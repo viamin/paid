@@ -151,6 +151,16 @@ module ApplicationHelper
     )
   end
 
+  PRIORITY_BADGE_STYLES = {
+    "P1" => "bg-red-100 text-red-700",
+    "P2" => "bg-orange-100 text-orange-700",
+    "P3" => "bg-amber-100 text-amber-700"
+  }.freeze
+
+  def priority_badge_class(priority)
+    PRIORITY_BADGE_STYLES.fetch(priority, "bg-gray-100 text-gray-600")
+  end
+
   RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq goal_eq branch_name_cont category_eq active_eq name_cont s].freeze
 
   def sort_link_to(label, attribute, q)

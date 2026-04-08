@@ -64,19 +64,83 @@
           <p class="mt-1 text-sm text-gray-500" data-goal-toggle-target="prDescription">Push changes to an existing pull request's branch instead of creating a new one.</p>
 
           <div class="mt-4 rounded-lg border border-gray-200 p-4">
-            <label for="pull_request_id" class="block text-sm font-medium text-gray-700">Choose from synced PRs:</label>
-            <% if @pull_requests.any? %>
-              <select name="pull_request_id" id="pull_request_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                <option value="">-- Select a pull request --</option>
-                <% @pull_requests.each do |pr| %>
-                  <option value="<%= pr.id %>" <%= "selected" if params[:pull_request_id].to_s == pr.id.to_s %>>
-                    #<%= pr.github_number %> - <%= truncate(pr.title, length: 60) %>
-                  </option>
-                <% end %>
-              </select>
-            <% else %>
-              <p class="mt-1 text-sm text-gray-500">No open pull requests found. Sync PRs first.</p>
-            <% end %>
+            <%# Single-select dropdown for create_pr goal %>
+            <div data-goal-toggle-target="prDropdown">
+              <label for="pull_request_id" class="block text-sm font-medium text-gray-700">Choose from synced PRs:</label>
+              <% if @pull_requests.any? %>
+                <select name="pull_request_id" id="pull_request_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                  <option value="">-- Select a pull request --</option>
+                  <% @pull_requests.each do |pr| %>
+                    <option value="<%= pr.id %>" <%= "selected" if params[:pull_request_id].to_s == pr.id.to_s %>>
+                      #<%= pr.github_number %> - <%= truncate(pr.title, length: 60) %>
+                    </option>
+                  <% end %>
+                </select>
+              <% else %>
+                <p class="mt-1 text-sm text-gray-500">No open pull requests found. Sync PRs first.</p>
+              <% end %>
+            </div>
+
+            <%# Multi-select table for review goal %>
+            <div data-goal-toggle-target="prTable" class="hidden">
+              <label class="block text-sm font-medium text-gray-700">Select PRs to review:</label>
+              <% if @pull_requests.any? %>
+                <div class="mt-2 overflow-hidden rounded-md border border-gray-200">
+                  <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                      <tr>
+                        <th scope="col" class="w-10 px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500"></th>
+                        <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">PR</th>
+                        <th scope="col" class="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Reviews</th>
+                        <th scope="col" class="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Priority</th>
+                        <th scope="col" class="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 bg-white">
+                      <% @pull_requests.each do |pr| %>
+                        <% has_active_run = @prs_with_active_runs.include?(pr.github_number) %>
+                        <% priority = @pr_priorities[pr.id] %>
+                        <tr class="<%= 'opacity-50' if has_active_run %>">
+                          <td class="whitespace-nowrap px-3 py-2">
+                            <input type="checkbox"
+                                   name="pull_request_ids[]"
+                                   value="<%= pr.id %>"
+                                   <%= "disabled" if has_active_run %>
+                                   <% if has_active_run %>data-active-run="true"<% end %>
+                                   class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
+                          </td>
+                          <td class="whitespace-nowrap px-3 py-2 text-sm text-gray-900">
+                            <span class="font-medium">#<%= pr.github_number %></span>
+                            <span class="text-gray-500"><%= truncate(pr.title, length: 50) %></span>
+                          </td>
+                          <td class="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-500">
+                            <%= pr.draft_review_count %>
+                          </td>
+                          <td class="whitespace-nowrap px-3 py-2 text-center text-sm">
+                            <% if priority %>
+                              <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= priority_badge_class(priority) %>">
+                                <%= priority %>
+                              </span>
+                            <% else %>
+                              <span class="text-gray-400">-</span>
+                            <% end %>
+                          </td>
+                          <td class="whitespace-nowrap px-3 py-2 text-center text-sm">
+                            <% if has_active_run %>
+                              <span class="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">In Progress</span>
+                            <% else %>
+                              <span class="text-gray-400">-</span>
+                            <% end %>
+                          </td>
+                        </tr>
+                      <% end %>
+                    </tbody>
+                  </table>
+                </div>
+              <% else %>
+                <p class="mt-1 text-sm text-gray-500">No open pull requests found. Sync PRs first.</p>
+              <% end %>
+            </div>
           </div>
         </div>
 

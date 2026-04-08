@@ -46,6 +46,19 @@ module Projects
         .pull_requests_only
         .where(github_state: "open")
         .order(github_number: :desc)
+
+      pr_numbers = @pull_requests.map(&:github_number)
+      @prs_with_active_runs = if pr_numbers.any?
+        @project.agent_runs
+          .where(source_pull_request_number: pr_numbers, status: AgentRun::UNFINISHED_STATUSES)
+          .distinct
+          .pluck(:source_pull_request_number)
+          .to_set
+      else
+        Set.new
+      end
+
+      @pr_priorities = build_pr_priorities(@pull_requests)
     end
 
     def create
@@ -53,30 +66,34 @@ module Projects
 
       goal = params[:goal].presence || "create_pr"
       custom_prompt = params[:custom_prompt]&.strip.presence
-      issue = resolve_issue
-      source_pr_number = resolve_pull_request
 
       if goal == "review"
-        unless source_pr_number
+        pr_ids = Array(params[:pull_request_ids]).reject(&:blank?)
+        if pr_ids.empty?
           redirect_to new_project_agent_run_path(@project, goal: goal),
-            alert: "Please select a pull request to review."
+            alert: "Please select at least one pull request to review."
           return
         end
+
+        create_review_runs_and_redirect(pr_ids, custom_prompt: custom_prompt)
       else
+        issue = resolve_issue
+        source_pr_number = resolve_pull_request
+
         unless issue || custom_prompt || source_pr_number
           redirect_to new_project_agent_run_path(@project, goal: goal),
             alert: "Please select an issue, provide a custom prompt, or select a pull request."
           return
         end
-      end
 
-      create_run_and_redirect(
-        on_error_path: new_project_agent_run_path(@project, goal: goal),
-        issue: issue,
-        custom_prompt: custom_prompt,
-        source_pull_request_number: source_pr_number,
-        goal: goal
-      )
+        create_run_and_redirect(
+          on_error_path: new_project_agent_run_path(@project, goal: goal),
+          issue: issue,
+          custom_prompt: custom_prompt,
+          source_pull_request_number: source_pr_number,
+          goal: goal
+        )
+      end
     end
 
     def quick_create
@@ -433,6 +450,61 @@ module Projects
 
     def set_agent_run
       @agent_run = @project.agent_runs.find(params[:id])
+    end
+
+    def create_review_runs_and_redirect(pr_ids, custom_prompt: nil)
+      prs = @project.issues.pull_requests_only.where(id: pr_ids)
+      if prs.empty?
+        redirect_to new_project_agent_run_path(@project, goal: "review"),
+          alert: "No valid pull requests selected."
+        return
+      end
+
+      budget_result = CostBudgets::Check.call(@project)
+      unless budget_result[:allowed]
+        redirect_to new_project_agent_run_path(@project, goal: "review"),
+          alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
+        return
+      end
+
+      created = 0
+      prs.each do |pr|
+        create_agent_run(
+          source_pull_request_number: pr.github_number,
+          custom_prompt: custom_prompt,
+          goal: "review"
+        )
+        created += 1
+      rescue ActiveRecord::RecordNotUnique
+        next
+      end
+
+      if created.zero?
+        redirect_to new_project_agent_run_path(@project, goal: "review"),
+          alert: "Agent runs are already queued or in progress for all selected PRs."
+        return
+      end
+
+      ProcessRunQueueJob.perform_later
+      notice = if created == 1
+        "1 review agent run queued."
+      else
+        "#{created} review agent runs queued."
+      end
+      redirect_to project_path(@project), notice: notice
+    rescue NoRunnableProviderError => e
+      redirect_to new_project_agent_run_path(@project, goal: "review"), alert: e.message
+    end
+
+    def build_pr_priorities(pull_requests)
+      priority_labels = @project.effective_priority_labels
+      pull_requests.each_with_object({}) do |pr, hash|
+        tier = Project::PRIORITY_TIERS.find do |t|
+          label_name = priority_labels[t]
+          label_name.present? && pr.labels.include?(label_name)
+        end
+        hash[pr.id] = tier
+      end
     end
 
     def resolve_issue

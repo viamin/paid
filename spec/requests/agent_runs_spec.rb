@@ -628,7 +628,7 @@ RSpec.describe "AgentRuns" do
 
         it "creates a review agent run with source_pull_request_number" do
           expect {
-            post project_agent_runs_path(project), params: { goal: "review", pull_request_id: pr.id }
+            post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id ] }
           }.to change(AgentRun, :count).by(1)
 
           agent_run = AgentRun.last
@@ -642,14 +642,23 @@ RSpec.describe "AgentRuns" do
           post project_agent_runs_path(project), params: { goal: "review" }
 
           expect(response).to redirect_to(new_project_agent_run_path(project, goal: "review"))
-          follow_redirect!
-          expect(response.body).to include("Please select a pull request to review")
+          expect(flash[:alert]).to eq("Please select at least one pull request to review.")
         end
 
         it "enqueues ProcessRunQueueJob for review runs" do
           expect {
-            post project_agent_runs_path(project), params: { goal: "review", pull_request_id: pr.id }
+            post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id ] }
           }.to have_enqueued_job(ProcessRunQueueJob)
+        end
+
+        it "creates multiple review runs for multiple selected PRs" do
+          pr2 = create(:issue, :pull_request, project: project, github_number: 56, title: "Second PR")
+          expect {
+            post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id, pr2.id ] }
+          }.to change(AgentRun, :count).by(2)
+
+          expect(response).to redirect_to(project_path(project))
+          expect(flash[:notice]).to include("2 review agent runs queued")
         end
       end
     end
