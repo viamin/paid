@@ -736,6 +736,8 @@ module Projects
     end
 
     def create_review_runs_and_redirect(pr_ids:, on_error_path:, custom_prompt:, goal:)
+      # Soft gate: budget is re-checked at execution time in ProcessRunQueueJob#start_claimed_run,
+      # so over-queuing is caught before any spend occurs.
       budget_result = CostBudgets::Check.call(@project)
       unless budget_result[:allowed]
         redirect_to on_error_path, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
@@ -778,13 +780,10 @@ module Projects
       redirect_to project_path(@project), notice: notice
     rescue NoRunnableProviderError => e
       redirect_to on_error_path, alert: e.message
-    rescue ActiveRecord::RecordNotUnique => e
-      alert = if (e.cause&.message || e.message).include?("proxy_token")
-        "An unexpected error occurred. Please try again."
-      else
-        "An agent run is already queued or in progress for one of the selected PRs."
-      end
-      redirect_to on_error_path, alert: alert
+    rescue ActiveRecord::RecordNotUnique
+      # Only proxy_token has a unique index; duplicate PR runs are caught
+      # server-side above (active_pr_numbers filter) rather than by a DB constraint.
+      redirect_to on_error_path, alert: "An unexpected error occurred. Please try again."
     end
 
     def compute_pr_priority_tiers(pull_requests)
