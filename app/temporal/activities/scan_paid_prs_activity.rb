@@ -167,7 +167,7 @@ module Activities
         # and only after a clean review-bot review is present.
         if checks.present? && all_checks_green?(checks)
           # Check non-bot review gates (manual reviewer, ci_action) before advancing.
-          reviews ||= fetch_reviews(client, project, issue)
+          reviews ||= fetch_reviews(client, project, issue) # safety: reviews already fetched above
           gate_triggers = non_bot_review_gate_triggers(project, reviews, checks)
           if gate_triggers.any?
             all_pending = pending_triggers + gate_triggers
@@ -464,6 +464,9 @@ module Activities
       reviewer_reviews = reviews.select { |r| r[:user_login]&.downcase == reviewer_login.downcase }
       return false if reviewer_reviews.empty?
 
+      # Time.at(0) fallback: reviews with nil timestamps sort oldest, so any
+      # review with a real timestamp will win. GitHub always populates
+      # submitted_at in practice, so this is purely defensive.
       latest = reviewer_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
       latest[:state] == "APPROVED"
     end
@@ -472,7 +475,7 @@ module Activities
       return false if checks.nil? || checks.empty?
 
       matching = checks.find { |c| c[:name] == action_name }
-      matching && matching[:conclusion] == "success"
+      matching&.dig(:conclusion) == "success"
     end
 
     # --- Review checks ---
@@ -803,6 +806,11 @@ module Activities
     # Returns true when there is no outstanding review feedback that should
     # block auto-merge. Checks the same review signals that detect_ready_triggers
     # would evaluate, so owner approval cannot bypass new findings.
+    #
+    # NOTE: When `checks` is nil (the default), an empty array is passed to
+    # non_bot_review_gate_triggers, causing ci_action_succeeded? to return
+    # false — conservatively blocking auto-merge if ci_action is enabled.
+    # Callers that have check data available should always pass it.
     def no_outstanding_review_feedback?(project, client, issue, reviews, checks: nil)
       last_run = last_completed_run(project, issue)
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
