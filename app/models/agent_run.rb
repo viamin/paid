@@ -8,6 +8,7 @@ class AgentRun < ApplicationRecord
   ACTIVE_STATUSES = %w[pending running].freeze
   FINISHED_STATUSES = %w[completed failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
+  TERMINAL_FAILURE_STATUSES = %w[failed cancelled timeout].freeze
   UNFINISHED_STATUSES = %w[queued pending running paused].freeze
   GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
@@ -932,6 +933,9 @@ class AgentRun < ApplicationRecord
 
   private
 
+  # Guard: only fires when these specific columns are being changed, so unrelated
+  # saves skip this check. Safe because no code path clears expected_draft_review_count
+  # independently — both columns are always set together at creation or merge time.
   def draft_review_round_tracking_is_consistent
     return unless count_toward_draft_review_round?
     return unless will_save_change_to_count_toward_draft_review_round? ||
