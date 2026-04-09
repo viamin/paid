@@ -9,5 +9,6 @@ class AgentRunsController < ApplicationController
     @q = base_scope.ransack(params[:q])
     @q.sorts = "created_at desc" if @q.sorts.empty?
     @pagy, @agent_runs = pagy(@q.result)
+    AgentRun.preload_source_pull_requests(@agent_runs)
   end
 end
