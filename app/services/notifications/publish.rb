@@ -2,6 +2,8 @@
 
 module Notifications
   class Publish
+    include Broadcasting
+
     def self.call(...)
       new(...).call
     end
@@ -38,7 +40,7 @@ module Notifications
       )
 
       notification.save!
-      broadcast(notification)
+      broadcast_notification_updates(account)
       notification
     end
 
@@ -46,21 +48,5 @@ module Notifications
 
     attr_reader :account, :source, :subject, :severity, :title,
       :description, :metadata, :action_url, :nav_section, :user
-
-    def broadcast(notification)
-      Turbo::StreamsChannel.broadcast_replace_to(
-        account, :notification_updates,
-        target: "notification_bell",
-        partial: "notifications/bell",
-        locals: { account: account }
-      )
-
-      Turbo::StreamsChannel.broadcast_replace_to(
-        account, :notification_updates,
-        target: "notification_nav_badges",
-        partial: "notifications/nav_badges",
-        locals: { account: account }
-      )
-    end
   end
 end

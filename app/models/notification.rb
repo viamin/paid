@@ -12,6 +12,7 @@ class Notification < ApplicationRecord
   validates :source, presence: true
   validates :title, presence: true
   validates :nav_section, inclusion: { in: NAV_SECTIONS }, allow_nil: true
+  validate :action_url_is_safe, if: -> { action_url.present? }
 
   scope :unread, -> { where(read_at: nil) }
   scope :undismissed, -> { where(dismissed_at: nil) }
@@ -20,4 +21,10 @@ class Notification < ApplicationRecord
   scope :visible, -> { undismissed }
   scope :for_nav_section, ->(section) { where(nav_section: section) }
   scope :recent, -> { order(created_at: :desc) }
+
+  private
+
+  def action_url_is_safe
+    errors.add(:action_url, "must be a path or HTTP(S) URL") unless action_url.start_with?("/", "http://", "https://")
+  end
 end

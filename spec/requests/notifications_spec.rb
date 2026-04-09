@@ -37,6 +37,22 @@ RSpec.describe "Notifications" do
       expect(table_text).not_to include("Warning alert")
     end
 
+    it "ignores invalid severity params" do
+      create(:notification, :warning, account: account, title: "Warning alert")
+
+      get notifications_path(severity: "bogus")
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Warning alert")
+    end
+
+    it "renders dropdown content when dropdown param is true" do
+      create(:notification, account: account, title: "Dropdown alert")
+
+      get notifications_path(dropdown: "true")
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Dropdown alert")
+    end
+
     it "excludes dismissed notifications" do
       create(:notification, account: account, title: "Active alert")
       create(:notification, :dismissed, account: account, title: "Dismissed alert")
