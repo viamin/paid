@@ -296,6 +296,7 @@ module Activities
           agent_run.timeout!(error: timeout_error) unless agent_run.finished?
           # Skip queue processing when cleanup killed the run — the timeout
           # was not a real provider issue, so there is nothing to re-schedule.
+          # (agent_run was reloaded above, so the model method sees current state)
           ProcessRunQueueJob.perform_later unless agent_run.cancelled_by_cleanup?
         elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_rate_limited)
           provider_list = providers.any? ? provider_attempt_labels(providers, agent_run, user_settings.user).join(", ") : "none"
