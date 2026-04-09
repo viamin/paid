@@ -20,7 +20,34 @@ then
   gem install overmind
 fi
 
+# Parse our own flags before they're handed to overmind. --detach (or -d, or
+# DEV_DETACH=1) re-execs bin/dev under setsid+nohup so it survives the parent
+# terminal being hung up — important in devcontainers where the host laptop
+# sleeping or the editor reconnecting sends SIGHUP to the foreground process
+# group and kills overmind+tmux. See log/dev-update/diagnostics for the
+# previous crash pattern that motivated this.
+DEV_DETACH_FLAG="${DEV_DETACH:-0}"
+DEV_PASSTHRU_ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --detach|-d) DEV_DETACH_FLAG=1 ;;
+    *) DEV_PASSTHRU_ARGS+=("$arg") ;;
+  esac
+done
+set -- ${DEV_PASSTHRU_ARGS[@]+"${DEV_PASSTHRU_ARGS[@]}"}
+
 dev_supervisor_prepare_logging
+
+if [ "$DEV_DETACH_FLAG" = "1" ] && [ -z "${DEV_DETACHED:-}" ]; then
+  log_path="$(dev_supervisor_overmind_log)"
+  echo "Detaching bin/dev — output streams to ${log_path}"
+  DEV_DETACHED=1 setsid nohup "$0" ${1+"$@"} </dev/null >>"$log_path" 2>&1 &
+  detached_pid=$!
+  disown "$detached_pid" 2>/dev/null || true
+  echo "bin/dev detached (pid=${detached_pid}). Use 'overmind connect' to attach."
+  exit 0
+fi
+
 dev_supervisor_log_line "$(dev_supervisor_overmind_log)" \
   "bin/dev starting pid=$$ ppid=$PPID tty=$(dev_supervisor_tty) term=${TERM:-} cwd=$PWD"
 
@@ -88,6 +115,7 @@ if [ -S "$OVERMIND_SOCKET" ]; then
 fi
 
 dev_supervisor_cleanup_stale_tmux_sockets
+dev_supervisor_cleanup_stale_overmind_tmp_dirs
 
 # Let the debug gem allow remote connections,
 # but avoid loading until `debugger` is called
