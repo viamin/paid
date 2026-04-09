@@ -424,6 +424,52 @@ RSpec.describe Activities::CreatePullRequestActivity do
       end
     end
 
+    context "when agent summary contains no issue references at all" do
+      before do
+        create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open")
+        agent_run.log!("stdout", "Refactored the parser module for better readability")
+      end
+
+      it "does not log a scope mismatch warning" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+          .find { |l| l.content.include?("summary may describe a different issue") }
+        expect(mismatch_log).to be_nil
+      end
+    end
+
+    context "when agent summary references both its own issue and a sibling issue" do
+      let(:other_issue) { create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open") }
+
+      before do
+        other_issue
+        agent_run.log!("stdout", "Fixed ##{issue.github_number} and also updated ##{other_issue.github_number}")
+      end
+
+      it "does not log a scope mismatch warning" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+          .find { |l| l.content.include?("summary may describe a different issue") }
+        expect(mismatch_log).to be_nil
+      end
+
+      it "logs cross-references at info level for observability" do
+        mock_logger = instance_double(ActiveSupport::Logger, warn: nil)
+        allow(activity).to receive(:logger).and_return(mock_logger)
+        allow(mock_logger).to receive(:info)
+        expect(mock_logger).to receive(:info).with(hash_including(
+          message: "agent_execution.summary_cross_references",
+          agent_run_id: agent_run.id,
+          issue_number: issue.github_number,
+          cross_referenced_issues: [ other_issue.github_number ]
+        ))
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
     context "when agent summary correctly references its own issue" do
       before do
         create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open")

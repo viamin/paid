@@ -137,7 +137,7 @@ module Activities
       mentions_own_issue = summary.scan(issue_ref_pattern).any? { |qualifier, num|
         num.to_i == issue_number &&
           (qualifier.nil? || qualifier.downcase == repo_full_name.downcase)
-      } || summary.match?(/\bissue\s+#{issue_number}\b/i)
+      } || summary.match?(/\bissue\s+#{Regexp.escape(issue_number.to_s)}\b/i)
 
       # Extract issue numbers from the summary in a single pass, keeping only
       # bare refs (#NNN) and qualified refs matching this project (owner/repo#NNN).
@@ -155,19 +155,31 @@ module Activities
       )
       cross_refs = referenced_numbers.intersection(sibling_numbers).to_a.sort
 
-      if !mentions_own_issue && cross_refs.any?
-        logger.warn(
-          message: "agent_execution.summary_scope_mismatch",
-          agent_run_id: agent_run.id,
-          issue_number: issue_number,
-          cross_referenced_issues: cross_refs,
-          summary_preview: summary.truncate(200)
-        )
-        agent_run.log!(
-          "system",
-          "Warning: agent summary may describe a different issue. " \
-          "Expected references to ##{issue_number}, found references to: #{cross_refs.map { |n| "##{n}" }.join(", ")}"
-        )
+      if cross_refs.any?
+        if mentions_own_issue
+          # Summary mentions both its own issue and sibling issues. This is
+          # likely a legitimate cross-reference, but we log at info level for
+          # observability in case it turns out to be partial contamination.
+          logger.info(
+            message: "agent_execution.summary_cross_references",
+            agent_run_id: agent_run.id,
+            issue_number: issue_number,
+            cross_referenced_issues: cross_refs
+          )
+        else
+          logger.warn(
+            message: "agent_execution.summary_scope_mismatch",
+            agent_run_id: agent_run.id,
+            issue_number: issue_number,
+            cross_referenced_issues: cross_refs,
+            summary_preview: summary.truncate(200)
+          )
+          agent_run.log!(
+            "system",
+            "Warning: agent summary may describe a different issue. " \
+            "Expected references to ##{issue_number}, found references to: #{cross_refs.map { |n| "##{n}" }.join(", ")}"
+          )
+        end
       end
     end
 
