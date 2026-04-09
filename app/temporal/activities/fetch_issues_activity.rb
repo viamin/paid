@@ -74,7 +74,7 @@ module Activities
 
         rescannable.each do |id, github_number, github_state|
           open_issues << { id: id, github_number: github_number, labels: [],
-                           github_state: github_state, trusted: true, rescan: true }
+                           github_state: github_state, rescan: true }
         end
       end
 
@@ -155,9 +155,19 @@ module Activities
           # from one that exactly fills DEFAULT_MAX_PAGES * DEFAULT_PER_PAGE.
           # Without this check a false truncation prevents the watermark from
           # ever advancing, causing the same window to be re-fetched indefinitely.
-          probe_opts = opts.merge(page: page)
-          if client.issues(repo_full_name, **probe_opts).any?
+          #
+          # Only probe during incremental fetches where false truncation matters
+          # for watermark advancement. For full fetches, false truncation just
+          # means stale-closure is conservatively skipped — already safe — so
+          # skip the extra API call to avoid unnecessary rate-limit pressure.
+          if since
+            probe_opts = opts.merge(page: page)
+            truncated = client.issues(repo_full_name, **probe_opts).any?
+          else
             truncated = true
+          end
+
+          if truncated
             logger.warn(
               message: "github_sync.fetch_issues_page_limit",
               repo: repo_full_name,
@@ -364,7 +374,8 @@ module Activities
       # Skip the bulk stale-closure pass to avoid false positives.
       if truncated || incremental
         reason = truncated ? "fetch_truncated" : "incremental_fetch"
-        logger.warn(
+        level = truncated ? :warn : :info
+        logger.public_send(level,
           message: "github_sync.stale_closure_skipped",
           project_id: project.id,
           reason: reason
