@@ -742,12 +742,19 @@ module Projects
       end
 
       prs = @project.issues.pull_requests_only.where(id: pr_ids)
-      prs.each do |pr|
-        create_agent_run(
-          custom_prompt: custom_prompt,
-          source_pull_request_number: pr.github_number,
-          goal: goal
-        )
+      if prs.empty?
+        redirect_to on_error_path, alert: "None of the selected pull requests could be found."
+        return
+      end
+
+      ActiveRecord::Base.transaction do
+        prs.each do |pr|
+          create_agent_run(
+            custom_prompt: custom_prompt,
+            source_pull_request_number: pr.github_number,
+            goal: goal
+          )
+        end
       end
       ProcessRunQueueJob.perform_later
 

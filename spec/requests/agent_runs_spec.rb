@@ -651,6 +651,26 @@ RSpec.describe "AgentRuns" do
             post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id ] }
           }.to have_enqueued_job(ProcessRunQueueJob)
         end
+
+        it "creates one agent run per selected PR when multiple are selected" do
+          pr2 = create(:issue, :pull_request, project: project, github_number: 56, title: "Second PR")
+
+          expect {
+            post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id, pr2.id ] }
+          }.to change(AgentRun, :count).by(2)
+
+          pr_numbers = AgentRun.last(2).map(&:source_pull_request_number)
+          expect(pr_numbers).to contain_exactly(55, 56)
+          expect(response).to redirect_to(project_path(project))
+          expect(flash[:notice]).to include("2 agent runs queued")
+        end
+
+        it "redirects with error when all PR IDs are invalid" do
+          post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ -1 ] }
+
+          expect(response).to redirect_to(new_project_agent_run_path(project, goal: "review"))
+          expect(flash[:alert]).to include("None of the selected pull requests could be found")
+        end
       end
     end
   end

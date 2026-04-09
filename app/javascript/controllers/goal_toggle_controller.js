@@ -52,7 +52,7 @@ export default class extends Controller {
       el.hidden = !isReview
       el.querySelectorAll("input[type='checkbox']").forEach((control) => {
         // Re-enable non-disabled-by-default checkboxes when review is shown
-        if (!control.dataset.permanentlyDisabled) {
+        if (!control.hasAttribute('data-permanently-disabled')) {
           control.disabled = !isReview
         }
       })
