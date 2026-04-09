@@ -159,9 +159,19 @@ module ApplicationHelper
     "ci_action" => { bg: "bg-teal-100", text: "text-teal-700", label: "CI Action" }
   }.freeze
 
+  # Validate at load time that every Project::REVIEW_METHODS entry has a style defined.
+  # This catches drift immediately rather than silently rendering missing badges.
+  Rails.application.config.after_initialize do
+    missing = Project::REVIEW_METHODS - REVIEW_METHOD_STYLES.keys
+    raise "REVIEW_METHOD_STYLES is missing keys: #{missing}" if missing.any?
+  end
+
   def review_method_badge(method)
     styles = REVIEW_METHOD_STYLES[method]
-    return if styles.nil?
+    if styles.nil?
+      Rails.logger.warn { "review_method_badge: unknown method #{method.inspect}" }
+      return
+    end
 
     tag.span(
       styles[:label],
