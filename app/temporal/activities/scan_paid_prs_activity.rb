@@ -654,6 +654,10 @@ module Activities
       reviewed_commit = review[:commit_id]
       return true if review_id.nil? || reviewed_commit.nil?
 
+      # NOTE: The GitHub API does not support filtering review comments by
+      # review ID server-side, so we fetch all comments for the PR and
+      # filter client-side. This is O(total comments) rather than
+      # O(comments on this review), which is fine for typical PR sizes.
       comments = client.pull_request_review_comments(
         project.full_name, issue.github_number
       )
@@ -663,6 +667,11 @@ module Activities
         .to_set
       return true if reviewed_paths.empty?
 
+      # NOTE: pr_data is already fetched in scan_pr, but check_review_bot_status
+      # does not receive it. This extra API call is behind multiple guard
+      # clauses so it only fires when all other conditions align. Passing
+      # pr_data through would avoid this call but adds complexity to
+      # check_review_bot_status's already long keyword-arg list.
       pr_data = client.pull_request(project.full_name, issue.github_number)
       head_sha = pr_data&.head&.sha
       return true if head_sha.nil? || head_sha == reviewed_commit
