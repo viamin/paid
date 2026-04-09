@@ -133,6 +133,11 @@ Rails.application.configure do
       cron: "0 * * * *",
       class: "DelayedHumanFeedbackCollectionJob",
       description: "Collect delayed human feedback (reactions, reviews) for recent agent runs"
+    },
+    orphan_branch_reaper: {
+      cron: "0 * * * *",
+      class: "OrphanBranchReaperJob",
+      description: "Delete remote branches abandoned by retried/timeout/failed agent runs"
     }
   }
 end
