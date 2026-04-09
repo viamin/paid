@@ -753,13 +753,24 @@ class GithubClient
     end
   end
 
-  # Gets the remaining rate limit.
+  # Gets the remaining rate limit. Returns 0 on transport/auth errors
+  # so callers treating 0 as "exhausted" get a safe default.
   #
   # @return [Integer] Number of requests remaining
   def rate_limit_remaining
     client.rate_limit.remaining
   rescue Octokit::Error
     0
+  end
+
+  # Returns remaining rate limit count, raising on transport/auth failure
+  # instead of returning 0. Use this when a false-positive "exhausted"
+  # reading would cause incorrect control flow (e.g. proactive budget checks).
+  #
+  # @return [Integer] Number of requests remaining
+  # @raise [Octokit::Error] on transport or auth failure
+  def rate_limit_remaining!
+    client.rate_limit.remaining
   end
 
   # Gets the rate limit reset time.

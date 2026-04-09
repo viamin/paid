@@ -168,6 +168,9 @@ module Activities
 
         stamp_relationships_parsed(issue, parsed_before)
       rescue GithubClient::RateLimitError, Temporalio::Error::ApplicationError
+        # Re-raise rate-limit errors (both reactive and proactive) so they
+        # propagate to the workflow instead of being swallowed by the
+        # generic rescue below.
         raise
       rescue => e
         logger.warn(

@@ -43,12 +43,10 @@ RSpec.describe Activities::BaseActivity do
   end
 
   describe "#check_rate_budget!" do
-    let(:octokit_client) { instance_double(Octokit::Client) }
-    let(:client) { instance_double(GithubClient, client: octokit_client) }
-    let(:rate_limit) { instance_double(Octokit::RateLimit, remaining: 100) }
+    let(:client) { instance_double(GithubClient) }
 
     before do
-      allow(octokit_client).to receive(:rate_limit).and_return(rate_limit)
+      allow(client).to receive(:rate_limit_remaining!).and_return(100)
     end
 
     it "does nothing when rate limit is not low" do
@@ -56,7 +54,7 @@ RSpec.describe Activities::BaseActivity do
     end
 
     it "raises a retryable ApplicationError when rate limit is low" do
-      allow(rate_limit).to receive(:remaining).and_return(5)
+      allow(client).to receive(:rate_limit_remaining!).and_return(5)
 
       expect { activity.send(:check_rate_budget!, client) }.to raise_error(
         Temporalio::Error::ApplicationError, /rate limit budget low/i
@@ -66,7 +64,7 @@ RSpec.describe Activities::BaseActivity do
     end
 
     it "skips the check when the rate-limit probe fails" do
-      allow(octokit_client).to receive(:rate_limit).and_raise(Octokit::Unauthorized.new)
+      allow(client).to receive(:rate_limit_remaining!).and_raise(Octokit::Unauthorized.new)
 
       expect { activity.send(:check_rate_budget!, client) }.not_to raise_error
     end
