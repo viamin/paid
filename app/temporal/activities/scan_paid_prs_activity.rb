@@ -195,7 +195,9 @@ module Activities
           checks.present? &&
           all_checks_green?(checks) &&
           mergeable == true &&
-          no_outstanding_review_feedback?(project, client, issue, reviews)
+          no_outstanding_review_feedback?(project, client, issue, reviews) &&
+          all_blocking_review_methods_complete?(project, reviews, checks) &&
+          !review_stale_for_head?(client, project, pr_data, reviews)
         return owner_approved_trigger(issue)
       end
 
@@ -759,6 +761,99 @@ module Activities
       return false if check_conversation_comments(client, project, issue, last_run).any?
 
       true
+    end
+
+    # --- Blocking review method completeness gate ---
+
+    # Returns true when every enabled blocking review method has a
+    # completion signal. Review methods and their completion criteria:
+    #
+    #   copilot / codex / paid_agent — checked by no_outstanding_review_feedback?
+    #     (review bot status + thread resolution). Not re-checked here.
+    #   ci_action — the check run named by action_name must be present
+    #     and have a successful conclusion.
+    #   manual — at least one trusted non-bot user must have submitted
+    #     an APPROVED review (distinct from owner approval, which gates
+    #     the merge trigger itself).
+    def all_blocking_review_methods_complete?(project, reviews, checks)
+      return true unless project.review_enabled? && project.wait_for_reviews?
+
+      if project.review_method_enabled?("ci_action")
+        return false unless ci_action_review_complete?(project, checks)
+      end
+
+      if project.review_method_enabled?("manual")
+        return false unless manual_review_complete?(project, reviews)
+      end
+
+      true
+    end
+
+    # ci_action is complete when the configured action_name appears in
+    # the check-run list with a "success" conclusion.
+    def ci_action_review_complete?(project, checks)
+      action_name = project.review_method_config("ci_action")["action_name"]
+      return false if action_name.blank?
+
+      checks.any? { |c| c[:name] == action_name && c[:conclusion] == "success" }
+    end
+
+    # manual review is complete when at least one trusted non-bot user
+    # has submitted an APPROVED review.
+    def manual_review_complete?(project, reviews)
+      return false if reviews.nil?
+
+      reviews.any? do |r|
+        r[:state] == "APPROVED" &&
+          project.trusted_github_user?(r[:user_login]) &&
+          !bot_user?(r[:user_login])
+      end
+    end
+
+    # --- Stale review detection ---
+
+    # Returns true when the head commit on the PR was pushed after the
+    # latest blocking approval, meaning the review is stale and should
+    # not satisfy the auto-merge gate. When no approvals exist (e.g.
+    # self-authored PRs where the owner skips explicit approval), returns
+    # false — staleness cannot be determined without an approval timestamp,
+    # and other gates (bot reviews, threads) protect against stale feedback.
+    def review_stale_for_head?(client, project, pr_data, reviews)
+      return false if reviews.nil?
+
+      latest_approval_at = latest_approval_timestamp(project, reviews)
+      return false if latest_approval_at.nil?
+
+      head_committed_at = fetch_head_commit_date(client, project, pr_data)
+      return false if head_committed_at.nil?
+
+      head_committed_at > latest_approval_at
+    end
+
+    def fetch_head_commit_date(client, project, pr_data)
+      sha = pr_data&.head&.sha
+      return nil if sha.nil?
+
+      commit_data = client.commit(project.full_name, sha)
+      commit_data&.commit&.committer&.date
+    rescue GithubClient::Error => e
+      log_signal_error("fetch_head_commit", project,
+        OpenStruct.new(github_number: pr_data&.number), e)
+      nil
+    end
+
+    # Returns the most recent submitted_at timestamp among APPROVED
+    # reviews from trusted non-bot users (including the owner).
+    def latest_approval_timestamp(project, reviews)
+      approvals = reviews.select do |r|
+        r[:state] == "APPROVED" &&
+          project.trusted_github_user?(r[:user_login]) &&
+          !bot_user?(r[:user_login])
+      end
+
+      return nil if approvals.empty?
+
+      approvals.filter_map { |r| r[:submitted_at] }.max
     end
 
     # --- Helpers ---
