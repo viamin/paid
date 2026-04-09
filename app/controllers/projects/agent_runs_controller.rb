@@ -47,7 +47,7 @@ module Projects
         .where(github_state: "open")
         .order(github_number: :desc)
 
-      pr_numbers = @pull_requests.map(&:github_number)
+      pr_numbers = @pull_requests.pluck(:github_number)
       @prs_with_active_runs = @project.agent_runs
         .where(source_pull_request_number: pr_numbers, status: AgentRun::UNFINISHED_STATUSES)
         .distinct
@@ -744,6 +744,17 @@ module Projects
       prs = @project.issues.pull_requests_only.where(id: pr_ids)
       if prs.empty?
         redirect_to on_error_path, alert: "None of the selected pull requests could be found."
+        return
+      end
+
+      # Filter out PRs that already have active (unfinished) runs server-side,
+      # since the client-side disabled checkbox can be bypassed or hit by a race.
+      active_pr_numbers = @project.agent_runs
+        .where(source_pull_request_number: prs.map(&:github_number), status: AgentRun::UNFINISHED_STATUSES)
+        .pluck(:source_pull_request_number)
+      prs = prs.where.not(github_number: active_pr_numbers) if active_pr_numbers.any?
+      if prs.empty?
+        redirect_to on_error_path, alert: "All selected pull requests already have active runs."
         return
       end
 
