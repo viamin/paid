@@ -48,7 +48,7 @@ module Activities
           message: "pr_scanner.rate_budget_exhausted_mid_scan",
           project_id: project_id,
           prs_collected: prs_to_trigger.size,
-          prs_remaining: paid_prs.size - paid_prs.index(issue)
+          prs_remaining: paid_prs.size - paid_prs.index(issue) - 1
         )
         break
       end
