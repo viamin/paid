@@ -111,6 +111,10 @@ module Api
       head :ok
     end
 
+    # Shared lookup used by all three event handlers (pull_request_review,
+    # pull_request, issue_comment). The review-goal fallback intentionally
+    # applies to every event type: a merged PR or issue comment on a PR that
+    # was reviewed by an agent should still attribute the signal.
     def find_agent_run(pr_number)
       return nil unless @project && pr_number
 
@@ -123,6 +127,9 @@ module Api
       # CollectReviewReactionFeedback, which queries source_pull_request_number
       # directly for review-goal runs.
       #
+      # NOTE: the existing partial unique index on (project_id,
+      # source_pull_request_number) covers active runs only and does not help
+      # this completed-status query. At current volume that is fine.
       # TODO(#943): if review-goal feedback volume grows, consider a composite
       # index on (project_id, source_pull_request_number, status).
       @project.agent_runs
