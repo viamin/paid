@@ -17,6 +17,8 @@ module Prompts
   #   )
   class Render
     def self.call(slug:, fallback:, project: nil, variables: {})
+      # Prompt.resolve includes global scope as a fallback (project > account > global),
+      # so passing a project for a global-only slug still finds the prompt.
       prompt = if project
         Prompt.resolve(slug, project: project)
       else
@@ -42,6 +44,7 @@ module Prompts
     # later iterations — important when the values come from arbitrary content
     # like other prompt templates or agent log output.
     #
+    # Variable names must match `\w+` (letters, digits, underscores only).
     # Accepts vars with either string or symbol keys. Unknown placeholders are
     # left in place so callers can spot drift.
     def self.interpolate(template, vars)

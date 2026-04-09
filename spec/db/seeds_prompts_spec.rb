@@ -51,7 +51,7 @@ RSpec.describe Prompt, type: :model do
         end
 
         rendered = version.render(vars)
-        unresolved = rendered.scan(/\{\{[^{}]+\}\}/)
+        unresolved = rendered.scan(/\{\{\w+\}\}/)
         expect(unresolved).to be_empty,
           "expected no unresolved placeholders in #{slug}, got: #{unresolved.inspect}"
       end

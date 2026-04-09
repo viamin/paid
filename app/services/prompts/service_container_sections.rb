@@ -17,7 +17,10 @@ module Prompts
       containers = project.service_containers.to_a
       has_db = containers.any? { |sc| sc.image.include?("postgres") }
       language = Prompts::LanguageCommands.detected_language(project)
+      build_database_instruction(has_db: has_db, language: language)
+    end
 
+    def self.build_database_instruction(has_db:, language:)
       if has_db
         if language == "ruby"
           "   Run `bin/rails db:prepare` to set up the database (`DATABASE_URL` will be configured for you)."
@@ -96,16 +99,10 @@ module Prompts
     private
 
     def setup_database_instruction
-      if has_database_container?
-        if detected_language == "ruby"
-          "   Run `bin/rails db:prepare` to set up the database (`DATABASE_URL` will be configured for you)."
-        else
-          "   A database service will be available via the `DATABASE_URL` environment variable." \
-          " Use your framework's standard command to create and migrate the database schema."
-        end
-      else
-        "   Do NOT run `bin/setup`, `db:prepare`, or `db:migrate` — no database is available in this environment."
-      end
+      ServiceContainerSections.build_database_instruction(
+        has_db: has_database_container?,
+        language: detected_language
+      )
     end
 
     def service_environment_section(include_setup_instruction: false)
