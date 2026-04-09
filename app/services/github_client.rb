@@ -384,12 +384,14 @@ class GithubClient
       last_rel = client.last_response&.rels&.dig(:last)
 
       unless last_rel
-        first_page.define_singleton_method(:multi_page?) { false }
+        first_page.instance_variable_set(:@multi_page, false)
+        first_page.define_singleton_method(:multi_page?) { @multi_page }
         return first_page
       end
 
       last_page = client.get(last_rel.href)
-      last_page.define_singleton_method(:multi_page?) { true }
+      last_page.instance_variable_set(:@multi_page, true)
+      last_page.define_singleton_method(:multi_page?) { @multi_page }
       last_page
     end
   end
