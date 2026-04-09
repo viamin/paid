@@ -78,6 +78,7 @@ module Activities
 
       case issue.pr_review_phase
       when "draft", "restarted"
+        # Rate budget checked inside scan_draft_pr, after non-API early exits
         scan_draft_pr(project, client, issue)
       when "ready"
         check_rate_budget!(client)
