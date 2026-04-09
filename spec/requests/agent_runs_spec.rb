@@ -671,6 +671,13 @@ RSpec.describe "AgentRuns" do
           expect(response).to redirect_to(new_project_agent_run_path(project, goal: "review"))
           expect(flash[:alert]).to include("None of the selected pull requests could be found")
         end
+
+        it "filters out non-numeric PR IDs" do
+          post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ "abc", "", pr.id.to_s ] }
+
+          expect(AgentRun.count).to eq(1)
+          expect(AgentRun.last.source_pull_request_number).to eq(55)
+        end
       end
     end
   end

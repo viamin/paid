@@ -65,7 +65,7 @@ module Projects
       issue = resolve_issue
 
       if goal == "review"
-        pr_ids = Array(params[:pull_request_ids]).reject(&:blank?)
+        pr_ids = Array(params[:pull_request_ids]).filter_map { |id| Integer(id, exception: false) }
         if pr_ids.empty?
           redirect_to new_project_agent_run_path(@project, goal: goal),
             alert: "Please select at least one pull request to review."

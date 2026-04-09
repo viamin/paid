@@ -21,7 +21,7 @@
                      name="pull_request_ids[]"
                      value="<%= pr.id %>"
                      <%= "disabled" if has_active_run %>
-                     <%= "data-permanently-disabled" if has_active_run %>
+                     <%= 'data-permanently-disabled="true"' if has_active_run %>
                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed">
             </td>
             <td class="px-3 py-2 text-sm text-gray-900">
@@ -34,7 +34,7 @@
               <%= priority_tier || "-" %>
             </td>
             <td class="px-3 py-2 text-right text-sm text-gray-500">
-              <%= pr.draft_review_count + pr.pr_followup_count %>
+              <%= pr.review_rounds_count %>
             </td>
           </tr>
         <% end %>
