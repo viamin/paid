@@ -1128,6 +1128,32 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when paid-agent review contains the clean signal marker" do
+      before do
+        enable_paid_agent_review!
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 200, user_login: "paid-agent[bot]", state: "COMMENTED",
+                       body: "Looks good! No issues found.\n<!-- paid-review-signal: clean -->",
+                       submitted_at: 1.hour.ago } ],
+          checks: [ { name: "ci", conclusion: "success" } ]
+        )
+      end
+
+      it "treats the paid-agent review as clean and advances to ready_for_owner" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+    end
+
     context "when no review bot review exists and CI is green" do
       before do
         enable_copilot_review!
@@ -2190,6 +2216,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(github_client).to receive(:pull_request_reviews)
       .with(project.full_name, 42)
       .and_return(reviews)
+  end
+
+  describe "REVIEW_BOT_PAID_CLEAN_PATTERN" do
+    let(:pattern) { described_class::REVIEW_BOT_PAID_CLEAN_PATTERN }
+
+    it "matches the paid-review-signal clean marker" do
+      expect(pattern).to match("<!-- paid-review-signal: clean -->")
+    end
+
+    it "matches when embedded in a larger body" do
+      body = "Looks good! No issues found.\n<!-- paid-review-signal: clean -->"
+      expect(pattern).to match(body)
+    end
+
+    it "does not match case variants (case-sensitive)" do
+      expect(pattern).not_to match("<!-- PAID-REVIEW-SIGNAL: CLEAN -->")
+    end
   end
 
   def default_clean_copilot_review

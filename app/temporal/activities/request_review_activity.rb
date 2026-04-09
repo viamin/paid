@@ -25,8 +25,6 @@ module Activities
 
     COPILOT_LOGIN = "copilot"
     CODEX_LOGIN = "chatgpt-codex-connector"
-    PAID_AGENT_LOGIN = "paid-agent"
-
     # Default GraphQL node ID for the copilot-pull-request-reviewer bot.
     # Override per environment via config.x.copilot_bot_node_id.
     # To verify: gh api users/copilot-pull-request-reviewer%5Bbot%5D --jq '.node_id'

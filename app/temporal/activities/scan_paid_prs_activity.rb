@@ -24,7 +24,7 @@ module Activities
     # Separate case-sensitive pattern for the machine-emitted paid-agent
     # clean signal. Case-sensitivity avoids false positives from
     # user-authored review text that might resemble the marker.
-    PAID_REVIEW_CLEAN_PATTERN = /<!-- paid-review-signal: clean -->/
+    REVIEW_BOT_PAID_CLEAN_PATTERN = /<!-- paid-review-signal: clean -->/
     # Body-only review bots (currently Codex) signal "no findings" by posting
     # an *issue comment* — not a review — with text like
     # "Codex Review: Didn't find any major issues. Bravo." Match the
@@ -462,7 +462,7 @@ module Activities
       return :no_review if latest.nil?
 
       body = latest[:body]
-      clean = REVIEW_BOT_CLEAN_PATTERN.match?(body) || PAID_REVIEW_CLEAN_PATTERN.match?(body)
+      clean = REVIEW_BOT_CLEAN_PATTERN.match?(body) || REVIEW_BOT_PAID_CLEAN_PATTERN.match?(body)
       clean ? :clean : :has_comments
     end
 

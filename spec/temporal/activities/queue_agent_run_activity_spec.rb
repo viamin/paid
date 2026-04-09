@@ -80,6 +80,25 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.source_pull_request_number).to eq(42)
     end
 
+    it "passes goal parameter through to the created agent run" do
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        source_pull_request_number: 42,
+        goal: "review"
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.goal).to eq("review")
+    end
+
+    it "defaults goal to create_pr when not specified" do
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.goal).to eq("create_pr")
+    end
+
     it "works without an issue" do
       result = activity.execute(
         project_id: project.id,

@@ -242,7 +242,7 @@ module Workflows
         pending_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
         login = pending_trigger&.dig(:request_login)
 
-        if login == Activities::RequestReviewActivity::PAID_AGENT_LOGIN
+        if login == ProviderSupport::PAID_AGENT_LOGIN
           # paid_agent reviews are Paid-internal agent runs, not external bot
           # requests. Start a review-goal agent run so the agent posts its
           # review via the GitHub API proxy under the paid-agent bot identity.

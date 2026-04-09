@@ -462,6 +462,40 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::TriggerDevEnvironmentUpdateActivity, anything, timeout: anything)
     end
 
+    it "routes review_bot_review_pending to start_review_goal_workflow when login is paid-agent" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [ { type: "review_bot_review_pending", request_login: ProviderSupport::PAID_AGENT_LOGIN } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42, goal: "review" },
+          timeout: 30)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, anything, timeout: anything)
+    end
+
+    it "routes review_bot_review_pending to RequestReviewActivity for non-paid-agent logins" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [ { type: "review_bot_review_pending", request_login: Activities::RequestReviewActivity::COPILOT_LOGIN } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(goal: "review"), timeout: anything)
+    end
+
     it "skips owner review request when owner_reviewer_login is blank" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::MarkPrReadyActivity, anything, timeout: anything)

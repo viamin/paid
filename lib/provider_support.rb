@@ -27,6 +27,13 @@ module ProviderSupport
   # in the container image. Update this list when new CLIs are added to the Dockerfile.
   CONTAINER_EXECUTABLE_PROVIDER_KEYS = Set.new(%w[aider claude codex copilot cursor gemini kilocode opencode]).freeze
 
+  # Login constant for the paid-agent review bot. Defined here (alongside
+  # PROVIDER_BOT_USERNAMES) rather than in RequestReviewActivity because
+  # paid-agent reviews route through QueueAgentRunActivity, not
+  # RequestReviewActivity. Keeping the constant in a shared location
+  # avoids implying a dependency on the wrong activity.
+  PAID_AGENT_LOGIN = "paid-agent"
+
   module_function
 
   # Returns supported provider keys in a deterministic order matching

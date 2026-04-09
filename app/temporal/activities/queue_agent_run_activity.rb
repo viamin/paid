@@ -41,7 +41,7 @@ module Activities
             source_pull_request_number: source_pull_request_number,
             status: "queued"
           }
-          attrs[:goal] = goal if goal.present?
+          attrs[:goal] = goal.presence || "create_pr"
           # NOTE: find_existing_run does not scope by goal, so a review-goal
           # run will be deduplicated against an in-flight create_pr run for
           # the same issue/PR. This is acceptable for now because the poll
