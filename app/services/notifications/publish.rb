@@ -36,7 +36,8 @@ module Notifications
         action_url: action_url,
         nav_section: nav_section,
         user: user,
-        resolved_at: nil
+        resolved_at: nil,
+        dismissed_at: nil
       )
 
       notification.save!
