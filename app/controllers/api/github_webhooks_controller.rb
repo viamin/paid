@@ -119,6 +119,12 @@ module Api
       #
       # Review-goal runs set source_pull_request_number (the PR they reviewed)
       # instead of pull_request_number, so fall back to that lookup.
+      # The HumanFeedbackCollectionJob side already handles this via
+      # CollectReviewReactionFeedback, which queries source_pull_request_number
+      # directly for review-goal runs.
+      #
+      # TODO(#943): if review-goal feedback volume grows, consider a composite
+      # index on (project_id, source_pull_request_number, status).
       @project.agent_runs
         .where(pull_request_number: pr_number, status: "completed")
         .order(created_at: :desc)
