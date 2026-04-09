@@ -42,9 +42,12 @@ if [ "$DEV_DETACH_FLAG" = "1" ] && [ -z "${DEV_DETACHED:-}" ]; then
   log_path="$(dev_supervisor_overmind_log)"
   echo "Detaching bin/dev — output streams to ${log_path}"
   DEV_DETACHED=1 setsid nohup "$0" ${1+"$@"} </dev/null >>"$log_path" 2>&1 &
+  # $! is the setsid wrapper PID, not overmind itself. Killing this PID still
+  # propagates to the session, so it's useful for teardown; it just won't match
+  # the overmind PID you'd see in `ps` or `overmind status`.
   detached_pid=$!
   disown "$detached_pid" 2>/dev/null || true
-  echo "bin/dev detached (pid=${detached_pid}). Use 'overmind connect' to attach."
+  echo "bin/dev detached (setsid pid=${detached_pid}). Use 'overmind connect' to attach."
   exit 0
 fi
 
