@@ -167,12 +167,13 @@ module Activities
         parent_child_changed |= Issues::ParseParentChild.call(issue: issue, comments: comment_bodies)
 
         stamp_relationships_parsed(issue, parsed_before)
-      rescue GithubClient::RateLimitError, Temporalio::Error::ApplicationError
-        # Re-raise rate-limit errors (both reactive and proactive) so they
-        # propagate to the workflow instead of being swallowed by the
-        # generic rescue below.
+      rescue GithubClient::RateLimitError
+        # Always re-raise reactive rate-limit errors.
         raise
       rescue => e
+        # Re-raise proactive rate-limit errors so they propagate to the
+        # workflow instead of being swallowed by the generic handler.
+        raise if e.is_a?(Temporalio::Error::ApplicationError) && e.type == "RateLimit"
         logger.warn(
           message: "github_sync.parse_issue_relationships_failed",
           project_id: project.id,
