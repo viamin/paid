@@ -2305,7 +2305,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     )
 
     recent = recent_issue_comments || issue_comments
-    recent.define_singleton_method(:multi_page?) { recent_multi_page }
+    multi_page = recent_multi_page
+    recent.define_singleton_method(:multi_page?) { multi_page }
 
     allow(github_client).to receive(:pull_request)
       .with(project.full_name, 42)

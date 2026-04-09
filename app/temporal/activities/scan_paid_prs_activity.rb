@@ -651,6 +651,7 @@ module Activities
         login = c.user&.login
         next false if bot_user?(login)
         next false unless project.trusted_github_user?(login)
+        # Defensive: treat nil created_at as potentially relevant (include it)
         next false if cutoff && c.created_at && c.created_at <= cutoff
         next false if system_generated_comment?(c.body)
         next false if c.body.to_s.strip.length < MIN_COMMENT_LENGTH
@@ -675,7 +676,9 @@ module Activities
     def fetch_conversation_comments(client, project, issue, cutoff)
       comments = client.recent_issue_comments(project.full_name, issue.github_number)
 
-      if cutoff && comments.respond_to?(:multi_page?) && comments.multi_page? &&
+      # Treat nil created_at as newer than cutoff (safe: triggers fallback to
+      # full pagination rather than silently missing comments).
+      if cutoff && comments.multi_page? &&
           comments.all? { |c| c.created_at.nil? || c.created_at > cutoff }
         client.issue_comments(project.full_name, issue.github_number)
       else
