@@ -766,7 +766,7 @@ class GithubClient
       query($owner: String!, $name: String!, $number: Int!, $maxComments: Int!) {
         repository(owner: $owner, name: $name) {
           pullRequest(number: $number) {
-            comments: reviewThreads(first: $maxComments) {
+            threads: reviewThreads(first: $maxComments) {
               pageInfo { hasNextPage }
               nodes {
                 comments(first: 50) {
@@ -795,9 +795,9 @@ class GithubClient
       owner: owner, name: name, number: pr_number, maxComments: max_threads
     )
 
-    raise_graphql_errors(data)
+    raise_graphql_errors(data, context: "fetching review reactions for #{repo}##{pr_number}")
 
-    threads_connection = data.dig("data", "repository", "pullRequest", "comments") || {}
+    threads_connection = data.dig("data", "repository", "pullRequest", "threads") || {}
     if threads_connection.dig("pageInfo", "hasNextPage")
       Rails.logger.warn(
         message: "github_client.review_threads_truncated",
@@ -818,7 +818,7 @@ class GithubClient
         reactions_data = comment["reactions"] || {}
         if reactions_data.dig("pageInfo", "hasNextPage")
           begin
-            fetch_all_comment_reactions(repo, comment["databaseId"])
+            pull_request_review_comment_reactions(repo, comment["databaseId"])
           rescue Error => e
             Rails.logger.warn(
               message: "github_client.comment_reaction_fallback_failed",
@@ -865,6 +865,18 @@ class GithubClient
   def rate_limit_low?(threshold: 10)
     rate_limit_remaining < threshold
   end
+
+  # Maps GraphQL ReactionContent enum values to REST API content strings.
+  GRAPHQL_REACTION_MAP = {
+    "THUMBS_UP" => "+1",
+    "THUMBS_DOWN" => "-1",
+    "LAUGH" => "laugh",
+    "HOORAY" => "hooray",
+    "CONFUSED" => "confused",
+    "HEART" => "heart",
+    "ROCKET" => "rocket",
+    "EYES" => "eyes"
+  }.freeze
 
   private
 
@@ -917,15 +929,12 @@ class GithubClient
     raise ApiError.new(e.message)
   end
 
-  def raise_graphql_errors(data)
+  def raise_graphql_errors(data, context: nil)
     return unless data["errors"].present?
 
     message = data["errors"].map { |e| e["message"] }.join(", ")
-    raise ApiError.new("GraphQL error: #{message}")
-  end
-
-  def fetch_all_comment_reactions(repo, comment_id)
-    pull_request_review_comment_reactions(repo, comment_id)
+    prefix = context ? "GraphQL error #{context}: " : "GraphQL error: "
+    raise ApiError.new("#{prefix}#{message}")
   end
 
   def graphql_mutation?(query)
@@ -980,7 +989,7 @@ class GithubClient
     GRAPHQL
 
     data = graphql_request(query, owner: owner, name: name, number: number)
-    raise_graphql_errors(data)
+    raise_graphql_errors(data, context: "resolving #{repo}##{number}")
 
     data.dig("data", "repository", "pullRequest", "id")
   end
@@ -998,18 +1007,6 @@ class GithubClient
     when String then Time.parse(value)
     end
   end
-
-  # Maps GraphQL ReactionContent enum values to REST API content strings.
-  GRAPHQL_REACTION_MAP = {
-    "THUMBS_UP" => "+1",
-    "THUMBS_DOWN" => "-1",
-    "LAUGH" => "laugh",
-    "HOORAY" => "hooray",
-    "CONFUSED" => "confused",
-    "HEART" => "heart",
-    "ROCKET" => "rocket",
-    "EYES" => "eyes"
-  }.freeze
 
   def graphql_reaction_to_rest(content)
     GRAPHQL_REACTION_MAP.fetch(content, content)
