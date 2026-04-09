@@ -227,7 +227,7 @@ module Knowledge
     def stream_repo_tar_to_container!
       Open3.popen3("tar", "-cf", "-", "-C", @host_repo_dir, ".") do |_stdin, stdout, stderr, wait_thr|
         stdout.binmode
-        @container.archive_in_stream(options[:workspace_mount]) { stdout.read(8192) }
+        @container.archive_in_stream(options[:workspace_mount]) { stdout.read(8192).to_s }
         status = wait_thr.value
         unless status.success?
           error_output = stderr.read.to_s.strip
