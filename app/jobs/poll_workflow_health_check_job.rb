@@ -73,7 +73,7 @@ class PollWorkflowHealthCheckJob < ApplicationJob
     WorkflowState.record_polling_status(
       project,
       status: map_temporal_status(status[:status]),
-      error_message: "Workflow in #{status[:status]} state"
+      error_message: "Workflow in #{map_temporal_status(status[:status])} state"
     )
 
     # Re-check to reduce race conditions with other lifecycle operations
