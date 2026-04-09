@@ -43,12 +43,12 @@ module Activities
           next nil
         end
 
-        scanned_count += 1
         result = scan_pr(project, client, issue)
-        # Only mark as scanned when the scan actually completed — scan_pr
+        # Only count as scanned when the scan actually completed — scan_pr
         # returns :skipped when short-circuited (active run exists) or when
         # API failures prevented full evaluation.
         next nil if result == :skipped
+        scanned_count += 1
         # Only stamp last_pr_scan_at when no triggers were emitted. When
         # triggers fire, downstream actions (queueing runs, requesting
         # reviews) may still fail; stamping now would cause
@@ -330,7 +330,7 @@ module Activities
       reviews ||= fetch_reviews(client, project, issue)
       unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
 
-      partial_failure = reviews.nil? || unresolved_threads.nil?
+      partial_failure = pr_data.nil? || reviews.nil? || unresolved_threads.nil?
 
       triggers = []
 
