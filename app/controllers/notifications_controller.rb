@@ -3,10 +3,17 @@
 class NotificationsController < ApplicationController
   def index
     authorize Notification
+
+    if params[:dropdown] == "true"
+      @dropdown_notifications = policy_scope(Notification).active.unread.recent.limit(10)
+      render partial: "notifications/dropdown_content", locals: { notifications: @dropdown_notifications }
+      return
+    end
+
     scope = policy_scope(Notification).visible.recent
 
     scope = scope.unread if params[:filter] == "unread"
-    scope = scope.where(severity: params[:severity]) if params[:severity].present?
+    scope = scope.where(severity: params[:severity]) if params[:severity].present? && params[:severity].in?(Notification.severities.keys)
     scope = scope.where(source: params[:source]) if params[:source].present?
 
     @pagy, @notifications = pagy(scope, limit: 25)

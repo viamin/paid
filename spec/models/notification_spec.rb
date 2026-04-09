@@ -24,6 +24,24 @@ RSpec.describe Notification do
       expect(notification).not_to be_valid
     end
 
+    it "rejects javascript: action_url" do
+      notification = build(:notification, action_url: "javascript:alert(1)")
+      expect(notification).not_to be_valid
+      expect(notification.errors[:action_url]).to include("must be a path or HTTP(S) URL")
+    end
+
+    it "accepts path action_url" do
+      expect(build(:notification, action_url: "/projects/1")).to be_valid
+    end
+
+    it "accepts http action_url" do
+      expect(build(:notification, action_url: "https://example.com")).to be_valid
+    end
+
+    it "accepts nil action_url" do
+      expect(build(:notification, action_url: nil)).to be_valid
+    end
+
     it "validates severity inclusion" do
       notification = build(:notification, severity: :info)
       expect(notification).to be_valid

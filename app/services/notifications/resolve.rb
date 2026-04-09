@@ -2,6 +2,8 @@
 
 module Notifications
   class Resolve
+    include Broadcasting
+
     def self.call(...)
       new(...).call
     end
@@ -23,28 +25,12 @@ module Notifications
       return unless notification
 
       notification.update!(resolved_at: Time.current)
-      broadcast
+      broadcast_notification_updates(account)
       notification
     end
 
     private
 
     attr_reader :account, :source, :subject
-
-    def broadcast
-      Turbo::StreamsChannel.broadcast_replace_to(
-        account, :notification_updates,
-        target: "notification_bell",
-        partial: "notifications/bell",
-        locals: { account: account }
-      )
-
-      Turbo::StreamsChannel.broadcast_replace_to(
-        account, :notification_updates,
-        target: "notification_nav_badges",
-        partial: "notifications/nav_badges",
-        locals: { account: account }
-      )
-    end
   end
 end

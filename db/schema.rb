@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_08_032317) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_09_184503) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -151,7 +151,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_032317) do
     t.integer "container_metrics_count", default: 0, null: false
     t.datetime "container_retained_until"
     t.integer "cost_cents", default: 0
-    t.boolean "count_toward_draft_review_round", default: false, null: false
     t.datetime "created_at", null: false
     t.integer "created_issue_number"
     t.string "created_issue_url", limit: 500
@@ -160,7 +159,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_032317) do
     t.string "diagnosis_status", limit: 50
     t.integer "duration_seconds"
     t.text "error_message"
-    t.integer "expected_draft_review_count"
     t.string "final_provider", limit: 50
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.jsonb "guardrail_context"
@@ -659,6 +657,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_032317) do
     t.index ["account_id", "read_at", "dismissed_at"], name: "index_notifications_on_unread"
     t.index ["account_id", "source", "subject_type", "subject_id"], name: "index_notifications_on_dedup", unique: true
     t.index ["subject_type", "subject_id"], name: "index_notifications_on_subject"
+    t.index ["user_id"], name: "index_notifications_on_user_id"
   end
 
   create_table "pre_commit_requirements", force: :cascade do |t|
@@ -772,6 +771,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_032317) do
     t.datetime "last_agent_run_at"
     t.datetime "last_code_scanning_scan_at"
     t.datetime "last_github_activity_at"
+    t.datetime "last_issue_sync_at"
     t.datetime "last_polled_at"
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_execution_seconds", default: 3600, null: false
