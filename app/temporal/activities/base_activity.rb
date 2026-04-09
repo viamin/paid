@@ -68,6 +68,8 @@ module Activities
     # errors instead of returning 0) so that auth/transport failures are
     # not misclassified as rate-limit exhaustion. On probe failure we log
     # a warning and return, letting the real API call surface the actual error.
+    # threshold default of 10 matches GithubClient#rate_limit_low? — if the
+    # budget floor changes, update both to keep them consistent.
     def check_rate_budget!(client, threshold: 10)
       remaining = client.rate_limit_remaining!
     rescue Octokit::Error => e
