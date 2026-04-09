@@ -672,6 +672,13 @@ RSpec.describe "AgentRuns" do
           expect(flash[:alert]).to include("None of the selected pull requests could be found")
         end
 
+        it "redirects with error when pull_request_ids param is an empty array" do
+          post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [] }
+
+          expect(response).to redirect_to(new_project_agent_run_path(project, goal: "review"))
+          expect(flash[:alert]).to include("Please select at least one pull request to review.")
+        end
+
         it "rejects negative and zero PR IDs" do
           post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ "-1", "0" ] }
 
