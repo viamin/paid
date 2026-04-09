@@ -614,6 +614,16 @@ RSpec.describe Activities::RunAgentActivity do
         # mid-flight when cleanup struck) — not one per configured fallback.
         expect(agent_run.reload.providers_attempted.size).to eq(1)
       end
+
+      it "does not enqueue ProcessRunQueueJob" do
+        expect(ProcessRunQueueJob).not_to receive(:perform_later)
+
+        begin
+          activity.execute(agent_run_id: agent_run.id)
+        rescue Temporalio::Error::ApplicationError
+          # expected
+        end
+      end
     end
 
     context "when agent hits rate limit (single provider)" do
