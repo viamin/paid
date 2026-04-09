@@ -105,8 +105,10 @@ module Activities
 
       return unless agent_run.count_toward_draft_review_round?
 
-      # Reload only when we will actually record a draft round, to avoid an
-      # unnecessary DB round-trip for the majority of non-draft runs.
+      # Reload to pick up concurrent tracking-column changes (e.g. from
+      # QueueAgentRunActivity#merge_draft_review_round_tracking!) and the
+      # latest status. Only done for draft-round runs to skip the DB
+      # round-trip for the majority of non-draft runs.
       agent_run.reload
 
       return unless agent_run.issue_id.present?
@@ -144,6 +146,10 @@ module Activities
       # on completion-activity retries/replays.
       return unless AgentRun::TERMINAL_FAILURE_STATUSES.include?(agent_run.status)
 
+      # Lockless read is safe here: this fallback only targets terminal-failure
+      # runs (guarded above), which never reach RecordDraftReviewActivity and
+      # thus never increment draft_review_count. The value is used only for the
+      # tracking-column write, not for the actual counter increment.
       expected_count = agent_run.issue.draft_review_count
       return if expected_count.blank?
 
