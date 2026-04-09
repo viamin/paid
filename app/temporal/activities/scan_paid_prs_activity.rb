@@ -20,7 +20,11 @@ module Activities
 
     MIN_COMMENT_LENGTH = 20
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
-    REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments|<!-- paid-review-signal: clean -->/i
+    REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
+    # Separate case-sensitive pattern for the machine-emitted paid-agent
+    # clean signal. Case-sensitivity avoids false positives from
+    # user-authored review text that might resemble the marker.
+    PAID_REVIEW_CLEAN_PATTERN = /<!-- paid-review-signal: clean -->/
     # Body-only review bots (currently Codex) signal "no findings" by posting
     # an *issue comment* — not a review — with text like
     # "Codex Review: Didn't find any major issues. Bravo." Match the
@@ -457,7 +461,9 @@ module Activities
       return :unknown if reviews.nil?
       return :no_review if latest.nil?
 
-      REVIEW_BOT_CLEAN_PATTERN.match?(latest[:body]) ? :clean : :has_comments
+      body = latest[:body]
+      clean = REVIEW_BOT_CLEAN_PATTERN.match?(body) || PAID_REVIEW_CLEAN_PATTERN.match?(body)
+      clean ? :clean : :has_comments
     end
 
     def latest_allowed_bot_review(reviews, allowed_bot_logins)

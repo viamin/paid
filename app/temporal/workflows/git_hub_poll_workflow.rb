@@ -334,6 +334,11 @@ module Workflows
       run_activity(Activities::RecordPrFollowupActivity, followup_input, timeout: 30)
     end
 
+    # Review-goal runs intentionally skip RecordDraftReviewActivity because
+    # they are bot reviews (reading + commenting), not code-change iterations.
+    # Draft review rounds track code-fix cycles; counting a review-goal run
+    # would inflate the counter and prematurely trigger escalation. The
+    # max_draft_review_rounds cap (#944) applies to create_pr followups only.
     def start_review_goal_workflow(project_id, pr_data)
       run_activity(Activities::QueueAgentRunActivity,
         { project_id: project_id, issue_id: pr_data[:issue_id],

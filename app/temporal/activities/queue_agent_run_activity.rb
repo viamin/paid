@@ -42,6 +42,11 @@ module Activities
             status: "queued"
           }
           attrs[:goal] = goal if goal.present?
+          # NOTE: find_existing_run does not scope by goal, so a review-goal
+          # run will be deduplicated against an in-flight create_pr run for
+          # the same issue/PR. This is acceptable for now because the poll
+          # workflow defers review requests when other triggers are present,
+          # but could miss reviews if a prior-cycle followup is still running.
           run = AgentRun.create!(**attrs)
           [ run, false ]
         end

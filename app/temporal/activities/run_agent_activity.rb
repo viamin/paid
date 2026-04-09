@@ -1046,7 +1046,7 @@ module Activities
         CLEAN SIGNAL: If you find NO issues requiring action, include the following marker
         in your review body so the automation system can detect a clean review:
         <!-- paid-review-signal: clean -->
-        Example clean review body: "Looks good! No issues found.\\n<!-- paid-review-signal: clean -->"
+        Example clean review body: "Looks good! No issues found.\n<!-- paid-review-signal: clean -->"
 
         Available endpoints:
         - GET  $GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number} — get PR details
