@@ -54,7 +54,7 @@
             </div>
             <% if perf[:total_cost_cents] > 0 || perf[:total_tokens].to_i > 0 %>
               <div class="mt-2 text-xs text-gray-500">
-                Total:<%= " $#{format("%.2f", perf[:total_cost_cents] / 100.0)}" if perf[:total_cost_cents] > 0 %><%= " · #{number_with_delimiter(perf[:total_tokens])} tokens" if perf[:total_tokens].to_i > 0 %>
+                Total:<%= " $#{format("%.2f", perf[:total_cost_cents] / 100.0)}" if perf[:total_cost_cents] > 0 %><%= "#{" · " if perf[:total_cost_cents] > 0}#{number_with_delimiter(perf[:total_tokens])} tokens" if perf[:total_tokens].to_i > 0 %>
               </div>
             <% end %>
           <% end %>
