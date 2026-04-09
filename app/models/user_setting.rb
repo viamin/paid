@@ -70,9 +70,7 @@ class UserSetting < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 1000, less_than_or_equal_to: PG_INT_MAX }
 
   # Display Limits
-  validates :max_issues_per_page,
-    numericality: { only_integer: true, greater_than_or_equal_to: 5, less_than_or_equal_to: 200 }
-  validates :max_prs_per_page,
+  validates :max_issues_per_page, :max_prs_per_page,
     numericality: { only_integer: true, greater_than_or_equal_to: 5, less_than_or_equal_to: 200 }
 
   # Project Defaults
