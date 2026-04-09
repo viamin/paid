@@ -34,7 +34,7 @@
               <%= priority_tier || "-" %>
             </td>
             <td class="px-3 py-2 text-right text-sm text-gray-500">
-              <%= pr.review_rounds_count %>
+              <%= pr.review_rounds_count > 0 ? pr.review_rounds_count : "—" %>
             </td>
           </tr>
         <% end %>
