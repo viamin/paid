@@ -324,6 +324,14 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(result[:pull_request_number]).to eq(99)
       end
 
+      it "falls through to create_pull_request when the lookup itself errors" do
+        allow(github_client).to receive(:pull_requests).and_raise(GithubClient::ApiError.new("boom"))
+
+        expect { activity.execute(agent_run_id: agent_run.id) }.not_to raise_error
+        expect(github_client).to have_received(:create_pull_request)
+        expect(agent_run.reload.status).to eq("completed")
+      end
+
       it "does not produce orphan branches when log! raises after completion" do
         allow(github_client).to receive(:pull_requests).and_return([])
         # agent_run.log! is called in best_effort, so even if it raises,
