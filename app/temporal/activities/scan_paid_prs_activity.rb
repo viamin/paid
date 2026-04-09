@@ -793,18 +793,24 @@ module Activities
     # the check-run list with a "success" conclusion.
     def ci_action_review_complete?(project, checks)
       action_name = project.review_method_config("ci_action")["action_name"]
-      return false if action_name.blank?
+      if action_name.blank?
+        Rails.logger.warn(message: "reviews.ci_action_missing_action_name", project_id: project.id)
+        return false
+      end
 
       checks.any? { |c| c[:name] == action_name && c[:conclusion] == "success" }
     end
 
     # manual review is complete when at least one trusted non-bot user
-    # has submitted an APPROVED review.
+    # (other than the owner) has submitted an APPROVED review. The owner's
+    # approval gates the merge trigger via owner_approved_or_self_authored?,
+    # so manual review requires a distinct second reviewer.
     def manual_review_complete?(project, reviews)
       return false if reviews.nil?
 
       reviews.any? do |r|
         r[:state] == "APPROVED" &&
+          r[:user_login] != project.owner_reviewer_login &&
           project.trusted_github_user?(r[:user_login]) &&
           !bot_user?(r[:user_login])
       end
@@ -838,7 +844,7 @@ module Activities
       commit_data&.commit&.committer&.date
     rescue GithubClient::Error => e
       log_signal_error("fetch_head_commit", project,
-        OpenStruct.new(github_number: pr_data&.number), e)
+        Struct.new(:github_number).new(pr_data&.number), e)
       nil
     end
 
