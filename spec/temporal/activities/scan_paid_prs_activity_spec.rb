@@ -31,13 +31,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     })
   end
 
-  def enable_paid_agent_review!(proj = project)
-    proj.update!(review_settings: {
-      "enabled" => true,
-      "methods" => { "paid_agent" => { "enabled" => true } }
-    })
-  end
-
   def enable_copilot_and_codex_review!(proj = project)
     proj.update!(review_settings: {
       "enabled" => true,
@@ -1285,30 +1278,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
-    context "when paid_agent review body matches the clean pattern" do
-      before do
-        enable_paid_agent_review!
-        create(:issue, :pull_request,
-          project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ],
-          pr_review_phase: "draft",
-          draft_review_count: 0)
-        stub_github_for_pr(
-          reviews: [ { id: 1, user_login: "human-reviewer", state: "COMMENTED",
-                       body: "Review complete. No major issues remaining.",
-                       submitted_at: 1.hour.ago } ],
-          review_threads: []
-        )
-      end
-
-      it "treats the review as clean via the text pattern" do
-        result = activity.execute(project_id: project.id)
-
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
-        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
-      end
-    end
-
     context "when paid_agent review does not include a clean signal" do
       before do
         enable_paid_agent_review!
@@ -1326,11 +1295,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "does not treat the review as clean" do
+      it "proceeds through normal flow instead of bypassing via clean signal" do
         result = activity.execute(project_id: project.id)
 
         trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
-        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+        # With CI green, no bot issues, and owner_reviewer_login set, the
+        # draft scanner emits ready_for_owner — proving the non-clean review
+        # did not trigger the paid_agent clean signal bypass.
+        expect(trigger_types).to include("ready_for_owner")
       end
     end
 

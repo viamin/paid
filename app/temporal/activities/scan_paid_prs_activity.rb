@@ -32,9 +32,9 @@ module Activities
     # logins registered in PROVIDER_BOT_USERNAMES), so they are invisible
     # to review_bot? and enabled_review_bot_logins. The agent includes a
     # machine-readable HTML comment marker when no major findings remain.
-    # A human-readable pattern is also accepted for robustness.
+    # Only the marker is used for detection — no text patterns — to avoid
+    # false positives from human reviewers writing similar phrases.
     PAID_REVIEW_CLEAN_MARKER = "<!-- paid-review-clean -->"
-    PAID_REVIEW_CLEAN_PATTERN = /no\s+(?:major\s+)?(?:issues|findings|concerns)\s+remaining/i
 
     def execute(input)
       project_id = input[:project_id]
@@ -526,8 +526,8 @@ module Activities
       # (e.g. paid_agent + copilot), each bot's status is evaluated
       # independently below.
       if project&.review_method_enabled?("paid_agent") &&
-          paid_agent_clean_review_present?(reviews) &&
-          (allowed.nil? || allowed.empty?)
+         paid_agent_clean_review_present?(reviews) &&
+         (allowed.nil? || allowed.empty?)
         return []
       end
 
@@ -792,9 +792,14 @@ module Activities
     def paid_agent_review_clean?(body)
       return false if body.nil?
 
-      body.include?(PAID_REVIEW_CLEAN_MARKER) || PAID_REVIEW_CLEAN_PATTERN.match?(body)
+      body.include?(PAID_REVIEW_CLEAN_MARKER)
     end
 
+    # NOTE: paid_agent posts reviews from regular GitHub accounts — there is
+    # no dedicated bot login to filter by. This method checks the latest
+    # review from *any* author. The HTML marker (<!-- paid-review-clean -->)
+    # is unlikely to appear in human-authored reviews, but if the project
+    # later stores the paid_agent's GitHub login, this should filter by it.
     def paid_agent_clean_review_present?(reviews)
       return false if reviews.nil? || reviews.empty?
 
