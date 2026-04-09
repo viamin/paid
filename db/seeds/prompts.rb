@@ -22,7 +22,7 @@ upsert_global_prompt = ->(slug:, name:, description:, category:, template:, vari
       active: true
     )
   else
-    prompt.name ||= name
+    prompt.name ||= name         # preserve user edits; only fill when blank
     prompt.description ||= description
     prompt.category ||= category
     prompt.active = true if prompt.active.nil?

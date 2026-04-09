@@ -1095,10 +1095,17 @@ module Activities
     end
 
     def augment_prompt_for_review_goal(agent_run, prompt)
+      pr_number = agent_run.source_pull_request_number
+      raise Temporalio::Error::ApplicationError.new(
+        "Review goal requires source_pull_request_number",
+        type: "MissingPRNumber",
+        non_retryable: true
+      ) unless pr_number
+
       vars = {
         base_prompt: prompt,
         repo: validated_repo_name(agent_run),
-        pr_number: agent_run.source_pull_request_number.to_s
+        pr_number: pr_number.to_s
       }
       Prompts::Render.call(
         slug: REVIEW_GOAL_PROMPT_SLUG,
