@@ -450,9 +450,47 @@ module Projects
 
     def apply_priority_label(issue, tier)
       label_name = @project.priority_label_for(tier)
-      return if label_name.blank? || Array(issue.labels).include?(label_name)
+      return if label_name.blank?
 
-      issue.update!(labels: (Array(issue.labels) - @project.priority_label_names) + [ label_name ])
+      current_labels = Array(issue.labels)
+      return if current_labels.include?(label_name)
+
+      stale_priority_labels = current_labels & @project.priority_label_names
+      new_labels = (current_labels - stale_priority_labels) + [ label_name ]
+      issue.update(labels: new_labels)
+
+      sync_priority_label_to_github(issue, label_name, stale_priority_labels)
+    rescue => e
+      Rails.logger.warn(
+        message: "agent_execution.apply_priority_label_failed",
+        issue_id: issue.id,
+        tier: tier,
+        error: e.message
+      )
+    end
+
+    def sync_priority_label_to_github(issue, label_name, stale_labels)
+      return unless issue.github_number
+
+      client = @project.github_token.client
+      stale_labels.each do |old_label|
+        client.remove_label_from_issue(@project.full_name, issue.github_number, old_label)
+      rescue GithubClient::Error => e
+        Rails.logger.warn(
+          message: "agent_execution.remove_priority_label_failed",
+          issue_id: issue.id,
+          label: old_label,
+          error: e.message
+        )
+      end
+      client.add_labels_to_issue(@project.full_name, issue.github_number, [ label_name ])
+    rescue GithubClient::Error => e
+      Rails.logger.warn(
+        message: "agent_execution.sync_priority_label_failed",
+        issue_id: issue.id,
+        label: label_name,
+        error: e.message
+      )
     end
 
     def resolve_pull_request
