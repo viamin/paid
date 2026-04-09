@@ -16,7 +16,7 @@ module Activities
         # Idempotency: reuse an existing PR for this branch if one was
         # already created (e.g. by a prior attempt that failed after the
         # GitHub API call but before the activity returned).
-        pr = find_existing_pr(client, project, agent_run.branch_name)
+        pr = find_existing_pr(client, project, agent_run.branch_name, agent_run_id: agent_run_id)
         pr ||= client.create_pull_request(
           project.full_name,
           base: project.default_branch,
@@ -52,13 +52,24 @@ module Activities
 
     private
 
-    def find_existing_pr(client, project, branch_name)
+    def find_existing_pr(client, project, branch_name, agent_run_id:)
       existing = client.pull_requests(
         project.full_name,
         head: "#{project.owner}:#{branch_name}",
         state: "open"
       )
       existing.first
+    rescue GithubClient::Error => e
+      # Lookup is best-effort: a transient failure here must not become a
+      # new failure mode introduced by the idempotency fix. Fall through
+      # to create_pull_request and let GitHub be the source of truth.
+      logger.warn(
+        message: "agent_execution.pull_request_lookup_failed",
+        agent_run_id: agent_run_id,
+        branch: branch_name,
+        error: e.message
+      )
+      nil
     end
 
     def best_effort(agent_run_id)
