@@ -71,8 +71,6 @@ module Projects
         end
       end
 
-      apply_priority_label(issue, priority_tier) if issue && priority_tier
-
       create_run_and_redirect(
         on_error_path: new_project_agent_run_path(@project, goal: goal),
         issue: issue,
@@ -452,9 +450,9 @@ module Projects
 
     def apply_priority_label(issue, tier)
       label_name = @project.priority_label_for(tier)
-      return if label_name.blank? || issue.labels.include?(label_name)
+      return if label_name.blank? || Array(issue.labels).include?(label_name)
 
-      issue.update!(labels: (issue.labels - @project.priority_label_names) + [ label_name ])
+      issue.update!(labels: (Array(issue.labels) - @project.priority_label_names) + [ label_name ])
     end
 
     def resolve_pull_request
@@ -547,7 +545,11 @@ module Projects
         return
       end
 
+      issue = attrs[:issue]
+      priority_tier = attrs[:priority_tier]
+
       create_agent_run(**attrs)
+      apply_priority_label(issue, priority_tier) if issue && priority_tier
       ProcessRunQueueJob.perform_later
 
       capacity_user = settings_owner || current_user
