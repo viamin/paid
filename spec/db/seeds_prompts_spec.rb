@@ -23,6 +23,8 @@ module SeedsPromptsSpec
     generation.issue_title
     generation.pr_description
     knowledge.draft_decision
+    goal.create_github_issue
+    goal.review_pull_request
   ].freeze
 end
 

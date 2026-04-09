@@ -493,3 +493,181 @@ upsert_global_prompt.call(
     var.call("changes_summary", "Truncated PR changes summary")
   ]
 )
+
+# ----------------------------------------------------------------------------
+# goal.create_github_issue — Augment a base prompt for the create-issue goal
+# Used by: Activities::RunAgentActivity#augment_prompt_for_issue_goal
+# ----------------------------------------------------------------------------
+upsert_global_prompt.call(
+  slug: "goal.create_github_issue",
+  name: "Goal: Create GitHub Issue",
+  description: "Augments a base prompt with instructions to create a GitHub issue via the API proxy. Used when an agent run's goal is to file an issue rather than open a PR.",
+  category: "planning",
+  template: <<~'TEMPLATE',
+    {{base_prompt}}
+
+    ---
+    IMPORTANT: Your goal is to CREATE A GITHUB ISSUE, not to write code or create a PR.
+
+    You have access to the GitHub API via a proxy. Use curl to create the issue.
+
+    IMPORTANT: Do NOT pass JSON inline with a single-quoted -d '...'. The body will contain
+    markdown with apostrophes (single quotes) and possibly newlines that break shell quoting.
+    Instead, write the JSON payload to a temporary file and use --data-binary @file:
+
+    ```bash
+    tmpfile=$(mktemp)
+    cat > "$tmpfile" <<'ISSUE_JSON'
+    {
+      "title": "Issue title",
+      "body": "Issue description with `code` and apostrophes",
+      "labels": []
+    }
+    ISSUE_JSON
+    curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/issues" \
+      -H "Content-Type: application/json" \
+      -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+      -H "X-Proxy-Token: $PROXY_TOKEN" \
+      --data-binary @"$tmpfile"
+    rm -f "$tmpfile"
+    ```
+
+    Available endpoints:
+    - GET  $GITHUB_API_URL/repos/{{repo}}/issues — list issues
+    - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{number} — get issue
+    - POST $GITHUB_API_URL/repos/{{repo}}/issues — create issue
+    - PATCH $GITHUB_API_URL/repos/{{repo}}/issues/{number} — update issue
+    - POST $GITHUB_API_URL/repos/{{repo}}/issues/{number}/comments — add comment
+    - POST $GITHUB_API_URL/repos/{{repo}}/issues/{number}/labels — add labels
+
+    Do NOT push code or create a pull request. Only create the GitHub issue.
+  TEMPLATE
+  variables: [
+    var.call("base_prompt", "The base prompt this augmentation extends"),
+    var.call("repo", "Repository full_name (owner/repo)")
+  ]
+)
+
+# ----------------------------------------------------------------------------
+# goal.review_pull_request — Augment a base prompt for the review-PR goal
+# Used by: Activities::RunAgentActivity#augment_prompt_for_review_goal
+#
+# IMPORTANT: This template instructs the agent to post a clean-review body
+# starting with the EXACT phrase "Generated no new comments." which matches
+# ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN. If that matcher pattern
+# changes, update this template AND the FALLBACK constant in
+# Activities::RunAgentActivity together.
+# ----------------------------------------------------------------------------
+upsert_global_prompt.call(
+  slug: "goal.review_pull_request",
+  name: "Goal: Review Pull Request",
+  description: "Augments a base prompt with instructions to review an existing PR. Forbids praise-only inline comments and requires the clean-PR signal phrase Paid uses to stop the review loop.",
+  category: "review",
+  template: <<~'TEMPLATE',
+    {{base_prompt}}
+
+    ---
+    IMPORTANT: Your goal is to REVIEW A PULL REQUEST, not to write code, create issues, or create PRs.
+
+    Review PR #{{pr_number}} in {{repo}}. Examine the code changes and post a review on the PR.
+
+    You have access to the repository code (already cloned). To examine the code changes, either:
+    - Use the GitHub API (via the proxy) to retrieve the PR's `/pulls/{{pr_number}}/files` patches and review those diffs; or
+    - From the cloned repo, run an explicit diff against the PR base, for example:
+      `git fetch origin` then `git diff "$(git merge-base HEAD origin/main)"...HEAD`
+      (replace `main` with the PR's actual base branch if different).
+    You also have access to the GitHub API via a proxy for posting review comments.
+
+    Review the code for:
+    1. **Performance** — inefficient algorithms, N+1 queries, unnecessary allocations, missing caching
+    2. **Security** — SQL injection, XSS, insecure deserialization, secrets in code
+    3. **Best practices** — language/framework idioms, error handling, naming
+    4. **Project code style** — adherence to existing conventions, indentation, file organization
+    5. **Scope violations** — changes unrelated to the linked issue, unnecessary refactoring, feature creep
+    6. **Issue linkage** — verify the PR actually addresses the issue it claims to fix
+
+    # Comment policy — read carefully
+
+    Inline comments are reserved **exclusively for actionable changes**: security,
+    correctness, performance, scope, or style problems that require the author to
+    edit code. Do **not** post praise-only comments, "looks good" notes, "nice
+    refactor" remarks, or any inline comment that does not request a concrete
+    change. If you have nothing actionable to say about a hunk, do not comment on it.
+
+    A clean PR with zero issues is a valid and expected outcome. Do not invent
+    nitpicks to justify having posted a review.
+
+    Use GitHub's suggestion block syntax for concrete fixes:
+    ````
+    ```suggestion
+    corrected code here
+    ```
+    ````
+
+    Post your review using the GitHub API proxy:
+
+    ```bash
+    # Get PR details (metadata and links)
+    curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}" \
+      -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+      -H "X-Proxy-Token: $PROXY_TOKEN"
+
+    # Get PR files
+    curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/files" \
+      -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+      -H "X-Proxy-Token: $PROXY_TOKEN"
+
+    # Case A — actionable issues found: post a review with inline comments.
+    # Note: "side" must be "RIGHT" (new code) or "LEFT" (deleted code).
+    curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/reviews" \
+      -H "Content-Type: application/json" \
+      -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+      -H "X-Proxy-Token: $PROXY_TOKEN" \
+      -d '{
+        "body": "Overall summary of the actionable issues found",
+        "event": "COMMENT",
+        "comments": [
+          {
+            "path": "file.rb",
+            "line": 10,
+            "side": "RIGHT",
+            "body": "Actionable change request on this line"
+          }
+        ]
+      }'
+
+    # Case B — clean PR, no actionable issues: post a single review with an EMPTY
+    # comments array and a body that begins with the EXACT phrase
+    # "Generated no new comments." This phrase is the signal Paid uses to mark
+    # the review as clean and stop the review loop. Do NOT paraphrase it.
+    curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/reviews" \
+      -H "Content-Type: application/json" \
+      -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+      -H "X-Proxy-Token: $PROXY_TOKEN" \
+      -d '{
+        "body": "Generated no new comments. The PR looks ready as-is.",
+        "event": "COMMENT",
+        "comments": []
+      }'
+    ```
+
+    IMPORTANT: You MUST post exactly one PR review via the
+    `/pulls/{{pr_number}}/reviews` endpoint — either Case A (with inline
+    actionable comments) or Case B (clean review). This is how your review is
+    tracked as complete. Standalone PR comments via
+    `/issues/{{pr_number}}/comments` do NOT satisfy the review requirement.
+
+    Available endpoints:
+    - GET  $GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}} — get PR details
+    - GET  $GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/files — list changed files
+    - POST $GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/reviews — create review (REQUIRED, exactly once)
+    - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{number} — get linked issue details
+
+    Do NOT push code, create issues, or create new pull requests. Only post the review on PR #{{pr_number}}.
+  TEMPLATE
+  variables: [
+    var.call("base_prompt", "The base prompt this augmentation extends"),
+    var.call("repo", "Repository full_name (owner/repo)"),
+    var.call("pr_number", "Pull request number")
+  ]
+)
