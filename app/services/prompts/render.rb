@@ -16,11 +16,11 @@ module Prompts
   #     fallback: -> { legacy_inline_prompt }
   #   )
   class Render
-    def self.call(slug:, variables: {}, project: nil, fallback:)
+    def self.call(slug:, fallback:, project: nil, variables: {})
       prompt = if project
         Prompt.resolve(slug, project: project)
       else
-        Prompt.active.global.find_by(slug: slug)
+        Prompt.global.active.find_by(slug: slug)
       end
 
       version = prompt&.current_version
@@ -35,6 +35,28 @@ module Prompts
       end
 
       version.render(variables)
+    end
+
+    # Single-pass `{{var}}` interpolation. Unlike a sequence of `gsub` calls,
+    # values that themselves contain `{{other_var}}` are *not* re-substituted on
+    # later iterations — important when the values come from arbitrary content
+    # like other prompt templates or agent log output.
+    #
+    # Accepts vars with either string or symbol keys. Unknown placeholders are
+    # left in place so callers can spot drift.
+    def self.interpolate(template, vars)
+      return template.to_s if template.nil?
+
+      template.to_s.gsub(/\{\{(\w+)\}\}/) do
+        key = Regexp.last_match(1)
+        if vars.key?(key.to_sym)
+          vars[key.to_sym].to_s
+        elsif vars.key?(key)
+          vars[key].to_s
+        else
+          Regexp.last_match(0)
+        end
+      end
     end
   end
 end

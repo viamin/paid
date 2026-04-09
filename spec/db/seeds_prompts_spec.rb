@@ -10,26 +10,28 @@ require "rails_helper"
 # This is the regression net for the "all prompts in the table" migration —
 # if a caller adds a new {{var}} to its template without declaring it in the
 # seed metadata, this spec will fail.
-EXPECTED_SEEDED_PROMPT_SLUGS = %w[
-  coding.issue_implementation
-  coding.pr_review_rebase
-  diagnostics.agent_run_failure
-  planning.decompose_feature
-  planning.model_selection
-  evolution.mutate_prompt
-  style.extract_guide
-  style.compress_guide
-  generation.issue_title
-  generation.pr_description
-  knowledge.draft_decision
-].freeze
+module SeedsPromptsSpec
+  EXPECTED_SLUGS = %w[
+    coding.issue_implementation
+    coding.pr_review_rebase
+    diagnostics.agent_run_failure
+    planning.decompose_feature
+    planning.model_selection
+    evolution.mutate_prompt
+    style.extract_guide
+    style.compress_guide
+    generation.issue_title
+    generation.pr_description
+    knowledge.draft_decision
+  ].freeze
+end
 
 RSpec.describe Prompt, type: :model do
   before do
     load Rails.root.join("db/seeds/prompts.rb").to_s
   end
 
-  EXPECTED_SEEDED_PROMPT_SLUGS.each do |slug|
+  SeedsPromptsSpec::EXPECTED_SLUGS.each do |slug|
     describe "prompt #{slug}" do
       let(:prompt) { described_class.global.find_by(slug: slug) }
       let(:version) { prompt&.current_version }
@@ -51,11 +53,19 @@ RSpec.describe Prompt, type: :model do
         expect(unresolved).to be_empty,
           "expected no unresolved placeholders in #{slug}, got: #{unresolved.inspect}"
       end
+
+      it "declares every {{placeholder}} that appears in its template" do
+        declared = Array(version.variables).map { |v| v.is_a?(Hash) ? (v["name"] || v[:name]) : v.to_s }
+        used = version.template.scan(/\{\{(\w+)\}\}/).flatten.uniq
+        missing = used - declared
+        expect(missing).to be_empty,
+          "template references undeclared variables: #{missing.inspect}"
+      end
     end
   end
 
   it "covers every expected slug exactly" do
-    actual = described_class.global.where(slug: EXPECTED_SEEDED_PROMPT_SLUGS).pluck(:slug).sort
-    expect(actual).to eq(EXPECTED_SEEDED_PROMPT_SLUGS.sort)
+    actual = described_class.global.where(slug: SeedsPromptsSpec::EXPECTED_SLUGS).pluck(:slug).sort
+    expect(actual).to eq(SeedsPromptsSpec::EXPECTED_SLUGS.sort)
   end
 end

@@ -100,7 +100,7 @@ module Activities
         slug: PROMPT_SLUG,
         project: issue.project,
         variables: vars,
-        fallback: -> { vars.reduce(FALLBACK_PROMPT) { |acc, (k, v)| acc.gsub("{{#{k}}}", v.to_s) } }
+        fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
       ).strip
     end
 

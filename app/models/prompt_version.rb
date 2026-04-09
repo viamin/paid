@@ -18,14 +18,14 @@ class PromptVersion < ApplicationRecord
 
   validate :immutable_content_after_creation, on: :update
 
-  # Renders the template by interpolating variables.
+  # Renders the template by interpolating variables in a single pass.
+  # Values that themselves contain `{{other_var}}` substrings are NOT
+  # re-substituted (no gsub-ordering bug).
   #
   # @param vars [Hash] Variable name-value pairs to interpolate
   # @return [String] The rendered template
   def render(vars = {})
-    vars.reduce(template) do |result, (key, value)|
-      result.gsub("{{#{key}}}", value.to_s)
-    end
+    Prompts::Render.interpolate(template, vars)
   end
 
   private
