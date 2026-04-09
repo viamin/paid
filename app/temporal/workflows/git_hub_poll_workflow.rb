@@ -195,6 +195,10 @@ module Workflows
       elsif trigger_types.include?("review_bot_review_pending")
         handle_review_bot_review_pending(project_id, pr_data, trigger_types)
       elsif trigger_types.include?("manual_review_pending") || trigger_types.include?("ci_action_pending")
+        # NOTE: when both review_bot_review_pending and manual/ci_action triggers
+        # are present, the bot handler above runs first and the non-bot handler is
+        # deferred to the next scan cycle. This is intentional — bot review
+        # completes before requesting human review or awaiting CI actions.
         handle_non_bot_review_pending(project_id, pr_data, trigger_types)
       elsif pr_data[:phase].in?(%w[draft restarted])
         start_draft_followup_workflow(project_id, pr_data)
