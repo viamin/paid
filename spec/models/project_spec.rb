@@ -182,6 +182,50 @@ RSpec.describe Project do
       end
     end
 
+    describe "#priority_label_for" do
+      it "returns the configured label name for a tier" do
+        project = build(:project, priority_labels: { "P1" => "critical", "P2" => "high", "P3" => "low" })
+        expect(project.priority_label_for("P1")).to eq("critical")
+        expect(project.priority_label_for(:P2)).to eq("high")
+      end
+
+      it "falls back to defaults when priority_labels is empty" do
+        project = build(:project, priority_labels: {})
+        expect(project.priority_label_for("P1")).to eq("P1")
+      end
+
+      it "treats a null mapping value as unset and falls back to the default" do
+        project = build(:project, priority_labels: { "P1" => nil, "P2" => "high" })
+        expect(project.priority_label_for("P1")).to eq("P1")
+        expect(project.priority_label_for("P2")).to eq("high")
+      end
+    end
+
+    describe "priority_labels validation" do
+      it "rejects unknown keys" do
+        project = build(:project, priority_labels: { "P1" => "critical", "P9" => "ultra" })
+        expect(project).not_to be_valid
+        expect(project.errors[:priority_labels].join).to match(/may only contain keys/)
+      end
+
+      it "rejects blank string values" do
+        project = build(:project, priority_labels: { "P1" => "  " })
+        expect(project).not_to be_valid
+        expect(project.errors[:priority_labels].join).to match(/non-blank string/)
+      end
+
+      it "accepts valid hash" do
+        project = build(:project, priority_labels: { "P1" => "critical", "P2" => "high", "P3" => "low" })
+        expect(project).to be_valid
+      end
+
+      it "trims surrounding whitespace from values on save" do
+        project = build(:project, priority_labels: { "P1" => "  critical  ", "P2" => "high", "P3" => "low" })
+        expect(project).to be_valid
+        expect(project.priority_labels["P1"]).to eq("critical")
+      end
+    end
+
     describe "#project_level_max_tokens_per_run" do
       it "returns the project override when set" do
         project = build(:project, max_tokens_per_run: 500_000)
