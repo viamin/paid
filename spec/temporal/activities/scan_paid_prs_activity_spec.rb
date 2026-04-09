@@ -1271,6 +1271,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "treats the review as clean and emits no review_bot triggers" do
+        # Verify the bypass short-circuits before review_bot_review_status_from
+        # is reached — without this spy, the test would pass trivially because
+        # paid_agent-only configs already return [] via the :no_review path.
+        expect(activity).not_to receive(:review_bot_review_status_from)
+
         result = activity.execute(project_id: project.id)
 
         trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
@@ -1332,7 +1337,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
-        expect(trigger_types).not_to include("review_bot_comments")
+        # With CI green, no bot issues, and owner_reviewer_login set, the
+        # draft scanner reaches the normal flow and emits ready_for_owner —
+        # proving the clean signal bypass was skipped.
+        expect(trigger_types).to include("ready_for_owner")
       end
     end
 

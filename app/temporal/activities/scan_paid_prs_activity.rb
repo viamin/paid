@@ -525,6 +525,14 @@ module Activities
       # could produce independent triggers; in mixed configurations
       # (e.g. paid_agent + copilot), each bot's status is evaluated
       # independently below.
+      #
+      # Today the existing flow already returns [] for paid_agent-only
+      # configs (no bot login → :no_review → nil login → []), so this
+      # early return is functionally redundant. It becomes load-bearing
+      # if paid_agent ever registers a bot login in PROVIDER_BOT_USERNAMES,
+      # which would cause `allowed` to be non-empty and the :no_review /
+      # :has_comments branches to fire. The explicit check keeps that
+      # future transition safe and documents the intended semantics.
       if project&.review_method_enabled?("paid_agent") &&
          paid_agent_clean_review_present?(reviews) &&
          (allowed.nil? || allowed.empty?)
@@ -795,11 +803,11 @@ module Activities
       body.include?(PAID_REVIEW_CLEAN_MARKER)
     end
 
-    # NOTE: paid_agent posts reviews from regular GitHub accounts — there is
+    # TODO(#918): paid_agent posts reviews from regular GitHub accounts — there is
     # no dedicated bot login to filter by. This method checks the latest
     # review from *any* author. The HTML marker (<!-- paid-review-clean -->)
-    # is unlikely to appear in human-authored reviews, but if the project
-    # later stores the paid_agent's GitHub login, this should filter by it.
+    # is unlikely to appear in human-authored reviews, but once the project
+    # stores the paid_agent's GitHub login, this should filter by it.
     def paid_agent_clean_review_present?(reviews)
       return false if reviews.nil? || reviews.empty?
 
