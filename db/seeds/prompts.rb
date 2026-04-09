@@ -11,8 +11,6 @@
 # version (versions are immutable). Use `db:seed:replant` during development
 # if you want to reset history.
 
-# rubocop:disable Metrics/BlockLength
-
 upsert_global_prompt = ->(slug:, name:, description:, category:, template:, variables:) do
   prompt = Prompt.find_or_initialize_by(slug: slug, account_id: nil, project_id: nil)
 
@@ -495,5 +493,3 @@ upsert_global_prompt.call(
     var.call("changes_summary", "Truncated PR changes summary")
   ]
 )
-
-# rubocop:enable Metrics/BlockLength
