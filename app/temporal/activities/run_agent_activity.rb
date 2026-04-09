@@ -929,13 +929,7 @@ module Activities
     # `goal.create_github_issue` and `goal.review_pull_request`. The
     # FALLBACK_* constants below are the safety net used when the seeded
     # row is missing or deactivated; they must stay in sync with the seeds.
-    #
-    # Note on the "Generated no new comments." phrase in the review template:
-    # this string is matched (case-insensitive) by
-    # ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN
-    #   = /generated no (?:new )?comments/i
-    # which is how Paid recognizes a clean review and stops the review loop.
-    # If the matcher pattern changes, update both the seed and this constant.
+    # spec/db/seeds_prompts_spec.rb asserts both pairs match.
     ISSUE_GOAL_PROMPT_SLUG = "goal.create_github_issue"
 
     FALLBACK_ISSUE_GOAL_PROMPT = <<~'AUGMENTED'
@@ -980,6 +974,13 @@ module Activities
 
     REVIEW_GOAL_PROMPT_SLUG = "goal.review_pull_request"
 
+    # The "Generated no new comments." phrase in the template below is
+    # matched (case-insensitive) by
+    #   ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
+    # which is how Paid recognizes a clean review and stops the review loop.
+    # spec/db/seeds_prompts_spec.rb has a coupling spec — if you change the
+    # matcher pattern, update the seed AND this constant together or the spec
+    # will fail.
     FALLBACK_REVIEW_GOAL_PROMPT = <<~'AUGMENTED'
       {{base_prompt}}
 
