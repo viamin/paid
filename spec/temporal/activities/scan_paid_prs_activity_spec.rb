@@ -351,93 +351,49 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
-    context "when cutoff window exceeds the recent comments page" do
-      # When the last page has 100+ comments all newer than the cutoff,
-      # earlier post-cutoff comments may exist on previous pages. The
-      # scanner should fall back to full pagination to avoid missing them.
-      let(:recent_page) do
-        Array.new(100) do |i|
+    [ 100, 50 ].each do |page_size|
+      context "when multi-page recent comments (#{page_size} per page) are all newer than cutoff" do
+        # When every comment on the last page is newer than the cutoff,
+        # earlier post-cutoff comments may exist on previous pages. The
+        # scanner should fall back to full pagination to avoid missing them.
+        let(:recent_page) do
+          Array.new(page_size) do |i|
+            OpenStruct.new(
+              user: OpenStruct.new(login: "bot-user"),
+              body: "Automated update ##{i}",
+              created_at: (50 - (i / 2)).minutes.ago
+            )
+          end
+        end
+        let(:human_comment) do
           OpenStruct.new(
-            user: OpenStruct.new(login: "bot-user"),
-            body: "Automated update ##{i}",
-            created_at: (50 - (i / 2)).minutes.ago
+            user: OpenStruct.new(login: "viamin"),
+            body: "Please also address the logging around the parser fallback path",
+            created_at: 55.minutes.ago
           )
         end
-      end
-      let(:human_comment) do
-        OpenStruct.new(
-          user: OpenStruct.new(login: "viamin"),
-          body: "Please also address the logging around the parser fallback path",
-          created_at: 55.minutes.ago
-        )
-      end
 
-      before do
-        create(:issue, :pull_request,
-          project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
-        create(:agent_run, :completed,
-          project: project, source_pull_request_number: 42,
-          completed_at: 2.hours.ago)
-        # recent_issue_comments returns only the last page (all newer than cutoff).
-        # issue_comments (full pagination) includes the human comment on an earlier page.
-        stub_github_for_pr(
-          recent_issue_comments: recent_page,
-          recent_multi_page: true,
-          issue_comments: [ human_comment ] + recent_page
-        )
-      end
-
-      it "falls back to full pagination and detects the earlier comment" do
-        result = activity.execute(project_id: project.id)
-
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
-        expect(trigger_types).to include("conversation_comments")
-      end
-    end
-
-    context "when partial last page has all comments newer than cutoff" do
-      # When a multi-page PR has a last page with fewer than 100 comments
-      # (e.g., 150 total -> last page has 50), and all are newer than the
-      # cutoff, the scanner must still fall back to full pagination.
-      let(:recent_page) do
-        Array.new(50) do |i|
-          OpenStruct.new(
-            user: OpenStruct.new(login: "bot-user"),
-            body: "Automated update ##{i}",
-            created_at: (25 - (i / 2)).minutes.ago
+        before do
+          create(:issue, :pull_request,
+            project: project, github_number: 42,
+            labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+          create(:agent_run, :completed,
+            project: project, source_pull_request_number: 42,
+            completed_at: 2.hours.ago)
+          stub_github_for_pr(
+            recent_issue_comments: recent_page,
+            recent_multi_page: true,
+            issue_comments: [ human_comment ] + recent_page
           )
         end
-      end
-      let(:human_comment) do
-        OpenStruct.new(
-          user: OpenStruct.new(login: "viamin"),
-          body: "Please also address the logging around the parser fallback path",
-          created_at: 55.minutes.ago
-        )
-      end
 
-      before do
-        create(:issue, :pull_request,
-          project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
-        create(:agent_run, :completed,
-          project: project, source_pull_request_number: 42,
-          completed_at: 2.hours.ago)
-        stub_github_for_pr(
-          recent_issue_comments: recent_page,
-          recent_multi_page: true,
-          issue_comments: [ human_comment ] + recent_page
-        )
-      end
+        it "falls back to full pagination and detects the earlier comment" do
+          result = activity.execute(project_id: project.id)
 
-      it "falls back to full pagination and detects the earlier comment" do
-        result = activity.execute(project_id: project.id)
-
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
-        expect(trigger_types).to include("conversation_comments")
+          expect(result[:prs_to_trigger].size).to eq(1)
+          trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+          expect(trigger_types).to include("conversation_comments")
+        end
       end
     end
 

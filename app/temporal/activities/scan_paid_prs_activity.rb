@@ -678,7 +678,7 @@ module Activities
 
       # Treat nil created_at as newer than cutoff (safe: triggers fallback to
       # full pagination rather than silently missing comments).
-      if cutoff && comments.multi_page? &&
+      if cutoff && comments.multi_page? && comments.any? &&
           comments.all? { |c| c.created_at.nil? || c.created_at > cutoff }
         client.issue_comments(project.full_name, issue.github_number)
       else
