@@ -340,22 +340,23 @@ class AgentRun < ApplicationRecord
     indicator ? "#{indicator} - #{priority[:label]}" : priority[:label]
   end
 
-  # LATERAL join that resolves candidate issue labels once per agent run.
+  # LATERAL join that aggregates candidate issue labels once per agent run.
   # Matches the issue either by direct association (issue_id) or by
-  # source_pull_request_number for PR-based runs. Both branches constrain
-  # `i.project_id = agent_runs.project_id`, so cross-project leakage
-  # is impossible even if `issue_id` were ever set across projects.
+  # source_pull_request_number for PR-based runs, merging labels from all
+  # matching rows so a run with both an issue and a source PR considers
+  # labels from both (matching compute_label_priority_tier). Both branches
+  # constrain `i.project_id = agent_runs.project_id`, so cross-project
+  # leakage is impossible even if `issue_id` were ever set across projects.
   QUEUE_LATERAL_JOIN = <<~SQL.squish.freeze
     LEFT JOIN LATERAL (
-      SELECT i.labels
-      FROM issues i
+      SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb) AS labels
+      FROM issues i, jsonb_array_elements(i.labels) AS elem
       WHERE (i.id = agent_runs.issue_id AND i.project_id = agent_runs.project_id)
          OR (i.project_id = agent_runs.project_id
              AND i.github_number = agent_runs.source_pull_request_number
              AND i.is_pull_request = TRUE)
-      LIMIT 1
     ) issue_labels ON TRUE
-    JOIN projects p ON p.id = agent_runs.project_id
+    LEFT JOIN projects p ON p.id = agent_runs.project_id
   SQL
 
   # Priority SQL using the LATERAL-joined issue_labels to avoid repeated
@@ -373,7 +374,6 @@ class AgentRun < ApplicationRecord
       WHEN issue_labels.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P2', ''), 'P2')) THEN 2
       WHEN trigger_type = 'automatic' AND source_pull_request_number IS NOT NULL THEN 3
       WHEN issue_labels.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P3', ''), 'P3')) THEN 4
-
       ELSE 5
     END
   SQL

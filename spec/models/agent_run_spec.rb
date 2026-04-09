@@ -1536,6 +1536,18 @@ RSpec.describe AgentRun do
       _ = pr_record
     end
 
+    it "considers labels from both issue and source PR (split-label scenario)" do
+      issue = create(:issue, project: project, labels: [ "low" ])
+      create(:issue, project: project, github_number: 777, is_pull_request: true, labels: [ "critical" ])
+      manual = create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 2.minutes.ago)
+      split_run = create(:agent_run, :queued, project: project, trigger_type: "automatic",
+        issue: issue, source_pull_request_number: 777, created_at: 1.minute.ago)
+
+      expect(split_run.queue_priority_tier).to eq(:label_p1)
+      expect(described_class.next_queued_run).to eq(split_run)
+      _ = manual
+    end
+
     describe ".preload_source_pull_requests" do
       it "stashes the matching PR Issue row on each run with one query" do
         pr_a = create(:issue, project: project, github_number: 101, is_pull_request: true, labels: [ "critical" ])
