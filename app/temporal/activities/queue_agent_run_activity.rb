@@ -53,6 +53,9 @@ module Activities
         existing = find_existing_run(project, issue, source_pull_request_number)
         raise unless existing
 
+        # Runs outside the rolled-back transaction. A retry between duplicate
+        # detection and this update is safe — the idempotency guard in
+        # merge_draft_review_round_tracking! prevents double-writes.
         merge_draft_review_round_tracking!(existing,
           count_toward_draft_review_round: count_toward_draft_review_round,
           expected_draft_review_count: expected_draft_review_count)
