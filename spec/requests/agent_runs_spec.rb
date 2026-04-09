@@ -678,6 +678,31 @@ RSpec.describe "AgentRuns" do
           expect(AgentRun.count).to eq(1)
           expect(AgentRun.last.source_pull_request_number).to eq(55)
         end
+
+        it "filters out PRs with active runs server-side and creates runs for the rest" do
+          pr2 = create(:issue, :pull_request, project: project, github_number: 56, title: "Second PR")
+          create(:agent_run, :queued, project: project, issue: nil,
+            source_pull_request_number: pr.github_number, goal: "review")
+
+          expect {
+            post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id, pr2.id ] }
+          }.to change(AgentRun, :count).by(1)
+
+          expect(AgentRun.last.source_pull_request_number).to eq(56)
+          expect(response).to redirect_to(project_path(project))
+        end
+
+        it "redirects with error when all selected PRs have active runs" do
+          create(:agent_run, :queued, project: project, issue: nil,
+            source_pull_request_number: pr.github_number, goal: "review")
+
+          expect {
+            post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id ] }
+          }.not_to change(AgentRun, :count)
+
+          expect(response).to redirect_to(new_project_agent_run_path(project, goal: "review"))
+          expect(flash[:alert]).to include("already have active runs")
+        end
       end
     end
   end
