@@ -2,7 +2,7 @@
 
 class NotificationPolicy < ApplicationPolicy
   def index?
-    true
+    user_in_account?
   end
 
   def read?
@@ -14,7 +14,7 @@ class NotificationPolicy < ApplicationPolicy
   end
 
   def mark_all_read?
-    true
+    user_in_account?
   end
 
   private
