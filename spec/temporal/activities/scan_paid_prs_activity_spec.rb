@@ -1508,11 +1508,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not auto-merge when manual reviewer has not approved" do
         result = activity.execute(project_id: project.id)
 
-        if result[:prs_to_trigger].any?
-          trigger = result[:prs_to_trigger].first
-          types = trigger[:triggers].map { |t| t[:type] }
-          expect(types).not_to include("owner_approved")
-        end
+        expect(result[:prs_to_trigger]).not_to be_empty
+        trigger = result[:prs_to_trigger].first
+        types = trigger[:triggers].map { |t| t[:type] }
+        expect(types).to include("manual_review_pending")
+        expect(types).not_to include("owner_approved")
       end
     end
 
