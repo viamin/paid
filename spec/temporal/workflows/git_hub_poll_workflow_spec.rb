@@ -501,8 +501,13 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
           hash_including(reviewers: [ "alice" ]), timeout: anything)
+      # Verify draft followup specifically (not ready followup) via
+      # RecordDraftReviewActivity which only start_draft_followup_workflow calls.
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordDraftReviewActivity,
+          hash_including(expected_draft_review_count: 0), timeout: anything)
     end
 
     it "skips owner review request when owner_reviewer_login is blank" do

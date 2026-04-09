@@ -461,7 +461,7 @@ module Activities
     def manual_reviewer_approved?(reviews, reviewer_login)
       return false if reviews.nil?
 
-      reviewer_reviews = reviews.select { |r| r[:user_login]&.downcase == reviewer_login.downcase }
+      reviewer_reviews = reviews.select { |r| r[:user_login]&.downcase == reviewer_login.strip.downcase }
       return false if reviewer_reviews.empty?
 
       # Time.at(0) fallback: reviews with nil timestamps sort oldest, so any
@@ -474,7 +474,7 @@ module Activities
     def ci_action_succeeded?(checks, action_name)
       return false if checks.nil? || checks.empty?
 
-      matching = checks.find { |c| c[:name] == action_name }
+      matching = checks.find { |c| c[:name] == action_name.strip }
       matching&.dig(:conclusion) == "success"
     end
 
@@ -820,7 +820,15 @@ module Activities
         project: project, last_run: last_run, client: client, issue: issue).any?
       return false if changes_requested_from_reviews(project, reviews, last_run).any?
       return false if check_conversation_comments(client, project, issue, last_run).any?
-      return false if non_bot_review_gate_triggers(project, reviews, checks || []).any?
+      effective_checks = checks || []
+      if checks.nil?
+        logger.debug(
+          message: "pr_scanner.no_outstanding_review_feedback_nil_checks",
+          project_id: project.id,
+          pr_number: issue.github_number
+        )
+      end
+      return false if non_bot_review_gate_triggers(project, reviews, effective_checks).any?
 
       true
     end
