@@ -1372,6 +1372,43 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when draft PR manual reviewer posts CHANGES_REQUESTED after earlier APPROVED" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "manual" => { "enabled" => true, "reviewer_login" => "alice" } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "alice", state: "APPROVED", body: "LGTM",
+              submitted_at: 2.hours.ago },
+            { id: 2, user_login: "alice", state: "CHANGES_REQUESTED", body: "Actually, needs fixes",
+              submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "uses latest review state and emits manual_review_pending" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        types = trigger[:triggers].map { |t| t[:type] }
+        expect(types).to include("manual_review_pending")
+        expect(types).not_to include("ready_for_owner")
+      end
+    end
+
     context "when draft PR has ci_action-only review and configured action is missing from checks" do
       before do
         project.update!(
