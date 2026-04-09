@@ -462,6 +462,49 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::TriggerDevEnvironmentUpdateActivity, anything, timeout: anything)
     end
 
+    it "routes manual_review_pending to RequestReviewActivity with configured reviewer" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [ { type: "manual_review_pending", reviewer_login: "alice" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: [ "alice" ]), timeout: anything)
+    end
+
+    it "does not start a followup workflow for ci_action_pending alone" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [ { type: "ci_action_pending", action_name: "e2e-suite" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+    end
+
+    it "starts followup when manual_review_pending is combined with other triggers" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [
+          { type: "manual_review_pending", reviewer_login: "alice" },
+          { type: "ci_failure", details: [ "rspec" ] }
+        ],
+        current_draft_review_count: 0
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: [ "alice" ]), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+    end
+
     it "skips owner review request when owner_reviewer_login is blank" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::MarkPrReadyActivity, anything, timeout: anything)

@@ -166,6 +166,15 @@ module Activities
         # all_checks_green? implicitly rejects nil conclusions (pending checks),
         # and only after a clean review-bot review is present.
         if checks.present? && all_checks_green?(checks)
+          # Check non-bot review gates (manual reviewer, ci_action) before advancing.
+          reviews ||= fetch_reviews(client, project, issue)
+          gate_triggers = non_bot_review_gate_triggers(project, reviews, checks)
+          if gate_triggers.any?
+            all_pending = pending_triggers + gate_triggers
+            log_triggers(project, issue, all_pending)
+            return draft_trigger_payload(issue, all_pending)
+          end
+
           return ready_for_owner_trigger(issue)
         end
 
@@ -195,7 +204,7 @@ module Activities
           checks.present? &&
           all_checks_green?(checks) &&
           mergeable == true &&
-          no_outstanding_review_feedback?(project, client, issue, reviews)
+          no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks)
         return owner_approved_trigger(issue)
       end
 
@@ -305,6 +314,7 @@ module Activities
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
       triggers.concat(check_merge_conflicts(project, pr_data))
+      triggers.concat(non_bot_review_gate_triggers(project, reviews, checks))
 
       triggers
     end
@@ -418,6 +428,51 @@ module Activities
       return true if checks.empty?
 
       checks.all? { |c| %w[success skipped neutral].include?(c[:conclusion]) }
+    end
+
+    # Returns pending-style triggers when an enabled non-bot review method
+    # (manual or ci_action) has not yet been satisfied. These gates prevent
+    # the scanner from advancing a PR when a human reviewer or a specific
+    # CI action has not approved/completed.
+    def non_bot_review_gate_triggers(project, reviews, checks)
+      return [] unless project.review_enabled?
+
+      triggers = []
+
+      if project.review_method_enabled?("manual")
+        reviewer = project.review_method_config("manual")["reviewer_login"]
+        if reviewer.present? && !manual_reviewer_approved?(reviews, reviewer)
+          triggers << { type: "manual_review_pending", reviewer_login: reviewer,
+                        details: "Awaiting approval from #{reviewer}" }
+        end
+      end
+
+      if project.review_method_enabled?("ci_action")
+        action_name = project.review_method_config("ci_action")["action_name"]
+        if action_name.present? && !ci_action_succeeded?(checks, action_name)
+          triggers << { type: "ci_action_pending", action_name: action_name,
+                        details: "Awaiting successful #{action_name} check" }
+        end
+      end
+
+      triggers
+    end
+
+    def manual_reviewer_approved?(reviews, reviewer_login)
+      return false if reviews.nil?
+
+      reviewer_reviews = reviews.select { |r| r[:user_login]&.downcase == reviewer_login.downcase }
+      return false if reviewer_reviews.empty?
+
+      latest = reviewer_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+      latest[:state] == "APPROVED"
+    end
+
+    def ci_action_succeeded?(checks, action_name)
+      return false if checks.nil? || checks.empty?
+
+      matching = checks.find { |c| c[:name] == action_name }
+      matching && matching[:conclusion] == "success"
     end
 
     # --- Review checks ---
@@ -748,7 +803,7 @@ module Activities
     # Returns true when there is no outstanding review feedback that should
     # block auto-merge. Checks the same review signals that detect_ready_triggers
     # would evaluate, so owner approval cannot bypass new findings.
-    def no_outstanding_review_feedback?(project, client, issue, reviews)
+    def no_outstanding_review_feedback?(project, client, issue, reviews, checks: nil)
       last_run = last_completed_run(project, issue)
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
@@ -757,6 +812,7 @@ module Activities
         project: project, last_run: last_run, client: client, issue: issue).any?
       return false if changes_requested_from_reviews(project, reviews, last_run).any?
       return false if check_conversation_comments(client, project, issue, last_run).any?
+      return false if non_bot_review_gate_triggers(project, reviews, checks || []).any?
 
       true
     end
