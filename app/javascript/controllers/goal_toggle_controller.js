@@ -42,7 +42,9 @@ export default class extends Controller {
       )
     })
 
-    // Toggle between dropdown (create_pr) and table (review)
+    // Toggle between dropdown (create_pr) and table (review).
+    // These blocks run after prSectionTargets above and override its enable/disable
+    // for controls within the dropdown and table sub-sections.
     this.prDropdownTargets.forEach((el) => {
       el.hidden = isReview
       el.querySelectorAll("select").forEach((control) => {
