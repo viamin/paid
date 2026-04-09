@@ -16,8 +16,8 @@ module Activities
         # Idempotency: reuse an existing PR for this branch if one was
         # already created (e.g. by a prior attempt that failed after the
         # GitHub API call but before the activity returned).
-        pr = find_existing_pr(client, project, agent_run.branch_name, agent_run_id: agent_run_id)
-        pr ||= client.create_pull_request(
+        existing_pr = find_existing_pr(client, project, agent_run.branch_name, agent_run_id: agent_run_id)
+        pr = existing_pr || client.create_pull_request(
           project.full_name,
           base: project.default_branch,
           head: agent_run.branch_name,
@@ -25,6 +25,7 @@ module Activities
           body: pr_body(issue, agent_run),
           draft: true
         )
+        pr_action = existing_pr ? "reused" : "created"
 
         # Persist completion as the very first step after obtaining the PR,
         # before any best-effort post-processing. This ensures a retry
@@ -38,10 +39,10 @@ module Activities
         # Best-effort post-processing — failures here must not cause the
         # activity to be retried now that the run is already completed.
         best_effort(agent_run_id) { add_pr_labels(client, project, pr.number, agent_run_id, issue: issue) }
-        best_effort(agent_run_id) { agent_run.log!("system", "PR created: #{pr.html_url}") }
+        best_effort(agent_run_id) { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
 
         logger.info(
-          message: "agent_execution.pull_request_created",
+          message: "agent_execution.pull_request_#{pr_action}",
           agent_run_id: agent_run_id,
           pull_request_url: pr.html_url
         )
@@ -59,10 +60,11 @@ module Activities
         state: "open"
       )
       existing.first
-    rescue GithubClient::Error => e
-      # Lookup is best-effort: a transient failure here must not become a
-      # new failure mode introduced by the idempotency fix. Fall through
-      # to create_pull_request and let GitHub be the source of truth.
+    rescue StandardError => e
+      # Lookup is best-effort: a transient failure (including network-level
+      # errors like Faraday::TimeoutError) must not become a new failure
+      # mode introduced by the idempotency fix. Fall through to
+      # create_pull_request and let GitHub be the source of truth.
       logger.warn(
         message: "agent_execution.pull_request_lookup_failed",
         agent_run_id: agent_run_id,
@@ -169,13 +171,6 @@ module Activities
       return if labels.empty?
 
       client.add_labels_to_issue(project.full_name, pr_number, labels)
-    rescue GithubClient::Error => e
-      logger.warn(
-        message: "agent_execution.add_pr_labels_failed",
-        agent_run_id: agent_run_id,
-        pr_number: pr_number,
-        error: e.message
-      )
     end
   end
 end

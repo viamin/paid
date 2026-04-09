@@ -69,6 +69,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       log = agent_run.agent_run_logs.last
       expect(log.log_type).to eq("system")
+      expect(log.content).to include("PR created:")
       expect(log.content).to include("https://github.com/owner/repo/pull/42")
     end
 
@@ -312,20 +313,42 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
       end
 
-      it "reuses existing PR on retry after partial failure" do
-        # Simulate: first attempt created the PR but failed after complete!
-        # On retry, the PR already exists on GitHub.
+      it "reuses existing PR on retry after partial failure with already-completed run" do
+        # Simulate: first attempt created the PR and called complete!, but
+        # the activity raised during post-processing. On retry, both the PR
+        # and the completed status already exist.
+        agent_run.complete!(
+          result_commit: agent_run.result_commit_sha,
+          pr_url: existing_pr.html_url,
+          pr_number: existing_pr.number
+        )
         allow(github_client).to receive(:pull_requests).and_return([ existing_pr ])
 
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(github_client).not_to have_received(:create_pull_request)
-        expect(agent_run.reload.status).to eq("completed")
         expect(result[:pull_request_number]).to eq(99)
       end
 
-      it "falls through to create_pull_request when the lookup itself errors" do
+      it "logs 'reused' when an existing PR is found" do
+        allow(github_client).to receive(:pull_requests).and_return([ existing_pr ])
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        log = agent_run.reload.agent_run_logs.last
+        expect(log.content).to include("PR reused:")
+      end
+
+      it "falls through to create_pull_request when the lookup raises GithubClient::ApiError" do
         allow(github_client).to receive(:pull_requests).and_raise(GithubClient::ApiError.new("boom"))
+
+        expect { activity.execute(agent_run_id: agent_run.id) }.not_to raise_error
+        expect(github_client).to have_received(:create_pull_request)
+        expect(agent_run.reload.status).to eq("completed")
+      end
+
+      it "falls through to create_pull_request when the lookup raises GithubClient::RateLimitError" do
+        allow(github_client).to receive(:pull_requests).and_raise(GithubClient::RateLimitError.new)
 
         expect { activity.execute(agent_run_id: agent_run.id) }.not_to raise_error
         expect(github_client).to have_received(:create_pull_request)
