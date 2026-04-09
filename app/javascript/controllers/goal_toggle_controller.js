@@ -35,7 +35,9 @@ export default class extends Controller {
       el.hidden = !showPr
       el.querySelectorAll("input, select, textarea, button").forEach(
         (control) => {
-          control.disabled = !showPr
+          if (!control.hasAttribute("data-permanently-disabled")) {
+            control.disabled = !showPr
+          }
         }
       )
     })
@@ -60,7 +62,7 @@ export default class extends Controller {
 
     if (isReview) {
       this.prHeadingTargets.forEach((el) => {
-        el.textContent = "Select PR to Review"
+        el.textContent = "Select PRs to Review"
       })
       this.prDescriptionTargets.forEach((el) => {
         el.textContent =
