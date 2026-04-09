@@ -78,7 +78,7 @@
                 </select>
               </div>
 
-              <%= render "shared/pr_review_table" %>
+              <%= render "shared/pr_review_table", pull_requests: @pull_requests, prs_with_active_runs: @prs_with_active_runs, pr_priority_tiers: @pr_priority_tiers %>
             <% else %>
               <p class="mt-1 text-sm text-gray-500">No open pull requests found. Sync PRs first.</p>
             <% end %>
