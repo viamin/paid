@@ -39,7 +39,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
         next
       end
 
-      labels_to_recover = missing_labels(agent_run.project, synced_pr)
+      labels_to_recover = missing_labels(agent_run.project, synced_pr, agent_run)
 
       if labels_to_recover.empty?
         skipped += 1
@@ -85,7 +85,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
       .where("agent_runs.created_at >= ?", CANDIDATE_WINDOW.ago)
       .select("DISTINCT ON (project_id, pull_request_number) agent_runs.*")
       .order(:project_id, :pull_request_number, id: :desc)
-      .preload(project: :github_token)
+      .preload(:issue, project: :github_token)
   end
 
   # Batch-loads synced Issue records for all candidate runs, keyed by
@@ -116,15 +116,33 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
     result
   end
 
-  def missing_labels(project, synced_pr)
+  def missing_labels(project, synced_pr, agent_run)
+    inherited_missing = inheritable_priority_labels(project, agent_run)
+      .reject { |l| synced_pr.has_label?(l) }
+
+    return inherited_missing unless project.auto_add_labels_enabled?
+
     generated = project.generated_label_name
     automation = project.automation_label_name
 
-    return [] if synced_pr.has_label?(generated)
+    if synced_pr.has_label?(generated)
+      # Generated label is the marker that initial labeling succeeded; if
+      # it is present we only need to backfill missing priority labels.
+      return inherited_missing
+    end
 
     labels = [ generated ]
     labels << automation unless synced_pr.has_label?(automation)
-    labels
+    labels.concat(inherited_missing)
+    labels.uniq
+  end
+
+  def inheritable_priority_labels(project, agent_run)
+    return [] unless project.inherit_priority_labels?
+    issue = agent_run.issue
+    return [] if issue.blank? || issue.labels.blank?
+
+    project.priority_label_names & Array(issue.labels)
   end
 
   def recover_label(agent_run, synced_pr, labels)
