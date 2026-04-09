@@ -51,7 +51,8 @@ module Activities
       /free tier limit reached/i,
       /(?:you'?ve|you have)\s+hit\s+your\s+limit/i,
       /exhausted\s+your\s+capacity/i,
-      /exhausted.*capacity/i,
+      /exhausted.*capacity/i, # intentionally loose — only used for exit-code failures, not timeout reclassification
+
       /(?:server|system)\s+(?:at\s+)?capacity/i,
       /(?:server|api|service)\s+overloaded/i,
       /out of (?:extra )?usage/i,
@@ -525,6 +526,8 @@ module Activities
       # Other execution error
       raise ProviderExecutionError, "Agent exited with code #{result[:exit_code]}: #{output.truncate(500)}"
     rescue Containers::Provision::TimeoutError => e
+      # execution_started_at is nil if the timeout fires before line 477 (e.g.
+      # during start!/callbacks); recent_timeout_output short-circuits on blank.
       timeout_output = recent_timeout_output(agent_run, since: execution_started_at, prompt: prompt)
       if timeout_rate_limit_error?(timeout_output)
         reset_at = parse_rate_limit_reset(timeout_output)
@@ -598,14 +601,35 @@ module Activities
         .limit(TIMEOUT_RATE_LIMIT_LOG_LIMIT)
         .pluck(:content)
 
+      # Precompute normalized prompt lines once rather than re-parsing per chunk.
+      normalized_prompt = normalize_output_text(prompt)
+      prompt_lines = normalized_prompt.present? ? normalized_prompt.each_line.map { |line|
+        normalize_output_line(line, strip_prompt_prefixes: true)
+      }.reject(&:blank?).to_set : Set.new
+
       normalized_chunks = chunks.filter_map do |chunk|
-        stripped = strip_prompt_echo(chunk, prompt).strip
+        stripped = strip_prompt_echo_with(chunk, prompt, normalized_prompt, prompt_lines).strip
         next if stripped.blank?
 
         stripped
       end
 
       normalized_chunks.reverse.join(" ")
+    end
+
+    # Variant of strip_prompt_echo that accepts precomputed prompt data
+    # to avoid re-parsing per chunk in hot loops.
+    def strip_prompt_echo_with(output, prompt, normalized_prompt, prompt_lines)
+      output = normalize_output_text(output)
+      return output if output.blank? || normalized_prompt.blank?
+
+      sanitized_output = output.gsub(prompt, "")
+      sanitized_output.each_line.filter_map do |line|
+        normalized_line = normalize_output_line(line, strip_prompt_prefixes: true)
+        next if normalized_line.blank? || prompt_lines.include?(normalized_line)
+
+        line.rstrip
+      end.join("\n").strip
     end
 
     # Attempts to parse a rate limit reset time from the output.
