@@ -447,14 +447,14 @@ module Projects
 
     def resolve_priority_tier
       tier = params[:priority_tier].presence
-      tier if tier.present? && Project::PRIORITY_TIERS.include?(tier)
+      tier if Project::PRIORITY_TIERS.include?(tier)
     end
 
     def apply_priority_label(issue, tier)
       label_name = @project.priority_label_for(tier)
       return if label_name.blank? || issue.labels.include?(label_name)
 
-      issue.update!(labels: issue.labels + [ label_name ])
+      issue.update!(labels: (issue.labels - @project.priority_label_names) + [ label_name ])
     end
 
     def resolve_pull_request

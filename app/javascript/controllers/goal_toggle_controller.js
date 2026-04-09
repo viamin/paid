@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["issueSection", "prSection", "prHeading", "prDescription"]
+  static targets = ["issueSection", "prSection", "prHeading", "prDescription", "prioritySection"]
 
   connect() {
     this.toggle()
@@ -28,6 +28,16 @@ export default class extends Controller {
       el.querySelectorAll("input, select, textarea, button").forEach(
         (control) => {
           control.disabled = !showPr
+        }
+      )
+    })
+
+    const showPriority = goal !== "review"
+    this.prioritySectionTargets.forEach((el) => {
+      el.hidden = !showPriority
+      el.querySelectorAll("input, select, textarea, button").forEach(
+        (control) => {
+          control.disabled = !showPriority
         }
       )
     })
