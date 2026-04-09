@@ -882,6 +882,14 @@ RSpec.describe "Projects" do
         expect(project.reload.priority_labels).to eq("P1" => "P1", "P2" => "P2", "P3" => "P3")
       end
 
+      it "preserves priority labels when param is omitted" do
+        project = create(:project, account: account, github_token: github_token,
+          priority_labels: { "P1" => "urgent", "P2" => "normal", "P3" => "low" })
+        patch project_path(project), params: { project: { generated_label_name: "ai-gen" } }
+        expect(response).to redirect_to(project)
+        expect(project.reload.priority_labels).to eq("P1" => "urgent", "P2" => "normal", "P3" => "low")
+      end
+
       it "allows updating security scanning settings" do
         project = create(:project, account: account, github_token: github_token,
           auto_scan_security: false, security_severity_threshold: "high")
