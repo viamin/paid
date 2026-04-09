@@ -81,6 +81,27 @@ RSpec.describe Notifications::Publish do
       expect(republished.resolved_at).to be_nil
     end
 
+    it "clears dismissed_at when re-publishing a dismissed notification" do
+      notification = described_class.call(
+        account: account,
+        source: "stalled_draft_pr",
+        subject: project,
+        severity: :warning,
+        title: "PR stuck"
+      )
+      notification.update!(dismissed_at: Time.current)
+
+      republished = described_class.call(
+        account: account,
+        source: "stalled_draft_pr",
+        subject: project,
+        severity: :warning,
+        title: "PR stuck again"
+      )
+
+      expect(republished.dismissed_at).to be_nil
+    end
+
     it "broadcasts updates via Turbo Streams" do
       described_class.call(
         account: account,

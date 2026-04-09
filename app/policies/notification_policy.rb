@@ -17,6 +17,14 @@ class NotificationPolicy < ApplicationPolicy
     user_in_account?
   end
 
+  class Scope < ApplicationPolicy::Scope
+    def resolve
+      raise Pundit::NotAuthorizedError, "must be logged in" unless user
+
+      scope.where(account: user.account)
+    end
+  end
+
   private
 
   def account_for_record
