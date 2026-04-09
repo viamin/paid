@@ -34,7 +34,8 @@ module Activities
             issue_number: issue.github_number.to_s,
             body: issue.body.to_s,
             test_command: test_command_for(project),
-            lint_command: lint_command_for(project)
+            lint_command: lint_command_for(project),
+            setup_database_instruction: Prompts::ServiceContainerSections.setup_database_instruction_for(project: project)
           )
           custom_prompt = [
             rendered_prompt,

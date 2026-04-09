@@ -108,30 +108,54 @@ module PromptEvolution
       Knowledge::Redaction::Redactor.call(text: text).clean_text
     end
 
+    PROMPT_SLUG = "evolution.mutate_prompt"
+
+    # Fallback used only if the seeded prompt is missing or deactivated.
+    # The active template lives in db/seeds/prompts.rb under PROMPT_SLUG.
+    FALLBACK_PROMPT = <<~PROMPT
+      You are a prompt engineering expert. Analyze the following prompt and its performance data, then generate {{mutation_count}} improved variant(s).
+
+      ## Current Prompt Template
+      ```
+      {{current_template}}
+      ```
+
+      {{variables_section}}
+      {{system_prompt_section}}
+      {{performance_section}}
+      {{sample_outputs_section}}
+      {{strategies_section}}
+
+      ## Instructions
+      Generate exactly {{mutation_count}} improved prompt variant(s). Each variant must:
+      {{variables_preservation_instruction}}- Be a complete, standalone prompt template (not a diff or partial edit)
+      - Apply one of the requested strategies: {{strategies_csv}}
+      - Address specific weaknesses identified in the performance data
+
+      Respond with ONLY valid JSON in this exact format (no markdown fences, no explanation):
+      {"mutations":[{"template":"improved prompt text","strategy":"one of {{strategies_pipe}}","reasoning":"what problem this addresses","expected_improvement":"why this should perform better"}]}
+    PROMPT
+
     def build_prompt
-      <<~PROMPT
-        You are a prompt engineering expert. Analyze the following prompt and its performance data, then generate #{@mutation_count} improved variant(s).
+      vars = {
+        mutation_count: @mutation_count,
+        current_template: current_template,
+        variables_section: variables_section,
+        system_prompt_section: system_prompt_section,
+        performance_section: performance_section,
+        sample_outputs_section: sample_outputs_section,
+        strategies_section: strategies_section,
+        variables_preservation_instruction: variables_preservation_instruction,
+        strategies_csv: @strategies.join(", "),
+        strategies_pipe: @strategies.join("/")
+      }
 
-        ## Current Prompt Template
-        ```
-        #{current_template}
-        ```
-
-        #{variables_section}
-        #{system_prompt_section}
-        #{performance_section}
-        #{sample_outputs_section}
-        #{strategies_section}
-
-        ## Instructions
-        Generate exactly #{@mutation_count} improved prompt variant(s). Each variant must:
-        #{variables_preservation_instruction}- Be a complete, standalone prompt template (not a diff or partial edit)
-        - Apply one of the requested strategies: #{@strategies.join(', ')}
-        - Address specific weaknesses identified in the performance data
-
-        Respond with ONLY valid JSON in this exact format (no markdown fences, no explanation):
-        {"mutations":[{"template":"improved prompt text","strategy":"one of #{@strategies.join('/')}","reasoning":"what problem this addresses","expected_improvement":"why this should perform better"}]}
-      PROMPT
+      Prompts::Render.call(
+        slug: PROMPT_SLUG,
+        project: @prompt.project,
+        variables: vars,
+        fallback: -> { vars.reduce(FALLBACK_PROMPT) { |acc, (k, v)| acc.gsub("{{#{k}}}", v.to_s) } }
+      )
     end
 
     def current_template

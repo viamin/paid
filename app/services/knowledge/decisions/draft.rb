@@ -14,7 +14,11 @@ module Knowledge
       TIMEOUT = 30
       DEFAULT_MODEL = "claude-sonnet-4-6"
 
-      DRAFT_PROMPT = <<~PROMPT
+      PROMPT_SLUG = "knowledge.draft_decision"
+
+      # Fallback used only if the seeded prompt is missing or deactivated.
+      # The active template lives in db/seeds/prompts.rb under PROMPT_SLUG.
+      FALLBACK_PROMPT = <<~PROMPT
         You are drafting a Decision Record (ADR-lite) for a code change.
 
         Given the following context about an agent run that created a pull request,
@@ -29,9 +33,9 @@ module Knowledge
         Respond with ONLY valid JSON, no markdown fences or extra text.
 
         ## Agent Run Context
-        Issue: %{issue_title}
+        Issue: {{issue_title}}
         PR Changes Summary:
-        %{changes_summary}
+        {{changes_summary}}
       PROMPT
 
       attr_reader :agent_run
@@ -71,10 +75,16 @@ module Knowledge
       private
 
       def build_prompt(changes_summary)
-        format(
-          DRAFT_PROMPT,
+        vars = {
           issue_title: agent_run.issue&.title || "N/A",
           changes_summary: changes_summary.truncate(10_000)
+        }
+
+        Prompts::Render.call(
+          slug: PROMPT_SLUG,
+          project: agent_run.project,
+          variables: vars,
+          fallback: -> { vars.reduce(FALLBACK_PROMPT) { |acc, (k, v)| acc.gsub("{{#{k}}}", v.to_s) } }
         )
       end
 
