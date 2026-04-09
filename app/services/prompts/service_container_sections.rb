@@ -9,6 +9,27 @@ module Prompts
     # project without requiring a full BuildForIssue/BuildForPr instance.
     # Used by CreateAgentRunActivity to append service guidance to rendered
     # PromptVersion custom_prompts.
+    # Public module method: returns the indented database setup instruction
+    # line that goes between the install-deps step and the analyze step in
+    # the issue prompt. Used by both BuildForIssue and CreateAgentRunActivity
+    # so the prompt template can carry a {{setup_database_instruction}} slot.
+    def self.setup_database_instruction_for(project:)
+      containers = project.service_containers.to_a
+      has_db = containers.any? { |sc| sc.image.include?("postgres") }
+      language = Prompts::LanguageCommands.detected_language(project)
+
+      if has_db
+        if language == "ruby"
+          "   Run `bin/rails db:prepare` to set up the database (`DATABASE_URL` will be configured for you)."
+        else
+          "   A database service will be available via the `DATABASE_URL` environment variable." \
+          " Use your framework's standard command to create and migrate the database schema."
+        end
+      else
+        "   Do NOT run `bin/setup`, `db:prepare`, or `db:migrate` — no database is available in this environment."
+      end
+    end
+
     def self.service_environment_section_for(project:)
       containers = project.service_containers.to_a
       has_db = containers.any? { |sc| sc.image.include?("postgres") }

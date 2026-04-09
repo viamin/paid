@@ -24,7 +24,11 @@ module Llm
     MAX_ISSUE_BODY_INPUT = 4_000
     TIMEOUT = 30
 
-    PROMPT_TEMPLATE = <<~PROMPT
+    PROMPT_SLUG = "generation.pr_description"
+
+    # Fallback used only if the seeded prompt is missing or deactivated.
+    # The active template lives in db/seeds/prompts.rb under PROMPT_SLUG.
+    FALLBACK_PROMPT = <<~PROMPT
       You are writing a pull request description for a code change. Write a clear, well-structured PR description following these rules:
 
       1. **Lead with "why"** — the first sentence must frame the goal and expected outcome, not implementation details.
@@ -39,12 +43,12 @@ module Llm
       Respond with ONLY the PR description markdown — no preamble, no wrapping quotes, no explanation.
 
       ## Issue Context
-      Title: %{issue_title}
+      Title: {{issue_title}}
       Body:
-      %{issue_body}
+      {{issue_body}}
 
       ## Agent Output
-      %{agent_summary}
+      {{agent_summary}}
     PROMPT
 
     class << self
@@ -101,11 +105,16 @@ module Llm
     end
 
     def prompt
-      format(
-        PROMPT_TEMPLATE,
+      vars = {
         issue_title: @issue_title.presence || "N/A",
         issue_body: truncated_issue_body,
         agent_summary: @agent_summary.truncate(MAX_SUMMARY_INPUT, omission: "")
+      }
+
+      Prompts::Render.call(
+        slug: PROMPT_SLUG,
+        variables: vars,
+        fallback: -> { vars.reduce(FALLBACK_PROMPT) { |acc, (k, v)| acc.gsub("{{#{k}}}", v.to_s) } }
       )
     end
 
