@@ -384,15 +384,11 @@ class GithubClient
       last_rel = client.last_response&.rels&.dig(:last)
 
       unless last_rel
-        first_page.instance_variable_set(:@multi_page, false)
-        first_page.define_singleton_method(:multi_page?) { @multi_page }
-        return first_page
+        return tag_multi_page(first_page, false)
       end
 
       last_page = client.get(last_rel.href)
-      last_page.instance_variable_set(:@multi_page, true)
-      last_page.define_singleton_method(:multi_page?) { @multi_page }
-      last_page
+      tag_multi_page(last_page, true)
     end
   end
 
@@ -788,6 +784,12 @@ class GithubClient
   end
 
   private
+
+  def tag_multi_page(page, multi)
+    page.instance_variable_set(:@multi_page, multi)
+    page.define_singleton_method(:multi_page?) { @multi_page }
+    page
+  end
 
   def configure_middleware
     client.middleware = Faraday::RackBuilder.new do |builder|
