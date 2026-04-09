@@ -1909,12 +1909,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "blocks auto-merge due to stale review" do
         result = activity.execute(project_id: project.id)
 
-        if result[:prs_to_trigger].any?
-          trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
-          expect(trigger_types).not_to include("owner_approved")
-        else
-          expect(result[:prs_to_trigger]).to eq([])
-        end
+        expect(result[:prs_to_trigger]).to eq([])
       end
     end
 
@@ -1973,12 +1968,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "blocks auto-merge because ci_action check is missing" do
         result = activity.execute(project_id: project.id)
 
-        if result[:prs_to_trigger].any?
-          trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
-          expect(trigger_types).not_to include("owner_approved")
-        else
-          expect(result[:prs_to_trigger]).to eq([])
-        end
+        expect(result[:prs_to_trigger]).to eq([])
       end
     end
 
@@ -2086,16 +2076,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "blocks auto-merge because no APPROVED review exists" do
         result = activity.execute(project_id: project.id)
 
-        if result[:prs_to_trigger].any?
-          trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
-          expect(trigger_types).not_to include("owner_approved")
-        else
-          expect(result[:prs_to_trigger]).to eq([])
-        end
+        expect(result[:prs_to_trigger]).to eq([])
       end
     end
 
-    context "when manual review method is enabled and a human has approved" do
+    context "when manual review method is enabled and only the owner has approved" do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
@@ -2115,6 +2100,39 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           reviews: [
             { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ]
+        )
+      end
+
+      it "blocks auto-merge because manual review requires a non-owner approval" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when manual review method is enabled and a non-owner human has approved" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_enabled: true,
+          allowed_github_usernames: %w[viamin reviewer],
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "manual" => { "enabled" => true }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current },
+            { id: 2, user_login: "reviewer", state: "APPROVED", body: "", submitted_at: Time.current }
           ]
         )
       end
@@ -2187,12 +2205,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "blocks auto-merge due to non-clean codex review" do
         result = activity.execute(project_id: project.id)
 
-        if result[:prs_to_trigger].any?
-          trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
-          expect(trigger_types).not_to include("owner_approved")
-        else
-          expect(result[:prs_to_trigger]).to eq([])
-        end
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_review_pending")
+        expect(trigger_types).not_to include("owner_approved")
       end
     end
 
