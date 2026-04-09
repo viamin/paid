@@ -163,15 +163,18 @@ module ApplicationHelper
   # This catches drift immediately rather than silently rendering missing badges.
   Rails.application.config.after_initialize do
     missing = Project::REVIEW_METHODS - REVIEW_METHOD_STYLES.keys
-    raise "REVIEW_METHOD_STYLES is missing keys: #{missing}" if missing.any?
+    if missing.any?
+      if Rails.env.local?
+        raise "REVIEW_METHOD_STYLES is missing keys: #{missing}"
+      else
+        Rails.logger.error(message: "REVIEW_METHOD_STYLES is missing keys", missing: missing)
+      end
+    end
   end
 
   def review_method_badge(method)
     styles = REVIEW_METHOD_STYLES[method]
-    if styles.nil?
-      Rails.logger.warn { "review_method_badge: unknown method #{method.inspect}" }
-      return
-    end
+    return if styles.nil? && Rails.logger.warn { "review_method_badge: unknown method #{method.inspect}" }
 
     tag.span(
       styles[:label],
