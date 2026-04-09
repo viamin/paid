@@ -1558,7 +1558,7 @@ RSpec.describe GithubClient do
               data: {
                 repository: {
                   pullRequest: {
-                    comments: {
+                    threads: {
                       pageInfo: { hasNextPage: false },
                       nodes: [
                         {
@@ -1623,7 +1623,7 @@ RSpec.describe GithubClient do
               data: {
                 repository: {
                   pullRequest: {
-                    comments: {
+                    threads: {
                       pageInfo: { hasNextPage: false },
                       nodes: [
                         {
@@ -1678,7 +1678,7 @@ RSpec.describe GithubClient do
               data: {
                 repository: {
                   pullRequest: {
-                    comments: {
+                    threads: {
                       pageInfo: { hasNextPage: true },
                       nodes: [
                         {
@@ -1729,7 +1729,7 @@ RSpec.describe GithubClient do
               data: {
                 repository: {
                   pullRequest: {
-                    comments: {
+                    threads: {
                       pageInfo: { hasNextPage: false },
                       nodes: [
                         {
