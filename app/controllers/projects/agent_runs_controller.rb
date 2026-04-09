@@ -47,7 +47,8 @@ module Projects
         .where(github_state: "open")
         .order(github_number: :desc)
 
-      pr_numbers = @pull_requests.pluck(:github_number)
+      @pull_requests = @pull_requests.to_a
+      pr_numbers = @pull_requests.map(&:github_number)
       @prs_with_active_runs = @project.agent_runs
         .where(source_pull_request_number: pr_numbers, status: AgentRun::UNFINISHED_STATUSES)
         .distinct

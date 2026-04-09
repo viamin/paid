@@ -12,9 +12,9 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-200 bg-white">
-        <% @pull_requests.each do |pr| %>
-          <% has_active_run = @prs_with_active_runs.include?(pr.github_number) %>
-          <% priority_tier = @pr_priority_tiers[pr.id] %>
+        <% pull_requests.each do |pr| %>
+          <% has_active_run = prs_with_active_runs.include?(pr.github_number) %>
+          <% priority_tier = pr_priority_tiers[pr.id] %>
           <tr class="<%= 'opacity-50' if has_active_run %>">
             <td class="px-3 py-2 text-center">
               <%= tag.input type: "checkbox",
