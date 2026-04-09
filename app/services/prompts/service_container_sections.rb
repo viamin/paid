@@ -30,30 +30,19 @@ module Prompts
       end
     end
 
-    def self.service_environment_section_for(project:)
+    def self.service_environment_section_for(project:, include_setup_instruction: true)
       containers = project.service_containers.to_a
       has_db = containers.any? { |sc| sc.image.include?("postgres") }
-      language = Prompts::LanguageCommands.detected_language(project)
 
       sections = []
 
-      # Setup instruction
-      setup = if has_db
-        if language == "ruby"
-          "   Run `bin/rails db:prepare` to set up the database (`DATABASE_URL` will be configured for you)."
-        else
-          "   A database service will be available via the `DATABASE_URL` environment variable." \
-          " Use your framework's standard command to create and migrate the database schema."
-        end
-      else
-        "   Do NOT run `bin/setup`, `db:prepare`, or `db:migrate` — no database is available in this environment."
+      if include_setup_instruction
+        sections << <<~SECTION
+          # Service Environment
+
+          #{setup_database_instruction_for(project: project)}
+        SECTION
       end
-
-      sections << <<~SECTION
-        # Service Environment
-
-        #{setup}
-      SECTION
 
       if containers.any?
         lines = containers.map { |sc| service_description(sc) }

@@ -72,8 +72,11 @@ module Prompts
       new(...).build
     end
 
-    def self.service_environment_section_for(project:)
-      ServiceContainerSections.service_environment_section_for(project: project)
+    def self.service_environment_section_for(project:, include_setup_instruction: true)
+      ServiceContainerSections.service_environment_section_for(
+        project: project,
+        include_setup_instruction: include_setup_instruction
+      )
     end
 
     def build
@@ -92,7 +95,7 @@ module Prompts
         slug: PROMPT_SLUG,
         project: project,
         variables: vars,
-        fallback: -> { vars.reduce(FALLBACK_PROMPT) { |acc, (k, v)| acc.gsub("{{#{k}}}", v.to_s) } }
+        fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
       )
 
       # Dynamic sections are composed in code and appended to the rendered

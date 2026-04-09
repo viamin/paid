@@ -39,7 +39,7 @@ module Prompts
 
     # Fallback used only if the seeded prompt is missing or deactivated.
     # The active template lives in db/seeds/prompts.rb under PROMPT_SLUG.
-    FALLBACK_PROMPT = <<~PROMPT
+    FALLBACK_PROMPT = <<~'PROMPT'
       # Instructions
 
       Priority order:
@@ -105,7 +105,7 @@ module Prompts
         slug: PROMPT_SLUG,
         project: project,
         variables: vars,
-        fallback: -> { vars.reduce(FALLBACK_PROMPT) { |acc, (k, v)| acc.gsub("{{#{k}}}", v.to_s) } }
+        fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
       )
     end
 
