@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_08_170459) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_09_184503) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -172,7 +172,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_170459) do
     t.datetime "paused_at"
     t.float "peak_cpu_percent"
     t.bigint "peak_memory_bytes"
-    t.string "priority_tier", limit: 10
     t.bigint "project_id", null: false
     t.bigint "prompt_version_id"
     t.bigint "provider_id"
@@ -639,6 +638,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_170459) do
     t.index ["selector_type"], name: "index_model_selections_on_selector_type"
   end
 
+  create_table "notifications", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "action_url"
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.datetime "dismissed_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.string "nav_section"
+    t.datetime "read_at"
+    t.datetime "resolved_at"
+    t.integer "severity", default: 0, null: false
+    t.string "source", null: false
+    t.bigint "subject_id"
+    t.string "subject_type"
+    t.string "title", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index ["account_id", "nav_section", "read_at"], name: "index_notifications_on_badge"
+    t.index ["account_id", "read_at", "dismissed_at"], name: "index_notifications_on_unread"
+    t.index ["account_id", "source", "subject_type", "subject_id"], name: "index_notifications_on_dedup", unique: true
+    t.index ["subject_type", "subject_id"], name: "index_notifications_on_subject"
+    t.index ["user_id"], name: "index_notifications_on_user_id"
+  end
+
   create_table "pre_commit_requirements", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "check_type", limit: 50, default: "shell_command", null: false
@@ -750,6 +773,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_170459) do
     t.datetime "last_agent_run_at"
     t.datetime "last_code_scanning_scan_at"
     t.datetime "last_github_activity_at"
+    t.datetime "last_issue_sync_at"
     t.datetime "last_polled_at"
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_execution_seconds", default: 3600, null: false
@@ -1050,53 +1074,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_170459) do
     t.index ["status"], name: "index_worktrees_on_status"
   end
 
-  add_foreign_key "ab_test_assignments", "ab_test_variants", on_delete: :cascade
-  add_foreign_key "ab_test_assignments", "ab_tests", on_delete: :cascade
-  add_foreign_key "ab_test_assignments", "agent_runs", on_delete: :cascade
-  add_foreign_key "ab_test_variants", "ab_tests", on_delete: :cascade
-  add_foreign_key "ab_test_variants", "prompt_versions", on_delete: :restrict
-  add_foreign_key "ab_tests", "ab_test_variants", column: "winner_variant_id", on_delete: :nullify
-  add_foreign_key "ab_tests", "prompt_versions", column: "control_version_id", on_delete: :restrict
-  add_foreign_key "ab_tests", "prompts", on_delete: :cascade
-  add_foreign_key "account_memberships", "accounts"
-  add_foreign_key "account_memberships", "users"
-  add_foreign_key "agent_run_anomalies", "agent_runs"
-  add_foreign_key "agent_run_anomalies", "projects"
-  add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
-  add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
-  add_foreign_key "agent_runs", "issues", on_delete: :nullify
-  add_foreign_key "agent_runs", "projects", on_delete: :cascade
-  add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
-  add_foreign_key "agent_runs", "providers", on_delete: :nullify
-  add_foreign_key "collector_runs", "project_versions"
-  add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
-  add_foreign_key "cost_budgets", "projects", on_delete: :cascade
-  add_foreign_key "decision_record_links", "decision_records", on_delete: :cascade
-  add_foreign_key "decision_records", "agent_runs", on_delete: :nullify
-  add_foreign_key "decision_records", "decision_records", column: "superseded_by_id", on_delete: :nullify
-  add_foreign_key "decision_records", "issues", on_delete: :nullify
-  add_foreign_key "decision_records", "projects", on_delete: :cascade
-  add_foreign_key "github_tokens", "accounts"
-  add_foreign_key "github_tokens", "users", column: "created_by_id"
-  add_foreign_key "integration_credentials", "accounts"
-  add_foreign_key "integration_credentials", "users", column: "created_by_id"
   add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade
   add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
   add_foreign_key "issues", "issues", column: "parent_issue_id"
   add_foreign_key "issues", "projects"
-  add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
   add_foreign_key "knowledge_artifacts", "projects"
   add_foreign_key "knowledge_audit_events", "projects", on_delete: :cascade
   add_foreign_key "knowledge_chunks", "knowledge_artifacts", on_delete: :cascade
   add_foreign_key "knowledge_chunks", "projects"
   add_foreign_key "knowledge_links", "knowledge_chunks", column: "source_chunk_id", on_delete: :cascade
   add_foreign_key "knowledge_links", "knowledge_chunks", column: "target_chunk_id", on_delete: :cascade
-  add_foreign_key "linear_tokens", "accounts"
   add_foreign_key "linear_tokens", "users", column: "created_by_id"
-  add_foreign_key "mcp_server_definitions", "accounts"
-  add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
   add_foreign_key "model_selections", "llm_models"
-  add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
+  add_foreign_key "notifications", "users"
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
   add_foreign_key "project_baselines", "projects"
@@ -1107,28 +1097,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_170459) do
   add_foreign_key "project_service_containers", "projects", on_delete: :cascade
   add_foreign_key "project_service_containers", "service_containers", on_delete: :cascade
   add_foreign_key "project_versions", "projects"
-  add_foreign_key "projects", "accounts"
-  add_foreign_key "projects", "github_tokens"
   add_foreign_key "projects", "users", column: "created_by_id"
   add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify
   add_foreign_key "prompt_versions", "prompts", on_delete: :cascade
   add_foreign_key "prompt_versions", "users", column: "created_by_user_id", on_delete: :nullify
-  add_foreign_key "prompts", "accounts", on_delete: :cascade
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "provider_api_keys", "users", on_delete: :cascade
   add_foreign_key "provider_states", "users", on_delete: :cascade
   add_foreign_key "providers", "provider_api_keys", on_delete: :restrict
   add_foreign_key "providers", "users", on_delete: :cascade
-  add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
-  add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
-  add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
   add_foreign_key "user_settings", "users"
-  add_foreign_key "users", "accounts"
   add_foreign_key "workflow_states", "projects"
-  add_foreign_key "worktrees", "agent_runs", on_delete: :nullify
   add_foreign_key "worktrees", "projects", on_delete: :cascade
 end

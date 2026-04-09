@@ -94,24 +94,28 @@ module Activities
     end
 
     def record_draft_review_round_if_needed(agent_run)
-      # Defensive: ensure we see the latest tracking columns in case they
-      # were updated by a concurrent QueueAgentRunActivity merge.
-      agent_run.reload
-
       unless agent_run.count_toward_draft_review_round?
-        # Defensive data-patch only: marks legacy in-flight runs so the
-        # tracking columns are consistent, but the terminal-status guard
-        # below means this will never actually increment draft_review_count.
+        # Defensive data-patch for legacy in-flight runs that were queued before
+        # this migration deployed. Sets the tracking columns for consistency but
+        # never leads to an actual increment — the terminal-status guard below
+        # returns early for the same statuses this fallback targets.
+        # TODO(#220): Remove after all legacy pre-migration runs have aged out.
         apply_legacy_draft_followup_fallback!(agent_run)
       end
+
       return unless agent_run.count_toward_draft_review_round?
+
+      # Reload only when we will actually record a draft round, to avoid an
+      # unnecessary DB round-trip for the majority of non-draft runs.
+      agent_run.reload
+
       return unless agent_run.issue_id.present?
       if agent_run.expected_draft_review_count.blank?
         raise ArgumentError,
           "agent_run #{agent_run.id} is tracking a draft review round without expected_draft_review_count"
       end
 
-      return if %w[failed cancelled timeout].include?(agent_run.status)
+      return if AgentRun::TERMINAL_FAILURE_STATUSES.include?(agent_run.status)
 
       Activities::RecordDraftReviewActivity.new.execute(
         issue_id: agent_run.issue_id,
@@ -119,6 +123,12 @@ module Activities
       )
     end
 
+    # Backfill tracking columns on legacy in-flight runs that reached a terminal
+    # failure state before the draft-round-tracking migration deployed. This
+    # write is intentional but has no downstream effect on draft_review_count:
+    # the terminal-status guard in record_draft_review_round_if_needed prevents
+    # the RecordDraftReviewActivity call from ever firing for these statuses.
+    # TODO(#220): Remove after all legacy pre-migration runs have aged out.
     def apply_legacy_draft_followup_fallback!(agent_run)
       return if agent_run.count_toward_draft_review_round?
       return if agent_run.expected_draft_review_count.present?
@@ -132,7 +142,7 @@ module Activities
       # call. Including them here would set expected_draft_review_count to the
       # already-incremented counter, passing the idempotency guard and overcounting
       # on completion-activity retries/replays.
-      return unless %w[failed cancelled timeout].include?(agent_run.status)
+      return unless AgentRun::TERMINAL_FAILURE_STATUSES.include?(agent_run.status)
 
       expected_count = agent_run.issue.draft_review_count
       return if expected_count.blank?
