@@ -23,14 +23,22 @@ class WorkflowState < ApplicationRecord
       project: project,
       workflow_type: "GitHubPollWorkflow",
       status: status,
-      restart_reason: restart_reason || ws.restart_reason,
+      restart_reason: restart_reason,
       error_message: error_message,
       started_at: status == "running" ? Time.current : ws.started_at,
       completed_at: FINISHED_STATUSES.include?(status) ? Time.current : nil
     )
+    should_broadcast = ws.new_record? || ws.status_changed?
     ws.save!
 
-    project.broadcast_workflow_status_update
+    # Broadcast after the transaction commits so listeners never see data that
+    # could be rolled back. Skip when status is unchanged (e.g., healthy →
+    # healthy on every poll cycle) to avoid unnecessary DB queries and
+    # ActionCable traffic.
+    if should_broadcast
+      ActiveRecord.after_all_transactions_commit { project.broadcast_workflow_status_update }
+    end
+
     ws
   end
 
