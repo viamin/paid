@@ -1365,6 +1365,21 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#rate_limit_remaining!" do
+    it "returns remaining requests" do
+      rate_limit = instance_double(Octokit::RateLimit, remaining: 4999)
+      allow(client.client).to receive(:rate_limit).and_return(rate_limit)
+
+      expect(client.rate_limit_remaining!).to eq(4999)
+    end
+
+    it "raises on transport/auth failure instead of returning 0" do
+      allow(client.client).to receive(:rate_limit).and_raise(Octokit::Unauthorized)
+
+      expect { client.rate_limit_remaining! }.to raise_error(Octokit::Unauthorized)
+    end
+  end
+
   describe "#rate_limit_low?" do
     context "when remaining is below threshold" do
       it "returns true" do

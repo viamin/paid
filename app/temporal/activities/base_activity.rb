@@ -64,12 +64,12 @@ module Activities
     # near exhaustion. Call this before making API requests so polling
     # activities stop early and let the next cycle handle remaining work.
     #
-    # Bypasses GithubClient#rate_limit_remaining (which rescues Octokit
-    # errors and returns 0) so that auth/transport failures are not
-    # misclassified as rate-limit exhaustion. On probe failure we log a
-    # warning and return, letting the real API call surface the actual error.
+    # Uses GithubClient#rate_limit_remaining! (which raises on Octokit
+    # errors instead of returning 0) so that auth/transport failures are
+    # not misclassified as rate-limit exhaustion. On probe failure we log
+    # a warning and return, letting the real API call surface the actual error.
     def check_rate_budget!(client, threshold: 10)
-      remaining = client.client.rate_limit.remaining
+      remaining = client.rate_limit_remaining!
     rescue Octokit::Error => e
       logger.warn(
         message: "rate_limit.probe_failed",
