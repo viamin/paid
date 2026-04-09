@@ -70,4 +70,21 @@ RSpec.describe Prompt, type: :model do
     actual = described_class.global.where(slug: SeedsPromptsSpec::EXPECTED_SLUGS).pluck(:slug).sort
     expect(actual).to eq(SeedsPromptsSpec::EXPECTED_SLUGS.sort)
   end
+
+  describe "goal.review_pull_request clean-PR phrase coupling" do
+    # If ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN ever changes, the
+    # seeded review template AND the FALLBACK_REVIEW_GOAL_PROMPT in
+    # RunAgentActivity must be updated together or clean reviews will
+    # silently fail to terminate the review loop.
+    let(:pattern) { Activities::ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN }
+
+    it "seeded template body matches the clean-review pattern" do
+      template = described_class.global.find_by(slug: "goal.review_pull_request").current_version.template
+      expect(template).to match(pattern)
+    end
+
+    it "FALLBACK_REVIEW_GOAL_PROMPT matches the clean-review pattern" do
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT).to match(pattern)
+    end
+  end
 end
