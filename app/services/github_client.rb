@@ -753,6 +753,11 @@ class GithubClient
     end
   end
 
+  # Maximum comments fetched per review thread in the batch GraphQL query.
+  # Threads with more comments will be logged as truncated; reactions on
+  # comments beyond this limit are not captured.
+  MAX_COMMENTS_PER_THREAD = 50
+
   # Fetches review comments and their reactions in a single GraphQL request.
   # Replaces N+1 REST calls with one batched query.
   #
@@ -763,13 +768,13 @@ class GithubClient
   def review_comment_reactions_batch(repo, pr_number, max_threads: 50)
     owner, name = repo.split("/", 2)
     query = <<~GRAPHQL
-      query($owner: String!, $name: String!, $number: Int!, $maxComments: Int!) {
+      query($owner: String!, $name: String!, $number: Int!, $maxThreads: Int!) {
         repository(owner: $owner, name: $name) {
           pullRequest(number: $number) {
-            threads: reviewThreads(first: $maxComments) {
+            threads: reviewThreads(first: $maxThreads) {
               pageInfo { hasNextPage }
               nodes {
-                comments(first: 50) {
+                comments(first: #{MAX_COMMENTS_PER_THREAD}) {
                   pageInfo { hasNextPage }
                   nodes {
                     databaseId
@@ -792,12 +797,21 @@ class GithubClient
 
     data = graphql_request(
       query,
-      owner: owner, name: name, number: pr_number, maxComments: max_threads
+      owner: owner, name: name, number: pr_number, maxThreads: max_threads
     )
 
     raise_graphql_errors(data, context: "fetching review reactions for #{repo}##{pr_number}")
 
-    threads_connection = data.dig("data", "repository", "pullRequest", "threads") || {}
+    pull_request = data.dig("data", "repository", "pullRequest")
+    unless pull_request
+      Rails.logger.warn(
+        message: "github_client.pull_request_not_found",
+        repo: repo, pr_number: pr_number
+      )
+      return []
+    end
+
+    threads_connection = pull_request["threads"] || {}
     if threads_connection.dig("pageInfo", "hasNextPage")
       Rails.logger.warn(
         message: "github_client.review_threads_truncated",
@@ -817,6 +831,11 @@ class GithubClient
       comments.flat_map do |comment|
         reactions_data = comment["reactions"] || {}
         if reactions_data.dig("pageInfo", "hasNextPage")
+          # When reactions exceed the GraphQL page size (100), fall back to the
+          # REST endpoint which auto-paginates. This intentionally re-fetches
+          # reactions already returned by GraphQL rather than merging the two
+          # result sets, trading a small amount of redundant data transfer for
+          # simpler, more reliable code.
           begin
             pull_request_review_comment_reactions(repo, comment["databaseId"])
           rescue Error => e
