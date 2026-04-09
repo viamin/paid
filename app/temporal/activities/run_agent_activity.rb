@@ -225,9 +225,13 @@ module Activities
               )
             end
           rescue InfiniteLoopError => e
+            last_error = "infinite_loop"
+            if cancelled_by_cleanup?(agent_run)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
+              break
+            end
             record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "infinite_loop")
-            last_error = "infinite_loop"
             logger.warn(message: "agent_execution.infinite_loop_detected", agent_run_id: agent_run.id, reason: e.message)
 
             result = Guardrails::ViolationHandler.call(

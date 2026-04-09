@@ -505,6 +505,34 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#cancelled_by_cleanup?" do
+      it "returns true when status is timeout and error_message starts with the sentinel prefix" do
+        agent_run = build(:agent_run, status: "timeout",
+          error_message: "#{AgentRun::STALE_CLEANUP_ERROR_PREFIX}: process was restarted")
+
+        expect(agent_run.cancelled_by_cleanup?).to be true
+      end
+
+      it "returns false when error_message lacks the sentinel prefix" do
+        agent_run = build(:agent_run, status: "timeout", error_message: "Provider timed out")
+
+        expect(agent_run.cancelled_by_cleanup?).to be false
+      end
+
+      it "returns false when status is not timeout even if the prefix is present" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "#{AgentRun::STALE_CLEANUP_ERROR_PREFIX}: process was restarted")
+
+        expect(agent_run.cancelled_by_cleanup?).to be false
+      end
+
+      it "returns false when error_message is nil" do
+        agent_run = build(:agent_run, status: "timeout", error_message: nil)
+
+        expect(agent_run.cancelled_by_cleanup?).to be false
+      end
+    end
+
     describe "#total_tokens" do
       it "returns sum of input and output tokens" do
         agent_run = build(:agent_run, tokens_input: 1000, tokens_output: 500)
