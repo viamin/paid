@@ -868,15 +868,18 @@ RSpec.describe "Projects" do
         patch project_path(project), params: {
           project: { priority_labels: { "P1" => "urgent", "P2" => "normal", "P3" => "low" } }
         }
+        expect(response).to redirect_to(project)
         expect(project.reload.priority_labels).to eq("P1" => "urgent", "P2" => "normal", "P3" => "low")
       end
 
       it "rejects blank priority label values" do
-        project = create(:project, account: account, github_token: github_token)
+        project = create(:project, account: account, github_token: github_token,
+          priority_labels: { "P1" => "P1", "P2" => "P2", "P3" => "P3" })
         patch project_path(project), params: {
           project: { priority_labels: { "P1" => "", "P2" => "normal", "P3" => "low" } }
         }
-        expect(project.reload.priority_labels).not_to eq("P1" => "", "P2" => "normal", "P3" => "low")
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(project.reload.priority_labels).to eq("P1" => "P1", "P2" => "P2", "P3" => "P3")
       end
 
       it "allows updating security scanning settings" do
