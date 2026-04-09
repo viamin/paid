@@ -89,8 +89,8 @@ RSpec.describe "Api::GithubWebhooks" do
       end
 
       it "attributes feedback to the review-goal run, not the create_pr run" do
-        # Create a create_pr run on the same PR to ensure the review run is preferred
-        # when no create_pr run matches
+        # No create_pr run exists for PR 77, so the fallback to
+        # source_pull_request_number should find the review-goal run.
         body, signature = sign_payload(payload, project.webhook_secret)
 
         expect {
