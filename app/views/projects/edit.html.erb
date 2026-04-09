@@ -399,7 +399,7 @@
 
             <% %w[P1 P2 P3].each do |tier| %>
               <div>
-                <label for="project_priority_labels_<%= tier %>" class="block text-sm font-medium leading-6 text-gray-900">Priority Label (<%= tier %>)</label>
+                <%= form.label "priority_labels_#{tier}", "Priority Label (#{tier})", class: "block text-sm font-medium leading-6 text-gray-900" %>
                 <div class="mt-2">
                   <input type="text" name="project[priority_labels][<%= tier %>]" id="project_priority_labels_<%= tier %>"
                     value="<%= @project.effective_priority_labels[tier] %>"
@@ -407,6 +407,11 @@
                 </div>
                 <p class="mt-1 text-xs text-gray-500">GitHub label name for <%= tier %> priority issues.</p>
               </div>
+            <% end %>
+            <% if @project.errors[:priority_labels].any? %>
+              <% @project.errors[:priority_labels].each do |msg| %>
+                <p class="mt-1 text-xs text-red-600"><%= msg %></p>
+              <% end %>
             <% end %>
           </fieldset>
 
