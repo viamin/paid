@@ -117,7 +117,10 @@ module Activities
           "agent_run #{agent_run.id} is tracking a draft review round without expected_draft_review_count"
       end
 
-      return if AgentRun::TERMINAL_FAILURE_STATUSES.include?(agent_run.status)
+      # Only record for successful completions (completed / no_output).
+      # Now that this method is called after complete!, the status is already
+      # set so this positive check reliably skips failed / cancelled / timed-out runs.
+      return unless %w[completed no_output].include?(agent_run.status)
 
       Activities::RecordDraftReviewActivity.new.execute(
         issue_id: agent_run.issue_id,
