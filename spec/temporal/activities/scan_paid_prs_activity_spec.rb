@@ -32,13 +32,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     })
   end
 
-  def enable_paid_agent_review!(proj = project)
-    proj.update!(review_settings: {
-      "enabled" => true,
-      "methods" => { "paid_agent" => { "enabled" => true } }
-    })
-  end
-
   def enable_copilot_and_codex_review!(proj = project)
     proj.update!(review_settings: {
       "enabled" => true,
@@ -46,6 +39,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         "copilot" => { "enabled" => true },
         "codex" => { "enabled" => true }
       }
+    })
+  end
+
+  def enable_paid_agent_review!(proj = project)
+    proj.update!(review_settings: {
+      "enabled" => true,
+      "methods" => { "paid_agent" => { "enabled" => true } }
     })
   end
 
@@ -360,6 +360,93 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("conversation_comments")
+      end
+    end
+
+    context "when the recent comment page starts with an older-than-cutoff comment" do
+      # Regression: GithubClient#recent_issue_comments returns comments in
+      # ascending order within the page, so a newer-than-cutoff comment can
+      # appear AFTER an older-than-cutoff comment in the same response. The
+      # scanner must scan the full page, not short-circuit on the first
+      # older entry.
+      let(:old_comment) do
+        OpenStruct.new(
+          user: OpenStruct.new(login: "viamin"),
+          body: "This comment is older than the last agent run — should be ignored",
+          created_at: 2.hours.ago
+        )
+      end
+      let(:new_comment) do
+        OpenStruct.new(
+          user: OpenStruct.new(login: "viamin"),
+          body: "Please also address the logging around the parser fallback path",
+          created_at: 20.minutes.ago
+        )
+      end
+
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+        create(:agent_run, :completed,
+          project: project, source_pull_request_number: 42,
+          completed_at: 1.hour.ago)
+        # Ascending order within the page — the older comment comes first.
+        stub_github_for_pr(issue_comments: [ old_comment, new_comment ])
+      end
+
+      it "still detects the newer comment that follows an older-than-cutoff entry" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("conversation_comments")
+      end
+    end
+
+    [ 100, 50 ].each do |page_size|
+      context "when multi-page recent comments (#{page_size} per page) are all newer than cutoff" do
+        # When every comment on the last page is newer than the cutoff,
+        # earlier post-cutoff comments may exist on previous pages. The
+        # scanner should fall back to full pagination to avoid missing them.
+        let(:recent_page) do
+          Array.new(page_size) do |i|
+            OpenStruct.new(
+              user: OpenStruct.new(login: "bot-user"),
+              body: "Automated update ##{i}",
+              created_at: (50 - (i / 2)).minutes.ago
+            )
+          end
+        end
+        let(:human_comment) do
+          OpenStruct.new(
+            user: OpenStruct.new(login: "viamin"),
+            body: "Please also address the logging around the parser fallback path",
+            created_at: 55.minutes.ago
+          )
+        end
+
+        before do
+          create(:issue, :pull_request,
+            project: project, github_number: 42,
+            labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+          create(:agent_run, :completed,
+            project: project, source_pull_request_number: 42,
+            completed_at: 2.hours.ago)
+          stub_github_for_pr(
+            recent_issue_comments: recent_page,
+            recent_multi_page: true,
+            issue_comments: [ human_comment ] + recent_page
+          )
+        end
+
+        it "falls back to full pagination and detects the earlier comment" do
+          result = activity.execute(project_id: project.id)
+
+          expect(result[:prs_to_trigger].size).to eq(1)
+          trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+          expect(trigger_types).to include("conversation_comments")
+        end
       end
     end
 
@@ -1042,6 +1129,149 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when codex review pre-dates last run but diff does not touch reviewed files" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: 10, user_login: "chatgpt-codex-connector", body: "Fix this",
+              created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
+              pull_request_review_id: 1 }
+          ])
+        allow(github_client).to receive(:compare_changed_files)
+          .with(project.full_name, "rev_sha", "abc123")
+          .and_return([ "db/schema.rb" ])
+      end
+
+      it "treats the review as unaddressed because the changed files are unrelated" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending")
+      end
+    end
+
+    context "when codex review pre-dates last run and diff touches a reviewed file" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: 10, user_login: "chatgpt-codex-connector", body: "Fix this",
+              created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
+              pull_request_review_id: 1 }
+          ])
+        allow(github_client).to receive(:compare_changed_files)
+          .with(project.full_name, "rev_sha", "abc123")
+          .and_return([ "app/services/fetch_issues_activity.rb", "db/schema.rb" ])
+      end
+
+      it "treats the review as addressed because the diff touches the reviewed file" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when codex review pre-dates last run and has no inline comments" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([])
+      end
+
+      it "falls back to treating the review as addressed" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when codex review pre-dates last run and compare API raises GithubClient::Error" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: 10, user_login: "chatgpt-codex-connector", body: "Fix this",
+              created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
+              pull_request_review_id: 1 }
+          ])
+        allow(github_client).to receive(:compare_changed_files)
+          .with(project.full_name, "rev_sha", "abc123")
+          .and_raise(GithubClient::Error, "Not Found")
+      end
+
+      it "falls back to treating the review as addressed" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
     context "when PR is in draft phase with Claude review threads" do
       before do
         create(:issue, :pull_request,
@@ -1307,6 +1537,163 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when paid_agent review includes the clean marker" do
+      before do
+        enable_paid_agent_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+                       body: "Looks good. <!-- paid-review-clean -->",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "treats the review as clean and emits no review_bot triggers" do
+        # Verify the bypass short-circuits before review_bot_review_status_from
+        # is reached — without this spy, the test would pass trivially because
+        # paid_agent-only configs already return [] via the :no_review path.
+        expect(activity).not_to receive(:review_bot_review_status_from)
+
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+      end
+    end
+
+    context "when paid_agent review does not include a clean signal" do
+      before do
+        enable_paid_agent_review!
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+                       body: "Found a few things to fix in the error handling.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "proceeds through normal flow instead of bypassing via clean signal" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        # With CI green, no bot issues, and owner_reviewer_login set, the
+        # draft scanner emits ready_for_owner — proving the non-clean review
+        # did not trigger the paid_agent clean signal bypass.
+        expect(trigger_types).to include("ready_for_owner")
+      end
+    end
+
+    context "when a newer non-clean review follows an older clean paid_agent review" do
+      before do
+        enable_paid_agent_review!
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+              body: "Looks good. <!-- paid-review-clean -->",
+              submitted_at: 2.hours.ago },
+            { id: 2, user_login: "human-reviewer", state: "COMMENTED",
+              body: "Found new issues after the latest push.",
+              submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "does not treat the review as clean because the latest review is non-clean" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        # With CI green, no bot issues, and owner_reviewer_login set, the
+        # draft scanner reaches the normal flow and emits ready_for_owner —
+        # proving the clean signal bypass was skipped.
+        expect(trigger_types).to include("ready_for_owner")
+      end
+    end
+
+    context "when paid_agent is enabled alongside copilot and copilot has unresolved threads" do
+      before do
+        proj = project
+        proj.update!(review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true },
+            "copilot" => { "enabled" => true }
+          }
+        })
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+              body: "Looks good. <!-- paid-review-clean -->",
+              submitted_at: 30.minutes.ago },
+            { id: 2, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed 3 out of 5 changed files and generated 2 comments.",
+              submitted_at: 1.hour.ago }
+          ],
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10,
+                            author: "copilot-pull-request-reviewer[bot]" } ]
+            }
+          ]
+        )
+      end
+
+      it "still emits review_bot_threads from Copilot — paid_agent clean signal cannot suppress other bots" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).to include("review_bot_threads", "review_bot_review_pending")
+      end
+    end
+
+    context "when paid_agent clean signal present but paid_agent is not enabled" do
+      before do
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+                       body: "Looks good. <!-- paid-review-clean -->",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "ignores the clean signal because paid_agent is not an enabled review method" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+      end
+    end
+
     context "when draft PR has CI green and no Copilot threads" do
       before do
         project.update!(owner_reviewer_login: "viamin")
@@ -1355,6 +1742,252 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
         expect(trigger[:owner_reviewer_login]).to eq("viamin")
+      end
+    end
+
+    context "when draft PR has manual-only review and CI is green but reviewer has not approved" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "manual" => { "enabled" => true, "reviewer_login" => "alice" } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+      end
+
+      it "does not emit ready_for_owner; emits manual_review_pending" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        types = trigger[:triggers].map { |t| t[:type] }
+        expect(types).to include("manual_review_pending")
+        expect(types).not_to include("ready_for_owner")
+        pending_trigger = trigger[:triggers].find { |t| t[:type] == "manual_review_pending" }
+        expect(pending_trigger[:reviewer_login]).to eq("alice")
+      end
+    end
+
+    context "when draft PR has manual-only review and configured reviewer has approved" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "manual" => { "enabled" => true, "reviewer_login" => "alice" } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "alice", state: "APPROVED", body: "LGTM",
+              submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "emits ready_for_owner when reviewer has approved" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+    end
+
+    context "when draft PR manual reviewer posts CHANGES_REQUESTED after earlier APPROVED" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "manual" => { "enabled" => true, "reviewer_login" => "alice" } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "alice", state: "APPROVED", body: "LGTM",
+              submitted_at: 2.hours.ago },
+            { id: 2, user_login: "alice", state: "CHANGES_REQUESTED", body: "Actually, needs fixes",
+              submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "uses latest review state and emits manual_review_pending" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        types = trigger[:triggers].map { |t| t[:type] }
+        expect(types).to include("manual_review_pending")
+        expect(types).not_to include("ready_for_owner")
+      end
+    end
+
+    context "when draft PR has ci_action-only review and configured action is missing from checks" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "ci_action" => { "enabled" => true, "action_name" => "e2e-suite" } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+      end
+
+      it "does not advance; emits ci_action_pending" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        types = trigger[:triggers].map { |t| t[:type] }
+        expect(types).to include("ci_action_pending")
+        expect(types).not_to include("ready_for_owner")
+        pending_trigger = trigger[:triggers].find { |t| t[:type] == "ci_action_pending" }
+        expect(pending_trigger[:action_name]).to eq("e2e-suite")
+      end
+    end
+
+    context "when draft PR has ci_action-only review and configured action succeeded" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "ci_action" => { "enabled" => true, "action_name" => "e2e-suite" } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [
+            { name: "ci", conclusion: "success" },
+            { name: "e2e-suite", conclusion: "success" }
+          ],
+          reviews: [],
+          review_threads: []
+        )
+      end
+
+      it "advances to ready_for_owner" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+    end
+
+    context "when ready PR has manual review pending and auto-merge is enabled" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+      end
+
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_enabled: true,
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "manual" => { "enabled" => true, "reviewer_login" => "alice" } }
+          }
+        )
+        pr_issue
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "Approved",
+              submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "does not auto-merge when manual reviewer has not approved" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).not_to be_empty
+        trigger = result[:prs_to_trigger].first
+        types = trigger[:triggers].map { |t| t[:type] }
+        expect(types).to include("manual_review_pending")
+        expect(types).not_to include("owner_approved")
+      end
+    end
+
+    context "when detect_ready_triggers includes non-bot review gates" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+      end
+
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "ci_action" => { "enabled" => true, "action_name" => "e2e-suite" } }
+          }
+        )
+        pr_issue
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+      end
+
+      it "includes ci_action_pending in ready-phase triggers" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        types = trigger[:triggers].map { |t| t[:type] }
+        expect(types).to include("ci_action_pending")
       end
     end
 
@@ -2216,6 +2849,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     review_threads: [],
     issue_comments: [],
     recent_issue_comments: nil,
+    recent_multi_page: false,
     reviews: default_clean_copilot_review
   )
     pr_data = OpenStruct.new(
@@ -2224,6 +2858,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       draft: draft,
       user: OpenStruct.new(login: author_login)
     )
+
+    recent = recent_issue_comments || issue_comments
+    multi_page = recent_multi_page
+    recent.define_singleton_method(:multi_page?) { multi_page }
 
     allow(github_client).to receive(:pull_request)
       .with(project.full_name, 42)
@@ -2234,12 +2872,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(github_client).to receive(:review_threads)
       .with(project.full_name, 42)
       .and_return(review_threads)
+    allow(github_client).to receive(:recent_issue_comments)
+      .with(project.full_name, 42)
+      .and_return(recent)
     allow(github_client).to receive(:issue_comments)
       .with(project.full_name, 42)
       .and_return(issue_comments)
-    allow(github_client).to receive(:recent_issue_comments)
-      .with(project.full_name, 42)
-      .and_return(recent_issue_comments || issue_comments)
     allow(github_client).to receive(:pull_request_reviews)
       .with(project.full_name, 42)
       .and_return(reviews)
