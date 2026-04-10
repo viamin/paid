@@ -839,6 +839,12 @@ RSpec.describe GithubClient do
         expect(result.map(&:body)).to contain_exactly("First comment", "Second comment")
         expect(client.client.auto_paginate).to be false
       end
+
+      it "marks the result as single-page" do
+        result = client.recent_issue_comments(repo, 42)
+
+        expect(result.multi_page?).to be false
+      end
     end
 
     context "when the comment list spans multiple pages" do
@@ -876,6 +882,12 @@ RSpec.describe GithubClient do
         expect(result.size).to eq(2)
         expect(result.map(&:body)).to contain_exactly("Newer comment", "Newest comment")
         expect(result.map(&:body)).not_to include("Very old comment")
+      end
+
+      it "marks the result as multi-page" do
+        result = client.recent_issue_comments(repo, 42)
+
+        expect(result.multi_page?).to be true
       end
     end
   end
@@ -1557,6 +1569,237 @@ RSpec.describe GithubClient do
         result = client.code_scanning_alerts(repo)
 
         expect(result).to eq([])
+      end
+    end
+  end
+
+  describe "#review_comment_reactions_batch" do
+    let(:repo) { "owner/repo" }
+
+    context "when reactions exist" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    threads: {
+                      pageInfo: { hasNextPage: false },
+                      nodes: [
+                        {
+                          comments: {
+                            pageInfo: { hasNextPage: false },
+                            nodes: [
+                              {
+                                databaseId: 101,
+                                reactions: {
+                                  pageInfo: { hasNextPage: false },
+                                  nodes: [
+                                    { user: { login: "alice" }, content: "THUMBS_UP", createdAt: "2024-01-01T00:00:00Z" }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns reactions from all review comments" do
+        result = client.review_comment_reactions_batch(repo, 1)
+
+        expect(result.size).to eq(1)
+        expect(result.first[:user_login]).to eq("alice")
+        expect(result.first[:content]).to eq("+1")
+      end
+    end
+
+    context "when GraphQL returns errors" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              errors: [ { message: "rate limited" } ]
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "raises ApiError instead of returning empty results" do
+        expect { client.review_comment_reactions_batch(repo, 1) }
+          .to raise_error(GithubClient::ApiError, /rate limited/)
+      end
+    end
+
+    context "when a comment has more than 100 reactions (paginated)" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    threads: {
+                      pageInfo: { hasNextPage: false },
+                      nodes: [
+                        {
+                          comments: {
+                            pageInfo: { hasNextPage: false },
+                            nodes: [
+                              {
+                                databaseId: 202,
+                                reactions: {
+                                  pageInfo: { hasNextPage: true },
+                                  nodes: Array.new(100) { |i|
+                                    { user: { login: "user#{i}" }, content: "THUMBS_UP", createdAt: "2024-01-01T00:00:00Z" }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
+        stub_request(:get, "#{api_base}/repos/owner/repo/pulls/comments/202/reactions")
+          .to_return(
+            status: 200,
+            body: Array.new(105) { |i|
+              { user: { login: "user#{i}" }, content: "+1", created_at: "2024-01-01T00:00:00Z" }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "falls back to REST API for the overflowing comment" do
+        result = client.review_comment_reactions_batch(repo, 1)
+
+        expect(result.size).to eq(105)
+        expect(WebMock).to have_requested(:get, "#{api_base}/repos/owner/repo/pulls/comments/202/reactions")
+      end
+    end
+
+    context "when review threads are truncated" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    threads: {
+                      pageInfo: { hasNextPage: true },
+                      nodes: [
+                        {
+                          comments: {
+                            pageInfo: { hasNextPage: true },
+                            nodes: [
+                              {
+                                databaseId: 401,
+                                reactions: {
+                                  pageInfo: { hasNextPage: false },
+                                  nodes: [
+                                    { user: { login: "alice" }, content: "THUMBS_UP", createdAt: "2024-01-01T00:00:00Z" }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "logs warnings for truncated threads and comments" do
+        expect(Rails.logger).to receive(:warn).with(hash_including(
+          message: "github_client.review_threads_truncated"
+        ))
+        expect(Rails.logger).to receive(:warn).with(hash_including(
+          message: "github_client.review_thread_comments_truncated"
+        ))
+
+        result = client.review_comment_reactions_batch(repo, 1)
+        expect(result.size).to eq(1)
+      end
+    end
+
+    context "when REST fallback fails for one comment but others succeed" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    threads: {
+                      pageInfo: { hasNextPage: false },
+                      nodes: [
+                        {
+                          comments: {
+                            pageInfo: { hasNextPage: false },
+                            nodes: [
+                              {
+                                databaseId: 301,
+                                reactions: {
+                                  pageInfo: { hasNextPage: true },
+                                  nodes: []
+                                }
+                              },
+                              {
+                                databaseId: 302,
+                                reactions: {
+                                  pageInfo: { hasNextPage: false },
+                                  nodes: [
+                                    { user: { login: "bob" }, content: "THUMBS_UP", createdAt: "2024-01-01T00:00:00Z" }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
+        stub_request(:get, "#{api_base}/repos/owner/repo/pulls/comments/301/reactions")
+          .to_return(status: 500, body: "Internal Server Error")
+      end
+
+      it "returns reactions from successful comments and skips the failed one" do
+        result = client.review_comment_reactions_batch(repo, 1)
+
+        expect(result.size).to eq(1)
+        expect(result.first[:user_login]).to eq("bob")
       end
     end
   end
