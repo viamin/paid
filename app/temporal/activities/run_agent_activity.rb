@@ -51,12 +51,40 @@ module Activities
       /free tier limit reached/i,
       /(?:you'?ve|you have)\s+hit\s+your\s+limit/i,
       /exhausted\s+your\s+capacity/i,
-      /exhausted.*capacity/i,
+      /exhausted.*capacity/i, # intentionally loose — only used for exit-code failures, not timeout reclassification
+
       /(?:server|system)\s+(?:at\s+)?capacity/i,
       /(?:server|api|service)\s+overloaded/i,
       /out of (?:extra )?usage/i,
       /usage limit/i
     ].freeze
+
+    # Timeout reclassification is intentionally stricter than generic
+    # execution-failure classification because streamed stdout/stderr can
+    # contain ordinary agent prose that mentions rate limiting.
+    # "too many requests" is only matched when accompanied by HTTP 429 or
+    # status code context to avoid false positives from conversational text.
+    #
+    # Note: bare "usage limit" (without exceeded/reached/hit) is deliberately
+    # excluded here — it matches RATE_LIMIT_PATTERNS for exit-code failures
+    # but is too loose for timeout reclassification where the output may
+    # contain conversational text.
+    TIMEOUT_RATE_LIMIT_PATTERNS = [
+      /\bHTTP\s?429\b/i,
+      /\b429\b.*\btoo many requests\b/i,
+      /\btoo many requests\b.*\b429\b/i,
+      /\bstatus[:\s]*429\b/i,
+      /quota exceeded/i,
+      /free tier limit reached/i,
+      /(?:rate.?limit|usage limit) +(?:exceeded|reached|hit)/i,
+      /(?:you'?ve|you have) +hit +your +limit/i,
+      /exhausted(?: +your)? +capacity/i,
+      /out of (?:extra )?usage/i
+    ].freeze
+
+    # Maximum number of log rows to inspect when reclassifying a timeout.
+    # Caps memory and DB load on long-running, verbose agent attempts.
+    TIMEOUT_RATE_LIMIT_LOG_LIMIT = 200
 
     # Default timeouts used when per-user settings are unavailable.
     # Runtime code resolves per-user values via UserSetting.
@@ -452,6 +480,7 @@ module Activities
 
       agent_run.log!("system", "Starting #{provider} agent in container")
       agent_run.log!("system", "Prompt: #{prompt.truncate(500)}")
+      execution_started_at = Time.current
 
       effective_timeout = if agent_run.create_issue_goal?
         user_settings&.issue_goal_timeout_seconds || DEFAULT_ISSUE_GOAL_TIMEOUT
@@ -502,6 +531,15 @@ module Activities
       # Other execution error
       raise ProviderExecutionError, "Agent exited with code #{result[:exit_code]}: #{output.truncate(500)}"
     rescue Containers::Provision::TimeoutError => e
+      # execution_started_at is nil if the timeout fires before execution
+      # begins (e.g. during start!/callbacks); recent_timeout_output
+      # short-circuits on blank.
+      timeout_output = recent_timeout_output(agent_run, since: execution_started_at, prompt: prompt)
+      if timeout_rate_limit_error?(timeout_output)
+        reset_at = parse_rate_limit_reset(timeout_output)
+        raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+      end
+
       timeout_type = case e
       when Containers::Provision::StartupTimeoutError then "startup"
       when Containers::Provision::IdleTimeoutError then "idle"
@@ -522,6 +560,12 @@ module Activities
       return false if output.blank?
 
       RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
+    end
+
+    def timeout_rate_limit_error?(output)
+      return false if output.blank?
+
+      TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
     end
 
     def strip_prompt_echo(output, prompt)
@@ -552,6 +596,55 @@ module Activities
     end
 
     include OutputSanitizer
+
+    def recent_timeout_output(agent_run, since:, prompt:)
+      return "" if since.blank?
+
+      chunks = agent_run.agent_run_logs
+        .where(log_type: %w[stdout stderr])
+        .where("created_at >= ?", since)
+        .order(created_at: :desc, id: :desc)
+        .limit(TIMEOUT_RATE_LIMIT_LOG_LIMIT)
+        .pluck(:content)
+
+      # Precompute normalized prompt lines once rather than re-parsing per chunk.
+      normalized_prompt = normalize_output_text(prompt)
+      prompt_lines = if normalized_prompt.present?
+        normalized_prompt.each_line.map do |line|
+          normalize_output_line(line, strip_prompt_prefixes: true)
+        end.reject(&:blank?).to_set
+      else
+        Set.new
+      end
+
+      normalized_chunks = chunks.filter_map do |chunk|
+        stripped = strip_prompt_echo_with(chunk, prompt, normalized_prompt, prompt_lines).strip
+        next if stripped.blank?
+
+        stripped
+      end
+
+      # Join chunks with spaces so patterns can match across chunk
+      # boundaries (e.g. "Free tier" + " limit reached"). A keyword split
+      # mid-word across chunks (e.g. "quo" + "ta exceeded") would produce
+      # "quo ta exceeded" and miss the match — acceptably unlikely in practice.
+      normalized_chunks.reverse.join(" ")
+    end
+
+    # Variant of strip_prompt_echo that accepts precomputed prompt data
+    # to avoid re-parsing per chunk in hot loops.
+    def strip_prompt_echo_with(output, prompt, normalized_prompt, prompt_lines)
+      output = normalize_output_text(output)
+      return output if output.blank? || normalized_prompt.blank?
+
+      sanitized_output = output.gsub(prompt, "")
+      sanitized_output.each_line.filter_map do |line|
+        normalized_line = normalize_output_line(line, strip_prompt_prefixes: true)
+        next if normalized_line.blank? || prompt_lines.include?(normalized_line)
+
+        line.rstrip
+      end.join("\n").strip
+    end
 
     # Attempts to parse a rate limit reset time from the output.
     # Falls back to 1 hour from now if not parseable.
