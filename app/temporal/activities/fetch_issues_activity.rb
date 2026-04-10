@@ -43,7 +43,9 @@ module Activities
         latest_updated = github_issues.filter_map { |gi| gi.updated_at }.max
         if latest_updated
           inclusive_cursor = latest_updated - 1.second
-          new_watermark = if project.last_issue_sync_at && inclusive_cursor <= project.last_issue_sync_at
+          # `incremental` is only true when `last_issue_sync_at` is present,
+          # so the nil-guard is unnecessary here.
+          new_watermark = if inclusive_cursor <= project.last_issue_sync_at
             latest_updated
           else
             inclusive_cursor
@@ -57,6 +59,8 @@ module Activities
       # Exclude closed issues from downstream processing (DetectLabelsActivity).
       # sync_issue already persisted their github_state to the DB, but passing
       # them downstream could incorrectly trigger agent runs for closed work.
+      # Note: parse_issue_relationships receives all synced_issues (including
+      # closed), but filters to github_state: "open" internally (line 227).
       open_issues = synced_issues.reject { |si| si[:github_state] == "closed" }
 
       # During incremental fetches, issues whose `updated_at` did not change
@@ -70,6 +74,7 @@ module Activities
         rescannable = project.issues
           .where(github_state: "open", paid_state: %w[new needs_input recommend_close])
           .where.not(id: fetched_ids.to_a)
+          .limit(200)
           .pluck(:id, :github_number, :github_state)
 
         rescannable.each do |id, github_number, github_state|
@@ -161,6 +166,8 @@ module Activities
           # means stale-closure is conservatively skipped — already safe — so
           # skip the extra API call to avoid unnecessary rate-limit pressure.
           if since
+            # `page` was already incremented to DEFAULT_MAX_PAGES + 1 on
+            # line above, so this probes the next page beyond the cap.
             probe_opts = opts.merge(page: page)
             truncated = client.issues(repo_full_name, **probe_opts).any?
           else
