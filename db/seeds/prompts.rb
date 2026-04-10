@@ -553,9 +553,11 @@ upsert_global_prompt.call(
 # Used by: Activities::RunAgentActivity#augment_prompt_for_review_goal
 #
 # IMPORTANT: This template instructs the agent to post a clean-review body
-# starting with the EXACT phrase "Generated no new comments." which matches
-# ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN. If that matcher pattern
-# changes, update this template AND the FALLBACK constant in
+# starting with the EXACT phrase "Generated no new comments." and including
+# the exact HTML marker "<!-- paid-review-signal: clean -->". Those match
+# ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN and
+# ScanPaidPrsActivity::REVIEW_BOT_PAID_CLEAN_PATTERN respectively. If either
+# matcher changes, update this template AND the FALLBACK constant in
 # Activities::RunAgentActivity together.
 # ----------------------------------------------------------------------------
 upsert_global_prompt.call(
@@ -638,14 +640,16 @@ upsert_global_prompt.call(
 
     # Case B — clean PR, no actionable issues: post a single review with an EMPTY
     # comments array and a body that begins with the EXACT phrase
-    # "Generated no new comments." This phrase is the signal Paid uses to mark
-    # the review as clean and stop the review loop. Do NOT paraphrase it.
+    # "Generated no new comments." and includes the exact HTML comment
+    # "<!-- paid-review-signal: clean -->" on a new line. These are the
+    # machine-readable signals Paid uses to mark the review as clean and stop
+    # the review loop. Do NOT paraphrase either signal.
     curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/reviews" \
       -H "Content-Type: application/json" \
       -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
       -H "X-Proxy-Token: $PROXY_TOKEN" \
       -d '{
-        "body": "Generated no new comments. The PR looks ready as-is.",
+        "body": "Generated no new comments. The PR looks ready as-is.\n<!-- paid-review-signal: clean -->",
         "event": "COMMENT",
         "comments": []
       }'

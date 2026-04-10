@@ -977,10 +977,12 @@ module Activities
     # The "Generated no new comments." phrase in the template below is
     # matched (case-insensitive) by
     #   ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
-    # which is how Paid recognizes a clean review and stops the review loop.
-    # spec/db/seeds_prompts_spec.rb has a coupling spec — if you change the
-    # matcher pattern, update the seed AND this constant together or the spec
-    # will fail.
+    # and the HTML comment marker is matched by
+    #   ScanPaidPrsActivity::REVIEW_BOT_PAID_CLEAN_PATTERN = /<!-- paid-review-signal: clean -->/
+    # Together they let Paid recognize a clean review and stop the review
+    # loop. spec/db/seeds_prompts_spec.rb has coupling specs — if you change
+    # either matcher pattern, update the seed AND this constant together or
+    # the spec will fail.
     FALLBACK_REVIEW_GOAL_PROMPT = <<~'AUGMENTED'
       {{base_prompt}}
 
@@ -1056,14 +1058,16 @@ module Activities
 
       # Case B — clean PR, no actionable issues: post a single review with an EMPTY
       # comments array and a body that begins with the EXACT phrase
-      # "Generated no new comments." This phrase is the signal Paid uses to mark
-      # the review as clean and stop the review loop. Do NOT paraphrase it.
+      # "Generated no new comments." and includes the exact HTML comment
+      # "<!-- paid-review-signal: clean -->" on a new line. These are the
+      # machine-readable signals Paid uses to mark the review as clean and
+      # stop the review loop. Do NOT paraphrase either signal.
       curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/reviews" \
         -H "Content-Type: application/json" \
         -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
         -H "X-Proxy-Token: $PROXY_TOKEN" \
         -d '{
-          "body": "Generated no new comments. The PR looks ready as-is.",
+          "body": "Generated no new comments. The PR looks ready as-is.\n<!-- paid-review-signal: clean -->",
           "event": "COMMENT",
           "comments": []
         }'
