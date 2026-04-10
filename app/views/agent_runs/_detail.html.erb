@@ -88,44 +88,49 @@
         </dd>
       </div>
 
-      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Tokens</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-          <%= number_with_delimiter((agent_run.tokens_input || 0) + (agent_run.tokens_output || 0)) %>
-        </dd>
-        <% limit = agent_run.effective_max_tokens_per_run %>
-        <% if limit && limit > 0 %>
-          <% total_tokens = agent_run.total_tokens || 0 %>
-          <% ratio = total_tokens.to_f / limit %>
-          <% raw_percent = (ratio * 100).round(1) %>
-          <% bar_percent = [raw_percent, 100].min %>
-          <% warning_ratio = agent_run.project.token_limit_warning_threshold / 100.0 %>
-          <% limit_exceeded = ratio >= 1.0 %>
-          <% limit_warning = !limit_exceeded && ratio >= warning_ratio %>
-          <div class="mt-2">
-            <div class="flex items-center justify-between text-xs text-gray-500">
-              <span><%= raw_percent %>% of limit</span>
-              <span><%= number_with_delimiter(limit) %></span>
+      <% total_tokens_display = (agent_run.tokens_input || 0) + (agent_run.tokens_output || 0) %>
+      <% if total_tokens_display > 0 %>
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Tokens</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= number_with_delimiter(total_tokens_display) %>
+          </dd>
+          <% limit = agent_run.effective_max_tokens_per_run %>
+          <% if limit && limit > 0 %>
+            <% total_tokens = agent_run.total_tokens || 0 %>
+            <% ratio = total_tokens.to_f / limit %>
+            <% raw_percent = (ratio * 100).round(1) %>
+            <% bar_percent = [raw_percent, 100].min %>
+            <% warning_ratio = agent_run.project.token_limit_warning_threshold / 100.0 %>
+            <% limit_exceeded = ratio >= 1.0 %>
+            <% limit_warning = !limit_exceeded && ratio >= warning_ratio %>
+            <div class="mt-2">
+              <div class="flex items-center justify-between text-xs text-gray-500">
+                <span><%= raw_percent %>% of limit</span>
+                <span><%= number_with_delimiter(limit) %></span>
+              </div>
+              <div class="mt-1 h-2 w-full rounded-full bg-gray-200">
+                <div class="h-2 rounded-full <%= limit_exceeded ? 'bg-red-500' : limit_warning ? 'bg-yellow-500' : 'bg-green-500' %>"
+                     style="width: <%= bar_percent %>%"></div>
+              </div>
+              <% if limit_exceeded %>
+                <p class="mt-1 text-xs font-medium text-red-600">Limit exceeded</p>
+              <% elsif limit_warning %>
+                <p class="mt-1 text-xs font-medium text-yellow-600">Approaching limit</p>
+              <% end %>
             </div>
-            <div class="mt-1 h-2 w-full rounded-full bg-gray-200">
-              <div class="h-2 rounded-full <%= limit_exceeded ? 'bg-red-500' : limit_warning ? 'bg-yellow-500' : 'bg-green-500' %>"
-                   style="width: <%= bar_percent %>%"></div>
-            </div>
-            <% if limit_exceeded %>
-              <p class="mt-1 text-xs font-medium text-red-600">Limit exceeded</p>
-            <% elsif limit_warning %>
-              <p class="mt-1 text-xs font-medium text-yellow-600">Approaching limit</p>
-            <% end %>
-          </div>
-        <% end %>
-      </div>
+          <% end %>
+        </div>
+      <% end %>
 
-      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Cost</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-          $<%= format("%.2f", (agent_run.cost_cents || 0) / 100.0) %>
-        </dd>
-      </div>
+      <% if (agent_run.cost_cents || 0) > 0 %>
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Cost</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            $<%= format("%.2f", agent_run.cost_cents / 100.0) %>
+          </dd>
+        </div>
+      <% end %>
     </dl>
   </div>
 
