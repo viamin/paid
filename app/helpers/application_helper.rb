@@ -151,6 +151,40 @@ module ApplicationHelper
     )
   end
 
+  REVIEW_METHOD_STYLES = {
+    "codex" => { bg: "bg-amber-100", text: "text-amber-700", label: "Codex" },
+    "manual" => { bg: "bg-sky-100", text: "text-sky-700", label: "Manual" },
+    "copilot" => { bg: "bg-blue-100", text: "text-blue-700", label: "GitHub Copilot" },
+    "paid_agent" => { bg: "bg-purple-100", text: "text-purple-700", label: "Paid Agent" },
+    "ci_action" => { bg: "bg-teal-100", text: "text-teal-700", label: "CI Action" }
+  }.freeze
+
+  # Validate at load time that every Project::REVIEW_METHODS entry has a style defined.
+  # This catches drift immediately rather than silently rendering missing badges.
+  Rails.application.config.after_initialize do
+    missing = Project::REVIEW_METHODS - REVIEW_METHOD_STYLES.keys
+    if missing.any?
+      if Rails.env.local?
+        raise "REVIEW_METHOD_STYLES is missing keys: #{missing}"
+      else
+        Rails.logger.error(message: "REVIEW_METHOD_STYLES is missing keys", missing: missing)
+      end
+    end
+  end
+
+  def review_method_badge(method)
+    styles = REVIEW_METHOD_STYLES[method]
+    unless styles
+      Rails.logger.warn { "review_method_badge: unknown method #{method.inspect}" }
+      return
+    end
+
+    tag.span(
+      styles[:label],
+      class: "inline-flex items-center rounded-md #{styles[:bg]} px-2 py-1 text-xs font-medium #{styles[:text]}"
+    )
+  end
+
   RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq goal_eq branch_name_cont category_eq active_eq name_cont s].freeze
 
   def sort_link_to(label, attribute, q)
