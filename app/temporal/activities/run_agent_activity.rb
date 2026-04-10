@@ -51,12 +51,40 @@ module Activities
       /free tier limit reached/i,
       /(?:you'?ve|you have)\s+hit\s+your\s+limit/i,
       /exhausted\s+your\s+capacity/i,
-      /exhausted.*capacity/i,
+      /exhausted.*capacity/i, # intentionally loose — only used for exit-code failures, not timeout reclassification
+
       /(?:server|system)\s+(?:at\s+)?capacity/i,
       /(?:server|api|service)\s+overloaded/i,
       /out of (?:extra )?usage/i,
       /usage limit/i
     ].freeze
+
+    # Timeout reclassification is intentionally stricter than generic
+    # execution-failure classification because streamed stdout/stderr can
+    # contain ordinary agent prose that mentions rate limiting.
+    # "too many requests" is only matched when accompanied by HTTP 429 or
+    # status code context to avoid false positives from conversational text.
+    #
+    # Note: bare "usage limit" (without exceeded/reached/hit) is deliberately
+    # excluded here — it matches RATE_LIMIT_PATTERNS for exit-code failures
+    # but is too loose for timeout reclassification where the output may
+    # contain conversational text.
+    TIMEOUT_RATE_LIMIT_PATTERNS = [
+      /\bHTTP\s?429\b/i,
+      /\b429\b.*\btoo many requests\b/i,
+      /\btoo many requests\b.*\b429\b/i,
+      /\bstatus[:\s]*429\b/i,
+      /quota exceeded/i,
+      /free tier limit reached/i,
+      /(?:rate.?limit|usage limit) +(?:exceeded|reached|hit)/i,
+      /(?:you'?ve|you have) +hit +your +limit/i,
+      /exhausted(?: +your)? +capacity/i,
+      /out of (?:extra )?usage/i
+    ].freeze
+
+    # Maximum number of log rows to inspect when reclassifying a timeout.
+    # Caps memory and DB load on long-running, verbose agent attempts.
+    TIMEOUT_RATE_LIMIT_LOG_LIMIT = 200
 
     # Default timeouts used when per-user settings are unavailable.
     # Runtime code resolves per-user values via UserSetting.
@@ -225,9 +253,13 @@ module Activities
               )
             end
           rescue InfiniteLoopError => e
+            last_error = "infinite_loop"
+            if cancelled_by_cleanup?(agent_run)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
+              break
+            end
             record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "infinite_loop")
-            last_error = "infinite_loop"
             logger.warn(message: "agent_execution.infinite_loop_detected", agent_run_id: agent_run.id, reason: e.message)
 
             result = Guardrails::ViolationHandler.call(
@@ -248,12 +280,20 @@ module Activities
           rescue ProviderTimeoutError => e
             last_error = "timeout"
             timeout_error ||= e.message
+            if cancelled_by_cleanup?(agent_run)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
+              break
+            end
             record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "timeout")
             logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message)
             break
           rescue ProviderExecutionError => e
             last_error = "error"
+            if cancelled_by_cleanup?(agent_run)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
+              break
+            end
             record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "error")
             logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message)
@@ -282,7 +322,10 @@ module Activities
         # ProcessRunQueueJob to re-schedule work.
         if timeout_error.present?
           agent_run.timeout!(error: timeout_error) unless agent_run.finished?
-          ProcessRunQueueJob.perform_later
+          # Skip queue processing when cleanup killed the run — the timeout
+          # was not a real provider issue, so there is nothing to re-schedule.
+          # (agent_run was reloaded above, so the model method sees current state)
+          ProcessRunQueueJob.perform_later unless agent_run.cancelled_by_cleanup?
         elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_rate_limited)
           provider_list = providers.any? ? provider_attempt_labels(providers, agent_run, user_settings.user).join(", ") : "none"
           agent_run.rate_limit!(
@@ -406,6 +449,31 @@ module Activities
       state.record_failure!(threshold: user_settings.circuit_breaker_failure_threshold)
     end
 
+    # True when the agent run we're executing has already been force-timed-out
+    # by `dev:cleanup` (e.g. `bin/setup --skip-server` killed our container).
+    # In that case the failure we just rescued was caused by the cleanup, not
+    # by the provider, so we must not penalize the provider's circuit breaker.
+    def cancelled_by_cleanup?(agent_run)
+      agent_run.reload
+      agent_run.cancelled_by_cleanup?
+    rescue ActiveRecord::RecordNotFound
+      false
+    end
+
+    # Mirror of the failed-attempt bookkeeping for the cleanup-cancelled case:
+    # records the attempt with a distinct error_type so the UI can show what
+    # happened, but skips both record_provider_failure and the standard warn
+    # log (which would imply a real provider problem).
+    def record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, error)
+      agent_run.record_provider_attempt(attempt_label, success: false, error_type: "cancelled_by_cleanup")
+      logger.info(
+        message: "agent_execution.cancelled_by_cleanup",
+        provider: provider,
+        agent_run_id: agent_run.id,
+        error: error.message
+      )
+    end
+
     # Returns the canonical settings-level provider name for a given agent type.
     def canonical_provider(provider)
       AGENT_TYPE_TO_PROVIDER.fetch(provider, provider)
@@ -452,6 +520,7 @@ module Activities
 
       agent_run.log!("system", "Starting #{provider} agent in container")
       agent_run.log!("system", "Prompt: #{prompt.truncate(500)}")
+      execution_started_at = Time.current
 
       effective_timeout = if agent_run.create_issue_goal?
         user_settings&.issue_goal_timeout_seconds || DEFAULT_ISSUE_GOAL_TIMEOUT
@@ -502,6 +571,15 @@ module Activities
       # Other execution error
       raise ProviderExecutionError, "Agent exited with code #{result[:exit_code]}: #{output.truncate(500)}"
     rescue Containers::Provision::TimeoutError => e
+      # execution_started_at is nil if the timeout fires before execution
+      # begins (e.g. during start!/callbacks); recent_timeout_output
+      # short-circuits on blank.
+      timeout_output = recent_timeout_output(agent_run, since: execution_started_at, prompt: prompt)
+      if timeout_rate_limit_error?(timeout_output)
+        reset_at = parse_rate_limit_reset(timeout_output)
+        raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+      end
+
       timeout_type = case e
       when Containers::Provision::StartupTimeoutError then "startup"
       when Containers::Provision::IdleTimeoutError then "idle"
@@ -522,6 +600,12 @@ module Activities
       return false if output.blank?
 
       RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
+    end
+
+    def timeout_rate_limit_error?(output)
+      return false if output.blank?
+
+      TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
     end
 
     def strip_prompt_echo(output, prompt)
@@ -552,6 +636,55 @@ module Activities
     end
 
     include OutputSanitizer
+
+    def recent_timeout_output(agent_run, since:, prompt:)
+      return "" if since.blank?
+
+      chunks = agent_run.agent_run_logs
+        .where(log_type: %w[stdout stderr])
+        .where("created_at >= ?", since)
+        .order(created_at: :desc, id: :desc)
+        .limit(TIMEOUT_RATE_LIMIT_LOG_LIMIT)
+        .pluck(:content)
+
+      # Precompute normalized prompt lines once rather than re-parsing per chunk.
+      normalized_prompt = normalize_output_text(prompt)
+      prompt_lines = if normalized_prompt.present?
+        normalized_prompt.each_line.map do |line|
+          normalize_output_line(line, strip_prompt_prefixes: true)
+        end.reject(&:blank?).to_set
+      else
+        Set.new
+      end
+
+      normalized_chunks = chunks.filter_map do |chunk|
+        stripped = strip_prompt_echo_with(chunk, prompt, normalized_prompt, prompt_lines).strip
+        next if stripped.blank?
+
+        stripped
+      end
+
+      # Join chunks with spaces so patterns can match across chunk
+      # boundaries (e.g. "Free tier" + " limit reached"). A keyword split
+      # mid-word across chunks (e.g. "quo" + "ta exceeded") would produce
+      # "quo ta exceeded" and miss the match — acceptably unlikely in practice.
+      normalized_chunks.reverse.join(" ")
+    end
+
+    # Variant of strip_prompt_echo that accepts precomputed prompt data
+    # to avoid re-parsing per chunk in hot loops.
+    def strip_prompt_echo_with(output, prompt, normalized_prompt, prompt_lines)
+      output = normalize_output_text(output)
+      return output if output.blank? || normalized_prompt.blank?
+
+      sanitized_output = output.gsub(prompt, "")
+      sanitized_output.each_line.filter_map do |line|
+        normalized_line = normalize_output_line(line, strip_prompt_prefixes: true)
+        next if normalized_line.blank? || prompt_lines.include?(normalized_line)
+
+        line.rstrip
+      end.join("\n").strip
+    end
 
     # Attempts to parse a rate limit reset time from the output.
     # Falls back to 1 hour from now if not parseable.
@@ -923,135 +1056,196 @@ module Activities
       end
     end
 
+    # Goal-augmentation prompts.
+    #
+    # The active templates live in db/seeds/prompts.rb under the slugs
+    # `goal.create_github_issue` and `goal.review_pull_request`. The
+    # FALLBACK_* constants below are the safety net used when the seeded
+    # row is missing or deactivated; they must stay in sync with the seeds.
+    # spec/db/seeds_prompts_spec.rb asserts both pairs match.
+    ISSUE_GOAL_PROMPT_SLUG = "goal.create_github_issue"
+
+    FALLBACK_ISSUE_GOAL_PROMPT = <<~'AUGMENTED'
+      {{base_prompt}}
+
+      ---
+      IMPORTANT: Your goal is to CREATE A GITHUB ISSUE, not to write code or create a PR.
+
+      You have access to the GitHub API via a proxy. Use curl to create the issue.
+
+      IMPORTANT: Do NOT pass JSON inline with a single-quoted -d '...'. The body will contain
+      markdown with apostrophes (single quotes) and possibly newlines that break shell quoting.
+      Instead, write the JSON payload to a temporary file and use --data-binary @file:
+
+      ```bash
+      tmpfile=$(mktemp)
+      cat > "$tmpfile" <<'ISSUE_JSON'
+      {
+        "title": "Issue title",
+        "body": "Issue description with `code` and apostrophes",
+        "labels": []
+      }
+      ISSUE_JSON
+      curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/issues" \
+        -H "Content-Type: application/json" \
+        -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+        -H "X-Proxy-Token: $PROXY_TOKEN" \
+        --data-binary @"$tmpfile"
+      rm -f "$tmpfile"
+      ```
+
+      Available endpoints:
+      - GET  $GITHUB_API_URL/repos/{{repo}}/issues — list issues
+      - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{number} — get issue
+      - POST $GITHUB_API_URL/repos/{{repo}}/issues — create issue
+      - PATCH $GITHUB_API_URL/repos/{{repo}}/issues/{number} — update issue
+      - POST $GITHUB_API_URL/repos/{{repo}}/issues/{number}/comments — add comment
+      - POST $GITHUB_API_URL/repos/{{repo}}/issues/{number}/labels — add labels
+
+      Do NOT push code or create a pull request. Only create the GitHub issue.
+    AUGMENTED
+
+    REVIEW_GOAL_PROMPT_SLUG = "goal.review_pull_request"
+
+    # The "Generated no new comments." phrase in the template below is
+    # matched (case-insensitive) by
+    #   ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
+    # which is how Paid recognizes a clean review and stops the review loop.
+    # spec/db/seeds_prompts_spec.rb has a coupling spec — if you change the
+    # matcher pattern, update the seed AND this constant together or the spec
+    # will fail.
+    FALLBACK_REVIEW_GOAL_PROMPT = <<~'AUGMENTED'
+      {{base_prompt}}
+
+      ---
+      IMPORTANT: Your goal is to REVIEW A PULL REQUEST, not to write code, create issues, or create PRs.
+
+      Review PR #{{pr_number}} in {{repo}}. Examine the code changes and post a review on the PR.
+
+      You have access to the repository code (already cloned). To examine the code changes, either:
+      - Use the GitHub API (via the proxy) to retrieve the PR's `/pulls/{{pr_number}}/files` patches and review those diffs; or
+      - From the cloned repo, run an explicit diff against the PR base, for example:
+        `git fetch origin` then `git diff "$(git merge-base HEAD origin/main)"...HEAD`
+        (replace `main` with the PR's actual base branch if different).
+      You also have access to the GitHub API via a proxy for posting review comments.
+
+      Review the code for:
+      1. **Performance** — inefficient algorithms, N+1 queries, unnecessary allocations, missing caching
+      2. **Security** — SQL injection, XSS, insecure deserialization, secrets in code
+      3. **Best practices** — language/framework idioms, error handling, naming
+      4. **Project code style** — adherence to existing conventions, indentation, file organization
+      5. **Scope violations** — changes unrelated to the linked issue, unnecessary refactoring, feature creep
+      6. **Issue linkage** — verify the PR actually addresses the issue it claims to fix
+
+      # Comment policy — read carefully
+
+      Inline comments are reserved **exclusively for actionable changes**: security,
+      correctness, performance, scope, or style problems that require the author to
+      edit code. Do **not** post praise-only comments, "looks good" notes, "nice
+      refactor" remarks, or any inline comment that does not request a concrete
+      change. If you have nothing actionable to say about a hunk, do not comment on it.
+
+      A clean PR with zero issues is a valid and expected outcome. Do not invent
+      nitpicks to justify having posted a review.
+
+      Use GitHub's suggestion block syntax for concrete fixes:
+      ````
+      ```suggestion
+      corrected code here
+      ```
+      ````
+
+      Post your review using the GitHub API proxy:
+
+      ```bash
+      # Get PR details (metadata and links)
+      curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}" \
+        -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+        -H "X-Proxy-Token: $PROXY_TOKEN"
+
+      # Get PR files
+      curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/files" \
+        -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+        -H "X-Proxy-Token: $PROXY_TOKEN"
+
+      # Case A — actionable issues found: post a review with inline comments.
+      # Note: "side" must be "RIGHT" (new code) or "LEFT" (deleted code).
+      curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/reviews" \
+        -H "Content-Type: application/json" \
+        -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+        -H "X-Proxy-Token: $PROXY_TOKEN" \
+        -d '{
+          "body": "Overall summary of the actionable issues found",
+          "event": "COMMENT",
+          "comments": [
+            {
+              "path": "file.rb",
+              "line": 10,
+              "side": "RIGHT",
+              "body": "Actionable change request on this line"
+            }
+          ]
+        }'
+
+      # Case B — clean PR, no actionable issues: post a single review with an EMPTY
+      # comments array and a body that begins with the EXACT phrase
+      # "Generated no new comments." This phrase is the signal Paid uses to mark
+      # the review as clean and stop the review loop. Do NOT paraphrase it.
+      curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/reviews" \
+        -H "Content-Type: application/json" \
+        -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+        -H "X-Proxy-Token: $PROXY_TOKEN" \
+        -d '{
+          "body": "Generated no new comments. The PR looks ready as-is.",
+          "event": "COMMENT",
+          "comments": []
+        }'
+      ```
+
+      IMPORTANT: You MUST post exactly one PR review via the
+      `/pulls/{{pr_number}}/reviews` endpoint — either Case A (with inline
+      actionable comments) or Case B (clean review). This is how your review is
+      tracked as complete. Standalone PR comments via
+      `/issues/{{pr_number}}/comments` do NOT satisfy the review requirement.
+
+      Available endpoints:
+      - GET  $GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}} — get PR details
+      - GET  $GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/files — list changed files
+      - POST $GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/reviews — create review (REQUIRED, exactly once)
+      - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{number} — get linked issue details
+
+      Do NOT push code, create issues, or create new pull requests. Only post the review on PR #{{pr_number}}.
+    AUGMENTED
+
     def augment_prompt_for_issue_goal(agent_run, prompt)
-      repo = validated_repo_name(agent_run)
-      <<~AUGMENTED
-        #{prompt}
-
-        ---
-        IMPORTANT: Your goal is to CREATE A GITHUB ISSUE, not to write code or create a PR.
-
-        You have access to the GitHub API via a proxy. Use curl to create the issue.
-
-        IMPORTANT: Do NOT pass JSON inline with a single-quoted -d '...'. The body will contain
-        markdown with apostrophes (single quotes) and possibly newlines that break shell quoting.
-        Instead, write the JSON payload to a temporary file and use --data-binary @file:
-
-        ```bash
-        tmpfile=$(mktemp)
-        cat > "$tmpfile" <<'ISSUE_JSON'
-        {
-          "title": "Issue title",
-          "body": "Issue description with `code` and apostrophes",
-          "labels": []
-        }
-        ISSUE_JSON
-        curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/#{repo}/issues" \\
-          -H "Content-Type: application/json" \\
-          -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
-          -H "X-Proxy-Token: $PROXY_TOKEN" \\
-          --data-binary @"$tmpfile"
-        rm -f "$tmpfile"
-        ```
-
-        Available endpoints:
-        - GET  $GITHUB_API_URL/repos/#{repo}/issues — list issues
-        - GET  $GITHUB_API_URL/repos/#{repo}/issues/{number} — get issue
-        - POST $GITHUB_API_URL/repos/#{repo}/issues — create issue
-        - PATCH $GITHUB_API_URL/repos/#{repo}/issues/{number} — update issue
-        - POST $GITHUB_API_URL/repos/#{repo}/issues/{number}/comments — add comment
-        - POST $GITHUB_API_URL/repos/#{repo}/issues/{number}/labels — add labels
-
-        Do NOT push code or create a pull request. Only create the GitHub issue.
-      AUGMENTED
+      vars = { base_prompt: prompt, repo: validated_repo_name(agent_run) }
+      Prompts::Render.call(
+        slug: ISSUE_GOAL_PROMPT_SLUG,
+        project: agent_run.project,
+        variables: vars,
+        fallback: -> { Prompts::Render.interpolate(FALLBACK_ISSUE_GOAL_PROMPT, vars) }
+      )
     end
 
     def augment_prompt_for_review_goal(agent_run, prompt)
-      repo = validated_repo_name(agent_run)
       pr_number = agent_run.source_pull_request_number
-      <<~AUGMENTED
-        #{prompt}
+      raise Temporalio::Error::ApplicationError.new(
+        "Review goal requires source_pull_request_number",
+        type: "MissingPRNumber",
+        non_retryable: true
+      ) unless pr_number
 
-        ---
-        IMPORTANT: Your goal is to REVIEW A PULL REQUEST, not to write code, create issues, or create PRs.
-
-        Review PR ##{pr_number} in #{repo}. Examine the code changes and post review comments on the PR.
-
-        You have access to the repository code (already cloned). To examine the code changes, either:
-        - Use the GitHub API (via the proxy) to retrieve the PR's `/pulls/#{pr_number}/files` patches and review those diffs; or
-        - From the cloned repo, run an explicit diff against the PR base, for example:
-          `git fetch origin` then `git diff "$(git merge-base HEAD origin/main)"...HEAD`
-          (replace `main` with the PR's actual base branch if different).
-        You also have access to the GitHub API via a proxy for posting review comments.
-
-        Review the code for:
-        1. **Performance** — inefficient algorithms, N+1 queries, unnecessary allocations, missing caching
-        2. **Security** — SQL injection, XSS, insecure deserialization, secrets in code
-        3. **Best practices** — language/framework idioms, error handling, naming
-        4. **Project code style** — adherence to existing conventions, indentation, file organization
-        5. **Scope violations** — changes unrelated to the linked issue, unnecessary refactoring, feature creep
-        6. **Issue linkage** — verify the PR actually addresses the issue it claims to fix
-
-        Use GitHub's suggestion block syntax for concrete fixes:
-        ````
-        ```suggestion
-        corrected code here
-        ```
-        ````
-
-        Post your review using the GitHub API proxy:
-
-        ```bash
-        # Get PR details (metadata and links)
-        curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}" \\
-          -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
-          -H "X-Proxy-Token: $PROXY_TOKEN"
-
-        # Get PR files
-        curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}/files" \\
-          -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
-          -H "X-Proxy-Token: $PROXY_TOKEN"
-
-        # Post a review with inline comments
-        # Note: "side" must be "RIGHT" (new code) or "LEFT" (deleted code) for inline comments.
-        curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}/reviews" \\
-          -H "Content-Type: application/json" \\
-          -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
-          -H "X-Proxy-Token: $PROXY_TOKEN" \\
-          -d '{
-            "body": "Overall summary of the review",
-            "event": "COMMENT",
-            "comments": [
-              {
-                "path": "file.rb",
-                "line": 10,
-                "side": "RIGHT",
-                "body": "Review comment on this line"
-              }
-            ]
-          }'
-
-        # Post a standalone comment on the PR (optional, supplementary only)
-        curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/#{repo}/issues/#{pr_number}/comments" \\
-          -H "Content-Type: application/json" \\
-          -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
-          -H "X-Proxy-Token: $PROXY_TOKEN" \\
-          -d '{"body": "Summary review comment"}'
-        ```
-
-        IMPORTANT: You MUST post at least one PR review via the `/pulls/#{pr_number}/reviews`
-        endpoint. This is how your review is tracked as complete. Standalone PR comments
-        via `/issues/#{pr_number}/comments` are optional and do NOT satisfy the review requirement.
-
-        Available endpoints:
-        - GET  $GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number} — get PR details
-        - GET  $GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}/files — list changed files
-        - POST $GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}/reviews — create review with inline comments (REQUIRED)
-        - POST $GITHUB_API_URL/repos/#{repo}/issues/#{pr_number}/comments — post PR comment (optional)
-        - GET  $GITHUB_API_URL/repos/#{repo}/issues/{number} — get linked issue details
-
-        Do NOT push code, create issues, or create new pull requests. Only post review comments on PR ##{pr_number}.
-      AUGMENTED
+      vars = {
+        base_prompt: prompt,
+        repo: validated_repo_name(agent_run),
+        pr_number: pr_number.to_s
+      }
+      Prompts::Render.call(
+        slug: REVIEW_GOAL_PROMPT_SLUG,
+        project: agent_run.project,
+        variables: vars,
+        fallback: -> { Prompts::Render.interpolate(FALLBACK_REVIEW_GOAL_PROMPT, vars) }
+      )
     end
 
     def validated_repo_name(agent_run)

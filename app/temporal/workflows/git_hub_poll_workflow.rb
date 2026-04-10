@@ -196,6 +196,12 @@ module Workflows
         handle_paid_agent_review_pending(project_id, pr_data, trigger_types)
       elsif trigger_types.include?("review_bot_review_pending")
         handle_review_bot_review_pending(project_id, pr_data, trigger_types)
+      elsif trigger_types.include?("manual_review_pending") || trigger_types.include?("ci_action_pending")
+        # NOTE: when both review_bot_review_pending and manual/ci_action triggers
+        # are present, the bot handler above runs first and the non-bot handler is
+        # deferred to the next scan cycle. This is intentional — bot review
+        # completes before requesting human review or awaiting CI actions.
+        handle_non_bot_review_pending(project_id, pr_data, trigger_types)
       elsif pr_data[:phase].in?(%w[draft restarted])
         start_draft_followup_workflow(project_id, pr_data)
       else
@@ -267,6 +273,32 @@ module Workflows
         end
         return
       end
+
+      if pr_data[:phase].in?(%w[draft restarted])
+        start_draft_followup_workflow(project_id, pr_data)
+      else
+        start_pr_followup_workflow(project_id, pr_data)
+      end
+    end
+
+    def handle_non_bot_review_pending(project_id, pr_data, trigger_types)
+      # For manual_review_pending, request a review from the configured reviewer.
+      # For ci_action_pending, there is nothing to dispatch — the PR stays
+      # in its current phase until the configured action posts a result.
+      manual_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "manual_review_pending" }
+      if manual_trigger
+        login = manual_trigger[:reviewer_login]
+        if login.present?
+          request_review(project_id, pr_data[:pr_number],
+            [ login ],
+            log_key: "pr_review.request_manual_review_failed")
+        end
+      end
+
+      # If there are other actionable triggers beyond the non-bot gates,
+      # start a followup workflow to address them.
+      other_triggers = trigger_types - %w[manual_review_pending ci_action_pending]
+      return if other_triggers.empty?
 
       if pr_data[:phase].in?(%w[draft restarted])
         start_draft_followup_workflow(project_id, pr_data)
