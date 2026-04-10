@@ -65,6 +65,8 @@ module Llm
         summary: @summary.truncate(MAX_SUMMARY_INPUT, omission: "")
       }
 
+      # No project: passed — callers don't always have project context, and
+      # this prompt is unlikely to need project-level overrides.
       Prompts::Render.call(
         slug: PROMPT_SLUG,
         variables: vars,
