@@ -2804,7 +2804,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "scans PRs that have never been scanned" do
         unchanged_pr.update_column(:last_pr_scan_at, nil)
         stub_github_for_pr
-        result = activity.execute(project_id: project.id)
+        activity.execute(project_id: project.id)
 
         expect(unchanged_pr.reload.last_pr_scan_at).to be_present
       end
@@ -2815,7 +2815,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           last_pr_scan_at: 1.hour.ago
         )
         stub_github_for_pr
-        result = activity.execute(project_id: project.id)
+        activity.execute(project_id: project.id)
 
         expect(unchanged_pr.reload.last_pr_scan_at).to be > 1.minute.ago
       end
@@ -2826,7 +2826,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           source_pull_request_number: 42,
           completed_at: 30.minutes.ago)
         stub_github_for_pr
-        result = activity.execute(project_id: project.id)
+        activity.execute(project_id: project.id)
 
         expect(unchanged_pr.reload.last_pr_scan_at).to be_present
       end
@@ -2840,13 +2840,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         }.to change { unchanged_pr.reload.last_pr_scan_at }.from(nil)
       end
 
-      it "does not update last_pr_scan_at when triggers are emitted" do
+      it "updates last_pr_scan_at even when triggers are emitted" do
         unchanged_pr.update_columns(last_pr_scan_at: nil, github_updated_at: Time.current)
         stub_github_for_pr(checks: [ { name: "ci", conclusion: "failure" } ])
 
         expect {
           activity.execute(project_id: project.id)
-        }.not_to change { unchanged_pr.reload.last_pr_scan_at }
+        }.to change { unchanged_pr.reload.last_pr_scan_at }.from(nil)
       end
 
       it "does not update last_pr_scan_at when an active run exists" do

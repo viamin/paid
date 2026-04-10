@@ -59,12 +59,7 @@ module Activities
         # API failures prevented full evaluation.
         next nil if result == :skipped
         scanned_count += 1
-        # Only stamp last_pr_scan_at when no triggers were emitted. When
-        # triggers fire, downstream actions (queueing runs, requesting
-        # reviews) may still fail; stamping now would cause
-        # skip_unchanged_pr? to suppress future scans before those actions
-        # are retried.
-        issue.update_column(:last_pr_scan_at, Time.current) if result.nil?
+        issue.update_column(:last_pr_scan_at, Time.current)
         result
       end
 
