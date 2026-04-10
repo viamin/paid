@@ -1,8 +1,0 @@
-{
-  "packages": {
-    ".": {
-      "release-type": "ruby",
-      "version-file": "lib/ruby_maat/version.rb"
-    }
-  }
-}

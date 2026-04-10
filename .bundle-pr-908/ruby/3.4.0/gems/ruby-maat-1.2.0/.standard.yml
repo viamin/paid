@@ -1,3 +1,0 @@
-ignore:
-  - 'codeql-repo/**/*'
-  - 'ruby-maat-codeql-db*/**/*'
