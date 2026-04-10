@@ -31,12 +31,18 @@ module Activities
       if custom_prompt.blank? && issue.present? && issue.trusted?
         prompt_version = Prompts::Resolve.call(slug: "coding.issue_implementation", project: project)
         if prompt_version
+          # The activity appends a full `# Service Environment` section after
+          # the rendered template (see below), so we suppress the inline
+          # `{{setup_database_instruction}}` slot to avoid duplicating the
+          # database setup line. BuildForIssue uses the opposite split: it
+          # fills the inline slot and skips the header in the appended block.
           rendered_prompt = prompt_version.render(
             title: issue.title,
             issue_number: issue.github_number.to_s,
             body: issue.body.to_s,
             test_command: test_command_for(project),
-            lint_command: lint_command_for(project)
+            lint_command: lint_command_for(project),
+            setup_database_instruction: ""
           )
           custom_prompt = [
             rendered_prompt,

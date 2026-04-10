@@ -203,6 +203,36 @@ dev_supervisor_cleanup_stale_tmux_sockets() {
   fi
 }
 
+dev_supervisor_cleanup_stale_overmind_tmp_dirs() {
+  dev_supervisor_prepare_logging
+
+  local app
+  app="$(dev_supervisor_app_name)"
+  local socket_dir
+  socket_dir="$(dev_supervisor_tmux_socket_dir)"
+
+  local dir
+  local found=0
+  for dir in /tmp/overmind-"${app}"-*; do
+    [ -d "$dir" ] || continue
+    found=1
+
+    local suffix="${dir##*/overmind-"${app}"-}"
+    local socket="${socket_dir}/overmind-${app}-${suffix}"
+    if [ -S "$socket" ] && tmux -S "$socket" ls >/dev/null 2>&1; then
+      dev_supervisor_log_line "$(dev_supervisor_overmind_log)" "Keeping active overmind tmp dir $dir"
+      continue
+    fi
+
+    dev_supervisor_log_line "$(dev_supervisor_overmind_log)" "Removing stale overmind tmp dir $dir"
+    rm -rf "$dir"
+  done
+
+  if [ "$found" -eq 0 ]; then
+    dev_supervisor_log_line "$(dev_supervisor_overmind_log)" "No overmind tmp dirs found in /tmp"
+  fi
+}
+
 dev_supervisor_tmux_sockets() {
   local socket_dir
   socket_dir="$(dev_supervisor_tmux_socket_dir)"
