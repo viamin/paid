@@ -181,6 +181,13 @@ module Activities
           )
         end
       end
+    rescue StandardError => e
+      logger.warn(
+        message: "agent_execution.summary_scope_check_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
     end
 
     # Returns github_numbers of other open issues in the same project,
