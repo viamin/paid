@@ -69,7 +69,7 @@ module Activities
       # blocking dependency was resolved, or project label/trust settings
       # changed. Append locally-open issues in re-scannable states that were
       # not already part of this fetch so the workflow passes them downstream.
-      if incremental
+      if incremental && !truncated
         fetched_ids = open_issues.map { |si| si[:id] }.to_set
         rescannable = project.issues
           .where(github_state: "open", paid_state: %w[new needs_input recommend_close])

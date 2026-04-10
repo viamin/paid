@@ -1057,6 +1057,44 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(returned_ids).not_to include(issue.id)
         expect(result[:issues].size).to eq(1)
       end
+
+      context "when incremental fetch is truncated" do
+        before do
+          allow(github_client).to receive(:issues) do |_repo, **opts|
+            page = opts[:page] || 1
+            if page <= described_class::DEFAULT_MAX_PAGES
+              Array.new(described_class::DEFAULT_PER_PAGE) do |i|
+                offset = (page - 1) * described_class::DEFAULT_PER_PAGE + i
+                OpenStruct.new(
+                  id: 4000 + offset, number: offset + 1,
+                  title: "Issue #{offset + 1}", body: "Body", state: "open",
+                  labels: [ OpenStruct.new(name: "paid-build") ], pull_request: nil,
+                  user: OpenStruct.new(login: "viamin"),
+                  created_at: 2.days.ago, updated_at: 5.minutes.ago
+                )
+              end
+            else
+              [ OpenStruct.new(
+                id: 9999, number: 9999, title: "Probe", body: "Body", state: "open",
+                labels: [], pull_request: nil, user: OpenStruct.new(login: "viamin"),
+                created_at: 2.days.ago, updated_at: 5.minutes.ago
+              ) ]
+            end
+          end
+
+          allow(Rails.logger).to receive(:warn)
+        end
+
+        it "skips local re-scan fallback" do
+          rescannable = create(:issue, project: project, github_issue_id: 5000,
+                               github_number: 50, github_state: "open", paid_state: "new")
+
+          result = activity.execute(project_id: project.id)
+
+          returned_ids = result[:issues].map { |i| i[:id] }
+          expect(returned_ids).not_to include(rescannable.id)
+        end
+      end
     end
 
     context "when project has no last_issue_sync_at (first sync)" do
