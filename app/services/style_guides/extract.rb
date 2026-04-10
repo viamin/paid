@@ -26,8 +26,12 @@ module StyleGuides
       "rust" => "Rust"
     }.freeze
 
-    EXTRACTION_PROMPT = <<~PROMPT
-      You are a senior software engineer. Analyze the following code samples from a %{language} codebase and extract the coding style conventions you observe.
+    PROMPT_SLUG = "style.extract_guide"
+
+    # Fallback used only if the seeded prompt is missing or deactivated.
+    # The active template lives in db/seeds/prompts.rb under PROMPT_SLUG.
+    FALLBACK_PROMPT = <<~PROMPT
+      You are a senior software engineer. Analyze the following code samples from a {{language}} codebase and extract the coding style conventions you observe.
 
       Output a concise style guide covering:
       - Naming conventions (variables, methods, classes, files)
@@ -88,7 +92,12 @@ module StyleGuides
     end
 
     def build_prompt(language, file_samples)
-      header = format(EXTRACTION_PROMPT, language: language)
+      header = Prompts::Render.call(
+        slug: PROMPT_SLUG,
+        project: project,
+        variables: { language: language },
+        fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, { language: language }) }
+      )
       body = file_samples.map { |s| "## #{s[:path]}\n```\n#{s[:content]}\n```" }.join("\n\n")
       "#{header}\n\n#{body}"
     end
