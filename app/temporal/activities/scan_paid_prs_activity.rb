@@ -792,7 +792,7 @@ module Activities
     # ci_action is complete when the configured action_name appears in
     # the check-run list with a "success" conclusion.
     def ci_action_review_complete?(project, checks)
-      action_name = project.review_method_config("ci_action")["action_name"]
+      action_name = project.review_method_config("ci_action").to_h["action_name"]
       if action_name.blank?
         Rails.logger.warn(message: "reviews.ci_action_missing_action_name", project_id: project.id)
         return false
@@ -844,7 +844,7 @@ module Activities
       commit_data&.commit&.committer&.date
     rescue GithubClient::Error => e
       log_signal_error("fetch_head_commit", project,
-        Struct.new(:github_number).new(pr_data&.number), e)
+        Struct.new(:github_number).new(pr_data.number), e)
       nil
     end
 
