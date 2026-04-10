@@ -110,7 +110,7 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       expect(issue.reload.draft_review_count).to eq(3)
     end
 
-    it "records the draft round before transitioning the run out of its active state" do
+    it "records the draft round only after the run completes successfully" do
       issue.update!(pr_review_phase: "draft", draft_review_count: 2)
       agent_run.update!(
         count_toward_draft_review_round: true,
@@ -119,11 +119,13 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
 
       expect(agent_run).to receive(:complete!).ordered.and_wrap_original do |method, **kwargs|
-        expect(issue.reload.draft_review_count).to eq(3)
+        # Draft round must NOT yet be recorded at this point
+        expect(issue.reload.draft_review_count).to eq(2)
         method.call(**kwargs)
       end
 
       activity.execute(agent_run_id: agent_run.id)
+      expect(issue.reload.draft_review_count).to eq(3)
     end
 
     it "handles comment failure gracefully" do
@@ -157,15 +159,18 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       expect(issue.reload.draft_review_count).to eq(2)
     end
 
-    it "does not increment draft_review_count for tracked runs with a non-running status" do
+    it "does not increment draft_review_count when completion fails" do
       issue.update!(pr_review_phase: "draft", draft_review_count: 2)
       agent_run.update!(
-        status: "failed",
         count_toward_draft_review_round: true,
         expected_draft_review_count: 2
       )
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(agent_run).to receive(:complete!).and_raise(ActiveRecord::ConnectionTimeoutError)
 
-      activity.execute(agent_run_id: agent_run.id)
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(ActiveRecord::ConnectionTimeoutError)
 
       expect(issue.reload.draft_review_count).to eq(2)
     end
