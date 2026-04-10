@@ -37,10 +37,6 @@
        end %>
     <% if elapsed %>
       <%= elapsed %>s
-      <% max_exec = agent_run.project.max_execution_seconds %>
-      <% if max_exec %>
-        <span class="text-gray-400">/ <%= max_exec %>s</span>
-      <% end %>
     <% else %>
       <span class="text-gray-400">-</span>
     <% end %>
