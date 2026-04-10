@@ -115,7 +115,8 @@ module Activities
       # other draft comment signals are skipped.
       # Resolve HEAD SHA early so check_review_bot_status can verify
       # clean signals target the current commit. The extra fetch is cheap
-      # relative to other API calls in this path, and ||= ensures at most one.
+      # relative to other API calls in this path, and ||= deduplicates
+      # against the later pr_data fetch at the CI-check stage.
       pr_data ||= fetch_pr_data(client, project, issue)
       current_head_sha = pr_data&.head&.sha
 
@@ -529,7 +530,7 @@ module Activities
 
       case status
       when :clean
-        if head_sha.nil? || latest[:commit_id].nil?
+        if (head_sha.nil?) != (latest[:commit_id].nil?)
           Rails.logger.debug(message: "review_bot.clean_review_missing_commit_info",
             head_sha: head_sha, review_commit_id: latest[:commit_id])
         end
@@ -539,6 +540,8 @@ module Activities
             [ { type: "review_bot_review_pending", details: "Clean review is not on current HEAD commit",
                 request_login: login } ]
           else
+            Rails.logger.debug(message: "review_bot.stale_clean_review_no_requestable_login",
+              review_commit_id: latest[:commit_id], head_sha: head_sha)
             []
           end
         else
@@ -683,8 +686,12 @@ module Activities
 
       # Review predates the run. Wait for a clean re-review on HEAD
       # until the timeout expires, then treat as addressed to avoid
-      # permanent wedges. Hardcoded for now; per-project configurability
-      # deferred until we see whether 30 minutes is sufficient in practice.
+      # permanent wedges. This changes prior behavior (which immediately
+      # treated pre-run reviews as addressed) to block for up to 30 min,
+      # giving the re-review cycle time to complete. For projects with
+      # agent runs exceeding 30 min, the timeout may expire before the
+      # re-review arrives; tie to agent run duration if this proves
+      # insufficient in practice.
       Time.current < cutoff + BODY_ONLY_REVIEW_FOLLOWUP_TIMEOUT
     end
 
