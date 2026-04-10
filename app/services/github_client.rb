@@ -189,6 +189,25 @@ class GithubClient
     end.map(&:filename)
   end
 
+  # Compares two commits and returns the list of changed file paths.
+  #
+  # NOTE: GitHub's compare API returns a maximum of 300 files per response.
+  # For very large diffs (e.g., a rebase onto a distant base), the result
+  # may be silently truncated. This is unlikely for the narrow
+  # commit-to-HEAD diffs this method currently serves, but callers doing
+  # broader comparisons should be aware of the limit.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param base [String] Base commit SHA
+  # @param head [String] Head commit SHA
+  # @return [Array<String>] File paths changed between base and head
+  def compare_changed_files(repo, base, head)
+    handle_errors do
+      comparison = client.compare(repo, base, head)
+      (comparison.files || []).map(&:filename)
+    end
+  end
+
   # Creates an issue on a repository.
   #
   # @param repo [String] Repository in "owner/name" format
@@ -382,9 +401,13 @@ class GithubClient
     handle_errors do
       first_page = client.issue_comments(repo, number, per_page: 100, page: 1)
       last_rel = client.last_response&.rels&.dig(:last)
-      return first_page if last_rel.nil?
 
-      client.get(last_rel.href)
+      unless last_rel
+        return tag_multi_page(first_page, false)
+      end
+
+      last_page = client.get(last_rel.href)
+      tag_multi_page(last_page, true)
     end
   end
 
@@ -452,7 +475,7 @@ class GithubClient
   #
   # @param repo [String] Repository in "owner/name" format
   # @param number [Integer] Pull request number
-  # @return [Array<Hash>] Reviews with :id, :user_login, :state, :body, :submitted_at keys (:body is always a String)
+  # @return [Array<Hash>] Reviews with :id, :user_login, :state, :body, :submitted_at, :commit_id keys (:body is always a String)
   # @raise [NotFoundError] if the pull request does not exist
   def pull_request_reviews(repo, number)
     handle_errors do
@@ -463,7 +486,8 @@ class GithubClient
           user_login: r.user&.login,
           state: r.state,
           body: r.body.to_s,
-          submitted_at: parse_timestamp(r.submitted_at)
+          submitted_at: parse_timestamp(r.submitted_at),
+          commit_id: r.commit_id
         }
       end
     end
@@ -709,7 +733,7 @@ class GithubClient
   # @param number [Integer] Pull request number
   # @param per_page [Integer, nil] When set, fetches a single page of this size
   #   (no auto-pagination). When nil, auto-paginates all comments.
-  # @return [Array<Hash>] Comments with :id, :user_login, :body, :created_at keys
+  # @return [Array<Hash>] Comments with :id, :user_login, :body, :created_at, :path, :pull_request_review_id keys
   def pull_request_review_comments(repo, number, per_page: nil)
     handle_errors do
       comments = if per_page
@@ -724,7 +748,9 @@ class GithubClient
           id: c.id,
           user_login: c.user&.login,
           body: c.body.to_s,
-          created_at: parse_timestamp(c.created_at)
+          created_at: parse_timestamp(c.created_at),
+          path: c.path,
+          pull_request_review_id: c.pull_request_review_id
         }
       end
     end
@@ -749,6 +775,112 @@ class GithubClient
           content: r.content,
           created_at: parse_timestamp(r.created_at)
         }
+      end
+    end
+  end
+
+  # Maximum comments fetched per review thread in the batch GraphQL query.
+  # Threads with more comments will be logged as truncated; reactions on
+  # comments beyond this limit are not captured.
+  MAX_COMMENTS_PER_THREAD = 50
+
+  # Fetches review comments and their reactions in a single GraphQL request.
+  # Replaces N+1 REST calls with one batched query.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param pr_number [Integer] Pull request number
+  # @param max_threads [Integer] Maximum number of review threads to fetch
+  # @return [Array<Hash>] Reactions with :user_login, :content, :created_at keys
+  def review_comment_reactions_batch(repo, pr_number, max_threads: 50)
+    owner, name = repo.split("/", 2)
+    query = <<~GRAPHQL
+      query($owner: String!, $name: String!, $number: Int!, $maxThreads: Int!) {
+        repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) {
+            threads: reviewThreads(first: $maxThreads) {
+              pageInfo { hasNextPage }
+              nodes {
+                comments(first: #{MAX_COMMENTS_PER_THREAD}) {
+                  pageInfo { hasNextPage }
+                  nodes {
+                    databaseId
+                    reactions(first: 100) {
+                      pageInfo { hasNextPage }
+                      nodes {
+                        user { login }
+                        content
+                        createdAt
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    GRAPHQL
+
+    data = graphql_request(
+      query,
+      owner: owner, name: name, number: pr_number, maxThreads: max_threads
+    )
+
+    raise_graphql_errors(data, context: "fetching review reactions for #{repo}##{pr_number}")
+
+    pull_request = data.dig("data", "repository", "pullRequest")
+    unless pull_request
+      Rails.logger.warn(
+        message: "github_client.pull_request_not_found",
+        repo: repo, pr_number: pr_number
+      )
+      return []
+    end
+
+    threads_connection = pull_request["threads"] || {}
+    if threads_connection.dig("pageInfo", "hasNextPage")
+      Rails.logger.warn(
+        message: "github_client.review_threads_truncated",
+        repo: repo, pr_number: pr_number, max_threads: max_threads
+      )
+    end
+
+    threads = threads_connection["nodes"] || []
+    threads.flat_map do |thread|
+      if thread.dig("comments", "pageInfo", "hasNextPage")
+        Rails.logger.warn(
+          message: "github_client.review_thread_comments_truncated",
+          repo: repo, pr_number: pr_number
+        )
+      end
+      comments = thread.dig("comments", "nodes") || []
+      comments.flat_map do |comment|
+        reactions_data = comment["reactions"] || {}
+        if reactions_data.dig("pageInfo", "hasNextPage")
+          # When reactions exceed the GraphQL page size (100), fall back to the
+          # REST endpoint which auto-paginates. This intentionally re-fetches
+          # reactions already returned by GraphQL rather than merging the two
+          # result sets, trading a small amount of redundant data transfer for
+          # simpler, more reliable code.
+          begin
+            pull_request_review_comment_reactions(repo, comment["databaseId"])
+          rescue Error => e
+            Rails.logger.warn(
+              message: "github_client.comment_reaction_fallback_failed",
+              comment_id: comment["databaseId"],
+              error: e.message
+            )
+            []
+          end
+        else
+          (reactions_data["nodes"] || []).map do |r|
+            {
+              user_login: r.dig("user", "login"),
+              content: graphql_reaction_to_rest(r["content"]),
+              created_at: parse_timestamp(r["createdAt"])
+            }
+          end
+        end
       end
     end
   end
@@ -779,7 +911,25 @@ class GithubClient
     rate_limit_remaining < threshold
   end
 
+  # Maps GraphQL ReactionContent enum values to REST API content strings.
+  GRAPHQL_REACTION_MAP = {
+    "THUMBS_UP" => "+1",
+    "THUMBS_DOWN" => "-1",
+    "LAUGH" => "laugh",
+    "HOORAY" => "hooray",
+    "CONFUSED" => "confused",
+    "HEART" => "heart",
+    "ROCKET" => "rocket",
+    "EYES" => "eyes"
+  }.freeze
+
   private
+
+  def tag_multi_page(page, multi)
+    page.instance_variable_set(:@multi_page, multi)
+    page.define_singleton_method(:multi_page?) { @multi_page }
+    page
+  end
 
   def configure_middleware
     client.middleware = Faraday::RackBuilder.new do |builder|
@@ -828,6 +978,14 @@ class GithubClient
     raise AuthenticationError
   rescue Faraday::Error => e
     raise ApiError.new(e.message)
+  end
+
+  def raise_graphql_errors(data, context: nil)
+    return unless data["errors"].present?
+
+    message = data["errors"].map { |e| e["message"] }.join(", ")
+    prefix = context ? "GraphQL error #{context}: " : "GraphQL error: "
+    raise ApiError.new("#{prefix}#{message}")
   end
 
   def graphql_mutation?(query)
@@ -882,11 +1040,7 @@ class GithubClient
     GRAPHQL
 
     data = graphql_request(query, owner: owner, name: name, number: number)
-
-    if data["errors"].present?
-      message = data["errors"].map { |e| e["message"] }.join(", ")
-      raise ApiError.new("GraphQL error resolving #{repo}##{number}: #{message}")
-    end
+    raise_graphql_errors(data, context: "resolving #{repo}##{number}")
 
     data.dig("data", "repository", "pullRequest", "id")
   end
@@ -903,6 +1057,10 @@ class GithubClient
     when Time then value
     when String then Time.parse(value)
     end
+  end
+
+  def graphql_reaction_to_rest(content)
+    GRAPHQL_REACTION_MAP.fetch(content, content)
   end
 
   # Extracts the token expiration from the GitHub API response header.
