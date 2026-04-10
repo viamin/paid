@@ -1249,14 +1249,14 @@ RSpec.describe AgentRun do
     end
 
     it "prioritizes manual runs over automatic runs" do
-      auto = create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
+      create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
       manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
 
       expect(described_class.next_queued_run).to eq(manual)
     end
 
     it "prioritizes auto-continue (PR) runs over auto-picked runs" do
-      auto_picked = create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
+      create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
       auto_continue = create(:agent_run, :queued, trigger_type: "automatic",
         source_pull_request_number: 42, created_at: 1.minute.ago)
 
@@ -1264,14 +1264,14 @@ RSpec.describe AgentRun do
     end
 
     it "prioritizes create_issue over create_pr within the same priority tier" do
-      pr_run = create(:agent_run, :queued, trigger_type: "manual", goal: "create_pr", created_at: 2.minutes.ago)
+      create(:agent_run, :queued, trigger_type: "manual", goal: "create_pr", created_at: 2.minutes.ago)
       issue_run = create(:agent_run, :queued, trigger_type: "manual", goal: "create_issue", created_at: 1.minute.ago)
 
       expect(described_class.next_queued_run).to eq(issue_run)
     end
 
     it "uses FIFO within the same priority tier and goal type" do
-      newer_manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
+      create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
       older_manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 2.minutes.ago)
 
       expect(described_class.next_queued_run).to eq(older_manual)
@@ -1280,7 +1280,7 @@ RSpec.describe AgentRun do
 
   describe ".peek_next_queued_run" do
     it "returns the highest-priority queued run without changing status" do
-      auto = create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
+      create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
       manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
 
       peeked = described_class.peek_next_queued_run
