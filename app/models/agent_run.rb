@@ -14,6 +14,14 @@ class AgentRun < ApplicationRecord
   TOKEN_LIMIT_STATUSES = %w[ok warning exceeded].freeze
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
 
+  # Sentinel prefix written into AgentRun#error_message by `bin/rails dev:cleanup`
+  # when it forcibly times out an in-flight run because the host process is being
+  # restarted (e.g. `bin/setup --skip-server`). Code that observes a run failing
+  # while marked with this prefix should treat the failure as caused by the
+  # cleanup, not by the provider — in particular, do not increment provider
+  # circuit-breaker counters on its behalf.
+  STALE_CLEANUP_ERROR_PREFIX = "Marked stale on startup"
+
   belongs_to :project
   belongs_to :issue, optional: true
   belongs_to :prompt_version, optional: true
@@ -211,7 +219,7 @@ class AgentRun < ApplicationRecord
     user.account.fallback_owner_id == user.id
   end
 
-  # Priority ordering for the run queue:
+  # Priority ordering for the run queue (6 tiers):
   #   0 = P1 user-defined label (highest)
   #   1 = manual runs
   #   2 = P2 user-defined label
@@ -224,6 +232,9 @@ class AgentRun < ApplicationRecord
   # issue OR the source pull request (looked up by source_pull_request_number
   # against the project's issues table). If multiple priority labels are
   # present, the highest takes precedence (P1 > P2 > P3).
+  #
+  # Issue labels in SQL are resolved once via a LATERAL join to avoid
+  # repeated correlated subqueries per priority tier.
   #
   # Within each tier, create_issue runs are prioritized over create_pr
   # runs because issue creation is lighter-weight and often unblocks
@@ -338,58 +349,40 @@ class AgentRun < ApplicationRecord
     indicator ? "#{indicator} - #{priority[:label]}" : priority[:label]
   end
 
-  # Static SQL: does the agent run's associated issue or source PR carry
-  # the project's configured priority label for the named tier? Reads
-  # the per-project label name from `projects.priority_labels` jsonb,
-  # falling back to the literal tier key (P1/P2/P3) when the project's
-  # mapping is empty so behavior matches Project#effective_priority_labels.
-  # `issues.labels` is jsonb; `@>` checks for element containment, and
-  # element matching is case-sensitive on both the SQL and Ruby sides.
-  #
-  # The JOIN uses an OR so the EXISTS check matches either the run's
-  # directly-associated issue OR the issue row representing its source
-  # pull request. When a run has both, labels from both rows are
-  # considered (any priority match wins). This mirrors the Ruby
-  # `compute_label_priority_tier` semantics. Both branches constrain
-  # `i.project_id = agent_runs.project_id`, so cross-project leakage
-  # is impossible even if `issue_id` were ever set across projects.
+  # LATERAL join that aggregates candidate issue labels once per agent run.
+  # Matches the issue either by direct association (issue_id) or by
+  # source_pull_request_number for PR-based runs, merging labels from all
+  # matching rows so a run with both an issue and a source PR considers
+  # labels from both (matching compute_label_priority_tier). Both branches
+  # constrain `i.project_id = agent_runs.project_id`, so cross-project
+  # leakage is impossible even if `issue_id` were ever set across projects.
+  QUEUE_LATERAL_JOIN = <<~SQL.squish.freeze
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb) AS labels
+      FROM issues i, jsonb_array_elements(i.labels) AS elem
+      WHERE (i.id = agent_runs.issue_id AND i.project_id = agent_runs.project_id)
+         OR (i.project_id = agent_runs.project_id
+             AND i.github_number = agent_runs.source_pull_request_number
+             AND i.is_pull_request = TRUE)
+    ) issue_labels ON TRUE
+    LEFT JOIN projects p ON p.id = agent_runs.project_id
+  SQL
+
+  # Priority SQL using the LATERAL-joined issue_labels to avoid repeated
+  # correlated subqueries. Reads per-project label names from
+  # `projects.priority_labels` jsonb, falling back to literal tier keys
+  # (P1/P2/P3) when the project's mapping is empty so behavior matches
+  # Project#effective_priority_labels. Element matching is case-sensitive.
   #
   # NOTE: This SQL contains no interpolated values — the tier names are
   # hardcoded literals — so it is not a SQL injection vector.
   QUEUE_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
     CASE
-      WHEN EXISTS (
-        SELECT 1 FROM projects p JOIN issues i ON (
-          (i.id = agent_runs.issue_id AND i.project_id = agent_runs.project_id)
-          OR (i.project_id = agent_runs.project_id
-              AND i.github_number = agent_runs.source_pull_request_number
-              AND i.is_pull_request = TRUE)
-        )
-        WHERE p.id = agent_runs.project_id
-          AND i.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P1', ''), 'P1'))
-      ) THEN 0
+      WHEN issue_labels.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P1', ''), 'P1')) THEN 0
       WHEN trigger_type = 'manual' THEN 1
-      WHEN EXISTS (
-        SELECT 1 FROM projects p JOIN issues i ON (
-          (i.id = agent_runs.issue_id AND i.project_id = agent_runs.project_id)
-          OR (i.project_id = agent_runs.project_id
-              AND i.github_number = agent_runs.source_pull_request_number
-              AND i.is_pull_request = TRUE)
-        )
-        WHERE p.id = agent_runs.project_id
-          AND i.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P2', ''), 'P2'))
-      ) THEN 2
+      WHEN issue_labels.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P2', ''), 'P2')) THEN 2
       WHEN trigger_type = 'automatic' AND source_pull_request_number IS NOT NULL THEN 3
-      WHEN EXISTS (
-        SELECT 1 FROM projects p JOIN issues i ON (
-          (i.id = agent_runs.issue_id AND i.project_id = agent_runs.project_id)
-          OR (i.project_id = agent_runs.project_id
-              AND i.github_number = agent_runs.source_pull_request_number
-              AND i.is_pull_request = TRUE)
-        )
-        WHERE p.id = agent_runs.project_id
-          AND i.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P3', ''), 'P3'))
-      ) THEN 4
+      WHEN issue_labels.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P3', ''), 'P3')) THEN 4
       ELSE 5
     END
   SQL
@@ -401,14 +394,22 @@ class AgentRun < ApplicationRecord
   SQL
   QUEUE_ORDER = [ QUEUE_PRIORITY_SQL, GOAL_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
 
+  # Scope that adds the LATERAL join required by QUEUE_PRIORITY_SQL.
+  # All queue-ordering methods use this instead of bare `queued`.
+  scope :queued_with_priority, -> {
+    queued
+      .joins(QUEUE_LATERAL_JOIN)
+      .select("agent_runs.*")
+  }
+
   def self.next_queued_run
-    queued.order(QUEUE_ORDER).first
+    queued_with_priority.order(QUEUE_ORDER).first
   end
 
   # Returns the next queued run without claiming it.
   # Used to check per-user capacity before acquiring the lock.
   def self.peek_next_queued_run(exclude_ids: [])
-    scope = queued.order(QUEUE_ORDER)
+    scope = queued_with_priority.order(QUEUE_ORDER)
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     scope.first
   end
@@ -650,6 +651,15 @@ class AgentRun < ApplicationRecord
       error_message: error,
       duration_seconds: duration
     )
+  end
+
+  # True when this run was force-timed-out by `dev:cleanup` (typically because
+  # `bin/setup --skip-server` is restarting the host process and stopping the
+  # run's container out from under the in-flight Temporal activity). Used by
+  # RunAgentActivity to suppress provider circuit-breaker bookkeeping for
+  # failures that the cleanup itself induced.
+  def cancelled_by_cleanup?
+    status == "timeout" && error_message.to_s.start_with?(STALE_CLEANUP_ERROR_PREFIX)
   end
 
   def retried?
