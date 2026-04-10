@@ -83,7 +83,18 @@ class OrphanBranchReaperJob < ApplicationJob
 
   def reap_branch(agent_run)
     project = agent_run.project
-    client = project.github_token.client
+    token = project&.github_token
+
+    unless token
+      Rails.logger.warn(
+        message: "branch_reaper.missing_token",
+        agent_run_id: agent_run.id,
+        project_id: project&.id
+      )
+      return :errored
+    end
+
+    client = token.client
     repo = project.full_name
     branch_name = agent_run.branch_name
 
@@ -93,6 +104,10 @@ class OrphanBranchReaperJob < ApplicationJob
     end
 
     # Never delete a branch that has any open PR referencing it.
+    # Note: there is a small TOCTOU window between this check and delete_ref
+    # below — a PR could be opened after we check. The 1-hour grace period
+    # makes this very unlikely, and the worst case is deleting a branch whose
+    # PR will then show as "branch deleted" on GitHub.
     if open_pr_exists?(client, repo, project.owner, branch_name)
       Rails.logger.info(
         message: "branch_reaper.skipped_open_pr",
