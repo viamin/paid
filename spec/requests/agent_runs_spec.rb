@@ -480,6 +480,32 @@ RSpec.describe "AgentRuns" do
         }.to have_enqueued_job(ProcessRunQueueJob)
       end
 
+      it "persists the selected priority tier and syncs the issue label" do
+        github_client = instance_double(GithubClient, remove_label_from_issue: true, add_labels_to_issue: true)
+        allow(GithubClient).to receive(:new).and_return(github_client)
+        issue.update!(labels: [ "bug", "P3" ])
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id, priority_tier: "P1" }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(AgentRun.last.priority_tier).to eq("P1")
+        expect(issue.reload.labels).to contain_exactly("bug", "P1")
+        expect(github_client).to have_received(:remove_label_from_issue).with(project.full_name, issue.github_number, "P3")
+        expect(github_client).to have_received(:add_labels_to_issue).with(project.full_name, issue.github_number, [ "P1" ])
+      end
+
+      it "does not sync GitHub labels when the local issue update fails" do
+        expect(GithubClient).not_to receive(:new)
+        issue.update_column(:paid_state, "bogus")
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id, priority_tier: "P1" }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(issue.reload.labels).to be_blank
+      end
+
       it "redirects with error when no issue selected" do
         post project_agent_runs_path(project)
         expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
@@ -628,7 +654,7 @@ RSpec.describe "AgentRuns" do
 
         it "creates a review agent run with source_pull_request_number" do
           expect {
-            post project_agent_runs_path(project), params: { goal: "review", pull_request_id: pr.id }
+            post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id ] }
           }.to change(AgentRun, :count).by(1)
 
           agent_run = AgentRun.last
@@ -643,13 +669,79 @@ RSpec.describe "AgentRuns" do
 
           expect(response).to redirect_to(new_project_agent_run_path(project, goal: "review"))
           follow_redirect!
-          expect(response.body).to include("Please select a pull request to review")
+          expect(response.body).to include("Please select at least one pull request to review")
         end
 
         it "enqueues ProcessRunQueueJob for review runs" do
           expect {
-            post project_agent_runs_path(project), params: { goal: "review", pull_request_id: pr.id }
+            post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id ] }
           }.to have_enqueued_job(ProcessRunQueueJob)
+        end
+
+        it "creates one agent run per selected PR when multiple are selected" do
+          pr2 = create(:issue, :pull_request, project: project, github_number: 56, title: "Second PR")
+
+          expect {
+            post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id, pr2.id ] }
+          }.to change(AgentRun, :count).by(2)
+
+          pr_numbers = AgentRun.last(2).map(&:source_pull_request_number)
+          expect(pr_numbers).to contain_exactly(55, 56)
+          expect(response).to redirect_to(project_path(project))
+          expect(flash[:notice]).to include("2 agent runs queued")
+        end
+
+        it "redirects with error when all PR IDs are invalid" do
+          post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ 999_999_999 ] }
+
+          expect(response).to redirect_to(new_project_agent_run_path(project, goal: "review"))
+          expect(flash[:alert]).to include("None of the selected pull requests could be found")
+        end
+
+        it "redirects with error when pull_request_ids param is an empty array" do
+          post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [] }
+
+          expect(response).to redirect_to(new_project_agent_run_path(project, goal: "review"))
+          expect(flash[:alert]).to include("Please select at least one pull request to review.")
+        end
+
+        it "rejects negative and zero PR IDs" do
+          post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ "-1", "0" ] }
+
+          expect(response).to redirect_to(new_project_agent_run_path(project, goal: "review"))
+          expect(flash[:alert]).to include("Please select at least one pull request to review.")
+        end
+
+        it "filters out non-numeric PR IDs" do
+          post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ "abc", "", pr.id.to_s ] }
+
+          expect(AgentRun.count).to eq(1)
+          expect(AgentRun.last.source_pull_request_number).to eq(55)
+        end
+
+        it "filters out PRs with active runs server-side and creates runs for the rest" do
+          pr2 = create(:issue, :pull_request, project: project, github_number: 56, title: "Second PR")
+          create(:agent_run, :queued, project: project, issue: nil,
+            source_pull_request_number: pr.github_number, goal: "review")
+
+          expect {
+            post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id, pr2.id ] }
+          }.to change(AgentRun, :count).by(1)
+
+          expect(AgentRun.last.source_pull_request_number).to eq(56)
+          expect(response).to redirect_to(project_path(project))
+        end
+
+        it "redirects with error when all selected PRs have active runs" do
+          create(:agent_run, :queued, project: project, issue: nil,
+            source_pull_request_number: pr.github_number, goal: "review")
+
+          expect {
+            post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id ] }
+          }.not_to change(AgentRun, :count)
+
+          expect(response).to redirect_to(new_project_agent_run_path(project, goal: "review"))
+          expect(flash[:alert]).to include("already have active runs")
         end
       end
     end

@@ -65,6 +65,67 @@ RSpec.describe "Api::GithubWebhooks" do
       end
     end
 
+    context "with pull_request_review event for a review-goal run" do
+      let(:review_run) do
+        create(:agent_run, :with_review, project: project, source_pull_request_number: 77)
+      end
+
+      let(:payload) do
+        {
+          action: "submitted",
+          review: {
+            state: "approved",
+            user: { login: "reviewer" },
+            body: "Review looks good!"
+          },
+          pull_request: {
+            number: review_run.source_pull_request_number
+          },
+          repository: {
+            id: project.github_id,
+            full_name: project.full_name
+          }
+        }
+      end
+
+      it "attributes feedback to the review-goal run, not the create_pr run" do
+        # No create_pr run exists for PR 77, so the fallback to
+        # source_pull_request_number should find the review-goal run.
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect {
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "pull_request_review",
+              "X-Hub-Signature-256" => signature
+            }
+        }.to change { review_run.quality_metrics.human.count }.by(1)
+
+        expect(response).to have_http_status(:ok)
+      end
+
+      it "prefers the create_pr run when both exist for the same PR number" do
+        pr_run = create(:agent_run, :completed, project: project, pull_request_number: 77)
+
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect {
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "pull_request_review",
+              "X-Hub-Signature-256" => signature
+            }
+        }.to change { pr_run.quality_metrics.human.count }.by(1)
+
+        expect(response).to have_http_status(:ok)
+        expect(review_run.quality_metrics.human.count).to eq(0)
+      end
+    end
+
     context "with signature verification" do
       let(:payload) do
         {
