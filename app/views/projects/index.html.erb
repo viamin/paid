@@ -59,9 +59,11 @@
                 <div class="text-gray-500">
                   <span class="font-medium text-gray-900"><%= project.agent_runs.size %></span> runs
                 </div>
-                <div class="text-gray-500">
-                  <span class="font-medium text-gray-900">$<%= format("%.2f", project.total_cost_cents / 100.0) %></span> spent
-                </div>
+                <% if project.total_cost_cents > 0 %>
+                  <div class="text-gray-500">
+                    <span class="font-medium text-gray-900">$<%= format("%.2f", project.total_cost_cents / 100.0) %></span> spent
+                  </div>
+                <% end %>
               </div>
               <%= link_to "View", project_path(project), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
             </div>

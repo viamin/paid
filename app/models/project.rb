@@ -52,6 +52,7 @@ class Project < ApplicationRecord
       },
       "manual" => {
         "enabled" => false,
+        "reviewer_login" => nil,
         "termination" => {
           "max_review_rounds" => nil,
           "stop_when_no_comments" => false,
@@ -641,6 +642,11 @@ class Project < ApplicationRecord
       # ci_action requires an action_name so the system knows which GitHub Action to invoke
       if method_name == "ci_action" && config["action_name"].blank?
         errors.add(:review_settings, "ci_action requires a non-blank action_name when enabled")
+      end
+
+      # manual requires a reviewer_login so the system knows who to request review from
+      if method_name == "manual" && config["reviewer_login"].blank?
+        errors.add(:review_settings, "manual requires a non-blank reviewer_login when enabled")
       end
 
       termination = config["termination"]
