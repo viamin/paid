@@ -66,7 +66,7 @@
 
   <%# Cost & Token Usage — hidden when all values are zero %>
   <% cost_tokens = stats[:cost_and_tokens] %>
-  <% has_cost_or_token_data = cost_tokens[:total_cost_cents] > 0 || cost_tokens[:trailing_30d_tokens].to_i > 0 %>
+  <% has_cost_or_token_data = cost_tokens[:total_cost_cents].to_i > 0 || cost_tokens[:trailing_30d_tokens].to_i > 0 %>
   <% if has_cost_or_token_data %>
     <div class="mt-8">
       <h2 class="text-lg font-semibold text-gray-900">Cost & Token Usage</h2>
@@ -124,7 +124,7 @@
           <p class="mt-1 text-xs text-gray-500"><%= number_with_delimiter(perf[:run_count]) %> runs</p>
           <% if perf[:run_count] > 0 %>
             <div class="mt-3 flex flex-wrap gap-4 text-sm">
-              <% if perf[:avg_cost_cents] > 0 %>
+              <% if perf[:avg_cost_cents].to_i > 0 %>
                 <div>
                   <dt class="text-xs text-gray-500">Avg Cost</dt>
                   <dd class="mt-1 font-semibold text-gray-900">$<%= format("%.2f", perf[:avg_cost_cents] / 100.0) %></dd>
@@ -141,9 +141,9 @@
                 <dd class="mt-1 font-semibold text-gray-900"><%= format_duration(perf[:avg_duration_seconds]) %></dd>
               </div>
             </div>
-            <% if perf[:total_cost_cents] > 0 || perf[:total_tokens].to_i > 0 %>
+            <% if perf[:total_cost_cents].to_i > 0 || perf[:total_tokens].to_i > 0 %>
               <div class="mt-2 text-xs text-gray-500">
-                Total:<%= " $#{format("%.2f", perf[:total_cost_cents] / 100.0)}" if perf[:total_cost_cents] > 0 %><%= "#{" · " if perf[:total_cost_cents] > 0}#{number_with_delimiter(perf[:total_tokens])} tokens" if perf[:total_tokens].to_i > 0 %>
+                Total:<%= " $#{format("%.2f", perf[:total_cost_cents].to_i / 100.0)}" if perf[:total_cost_cents].to_i > 0 %><%= "#{" · " if perf[:total_cost_cents].to_i > 0}#{number_with_delimiter(perf[:total_tokens])} tokens" if perf[:total_tokens].to_i > 0 %>
               </div>
             <% end %>
           <% end %>
@@ -163,7 +163,7 @@
           <p class="mt-1 text-xs text-gray-500"><%= number_with_delimiter(perf[:run_count]) %> runs</p>
           <% if perf[:run_count] > 0 %>
             <div class="mt-3 space-y-2 text-sm">
-              <% if perf[:avg_cost_cents] > 0 %>
+              <% if perf[:avg_cost_cents].to_i > 0 %>
                 <div class="flex justify-between">
                   <span class="text-gray-500">Avg Cost</span>
                   <span class="font-semibold text-gray-900">$<%= format("%.2f", perf[:avg_cost_cents] / 100.0) %></span>
@@ -187,7 +187,7 @@
                 <% next if sub_perf[:run_count].zero? %>
                 <div class="mt-1 flex justify-between text-xs">
                   <span class="text-gray-500"><%= outcome_label(outcome) %> (<%= sub_perf[:run_count] %>)</span>
-                  <span class="text-gray-700"><%= "$#{format("%.2f", sub_perf[:avg_cost_cents] / 100.0)} · " if sub_perf[:avg_cost_cents] > 0 %><%= format_duration(sub_perf[:avg_duration_seconds]) %></span>
+                  <span class="text-gray-700"><%= "$#{format("%.2f", sub_perf[:avg_cost_cents].to_i / 100.0)} · " if sub_perf[:avg_cost_cents].to_i > 0 %><%= format_duration(sub_perf[:avg_duration_seconds]) %></span>
                 </div>
               <% end %>
             </div>
