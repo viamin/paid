@@ -791,17 +791,62 @@ RSpec.describe Project do
       end
     end
 
-    describe "#review_bot_request_login" do
-      it "returns nil when no review method is enabled" do
+    describe "#review_bot_request_logins" do
+      it "returns empty array when no review method is enabled" do
         project = build(:project, review_settings: { "enabled" => false })
-        expect(project.review_bot_request_login).to be_nil
+        expect(project.review_bot_request_logins).to eq([])
       end
 
-      it "returns nil when reviews are globally disabled even if a method sub-flag is enabled" do
+      it "returns empty array when reviews are globally disabled even if a method sub-flag is enabled" do
         project = build(:project, review_settings: {
           "enabled" => false,
           "methods" => { "codex" => { "enabled" => true } }
         })
+        expect(project.review_bot_request_logins).to eq([])
+      end
+
+      it "returns copilot login when copilot is enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "copilot" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_logins).to eq([ Activities::RequestReviewActivity::COPILOT_LOGIN ])
+      end
+
+      it "returns codex login when only codex is enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "codex" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_logins).to eq([ Activities::RequestReviewActivity::CODEX_LOGIN ])
+      end
+
+      it "returns all enabled bot logins in mixed configurations" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "copilot" => { "enabled" => true },
+            "paid_agent" => { "enabled" => true }
+          }
+        })
+        expect(project.review_bot_request_logins).to contain_exactly(
+          Activities::RequestReviewActivity::COPILOT_LOGIN,
+          ProviderSupport::PAID_AGENT_LOGIN
+        )
+      end
+
+      it "returns empty array for enabled methods with no bot account" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "manual" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_logins).to eq([])
+      end
+    end
+
+    describe "#review_bot_request_login" do
+      it "returns nil when no review method is enabled" do
+        project = build(:project, review_settings: { "enabled" => false })
         expect(project.review_bot_request_login).to be_nil
       end
 
@@ -813,15 +858,7 @@ RSpec.describe Project do
         expect(project.review_bot_request_login).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
       end
 
-      it "returns codex login when only codex is enabled" do
-        project = build(:project, review_settings: {
-          "enabled" => true,
-          "methods" => { "codex" => { "enabled" => true } }
-        })
-        expect(project.review_bot_request_login).to eq(Activities::RequestReviewActivity::CODEX_LOGIN)
-      end
-
-      it "prefers copilot over codex when both are enabled" do
+      it "returns first enabled login for backward compatibility" do
         project = build(:project, review_settings: {
           "enabled" => true,
           "methods" => {
@@ -830,14 +867,6 @@ RSpec.describe Project do
           }
         })
         expect(project.review_bot_request_login).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
-      end
-
-      it "returns nil for enabled methods with no bot account" do
-        project = build(:project, review_settings: {
-          "enabled" => true,
-          "methods" => { "manual" => { "enabled" => true } }
-        })
-        expect(project.review_bot_request_login).to be_nil
       end
     end
 

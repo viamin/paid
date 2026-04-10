@@ -479,6 +479,27 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RequestReviewActivity, anything, timeout: anything)
     end
 
+    it "routes mixed review_bot_review_pending triggers to both paid-agent and external bots" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [
+          { type: "review_bot_review_pending", request_login: Activities::RequestReviewActivity::COPILOT_LOGIN },
+          { type: "review_bot_review_pending", request_login: ProviderSupport::PAID_AGENT_LOGIN }
+        ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42, goal: "review" },
+          timeout: 30)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), timeout: anything)
+    end
+
     it "routes review_bot_review_pending to RequestReviewActivity for non-paid-agent logins" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",

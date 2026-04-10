@@ -243,19 +243,26 @@ module Workflows
       other_triggers = trigger_types - [ "review_bot_review_pending" ]
 
       if other_triggers.empty?
-        # Use the login from the trigger: nil means the bot auto-reviews (e.g.
-        # Codex via GitHub App) and no explicit request is needed.
-        pending_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
-        login = pending_trigger&.dig(:request_login)
+        # Collect all distinct request_logins from review_bot_review_pending
+        # triggers. Mixed configurations (e.g. copilot + paid_agent) emit
+        # one trigger per bot so each is requested independently.
+        pending_triggers = (pr_data[:triggers] || []).select { |t| t[:type] == "review_bot_review_pending" }
+        logins = pending_triggers.filter_map { |t| t[:request_login] }.uniq
 
-        if login == ProviderSupport::PAID_AGENT_LOGIN
-          # paid_agent reviews are Paid-internal agent runs, not external bot
-          # requests. Start a review-goal agent run so the agent posts its
-          # review via the GitHub API proxy under the paid-agent bot identity.
-          start_review_goal_workflow(project_id, pr_data)
-        elsif login
+        # Partition into paid_agent (internal agent run) and external bots
+        # (GitHub review request API).
+        external_logins = []
+        logins.each do |login|
+          if login == ProviderSupport::PAID_AGENT_LOGIN
+            start_review_goal_workflow(project_id, pr_data)
+          else
+            external_logins << login
+          end
+        end
+
+        if external_logins.any?
           request_review(project_id, pr_data[:pr_number],
-            [ login ],
+            external_logins,
             log_key: "pr_review.request_review_bot_review_failed")
         end
         return

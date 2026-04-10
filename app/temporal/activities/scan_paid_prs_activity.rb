@@ -530,8 +530,9 @@ module Activities
       return :no_review if latest.nil?
 
       body = latest[:body]
-      clean = REVIEW_BOT_CLEAN_PATTERN.match?(body) || REVIEW_BOT_PAID_CLEAN_PATTERN.match?(body)
-      clean ? :clean : :has_comments
+      # paid-agent clean signals are evaluated separately via
+      # paid_agent_review_clean? — only check the generic bot pattern here.
+      REVIEW_BOT_CLEAN_PATTERN.match?(body) ? :clean : :has_comments
     end
 
     def latest_allowed_bot_review(reviews, allowed_bot_logins)
@@ -546,12 +547,10 @@ module Activities
       bot_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
     end
 
-    # Returns the login that should be explicitly requested for a review-bot
-    # review, or nil when no enabled review method has a bot that accepts
-    # explicit review requests. See Project#review_bot_request_login for the
-    # precedence rules.
-    def review_bot_request_login(project)
-      project.review_bot_request_login
+    # Returns all logins that should be explicitly requested for review-bot
+    # reviews. See Project#review_bot_request_logins.
+    def review_bot_request_logins(project)
+      project.review_bot_request_logins
     end
 
     # Review-bot logins that post feedback as a single top-level review body
@@ -566,7 +565,15 @@ module Activities
 
     def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
       allowed = project&.review_enabled? ? (project.enabled_review_bot_logins.presence || Set.new) : nil
-      latest = latest_allowed_bot_review(reviews, allowed)
+
+      # paid_agent reviews are evaluated separately via
+      # paid_agent_clean_review_present? below — exclude paid-agent logins
+      # from the shared bot-review path so a clean paid-agent review cannot
+      # suppress outstanding findings from another bot (e.g. Copilot).
+      paid_agent_logins = ProviderSupport::PROVIDER_BOT_USERNAMES
+        .fetch("paid_agent", []).map(&:downcase).to_set
+      non_paid_allowed = allowed.nil? ? nil : (allowed - paid_agent_logins)
+      latest = latest_allowed_bot_review(reviews, non_paid_allowed)
 
       # Body-only bots (Codex) can post their CLEAN signal as an issue
       # comment — e.g. "Codex Review: Didn't find any major issues. Bravo." —
@@ -588,40 +595,35 @@ module Activities
       # recent review contains the clean marker, treat the review cycle
       # as complete. Only bypass when no *other* registered bot method
       # could produce independent triggers; in mixed configurations
-      # (e.g. paid_agent + copilot), each bot's status is evaluated
-      # independently below.
-      #
-      # paid_agent has entries in PROVIDER_BOT_USERNAMES for identity
-      # detection, but those logins don't post reviews the way copilot/
-      # codex do, so we subtract them before checking whether any other
-      # bot logins remain.
-      paid_agent_logins = ProviderSupport::PROVIDER_BOT_USERNAMES
-        .fetch("paid_agent", []).map(&:downcase).to_set
-      non_paid_allowed = allowed.nil? ? nil : (allowed - paid_agent_logins)
+      # (e.g. paid_agent + copilot), paid_agent clean status alone does
+      # not clear the other bot — the non-paid_agent bot's status is
+      # still evaluated via the shared latest_allowed_bot_review path.
       if project&.review_method_enabled?("paid_agent") &&
          paid_agent_clean_review_present?(reviews) &&
          (non_paid_allowed.nil? || non_paid_allowed.empty?)
         return []
       end
 
+      # Accumulate triggers from both the shared bot-review path (copilot,
+      # codex) and the paid_agent path. In mixed configurations each bot
+      # is evaluated independently so one bot's clean review cannot mask
+      # another's outstanding findings.
+      triggers = []
+
+      # -- shared bot-review evaluation (copilot / codex) --
       status = review_bot_review_status_from(reviews, latest)
 
       case status
       when :clean
-        []
+        # external bot review is clean — no triggers from this path
+        nil
       when :no_review
-        # Only emit a pending trigger when a requestable review bot is
-        # configured. When login is nil — reviews globally disabled, or
-        # only non-bot review methods (e.g. manual) are enabled — there is
-        # no bot that could satisfy the trigger, so emitting it would wedge
-        # the draft scanner in a perpetual "waiting for bot review" state
-        # with no path out (handle_review_bot_review_pending skips the
-        # RequestReviewActivity call when login is nil).
-        login = project && review_bot_request_login(project)
-        if login
-          [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
-        else
-          []
+        # Emit pending triggers for each requestable external bot login.
+        # paid_agent is handled separately below.
+        logins = project ? review_bot_request_logins(project) : []
+        logins.each do |login|
+          next if login == ProviderSupport::PAID_AGENT_LOGIN
+          triggers << { type: "review_bot_review_pending", details: "No review bot review found", request_login: login }
         end
       when :has_comments
         # When unresolved_threads is nil, threads were either never fetched
@@ -629,7 +631,7 @@ module Activities
         # cannot tell whether bot threads are truly resolved, so treat the
         # status as pending to avoid prematurely advancing the PR.
         if unresolved_threads.nil?
-          [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean" } ]
+          triggers << { type: "review_bot_review_pending", details: "Latest review bot review was not clean" }
         else
           bot_thread_triggers = review_bot_thread_triggers(unresolved_threads)
           body_only_pending_triggers = [
@@ -639,10 +641,9 @@ module Activities
           if bot_thread_triggers.any?
             # Thread-based bots (e.g. Copilot) with at least one unresolved
             # bot thread: emit review_bot_comments + the thread triggers.
-            triggers = [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean" } ]
+            triggers << { type: "review_bot_review_pending", details: "Latest review bot review was not clean" }
             triggers << { type: "review_bot_comments", details: "Latest review bot review generated comments" }
             triggers.concat(bot_thread_triggers)
-            triggers
           elsif body_only_review_bot?(latest&.dig(:user_login)) &&
               body_only_review_needs_followup?(latest, last_run)
             # Body-only bots (e.g. Codex): the review feedback lives in
@@ -653,7 +654,7 @@ module Activities
             # The "(body-only)" suffix on review_bot_comments lets
             # structured-log consumers distinguish this path from the
             # thread-based Copilot flow above.
-            body_only_pending_triggers
+            triggers.concat(body_only_pending_triggers)
           elsif body_only_review_bot?(latest&.dig(:user_login)) &&
               !review_diff_touches_reviewed_files?(client, project, issue, latest)
             # Body-only bot whose review pre-dates the last agent run
@@ -661,19 +662,29 @@ module Activities
             # touch any file mentioned in the review's inline comments.
             # Treat as still-unaddressed to prevent unrelated changes
             # (e.g. a CI schema fix) from clearing review findings.
-            body_only_pending_triggers
-          else
-            # Thread-based bot with all bot threads resolved, or body-only
-            # review already addressed by a subsequent agent run whose diff
-            # touches at least one reviewed file. Treat as effectively clean
-            # to avoid re-requesting reviews that would produce no new
-            # comments.
-            []
+            triggers.concat(body_only_pending_triggers)
           end
+          # else: Thread-based bot with all bot threads resolved, or
+          # body-only review already addressed by a subsequent agent run
+          # whose diff touches at least one reviewed file. No triggers
+          # from this path.
         end
       when :unknown
-        review_bot_thread_triggers(unresolved_threads)
+        triggers.concat(review_bot_thread_triggers(unresolved_threads))
       end
+
+      # -- paid_agent evaluation (independent of shared bot path) --
+      # When paid_agent is enabled and has no clean review, emit a
+      # pending trigger so handle_review_bot_review_pending queues a
+      # review-goal agent run. This runs regardless of the shared bot
+      # status so mixed configurations (copilot + paid_agent) request
+      # both bots independently.
+      if project&.review_method_enabled?("paid_agent") && !paid_agent_clean_review_present?(reviews)
+        triggers << { type: "review_bot_review_pending", details: "No paid-agent review found",
+                      request_login: ProviderSupport::PAID_AGENT_LOGIN }
+      end
+
+      triggers
     end
 
     def body_only_review_bot?(login)
@@ -956,7 +967,8 @@ module Activities
     def paid_agent_review_clean?(body)
       return false if body.nil?
 
-      body.include?(PAID_REVIEW_CLEAN_MARKER)
+      body.include?(PAID_REVIEW_CLEAN_MARKER) ||
+        REVIEW_BOT_PAID_CLEAN_PATTERN.match?(body)
     end
 
     # TODO(#918): paid_agent posts reviews from regular GitHub accounts — there is
