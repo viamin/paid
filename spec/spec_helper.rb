@@ -32,8 +32,9 @@ RSpec.configure do |config|
   # Limits the available syntax to the non-monkey patched syntax.
   config.disable_monkey_patching!
 
-  # This setting enables warnings.
-  config.warnings = true
+  # Warnings from third-party gems are noisy and not actionable.
+  # Run with RUBYOPT="-W1" to surface warnings locally when needed.
+  config.warnings = false
 
   # Print the 10 slowest examples at the end of the spec run.
   config.profile_examples = 10 if config.files_to_run.one?
