@@ -470,6 +470,30 @@ RSpec.describe Activities::CreatePullRequestActivity do
       end
     end
 
+    context "when validate_summary_scope raises an unexpected error" do
+      before do
+        agent_run.log!("stdout", "Fixed ##{issue.github_number} by updating the scanner")
+        allow(activity).to receive(:sibling_open_issue_numbers).and_raise(ActiveRecord::StatementInvalid.new("DB gone"))
+      end
+
+      it "still creates the PR successfully" do
+        result = activity.execute(agent_run_id: agent_run.id)
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+      end
+
+      it "logs the scope check failure" do
+        mock_logger = instance_double(ActiveSupport::Logger, info: nil)
+        allow(activity).to receive(:logger).and_return(mock_logger)
+        expect(mock_logger).to receive(:warn).with(hash_including(
+          message: "agent_execution.summary_scope_check_failed",
+          agent_run_id: agent_run.id,
+          error_class: "ActiveRecord::StatementInvalid"
+        ))
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
     context "when agent summary correctly references its own issue" do
       before do
         create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open")
