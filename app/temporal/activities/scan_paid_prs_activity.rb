@@ -759,14 +759,15 @@ module Activities
     end
 
     def check_conversation_comments(client, project, issue, last_run)
-      comments = client.issue_comments(project.full_name, issue.github_number)
       cutoff = last_run&.completed_at
+      comments = fetch_conversation_comments(client, project, issue, cutoff)
 
       relevant = comments.select do |c|
         login = c.user&.login
         next false if bot_user?(login)
         next false unless project.trusted_github_user?(login)
-        next false if cutoff && c.created_at <= cutoff
+        # Defensive: treat nil created_at as potentially relevant (include it)
+        next false if cutoff && c.created_at && c.created_at <= cutoff
         next false if system_generated_comment?(c.body)
         next false if c.body.to_s.strip.length < MIN_COMMENT_LENGTH
 
@@ -779,6 +780,25 @@ module Activities
     rescue GithubClient::Error => e
       log_signal_error("conversation_comments", project, issue, e)
       []
+    end
+
+    # Fetches conversation comments, preferring the lightweight single-page
+    # recent_issue_comments call. Falls back to full auto-paginated
+    # issue_comments when the returned page is from a multi-page result and
+    # the cutoff window extends beyond it (i.e., every comment on the page
+    # is newer than the cutoff, meaning older post-cutoff comments may exist
+    # on earlier pages).
+    def fetch_conversation_comments(client, project, issue, cutoff)
+      comments = client.recent_issue_comments(project.full_name, issue.github_number)
+
+      # Treat nil created_at as newer than cutoff (safe: triggers fallback to
+      # full pagination rather than silently missing comments).
+      if cutoff && comments.multi_page? && comments.any? &&
+          comments.all? { |c| c.created_at.nil? || c.created_at > cutoff }
+        client.issue_comments(project.full_name, issue.github_number)
+      else
+        comments
+      end
     end
 
     def fetch_reviews(client, project, issue)

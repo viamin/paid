@@ -401,9 +401,13 @@ class GithubClient
     handle_errors do
       first_page = client.issue_comments(repo, number, per_page: 100, page: 1)
       last_rel = client.last_response&.rels&.dig(:last)
-      return first_page if last_rel.nil?
 
-      client.get(last_rel.href)
+      unless last_rel
+        return tag_multi_page(first_page, false)
+      end
+
+      last_page = client.get(last_rel.href)
+      tag_multi_page(last_page, true)
     end
   end
 
@@ -920,6 +924,12 @@ class GithubClient
   }.freeze
 
   private
+
+  def tag_multi_page(page, multi)
+    page.instance_variable_set(:@multi_page, multi)
+    page.define_singleton_method(:multi_page?) { @multi_page }
+    page
+  end
 
   def configure_middleware
     client.middleware = Faraday::RackBuilder.new do |builder|

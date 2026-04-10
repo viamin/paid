@@ -839,6 +839,12 @@ RSpec.describe GithubClient do
         expect(result.map(&:body)).to contain_exactly("First comment", "Second comment")
         expect(client.client.auto_paginate).to be false
       end
+
+      it "marks the result as single-page" do
+        result = client.recent_issue_comments(repo, 42)
+
+        expect(result.multi_page?).to be false
+      end
     end
 
     context "when the comment list spans multiple pages" do
@@ -876,6 +882,12 @@ RSpec.describe GithubClient do
         expect(result.size).to eq(2)
         expect(result.map(&:body)).to contain_exactly("Newer comment", "Newest comment")
         expect(result.map(&:body)).not_to include("Very old comment")
+      end
+
+      it "marks the result as multi-page" do
+        result = client.recent_issue_comments(repo, 42)
+
+        expect(result.multi_page?).to be true
       end
     end
   end
