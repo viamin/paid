@@ -174,7 +174,10 @@ module ApplicationHelper
 
   def review_method_badge(method)
     styles = REVIEW_METHOD_STYLES[method]
-    return if styles.nil? && Rails.logger.warn { "review_method_badge: unknown method #{method.inspect}" }
+    unless styles
+      Rails.logger.warn { "review_method_badge: unknown method #{method.inspect}" }
+      return
+    end
 
     tag.span(
       styles[:label],
