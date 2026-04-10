@@ -233,6 +233,7 @@ RSpec.describe PromptEvolution::Mutate do
       failed_response = instance_double(AgentHarness::Response, success?: false, exit_code: 1, error: long_error)
       allow(AgentHarness).to receive(:send_message).and_return(failed_response)
 
+      allow(Rails.logger).to receive(:warn).with(hash_including(message: "prompts.render_fallback"))
       expect(Rails.logger).to receive(:warn).with(hash_including(
         message: "prompt_evolution.mutate_unsuccessful_response",
         error_detail: a_string_matching(/\[truncated\]/)
