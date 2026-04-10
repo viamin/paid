@@ -40,10 +40,11 @@ module Prompts
       sections = []
 
       if include_setup_instruction
+        language = Prompts::LanguageCommands.detected_language(project)
         sections << <<~SECTION
           # Service Environment
 
-          #{setup_database_instruction_for(project: project)}
+          #{build_database_instruction(has_db: has_db, language: language)}
         SECTION
       end
 
