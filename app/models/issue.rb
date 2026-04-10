@@ -147,6 +147,10 @@ class Issue < ApplicationRecord
     end
   end
 
+  def review_rounds_count
+    draft_review_count + pr_followup_count
+  end
+
   def associated_pull_request
     if sub_issues.loaded?
       open_prs = sub_issues.select { |si| si.is_pull_request? && si.github_state == "open" }
