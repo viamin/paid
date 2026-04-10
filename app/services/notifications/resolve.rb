@@ -8,15 +8,17 @@ module Notifications
       new(...).call
     end
 
-    def initialize(account:, source:, subject:)
+    def initialize(account:, source:, subject:, user: nil)
       @account = account
       @source = source
       @subject = subject
+      @user = user
     end
 
     def call
       notification = Notification.find_by(
         account: account,
+        user: user,
         source: source,
         subject: subject,
         resolved_at: nil
@@ -31,6 +33,6 @@ module Notifications
 
     private
 
-    attr_reader :account, :source, :subject
+    attr_reader :account, :source, :subject, :user
   end
 end
