@@ -96,7 +96,7 @@ module StyleGuides
         slug: PROMPT_SLUG,
         project: project,
         variables: { language: language },
-        fallback: -> { FALLBACK_PROMPT.gsub("{{language}}", language) }
+        fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, { language: language }) }
       )
       body = file_samples.map { |s| "## #{s[:path]}\n```\n#{s[:content]}\n```" }.join("\n\n")
       "#{header}\n\n#{body}"
