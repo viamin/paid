@@ -1,7 +1,15 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["issueSection", "prSection", "prHeading", "prDescription", "prioritySection"]
+  static targets = [
+    "issueSection",
+    "prSection",
+    "prHeading",
+    "prDescription",
+    "prDropdown",
+    "prTable",
+    "prioritySection",
+  ]
 
   connect() {
     this.toggle()
@@ -13,6 +21,8 @@ export default class extends Controller {
 
     const showIssue = goal === "create_pr"
     const showPr = goal === "create_pr" || goal === "review"
+    const isReview = goal === "review"
+    const showPriority = !isReview
 
     this.issueSectionTargets.forEach((el) => {
       el.hidden = !showIssue
@@ -27,12 +37,13 @@ export default class extends Controller {
       el.hidden = !showPr
       el.querySelectorAll("input, select, textarea, button").forEach(
         (control) => {
-          control.disabled = !showPr
+          if (!control.hasAttribute("data-permanently-disabled")) {
+            control.disabled = !showPr
+          }
         }
       )
     })
 
-    const showPriority = goal !== "review"
     this.prioritySectionTargets.forEach((el) => {
       el.hidden = !showPriority
       el.querySelectorAll("input, select, textarea, button").forEach(
@@ -42,9 +53,29 @@ export default class extends Controller {
       )
     })
 
-    if (goal === "review") {
+    // Toggle between dropdown (create_pr) and table (review).
+    // These blocks run after prSectionTargets above and override its enable/disable
+    // for controls within the dropdown and table sub-sections.
+    this.prDropdownTargets.forEach((el) => {
+      el.hidden = isReview
+      el.querySelectorAll("select").forEach((control) => {
+        control.disabled = isReview || !showPr
+      })
+    })
+
+    this.prTableTargets.forEach((el) => {
+      el.hidden = !isReview
+      el.querySelectorAll("input[type='checkbox']").forEach((control) => {
+        // Re-enable non-disabled-by-default checkboxes when review is shown
+        if (!control.hasAttribute("data-permanently-disabled")) {
+          control.disabled = !isReview
+        }
+      })
+    })
+
+    if (isReview) {
       this.prHeadingTargets.forEach((el) => {
-        el.textContent = "Select PR to Review"
+        el.textContent = "Select PRs to Review"
       })
       this.prDescriptionTargets.forEach((el) => {
         el.textContent =

@@ -141,35 +141,54 @@ module Models
       text
     end
 
+    PROMPT_SLUG = "planning.model_selection"
+
+    # Fallback used only if the seeded prompt is missing or deactivated.
+    # The active template lives in db/seeds/prompts.rb under PROMPT_SLUG.
+    FALLBACK_PROMPT = <<~PROMPT
+      Select the best LLM model for this development task.
+
+      ## Task
+      Goal: {{goal}}
+      {{task_details}}
+
+      ## Project
+      Repository: {{repository}}
+      {{budget_context}}
+
+      ## Available Models
+      {{candidates}}
+
+      ## Instructions
+      Consider task complexity, reasoning requirements, cost-effectiveness, and any budget constraints.
+      Simple tasks (typo fixes, small edits) should use cheaper models.
+      Complex tasks (architecture, multi-file refactors) need the most capable models.
+      If budget is limited, prefer cost-effective models unless the task clearly requires high capability.
+
+      Respond with ONLY a JSON object:
+      {"model": "model-id", "reasoning": "brief explanation", "complexity_score": 5.0}
+
+      complexity_score must be a number from 1.0 (trivial) to 10.0 (extremely complex).
+    PROMPT
+
     def build_prompt(candidates)
       issue = agent_run.issue
       project = agent_run.project
 
-      <<~PROMPT.strip
-        Select the best LLM model for this development task.
+      vars = {
+        goal: agent_run.goal,
+        task_details: task_details(issue),
+        repository: project.full_name,
+        budget_context: budget_context(project),
+        candidates: format_candidates(candidates)
+      }
 
-        ## Task
-        Goal: #{agent_run.goal}
-        #{task_details(issue)}
-
-        ## Project
-        Repository: #{project.full_name}
-        #{budget_context(project)}
-
-        ## Available Models
-        #{format_candidates(candidates)}
-
-        ## Instructions
-        Consider task complexity, reasoning requirements, cost-effectiveness, and any budget constraints.
-        Simple tasks (typo fixes, small edits) should use cheaper models.
-        Complex tasks (architecture, multi-file refactors) need the most capable models.
-        If budget is limited, prefer cost-effective models unless the task clearly requires high capability.
-
-        Respond with ONLY a JSON object:
-        {"model": "model-id", "reasoning": "brief explanation", "complexity_score": 5.0}
-
-        complexity_score must be a number from 1.0 (trivial) to 10.0 (extremely complex).
-      PROMPT
+      Prompts::Render.call(
+        slug: PROMPT_SLUG,
+        project: project,
+        variables: vars,
+        fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
+      ).strip
     end
 
     def task_details(issue)

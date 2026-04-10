@@ -46,6 +46,16 @@ module Projects
         .pull_requests_only
         .where(github_state: "open")
         .order(github_number: :desc)
+
+      @pull_requests = @pull_requests.to_a
+      pr_numbers = @pull_requests.map(&:github_number)
+      @prs_with_active_runs = @project.agent_runs
+        .where(source_pull_request_number: pr_numbers, status: AgentRun::UNFINISHED_STATUSES)
+        .distinct
+        .pluck(:source_pull_request_number)
+        .to_set
+
+      @pr_priority_tiers = compute_pr_priority_tiers(@pull_requests)
     end
 
     def create
@@ -54,31 +64,39 @@ module Projects
       goal = params[:goal].presence || "create_pr"
       custom_prompt = params[:custom_prompt]&.strip.presence
       issue = resolve_issue
-      source_pr_number = resolve_pull_request
       priority_tier = resolve_priority_tier
 
       if goal == "review"
-        unless source_pr_number
+        pr_ids = Array(params[:pull_request_ids]).filter_map { |id| Integer(id, exception: false) }.select(&:positive?)
+        if pr_ids.empty?
           redirect_to new_project_agent_run_path(@project, goal: goal),
-            alert: "Please select a pull request to review."
+            alert: "Please select at least one pull request to review."
           return
         end
+
+        create_review_runs_and_redirect(
+          pr_ids: pr_ids,
+          on_error_path: new_project_agent_run_path(@project, goal: goal),
+          custom_prompt: custom_prompt,
+          goal: goal
+        )
       else
+        source_pr_number = resolve_pull_request
         unless issue || custom_prompt || source_pr_number
           redirect_to new_project_agent_run_path(@project, goal: goal),
             alert: "Please select an issue, provide a custom prompt, or select a pull request."
           return
         end
-      end
 
-      create_run_and_redirect(
-        on_error_path: new_project_agent_run_path(@project, goal: goal),
-        issue: issue,
-        custom_prompt: custom_prompt,
-        source_pull_request_number: source_pr_number,
-        goal: goal,
-        priority_tier: priority_tier
-      )
+        create_run_and_redirect(
+          on_error_path: new_project_agent_run_path(@project, goal: goal),
+          issue: issue,
+          custom_prompt: custom_prompt,
+          source_pull_request_number: source_pr_number,
+          goal: goal,
+          priority_tier: priority_tier
+        )
+      end
     end
 
     def quick_create
@@ -457,7 +475,7 @@ module Projects
 
       stale_priority_labels = current_labels & @project.priority_label_names
       new_labels = (current_labels - stale_priority_labels) + [ label_name ]
-      issue.update(labels: new_labels)
+      issue.update!(labels: new_labels)
 
       sync_priority_label_to_github(issue, label_name, stale_priority_labels)
     rescue => e
@@ -772,6 +790,68 @@ module Projects
       agent_run.guardrail_violation_type.presence ||
         agent_run.guardrail_context&.dig("violation_type").presence ||
         "unknown"
+    end
+
+    def create_review_runs_and_redirect(pr_ids:, on_error_path:, custom_prompt:, goal:)
+      # Soft gate: budget is re-checked at execution time in ProcessRunQueueJob#start_claimed_run,
+      # so over-queuing is caught before any spend occurs.
+      budget_result = CostBudgets::Check.call(@project)
+      unless budget_result[:allowed]
+        redirect_to on_error_path, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
+        return
+      end
+
+      prs = @project.issues.pull_requests_only.where(id: pr_ids)
+      if prs.empty?
+        redirect_to on_error_path, alert: "None of the selected pull requests could be found."
+        return
+      end
+
+      # Filter out PRs that already have active (unfinished) runs server-side,
+      # since the client-side disabled checkbox can be bypassed or hit by a race.
+      active_pr_numbers = @project.agent_runs
+        .where(source_pull_request_number: prs.map(&:github_number), status: AgentRun::UNFINISHED_STATUSES)
+        .pluck(:source_pull_request_number)
+      prs = prs.where.not(github_number: active_pr_numbers) if active_pr_numbers.any?
+      if prs.empty?
+        redirect_to on_error_path, alert: "All selected pull requests already have active runs."
+        return
+      end
+
+      ActiveRecord::Base.transaction do
+        prs.each do |pr|
+          create_agent_run(
+            custom_prompt: custom_prompt,
+            source_pull_request_number: pr.github_number,
+            goal: goal
+          )
+        end
+      end
+      ProcessRunQueueJob.perform_later
+
+      notice = if prs.size == 1
+        "Agent run queued for PR review."
+      else
+        "#{prs.size} agent runs queued for PR review."
+      end
+      redirect_to project_path(@project), notice: notice
+    rescue NoRunnableProviderError => e
+      redirect_to on_error_path, alert: e.message
+    rescue ActiveRecord::RecordNotUnique
+      # Only proxy_token has a unique index; duplicate PR runs are caught
+      # server-side above (active_pr_numbers filter) rather than by a DB constraint.
+      redirect_to on_error_path, alert: "An unexpected error occurred. Please try again."
+    end
+
+    def compute_pr_priority_tiers(pull_requests)
+      priority_labels = @project.effective_priority_labels
+      pull_requests.each_with_object({}) do |pr, hash|
+        tier = Project::PRIORITY_TIERS.find do |t|
+          label_name = priority_labels[t]
+          label_name && pr.labels.include?(label_name)
+        end
+        hash[pr.id] = tier
+      end
     end
 
     def available_run_provider_options

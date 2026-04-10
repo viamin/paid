@@ -5,19 +5,19 @@ module Prompts
   # Included by both BuildForIssue and BuildForPr to provide
   # consistent database/infrastructure guardrails across all agent prompts.
   module ServiceContainerSections
-    # Public module method: generates the service-environment text for a
-    # project without requiring a full BuildForIssue/BuildForPr instance.
-    # Used by CreateAgentRunActivity to append service guidance to rendered
-    # PromptVersion custom_prompts.
-    def self.service_environment_section_for(project:)
+    # Public module method: returns the indented database setup instruction
+    # line that goes between the install-deps step and the analyze step in
+    # the issue prompt. Used by both BuildForIssue and CreateAgentRunActivity
+    # so the prompt template can carry a {{setup_database_instruction}} slot.
+    def self.setup_database_instruction_for(project:)
       containers = project.service_containers.to_a
       has_db = containers.any? { |sc| sc.image.include?("postgres") }
       language = Prompts::LanguageCommands.detected_language(project)
+      build_database_instruction(has_db: has_db, language: language)
+    end
 
-      sections = []
-
-      # Setup instruction
-      setup = if has_db
+    def self.build_database_instruction(has_db:, language:)
+      if has_db
         if language == "ruby"
           "   Run `bin/rails db:prepare` to set up the database (`DATABASE_URL` will be configured for you)."
         else
@@ -27,12 +27,22 @@ module Prompts
       else
         "   Do NOT run `bin/setup`, `db:prepare`, or `db:migrate` — no database is available in this environment."
       end
+    end
 
-      sections << <<~SECTION
-        # Service Environment
+    def self.service_environment_section_for(project:, include_setup_instruction: true)
+      containers = project.service_containers.to_a
+      has_db = containers.any? { |sc| sc.image.include?("postgres") }
 
-        #{setup}
-      SECTION
+      sections = []
+
+      if include_setup_instruction
+        language = Prompts::LanguageCommands.detected_language(project)
+        sections << <<~SECTION
+          # Service Environment
+
+          #{build_database_instruction(has_db: has_db, language: language)}
+        SECTION
+      end
 
       if containers.any?
         lines = containers.map { |sc| service_description(sc) }
@@ -86,16 +96,10 @@ module Prompts
     private
 
     def setup_database_instruction
-      if has_database_container?
-        if detected_language == "ruby"
-          "   Run `bin/rails db:prepare` to set up the database (`DATABASE_URL` will be configured for you)."
-        else
-          "   A database service will be available via the `DATABASE_URL` environment variable." \
-          " Use your framework's standard command to create and migrate the database schema."
-        end
-      else
-        "   Do NOT run `bin/setup`, `db:prepare`, or `db:migrate` — no database is available in this environment."
-      end
+      ServiceContainerSections.build_database_instruction(
+        has_db: has_database_container?,
+        language: detected_language
+      )
     end
 
     def service_environment_section(include_setup_instruction: false)

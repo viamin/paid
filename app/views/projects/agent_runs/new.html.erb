@@ -64,16 +64,21 @@
           <p class="mt-1 text-sm text-gray-500" data-goal-toggle-target="prDescription">Push changes to an existing pull request's branch instead of creating a new one.</p>
 
           <div class="mt-4 rounded-lg border border-gray-200 p-4">
-            <label for="pull_request_id" class="block text-sm font-medium text-gray-700">Choose from synced PRs:</label>
             <% if @pull_requests.any? %>
-              <select name="pull_request_id" id="pull_request_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                <option value="">-- Select a pull request --</option>
-                <% @pull_requests.each do |pr| %>
-                  <option value="<%= pr.id %>" <%= "selected" if params[:pull_request_id].to_s == pr.id.to_s %>>
-                    #<%= pr.github_number %> - <%= truncate(pr.title, length: 60) %>
-                  </option>
-                <% end %>
-              </select>
+              <%# Single-select dropdown for create_pr goal %>
+              <div data-goal-toggle-target="prDropdown">
+                <label for="pull_request_id" class="block text-sm font-medium text-gray-700">Choose from synced PRs:</label>
+                <select name="pull_request_id" id="pull_request_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                  <option value="">-- Select a pull request --</option>
+                  <% @pull_requests.each do |pr| %>
+                    <option value="<%= pr.id %>" <%= "selected" if params[:pull_request_id].to_s == pr.id.to_s %>>
+                      #<%= pr.github_number %> - <%= truncate(pr.title, length: 60) %>
+                    </option>
+                  <% end %>
+                </select>
+              </div>
+
+              <%= render "shared/pr_review_table", pull_requests: @pull_requests, prs_with_active_runs: @prs_with_active_runs, pr_priority_tiers: @pr_priority_tiers %>
             <% else %>
               <p class="mt-1 text-sm text-gray-500">No open pull requests found. Sync PRs first.</p>
             <% end %>
