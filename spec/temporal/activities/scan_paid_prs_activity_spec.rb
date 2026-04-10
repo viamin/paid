@@ -1305,6 +1305,252 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when draft PR has manual-only review and CI is green but reviewer has not approved" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "manual" => { "enabled" => true, "reviewer_login" => "alice" } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+      end
+
+      it "does not emit ready_for_owner; emits manual_review_pending" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        types = trigger[:triggers].map { |t| t[:type] }
+        expect(types).to include("manual_review_pending")
+        expect(types).not_to include("ready_for_owner")
+        pending_trigger = trigger[:triggers].find { |t| t[:type] == "manual_review_pending" }
+        expect(pending_trigger[:reviewer_login]).to eq("alice")
+      end
+    end
+
+    context "when draft PR has manual-only review and configured reviewer has approved" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "manual" => { "enabled" => true, "reviewer_login" => "alice" } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "alice", state: "APPROVED", body: "LGTM",
+              submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "emits ready_for_owner when reviewer has approved" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+    end
+
+    context "when draft PR manual reviewer posts CHANGES_REQUESTED after earlier APPROVED" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "manual" => { "enabled" => true, "reviewer_login" => "alice" } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "alice", state: "APPROVED", body: "LGTM",
+              submitted_at: 2.hours.ago },
+            { id: 2, user_login: "alice", state: "CHANGES_REQUESTED", body: "Actually, needs fixes",
+              submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "uses latest review state and emits manual_review_pending" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        types = trigger[:triggers].map { |t| t[:type] }
+        expect(types).to include("manual_review_pending")
+        expect(types).not_to include("ready_for_owner")
+      end
+    end
+
+    context "when draft PR has ci_action-only review and configured action is missing from checks" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "ci_action" => { "enabled" => true, "action_name" => "e2e-suite" } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+      end
+
+      it "does not advance; emits ci_action_pending" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        types = trigger[:triggers].map { |t| t[:type] }
+        expect(types).to include("ci_action_pending")
+        expect(types).not_to include("ready_for_owner")
+        pending_trigger = trigger[:triggers].find { |t| t[:type] == "ci_action_pending" }
+        expect(pending_trigger[:action_name]).to eq("e2e-suite")
+      end
+    end
+
+    context "when draft PR has ci_action-only review and configured action succeeded" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "ci_action" => { "enabled" => true, "action_name" => "e2e-suite" } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [
+            { name: "ci", conclusion: "success" },
+            { name: "e2e-suite", conclusion: "success" }
+          ],
+          reviews: [],
+          review_threads: []
+        )
+      end
+
+      it "advances to ready_for_owner" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+    end
+
+    context "when ready PR has manual review pending and auto-merge is enabled" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+      end
+
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_enabled: true,
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "manual" => { "enabled" => true, "reviewer_login" => "alice" } }
+          }
+        )
+        pr_issue
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "Approved",
+              submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "does not auto-merge when manual reviewer has not approved" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).not_to be_empty
+        trigger = result[:prs_to_trigger].first
+        types = trigger[:triggers].map { |t| t[:type] }
+        expect(types).to include("manual_review_pending")
+        expect(types).not_to include("owner_approved")
+      end
+    end
+
+    context "when detect_ready_triggers includes non-bot review gates" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+      end
+
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "ci_action" => { "enabled" => true, "action_name" => "e2e-suite" } }
+          }
+        )
+        pr_issue
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+      end
+
+      it "includes ci_action_pending in ready-phase triggers" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        types = trigger[:triggers].map { |t| t[:type] }
+        expect(types).to include("ci_action_pending")
+      end
+    end
+
     context "when draft PR has some green checks but others still pending" do
       before do
         project.update!(owner_reviewer_login: "viamin")
