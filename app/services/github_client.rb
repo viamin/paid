@@ -189,6 +189,25 @@ class GithubClient
     end.map(&:filename)
   end
 
+  # Compares two commits and returns the list of changed file paths.
+  #
+  # NOTE: GitHub's compare API returns a maximum of 300 files per response.
+  # For very large diffs (e.g., a rebase onto a distant base), the result
+  # may be silently truncated. This is unlikely for the narrow
+  # commit-to-HEAD diffs this method currently serves, but callers doing
+  # broader comparisons should be aware of the limit.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param base [String] Base commit SHA
+  # @param head [String] Head commit SHA
+  # @return [Array<String>] File paths changed between base and head
+  def compare_changed_files(repo, base, head)
+    handle_errors do
+      comparison = client.compare(repo, base, head)
+      (comparison.files || []).map(&:filename)
+    end
+  end
+
   # Creates an issue on a repository.
   #
   # @param repo [String] Repository in "owner/name" format
@@ -452,7 +471,7 @@ class GithubClient
   #
   # @param repo [String] Repository in "owner/name" format
   # @param number [Integer] Pull request number
-  # @return [Array<Hash>] Reviews with :id, :user_login, :state, :body, :submitted_at keys (:body is always a String)
+  # @return [Array<Hash>] Reviews with :id, :user_login, :state, :body, :submitted_at, :commit_id keys (:body is always a String)
   # @raise [NotFoundError] if the pull request does not exist
   def pull_request_reviews(repo, number)
     handle_errors do
@@ -463,7 +482,8 @@ class GithubClient
           user_login: r.user&.login,
           state: r.state,
           body: r.body.to_s,
-          submitted_at: parse_timestamp(r.submitted_at)
+          submitted_at: parse_timestamp(r.submitted_at),
+          commit_id: r.commit_id
         }
       end
     end
@@ -709,7 +729,7 @@ class GithubClient
   # @param number [Integer] Pull request number
   # @param per_page [Integer, nil] When set, fetches a single page of this size
   #   (no auto-pagination). When nil, auto-paginates all comments.
-  # @return [Array<Hash>] Comments with :id, :user_login, :body, :created_at keys
+  # @return [Array<Hash>] Comments with :id, :user_login, :body, :created_at, :path, :pull_request_review_id keys
   def pull_request_review_comments(repo, number, per_page: nil)
     handle_errors do
       comments = if per_page
@@ -724,7 +744,9 @@ class GithubClient
           id: c.id,
           user_login: c.user&.login,
           body: c.body.to_s,
-          created_at: parse_timestamp(c.created_at)
+          created_at: parse_timestamp(c.created_at),
+          path: c.path,
+          pull_request_review_id: c.pull_request_review_id
         }
       end
     end
