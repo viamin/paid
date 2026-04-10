@@ -361,10 +361,13 @@ module Activities
     end
 
     # Circuit breaker: if the last N automatic draft follow-up runs on
-    # this PR all ended without producing any output (timeout/failed/
-    # cancelled with zero iterations), stop requeueing to prevent
-    # infinite retry loops. Scoped to automatic create_pr runs so that
-    # manual runs or review-phase followups don't trip the breaker.
+    # this PR all ended without producing any output, stop requeueing
+    # to prevent infinite retry loops. A run is "unproductive" if it
+    # finished as no_output (completed with zero commits), or if it
+    # failed/cancelled/timed out with zero iterations. Runs that did
+    # real work before failing don't trip the breaker. Scoped to
+    # automatic create_pr runs so that manual runs or review-phase
+    # followups don't trip the breaker.
     #
     # The draft_review_count guard ensures we only consider runs from the
     # current draft phase. maybe_restart_draft resets draft_review_count
@@ -373,7 +376,7 @@ module Activities
     def consecutive_draft_failures_breaker?(project, issue)
       return false if issue.draft_review_count < MAX_CONSECUTIVE_DRAFT_FAILURES
 
-      failure_statuses = AgentRun::FAILURE_STATUSES + %w[cancelled]
+      unproductive_statuses = AgentRun::FAILURE_STATUSES + %w[cancelled no_output]
 
       recent_runs = project.agent_runs
         .where(source_pull_request_number: issue.github_number)
@@ -385,7 +388,7 @@ module Activities
       return false if recent_runs.size < MAX_CONSECUTIVE_DRAFT_FAILURES
 
       recent_runs.all? do |run|
-        failure_statuses.include?(run.status) && run.iterations.to_i.zero?
+        unproductive_statuses.include?(run.status) && (run.status == "no_output" || run.iterations.to_i.zero?)
       end
     end
 

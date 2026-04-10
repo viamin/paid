@@ -6,6 +6,7 @@ module ApplicationHelper
     "pending" => { bg: "bg-yellow-100", text: "text-yellow-800", label: "Pending" },
     "running" => { bg: "bg-blue-100", text: "text-blue-700", label: "Running" },
     "completed" => { bg: "bg-green-100", text: "text-green-700", label: "Completed" },
+    "no_output" => { bg: "bg-slate-100", text: "text-slate-600", label: "No Output" },
     "failed" => { bg: "bg-red-100", text: "text-red-700", label: "Failed" },
     "cancelled" => { bg: "bg-gray-100", text: "text-gray-600", label: "Cancelled" },
     "timeout" => { bg: "bg-orange-100", text: "text-orange-700", label: "Timeout" },
