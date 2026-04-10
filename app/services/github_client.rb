@@ -191,6 +191,12 @@ class GithubClient
 
   # Compares two commits and returns the list of changed file paths.
   #
+  # NOTE: GitHub's compare API returns a maximum of 300 files per response.
+  # For very large diffs (e.g., a rebase onto a distant base), the result
+  # may be silently truncated. This is unlikely for the narrow
+  # commit-to-HEAD diffs this method currently serves, but callers doing
+  # broader comparisons should be aware of the limit.
+  #
   # @param repo [String] Repository in "owner/name" format
   # @param base [String] Base commit SHA
   # @param head [String] Head commit SHA
