@@ -495,15 +495,16 @@ RSpec.describe "AgentRuns" do
         expect(github_client).to have_received(:add_labels_to_issue).with(project.full_name, issue.github_number, [ "P1" ])
       end
 
-      it "does not sync GitHub labels when the local issue update fails" do
+      it "rolls back the agent run when the local issue label update fails" do
         expect(GithubClient).not_to receive(:new)
         issue.update_column(:paid_state, "bogus")
 
         expect {
           post project_agent_runs_path(project), params: { issue_id: issue.id, priority_tier: "P1" }
-        }.to change(AgentRun, :count).by(1)
+        }.not_to change(AgentRun, :count)
 
         expect(issue.reload.labels).to be_blank
+        expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
       end
 
       it "redirects with error when no issue selected" do
