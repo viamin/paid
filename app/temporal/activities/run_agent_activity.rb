@@ -64,6 +64,11 @@ module Activities
     # contain ordinary agent prose that mentions rate limiting.
     # "too many requests" is only matched when accompanied by HTTP 429 or
     # status code context to avoid false positives from conversational text.
+    #
+    # Note: bare "usage limit" (without exceeded/reached/hit) is deliberately
+    # excluded here — it matches RATE_LIMIT_PATTERNS for exit-code failures
+    # but is too loose for timeout reclassification where the output may
+    # contain conversational text.
     TIMEOUT_RATE_LIMIT_PATTERNS = [
       /\bHTTP\s?429\b/i,
       /\b429\b.*\btoo many requests\b/i,
@@ -526,8 +531,9 @@ module Activities
       # Other execution error
       raise ProviderExecutionError, "Agent exited with code #{result[:exit_code]}: #{output.truncate(500)}"
     rescue Containers::Provision::TimeoutError => e
-      # execution_started_at is nil if the timeout fires before line 477 (e.g.
-      # during start!/callbacks); recent_timeout_output short-circuits on blank.
+      # execution_started_at is nil if the timeout fires before execution
+      # begins (e.g. during start!/callbacks); recent_timeout_output
+      # short-circuits on blank.
       timeout_output = recent_timeout_output(agent_run, since: execution_started_at, prompt: prompt)
       if timeout_rate_limit_error?(timeout_output)
         reset_at = parse_rate_limit_reset(timeout_output)
@@ -603,9 +609,13 @@ module Activities
 
       # Precompute normalized prompt lines once rather than re-parsing per chunk.
       normalized_prompt = normalize_output_text(prompt)
-      prompt_lines = normalized_prompt.present? ? normalized_prompt.each_line.map { |line|
-        normalize_output_line(line, strip_prompt_prefixes: true)
-      }.reject(&:blank?).to_set : Set.new
+      prompt_lines = if normalized_prompt.present?
+        normalized_prompt.each_line.map do |line|
+          normalize_output_line(line, strip_prompt_prefixes: true)
+        end.reject(&:blank?).to_set
+      else
+        Set.new
+      end
 
       normalized_chunks = chunks.filter_map do |chunk|
         stripped = strip_prompt_echo_with(chunk, prompt, normalized_prompt, prompt_lines).strip
@@ -614,6 +624,10 @@ module Activities
         stripped
       end
 
+      # Join chunks with spaces so patterns can match across chunk
+      # boundaries (e.g. "Free tier" + " limit reached"). A keyword split
+      # mid-word across chunks (e.g. "quo" + "ta exceeded") would produce
+      # "quo ta exceeded" and miss the match — acceptably unlikely in practice.
       normalized_chunks.reverse.join(" ")
     end
 
