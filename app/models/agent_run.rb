@@ -1,12 +1,12 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
-  STATUSES = %w[queued pending running paused completed failed cancelled timeout retried auth_expired rate_limited].freeze
+  STATUSES = %w[queued pending running paused completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
   GOALS = %w[create_pr create_issue review].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
   ACTIVE_STATUSES = %w[pending running].freeze
-  FINISHED_STATUSES = %w[completed failed cancelled timeout retried auth_expired rate_limited].freeze
+  FINISHED_STATUSES = %w[completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
   UNFINISHED_STATUSES = %w[queued pending running paused].freeze
   GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly].freeze
@@ -89,6 +89,7 @@ class AgentRun < ApplicationRecord
   scope :pending, -> { where(status: "pending") }
   scope :running, -> { where(status: "running") }
   scope :completed, -> { where(status: "completed") }
+  scope :no_output, -> { where(status: "no_output") }
   scope :failed, -> { where(status: "failed") }
   scope :cancelled, -> { where(status: "cancelled") }
   scope :timeout, -> { where(status: "timeout") }
@@ -579,6 +580,15 @@ class AgentRun < ApplicationRecord
       pull_request_number: pr_number,
       created_issue_url: issue_url,
       created_issue_number: issue_number,
+      duration_seconds: duration
+    )
+  end
+
+  def complete_no_output!(reason: "no_changes")
+    update!(
+      status: "no_output",
+      completed_at: Time.current,
+      error_message: reason,
       duration_seconds: duration
     )
   end

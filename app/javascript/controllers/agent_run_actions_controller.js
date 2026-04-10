@@ -14,6 +14,7 @@ import { Controller } from "@hotwired/stimulus"
 const ACTIVE_STATUSES = ["pending", "running"]
 const FINISHED_STATUSES = [
   "completed",
+  "no_output",
   "failed",
   "cancelled",
   "timeout",
