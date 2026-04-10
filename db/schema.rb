@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_09_231400) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_10_204751) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -151,6 +151,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_09_231400) do
     t.integer "container_metrics_count", default: 0, null: false
     t.datetime "container_retained_until"
     t.integer "cost_cents", default: 0
+    t.boolean "count_toward_draft_review_round", default: false, null: false
     t.datetime "created_at", null: false
     t.integer "created_issue_number"
     t.string "created_issue_url", limit: 500
@@ -159,6 +160,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_09_231400) do
     t.string "diagnosis_status", limit: 50
     t.integer "duration_seconds"
     t.text "error_message"
+    t.integer "expected_draft_review_count"
     t.string "final_provider", limit: 50
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.jsonb "guardrail_context"
@@ -170,6 +172,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_09_231400) do
     t.datetime "paused_at"
     t.float "peak_cpu_percent"
     t.bigint "peak_memory_bytes"
+    t.string "priority_tier", limit: 10
     t.bigint "project_id", null: false
     t.bigint "prompt_version_id"
     t.bigint "provider_id"
@@ -655,7 +658,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_09_231400) do
     t.bigint "user_id"
     t.index ["account_id", "nav_section", "read_at"], name: "index_notifications_on_badge"
     t.index ["account_id", "read_at", "dismissed_at"], name: "index_notifications_on_unread"
-    t.index ["account_id", "source", "subject_type", "subject_id"], name: "index_notifications_on_dedup", unique: true
+    t.index ["account_id", "user_id", "source", "subject_type", "subject_id"], name: "index_notifications_on_dedup", unique: true
     t.index ["subject_type", "subject_id"], name: "index_notifications_on_subject"
     t.index ["user_id"], name: "index_notifications_on_user_id"
   end
@@ -1046,6 +1049,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_09_231400) do
     t.text "error_message"
     t.jsonb "input_data"
     t.bigint "project_id"
+    t.text "restart_reason"
     t.jsonb "result_data"
     t.datetime "started_at"
     t.string "status", limit: 50, default: "running", null: false

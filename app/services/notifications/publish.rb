@@ -24,6 +24,7 @@ module Notifications
     def call
       notification = Notification.find_or_initialize_by(
         account: account,
+        user: user,
         source: source,
         subject: subject
       )

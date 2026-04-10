@@ -21,7 +21,9 @@ class NotificationPolicy < ApplicationPolicy
     def resolve
       raise Pundit::NotAuthorizedError, "must be logged in" unless user
 
-      scope.where(account: user.account)
+      scope.where(account: user.account, user_id: nil).or(
+        scope.where(account: user.account, user_id: user.id)
+      )
     end
   end
 
