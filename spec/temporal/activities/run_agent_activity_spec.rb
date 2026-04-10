@@ -544,6 +544,88 @@ RSpec.describe Activities::RunAgentActivity do
       end
     end
 
+    context "when the run is cancelled by dev:cleanup mid-execution" do
+      before do
+        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+        # Simulate dev:cleanup force-timing-out the run from a *different*
+        # process while the container call is in flight. We mutate via
+        # `update_columns` so the in-memory `agent_run` instance held by the
+        # activity stays stale — only the `reload` inside `cancelled_by_cleanup?`
+        # will surface the cleanup mark, which is what happens in production
+        # where the rake task and the Temporal worker are separate processes.
+        allow(container_service).to receive(:execute) do
+          AgentRun.where(id: agent_run.id).update_all(
+            status: "timeout",
+            error_message: "#{AgentRun::STALE_CLEANUP_ERROR_PREFIX}: process was restarted",
+            completed_at: Time.current
+          )
+          exec_failure
+        end
+      end
+
+      it "does not increment the provider circuit-breaker failure_count" do
+        state = user.provider_states.create!(provider_name: "claude", failure_count: 0, circuit_state: "closed")
+
+        begin
+          activity.execute(agent_run_id: agent_run.id)
+        rescue Temporalio::Error::ApplicationError
+          # Expected: AllProvidersExhausted is still raised (the run is dead),
+          # but the breaker must remain untouched.
+        end
+
+        expect(state.reload.failure_count).to eq(0)
+        expect(state.circuit_state).to eq("closed")
+      end
+
+      it "records the provider attempt as cancelled_by_cleanup" do
+        begin
+          activity.execute(agent_run_id: agent_run.id)
+        rescue Temporalio::Error::ApplicationError
+          # expected
+        end
+
+        attempts = agent_run.reload.providers_attempted
+        expect(attempts.last["error_type"]).to eq("cancelled_by_cleanup")
+        expect(attempts.last["success"]).to be false
+      end
+
+      it "preserves the cleanup error_message and timeout status on the run" do
+        begin
+          activity.execute(agent_run_id: agent_run.id)
+        rescue Temporalio::Error::ApplicationError
+          # expected
+        end
+
+        agent_run.reload
+        expect(agent_run.status).to eq("timeout")
+        expect(agent_run.error_message).to start_with(AgentRun::STALE_CLEANUP_ERROR_PREFIX)
+      end
+
+      it "stops iterating providers instead of attempting fallbacks" do
+        user.settings.update!(fallback_enabled: true)
+
+        begin
+          activity.execute(agent_run_id: agent_run.id)
+        rescue Temporalio::Error::ApplicationError
+          # expected
+        end
+
+        # Exactly one provider attempt should be recorded (the one that was
+        # mid-flight when cleanup struck) — not one per configured fallback.
+        expect(agent_run.reload.providers_attempted.size).to eq(1)
+      end
+
+      it "does not enqueue ProcessRunQueueJob" do
+        expect(ProcessRunQueueJob).not_to receive(:perform_later)
+
+        begin
+          activity.execute(agent_run_id: agent_run.id)
+        rescue Temporalio::Error::ApplicationError
+          # expected
+        end
+      end
+    end
+
     context "when agent hits rate limit (single provider)" do
       let(:rate_limit_output) do
         Containers::Provision::Result.failure(
@@ -919,6 +1001,152 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.error_message).to include("wall_clock_timeout")
         expect(agent_run.providers_attempted.map { |attempt| attempt["provider"] }).to eq([ "claude_code" ])
         expect(agent_run.final_provider).to be_nil
+      end
+
+      it "reclassifies timeout output that contains quota errors as rate limited" do
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          agent_run.log!("stderr", "Error: Free tier limit reached. Please upgrade to a paid plan to continue using the service.")
+          3.times { |index| agent_run.log!("stdout", "still waiting on provider chunk #{index}") }
+          raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to include("rate limited")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
+      it "reclassifies timeout output as rate limited when quota message is within the log scan window" do
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          agent_run.log!("stderr", "Free tier limit reached. Please upgrade for higher usage.")
+          100.times { |index| agent_run.log!("stdout", "provider still warming up: #{index}") }
+          raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to include("rate limited")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
+      it "does not reclassify timeout when quota message falls outside the bounded log scan window" do
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          agent_run.log!("stderr", "Free tier limit reached. Please upgrade for higher usage.")
+          250.times { |index| agent_run.log!("stdout", "provider still warming up: #{index}") }
+          raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+          .and have_enqueued_job(ProcessRunQueueJob)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("timeout")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("timeout")
+      end
+
+      it "reclassifies timeout output as rate limited when the quota signal spans chunk boundaries" do
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          agent_run.log!("stderr", "Free tier")
+          agent_run.log!("stderr", " limit reached while processing request")
+          raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to include("rate limited")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
+      it "reclassifies timeout output as rate limited when HTTP 429 appears in output" do
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          agent_run.log!("stderr", "Error: HTTP 429 Too Many Requests")
+          raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
+      it "reclassifies timeout output as rate limited when 'too many requests' appears with 429 context" do
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          agent_run.log!("stderr", "Error 429: Too many requests. Please retry after 60 seconds.")
+          raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
+      it "does not reclassify timeouts when recent output only mentions rate limits conversationally" do
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          agent_run.log!("stdout", "Document how to handle a service overloaded response and a server at capacity banner in the retry guide.")
+          raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+          .and have_enqueued_job(ProcessRunQueueJob)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("timeout")
+        expect(agent_run.error_message).to include("idle_timeout")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("timeout")
+      end
+
+      it "does not reclassify timeouts when 'too many requests' appears without 429 context" do
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          agent_run.log!("stdout", "You have sent too many requests in a given amount of time.")
+          raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+          .and have_enqueued_job(ProcessRunQueueJob)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("timeout")
+        expect(agent_run.error_message).to include("idle_timeout")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("timeout")
+      end
+
+      it "preserves timeout handling when the timeout happens before provider execution starts" do
+        allow(activity).to receive(:augment_prompt_for_goal)
+          .and_raise(Containers::Provision::TimeoutError, "took too long before exec")
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+          .and have_enqueued_job(ProcessRunQueueJob)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("timeout")
+        expect(agent_run.error_message).to include("wall_clock_timeout")
       end
 
       it "raises AllProvidersExhausted when all fallbacks fail" do
