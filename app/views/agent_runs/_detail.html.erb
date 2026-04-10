@@ -74,14 +74,6 @@
              end %>
           <% if elapsed %>
             <%= elapsed %>s
-            <% max_exec = agent_run.project.max_execution_seconds %>
-            <% if max_exec %>
-              <span class="text-sm font-normal text-gray-500">/ <%= max_exec %>s</span>
-              <% pct = (elapsed * 100.0 / max_exec).clamp(0, 100) %>
-              <div class="mt-2 h-1.5 w-full rounded-full bg-gray-200">
-                <div class="h-1.5 rounded-full <%= pct >= 90 ? 'bg-red-500' : pct >= 75 ? 'bg-yellow-500' : 'bg-indigo-600' %>" style="width: <%= pct.round %>%"></div>
-              </div>
-            <% end %>
           <% else %>
             -
           <% end %>
