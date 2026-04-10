@@ -253,9 +253,13 @@ module Activities
               )
             end
           rescue InfiniteLoopError => e
+            last_error = "infinite_loop"
+            if cancelled_by_cleanup?(agent_run)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
+              break
+            end
             record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "infinite_loop")
-            last_error = "infinite_loop"
             logger.warn(message: "agent_execution.infinite_loop_detected", agent_run_id: agent_run.id, reason: e.message)
 
             result = Guardrails::ViolationHandler.call(
@@ -276,12 +280,20 @@ module Activities
           rescue ProviderTimeoutError => e
             last_error = "timeout"
             timeout_error ||= e.message
+            if cancelled_by_cleanup?(agent_run)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
+              break
+            end
             record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "timeout")
             logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message)
             break
           rescue ProviderExecutionError => e
             last_error = "error"
+            if cancelled_by_cleanup?(agent_run)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
+              break
+            end
             record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "error")
             logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message)
@@ -310,7 +322,10 @@ module Activities
         # ProcessRunQueueJob to re-schedule work.
         if timeout_error.present?
           agent_run.timeout!(error: timeout_error) unless agent_run.finished?
-          ProcessRunQueueJob.perform_later
+          # Skip queue processing when cleanup killed the run — the timeout
+          # was not a real provider issue, so there is nothing to re-schedule.
+          # (agent_run was reloaded above, so the model method sees current state)
+          ProcessRunQueueJob.perform_later unless agent_run.cancelled_by_cleanup?
         elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_rate_limited)
           provider_list = providers.any? ? provider_attempt_labels(providers, agent_run, user_settings.user).join(", ") : "none"
           agent_run.rate_limit!(
@@ -432,6 +447,31 @@ module Activities
     def record_provider_failure(user_settings, provider_state_name, provider_states)
       state = provider_state_for(user_settings, provider_state_name, provider_states)
       state.record_failure!(threshold: user_settings.circuit_breaker_failure_threshold)
+    end
+
+    # True when the agent run we're executing has already been force-timed-out
+    # by `dev:cleanup` (e.g. `bin/setup --skip-server` killed our container).
+    # In that case the failure we just rescued was caused by the cleanup, not
+    # by the provider, so we must not penalize the provider's circuit breaker.
+    def cancelled_by_cleanup?(agent_run)
+      agent_run.reload
+      agent_run.cancelled_by_cleanup?
+    rescue ActiveRecord::RecordNotFound
+      false
+    end
+
+    # Mirror of the failed-attempt bookkeeping for the cleanup-cancelled case:
+    # records the attempt with a distinct error_type so the UI can show what
+    # happened, but skips both record_provider_failure and the standard warn
+    # log (which would imply a real provider problem).
+    def record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, error)
+      agent_run.record_provider_attempt(attempt_label, success: false, error_type: "cancelled_by_cleanup")
+      logger.info(
+        message: "agent_execution.cancelled_by_cleanup",
+        provider: provider,
+        agent_run_id: agent_run.id,
+        error: error.message
+      )
     end
 
     # Returns the canonical settings-level provider name for a given agent type.

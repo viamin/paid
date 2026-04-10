@@ -14,6 +14,14 @@ class AgentRun < ApplicationRecord
   TOKEN_LIMIT_STATUSES = %w[ok warning exceeded].freeze
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
 
+  # Sentinel prefix written into AgentRun#error_message by `bin/rails dev:cleanup`
+  # when it forcibly times out an in-flight run because the host process is being
+  # restarted (e.g. `bin/setup --skip-server`). Code that observes a run failing
+  # while marked with this prefix should treat the failure as caused by the
+  # cleanup, not by the provider — in particular, do not increment provider
+  # circuit-breaker counters on its behalf.
+  STALE_CLEANUP_ERROR_PREFIX = "Marked stale on startup"
+
   belongs_to :project
   belongs_to :issue, optional: true
   belongs_to :prompt_version, optional: true
@@ -642,6 +650,15 @@ class AgentRun < ApplicationRecord
       error_message: error,
       duration_seconds: duration
     )
+  end
+
+  # True when this run was force-timed-out by `dev:cleanup` (typically because
+  # `bin/setup --skip-server` is restarting the host process and stopping the
+  # run's container out from under the in-flight Temporal activity). Used by
+  # RunAgentActivity to suppress provider circuit-breaker bookkeeping for
+  # failures that the cleanup itself induced.
+  def cancelled_by_cleanup?
+    status == "timeout" && error_message.to_s.start_with?(STALE_CLEANUP_ERROR_PREFIX)
   end
 
   def retried?
