@@ -16,6 +16,7 @@ module Activities
       counts_by_status = runs.group(:status).count
 
       completed = counts_by_status["completed"].to_i
+      no_output = counts_by_status["no_output"].to_i
       failed = AgentRun::FAILURE_STATUSES.sum { |status| counts_by_status[status].to_i }
       cancelled = counts_by_status["cancelled"].to_i
       active = AgentRun::ACTIVE_STATUSES.sum { |status| counts_by_status[status].to_i }
@@ -27,13 +28,14 @@ module Activities
       missing = agent_run_ids.size - found_count
       total = found_count
 
-      all_finished = (completed + failed + cancelled) == total && total > 0
+      all_finished = (completed + no_output + failed + cancelled) == total && total > 0
 
       logger.info(
         message: "parallel_execution.progress",
         parent_workflow_id: parent_workflow_id,
         total: total,
         completed: completed,
+        no_output: no_output,
         failed: failed,
         cancelled: cancelled,
         active: active,
@@ -45,6 +47,7 @@ module Activities
       {
         total: total,
         completed: completed,
+        no_output: no_output,
         failed: failed,
         cancelled: cancelled,
         active: active,
