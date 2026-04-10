@@ -355,7 +355,7 @@ module Activities
     def consecutive_draft_failures_breaker?(project, issue)
       return false if issue.draft_review_count < MAX_CONSECUTIVE_DRAFT_FAILURES
 
-      failure_statuses = AgentRun::FAILURE_STATUSES + %w[cancelled]
+      unproductive_statuses = AgentRun::FAILURE_STATUSES + %w[cancelled no_output]
 
       recent_runs = project.agent_runs
         .where(source_pull_request_number: issue.github_number)
@@ -367,7 +367,7 @@ module Activities
       return false if recent_runs.size < MAX_CONSECUTIVE_DRAFT_FAILURES
 
       recent_runs.all? do |run|
-        failure_statuses.include?(run.status) && run.iterations.to_i.zero?
+        unproductive_statuses.include?(run.status)
       end
     end
 
