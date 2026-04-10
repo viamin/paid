@@ -23,7 +23,7 @@ module Issues
   class AutoPick
     NoRunnableProviderError = Class.new(StandardError)
 
-    # Each label here must also be created as a GitHub label in the repo to take effect.
+    # Each label here must also exist as a GitHub label in the repo so it can be applied to issues.
     EXCLUDED_LABELS = %w[planning research waiting tracking epic needs-manual-setup].freeze
     PAID_READY_LABEL = "paid-ready"
 
