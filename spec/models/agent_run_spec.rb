@@ -505,6 +505,34 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#cancelled_by_cleanup?" do
+      it "returns true when status is timeout and error_message starts with the sentinel prefix" do
+        agent_run = build(:agent_run, status: "timeout",
+          error_message: "#{AgentRun::STALE_CLEANUP_ERROR_PREFIX}: process was restarted")
+
+        expect(agent_run.cancelled_by_cleanup?).to be true
+      end
+
+      it "returns false when error_message lacks the sentinel prefix" do
+        agent_run = build(:agent_run, status: "timeout", error_message: "Provider timed out")
+
+        expect(agent_run.cancelled_by_cleanup?).to be false
+      end
+
+      it "returns false when status is not timeout even if the prefix is present" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "#{AgentRun::STALE_CLEANUP_ERROR_PREFIX}: process was restarted")
+
+        expect(agent_run.cancelled_by_cleanup?).to be false
+      end
+
+      it "returns false when error_message is nil" do
+        agent_run = build(:agent_run, status: "timeout", error_message: nil)
+
+        expect(agent_run.cancelled_by_cleanup?).to be false
+      end
+    end
+
     describe "#total_tokens" do
       it "returns sum of input and output tokens" do
         agent_run = build(:agent_run, tokens_input: 1000, tokens_output: 500)
@@ -1249,14 +1277,14 @@ RSpec.describe AgentRun do
     end
 
     it "prioritizes manual runs over automatic runs" do
-      auto = create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
+      create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
       manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
 
       expect(described_class.next_queued_run).to eq(manual)
     end
 
     it "prioritizes auto-continue (PR) runs over auto-picked runs" do
-      auto_picked = create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
+      create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
       auto_continue = create(:agent_run, :queued, trigger_type: "automatic",
         source_pull_request_number: 42, created_at: 1.minute.ago)
 
@@ -1264,23 +1292,103 @@ RSpec.describe AgentRun do
     end
 
     it "prioritizes create_issue over create_pr within the same priority tier" do
-      pr_run = create(:agent_run, :queued, trigger_type: "manual", goal: "create_pr", created_at: 2.minutes.ago)
+      create(:agent_run, :queued, trigger_type: "manual", goal: "create_pr", created_at: 2.minutes.ago)
       issue_run = create(:agent_run, :queued, trigger_type: "manual", goal: "create_issue", created_at: 1.minute.ago)
 
       expect(described_class.next_queued_run).to eq(issue_run)
     end
 
     it "uses FIFO within the same priority tier and goal type" do
-      newer_manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
+      create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
       older_manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 2.minutes.ago)
 
       expect(described_class.next_queued_run).to eq(older_manual)
+    end
+
+    it "prioritizes P1-labeled issues above manual runs" do
+      project = create(:project)
+      p1_issue = create(:issue, project: project, labels: [ "P1" ])
+      manual_run = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)
+      p1_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+        issue: p1_issue, created_at: 1.minute.ago)
+
+      expect(described_class.next_queued_run).to eq(p1_run)
+    end
+
+    it "prioritizes P2-labeled issues above auto-continue runs" do
+      project = create(:project)
+      p2_issue = create(:issue, project: project, labels: [ "P2" ])
+      auto_continue = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+        source_pull_request_number: 42, created_at: 2.minutes.ago)
+      p2_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+        issue: p2_issue, created_at: 1.minute.ago)
+
+      expect(described_class.next_queued_run).to eq(p2_run)
+    end
+
+    it "prioritizes P3-labeled issues above plain auto-pick runs" do
+      project = create(:project)
+      p3_issue = create(:issue, project: project, labels: [ "P3" ])
+      plain_issue = create(:issue, project: project, labels: [])
+      auto_pick = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+        issue: plain_issue, created_at: 2.minutes.ago)
+      p3_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+        issue: p3_issue, created_at: 1.minute.ago)
+
+      expect(described_class.next_queued_run).to eq(p3_run)
+    end
+
+    it "respects custom priority label names from project settings" do
+      project = create(:project, priority_labels: { "P1" => "critical", "P2" => "important" })
+      critical_issue = create(:issue, project: project, labels: [ "critical" ])
+      manual_run = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)
+      critical_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+        issue: critical_issue, created_at: 1.minute.ago)
+
+      expect(described_class.next_queued_run).to eq(critical_run)
+    end
+
+    it "resolves labels from PR issue via source_pull_request_number" do
+      project = create(:project)
+      pr_issue = create(:issue, project: project, labels: [ "P1" ],
+        is_pull_request: true, github_number: 99)
+      plain_run = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)
+      pr_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+        issue: nil, custom_prompt: "Fix PR", source_pull_request_number: 99, created_at: 1.minute.ago)
+
+      expect(described_class.next_queued_run).to eq(pr_run)
+    end
+
+    context "with all 6 priority tiers" do
+      let(:project) { create(:project) }
+      let(:p1_issue) { create(:issue, project: project, labels: [ "P1" ]) }
+      let(:p2_issue) { create(:issue, project: project, labels: [ "P2" ]) }
+      let(:p3_issue) { create(:issue, project: project, labels: [ "P3" ]) }
+      let(:plain_issue) { create(:issue, project: project, labels: []) }
+
+      it "produces correct ordering across all tiers" do
+        auto_pick = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+          issue: plain_issue, created_at: 6.minutes.ago)
+        p3_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+          issue: p3_issue, created_at: 5.minutes.ago)
+        auto_continue = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+          issue: nil, custom_prompt: "Fix PR", source_pull_request_number: 42, created_at: 4.minutes.ago)
+        p2_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+          issue: p2_issue, created_at: 3.minutes.ago)
+        manual_run = create(:agent_run, :queued, trigger_type: "manual", project: project,
+          issue: create(:issue, project: project, labels: []), created_at: 2.minutes.ago)
+        p1_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+          issue: p1_issue, created_at: 1.minute.ago)
+
+        ordered_ids = described_class.queued_with_priority.order(described_class::QUEUE_ORDER).pluck(:id)
+        expect(ordered_ids).to eq([ p1_run, manual_run, p2_run, auto_continue, p3_run, auto_pick ].map(&:id))
+      end
     end
   end
 
   describe ".peek_next_queued_run" do
     it "returns the highest-priority queued run without changing status" do
-      auto = create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
+      create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
       manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
 
       peeked = described_class.peek_next_queued_run
@@ -1345,6 +1453,38 @@ RSpec.describe AgentRun do
 
       expect(run.queue_priority_tier).to eq(:auto_pick)
     end
+
+    it "returns :label_p1 when the issue has the P1 label" do
+      project = create(:project)
+      issue = create(:issue, project: project, labels: [ "P1" ])
+      run = create(:agent_run, trigger_type: "automatic", project: project, issue: issue)
+
+      expect(run.queue_priority_tier).to eq(:label_p1)
+    end
+
+    it "returns :label_p2 when the issue has the P2 label" do
+      project = create(:project)
+      issue = create(:issue, project: project, labels: [ "P2" ])
+      run = create(:agent_run, trigger_type: "automatic", project: project, issue: issue)
+
+      expect(run.queue_priority_tier).to eq(:label_p2)
+    end
+
+    it "returns :label_p3 when the issue has the P3 label" do
+      project = create(:project)
+      issue = create(:issue, project: project, labels: [ "P3" ])
+      run = create(:agent_run, trigger_type: "automatic", project: project, issue: issue)
+
+      expect(run.queue_priority_tier).to eq(:label_p3)
+    end
+
+    it "uses custom label names from project priority_labels" do
+      project = create(:project, priority_labels: { "P1" => "urgent" })
+      issue = create(:issue, project: project, labels: [ "urgent" ])
+      run = create(:agent_run, trigger_type: "automatic", project: project, issue: issue)
+
+      expect(run.queue_priority_tier).to eq(:label_p1)
+    end
   end
 
   describe "#queue_priority_label" do
@@ -1395,7 +1535,7 @@ RSpec.describe AgentRun do
         source_pull_request_number: 99, created_at: 1.minute.ago)
       p2 = queued_run_with_issue_labels([ "high" ], trigger_type: "automatic", created_at: 2.minutes.ago)
 
-      ordered = described_class.queued.order(described_class::QUEUE_ORDER).to_a
+      ordered = described_class.queued_with_priority.order(described_class::QUEUE_ORDER).to_a
       expect(ordered).to eq([ manual, p2, auto_continue ])
     end
 
@@ -1405,7 +1545,7 @@ RSpec.describe AgentRun do
         source_pull_request_number: 99, created_at: 1.minute.ago)
       p3 = queued_run_with_issue_labels([ "low" ], trigger_type: "automatic", created_at: 2.minutes.ago)
 
-      ordered = described_class.queued.order(described_class::QUEUE_ORDER).to_a
+      ordered = described_class.queued_with_priority.order(described_class::QUEUE_ORDER).to_a
       expect(ordered).to eq([ auto_continue, p3, auto_pick ])
     end
 
@@ -1422,6 +1562,18 @@ RSpec.describe AgentRun do
 
       expect(run.queue_priority_tier).to eq(:label_p1)
       _ = pr_record
+    end
+
+    it "considers labels from both issue and source PR (split-label scenario)" do
+      issue = create(:issue, project: project, labels: [ "low" ])
+      create(:issue, project: project, github_number: 777, is_pull_request: true, labels: [ "critical" ])
+      manual = create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 2.minutes.ago)
+      split_run = create(:agent_run, :queued, project: project, trigger_type: "automatic",
+        issue: issue, source_pull_request_number: 777, created_at: 1.minute.ago)
+
+      expect(split_run.queue_priority_tier).to eq(:label_p1)
+      expect(described_class.next_queued_run).to eq(split_run)
+      _ = manual
     end
 
     describe ".preload_source_pull_requests" do
@@ -1455,6 +1607,14 @@ RSpec.describe AgentRun do
         expect(Issue).not_to receive(:where)
         described_class.preload_source_pull_requests([ run ])
       end
+    end
+
+    it "returns '1 - P1' for P1-labeled issues" do
+      project = create(:project)
+      issue = create(:issue, project: project, labels: [ "P1" ])
+      run = create(:agent_run, trigger_type: "automatic", project: project, issue: issue)
+
+      expect(run.queue_priority_label).to eq("1 - P1")
     end
   end
 

@@ -11,6 +11,46 @@ module Prompts
 
     class UntrustedIssueError < StandardError; end
 
+    PROMPT_SLUG = "coding.issue_implementation"
+
+    # Fallback used only if the seeded prompt is missing or deactivated.
+    # The active template lives in db/seeds/prompts.rb under PROMPT_SLUG.
+    FALLBACK_PROMPT = <<~'PROMPT'
+      # Task
+
+      You are working on the following GitHub issue:
+
+      **{{title}}** (#{{issue_number}})
+
+      {{body}}
+
+      # Instructions
+
+      1. Install dependencies (`bundle install`, `yarn install`, etc.)
+      {{setup_database_instruction}}
+      2. Analyze the issue and understand what needs to be done
+      3. Make the necessary code changes
+      4. Run lint and fix any violations: `{{lint_command}}`
+      5. Run the test suite and fix any failures: `{{test_command}}`
+      6. Commit your changes with a descriptive message
+
+      **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
+      If the commit is rejected, read the error output carefully, fix the issues, and commit again.
+      Keep iterating until the commit succeeds. Do not leave uncommitted changes.
+
+      # Rules — you MUST follow these
+
+      - **Lint and tests MUST pass before every commit.** Do not commit code that fails lint or tests.
+      - **Never use `--no-verify`** or any flag that skips git hooks.
+      - **Never disable linters** (e.g. rubocop:disable, eslint-disable, noqa) to silence failures. Fix the code instead.
+      - **Fix forward** — if a check fails, fix the underlying issue. Do not bypass the check.
+      - Work within the existing codebase style and conventions
+      - Do not modify unrelated files
+      - Focus on completing the specific task in the issue
+
+      When you're done, commit all your changes. Do not push.
+    PROMPT
+
     # Kept for backwards compatibility with existing references
     LANGUAGE_TEST_COMMANDS = LanguageCommands::LANGUAGE_TEST_COMMANDS
     LANGUAGE_LINT_COMMANDS = LanguageCommands::LANGUAGE_LINT_COMMANDS
@@ -32,49 +72,39 @@ module Prompts
       new(...).build
     end
 
-    def self.service_environment_section_for(project:)
-      ServiceContainerSections.service_environment_section_for(project: project)
+    def self.service_environment_section_for(project:, include_setup_instruction: true)
+      ServiceContainerSections.service_environment_section_for(
+        project: project,
+        include_setup_instruction: include_setup_instruction
+      )
     end
 
     def build
       raise UntrustedIssueError, "Cannot build prompt for issue from untrusted user: #{issue.github_creator_login}" unless issue.trusted?
 
-      base_prompt = <<~PROMPT
-        # Task
+      vars = {
+        title: issue.title,
+        issue_number: issue.github_number.to_s,
+        body: issue.body.to_s,
+        lint_command: lint_command,
+        test_command: test_command,
+        setup_database_instruction: setup_database_instruction
+      }
 
-        You are working on the following GitHub issue:
+      rendered = Prompts::Render.call(
+        slug: PROMPT_SLUG,
+        project: project,
+        variables: vars,
+        fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
+      )
 
-        **#{issue.title}** (##{issue.github_number})
-
-        #{issue.body}
-
-        # Instructions
-
-        1. Install dependencies (`bundle install`, `yarn install`, etc.)
-        #{setup_database_instruction}
-        2. Analyze the issue and understand what needs to be done
-        3. Make the necessary code changes
-        4. Run lint and fix any violations: `#{lint_command}`
-        5. Run the test suite and fix any failures: `#{test_command}`
-        6. Commit your changes with a descriptive message
-
-        **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
-        If the commit is rejected, read the error output carefully, fix the issues, and commit again.
-        Keep iterating until the commit succeeds. Do not leave uncommitted changes.
-        #{conversation_section}
-        # Rules — you MUST follow these
-
-        - **Lint and tests MUST pass before every commit.** Do not commit code that fails lint or tests.
-        - **Never use `--no-verify`** or any flag that skips git hooks.
-        - **Never disable linters** (e.g. rubocop:disable, eslint-disable, noqa) to silence failures. Fix the code instead.
-        - **Fix forward** — if a check fails, fix the underlying issue. Do not bypass the check.
-        - Work within the existing codebase style and conventions
-        - Do not modify unrelated files
-        - Focus on completing the specific task in the issue
-
-        When you're done, commit all your changes. Do not push.
-        #{service_environment_section}
-      PROMPT
+      # Dynamic sections are composed in code and appended to the rendered
+      # template so the template stays readable in the prompts UI.
+      base_prompt = [
+        rendered,
+        conversation_section.presence,
+        service_environment_section.presence
+      ].compact.join("\n\n")
 
       with_knowledge = inject_knowledge_context(base_prompt)
       StyleGuides::InjectIntoPrompt.call(prompt: with_knowledge, project: project)

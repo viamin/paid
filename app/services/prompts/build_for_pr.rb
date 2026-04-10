@@ -35,6 +35,46 @@ module Prompts
       new(...).build
     end
 
+    PROMPT_SLUG = "coding.pr_review_rebase"
+
+    # Fallback used only if the seeded prompt is missing or deactivated.
+    # The active template lives in db/seeds/prompts.rb under PROMPT_SLUG.
+    FALLBACK_PROMPT = <<~'PROMPT'
+      # Instructions
+
+      Priority order:
+      {{priority_list}}
+
+      Steps:
+      1. Install dependencies (`bundle install`, `yarn install`, etc.)
+      {{setup_database_instruction}}
+      2. Work through the priorities above in order
+      3. Proactive scan: After making your changes, review the **entire diff** you are
+         about to commit{{review_scan_instruction}}. Look for missing guard clauses,
+         insufficient input validation, unhandled edge cases, missing tests, unclear
+         naming, and style inconsistencies. Fix every issue you find — the goal is
+         zero new review rounds for problems you could have caught yourself.
+      4. Run lint and fix any violations: `{{lint_command}}`
+      5. Run the test suite and fix any failures: `{{test_command}}`
+      6. Commit your changes with a descriptive message
+
+      **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
+      If the commit is rejected, read the error output carefully, fix the issues, and commit again.
+      Keep iterating until the commit succeeds. Do not leave uncommitted changes.
+
+      When you're done, commit all your changes. Do not push.
+
+      # Rules — you MUST follow these
+
+      - **Lint and tests MUST pass before every commit.** Do not commit code that fails lint or tests.
+      - **Never use `--no-verify`** or any flag that skips git hooks.
+      - **Never disable linters** (e.g. rubocop:disable, eslint-disable, noqa) to silence failures. Fix the code instead.
+      - **Fix forward** — if a check fails, fix the underlying issue. Do not bypass the check.
+      - Work within the existing codebase style and conventions
+      - Do not modify unrelated files
+      - Focus on completing the specific tasks listed above
+    PROMPT
+
     def build
       sections = []
       sections << task_section
@@ -43,8 +83,7 @@ module Prompts
       sections << ci_failures_section if failing_checks.any?
       sections << code_review_section if unresolved_threads.any?
       sections << conversation_section if trusted_comments.any?
-      sections << instructions_section
-      sections << rules_section
+      sections << instructions_and_rules_shell
       sections << service_environment_section
       base_prompt = sections.join("\n").delete("\x00")
 
@@ -52,6 +91,33 @@ module Prompts
     end
 
     private
+
+    def instructions_and_rules_shell
+      vars = {
+        priority_list: priority_list,
+        setup_database_instruction: setup_database_instruction,
+        review_scan_instruction: review_scan_instruction,
+        lint_command: lint_command,
+        test_command: test_command
+      }
+
+      Prompts::Render.call(
+        slug: PROMPT_SLUG,
+        project: project,
+        variables: vars,
+        fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
+      )
+    end
+
+    def priority_list
+      priorities = []
+      priorities << "Resolve merge conflicts" unless rebase_succeeded
+      priorities << "Fix CI failures" if failing_checks.any?
+      priorities << "Close implementation gaps against the linked issue" if linked_issue?
+      priorities << "Address code review comments" if unresolved_threads.any?
+      priorities << "Address conversation comments" if trusted_comments.any?
+      priorities.each_with_index.map { |p, i| "#{i + 1}. #{p}" }.join("\n")
+    end
 
     # Returns true when a separate issue is linked (not the PR's own Issue record).
     # PR follow-up runs pass the PR's Issue as `issue`, which duplicates the
@@ -157,56 +223,6 @@ module Prompts
         #{comment_text}
 
         Address any actionable requests in these comments.
-      SECTION
-    end
-
-    def instructions_section
-      priorities = []
-      priorities << "Resolve merge conflicts" unless rebase_succeeded
-      priorities << "Fix CI failures" if failing_checks.any?
-      priorities << "Close implementation gaps against the linked issue" if linked_issue?
-      priorities << "Address code review comments" if unresolved_threads.any?
-      priorities << "Address conversation comments" if trusted_comments.any?
-      priority_list = priorities.each_with_index.map { |p, i| "#{i + 1}. #{p}" }.join("\n")
-
-      <<~SECTION
-        # Instructions
-
-        Priority order:
-        #{priority_list}
-
-        Steps:
-        1. Install dependencies (`bundle install`, `yarn install`, etc.)
-        #{setup_database_instruction}
-        2. Work through the priorities above in order
-        3. Proactive scan: After making your changes, review the **entire diff** you are
-           about to commit#{review_scan_instruction}. Look for missing guard clauses,
-           insufficient input validation, unhandled edge cases, missing tests, unclear
-           naming, and style inconsistencies. Fix every issue you find — the goal is
-           zero new review rounds for problems you could have caught yourself.
-        4. Run lint and fix any violations: `#{lint_command}`
-        5. Run the test suite and fix any failures: `#{test_command}`
-        6. Commit your changes with a descriptive message
-
-        **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
-        If the commit is rejected, read the error output carefully, fix the issues, and commit again.
-        Keep iterating until the commit succeeds. Do not leave uncommitted changes.
-
-        When you're done, commit all your changes. Do not push.
-      SECTION
-    end
-
-    def rules_section
-      <<~SECTION
-        # Rules — you MUST follow these
-
-        - **Lint and tests MUST pass before every commit.** Do not commit code that fails lint or tests.
-        - **Never use `--no-verify`** or any flag that skips git hooks.
-        - **Never disable linters** (e.g. rubocop:disable, eslint-disable, noqa) to silence failures. Fix the code instead.
-        - **Fix forward** — if a check fails, fix the underlying issue. Do not bypass the check.
-        - Work within the existing codebase style and conventions
-        - Do not modify unrelated files
-        - Focus on completing the specific tasks listed above
       SECTION
     end
 
