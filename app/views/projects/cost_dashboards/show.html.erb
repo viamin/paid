@@ -20,7 +20,7 @@
   <% summary = @stats[:summary] %>
 
   <%# Cost Summary Cards — hidden when total cost is zero %>
-  <% if summary[:total_cost_cents] > 0 %>
+  <% if summary[:total_cost_cents].to_i > 0 %>
     <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
         <dt class="truncate text-sm font-medium text-gray-500">Total Cost</dt>
@@ -55,7 +55,7 @@
   <% end %>
 
   <%# Cost by Outcome — hidden when no cost data %>
-  <% if summary[:total_cost_cents] > 0 %>
+  <% if summary[:total_cost_cents].to_i > 0 %>
   <div class="mt-8">
     <h2 class="text-lg font-semibold text-gray-900">Cost by Outcome</h2>
     <p class="mt-1 text-sm text-gray-500">Separate successful run costs from failed/timed-out runs.</p>
@@ -87,7 +87,7 @@
   <% end %>
 
   <%# Cost by Goal Type — hidden when no cost data %>
-  <% if summary[:total_cost_cents] > 0 %>
+  <% if summary[:total_cost_cents].to_i > 0 %>
   <div class="mt-8">
     <h2 class="text-lg font-semibold text-gray-900">Cost by Goal Type</h2>
     <p class="mt-1 text-sm text-gray-500">Compare costs across different types of agent work.</p>

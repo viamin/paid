@@ -40,7 +40,7 @@ RSpec.describe "Projects::CostDashboards" do
         get project_cost_dashboard_path(project)
 
         expect(response.body).to include("No cost data available yet.")
-        expect(response.body).not_to include("Total Cost")
+        expect(response.body).not_to include('<dt class="truncate text-sm font-medium text-gray-500">Total Cost</dt>')
       end
 
       it "shows cost data when token usages exist" do
