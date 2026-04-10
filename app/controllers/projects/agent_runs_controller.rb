@@ -478,13 +478,6 @@ module Projects
       issue.update!(labels: new_labels)
 
       sync_priority_label_to_github(issue, label_name, stale_priority_labels)
-    rescue => e
-      Rails.logger.warn(
-        message: "agent_execution.apply_priority_label_failed",
-        issue_id: issue.id,
-        tier: tier,
-        error: e.message
-      )
     end
 
     def sync_priority_label_to_github(issue, label_name, stale_labels)
@@ -604,8 +597,10 @@ module Projects
       issue = attrs[:issue]
       priority_tier = attrs[:priority_tier]
 
-      create_agent_run(**attrs)
-      apply_priority_label(issue, priority_tier) if issue && priority_tier
+      ActiveRecord::Base.transaction do
+        create_agent_run(**attrs)
+        apply_priority_label(issue, priority_tier) if issue && priority_tier
+      end
       ProcessRunQueueJob.perform_later
 
       capacity_user = settings_owner || current_user
@@ -617,6 +612,8 @@ module Projects
 
       redirect_to project_path(@project), notice: notice
     rescue NoRunnableProviderError => e
+      redirect_to on_error_path, alert: e.message
+    rescue ActiveRecord::RecordInvalid => e
       redirect_to on_error_path, alert: e.message
     rescue ActiveRecord::RecordNotUnique => e
       alert = if (e.cause&.message || e.message).include?("proxy_token")
