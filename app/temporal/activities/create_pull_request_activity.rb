@@ -38,14 +38,16 @@ module Activities
 
         # Best-effort post-processing — failures here must not cause the
         # activity to be retried now that the run is already completed.
-        best_effort(agent_run_id) { add_pr_labels(client, project, pr.number, agent_run_id, issue: issue) }
-        best_effort(agent_run_id) { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
+        best_effort(agent_run_id, context: "add_pr_labels") { add_pr_labels(client, project, pr.number, agent_run_id, issue: issue) }
+        best_effort(agent_run_id, context: "log_pr_action") { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
 
-        logger.info(
-          message: "agent_execution.pull_request_#{pr_action}",
-          agent_run_id: agent_run_id,
-          pull_request_url: pr.html_url
-        )
+        best_effort(agent_run_id, context: "structured_log") do
+          logger.info(
+            message: "agent_execution.pull_request_#{pr_action}",
+            agent_run_id: agent_run_id,
+            pull_request_url: pr.html_url
+          )
+        end
 
         { agent_run_id: agent_run_id, pull_request_url: pr.html_url, pull_request_number: pr.number }
       end
@@ -74,12 +76,13 @@ module Activities
       nil
     end
 
-    def best_effort(agent_run_id)
+    def best_effort(agent_run_id, context: nil)
       yield
     rescue StandardError => e
       logger.warn(
         message: "agent_execution.post_processing_failed",
         agent_run_id: agent_run_id,
+        context: context,
         error_class: e.class.name,
         error: e.message
       )
