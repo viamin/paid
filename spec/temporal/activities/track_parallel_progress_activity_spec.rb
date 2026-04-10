@@ -65,6 +65,20 @@ RSpec.describe Activities::TrackParallelProgressActivity do
       expect(result[:all_finished]).to be true
     end
 
+    it "counts no_output runs toward finished" do
+      project = create(:project)
+      no_output_run = create(:agent_run, :no_output, project: project, parent_workflow_id: "test-wf")
+
+      result = activity.execute({
+        parent_workflow_id: "test-wf",
+        agent_run_ids: [ no_output_run.id ]
+      })
+
+      expect(result[:total]).to eq(1)
+      expect(result[:no_output]).to eq(1)
+      expect(result[:all_finished]).to be true
+    end
+
     it "scopes runs by parent_workflow_id when provided" do
       project = create(:project)
       matching_run = create(:agent_run, :completed, project: project, parent_workflow_id: "parent-wf-1")
