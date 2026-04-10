@@ -100,38 +100,55 @@ module AgentRuns
       gh_issue.html_url
     end
 
+    PROMPT_SLUG = "diagnostics.agent_run_failure"
+
+    # Fallback used only if the seeded prompt is missing or deactivated.
+    # The active template lives in db/seeds/prompts.rb under PROMPT_SLUG.
+    FALLBACK_PROMPT = <<~PROMPT
+      You are diagnosing a failed agent run. Analyze the error and logs below, then provide:
+      1. A brief summary of what went wrong
+      2. The root cause of the failure
+      3. A suggested fix or workaround
+
+      Be concise and actionable. Format your response in Markdown.
+
+      ## Context
+      - Agent type: {{agent_type}}
+      - Goal: {{goal}}
+      - Task: {{task}}
+      - Status: {{status}}
+      - Duration: {{duration}}s
+
+      ## Error Message
+      ```
+      {{error_text}}
+      ```
+
+      ## Recent Logs
+      ```
+      {{logs_text}}
+      ```
+    PROMPT
+
     def diagnosis_prompt
-      error_text = redact_secrets(@agent_run.error_message.to_s).truncate(MAX_ERROR_INPUT, omission: "")
-      logs_text = redact_secrets(recent_logs.to_s).truncate(MAX_LOG_INPUT, omission: "")
-      issue_context = redact_secrets(@agent_run.issue&.title.to_s).truncate(MAX_ERROR_INPUT, omission: "").presence ||
-                      redact_secrets(@agent_run.custom_prompt.to_s).presence ||
-                      "N/A"
+      vars = {
+        agent_type: @agent_run.agent_type,
+        goal: @agent_run.goal,
+        task: redact_secrets(@agent_run.issue&.title.to_s).truncate(MAX_ERROR_INPUT, omission: "").presence ||
+              redact_secrets(@agent_run.custom_prompt.to_s).presence ||
+              "N/A",
+        status: @agent_run.status,
+        duration: @agent_run.duration_seconds || "N/A",
+        error_text: redact_secrets(@agent_run.error_message.to_s).truncate(MAX_ERROR_INPUT, omission: ""),
+        logs_text: redact_secrets(recent_logs.to_s).truncate(MAX_LOG_INPUT, omission: "")
+      }
 
-      <<~PROMPT.strip
-        You are diagnosing a failed agent run. Analyze the error and logs below, then provide:
-        1. A brief summary of what went wrong
-        2. The root cause of the failure
-        3. A suggested fix or workaround
-
-        Be concise and actionable. Format your response in Markdown.
-
-        ## Context
-        - Agent type: #{@agent_run.agent_type}
-        - Goal: #{@agent_run.goal}
-        - Task: #{issue_context}
-        - Status: #{@agent_run.status}
-        - Duration: #{@agent_run.duration_seconds || "N/A"}s
-
-        ## Error Message
-        ```
-        #{error_text}
-        ```
-
-        ## Recent Logs
-        ```
-        #{logs_text}
-        ```
-      PROMPT
+      Prompts::Render.call(
+        slug: PROMPT_SLUG,
+        project: @project,
+        variables: vars,
+        fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
+      ).strip
     end
 
     def recent_logs
