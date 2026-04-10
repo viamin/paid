@@ -55,6 +55,8 @@ class UserSettingsController < ApplicationController
       :retry_max_attempts,
       :retry_base_delay,
       :retry_max_delay,
+      :max_issues_per_page,
+      :max_prs_per_page,
       :fallback_enabled,
       :fallback_providers
     )

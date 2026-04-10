@@ -18,7 +18,11 @@ module StyleGuides
     # Overridden by UserSetting#style_guide_max_raw_bytes at runtime.
     DEFAULT_MAX_RAW_BYTES = 100_000
 
-    COMPRESSION_PROMPT = <<~PROMPT
+    PROMPT_SLUG = "style.compress_guide"
+
+    # Fallback used only if the seeded prompt is missing or deactivated.
+    # The active template lives in db/seeds/prompts.rb under PROMPT_SLUG.
+    FALLBACK_PROMPT = <<~PROMPT
       You are a technical writing assistant. Compress the following coding style guide into a concise, LLM-friendly format.
 
       Rules:
@@ -63,8 +67,14 @@ module StyleGuides
       @max_raw_bytes_used = max_bytes
       raw = raw.byteslice(0, max_bytes).scrub("") if @truncated
 
+      header = Prompts::Render.call(
+        slug: PROMPT_SLUG,
+        project: style_guide.project,
+        fallback: -> { FALLBACK_PROMPT }
+      )
+
       response = AgentHarness.send_message(
-        "#{COMPRESSION_PROMPT}\n\n#{raw}",
+        "#{header}\n\n#{raw}",
         provider: :claude,
         model: DEFAULT_MODEL,
         timeout: TIMEOUT,
