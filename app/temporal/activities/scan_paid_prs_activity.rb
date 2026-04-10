@@ -38,8 +38,10 @@ module Activities
       paid_prs = find_paid_prs(project)
 
       scanned_count = 0
+      unchanged_count = 0
       prs_to_trigger = paid_prs.filter_map do |issue|
         if skip_unchanged_pr?(project, issue)
+          unchanged_count += 1
           next nil
         end
 
@@ -63,7 +65,7 @@ module Activities
         project_id: project_id,
         prs_found: paid_prs.size,
         prs_scanned: scanned_count,
-        prs_skipped: paid_prs.size - scanned_count,
+        prs_skipped_unchanged: unchanged_count,
         prs_triggered: prs_to_trigger.size
       )
 
@@ -393,10 +395,8 @@ module Activities
 
     def recently_completed_run?(project, issue)
       project.agent_runs
-        .where(
-          "source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
-          pr_num: issue.github_number
-        )
+        .where(source_pull_request_number: issue.github_number)
+        .or(project.agent_runs.where(pull_request_number: issue.github_number))
         .where("completed_at >= ?", issue.last_pr_scan_at)
         .exists?
     end

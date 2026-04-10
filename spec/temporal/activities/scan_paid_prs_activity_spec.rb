@@ -2144,7 +2144,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             message: "pr_scanner.scan_complete",
             project_id: project.id,
             prs_scanned: 1,
-            prs_skipped: 0,
+            prs_skipped_unchanged: 0,
             prs_triggered: 0
           )
         )
@@ -2277,6 +2277,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(triggers).to include(hash_including(type: "ci_failure"))
       end
 
+      it "returns :skipped when partial_failure and no triggers in ready phase" do
+        unchanged_pr.update_columns(
+          last_pr_scan_at: nil,
+          github_updated_at: Time.current,
+          pr_review_phase: "ready"
+        )
+        stub_github_for_pr(checks: [ { name: "ci", conclusion: "success" } ])
+        allow(github_client).to receive(:pull_request_reviews)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::Error.new("API error"))
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to be_empty
+        expect(unchanged_pr.reload.last_pr_scan_at).to be_nil
+      end
+
       it "reports skipped count in log output" do
         allow(Rails.logger).to receive(:info)
         allow(Rails.logger).to receive(:debug)
@@ -2288,7 +2305,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             message: "pr_scanner.scan_complete",
             prs_found: 1,
             prs_scanned: 0,
-            prs_skipped: 1
+            prs_skipped_unchanged: 1
           )
         )
       end
