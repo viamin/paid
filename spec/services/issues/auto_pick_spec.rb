@@ -172,6 +172,14 @@ RSpec.describe Issues::AutoPick do
       expect(result).to be_nil
     end
 
+    it "skips issues labeled needs-manual-setup" do
+      create(:issue, project: project, labels: [ "needs-manual-setup" ])
+
+      result = described_class.new(project).call
+
+      expect(result).to be_nil
+    end
+
     context "with tracker/meta issues" do
       it "skips a tracker issue when its body references open issues" do
         tracker = create(:issue, project: project, github_number: 100,
