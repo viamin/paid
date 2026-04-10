@@ -989,6 +989,149 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when codex review pre-dates last run but diff does not touch reviewed files" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: 10, user_login: "chatgpt-codex-connector", body: "Fix this",
+              created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
+              pull_request_review_id: 1 }
+          ])
+        allow(github_client).to receive(:compare_changed_files)
+          .with(project.full_name, "rev_sha", "abc123")
+          .and_return([ "db/schema.rb" ])
+      end
+
+      it "treats the review as unaddressed because the changed files are unrelated" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending")
+      end
+    end
+
+    context "when codex review pre-dates last run and diff touches a reviewed file" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: 10, user_login: "chatgpt-codex-connector", body: "Fix this",
+              created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
+              pull_request_review_id: 1 }
+          ])
+        allow(github_client).to receive(:compare_changed_files)
+          .with(project.full_name, "rev_sha", "abc123")
+          .and_return([ "app/services/fetch_issues_activity.rb", "db/schema.rb" ])
+      end
+
+      it "treats the review as addressed because the diff touches the reviewed file" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when codex review pre-dates last run and has no inline comments" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([])
+      end
+
+      it "falls back to treating the review as addressed" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when codex review pre-dates last run and compare API raises GithubClient::Error" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: 10, user_login: "chatgpt-codex-connector", body: "Fix this",
+              created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
+              pull_request_review_id: 1 }
+          ])
+        allow(github_client).to receive(:compare_changed_files)
+          .with(project.full_name, "rev_sha", "abc123")
+          .and_raise(GithubClient::Error, "Not Found")
+      end
+
+      it "falls back to treating the review as addressed" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
     context "when PR is in draft phase with Claude review threads" do
       before do
         create(:issue, :pull_request,
