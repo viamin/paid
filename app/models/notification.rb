@@ -25,6 +25,9 @@ class Notification < ApplicationRecord
   private
 
   def action_url_is_safe
-    errors.add(:action_url, "must be a path or HTTP(S) URL") unless action_url.start_with?("/", "http://", "https://")
+    return if action_url == "/"
+    return if action_url.match?(%r{\A(/[^/]|https?://)})
+
+    errors.add(:action_url, "must be a path or HTTP(S) URL")
   end
 end

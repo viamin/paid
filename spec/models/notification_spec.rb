@@ -30,8 +30,18 @@ RSpec.describe Notification do
       expect(notification.errors[:action_url]).to include("must be a path or HTTP(S) URL")
     end
 
+    it "rejects protocol-relative action_url" do
+      notification = build(:notification, action_url: "//evil.com/phish")
+      expect(notification).not_to be_valid
+      expect(notification.errors[:action_url]).to include("must be a path or HTTP(S) URL")
+    end
+
     it "accepts path action_url" do
       expect(build(:notification, action_url: "/projects/1")).to be_valid
+    end
+
+    it "accepts root path action_url" do
+      expect(build(:notification, action_url: "/")).to be_valid
     end
 
     it "accepts http action_url" do
