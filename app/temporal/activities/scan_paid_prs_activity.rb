@@ -27,11 +27,14 @@ module Activities
     # distinctive phrase rather than the prefix so we are robust to minor
     # wording changes.
     BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN = /didn'?t find any (?:major )?issues/i
-    # Fallback timeout for body-only review bots: if no clean re-review
-    # arrives within this window after the last agent run, treat the
-    # feedback as addressed to prevent permanent wedges. The primary
-    # clearance path requires a clean signal on the current HEAD commit.
-    BODY_ONLY_REVIEW_FOLLOWUP_TIMEOUT = 30.minutes
+
+    # paid_agent reviews are posted from regular GitHub accounts (not bot
+    # logins registered in PROVIDER_BOT_USERNAMES), so they are invisible
+    # to review_bot? and enabled_review_bot_logins. The agent includes a
+    # machine-readable HTML comment marker when no major findings remain.
+    # Only the marker is used for detection — no text patterns — to avoid
+    # false positives from human reviewers writing similar phrases.
+    PAID_REVIEW_CLEAN_MARKER = "<!-- paid-review-clean -->"
 
     def execute(input)
       project_id = input[:project_id]
@@ -113,18 +116,10 @@ module Activities
 
       # Draft exit still requires an explicitly clean bot review even when
       # other draft comment signals are skipped.
-      # Resolve HEAD SHA early so check_review_bot_status can verify
-      # clean signals target the current commit. The extra fetch is cheap
-      # relative to other API calls in this path, and ||= deduplicates
-      # against the later pr_data fetch at the CI-check stage.
-      pr_data ||= fetch_pr_data(client, project, issue)
-      current_head_sha = pr_data&.head&.sha
-
       if skip_comment_signals
         reviews = fetch_reviews(client, project, issue)
         review_bot_triggers = check_review_bot_status(reviews, unresolved_threads,
-          project: project, last_run: last_run, client: client, issue: issue,
-          head_sha: current_head_sha)
+          project: project, last_run: last_run, client: client, issue: issue)
       else
         # Fetch review threads first; only fetch full reviews when needed.
         unresolved_threads = fetch_unresolved_threads(client, project, issue)
@@ -133,8 +128,7 @@ module Activities
         if human_triggers.blank?
           reviews = fetch_reviews(client, project, issue)
           review_bot_triggers = check_review_bot_status(reviews, unresolved_threads,
-            project: project, last_run: last_run, client: client, issue: issue,
-            head_sha: current_head_sha)
+            project: project, last_run: last_run, client: client, issue: issue)
         end
       end
 
@@ -180,6 +174,15 @@ module Activities
         # all_checks_green? implicitly rejects nil conclusions (pending checks),
         # and only after a clean review-bot review is present.
         if checks.present? && all_checks_green?(checks)
+          # Check non-bot review gates (manual reviewer, ci_action) before advancing.
+          reviews ||= fetch_reviews(client, project, issue) # safety: reviews already fetched above
+          gate_triggers = non_bot_review_gate_triggers(project, reviews, checks)
+          if gate_triggers.any?
+            all_pending = pending_triggers + gate_triggers
+            log_triggers(project, issue, all_pending)
+            return draft_trigger_payload(issue, all_pending)
+          end
+
           return ready_for_owner_trigger(issue)
         end
 
@@ -209,7 +212,7 @@ module Activities
           checks.present? &&
           all_checks_green?(checks) &&
           mergeable == true &&
-          no_outstanding_review_feedback?(project, client, issue, reviews, head_sha: pr_data.head&.sha)
+          no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks)
         return owner_approved_trigger(issue)
       end
 
@@ -313,13 +316,13 @@ module Activities
 
       triggers.concat(ci_failure_triggers(checks))
       triggers.concat(check_review_bot_status(reviews, unresolved_threads,
-        project: project, last_run: last_run, client: client, issue: issue,
-        head_sha: pr_data&.head&.sha))
+        project: project, last_run: last_run, client: client, issue: issue))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
       triggers.concat(check_merge_conflicts(project, pr_data))
+      triggers.concat(non_bot_review_gate_triggers(project, reviews, checks))
 
       triggers
     end
@@ -435,6 +438,54 @@ module Activities
       checks.all? { |c| %w[success skipped neutral].include?(c[:conclusion]) }
     end
 
+    # Returns pending-style triggers when an enabled non-bot review method
+    # (manual or ci_action) has not yet been satisfied. These gates prevent
+    # the scanner from advancing a PR when a human reviewer or a specific
+    # CI action has not approved/completed.
+    def non_bot_review_gate_triggers(project, reviews, checks)
+      return [] unless project.review_enabled?
+
+      triggers = []
+
+      if project.review_method_enabled?("manual")
+        reviewer = project.review_method_config("manual")["reviewer_login"]
+        if reviewer.present? && !manual_reviewer_approved?(reviews, reviewer)
+          triggers << { type: "manual_review_pending", reviewer_login: reviewer,
+                        details: "Awaiting approval from #{reviewer}" }
+        end
+      end
+
+      if project.review_method_enabled?("ci_action")
+        action_name = project.review_method_config("ci_action")["action_name"]
+        if action_name.present? && !ci_action_succeeded?(checks, action_name)
+          triggers << { type: "ci_action_pending", action_name: action_name,
+                        details: "Awaiting successful #{action_name} check" }
+        end
+      end
+
+      triggers
+    end
+
+    def manual_reviewer_approved?(reviews, reviewer_login)
+      return false if reviews.nil?
+
+      reviewer_reviews = reviews.select { |r| r[:user_login]&.downcase == reviewer_login.strip.downcase }
+      return false if reviewer_reviews.empty?
+
+      # Time.at(0) fallback: reviews with nil timestamps sort oldest, so any
+      # review with a real timestamp will win. GitHub always populates
+      # submitted_at in practice, so this is purely defensive.
+      latest = reviewer_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+      latest[:state] == "APPROVED"
+    end
+
+    def ci_action_succeeded?(checks, action_name)
+      return false if checks.nil? || checks.empty?
+
+      matching = checks.find { |c| c[:name] == action_name.strip }
+      matching&.dig(:conclusion) == "success"
+    end
+
     # --- Review checks ---
 
     def fetch_unresolved_threads(client, project, issue)
@@ -505,8 +556,7 @@ module Activities
       .to_set
       .freeze
 
-    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil,
-      head_sha: nil)
+    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
       allowed = project&.review_enabled? ? (project.enabled_review_bot_logins.presence || Set.new) : nil
       latest = latest_allowed_bot_review(reviews, allowed)
 
@@ -521,8 +571,29 @@ module Activities
       # The bypass is restricted to projects whose enabled review bots are
       # ALL body-only so a clean codex comment cannot suppress an outstanding
       # Copilot review in mixed configurations.
-      if client && issue && body_only_bot_clean_comment_present?(client, project, issue, latest, allowed,
-        head_sha: head_sha)
+      if client && issue && body_only_bot_clean_comment_present?(client, project, issue, latest, allowed)
+        return []
+      end
+
+      # paid_agent reviews are authored by regular GitHub accounts, not
+      # bot logins registered in PROVIDER_BOT_USERNAMES. When paid_agent
+      # is enabled and the most recent review contains the clean marker,
+      # treat the review cycle as complete — the agent has signaled "no
+      # major findings remaining." Only bypass when no registered bot method
+      # could produce independent triggers; in mixed configurations
+      # (e.g. paid_agent + copilot), each bot's status is evaluated
+      # independently below.
+      #
+      # Today the existing flow already returns [] for paid_agent-only
+      # configs (no bot login → :no_review → nil login → []), so this
+      # early return is functionally redundant. It becomes load-bearing
+      # if paid_agent ever registers a bot login in PROVIDER_BOT_USERNAMES,
+      # which would cause `allowed` to be non-empty and the :no_review /
+      # :has_comments branches to fire. The explicit check keeps that
+      # future transition safe and documents the intended semantics.
+      if project&.review_method_enabled?("paid_agent") &&
+         paid_agent_clean_review_present?(reviews) &&
+         (allowed.nil? || allowed.empty?)
         return []
       end
 
@@ -530,23 +601,7 @@ module Activities
 
       case status
       when :clean
-        if (head_sha.nil?) != (latest[:commit_id].nil?)
-          Rails.logger.debug(message: "review_bot.clean_review_missing_commit_info",
-            head_sha: head_sha, review_commit_id: latest[:commit_id])
-        end
-        if head_sha && latest[:commit_id] && latest[:commit_id] != head_sha
-          login = project && review_bot_request_login(project)
-          if login
-            [ { type: "review_bot_review_pending", details: "Clean review is not on current HEAD commit",
-                request_login: login } ]
-          else
-            Rails.logger.debug(message: "review_bot.stale_clean_review_no_requestable_login",
-              review_commit_id: latest[:commit_id], head_sha: head_sha)
-            []
-          end
-        else
-          []
-        end
+        []
       when :no_review
         # Only emit a pending trigger when a requestable review bot is
         # configured. When login is nil — reviews globally disabled, or
@@ -570,6 +625,10 @@ module Activities
           [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean" } ]
         else
           bot_thread_triggers = review_bot_thread_triggers(unresolved_threads)
+          body_only_pending_triggers = [
+            { type: "review_bot_review_pending", details: "Latest review bot review was not clean" },
+            { type: "review_bot_comments", details: "Latest review bot review generated comments (body-only)" }
+          ]
           if bot_thread_triggers.any?
             # Thread-based bots (e.g. Copilot) with at least one unresolved
             # bot thread: emit review_bot_comments + the thread triggers.
@@ -587,15 +646,21 @@ module Activities
             # The "(body-only)" suffix on review_bot_comments lets
             # structured-log consumers distinguish this path from the
             # thread-based Copilot flow above.
-            [
-              { type: "review_bot_review_pending", details: "Latest review bot review was not clean" },
-              { type: "review_bot_comments", details: "Latest review bot review generated comments (body-only)" }
-            ]
+            body_only_pending_triggers
+          elsif body_only_review_bot?(latest&.dig(:user_login)) &&
+              !review_diff_touches_reviewed_files?(client, project, issue, latest)
+            # Body-only bot whose review pre-dates the last agent run
+            # (timestamp guard passed), but the interceding diff did not
+            # touch any file mentioned in the review's inline comments.
+            # Treat as still-unaddressed to prevent unrelated changes
+            # (e.g. a CI schema fix) from clearing review findings.
+            body_only_pending_triggers
           else
             # Thread-based bot with all bot threads resolved, or body-only
-            # review already addressed by a subsequent agent run. Treat as
-            # effectively clean to avoid re-requesting reviews that would
-            # produce no new comments.
+            # review already addressed by a subsequent agent run whose diff
+            # touches at least one reviewed file. Treat as effectively clean
+            # to avoid re-requesting reviews that would produce no new
+            # comments.
             []
           end
         end
@@ -615,11 +680,6 @@ module Activities
     # authoritatively for the project's review configuration AND is at least
     # as recent as that bot's latest review on this PR.
     #
-    # When head_sha is provided, also requires that the latest non-clean
-    # review (if any) was NOT on the current HEAD commit — a non-clean
-    # review on HEAD means the bot found issues with the current code and
-    # a clean comment from a prior commit cannot override that finding.
-    #
     # The override is restricted to projects whose enabled review bots are
     # ALL body-only — i.e. no thread-based bot like Copilot is also enabled.
     # A clean codex comment cannot speak for an outstanding Copilot review
@@ -628,19 +688,9 @@ module Activities
     #
     # The comment-vs-review timestamp comparison prevents an older "Bravo"
     # comment from masking a newer non-clean review on a subsequent commit.
-    def body_only_bot_clean_comment_present?(client, project, issue, latest_review, allowed_bot_logins,
-      head_sha: nil)
+    def body_only_bot_clean_comment_present?(client, project, issue, latest_review, allowed_bot_logins)
       return false if allowed_bot_logins.nil? || allowed_bot_logins.empty?
       return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
-
-      # If the latest review is a non-clean review on the current HEAD
-      # commit, a clean issue comment cannot override it — the bot reviewed
-      # this exact code and found issues.
-      if head_sha && latest_review &&
-          !REVIEW_BOT_CLEAN_PATTERN.match?(latest_review[:body]) &&
-          latest_review[:commit_id] == head_sha
-        return false
-      end
 
       comments = client.recent_issue_comments(project.full_name, issue.github_number)
       bot_comments = comments.select do |c|
@@ -662,16 +712,11 @@ module Activities
       false
     end
 
-    # Anti-loop guard for body-only review bots. Returns true when
-    # the review feedback should still be treated as unaddressed.
-    #
-    # Primary clearance requires a clean signal on the current HEAD
-    # commit (checked elsewhere). This method acts as a safety-net
-    # fallback: if no clean re-review arrives within
-    # BODY_ONLY_REVIEW_FOLLOWUP_TIMEOUT after the last agent run
-    # completed, the feedback is treated as addressed to prevent
-    # permanent wedges. While the timeout has not elapsed, feedback
-    # remains blocking so the re-review has time to arrive.
+    # Anti-loop guard for body-only review bots: returns true when the bot's
+    # latest review was submitted after the last agent run completed, meaning
+    # the agent has not yet addressed the feedback. Treats missing timestamps
+    # conservatively as "needs follow-up" to avoid silently dropping
+    # actionable review content.
     def body_only_review_needs_followup?(latest_review, last_run)
       return false if latest_review.nil?
 
@@ -681,18 +726,54 @@ module Activities
       cutoff = last_run&.completed_at
       return true if cutoff.nil?
 
-      # Review was posted after the run — definitely unaddressed.
-      return true if submitted_at > cutoff
+      submitted_at > cutoff
+    end
 
-      # Review predates the run. Wait for a clean re-review on HEAD
-      # until the timeout expires, then treat as addressed to avoid
-      # permanent wedges. This changes prior behavior (which immediately
-      # treated pre-run reviews as addressed) to block for up to 30 min,
-      # giving the re-review cycle time to complete. For projects with
-      # agent runs exceeding 30 min, the timeout may expire before the
-      # re-review arrives; tie to agent run duration if this proves
-      # insufficient in practice.
-      Time.current < cutoff + BODY_ONLY_REVIEW_FOLLOWUP_TIMEOUT
+    # Returns true when the diff between the review's commit and the PR
+    # HEAD touches at least one file mentioned in the review's inline
+    # comments. Falls back to true (assumes addressed) when inline
+    # comments have no file paths or the comparison cannot be fetched.
+    def review_diff_touches_reviewed_files?(client, project, issue, review)
+      return true if client.nil? || project.nil? || issue.nil?
+
+      review_id = review[:id]
+      reviewed_commit = review[:commit_id]
+      return true if review_id.nil? || reviewed_commit.nil?
+
+      # NOTE: The GitHub API does not support filtering review comments by
+      # review ID server-side, so we fetch all comments for the PR and
+      # filter client-side. This is O(total comments) rather than
+      # O(comments on this review), which is fine for typical PR sizes.
+      comments = client.pull_request_review_comments(
+        project.full_name, issue.github_number
+      )
+      reviewed_paths = comments
+        .select { |c| c[:pull_request_review_id] == review_id }
+        .filter_map { |c| c[:path] }
+        .to_set
+      return true if reviewed_paths.empty?
+
+      # NOTE: pr_data is already fetched in scan_pr, but check_review_bot_status
+      # does not receive it. This extra API call is behind multiple guard
+      # clauses so it only fires when all other conditions align. Passing
+      # pr_data through would avoid this call but adds complexity to
+      # check_review_bot_status's already long keyword-arg list.
+      #
+      # pr_data returns a Sawyer::Resource, so `.head.sha` uses method
+      # dispatch. If pull_request is ever changed to return a plain Hash,
+      # this would need to switch to dig-style access. The nil guard below
+      # keeps this safe in either case.
+      pr_data = client.pull_request(project.full_name, issue.github_number)
+      head_sha = pr_data&.head&.sha
+      return true if head_sha.nil? || head_sha == reviewed_commit
+
+      changed_files = client.compare_changed_files(
+        project.full_name, reviewed_commit, head_sha
+      )
+      changed_files.any? { |f| reviewed_paths.include?(f) }
+    rescue GithubClient::Error => e
+      log_signal_error("review_diff_check", project, issue, e)
+      true
     end
 
     def review_bot_thread_triggers(unresolved_threads)
@@ -708,14 +789,15 @@ module Activities
     end
 
     def check_conversation_comments(client, project, issue, last_run)
-      comments = client.issue_comments(project.full_name, issue.github_number)
       cutoff = last_run&.completed_at
+      comments = fetch_conversation_comments(client, project, issue, cutoff)
 
       relevant = comments.select do |c|
         login = c.user&.login
         next false if bot_user?(login)
         next false unless project.trusted_github_user?(login)
-        next false if cutoff && c.created_at <= cutoff
+        # Defensive: treat nil created_at as potentially relevant (include it)
+        next false if cutoff && c.created_at && c.created_at <= cutoff
         next false if system_generated_comment?(c.body)
         next false if c.body.to_s.strip.length < MIN_COMMENT_LENGTH
 
@@ -728,6 +810,25 @@ module Activities
     rescue GithubClient::Error => e
       log_signal_error("conversation_comments", project, issue, e)
       []
+    end
+
+    # Fetches conversation comments, preferring the lightweight single-page
+    # recent_issue_comments call. Falls back to full auto-paginated
+    # issue_comments when the returned page is from a multi-page result and
+    # the cutoff window extends beyond it (i.e., every comment on the page
+    # is newer than the cutoff, meaning older post-cutoff comments may exist
+    # on earlier pages).
+    def fetch_conversation_comments(client, project, issue, cutoff)
+      comments = client.recent_issue_comments(project.full_name, issue.github_number)
+
+      # Treat nil created_at as newer than cutoff (safe: triggers fallback to
+      # full pagination rather than silently missing comments).
+      if cutoff && comments.multi_page? && comments.any? &&
+          comments.all? { |c| c.created_at.nil? || c.created_at > cutoff }
+        client.issue_comments(project.full_name, issue.github_number)
+      else
+        comments
+      end
     end
 
     def fetch_reviews(client, project, issue)
@@ -812,16 +913,29 @@ module Activities
     # Returns true when there is no outstanding review feedback that should
     # block auto-merge. Checks the same review signals that detect_ready_triggers
     # would evaluate, so owner approval cannot bypass new findings.
-    def no_outstanding_review_feedback?(project, client, issue, reviews, head_sha: nil)
+    #
+    # NOTE: When `checks` is nil (the default), an empty array is passed to
+    # non_bot_review_gate_triggers, causing ci_action_succeeded? to return
+    # false — conservatively blocking auto-merge if ci_action is enabled.
+    # Callers that have check data available should always pass it.
+    def no_outstanding_review_feedback?(project, client, issue, reviews, checks: nil)
       last_run = last_completed_run(project, issue)
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
       return false if human_review_thread_triggers(project, unresolved_threads).any?
       return false if check_review_bot_status(reviews, unresolved_threads,
-        project: project, last_run: last_run, client: client, issue: issue,
-        head_sha: head_sha).any?
+        project: project, last_run: last_run, client: client, issue: issue).any?
       return false if changes_requested_from_reviews(project, reviews, last_run).any?
       return false if check_conversation_comments(client, project, issue, last_run).any?
+      effective_checks = checks || []
+      if checks.nil?
+        logger.debug(
+          message: "pr_scanner.no_outstanding_review_feedback_nil_checks",
+          project_id: project.id,
+          pr_number: issue.github_number
+        )
+      end
+      return false if non_bot_review_gate_triggers(project, reviews, effective_checks).any?
 
       true
     end
@@ -830,6 +944,24 @@ module Activities
 
     def review_bot?(login)
       ProviderSupport.provider_bot_username?(login)
+    end
+
+    def paid_agent_review_clean?(body)
+      return false if body.nil?
+
+      body.include?(PAID_REVIEW_CLEAN_MARKER)
+    end
+
+    # TODO(#918): paid_agent posts reviews from regular GitHub accounts — there is
+    # no dedicated bot login to filter by. This method checks the latest
+    # review from *any* author. The HTML marker (<!-- paid-review-clean -->)
+    # is unlikely to appear in human-authored reviews, but once the project
+    # stores the paid_agent's GitHub login, this should filter by it.
+    def paid_agent_clean_review_present?(reviews)
+      return false if reviews.nil? || reviews.empty?
+
+      latest = reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+      paid_agent_review_clean?(latest[:body])
     end
 
     def extract_actionable_labels(triggers)

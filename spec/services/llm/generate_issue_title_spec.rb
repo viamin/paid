@@ -85,6 +85,7 @@ RSpec.describe Llm::GenerateIssueTitle do
       allow(AgentHarness).to receive(:send_message)
         .and_raise(AgentHarness::ProviderError.new("Provider unavailable"))
 
+      allow(Rails.logger).to receive(:warn).with(hash_including(message: "prompts.render_fallback"))
       expect(Rails.logger).to receive(:warn).with(hash_including(
         message: "agent_execution.llm_generate_issue_title_failed"
       ))
@@ -98,6 +99,7 @@ RSpec.describe Llm::GenerateIssueTitle do
       allow(AgentHarness).to receive(:send_message)
         .and_raise(AgentHarness::TimeoutError.new("Timed out"))
 
+      allow(Rails.logger).to receive(:warn).with(hash_including(message: "prompts.render_fallback"))
       expect(Rails.logger).to receive(:warn).with(hash_including(
         message: "agent_execution.llm_generate_issue_title_failed"
       ))

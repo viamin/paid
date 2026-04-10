@@ -49,13 +49,29 @@ module Llm
       clean_title(response.output)
     end
 
-    def prompt
-      truncated = @summary.truncate(MAX_SUMMARY_INPUT, omission: "")
-      <<~PROMPT.strip
-        Generate a concise GitHub issue title for the following agent output. Respond with ONLY the title text — no quotes, no prefix, no explanation. Keep it under #{MAX_TITLE_LENGTH} characters.
+    PROMPT_SLUG = "generation.issue_title"
 
-        #{truncated}
-      PROMPT
+    # Fallback used only if the seeded prompt is missing or deactivated.
+    # The active template lives in db/seeds/prompts.rb under PROMPT_SLUG.
+    FALLBACK_PROMPT = <<~PROMPT
+      Generate a concise GitHub issue title for the following agent output. Respond with ONLY the title text — no quotes, no prefix, no explanation. Keep it under {{max_title_length}} characters.
+
+      {{summary}}
+    PROMPT
+
+    def prompt
+      vars = {
+        max_title_length: MAX_TITLE_LENGTH,
+        summary: @summary.truncate(MAX_SUMMARY_INPUT, omission: "")
+      }
+
+      # No project: passed — callers don't always have project context, and
+      # this prompt is unlikely to need project-level overrides.
+      Prompts::Render.call(
+        slug: PROMPT_SLUG,
+        variables: vars,
+        fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
+      ).strip
     end
 
     def clean_title(text)
