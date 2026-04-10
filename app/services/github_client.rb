@@ -775,6 +775,112 @@ class GithubClient
     end
   end
 
+  # Maximum comments fetched per review thread in the batch GraphQL query.
+  # Threads with more comments will be logged as truncated; reactions on
+  # comments beyond this limit are not captured.
+  MAX_COMMENTS_PER_THREAD = 50
+
+  # Fetches review comments and their reactions in a single GraphQL request.
+  # Replaces N+1 REST calls with one batched query.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param pr_number [Integer] Pull request number
+  # @param max_threads [Integer] Maximum number of review threads to fetch
+  # @return [Array<Hash>] Reactions with :user_login, :content, :created_at keys
+  def review_comment_reactions_batch(repo, pr_number, max_threads: 50)
+    owner, name = repo.split("/", 2)
+    query = <<~GRAPHQL
+      query($owner: String!, $name: String!, $number: Int!, $maxThreads: Int!) {
+        repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) {
+            threads: reviewThreads(first: $maxThreads) {
+              pageInfo { hasNextPage }
+              nodes {
+                comments(first: #{MAX_COMMENTS_PER_THREAD}) {
+                  pageInfo { hasNextPage }
+                  nodes {
+                    databaseId
+                    reactions(first: 100) {
+                      pageInfo { hasNextPage }
+                      nodes {
+                        user { login }
+                        content
+                        createdAt
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    GRAPHQL
+
+    data = graphql_request(
+      query,
+      owner: owner, name: name, number: pr_number, maxThreads: max_threads
+    )
+
+    raise_graphql_errors(data, context: "fetching review reactions for #{repo}##{pr_number}")
+
+    pull_request = data.dig("data", "repository", "pullRequest")
+    unless pull_request
+      Rails.logger.warn(
+        message: "github_client.pull_request_not_found",
+        repo: repo, pr_number: pr_number
+      )
+      return []
+    end
+
+    threads_connection = pull_request["threads"] || {}
+    if threads_connection.dig("pageInfo", "hasNextPage")
+      Rails.logger.warn(
+        message: "github_client.review_threads_truncated",
+        repo: repo, pr_number: pr_number, max_threads: max_threads
+      )
+    end
+
+    threads = threads_connection["nodes"] || []
+    threads.flat_map do |thread|
+      if thread.dig("comments", "pageInfo", "hasNextPage")
+        Rails.logger.warn(
+          message: "github_client.review_thread_comments_truncated",
+          repo: repo, pr_number: pr_number
+        )
+      end
+      comments = thread.dig("comments", "nodes") || []
+      comments.flat_map do |comment|
+        reactions_data = comment["reactions"] || {}
+        if reactions_data.dig("pageInfo", "hasNextPage")
+          # When reactions exceed the GraphQL page size (100), fall back to the
+          # REST endpoint which auto-paginates. This intentionally re-fetches
+          # reactions already returned by GraphQL rather than merging the two
+          # result sets, trading a small amount of redundant data transfer for
+          # simpler, more reliable code.
+          begin
+            pull_request_review_comment_reactions(repo, comment["databaseId"])
+          rescue Error => e
+            Rails.logger.warn(
+              message: "github_client.comment_reaction_fallback_failed",
+              comment_id: comment["databaseId"],
+              error: e.message
+            )
+            []
+          end
+        else
+          (reactions_data["nodes"] || []).map do |r|
+            {
+              user_login: r.dig("user", "login"),
+              content: graphql_reaction_to_rest(r["content"]),
+              created_at: parse_timestamp(r["createdAt"])
+            }
+          end
+        end
+      end
+    end
+  end
+
   # Gets the remaining rate limit.
   #
   # @return [Integer] Number of requests remaining
@@ -800,6 +906,18 @@ class GithubClient
   def rate_limit_low?(threshold: 10)
     rate_limit_remaining < threshold
   end
+
+  # Maps GraphQL ReactionContent enum values to REST API content strings.
+  GRAPHQL_REACTION_MAP = {
+    "THUMBS_UP" => "+1",
+    "THUMBS_DOWN" => "-1",
+    "LAUGH" => "laugh",
+    "HOORAY" => "hooray",
+    "CONFUSED" => "confused",
+    "HEART" => "heart",
+    "ROCKET" => "rocket",
+    "EYES" => "eyes"
+  }.freeze
 
   private
 
@@ -850,6 +968,14 @@ class GithubClient
     raise AuthenticationError
   rescue Faraday::Error => e
     raise ApiError.new(e.message)
+  end
+
+  def raise_graphql_errors(data, context: nil)
+    return unless data["errors"].present?
+
+    message = data["errors"].map { |e| e["message"] }.join(", ")
+    prefix = context ? "GraphQL error #{context}: " : "GraphQL error: "
+    raise ApiError.new("#{prefix}#{message}")
   end
 
   def graphql_mutation?(query)
@@ -904,11 +1030,7 @@ class GithubClient
     GRAPHQL
 
     data = graphql_request(query, owner: owner, name: name, number: number)
-
-    if data["errors"].present?
-      message = data["errors"].map { |e| e["message"] }.join(", ")
-      raise ApiError.new("GraphQL error resolving #{repo}##{number}: #{message}")
-    end
+    raise_graphql_errors(data, context: "resolving #{repo}##{number}")
 
     data.dig("data", "repository", "pullRequest", "id")
   end
@@ -925,6 +1047,10 @@ class GithubClient
     when Time then value
     when String then Time.parse(value)
     end
+  end
+
+  def graphql_reaction_to_rest(content)
+    GRAPHQL_REACTION_MAP.fetch(content, content)
   end
 
   # Extracts the token expiration from the GitHub API response header.
