@@ -65,8 +65,8 @@ RSpec.describe Prompt do
 
   describe "scopes" do
     before do
-      # Remove all existing prompts (including seeds) so scope tests have a clean slate
-      described_class.destroy_all
+      # Remove all seeded (global) prompts so scope tests have a clean slate
+      described_class.global.destroy_all
     end
 
     describe ".active" do

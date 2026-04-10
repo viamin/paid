@@ -5,10 +5,6 @@ module Prompts
   # Included by both BuildForIssue and BuildForPr to provide
   # consistent database/infrastructure guardrails across all agent prompts.
   module ServiceContainerSections
-    # Public module method: generates the service-environment text for a
-    # project without requiring a full BuildForIssue/BuildForPr instance.
-    # Used by CreateAgentRunActivity to append service guidance to rendered
-    # PromptVersion custom_prompts.
     # Public module method: returns the indented database setup instruction
     # line that goes between the install-deps step and the analyze step in
     # the issue prompt. Used by both BuildForIssue and CreateAgentRunActivity

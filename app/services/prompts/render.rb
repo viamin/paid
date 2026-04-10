@@ -49,6 +49,7 @@ module Prompts
     # left in place so callers can spot drift.
     def self.interpolate(template, vars)
       return template.to_s if template.nil?
+      return template.to_s if vars.empty?
 
       template.to_s.gsub(/\{\{(\w+)\}\}/) do
         key = Regexp.last_match(1)

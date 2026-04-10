@@ -11,7 +11,7 @@
 # version (versions are immutable). Use `db:seed:replant` during development
 # if you want to reset history.
 
-upsert_global_prompt = ->(slug:, name:, description:, category:, template:, variables:) do
+upsert_global_prompt = lambda do |slug:, name:, description:, category:, template:, variables:|
   prompt = Prompt.find_or_initialize_by(slug: slug, account_id: nil, project_id: nil)
 
   if prompt.new_record?
