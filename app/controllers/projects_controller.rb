@@ -23,10 +23,11 @@ class ProjectsController < ApplicationController
     authorize @project
     @recent_agent_runs = @project.agent_runs.recent.includes(:issue).limit(10).to_a
     AgentRun.preload_source_pull_requests(@recent_agent_runs)
+    settings = current_user.settings
     open_items = @project.issues.where(github_state: "open").order(github_number: :desc)
-    @issues = open_items.issues_only.includes(:sub_issues).limit(25)
+    @issues = open_items.issues_only.includes(:sub_issues).limit(settings.max_issues_per_page)
     @issue_lifecycle_statuses = Issue.lifecycle_statuses(@issues)
-    @pull_requests = open_items.pull_requests_only.limit(25)
+    @pull_requests = open_items.pull_requests_only.limit(settings.max_prs_per_page)
     @pr_numbers_with_queued_auto_continue = @project.pr_numbers_with_queued_auto_continue
     @pr_numbers_with_active_runs = @project.pr_numbers_with_active_runs
     @cost_budgets = @project.cost_budgets.load
