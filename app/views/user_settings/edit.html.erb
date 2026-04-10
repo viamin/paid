@@ -185,6 +185,30 @@
 
         <hr class="my-8 border-gray-200">
 
+        <%# === Display Settings === %>
+        <fieldset class="space-y-6">
+          <legend class="text-base font-semibold leading-7 text-gray-900">Display Settings</legend>
+          <p class="text-sm text-gray-500">Configure how many items are shown on project pages.</p>
+
+          <div>
+            <%= form.label :max_issues_per_page, "Max Issues Per Page", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :max_issues_per_page, min: 5, max: 200, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Maximum number of issues displayed on project pages (5&ndash;200). Default is 50.</p>
+          </div>
+
+          <div>
+            <%= form.label :max_prs_per_page, "Max Pull Requests Per Page", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :max_prs_per_page, min: 5, max: 200, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Maximum number of pull requests displayed on project pages (5&ndash;200). Default is 50.</p>
+          </div>
+        </fieldset>
+
+        <hr class="my-8 border-gray-200">
+
         <%# === Project Defaults === %>
         <fieldset class="space-y-6">
           <legend class="text-base font-semibold leading-7 text-gray-900">Project Defaults</legend>
