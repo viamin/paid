@@ -15,19 +15,35 @@ class WorkflowState < ApplicationRecord
 
   # Upserts the polling workflow state for a project and broadcasts the change.
   # Called by ProjectWorkflowManager on start/restart and by PollWorkflowHealthCheckJob.
-  def self.record_polling_status(project, status:, restart_reason: nil, error_message: nil)
+  def self.record_polling_status(project, status:, restart_reason: :not_provided, error_message: :not_provided)
     workflow_id = "github-poll-#{project.id}"
 
     ws = find_or_initialize_by(temporal_workflow_id: workflow_id)
+    transitioning_to_running = status == "running" && !ws.running?
+
     ws.assign_attributes(
       project: project,
       workflow_type: "GitHubPollWorkflow",
       status: status,
-      restart_reason: restart_reason,
-      error_message: error_message,
-      started_at: status == "running" ? Time.current : ws.started_at,
+      started_at: transitioning_to_running ? Time.current : ws.started_at,
       completed_at: FINISHED_STATUSES.include?(status) ? Time.current : nil
     )
+
+    # Only update restart_reason/error_message when explicitly provided.
+    # Clear them when transitioning back to running without explicit values,
+    # so stale reasons from a previous restart don't linger.
+    if restart_reason != :not_provided
+      ws.restart_reason = restart_reason
+    elsif transitioning_to_running
+      ws.restart_reason = nil
+    end
+
+    if error_message != :not_provided
+      ws.error_message = error_message
+    elsif transitioning_to_running
+      ws.error_message = nil
+    end
+
     should_broadcast = ws.new_record? || ws.status_changed?
     ws.save!
 
