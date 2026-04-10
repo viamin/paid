@@ -76,7 +76,7 @@
 
   <%# Cost & Token Usage — hidden when all values are zero %>
   <% cost_tokens = stats[:cost_and_tokens] %>
-  <% has_cost_or_token_data = cost_tokens[:total_cost_cents] > 0 || cost_tokens[:trailing_30d_tokens].to_i > 0 %>
+  <% has_cost_or_token_data = cost_tokens[:total_cost_cents].to_i > 0 || cost_tokens[:trailing_30d_tokens].to_i > 0 %>
   <% if has_cost_or_token_data %>
     <div class="mt-8">
       <h2 class="text-lg font-semibold text-gray-900">Cost & Token Usage</h2>
