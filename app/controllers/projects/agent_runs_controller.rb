@@ -37,7 +37,10 @@ module Projects
     def new
       authorize @project, :run_agent?
       selected_goal = params[:goal].presence || "create_pr"
-      @default_provider_identifier = settings_owner&.settings&.default_provider_identifier_for_goal(selected_goal)
+      @default_provider_identifiers_by_goal = AgentRun::GOALS.index_with do |goal|
+        settings_owner&.settings&.default_provider_identifier_for_goal(goal)
+      end.compact
+      @default_provider_identifier = @default_provider_identifiers_by_goal[selected_goal]
       @available_run_provider_options = available_run_provider_options
       @issues = @project.issues
         .issues_only
