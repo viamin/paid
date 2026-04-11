@@ -3206,6 +3206,48 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a ready PR at review-goal retry limit is converted back to draft" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          draft_review_count: 5,
+          pr_followup_count: 3)
+      end
+
+      before do
+        enable_paid_agent_review!(project)
+        3.times do
+          create(:agent_run,
+            project: project, issue: pr_issue,
+            source_pull_request_number: 42,
+            goal: "review", status: "failed",
+            started_at: 1.hour.ago, completed_at: 1.hour.ago)
+        end
+        stub_github_for_pr(draft: true,
+          checks: [ { name: "rspec", conclusion: "failure" } ])
+      end
+
+      it "transitions to restarted instead of escalating" do
+        result = activity.execute(project_id: project.id)
+
+        pr_issue.reload
+        expect(pr_issue.pr_review_phase).to eq("restarted")
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("restarted")
+        expect(trigger[:triggers].first[:type]).to eq("ci_failure")
+      end
+
+      it "does not emit escalate_to_owner" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("escalate_to_owner")
+      end
+    end
+
     context "when a draft PR is still draft on GitHub" do
       let!(:pr_issue) do
         create(:issue, :pull_request,
@@ -3770,6 +3812,36 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       trigger = result[:prs_to_trigger].first
       expect(trigger).to have_key(:owner_reviewer_login)
+    end
+  end
+
+  context "when a ready PR at review-goal retry limit is NOT converted back to draft" do
+    let(:ready_retry_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "ready",
+        pr_followup_count: 0)
+    end
+
+    before do
+      enable_paid_agent_review!(project)
+      3.times do
+        create(:agent_run,
+          project: project, issue: ready_retry_issue,
+          source_pull_request_number: 42,
+          goal: "review", status: "failed",
+          started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      end
+      stub_github_for_pr
+    end
+
+    it "escalates to owner because the PR is still ready (not draft)" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
     end
   end
 

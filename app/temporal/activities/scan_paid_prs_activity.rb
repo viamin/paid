@@ -107,19 +107,22 @@ module Activities
 
         scan_draft_pr(project, client, issue)
       when "ready"
-        # Escalate when review-goal retries are exhausted so the PR does not
-        # wedge indefinitely after repeated review failures (#1002).
-        if review_goal_retry_limit_reached?(project, issue)
-          return escalate_trigger(issue,
-            reason: "Review-goal retry limit reached " \
-                    "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
-        end
-
         check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
         else
+          # Escalate when review-goal retries are exhausted so the PR does not
+          # wedge indefinitely after repeated review failures (#1002).
+          # Checked after maybe_restart_draft so that a PR converted back to
+          # draft on GitHub can transition to "restarted" instead of being
+          # trapped in perpetual escalation.
+          if review_goal_retry_limit_reached?(project, issue)
+            return escalate_trigger(issue,
+              reason: "Review-goal retry limit reached " \
+                      "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
+          end
+
           scan_ready_pr(project, client, issue, pr_data: pr_data)
         end
       when "escalated"

@@ -91,6 +91,8 @@ group :development, :test do
 end
 
 group :test do
+  gem "sqlite3", "~> 1.6.0"
+  gem "pkg-config"
   gem "simplecov", require: false
   gem "capybara"
   gem "cuprite"
