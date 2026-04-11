@@ -97,19 +97,24 @@ module Activities
     def scan_pr(project, client, issue)
       return :skipped if active_run_exists?(project, issue)
 
-      # Escalate when review-goal retries are exhausted so the PR does not
-      # wedge indefinitely after repeated review failures (#1002).
-      if review_goal_retry_limit_reached?(project, issue)
-        return escalate_trigger(issue,
-          reason: "Review-goal retry limit reached " \
-                  "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
-      end
-
       case issue.pr_review_phase
       when "draft", "restarted"
-        # Rate budget checked inside scan_draft_pr, after non-API early exits
+        if review_goal_retry_limit_reached?(project, issue)
+          return escalate_trigger(issue,
+            reason: "Review-goal retry limit reached " \
+                    "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
+        end
+
         scan_draft_pr(project, client, issue)
       when "ready"
+        # Escalate when review-goal retries are exhausted so the PR does not
+        # wedge indefinitely after repeated review failures (#1002).
+        if review_goal_retry_limit_reached?(project, issue)
+          return escalate_trigger(issue,
+            reason: "Review-goal retry limit reached " \
+                    "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
+        end
+
         check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)

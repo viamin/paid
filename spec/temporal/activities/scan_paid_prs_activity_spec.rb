@@ -3966,6 +3966,43 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  context "when escalated PR has reached the review-goal retry limit" do
+    let(:escalated_retry_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation", "paid-dismiss-escalation" ],
+        pr_review_phase: "escalated",
+        paid_state: "completed")
+    end
+
+    before do
+      enable_paid_agent_review!
+      3.times do
+        create(:agent_run,
+          project: project, issue: escalated_retry_issue,
+          source_pull_request_number: 42,
+          goal: "review", status: "failed",
+          started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      end
+      stub_github_for_pr
+    end
+
+    it "still reaches scan_escalated_pr and processes the dismiss label" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      expect(trigger[:triggers].first[:type]).to eq("dismiss_escalation")
+    end
+
+    it "does not emit escalate_to_owner for an already-escalated PR" do
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("escalate_to_owner")
+    end
+  end
+
   private
 
   # Helper to stub GitHub API calls with sensible defaults.

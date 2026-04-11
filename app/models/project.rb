@@ -693,6 +693,7 @@ class Project < ApplicationRecord
     end
 
     has_any_condition = termination["max_review_rounds"].present? ||
+                        termination["max_review_goal_retries"].present? ||
                         termination["stop_when_no_comments"] == true ||
                         termination["quality_threshold"].present? ||
                         termination["timeout_minutes"].present?
