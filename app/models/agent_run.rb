@@ -14,6 +14,8 @@ class AgentRun < ApplicationRecord
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
   TOKEN_LIMIT_STATUSES = %w[ok warning exceeded].freeze
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
+  MAX_STALE_REQUEUES = 2
+  STALE_PENDING_TIMEOUT = 15.minutes
   STALE_RUNNING_GRACE_PERIOD = 10.minutes
 
   # Sentinel prefix written into AgentRun#error_message by `bin/rails dev:cleanup`
@@ -106,7 +108,10 @@ class AgentRun < ApplicationRecord
   scope :finished, -> { where(status: FINISHED_STATUSES) }
   scope :recent, -> { order(created_at: :desc) }
   scope :started_before, ->(time) { where("started_at < ?", time) }
+  scope :updated_before, ->(time) { where("updated_at < ?", time) }
   scope :stale_running, -> { running.started_before(stale_running_cutoff) }
+  scope :stale_pending, -> { pending.updated_before(stale_pending_cutoff) }
+  scope :stale_for_cleanup, -> { stale_running.or(stale_pending) }
   scope :search_by_goal, lambda { |query|
     normalized_query = query.to_s.strip
 
@@ -223,8 +228,16 @@ class AgentRun < ApplicationRecord
     AGENT_TIMEOUT_DEFAULT.seconds + STALE_RUNNING_GRACE_PERIOD
   end
 
+  def self.stale_pending_timeout
+    STALE_PENDING_TIMEOUT
+  end
+
   def self.stale_running_cutoff(now: Time.current)
     now - stale_running_timeout
+  end
+
+  def self.stale_pending_cutoff(now: Time.current)
+    now - stale_pending_timeout
   end
 
   # Returns true if this user is the fallback owner for orphaned

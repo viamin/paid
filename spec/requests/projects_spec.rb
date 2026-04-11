@@ -481,6 +481,16 @@ RSpec.describe "Projects" do
         expect(response.body).not_to include("Clean Up Stale Runs")
       end
 
+      it "shows the stale cleanup button for stale pending runs" do
+        project = create(:project, account: account, github_token: github_token)
+        stale_run = create(:agent_run, status: "pending", project: project)
+        stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+
+        get project_path(project)
+
+        expect(response.body).to include("Clean Up Stale Runs")
+      end
+
       it "hides the stale cleanup button for viewers" do
         viewer = create(:user, :viewer, account: account)
         project = create(:project, account: account, github_token: github_token)
@@ -1151,6 +1161,19 @@ RSpec.describe "Projects" do
         expect(response).to redirect_to(project_path(project))
         expect(flash[:notice]).to eq("Cleaned up 1 stale agent run(s).")
         expect(stale_run.reload.status).to eq("timeout")
+      end
+
+      it "requeues stale pending runs" do
+        project = create(:project, account: account, github_token: github_token)
+        stale_run = create(:agent_run, status: "pending", project: project)
+        stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+
+        post cleanup_stale_runs_project_path(project)
+
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:notice]).to eq("Cleaned up 1 stale agent run(s).")
+        expect(stale_run.reload.status).to eq("queued")
+        expect(stale_run.stale_requeue_count).to eq(1)
       end
 
       it "shows a no-op notice when no stale runs need cleanup" do
