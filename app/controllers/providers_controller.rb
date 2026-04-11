@@ -123,10 +123,7 @@ class ProvidersController < ApplicationController
     update_fallback_provider_flags!
 
     attrs = provider_settings_params
-    attrs[:default_agent_providers_by_goal] ||= sanitize_goal_default_provider_identifiers(
-      @user_setting,
-      enabled_agent_provider_identifiers
-    )
+    attrs[:default_agent_providers_by_goal] = goal_default_provider_attrs(attrs)
 
     if @user_setting.update(attrs)
       redirect_to providers_path, notice: "Provider settings saved successfully."
@@ -403,5 +400,21 @@ class ProvidersController < ApplicationController
 
       normalized[goal] = resolved.first
     end
+  end
+
+  def goal_default_provider_attrs(attrs)
+    submitted = attrs[:default_agent_providers_by_goal]
+    return sanitize_goal_default_provider_identifiers(@user_setting, enabled_agent_provider_identifiers) unless submitted
+
+    raw_submitted = params.dig(:user_setting, :default_agent_providers_by_goal)
+    return sanitize_goal_default_provider_identifiers(@user_setting, enabled_agent_provider_identifiers) if submitted.empty? && raw_goal_defaults_filtered_out?(raw_submitted)
+
+    submitted
+  end
+
+  def raw_goal_defaults_filtered_out?(raw_submitted)
+    return true unless raw_submitted.respond_to?(:keys)
+
+    raw_submitted.keys.map(&:to_s).intersection(AgentRun::GOALS).empty?
   end
 end
