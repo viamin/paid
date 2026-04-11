@@ -1343,7 +1343,8 @@ module Activities
     def paid_agent_max_review_rounds(project)
       return nil unless project.review_method_enabled?("paid_agent")
 
-      project.review_method_config("paid_agent").dig("termination", "max_review_rounds")
+      raw = project.review_method_config("paid_agent").dig("termination", "max_review_rounds")
+      raw.present? ? raw.to_i : nil
     end
 
     # Counts the number of reviews submitted by the paid_agent bot account
