@@ -3533,14 +3533,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_github_for_pr(reviews: [])
     end
 
-    it "emits a paid_agent_review_pending trigger alongside ready_for_owner" do
+    it "blocks draft exit with a paid_agent_review_pending trigger (no ready_for_owner)" do
       result = activity.execute(project_id: project.id)
 
       expect(result[:prs_to_trigger].size).to eq(1)
       trigger = result[:prs_to_trigger].first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("paid_agent_review_pending")
-      expect(trigger_types).to include("ready_for_owner")
+      expect(trigger_types).not_to include("ready_for_owner")
     end
   end
 
@@ -3671,6 +3671,60 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(result[:prs_to_trigger].size).to eq(1)
       trigger = result[:prs_to_trigger].first
       expect(trigger[:triggers].map { |t| t[:type] }).to include("paid_agent_review_pending")
+    end
+  end
+
+  context "when paid_agent is the only review method and a clean review exists" do
+    before do
+      enable_paid_agent_review!
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      stub_github_for_pr(reviews: [
+        { id: 200, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+          body: "Review complete.\n<!-- paid-review-clean -->", submitted_at: 1.hour.ago }
+      ])
+    end
+
+    it "allows draft exit with ready_for_owner when paid_agent review is clean" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+      expect(trigger_types).to include("ready_for_owner")
+      expect(trigger_types).not_to include("paid_agent_review_pending")
+    end
+  end
+
+  context "when paid_agent is enabled alongside copilot with no reviews" do
+    before do
+      project.update!(review_settings: {
+        "enabled" => true,
+        "methods" => {
+          "copilot" => { "enabled" => true },
+          "paid_agent" => { "enabled" => true }
+        }
+      })
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "gates draft exit via copilot (paid_agent does not independently block)" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+      # copilot gates draft exit with review_bot_review_pending
+      expect(trigger_types).to include("review_bot_review_pending")
+      expect(trigger_types).not_to include("ready_for_owner")
     end
   end
 
