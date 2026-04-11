@@ -46,7 +46,9 @@ module Notifications
       broadcast_notification_updates(account)
       notification
     rescue ActiveRecord::RecordNotUnique
-      retry
+      retries ||= 0
+      retry if (retries += 1) < 3
+      raise
     end
 
     private

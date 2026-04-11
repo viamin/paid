@@ -47,5 +47,35 @@ RSpec.describe Notifications::Resolve do
 
       expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to).at_least(:once)
     end
+
+    it "does not broadcast when no matching notification exists" do
+      described_class.call(account: account, source: "nonexistent", subject: project)
+
+      expect(Turbo::StreamsChannel).not_to have_received(:broadcast_replace_to)
+    end
+
+    context "with user-scoped notifications" do
+      let(:user) { create(:user) }
+
+      it "resolves only the user-scoped notification" do
+        user_notification = create(:notification, account: account, source: "stalled_draft_pr", subject: project, user: user)
+        account_notification = create(:notification, account: account, source: "stalled_draft_pr", subject: project, user: nil)
+
+        described_class.call(account: account, source: "stalled_draft_pr", subject: project, user: user)
+
+        expect(user_notification.reload.resolved_at).not_to be_nil
+        expect(account_notification.reload.resolved_at).to be_nil
+      end
+
+      it "does not resolve another user's notification" do
+        other_user = create(:user)
+        other_notification = create(:notification, account: account, source: "stalled_draft_pr", subject: project, user: other_user)
+
+        result = described_class.call(account: account, source: "stalled_draft_pr", subject: project, user: user)
+
+        expect(result).to be_nil
+        expect(other_notification.reload.resolved_at).to be_nil
+      end
+    end
   end
 end
