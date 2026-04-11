@@ -181,7 +181,10 @@ class StaleRunDetectorJob < ApplicationJob
       agent_run.log!("system", "Run marked as timed out by stale run detector")
 
       if (issue = agent_run.issue)
-        issue.update!(paid_state: "failed") unless issue.paid_state == "failed"
+        # Review-goal failures restore "completed" instead of "failed" so
+        # auto-pick is not blocked by a transient review follow-up failure.
+        target_state = agent_run.review_goal? ? "completed" : "failed"
+        issue.update!(paid_state: target_state) unless issue.paid_state == target_state
       end
 
       Rails.logger.warn(
