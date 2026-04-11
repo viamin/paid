@@ -169,8 +169,25 @@ module Api
       log_info("github_proxy.review_created",
         review_id: body["id"],
         review_url: body["html_url"])
+
+      warn_if_missing_inline_comments(body)
     rescue => e
       log_error("github_proxy.track_review_failed", e.message)
+    end
+
+    def warn_if_missing_inline_comments(response_body)
+      request_body = parse_response_body(request.raw_post) rescue nil
+      comment_count = Array(request_body&.dig("comments")).length
+
+      return unless comment_count.zero?
+      return if response_body["body"].to_s.match?(/generated no (?:new )?comments/i)
+
+      Rails.logger.warn(
+        message: "github_proxy.review_missing_inline_comments",
+        agent_run_id: @agent_run.id,
+        review_id: response_body["id"],
+        comment_count: comment_count
+      )
     end
 
     def parse_response_body(body)
