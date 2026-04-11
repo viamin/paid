@@ -177,3 +177,6 @@ config.status
 /.venv/
 __pycache__/
 /.yarn-cache/
+
+# Aider tool artifacts
+.aider*
