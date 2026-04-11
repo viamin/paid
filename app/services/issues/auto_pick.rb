@@ -12,6 +12,7 @@ module Issues
   # Selection criteria:
   # - Open, non-PR issues with all dependencies satisfied
   # - No existing unfinished (queued/pending/running/paused) agent run
+  # - No existing open PR linked to the issue (via parent_issue_id)
   # - Not labeled with excluded labels (planning, research, waiting,
   #   tracking, epic, needs-manual-setup)
   # - Not a parent/tracking issue (has sub-issues)
@@ -59,6 +60,7 @@ module Issues
         .where.not(id: AgentRun.where(project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).where.not(issue_id: nil).select(:issue_id))
         .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
         .where.not(id: Issue.where(project: project).where.not(parent_issue_id: nil).distinct.select(:parent_issue_id))
+        .where.not(id: Issue.where(project: project, is_pull_request: true, github_state: "open").where.not(parent_issue_id: nil).select(:parent_issue_id))
 
       trusted_usernames = Array(project.allowed_github_usernames).presence
       scope = scope.where(github_creator_login: trusted_usernames) if trusted_usernames
