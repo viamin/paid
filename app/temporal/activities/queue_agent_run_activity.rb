@@ -21,6 +21,7 @@ module Activities
         project: project,
         requested_agent_type: requested_agent_type,
         requested_provider_id: provider_id,
+        goal: goal,
         agent_type_provided: input.key?(:agent_type),
         provider_id_provided: input.key?(:provider_id)
       )
@@ -91,7 +92,7 @@ module Activities
 
     private
 
-    def resolve_provider_selection(project:, requested_agent_type:, requested_provider_id:, agent_type_provided:, provider_id_provided:)
+    def resolve_provider_selection(project:, requested_agent_type:, requested_provider_id:, goal:, agent_type_provided:, provider_id_provided:)
       if provider_id_provided || agent_type_provided
         provider = provider_for_id(requested_provider_id)
         resolved_agent_type =
@@ -104,20 +105,20 @@ module Activities
         return [ requested_provider_id, resolved_agent_type ]
       end
 
-      provider = default_provider_for(project)
+      provider = default_provider_for(project, goal: goal)
       return [ provider&.id, Provider.agent_type_for(provider.provider_key) ] if provider
 
       [ nil, "claude_code" ]
     end
 
-    def default_provider_for(project)
+    def default_provider_for(project, goal:)
       owner = project.effective_owner
       return unless owner
 
       settings = AgentRuns::UserSettingsResolver.call(project: project, strict: false)
       return Provider.ensure_default_for(owner) unless settings
 
-      Provider.for_identifier(settings.user, settings.default_provider_identifier) || Provider.ensure_default_for(settings.user)
+      Provider.for_identifier(settings.user, settings.default_provider_identifier_for_goal(goal)) || Provider.ensure_default_for(settings.user)
     end
 
     def provider_for_id(provider_id)
