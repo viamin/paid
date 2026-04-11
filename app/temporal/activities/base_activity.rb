@@ -60,6 +60,38 @@ module Activities
       Rails.logger
     end
 
+    # Raises a retryable Temporal error when the GitHub API rate limit is
+    # near exhaustion. Call this before making API requests so polling
+    # activities stop early and let the next cycle handle remaining work.
+    #
+    # Uses GithubClient#rate_limit_remaining! (which raises on Octokit
+    # errors instead of returning 0) so that auth/transport failures are
+    # not misclassified as rate-limit exhaustion. On probe failure we log
+    # a warning and return, letting the real API call surface the actual error.
+    # threshold default of 10 matches GithubClient#rate_limit_low? — if the
+    # budget floor changes, update both to keep them consistent.
+    def check_rate_budget!(client, threshold: 10)
+      remaining = client.rate_limit_remaining!
+    rescue Octokit::Error => e
+      logger.warn(
+        message: "rate_limit.probe_failed",
+        error_class: e.class.name,
+        error_message: e.message.to_s.truncate(200)
+      )
+    else
+      return unless remaining < threshold
+
+      logger.warn(
+        message: "rate_limit.budget_low",
+        remaining: remaining
+      )
+
+      raise Temporalio::Error::ApplicationError.new(
+        "GitHub API rate limit budget low (remaining: #{remaining})",
+        type: "RateLimit"
+      )
+    end
+
     # Send a heartbeat to Temporal so the server knows this activity is still
     # alive. Safe to call frequently — the SDK throttles heartbeats internally
     # based on the configured heartbeat_timeout. Swallows calls when made
