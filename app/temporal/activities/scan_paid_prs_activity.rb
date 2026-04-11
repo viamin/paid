@@ -792,14 +792,16 @@ module Activities
         source_pull_request_number: pr_number,
         goal: "review"
       )
+      attempted_review_runs = review_runs.where.not(status: "retried")
 
       # A review-goal run is already queued or running — no new trigger needed.
       return [] if review_runs.where(status: AgentRun::UNFINISHED_STATUSES).exists?
 
-      # Count all finished review runs (including failed/timed-out) toward the
-      # max_review_rounds limit. Only counting completed runs allowed timed-out
-      # reviews to re-trigger indefinitely, stalling draft PR progression (#830).
-      finished_count = review_runs.finished.count
+      # Count all finished review attempts (including failed/timed-out) toward
+      # the max_review_rounds limit, but exclude retried runs because retry
+      # bookkeeping marks the superseded run as retried before enqueuing its
+      # replacement. Counting both would burn two rounds for one logical retry.
+      finished_count = attempted_review_runs.finished.count
       max_rounds = project.review_method_config("paid_agent")
         .dig("termination", "max_review_rounds")
 
@@ -812,7 +814,7 @@ module Activities
       # was already attempted for the current code — don't re-trigger.
       # Previously only checked completed runs, which let timed-out reviews
       # re-trigger on every scan cycle (#830).
-      last_review_run = review_runs.finished
+      last_review_run = attempted_review_runs.finished
         .order(Arel.sql("COALESCE(completed_at, updated_at) DESC")).first
       last_create_pr_run = project.agent_runs
         .where(source_pull_request_number: issue.github_number, goal: "create_pr")
