@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.18.0](https://github.com/viamin/paid/compare/v0.17.0...v0.18.0) (2026-04-11)
+
+
+### Features
+
+* **agent-runs:** add diff-overlap check for summary scope validation ([d6e16bb](https://github.com/viamin/paid/commit/d6e16bbbab4a5f4afe44fa3f67dc7fcd3505365d))
+* **dashboard:** rename Agent column to Goal in active runs table ([c1547f2](https://github.com/viamin/paid/commit/c1547f254f9db2ba3c4ebbefed481397984a3c44)), closes [#987](https://github.com/viamin/paid/issues/987)
+* **scanner:** define post-escalation behavior after max_review_rounds ([#1006](https://github.com/viamin/paid/issues/1006)) ([341d671](https://github.com/viamin/paid/commit/341d671ef2b326e9fcf7ec0095195e84c5d7a5fe))
+
+
+### Bug Fixes
+
+* **credentials:** add paid-code-reviewer github app private key ([efbc545](https://github.com/viamin/paid/commit/efbc5456c5d2bd887aa33eeed70d10d56b59d530))
+* **credentials:** add paid-code-reviewer github app private key ([f78930d](https://github.com/viamin/paid/commit/f78930dfdd460ed94999fa6fd62e9ee47d26cd65))
+* **github-sync:** merge main, remove committed yarn cache artifacts ([7b9b6ee](https://github.com/viamin/paid/commit/7b9b6eeeec0803bcc0f828558f7d8372005209df))
+* **github-sync:** merge main, resolve conflict in scan_paid_prs_activity.rb ([5419698](https://github.com/viamin/paid/commit/5419698f2387d459ea32241f8ebd8ce992ab3094))
+* **knowledge:** handle content_hash collisions across different scope_paths ([ea8ff23](https://github.com/viamin/paid/commit/ea8ff235b1f480a27e304e2b83c4ca3719c90763)), closes [#982](https://github.com/viamin/paid/issues/982)
+* **knowledge:** install gems before routes collection in container ([837265e](https://github.com/viamin/paid/commit/837265ec163b4ea1192bf7ba24e19db22622b29a)), closes [#983](https://github.com/viamin/paid/issues/983)
+* **knowledge:** restore network isolation for collector containers ([07091fd](https://github.com/viamin/paid/commit/07091fdbe3db3908c6d4da887192e057e1eb49e4))
+* **notifications:** add retry limit to RecordNotUnique rescue and expand Resolve specs ([92fa994](https://github.com/viamin/paid/commit/92fa994d4564993c827ee56feef83e12acb1faa8))
+* **notifications:** clear read_at on re-publish so escalated notifications appear as unread ([8434942](https://github.com/viamin/paid/commit/8434942b7587ed997a14fa6bae90dfcc3a7c558f))
+* **notifications:** compute broadcast counts server-side and add NULL-safe dedup index ([b33082c](https://github.com/viamin/paid/commit/b33082c953cf36c876f09781e924737014bef21f))
+* **notifications:** handle race condition in Publish and add on_delete nullify for user FK ([a681210](https://github.com/viamin/paid/commit/a681210710f3293a4fa5b9c645c9deb7216d2478))
+* **pr-review:** count only successful draft followups ([74c00a7](https://github.com/viamin/paid/commit/74c00a7247e95ef5df630fe03c800d931e528a87))
+* remove .yarn-cache-v2/ build artifacts from repository ([13487c6](https://github.com/viamin/paid/commit/13487c6a90bee34d60b14be0b12bca85f10c5aaf))
+* **reviews:** align manual_review_complete? and blocking_approval_timestamps with configured reviewer ([247c525](https://github.com/viamin/paid/commit/247c525df34f35f46906583d48047204e2bf9e4f))
+* **scanner:** address review feedback for paid_agent review triggers ([191fe28](https://github.com/viamin/paid/commit/191fe28378bd1f5ceaf2dcc248013e465dcfdd5e))
+* **scanner:** correct test expectations for body-only paid_agent reviews ([6c3d973](https://github.com/viamin/paid/commit/6c3d973fab38e4de133f6ec0b300887a1c31e686))
+* **scanner:** include paid_agent in BODY_ONLY_REVIEW_BOT_LOGINS ([b697afd](https://github.com/viamin/paid/commit/b697afddf17dddaa6b4bbf390d2432427eb1e49e)), closes [#1004](https://github.com/viamin/paid/issues/1004)
+* **scanner:** restore completed state for review-goal failures instead of failed ([2724176](https://github.com/viamin/paid/commit/272417696f7737793819d1690be2654b1611a9b9)), closes [#1005](https://github.com/viamin/paid/issues/1005)
+* **workflow-status:** include restart button in Turbo Stream broadcasts ([950c76d](https://github.com/viamin/paid/commit/950c76d51c3d119d768835afa782076cee486d05))
+* **workflow-status:** merge main, address review feedback ([2216460](https://github.com/viamin/paid/commit/22164600564b68a1a0d7c81f8998baed2096f900))
+
 ## [0.17.0](https://github.com/viamin/paid/compare/v0.16.0...v0.17.0) (2026-04-11)
 
 
