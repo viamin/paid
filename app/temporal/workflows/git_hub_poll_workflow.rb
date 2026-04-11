@@ -190,6 +190,8 @@ module Workflows
         handle_ready_for_owner(project_id, pr_data)
       elsif trigger_types.include?("escalate_to_owner")
         handle_escalate_to_owner(project_id, pr_data)
+      elsif trigger_types.include?("dismiss_escalation")
+        handle_dismiss_escalation(project_id, pr_data)
       elsif trigger_types.include?("owner_approved")
         handle_owner_approved(project_id, pr_data)
       elsif trigger_types.include?("review_bot_review_pending")
@@ -224,6 +226,12 @@ module Workflows
         timeout: 30)
 
       request_owner_review(project_id, pr_data)
+    end
+
+    def handle_dismiss_escalation(project_id, pr_data)
+      run_activity(Activities::DismissEscalationActivity,
+        { issue_id: pr_data[:issue_id] },
+        timeout: 30)
     end
 
     def request_owner_review(project_id, pr_data)
