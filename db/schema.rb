@@ -172,7 +172,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_10_204751) do
     t.datetime "paused_at"
     t.float "peak_cpu_percent"
     t.bigint "peak_memory_bytes"
-    t.string "priority_tier", limit: 10
     t.bigint "project_id", null: false
     t.bigint "prompt_version_id"
     t.bigint "provider_id"
@@ -1049,7 +1048,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_10_204751) do
     t.text "error_message"
     t.jsonb "input_data"
     t.bigint "project_id"
-    t.text "restart_reason"
     t.jsonb "result_data"
     t.datetime "started_at"
     t.string "status", limit: 50, default: "running", null: false

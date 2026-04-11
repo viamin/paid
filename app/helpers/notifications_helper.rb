@@ -17,7 +17,6 @@ module NotificationsHelper
   private
 
   def visible_notifications
-    current_account.notifications
-      .where(user_id: nil).or(current_account.notifications.where(user_id: current_user&.id))
+    NotificationPolicy::Scope.new(current_user, Notification).resolve
   end
 end
