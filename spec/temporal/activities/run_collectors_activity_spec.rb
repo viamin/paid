@@ -38,7 +38,7 @@ RSpec.describe Activities::RunCollectorsActivity, :no_db do
           project: project,
           commit_sha: commit_sha,
           branch: "main",
-          committed_at: nil
+          committed_at: nil,
         )
         expect(result[:success]).to be true
         expect(result[:containerized]).to be true
