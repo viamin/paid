@@ -1607,14 +1607,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "proceeds through normal flow instead of bypassing via clean signal" do
+      it "emits body-only review triggers instead of bypassing via clean signal" do
         result = activity.execute(project_id: project.id)
 
         trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
-        # With CI green, no bot issues, and owner_reviewer_login set, the
-        # draft scanner emits ready_for_owner — proving the non-clean review
-        # did not trigger the paid_agent clean signal bypass.
-        expect(trigger_types).to include("ready_for_owner")
+        # The non-clean body-only review is detected as unaddressed feedback,
+        # emitting review_bot_comments — proving the clean signal bypass was
+        # not triggered and the body-only anti-loop guard correctly flags the
+        # review for followup.
+        expect(trigger_types).to include("review_bot_comments")
       end
     end
 
@@ -1644,10 +1645,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
-        # With CI green, no bot issues, and owner_reviewer_login set, the
-        # draft scanner reaches the normal flow and emits ready_for_owner —
-        # proving the clean signal bypass was skipped.
-        expect(trigger_types).to include("ready_for_owner")
+        # The latest non-clean body-only review is detected as unaddressed
+        # feedback, emitting review_bot_comments — proving the older clean
+        # signal did not bypass and the body-only anti-loop guard correctly
+        # flags the review for followup.
+        expect(trigger_types).to include("review_bot_comments")
       end
     end
 
