@@ -8,6 +8,7 @@ export default class extends Controller {
     "prDescription",
     "prDropdown",
     "prTable",
+    "prioritySection",
   ]
 
   connect() {
@@ -21,6 +22,7 @@ export default class extends Controller {
     const showIssue = goal === "create_pr"
     const showPr = goal === "create_pr" || goal === "review"
     const isReview = goal === "review"
+    const showPriority = !isReview
 
     this.issueSectionTargets.forEach((el) => {
       el.hidden = !showIssue
@@ -42,6 +44,15 @@ export default class extends Controller {
       )
     })
 
+    this.prioritySectionTargets.forEach((el) => {
+      el.hidden = !showPriority
+      el.querySelectorAll("input, select, textarea, button").forEach(
+        (control) => {
+          control.disabled = !showPriority
+        }
+      )
+    })
+
     // Toggle between dropdown (create_pr) and table (review).
     // These blocks run after prSectionTargets above and override its enable/disable
     // for controls within the dropdown and table sub-sections.
@@ -56,7 +67,7 @@ export default class extends Controller {
       el.hidden = !isReview
       el.querySelectorAll("input[type='checkbox']").forEach((control) => {
         // Re-enable non-disabled-by-default checkboxes when review is shown
-        if (!control.hasAttribute('data-permanently-disabled')) {
+        if (!control.hasAttribute("data-permanently-disabled")) {
           control.disabled = !isReview
         }
       })

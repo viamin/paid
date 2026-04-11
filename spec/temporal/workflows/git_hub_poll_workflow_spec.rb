@@ -224,9 +224,32 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     let(:workflow) { described_class.new }
     let(:project_id) { 1 }
 
+    def draft_pr_data(current_draft_review_count:, triggers:)
+      {
+        issue_id: 10,
+        pr_number: 42,
+        phase: "draft",
+        current_draft_review_count: current_draft_review_count,
+        triggers: triggers
+      }
+    end
+
+    def expected_draft_queue_input(count:)
+      {
+        project_id: project_id,
+        issue_id: 10,
+        source_pull_request_number: 42,
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: count
+      }
+    end
+
     before do
       allow(workflow).to receive(:run_activity).and_return({})
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("draft-followup-direct-start-v1")
+        .and_return(true)
     end
 
     it "routes ready_for_owner to MarkPrReadyActivity and RequestReviewActivity" do
@@ -303,21 +326,60 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
 
     it "routes draft phase triggers to draft followup workflow" do
-      allow(workflow).to receive(:run_activity)
-        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
-        .and_return({ queued: true })
+      workflow.send(:handle_pr_trigger, project_id,
+        draft_pr_data(current_draft_review_count: 1, triggers: [ { type: "ci_failure" } ]))
 
-      pr_data = {
-        issue_id: 10, pr_number: 42, phase: "draft",
-        current_draft_review_count: 1,
-        triggers: [ { type: "ci_failure" } ]
-      }
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, expected_draft_queue_input(count: 1), timeout: 30)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
+      expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+    end
 
-      workflow.send(:handle_pr_trigger, project_id, pr_data)
+    it "replays the legacy draft followup command sequence before the patch" do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("draft-followup-direct-start-v1")
+        .and_return(false)
+
+      workflow.send(:handle_pr_trigger, project_id,
+        draft_pr_data(current_draft_review_count: 1, triggers: [ { type: "ci_failure" } ]))
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: 10, source_pull_request_number: 42 }, timeout: 30)
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42 },
+          timeout: 30)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordDraftReviewActivity,
+          { issue_id: 10, expected_draft_review_count: 1 }, timeout: 30)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
+      expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+    end
+
+    it "queues draft followup runs without incrementing draft review count yet" do
+      workflow.send(:handle_pr_trigger, project_id,
+        draft_pr_data(current_draft_review_count: 4, triggers: [ { type: "ci_failure" } ]))
+
+      expect(workflow).to have_received(:run_activity)
+        .with(
+          Activities::QueueAgentRunActivity,
+          expected_draft_queue_input(count: 4),
+          timeout: 30
+        )
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RecordDraftReviewActivity, anything, timeout: anything)
+    end
+
+    it "preserves draft-round metadata when a draft followup deduplicates" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::QueueAgentRunActivity, expected_draft_queue_input(count: 2), timeout: 30)
+        .and_return({ agent_run_id: 456, queued: false, duplicate: true })
+
+      workflow.send(:handle_pr_trigger, project_id,
+        draft_pr_data(current_draft_review_count: 2, triggers: [ { type: "review_threads" } ]))
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, expected_draft_queue_input(count: 2), timeout: 30)
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
@@ -368,10 +430,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
 
     it "defers review request and dispatches followup when other triggers present" do
-      allow(workflow).to receive(:run_activity)
-        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
-        .and_return({ queued: true })
-
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
         current_draft_review_count: 1,
@@ -388,8 +446,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RequestReviewActivity,
           hash_including(reviewers: array_including(Activities::RequestReviewActivity::COPILOT_LOGIN)), timeout: anything)
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: 10, source_pull_request_number: 42 }, timeout: 30)
+        .with(Activities::QueueAgentRunActivity, expected_draft_queue_input(count: 1), timeout: 30)
     end
 
     it "does not start followup workflow when review_bot_review_pending is the only trigger" do
@@ -504,10 +561,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       # Verify draft followup specifically (not ready followup) via
       # RecordDraftReviewActivity which only start_draft_followup_workflow calls.
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::RecordDraftReviewActivity,
-          hash_including(expected_draft_review_count: 0), timeout: anything)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(count_toward_draft_review_round: true, expected_draft_review_count: 0),
+          timeout: anything)
     end
 
     it "skips owner review request when owner_reviewer_login is blank" do
@@ -561,10 +617,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
-          hash_excluding(goal: "review"),
+          hash_including(count_toward_draft_review_round: true, expected_draft_review_count: 0),
           timeout: anything)
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::RecordDraftReviewActivity, anything, timeout: anything)
     end
   end
 end

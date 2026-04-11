@@ -40,8 +40,8 @@ module Api
         return
       end
 
-      response = proxy_to_github(path, github_token)
-      github_token.touch_last_used!
+      response = proxy_to_github(path, github_authorization_token(path))
+      github_token.touch_last_used! unless use_review_bot_token?(path)
 
       if response.status >= 200 && response.status < 300
         track_issue_creation(path, response)
@@ -50,6 +50,12 @@ module Api
 
       render body: response.body, status: response.status,
              content_type: response.headers["content-type"] || "application/json"
+    rescue Github::ReviewBotInstallationToken::ConfigurationError => e
+      log_error("github_proxy.review_bot_token_failed", e.message)
+      render json: { error: e.message }, status: :service_unavailable
+    rescue Github::ReviewBotInstallationToken::Error => e
+      log_error("github_proxy.review_bot_token_failed", e.message)
+      render json: { error: e.message }, status: :bad_gateway
     rescue Faraday::Error => e
       log_error("github_proxy.forward_failed", e.message)
       render json: { error: "Upstream request failed" }, status: :bad_gateway
@@ -75,7 +81,7 @@ module Api
       "#{owner}/#{repo}".casecmp(project_full_name).zero?
     end
 
-    def proxy_to_github(path, github_token)
+    def proxy_to_github(path, authorization_token)
       target_url = "https://api.github.com/#{path}"
       target_url = "#{target_url}?#{request.query_string}" if request.query_string.present?
 
@@ -84,10 +90,25 @@ module Api
         target_url,
         request.raw_post,
         forwarded_headers.merge(
-          "Authorization" => "Bearer #{github_token.token}",
+          "Authorization" => "Bearer #{authorization_token}",
           "Accept" => "application/vnd.github+json"
         )
       )
+    end
+
+    def github_authorization_token(path)
+      return @agent_run.project.github_token.token unless use_review_bot_token?(path)
+
+      Github::ReviewBotInstallationToken.new(
+        repo_full_name: @agent_run.project.full_name
+      ).fetch
+    end
+
+    def use_review_bot_token?(path)
+      @agent_run.review_goal? &&
+        @agent_run.project.review_method_enabled?("paid_agent") &&
+        request.method == "POST" &&
+        %r{\Arepos/[^/]+/[^/]+/pulls/\d+/reviews\z}.match?(path)
     end
 
     def build_connection
