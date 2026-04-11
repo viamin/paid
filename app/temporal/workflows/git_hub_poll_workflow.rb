@@ -190,8 +190,12 @@ module Workflows
         handle_ready_for_owner(project_id, pr_data)
       elsif trigger_types.include?("escalate_to_owner")
         handle_escalate_to_owner(project_id, pr_data)
+      elsif trigger_types.include?("dismiss_escalation")
+        handle_dismiss_escalation(project_id, pr_data)
       elsif trigger_types.include?("owner_approved")
         handle_owner_approved(project_id, pr_data)
+      elsif trigger_types.include?("paid_agent_review_pending")
+        handle_paid_agent_review_pending(project_id, pr_data, trigger_types)
       elsif trigger_types.include?("review_bot_review_pending")
         handle_review_bot_review_pending(project_id, pr_data, trigger_types)
       elsif trigger_types.include?("manual_review_pending") || trigger_types.include?("ci_action_pending")
@@ -208,6 +212,16 @@ module Workflows
     end
 
     def handle_ready_for_owner(project_id, pr_data)
+      trigger_types = (pr_data[:triggers] || []).map { |t| t[:type] }
+
+      # Queue paid_agent review sidecar if bundled with ready_for_owner
+      if trigger_types.include?("paid_agent_review_pending")
+        run_activity(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: pr_data[:issue_id],
+            source_pull_request_number: pr_data[:pr_number],
+            goal: "review" }, timeout: 30)
+      end
+
       result = run_activity(Activities::MarkPrReadyActivity,
         { project_id: project_id, pr_number: pr_data[:pr_number],
           issue_id: pr_data[:issue_id] }, timeout: 60)
@@ -226,12 +240,34 @@ module Workflows
       request_owner_review(project_id, pr_data)
     end
 
+    def handle_dismiss_escalation(project_id, pr_data)
+      run_activity(Activities::DismissEscalationActivity,
+        { issue_id: pr_data[:issue_id] },
+        timeout: 30)
+    end
+
     def request_owner_review(project_id, pr_data)
       reviewer = pr_data[:owner_reviewer_login]
       return if reviewer.blank?
 
       request_review(project_id, pr_data[:pr_number], [ reviewer ],
         log_key: "pr_review.request_owner_review_failed")
+    end
+
+    def handle_paid_agent_review_pending(project_id, pr_data, trigger_types)
+      other_triggers = trigger_types - [ "paid_agent_review_pending" ]
+
+      if other_triggers.empty?
+        # No other work to do — queue a review-goal agent run directly.
+        run_activity(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: pr_data[:issue_id],
+            source_pull_request_number: pr_data[:pr_number],
+            goal: "review" }, timeout: 30)
+      elsif pr_data[:phase].in?(%w[draft restarted])
+        start_draft_followup_workflow(project_id, pr_data)
+      else
+        start_pr_followup_workflow(project_id, pr_data)
+      end
     end
 
     def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
