@@ -1,5 +1,5 @@
 <div id="<%= dom_id(project, :agent_runs) %>" class="mt-8">
-  <% stale_agent_runs_count = local_assigns.fetch(:stale_agent_runs_count, project.agent_runs.stale_running.count) %>
+  <% stale_agent_runs_count = local_assigns.fetch(:stale_agent_runs_count, project.agent_runs.stale_for_cleanup.count) %>
   <% show_stale_cleanup_action = local_assigns.fetch(:show_stale_cleanup_action, false) %>
   <div class="flex items-center justify-between gap-4">
     <h2 class="text-lg font-medium text-gray-900">

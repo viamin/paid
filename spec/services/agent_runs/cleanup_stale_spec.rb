@@ -15,9 +15,33 @@ RSpec.describe AgentRuns::CleanupStale do
       expect(stale_run.error_message).to eq("Manual stale run cleanup: exceeded running timeout")
     end
 
-    it "leaves fresh or non-running runs untouched" do
+    it "requeues stale pending runs for the project" do
+      stale_run = create(:agent_run, status: "pending", project: project)
+      stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+
+      described_class.call(project: project)
+
+      stale_run.reload
+      expect(stale_run.status).to eq("queued")
+      expect(stale_run.stale_requeue_count).to eq(1)
+      expect(stale_run.temporal_workflow_id).to be_nil
+      expect(stale_run.temporal_run_id).to be_nil
+    end
+
+    it "times out stale pending runs that exhausted the requeue budget" do
+      stale_run = create(:agent_run, status: "pending", project: project, stale_requeue_count: AgentRun::MAX_STALE_REQUEUES)
+      stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+
+      described_class.call(project: project)
+
+      expect(stale_run.reload.status).to eq("timeout")
+      expect(stale_run.error_message).to eq("Manual stale run cleanup: exceeded pending requeue limit")
+    end
+
+    it "leaves fresh or non-stale runs untouched" do
       fresh_run = create(:agent_run, :running, project: project, started_at: AgentRun.stale_running_cutoff + 1.minute)
-      pending_run = create(:agent_run, status: "pending", project: project, started_at: AgentRun.stale_running_cutoff - 1.minute)
+      pending_run = create(:agent_run, status: "pending", project: project)
+      pending_run.update_column(:updated_at, AgentRun.stale_pending_cutoff + 1.minute)
 
       described_class.call(project: project)
 
@@ -31,16 +55,17 @@ RSpec.describe AgentRuns::CleanupStale do
         container_id: "container-123",
         service_container_ids: [ 1, 2 ])
       relation = instance_double(ActiveRecord::Relation)
-      agent_runs = double(stale_running: relation)
+      container_service = instance_double(Containers::Provision, cleanup: true)
       provisioner = instance_double(Containers::ServiceProvisioner, cleanup: true)
 
-      allow(project).to receive(:agent_runs).and_return(agent_runs)
+      allow(project.agent_runs).to receive(:stale_for_cleanup).and_return(relation)
       allow(relation).to receive(:find_each).and_yield(stale_run)
+      allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
       allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
-      expect(stale_run).to receive(:cleanup_container).with(force: true)
 
       described_class.call(project: project)
 
+      expect(container_service).to have_received(:cleanup).with(force: true)
       expect(provisioner).to have_received(:cleanup).with(stale_run)
     end
 
@@ -57,7 +82,8 @@ RSpec.describe AgentRuns::CleanupStale do
 
     it "returns the number of cleaned runs" do
       create(:agent_run, :running, project: project, started_at: AgentRun.stale_running_cutoff - 1.minute)
-      create(:agent_run, :running, project: project, started_at: AgentRun.stale_running_cutoff - 2.minutes)
+      stale_pending = create(:agent_run, status: "pending", project: project)
+      stale_pending.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
 
       expect(described_class.call(project: project)).to eq(2)
     end
