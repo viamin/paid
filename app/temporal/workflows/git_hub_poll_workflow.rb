@@ -210,6 +210,16 @@ module Workflows
     end
 
     def handle_ready_for_owner(project_id, pr_data)
+      trigger_types = (pr_data[:triggers] || []).map { |t| t[:type] }
+
+      # Queue paid_agent review sidecar if bundled with ready_for_owner
+      if trigger_types.include?("paid_agent_review_pending")
+        run_activity(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: pr_data[:issue_id],
+            source_pull_request_number: pr_data[:pr_number],
+            goal: "review" }, timeout: 30)
+      end
+
       result = run_activity(Activities::MarkPrReadyActivity,
         { project_id: project_id, pr_number: pr_data[:pr_number],
           issue_id: pr_data[:issue_id] }, timeout: 60)
