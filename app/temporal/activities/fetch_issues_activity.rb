@@ -256,6 +256,7 @@ module Activities
 
       issues_relation.find_each do |issue|
         parsed_before = issue.relationships_parsed_at
+        check_rate_budget!(client)
         comment_bodies = fetch_trusted_comment_bodies(client, project, issue)
         # nil means comment fetch failed — skip ALL parsing for this issue to
         # avoid stale-removal of comment-derived deps. Body-only parsing would
@@ -267,8 +268,12 @@ module Activities
 
         stamp_relationships_parsed(issue, parsed_before)
       rescue GithubClient::RateLimitError
+        # Always re-raise reactive rate-limit errors.
         raise
       rescue => e
+        # Re-raise proactive rate-limit errors so they propagate to the
+        # workflow instead of being swallowed by the generic handler.
+        raise if e.is_a?(Temporalio::Error::ApplicationError) && e.type == "RateLimit"
         logger.warn(
           message: "github_sync.parse_issue_relationships_failed",
           project_id: project.id,
