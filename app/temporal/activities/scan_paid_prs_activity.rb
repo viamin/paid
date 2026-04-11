@@ -796,27 +796,33 @@ module Activities
       # A review-goal run is already queued or running — no new trigger needed.
       return [] if review_runs.where(status: AgentRun::UNFINISHED_STATUSES).exists?
 
-      completed_count = review_runs.where(status: "completed").count
+      # Count all finished review runs (including failed/timed-out) toward the
+      # max_review_rounds limit. Only counting completed runs allowed timed-out
+      # reviews to re-trigger indefinitely, stalling draft PR progression (#830).
+      finished_count = review_runs.finished.count
       max_rounds = project.review_method_config("paid_agent")
         .dig("termination", "max_review_rounds")
 
-      if max_rounds.present? && completed_count >= max_rounds.to_i
+      if max_rounds.present? && finished_count >= max_rounds.to_i
         return []
       end
 
-      # Check whether the most recent completed review-goal run was posted
-      # after the last create_pr run. If so, the review is already up to date.
-      last_review_run = review_runs.where(status: "completed")
-        .order(completed_at: :desc).first
+      # Check whether the most recent finished review-goal run (regardless of
+      # success) was attempted after the last create_pr run. If so, the review
+      # was already attempted for the current code — don't re-trigger.
+      # Previously only checked completed runs, which let timed-out reviews
+      # re-trigger on every scan cycle (#830).
+      last_review_run = review_runs.finished
+        .order(Arel.sql("COALESCE(completed_at, updated_at) DESC")).first
       last_create_pr_run = project.agent_runs
         .where(source_pull_request_number: issue.github_number, goal: "create_pr")
         .completed
         .order(completed_at: :desc)
         .first
 
-      if last_review_run && last_create_pr_run &&
-          last_review_run.completed_at >= last_create_pr_run.completed_at
-        return []
+      if last_review_run && last_create_pr_run
+        review_timestamp = last_review_run.completed_at || last_review_run.updated_at
+        return [] if review_timestamp >= last_create_pr_run.completed_at
       end
 
       [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]
