@@ -455,6 +455,7 @@ module Activities
       return false unless issue.last_pr_scan_at
       return false if issue.github_updated_at >= issue.last_pr_scan_at
       return false if recently_completed_run?(project, issue)
+      return false if merge_conflict_rescan_needed?(project, issue)
 
       logger.debug(
         message: "pr_scanner.skipped_unchanged",
@@ -465,6 +466,10 @@ module Activities
       )
 
       true
+    end
+
+    def merge_conflict_rescan_needed?(project, issue)
+      project.auto_fix_merge_conflicts && issue.pr_review_phase.in?(%w[ready escalated])
     end
 
     def recently_completed_run?(project, issue)

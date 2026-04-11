@@ -3408,6 +3408,55 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(unchanged_pr.reload.last_pr_scan_at).to be_present
       end
 
+      it "scans ready PRs for merge conflicts when auto-fix is enabled" do
+        project.update!(auto_fix_merge_conflicts: true)
+        unchanged_pr.update!(pr_review_phase: "ready")
+        stub_github_for_pr(mergeable: false)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to contain_exactly(
+          hash_including(
+            pr_number: 42,
+            phase: "ready",
+            triggers: include(hash_including(type: "merge_conflicts"))
+          )
+        )
+      end
+
+      it "scans escalated PRs for merge conflicts when auto-fix is enabled" do
+        project.update!(auto_fix_merge_conflicts: true)
+        unchanged_pr.update!(pr_review_phase: "escalated")
+        stub_github_for_pr(mergeable: false)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to contain_exactly(
+          hash_including(
+            pr_number: 42,
+            phase: "escalated",
+            triggers: include(hash_including(type: "merge_conflicts"))
+          )
+        )
+      end
+
+      it "still skips draft PRs when auto-fix is enabled" do
+        project.update!(auto_fix_merge_conflicts: true)
+        unchanged_pr.update!(pr_review_phase: "draft")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
+      it "still skips ready PRs when auto-fix is disabled" do
+        unchanged_pr.update!(pr_review_phase: "ready")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
       it "updates last_pr_scan_at after scanning" do
         unchanged_pr.update_columns(last_pr_scan_at: nil, github_updated_at: Time.current)
         stub_github_for_pr
