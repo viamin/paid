@@ -38,17 +38,22 @@ module Popen3Stub
 
     if command_pattern.is_a?(Regexp)
       allow(Open3).to receive(:popen3).and_wrap_original do |original, *args, **kwargs, &block|
-        if args.join(" ").match?(command_pattern)
+        command_args = popen3_command_args(args)
+        if command_args.join(" ").match?(command_pattern)
           block.call(stdin_io, stdout_io, stderr_io, wait_thr)
         else
           original.call(*args, **kwargs, &block)
         end
       end
     else
-      allow(Open3).to receive(:popen3).with(*command_pattern, pgroup: true) do |*, &block|
+      allow(Open3).to receive(:popen3).with({}, *command_pattern, pgroup: true) do |*, &block|
         block.call(stdin_io, stdout_io, stderr_io, wait_thr)
       end
     end
+  end
+
+  def popen3_command_args(args)
+    args.first.is_a?(Hash) ? args.drop(1) : args
   end
 end
 

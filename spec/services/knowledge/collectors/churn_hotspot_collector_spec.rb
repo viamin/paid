@@ -30,20 +30,21 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
   # Stubs all shell commands: `command -v ruby-maat`, git log, ruby-maat, and scc.
   def stub_collector_commands(git_log: git_log_data, revisions: revisions_csv, scc: scc_by_file_json)
     allow(Open3).to receive(:popen3).and_wrap_original do |_original, *args, **_kwargs, &block|
+      command_args = args.first.is_a?(Hash) ? args.drop(1) : args
       stdin_io = Popen3Stub::FakeIO.new
       status = instance_double(Process::Status, success?: true, exitstatus: 0)
       wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
 
-      stdout_content = if args.first == "sh" && args.include?("command -v ruby-maat")
+      stdout_content = if command_args.first == "sh" && command_args.include?("command -v ruby-maat")
         "/usr/local/bin/ruby-maat\n"
-      elsif args.first == "git" && args.include?("log")
+      elsif command_args.first == "git" && command_args.include?("log")
         git_log
-      elsif args.first == "ruby-maat"
+      elsif command_args.first == "ruby-maat"
         revisions
-      elsif args.first == "scc"
+      elsif command_args.first == "scc"
         scc
       else
-        raise "Unexpected command in test: #{args.inspect}"
+        raise "Unexpected command in test: #{command_args.inspect}"
       end
 
       block.call(stdin_io, Popen3Stub::FakeIO.new(stdout_content), Popen3Stub::FakeIO.new(""), wait_thr)
@@ -52,70 +53,73 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
 
   def stub_failing_git_command(scc: scc_by_file_json)
     allow(Open3).to receive(:popen3).and_wrap_original do |_original, *args, **_kwargs, &block|
+      command_args = args.first.is_a?(Hash) ? args.drop(1) : args
       stdin_io = Popen3Stub::FakeIO.new
 
-      if args.first == "sh" && args.include?("command -v ruby-maat")
+      if command_args.first == "sh" && command_args.include?("command -v ruby-maat")
         status = instance_double(Process::Status, success?: true, exitstatus: 0)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
         block.call(stdin_io, Popen3Stub::FakeIO.new("/usr/local/bin/ruby-maat\n"), Popen3Stub::FakeIO.new(""), wait_thr)
-      elsif args.first == "git" && args.include?("log")
+      elsif command_args.first == "git" && command_args.include?("log")
         status = instance_double(Process::Status, success?: false, exitstatus: 1)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
         block.call(stdin_io, Popen3Stub::FakeIO.new(""), Popen3Stub::FakeIO.new("error"), wait_thr)
-      elsif args.first == "scc"
+      elsif command_args.first == "scc"
         status = instance_double(Process::Status, success?: true, exitstatus: 0)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
         block.call(stdin_io, Popen3Stub::FakeIO.new(scc), Popen3Stub::FakeIO.new(""), wait_thr)
       else
-        raise "Unexpected command in test: #{args.inspect}"
+        raise "Unexpected command in test: #{command_args.inspect}"
       end
     end
   end
 
   def stub_failing_revisions_command
     allow(Open3).to receive(:popen3).and_wrap_original do |_original, *args, **_kwargs, &block|
+      command_args = args.first.is_a?(Hash) ? args.drop(1) : args
       stdin_io = Popen3Stub::FakeIO.new
 
-      if args.first == "sh" && args.include?("command -v ruby-maat")
+      if command_args.first == "sh" && command_args.include?("command -v ruby-maat")
         status = instance_double(Process::Status, success?: true, exitstatus: 0)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
         block.call(stdin_io, Popen3Stub::FakeIO.new("/usr/local/bin/ruby-maat\n"), Popen3Stub::FakeIO.new(""), wait_thr)
-      elsif args.first == "git" && args.include?("log")
+      elsif command_args.first == "git" && command_args.include?("log")
         status = instance_double(Process::Status, success?: true, exitstatus: 0)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
         block.call(stdin_io, Popen3Stub::FakeIO.new(git_log_data), Popen3Stub::FakeIO.new(""), wait_thr)
-      elsif args.first == "ruby-maat"
+      elsif command_args.first == "ruby-maat"
         status = instance_double(Process::Status, success?: false, exitstatus: 1)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
         block.call(stdin_io, Popen3Stub::FakeIO.new(""), Popen3Stub::FakeIO.new("ruby-maat: error"), wait_thr)
       else
-        raise "Unexpected command in test: #{args.inspect}"
+        raise "Unexpected command in test: #{command_args.inspect}"
       end
     end
   end
 
   def stub_failing_scc_command
     allow(Open3).to receive(:popen3).and_wrap_original do |_original, *args, **_kwargs, &block|
+      command_args = args.first.is_a?(Hash) ? args.drop(1) : args
       stdin_io = Popen3Stub::FakeIO.new
 
-      if args.first == "sh" && args.include?("command -v ruby-maat")
+      if command_args.first == "sh" && command_args.include?("command -v ruby-maat")
         status = instance_double(Process::Status, success?: true, exitstatus: 0)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
         block.call(stdin_io, Popen3Stub::FakeIO.new("/usr/local/bin/ruby-maat\n"), Popen3Stub::FakeIO.new(""), wait_thr)
-      elsif args.first == "git" && args.include?("log")
+      elsif command_args.first == "git" && command_args.include?("log")
         status = instance_double(Process::Status, success?: true, exitstatus: 0)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
         block.call(stdin_io, Popen3Stub::FakeIO.new(git_log_data), Popen3Stub::FakeIO.new(""), wait_thr)
-      elsif args.first == "ruby-maat"
+      elsif command_args.first == "ruby-maat"
         status = instance_double(Process::Status, success?: true, exitstatus: 0)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
         block.call(stdin_io, Popen3Stub::FakeIO.new(revisions_csv), Popen3Stub::FakeIO.new(""), wait_thr)
-      elsif args.first == "scc"
+      elsif command_args.first == "scc"
         status = instance_double(Process::Status, success?: false, exitstatus: 1)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
         block.call(stdin_io, Popen3Stub::FakeIO.new(""), Popen3Stub::FakeIO.new("scc: not found"), wait_thr)
       else
-        raise "Unexpected command in test: #{args.inspect}"
+        raise "Unexpected command in test: #{command_args.inspect}"
       end
     end
   end
