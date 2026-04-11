@@ -164,10 +164,15 @@ module Activities
         end
       end
 
-      # review_bot_review_pending is non-blocking: it requests a review but
-      # should not prevent evaluation of CI, comments, or changes_requested.
+      # review_bot_review_pending gates draft advancement (the PR must have a
+      # clean review-bot review before it can leave draft).
+      # paid_agent_review_pending is fully non-blocking: it signals the
+      # workflow to start a review run but never prevents ready_for_owner.
       pending_triggers = (review_bot_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
-      blocking_triggers = (review_bot_triggers || []).reject { |t| t[:type] == "review_bot_review_pending" }
+      sidecar_triggers = (review_bot_triggers || []).select { |t| t[:type] == "paid_agent_review_pending" }
+      blocking_triggers = (review_bot_triggers || []).reject { |t|
+        t[:type] == "review_bot_review_pending" || t[:type] == "paid_agent_review_pending"
+      }
       all_triggers = blocking_triggers + (human_triggers || [])
 
       # Only fetch PR data and check runs if blocking review triggers aren't enough.
@@ -199,7 +204,7 @@ module Activities
         # A draft PR is only ready to leave draft after the latest review-bot
         # review is explicitly clean. Resolved threads alone are not enough.
         if pending_triggers.any?
-          triggers = pending_triggers
+          triggers = pending_triggers + sidecar_triggers
           log_triggers(project, issue, triggers)
           return draft_trigger_payload(issue, triggers)
         end
@@ -212,12 +217,12 @@ module Activities
           reviews ||= fetch_reviews(client, project, issue) # safety: reviews already fetched above
           gate_triggers = non_bot_review_gate_triggers(project, reviews, checks)
           if gate_triggers.any?
-            all_pending = pending_triggers + gate_triggers
+            all_pending = pending_triggers + sidecar_triggers + gate_triggers
             log_triggers(project, issue, all_pending)
             return draft_trigger_payload(issue, all_pending)
           end
 
-          return ready_for_owner_trigger(issue)
+          return ready_for_owner_trigger(issue, sidecar_triggers: sidecar_triggers)
         end
 
         return nil # CI still pending or checks unavailable
@@ -225,6 +230,7 @@ module Activities
 
       # Re-add pending triggers so the workflow can request the review.
       all_triggers.concat(pending_triggers)
+      all_triggers.concat(sidecar_triggers)
 
       triggers = all_triggers
       log_triggers(project, issue, triggers)
@@ -294,13 +300,14 @@ module Activities
 
     # --- Special trigger builders ---
 
-    def ready_for_owner_trigger(issue)
-      log_triggers(issue.project, issue, [ { type: "ready_for_owner" } ])
+    def ready_for_owner_trigger(issue, sidecar_triggers: [])
+      triggers = [ { type: "ready_for_owner", details: "CI green, review bots clean" } ] + sidecar_triggers
+      log_triggers(issue.project, issue, triggers)
 
       {
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: "ready_for_owner", details: "CI green, review bots clean" } ],
+        triggers: triggers,
         phase: issue.pr_review_phase,
         owner_reviewer_login: issue.project.owner_reviewer_login
       }
@@ -434,6 +441,7 @@ module Activities
       project.agent_runs
         .where(source_pull_request_number: issue.github_number)
         .where(status: AgentRun::UNFINISHED_STATUSES)
+        .where(goal: "create_pr")
         .exists?
     end
 
@@ -676,6 +684,8 @@ module Activities
         login = project && review_bot_request_login(project)
         if login
           [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
+        elsif project&.review_enabled? && project.review_method_enabled?("paid_agent")
+          check_paid_agent_review_status(project, issue)
         else
           []
         end
@@ -730,6 +740,48 @@ module Activities
       when :unknown
         review_bot_thread_triggers(unresolved_threads)
       end
+    end
+
+    # Checks whether a paid_agent review-goal run is needed for this PR.
+    # Returns a paid_agent_review_pending trigger when no completed review-goal
+    # run exists and the max_review_rounds limit has not been reached. Returns
+    # an empty array when the review is already satisfied or the limit is hit.
+    def check_paid_agent_review_status(project, issue)
+      return [] unless issue
+
+      pr_number = issue.github_number
+      review_runs = project.agent_runs.where(
+        source_pull_request_number: pr_number,
+        goal: "review"
+      )
+
+      # A review-goal run is already queued or running — no new trigger needed.
+      return [] if review_runs.where(status: AgentRun::UNFINISHED_STATUSES).exists?
+
+      completed_count = review_runs.where(status: "completed").count
+      max_rounds = project.review_method_config("paid_agent")
+        .dig("termination", "max_review_rounds")
+
+      if max_rounds.present? && completed_count >= max_rounds.to_i
+        return []
+      end
+
+      # Check whether the most recent completed review-goal run was posted
+      # after the last create_pr run. If so, the review is already up to date.
+      last_review_run = review_runs.where(status: "completed")
+        .order(completed_at: :desc).first
+      last_create_pr_run = project.agent_runs
+        .where(source_pull_request_number: issue.github_number, goal: "create_pr")
+        .completed
+        .order(completed_at: :desc)
+        .first
+
+      if last_review_run && last_create_pr_run &&
+          last_review_run.completed_at >= last_create_pr_run.completed_at
+        return []
+      end
+
+      [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]
     end
 
     def body_only_review_bot?(login)
