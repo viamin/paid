@@ -44,6 +44,15 @@ RSpec.describe StaleRunDetectorJob do
       expect(stale_run.issue.reload.paid_state).to eq("failed")
     end
 
+    it "sets issue paid_state to completed for stale review-goal runs" do
+      issue = create(:issue, :in_progress, :pull_request, project: create(:project))
+      stale_run = create(:agent_run, :running, :review_goal, project: issue.project, issue: issue, started_at: (running_threshold + 60).seconds.ago)
+
+      described_class.perform_now
+
+      expect(stale_run.issue.reload.paid_state).to eq("completed")
+    end
+
     it "creates a log entry on the resolved run" do
       stale_run = create(:agent_run, :running, started_at: (running_threshold + 60).seconds.ago)
 
