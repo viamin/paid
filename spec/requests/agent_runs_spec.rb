@@ -388,12 +388,19 @@ RSpec.describe "AgentRuns" do
       end
 
       it "includes goal-toggle Stimulus wiring" do
+        create(:issue, :pull_request, project: project, github_number: 20, title: "Wiring PR")
         get new_project_agent_run_path(project)
         body = response.body
         expect(body).to include('data-controller="goal-toggle"')
         expect(body).to include('data-action="change->goal-toggle#toggle"')
         expect(body).to include('data-goal-toggle-target="issueSection"')
         expect(body).to include('data-goal-toggle-target="prSection"')
+        expect(body).to include('data-goal-toggle-target="prTable"')
+
+        doc = Nokogiri::HTML(body)
+        pr_table = doc.at_css('[data-goal-toggle-target="prTable"]')
+        expect(pr_table).not_to be_nil
+        expect(pr_table["class"].to_s).not_to include("hidden")
       end
 
       it "shows all open issues in dropdown regardless of paid_state" do
