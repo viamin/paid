@@ -36,7 +36,8 @@ module Projects
 
     def new
       authorize @project, :run_agent?
-      @default_provider_identifier = settings_owner&.settings&.provider_priority(identifiers: true)&.first
+      selected_goal = params[:goal].presence || "create_pr"
+      @default_provider_identifier = settings_owner&.settings&.default_provider_identifier_for_goal(selected_goal)
       @available_run_provider_options = available_run_provider_options
       @issues = @project.issues
         .issues_only
@@ -120,7 +121,7 @@ module Projects
       create_run_and_redirect(
         on_error_path: project_path(@project),
         issue: issue,
-        provider_identifier: settings_owner&.settings&.default_provider_identifier,
+        provider_identifier: settings_owner&.settings&.default_provider_identifier_for_goal("create_pr"),
         goal: "create_pr",
         source_pull_request_number: source_pr_number
       )
@@ -529,7 +530,8 @@ module Projects
       requested_provider_identifier = provider_identifier || params[:provider].presence
       resolved_provider = resolve_provider_selection(
         requested_agent_type: requested_agent_type,
-        requested_provider_identifier: requested_provider_identifier
+        requested_provider_identifier: requested_provider_identifier,
+        goal: goal
       )
       raise NoRunnableProviderError, "No runnable provider could be resolved for this project." unless resolved_provider
 
@@ -555,7 +557,7 @@ module Projects
     def enqueue_resume_run(pr)
       create_agent_run(
         source_pull_request_number: pr.github_number,
-        provider_identifier: settings_owner&.settings&.default_provider_identifier,
+        provider_identifier: settings_owner&.settings&.default_provider_identifier_for_goal("create_pr"),
         goal: "create_pr",
         trigger_type: "automatic"
       )
@@ -694,12 +696,12 @@ module Projects
       enabled_retry_providers.any? { |provider| provider.provider_key == provider_key }
     end
 
-    def resolve_provider_selection(requested_agent_type:, requested_provider_identifier:)
+    def resolve_provider_selection(requested_agent_type:, requested_provider_identifier:, goal:)
       owner = settings_owner
       return unless owner
 
       configured_identifiers = UserSetting.enabled_agent_providers(owner, identifiers: true)
-      priority_identifiers = owner.settings.provider_priority(identifiers: true)
+      priority_identifiers = owner.settings.provider_priority_for_goal(goal, identifiers: true)
       default_identifier = priority_identifiers.first
 
       if requested_provider_identifier.present?
