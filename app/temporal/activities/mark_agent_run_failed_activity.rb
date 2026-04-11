@@ -25,7 +25,10 @@ module Activities
       ProcessRunQueueJob.perform_later
 
       # Always update issue state so it doesn't stay stuck in "in_progress".
-      if agent_run.issue && agent_run.issue.paid_state != "failed"
+      # Review-goal runs don't own the issue lifecycle — they review an
+      # existing PR. Setting paid_state to "failed" would suppress further
+      # automation on the issue, so skip the state change for review goals.
+      if agent_run.issue && !agent_run.review_goal? && agent_run.issue.paid_state != "failed"
         agent_run.issue.update!(paid_state: "failed")
       end
 

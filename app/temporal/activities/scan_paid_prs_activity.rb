@@ -86,6 +86,16 @@ module Activities
     def scan_pr(project, client, issue)
       return :skipped if active_run_exists?(project, issue)
 
+      # Check for failed review-goal runs needing retry before phase-specific
+      # scanning. This prevents the PR from wedging indefinitely when a
+      # review-goal run fails (provider error, malformed JSON, container crash).
+      if review_goal_retry_needed?(project, issue)
+        if review_goal_retry_limit_reached?(issue)
+          return escalate_trigger(issue, reason: "Review-goal retries exhausted (#{MAX_REVIEW_GOAL_RETRIES} consecutive failures)")
+        end
+        return review_goal_retry_trigger(issue)
+      end
+
       case issue.pr_review_phase
       when "draft", "restarted"
         scan_draft_pr(project, client, issue)
@@ -107,6 +117,7 @@ module Activities
     end
 
     MAX_CONSECUTIVE_DRAFT_FAILURES = 3
+    MAX_REVIEW_GOAL_RETRIES = 3
 
     # --- Draft phase scanning ---
 
@@ -455,6 +466,40 @@ module Activities
       recent_runs.all? do |run|
         unproductive_statuses.include?(run.status) && (run.status == "no_output" || run.iterations.to_i.zero?)
       end
+    end
+
+    # Returns true when the most recent review-goal run for this PR failed
+    # and no successful review-goal run has completed since. Only applies
+    # when the paid_agent review method is enabled (review-goal runs are
+    # how paid_agent posts reviews).
+    def review_goal_retry_needed?(project, issue)
+      return false unless project.review_method_enabled?("paid_agent")
+
+      latest_review_run = project.agent_runs
+        .where(source_pull_request_number: issue.github_number, goal: "review")
+        .finished
+        .order(created_at: :desc)
+        .first
+
+      return false unless latest_review_run
+      return false unless AgentRun::FAILURE_STATUSES.include?(latest_review_run.status)
+
+      true
+    end
+
+    def review_goal_retry_limit_reached?(issue)
+      issue.review_goal_retry_count >= MAX_REVIEW_GOAL_RETRIES
+    end
+
+    def review_goal_retry_trigger(issue)
+      log_triggers(issue.project, issue, [ { type: "review_goal_retry" } ])
+
+      {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: [ { type: "review_goal_retry", details: "Retrying failed review-goal run (attempt #{issue.review_goal_retry_count + 1}/#{MAX_REVIEW_GOAL_RETRIES})" } ],
+        phase: issue.pr_review_phase
+      }
     end
 
     def last_completed_run(project, issue)

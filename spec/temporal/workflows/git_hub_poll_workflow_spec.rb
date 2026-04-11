@@ -566,6 +566,27 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           timeout: anything)
     end
 
+    it "routes review_goal_retry to RecordReviewGoalRetryActivity and QueueAgentRunActivity with review goal" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [ { type: "review_goal_retry", details: "Retrying failed review-goal run" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity,
+          hash_including(issue_id: 10), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(
+            project_id: project_id,
+            issue_id: 10,
+            source_pull_request_number: 42,
+            goal: "review"
+          ), timeout: anything)
+    end
+
     it "skips owner review request when owner_reviewer_login is blank" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::MarkPrReadyActivity, anything, timeout: anything)

@@ -82,5 +82,16 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
         activity.execute(agent_run_id: -1, error: "error")
       }.to raise_error(ActiveRecord::RecordNotFound)
     end
+
+    it "does not set paid_state to failed for review-goal runs" do
+      issue = create(:issue, :in_progress, project: project)
+      agent_run = create(:agent_run, :running, project: project, issue: issue,
+        goal: "review", source_pull_request_number: 42)
+
+      activity.execute(agent_run_id: agent_run.id, error: "Provider error")
+
+      expect(agent_run.reload.status).to eq("failed")
+      expect(issue.reload.paid_state).to eq("in_progress")
+    end
   end
 end

@@ -3308,6 +3308,94 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
     end
+
+    context "when a review-goal run has failed and paid_agent is enabled" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          paid_state: "completed",
+          pr_review_phase: "draft")
+      end
+
+      before do
+        enable_paid_agent_review!
+        pr_issue
+        stub_github_for_pr(reviews: [])
+      end
+
+      it "emits review_goal_retry when most recent review-goal run failed" do
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("review_goal_retry")
+      end
+
+      it "does not emit review_goal_retry when most recent review-goal run completed" do
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42,
+          created_at: 2.hours.ago)
+        create(:agent_run, :completed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42,
+          created_at: 1.hour.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("review_goal_retry")
+      end
+
+      it "does not emit review_goal_retry when paid_agent is not enabled" do
+        project.update!(review_settings: { "enabled" => true, "methods" => { "copilot" => { "enabled" => true } } })
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("review_goal_retry")
+      end
+
+      it "escalates when retry limit is reached" do
+        pr_issue.update!(review_goal_retry_count: 3)
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
+        expect(trigger[:triggers].first[:details]).to include("Review-goal retries exhausted")
+      end
+
+      it "does not emit review_goal_retry when no review-goal runs exist" do
+        create(:agent_run, :failed,
+          project: project,
+          goal: "create_pr",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("review_goal_retry")
+      end
+    end
   end
 
   private

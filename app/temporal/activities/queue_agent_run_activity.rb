@@ -11,6 +11,7 @@ module Activities
       requested_agent_type = input[:agent_type]
       provider_id = input[:provider_id]
       source_pull_request_number = input[:source_pull_request_number]
+      goal = input.fetch(:goal, "create_pr")
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
       expected_draft_review_count = input[:expected_draft_review_count]
 
@@ -43,6 +44,7 @@ module Activities
             agent_type: agent_type,
             custom_prompt: custom_prompt,
             source_pull_request_number: source_pull_request_number,
+            goal: goal,
             count_toward_draft_review_round: count_toward_draft_review_round,
             expected_draft_review_count: expected_draft_review_count,
             status: "queued"

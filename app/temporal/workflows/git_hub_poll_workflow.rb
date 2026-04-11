@@ -192,6 +192,8 @@ module Workflows
         handle_escalate_to_owner(project_id, pr_data)
       elsif trigger_types.include?("owner_approved")
         handle_owner_approved(project_id, pr_data)
+      elsif trigger_types.include?("review_goal_retry")
+        handle_review_goal_retry(project_id, pr_data)
       elsif trigger_types.include?("review_bot_review_pending")
         handle_review_bot_review_pending(project_id, pr_data, trigger_types)
       elsif trigger_types.include?("manual_review_pending") || trigger_types.include?("ci_action_pending")
@@ -261,6 +263,21 @@ module Workflows
       else
         start_pr_followup_workflow(project_id, pr_data)
       end
+    end
+
+    def handle_review_goal_retry(project_id, pr_data)
+      issue_id = pr_data[:issue_id]
+      pr_number = pr_data[:pr_number]
+
+      run_activity(Activities::RecordReviewGoalRetryActivity,
+        { issue_id: issue_id }, timeout: 30)
+
+      run_activity(Activities::QueueAgentRunActivity, {
+        project_id: project_id,
+        issue_id: issue_id,
+        source_pull_request_number: pr_number,
+        goal: "review"
+      }, timeout: 30)
     end
 
     def handle_non_bot_review_pending(project_id, pr_data, trigger_types)
