@@ -1306,14 +1306,23 @@ module Activities
     end
 
     # Returns true when the latest review-bot review on this PR is from a
-    # paid_agent account AND there are pending or blocking review triggers.
-    # In mixed-method projects this prevents non-paid_agent bot triggers
-    # (e.g. Copilot unresolved-thread triggers) from causing premature
-    # escalation when paid_agent's round budget is exhausted but the other
-    # bot's cycle can still proceed.
+    # paid_agent account AND all present triggers are attributable to
+    # paid_agent. In mixed-method projects, non-paid_agent bot triggers
+    # (e.g. Copilot unresolved-thread triggers) must not cause escalation
+    # when paid_agent's round budget is exhausted but the other bot's
+    # cycle can still proceed.
+    #
+    # paid_agent is a body-only bot — it never creates review threads.
+    # Any review_bot_threads trigger must therefore originate from a
+    # different bot (e.g. Copilot). When such triggers are present the
+    # remaining blocker is not paid_agent-owned, so we return false to
+    # allow the other bot's cycle to continue.
     def paid_agent_is_latest_blocker?(project, reviews, pending_triggers, blocking_triggers)
       return false if reviews.nil?
       return false unless pending_triggers.any? || blocking_triggers.any?
+
+      has_non_paid_agent_thread_triggers = blocking_triggers.any? { |t| t[:type] == "review_bot_threads" }
+      return false if has_non_paid_agent_thread_triggers
 
       allowed = project.enabled_review_bot_logins.presence
       latest = latest_allowed_bot_review(reviews, allowed)
