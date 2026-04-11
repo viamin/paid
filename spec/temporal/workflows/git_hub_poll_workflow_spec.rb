@@ -300,10 +300,23 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "viamin" ]), timeout: anything)
     end
 
-    it "lets MarkEscalatedActivity compute the default reason" do
+    it "forwards escalation reason from trigger details to MarkEscalatedActivity" do
       pr_data = {
         issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
         triggers: [ { type: "escalate_to_owner", details: "Draft review limit reached" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkEscalatedActivity,
+          { issue_id: 10, reason: "Draft review limit reached" }, timeout: anything)
+    end
+
+    it "omits reason key when trigger has no details" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
+        triggers: [ { type: "escalate_to_owner" } ]
       }
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)
