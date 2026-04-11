@@ -22,7 +22,7 @@ module Activities
           base: project.default_branch,
           head: agent_run.branch_name,
           title: pr_title(issue),
-          body: pr_body(issue, agent_run),
+          body: pr_body(issue, agent_run, client: client),
           draft: true
         )
         pr_action = existing_pr ? "reused" : "created"
@@ -94,11 +94,11 @@ module Activities
       "Fix ##{issue.github_number}: #{issue.title}".truncate(255)
     end
 
-    def pr_body(issue, agent_run)
+    def pr_body(issue, agent_run, client: nil)
       parts = []
 
       summary = agent_run.agent_summary
-      validate_summary_scope(summary, issue, agent_run)
+      validate_summary_scope(summary, issue, agent_run, client: client)
       description = generate_description(summary, issue, agent_run_id: agent_run.id)
 
       if description.present?
@@ -164,7 +164,7 @@ module Activities
     #
     # The check is deliberately lightweight (string matching, no LLM call)
     # so it never blocks PR creation.
-    def validate_summary_scope(summary, issue, agent_run)
+    def validate_summary_scope(summary, issue, agent_run, client: nil)
       return if summary.blank? || issue.nil?
 
       issue_number = issue.github_number
@@ -225,6 +225,12 @@ module Activities
             "Expected references to ##{issue_number}, found references to: #{cross_refs.map { |n| "##{n}" }.join(", ")}"
           )
         end
+      elsif !mentions_own_issue
+        # Second sanity gate (see #905): the summary has no issue cross-refs
+        # but also does not mention its own target issue. Check whether the
+        # summary content overlaps with the actual diff — if not, the summary
+        # likely drifted in from a previous run's scope.
+        warn_unless_diff_overlap(summary, agent_run, client, issue_number)
       end
     rescue StandardError => e
       logger.warn(
@@ -244,6 +250,55 @@ module Activities
         .where(github_state: "open", is_pull_request: false, github_number: candidates)
         .where.not(github_number: exclude)
         .pluck(:github_number)
+    end
+
+    # Warns when the summary does not mention its target issue and has no
+    # overlap with the files actually changed in this run. This catches the
+    # contamination pattern from #905 where content from a previous run's
+    # scope (different file/symbol names) drifts in without explicit issue
+    # cross-references.
+    def warn_unless_diff_overlap(summary, agent_run, client, issue_number)
+      changed_files = fetch_changed_files(agent_run, client)
+      return if changed_files.nil?
+
+      # Check if any changed file's basename (e.g. "scanner.rb") or full
+      # path appears in the summary — a lightweight signal that the summary
+      # relates to the actual work done. Basenames shorter than 4 chars are
+      # skipped to avoid false matches (e.g. "a.rb" matching any "a").
+      has_overlap = changed_files.any? { |path|
+        basename = File.basename(path, File.extname(path))
+        (basename.length >= 4 && summary.include?(basename)) ||
+          summary.include?(path)
+      }
+
+      return if has_overlap
+
+      logger.warn(
+        message: "agent_execution.summary_scope_mismatch",
+        agent_run_id: agent_run.id,
+        issue_number: issue_number,
+        reason: "no_own_issue_ref_and_no_diff_overlap",
+        summary_preview: summary.truncate(200)
+      )
+      agent_run.log!(
+        "system",
+        "Warning: agent summary may describe a different issue. " \
+        "Summary does not reference ##{issue_number} and has no overlap with changed files."
+      )
+    end
+
+    # Fetches file paths changed between base and result commits via the
+    # GitHub compare API. Returns nil when insufficient data is available
+    # (missing SHAs or client), so callers can skip the check gracefully.
+    def fetch_changed_files(agent_run, client)
+      return nil unless client
+      return nil if agent_run.base_commit_sha.blank? || agent_run.result_commit_sha.blank?
+
+      client.compare_changed_files(
+        agent_run.project.full_name,
+        agent_run.base_commit_sha,
+        agent_run.result_commit_sha
+      )
     end
 
     def inherited_priority_labels(project, issue)

@@ -14,6 +14,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(pull_requests: [], create_pull_request: pr_response)
     allow(github_client).to receive(:add_labels_to_issue)
+    allow(github_client).to receive(:compare_changed_files).and_return([])
     # Stub external agent harness so Llm::GeneratePrDescription runs without real external calls.
     # By default, return a failed response so the activity falls back to raw summary.
     allow(AgentHarness).to receive(:send_message)
@@ -441,15 +442,70 @@ RSpec.describe Activities::CreatePullRequestActivity do
     context "when agent summary contains no issue references at all" do
       before do
         create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open")
+        agent_run.update!(result_commit_sha: "abc123def456789012345678901234567890abcd")
         agent_run.log!("stdout", "Refactored the parser module for better readability")
       end
 
-      it "does not log a scope mismatch warning" do
-        activity.execute(agent_run_id: agent_run.id)
+      context "when summary overlaps with changed files" do
+        before do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "app/services/parser.rb" ])
+        end
 
-        mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
-          .find { |l| l.content.include?("summary may describe a different issue") }
-        expect(mismatch_log).to be_nil
+        it "does not log a scope mismatch warning" do
+          activity.execute(agent_run_id: agent_run.id)
+
+          mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+            .find { |l| l.content.include?("summary may describe a different issue") }
+          expect(mismatch_log).to be_nil
+        end
+      end
+
+      context "when summary has no overlap with changed files" do
+        before do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "app/models/user.rb", "db/migrate/001_create_users.rb" ])
+        end
+
+        it "logs a scope mismatch warning" do
+          mock_logger = instance_double(ActiveSupport::Logger, info: nil, warn: nil)
+          allow(activity).to receive(:logger).and_return(mock_logger)
+          expect(mock_logger).to receive(:warn).with(hash_including(
+            message: "agent_execution.summary_scope_mismatch",
+            agent_run_id: agent_run.id,
+            issue_number: issue.github_number,
+            reason: "no_own_issue_ref_and_no_diff_overlap"
+          ))
+
+          activity.execute(agent_run_id: agent_run.id)
+        end
+
+        it "adds a system log about no overlap" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "app/models/user.rb" ])
+
+          activity.execute(agent_run_id: agent_run.id)
+
+          mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+            .find { |l| l.content.include?("summary may describe a different issue") }
+          expect(mismatch_log).to be_present
+          expect(mismatch_log.content).to include("no overlap with changed files")
+        end
+      end
+
+      context "when compare API is unavailable" do
+        before do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_raise(GithubClient::ApiError.new("Not Found"))
+        end
+
+        it "does not log a scope mismatch warning (fails open)" do
+          activity.execute(agent_run_id: agent_run.id)
+
+          mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+            .find { |l| l.content.include?("summary may describe a different issue") }
+          expect(mismatch_log).to be_nil
+        end
       end
     end
 
