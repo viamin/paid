@@ -884,8 +884,8 @@ module Activities
 
     # Returns true when the diff between the review's commit and the PR
     # HEAD touches at least one file mentioned in the review's inline
-    # comments. Falls back to true (assumes addressed) when inline
-    # comments have no file paths or the comparison cannot be fetched.
+    # comments. Returns false (assumes NOT addressed) when the review
+    # has no inline comments, since we cannot verify file overlap.
     def review_diff_touches_reviewed_files?(client, project, issue, review)
       return true if client.nil? || project.nil? || issue.nil?
 
@@ -904,7 +904,7 @@ module Activities
         .select { |c| c[:pull_request_review_id] == review_id }
         .filter_map { |c| c[:path] }
         .to_set
-      return true if reviewed_paths.empty?
+      return false if reviewed_paths.empty?
 
       # NOTE: pr_data is already fetched in scan_pr, but check_review_bot_status
       # does not receive it. This extra API call is behind multiple guard
