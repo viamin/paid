@@ -144,6 +144,28 @@ RSpec.describe "Providers" do
       )
     end
 
+    it "preserves saved goal defaults when submitted nested keys are all unpermitted" do
+      claude = user.providers.find_by!(provider_key: "claude")
+      user.settings.update!(
+        default_agent_provider: claude.routing_key,
+        default_agent_providers_by_goal: { "review" => claude.routing_key }
+      )
+
+      patch settings_providers_path, params: {
+        user_setting: {
+          default_agent_provider: "claude",
+          default_agent_providers_by_goal: { ship_it: "claude" },
+          fallback_enabled: false,
+          fallback_providers: [].to_json
+        }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      expect(user.reload.settings.default_agent_providers_by_goal).to eq(
+        "review" => claude.routing_key
+      )
+    end
+
     it "disables fallback for providers not in enabled_fallback_provider_keys" do
       user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
       user.providers.create!(provider_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true)
