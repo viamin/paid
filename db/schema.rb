@@ -204,8 +204,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_10_204751) do
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["parent_workflow_id"], name: "index_agent_runs_on_parent_workflow_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
+    t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])))"
+    t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])))"
     t.index ["project_id", "status", "completed_at"], name: "index_agent_runs_on_project_status_completed_at"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
@@ -659,6 +659,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_10_204751) do
     t.bigint "user_id"
     t.index ["account_id", "nav_section", "read_at"], name: "index_notifications_on_badge"
     t.index ["account_id", "read_at", "dismissed_at"], name: "index_notifications_on_unread"
+    t.index ["account_id", "source", "subject_type", "subject_id"], name: "index_notifications_on_dedup_account_wide", unique: true, where: "(user_id IS NULL)"
     t.index ["account_id", "user_id", "source", "subject_type", "subject_id"], name: "index_notifications_on_dedup", unique: true
     t.index ["subject_type", "subject_id"], name: "index_notifications_on_subject"
     t.index ["user_id"], name: "index_notifications_on_user_id"
@@ -999,8 +1000,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_10_204751) do
     t.string "default_agent_provider", default: "claude", null: false
     t.jsonb "default_allowed_github_usernames", default: [], null: false
     t.string "default_branch", default: "main", null: false
+    t.string "default_create_issue_provider"
+    t.string "default_create_pr_provider"
     t.integer "default_poll_interval_seconds", default: 60, null: false
     t.boolean "default_project_active", default: true, null: false
+    t.string "default_review_provider"
     t.boolean "fallback_enabled", default: false, null: false
     t.jsonb "fallback_providers", default: [], null: false
     t.integer "git_clone_timeout_seconds", default: 600, null: false
@@ -1051,6 +1055,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_10_204751) do
     t.text "error_message"
     t.jsonb "input_data"
     t.bigint "project_id"
+    t.text "restart_reason"
     t.jsonb "result_data"
     t.datetime "started_at"
     t.string "status", limit: 50, default: "running", null: false
@@ -1127,7 +1132,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_10_204751) do
   add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
   add_foreign_key "model_selections", "llm_models"
   add_foreign_key "notifications", "accounts"
-  add_foreign_key "notifications", "users"
+  add_foreign_key "notifications", "users", on_delete: :nullify
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
