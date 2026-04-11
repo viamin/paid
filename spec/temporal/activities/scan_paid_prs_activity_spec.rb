@@ -1253,10 +1253,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           .and_return([])
       end
 
-      it "falls back to treating the review as addressed" do
+      it "treats the body-only review as NOT addressed" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending")
       end
     end
 
