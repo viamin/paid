@@ -42,13 +42,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     })
   end
 
-  def enable_paid_agent_review!(proj = project, max_review_rounds: 3)
+  def enable_paid_agent_review!(proj = project, max_review_rounds: 3, max_review_goal_retries: nil)
+    termination = { "max_review_rounds" => max_review_rounds }
+    termination["max_review_goal_retries"] = max_review_goal_retries if max_review_goal_retries
+
     proj.update!(review_settings: {
       "enabled" => true,
       "methods" => {
         "paid_agent" => {
           "enabled" => true,
-          "termination" => { "max_review_rounds" => max_review_rounds }
+          "termination" => termination
         }
       }
     })
@@ -3545,16 +3548,19 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   end
 
   context "when reviews are globally disabled but paid_agent sub-flag is true" do
-    before do
-      project.update!(review_settings: {
-        "enabled" => false,
-        "methods" => { "paid_agent" => { "enabled" => true } }
-      })
+    let!(:disabled_reviews_issue) do
       create(:issue, :pull_request,
         project: project, github_number: 42,
         labels: [ "paid-generated", "paid-automation" ],
         pr_review_phase: "draft",
         draft_review_count: 0)
+    end
+
+    before do
+      project.update!(review_settings: {
+        "enabled" => false,
+        "methods" => { "paid_agent" => { "enabled" => true } }
+      })
       stub_github_for_pr(reviews: [])
     end
 
@@ -3563,6 +3569,18 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
       expect(triggers).not_to include("paid_agent_review_pending")
+    end
+
+    it "does not escalate based on historical failed review-goal runs" do
+      create(:agent_run, :failed,
+        project: project, issue: disabled_reviews_issue,
+        source_pull_request_number: 42,
+        goal: "review")
+
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("escalate_to_owner")
     end
   end
 
@@ -3752,6 +3770,94 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       trigger = result[:prs_to_trigger].first
       expect(trigger).to have_key(:owner_reviewer_login)
+    end
+  end
+
+  context "when a newer create_pr cycle follows historical review-goal failures" do
+    let(:new_cycle_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+    end
+
+    before do
+      enable_paid_agent_review!(project, max_review_rounds: 3, max_review_goal_retries: 2)
+      2.times do |index|
+        create(:agent_run, :failed,
+          project: project, issue: new_cycle_issue,
+          source_pull_request_number: 42,
+          goal: "review",
+          started_at: (4 - index).hours.ago,
+          completed_at: (4 - index).hours.ago)
+      end
+      create(:agent_run, :completed,
+        project: project, issue: new_cycle_issue,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        started_at: 90.minutes.ago,
+        completed_at: 90.minutes.ago)
+      create(:agent_run, :failed,
+        project: project, issue: new_cycle_issue,
+        source_pull_request_number: 42,
+        goal: "review",
+        started_at: 1.hour.ago,
+        completed_at: 1.hour.ago)
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "retries instead of escalating because the breaker resets for the new cycle" do
+      result = activity.execute(project_id: project.id)
+
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+      expect(trigger_types).to include("paid_agent_review_pending")
+      expect(trigger_types).not_to include("escalate_to_owner")
+    end
+  end
+
+  context "when a successful review follows historical review-goal failures" do
+    let(:successful_review_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+    end
+
+    before do
+      enable_paid_agent_review!(project, max_review_rounds: 3, max_review_goal_retries: 2)
+      2.times do |index|
+        create(:agent_run, :failed,
+          project: project, issue: successful_review_issue,
+          source_pull_request_number: 42,
+          goal: "review",
+          started_at: (4 - index).hours.ago,
+          completed_at: (4 - index).hours.ago)
+      end
+      create(:agent_run, :completed,
+        project: project, issue: successful_review_issue,
+        source_pull_request_number: 42,
+        goal: "review",
+        started_at: 90.minutes.ago,
+        completed_at: 90.minutes.ago)
+      create(:agent_run, :failed,
+        project: project, issue: successful_review_issue,
+        source_pull_request_number: 42,
+        goal: "review",
+        started_at: 1.hour.ago,
+        completed_at: 1.hour.ago)
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "retries instead of escalating because the breaker resets after a successful review" do
+      result = activity.execute(project_id: project.id)
+
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+      expect(trigger_types).to include("paid_agent_review_pending")
+      expect(trigger_types).not_to include("escalate_to_owner")
     end
   end
 

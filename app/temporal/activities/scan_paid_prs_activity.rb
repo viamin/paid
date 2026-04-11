@@ -102,7 +102,7 @@ module Activities
       if review_goal_retry_limit_reached?(project, issue)
         return escalate_trigger(issue,
           reason: "Review-goal retry limit reached " \
-                  "(#{review_goal_failure_count(project, issue)} consecutive failures)")
+                  "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
       end
 
       case issue.pr_review_phase
@@ -838,7 +838,7 @@ module Activities
       # scanner queues a retry. The retry cap is enforced by
       # review_goal_retry_limit_reached? which callers check separately
       # to escalate when the cap is hit.
-      failed_count = review_goal_failure_count(project, issue)
+      failed_count = review_goal_consecutive_failure_count(project, issue)
       if failed_count > 0
         max_retries = review_goal_max_retries(project)
         return [ { type: "paid_agent_review_pending",
@@ -848,25 +848,39 @@ module Activities
       [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]
     end
 
-    # Returns true when the number of failed review-goal runs for this PR
-    # has reached the configurable retry limit. Callers should escalate to
-    # the owner when this returns true to prevent the PR from wedging
-    # indefinitely after repeated review-goal failures (#1002).
+    # Returns true when the number of consecutive failed review-goal runs in
+    # the current review cycle has reached the configurable retry limit.
+    # A completed review or newer create_pr run resets the breaker so old
+    # failures do not cause permanent escalation (#1002).
     def review_goal_retry_limit_reached?(project, issue)
+      return false unless project.review_enabled?
       return false unless project.review_method_enabled?("paid_agent")
 
-      count = review_goal_failure_count(project, issue)
+      count = review_goal_consecutive_failure_count(project, issue)
       return false if count.zero?
 
       count >= review_goal_max_retries(project)
     end
 
-    def review_goal_failure_count(project, issue)
-      project.agent_runs.where(
+    def review_goal_consecutive_failure_count(project, issue)
+      reset_at = review_goal_failure_reset_at(project, issue)
+
+      scope = project.agent_runs.where(
         source_pull_request_number: issue.github_number,
         goal: "review",
         status: AgentRun::FAILURE_STATUSES
-      ).count
+      )
+      scope = scope.where("completed_at > ?", reset_at) if reset_at
+      scope.count
+    end
+
+    def review_goal_failure_reset_at(project, issue)
+      run_scope = project.agent_runs.where(source_pull_request_number: issue.github_number)
+
+      [
+        run_scope.where(goal: "review", status: "completed").maximum(:completed_at),
+        run_scope.where(goal: "create_pr", status: "completed").maximum(:completed_at)
+      ].compact.max
     end
 
     def review_goal_max_retries(project)
