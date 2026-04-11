@@ -2517,6 +2517,375 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    # --- Stale review detection ---
+
+    context "when owner approved but head commit is newer than approval" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: 2.hours.ago }
+          ],
+          head_committed_at: 1.hour.ago
+        )
+      end
+
+      it "blocks auto-merge due to stale review" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when owner approved after the latest commit" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: 1.hour.ago }
+          ],
+          head_committed_at: 2.hours.ago
+        )
+      end
+
+      it "allows auto-merge (review is fresh)" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("owner_approved")
+      end
+    end
+
+    context "when owner re-approves after commit but manual reviewer approval is stale" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_enabled: true,
+          allowed_github_usernames: %w[viamin reviewer],
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "manual" => { "enabled" => true, "reviewer_login" => "reviewer" }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "reviewer", state: "APPROVED", body: "", submitted_at: 3.hours.ago },
+            { id: 2, user_login: "viamin", state: "APPROVED", body: "", submitted_at: 30.minutes.ago }
+          ],
+          head_committed_at: 1.hour.ago
+        )
+      end
+
+      it "blocks auto-merge because the manual reviewer's approval is stale" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    # --- Blocking review method completeness ---
+
+    context "when ci_action review method is enabled but action has not passed" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_enabled: true,
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "ci_action" => { "enabled" => true, "action_name" => "security-review" }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ],
+          checks: [ { name: "ci", conclusion: "success" } ]
+        )
+      end
+
+      it "blocks auto-merge because ci_action check is missing" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("ci_action_pending")
+        expect(trigger[:triggers].map { |t| t[:type] }).not_to include("owner_approved")
+      end
+    end
+
+    context "when ci_action review method is enabled and action has passed" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_enabled: true,
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "ci_action" => { "enabled" => true, "action_name" => "security-review" }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ],
+          checks: [
+            { name: "ci", conclusion: "success" },
+            { name: "security-review", conclusion: "success" }
+          ]
+        )
+      end
+
+      it "allows auto-merge when ci_action check passes" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("owner_approved")
+      end
+    end
+
+    context "when ci_action review method is enabled but action has failed" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_enabled: true,
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "ci_action" => { "enabled" => true, "action_name" => "security-review" }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ],
+          checks: [
+            { name: "ci", conclusion: "success" },
+            { name: "security-review", conclusion: "failure" }
+          ]
+        )
+      end
+
+      it "blocks auto-merge because ci_action failed" do
+        result = activity.execute(project_id: project.id)
+
+        # ci_failure triggers a followup, not owner_approved
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("ci_failure")
+        expect(trigger_types).not_to include("owner_approved")
+      end
+    end
+
+    context "when manual review method is enabled but no human has approved" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_enabled: true,
+          allowed_github_usernames: %w[viamin reviewer],
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "manual" => { "enabled" => true, "reviewer_login" => "reviewer" }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "viamin", state: "COMMENTED", body: "Looks good!", submitted_at: Time.current }
+          ]
+        )
+      end
+
+      it "blocks auto-merge because no APPROVED review exists" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("manual_review_pending")
+        expect(trigger[:triggers].map { |t| t[:type] }).not_to include("owner_approved")
+      end
+    end
+
+    context "when manual review method is enabled and only the owner has approved" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_enabled: true,
+          allowed_github_usernames: %w[viamin reviewer],
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "manual" => { "enabled" => true, "reviewer_login" => "reviewer" }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ]
+        )
+      end
+
+      it "blocks auto-merge because manual review requires a non-owner approval" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("manual_review_pending")
+        expect(trigger[:triggers].map { |t| t[:type] }).not_to include("owner_approved")
+      end
+    end
+
+    context "when manual review method is enabled and a non-owner human has approved" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_enabled: true,
+          allowed_github_usernames: %w[viamin reviewer],
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "manual" => { "enabled" => true, "reviewer_login" => "reviewer" }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current },
+            { id: 2, user_login: "reviewer", state: "APPROVED", body: "", submitted_at: Time.current }
+          ]
+        )
+      end
+
+      it "allows auto-merge when manual review is complete" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("owner_approved")
+      end
+    end
+
+    # --- Copilot review path regression ---
+
+    context "when copilot review is enabled with unresolved bot threads and owner approved" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        enable_copilot_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed and generated 1 comment.", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ],
+          review_threads: [
+            { id: "thread_1", is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10,
+                           author: "copilot-pull-request-reviewer[bot]" } ] }
+          ]
+        )
+      end
+
+      it "blocks auto-merge due to unresolved copilot threads" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).not_to include("owner_approved")
+        expect(trigger_types).to include("review_bot_threads")
+      end
+    end
+
+    # --- Codex review path regression ---
+
+    context "when codex review is enabled and review has comments" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        enable_codex_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "github-actions[bot]", state: "COMMENTED",
+              body: "Codex Review: Found 2 issues.", submitted_at: Time.current },
+            { id: 2, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ]
+        )
+      end
+
+      it "blocks auto-merge due to non-clean codex review" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_review_pending")
+        expect(trigger_types).not_to include("owner_approved")
+      end
+    end
+
     context "when ready PR has unresolved review bot threads" do
       before do
         create(:issue, :pull_request,
@@ -2953,16 +3322,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     review_threads: [],
     issue_comments: [],
     recent_issue_comments: nil,
+    reviews: default_clean_copilot_review,
     recent_multi_page: false,
-    reviews: default_clean_copilot_review
+    head_committed_at: 2.hours.ago
   )
     pr_data = OpenStruct.new(
       head: OpenStruct.new(sha: "abc123"),
       mergeable: mergeable,
       draft: draft,
+      number: 42,
       user: OpenStruct.new(login: author_login)
     )
 
+    commit_data = OpenStruct.new(
+      commit: OpenStruct.new(
+        committer: OpenStruct.new(date: head_committed_at)
+      )
+    )
     recent = recent_issue_comments || issue_comments
     multi_page = recent_multi_page
     recent.define_singleton_method(:multi_page?) { multi_page }
@@ -2985,6 +3361,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(github_client).to receive(:pull_request_reviews)
       .with(project.full_name, 42)
       .and_return(reviews)
+    allow(github_client).to receive(:commit)
+      .with(project.full_name, "abc123")
+      .and_return(commit_data)
   end
 
   def default_clean_copilot_review
