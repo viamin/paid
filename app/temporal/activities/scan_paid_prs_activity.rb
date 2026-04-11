@@ -200,8 +200,11 @@ module Activities
       # configured round budget means another review cycle cannot be requested.
       # In mixed-method projects, non-paid_agent bot triggers (e.g. Copilot
       # unresolved-thread triggers) must not cause escalation — those bots can
-      # still make progress within their own review cycle.
-      if paid_agent_rounds_exhausted && paid_agent_is_latest_blocker?(project, reviews, pending_triggers, blocking_triggers)
+      # still make progress within their own review cycle.  Skip escalation
+      # when any trigger carries data_incomplete (thread data unavailable due
+      # to a transient API failure or the skip-comment path).
+      data_incomplete = (review_bot_triggers || []).any? { |t| t[:data_incomplete] }
+      if paid_agent_rounds_exhausted && !data_incomplete && paid_agent_is_latest_blocker?(project, reviews, pending_triggers, blocking_triggers)
         return escalate_trigger(issue, reason: paid_agent_limit_reason(project))
       end
 
@@ -799,11 +802,12 @@ module Activities
         # cannot tell whether bot threads are truly resolved, so treat the
         # status as pending to avoid prematurely advancing the PR.
         if unresolved_threads.nil?
-          if paid_agent_limit_reached_for_latest_review
-            [ { type: "review_bot_comments", details: "Latest review bot review generated comments (body-only)" } ]
-          else
-            [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean" } ]
-          end
+          # Always keep pending status when thread data is unavailable —
+          # regardless of whether paid_agent rounds are exhausted. A
+          # data_incomplete marker prevents the escalation check from
+          # firing with incomplete information, so a transient
+          # thread-fetch failure cannot trigger premature escalation.
+          [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean", data_incomplete: true } ]
         else
           bot_thread_triggers = review_bot_thread_triggers(unresolved_threads)
           body_only_pending_triggers = [
