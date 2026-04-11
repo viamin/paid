@@ -57,9 +57,13 @@ class NotificationsController < ApplicationController
 
     respond_to do |format|
       format.turbo_stream do
+        @notifications = policy_scope(Notification).visible.recent.limit(25)
         render turbo_stream: [
           turbo_stream.replace("notification_bell", partial: "notifications/bell", locals: { account: current_account }),
-          turbo_stream.replace("notification_nav_badges", partial: "notifications/nav_badges", locals: { account: current_account })
+          turbo_stream.replace("notification_nav_badges", partial: "notifications/nav_badges", locals: { account: current_account }),
+          turbo_stream.replace("notifications_list") {
+            render_to_string(partial: "notifications/notification", collection: @notifications, as: :notification)
+          }
         ]
       end
       format.html { redirect_to notifications_path, notice: "All notifications marked as read." }
