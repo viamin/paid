@@ -166,10 +166,21 @@ module Activities
 
       # review_bot_review_pending gates draft advancement (the PR must have a
       # clean review-bot review before it can leave draft).
-      # paid_agent_review_pending is fully non-blocking: it signals the
-      # workflow to start a review run but never prevents ready_for_owner.
+      # paid_agent_review_pending is normally a non-blocking sidecar that
+      # signals the workflow to start a review run without preventing
+      # ready_for_owner.  However, when paid_agent is the *only* enabled
+      # review method there is no other bot that can gate draft exit, so
+      # paid_agent_review_pending must block advancement just like
+      # review_bot_review_pending does for copilot/codex.
+      paid_agent_sole_reviewer = paid_agent_sole_review_method?(project)
       pending_triggers = (review_bot_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
       sidecar_triggers = (review_bot_triggers || []).select { |t| t[:type] == "paid_agent_review_pending" }
+
+      if paid_agent_sole_reviewer && sidecar_triggers.any?
+        pending_triggers.concat(sidecar_triggers)
+        sidecar_triggers = []
+      end
+
       blocking_triggers = (review_bot_triggers || []).reject { |t|
         t[:type] == "review_bot_review_pending" || t[:type] == "paid_agent_review_pending"
       }
@@ -780,10 +791,22 @@ module Activities
       end
     end
 
+    # Returns true when paid_agent is the only enabled bot review method,
+    # meaning its pending trigger must block draft exit since no other bot
+    # can gate the PR.
+    def paid_agent_sole_review_method?(project)
+      return false unless project&.review_enabled?
+      return false unless project.review_method_enabled?("paid_agent")
+
+      bot_methods = project.enabled_review_methods & %w[copilot codex paid_agent]
+      bot_methods == %w[paid_agent]
+    end
+
     # Checks whether a paid_agent review-goal run is needed for this PR.
-    # Returns a paid_agent_review_pending trigger when no completed review-goal
-    # run exists and the max_review_rounds limit has not been reached. Returns
-    # an empty array when the review is already satisfied or the limit is hit.
+    # Returns a paid_agent_review_pending trigger when no up-to-date completed
+    # review-goal run exists and the max_review_rounds limit has not been
+    # reached. Unfinished review runs keep emitting the pending trigger so the
+    # draft-phase gate remains active until the review is actually posted.
     def check_paid_agent_review_status(project, issue)
       return [] unless issue
 
@@ -792,9 +815,9 @@ module Activities
         source_pull_request_number: pr_number,
         goal: "review"
       )
-
-      # A review-goal run is already queued or running — no new trigger needed.
-      return [] if review_runs.where(status: AgentRun::UNFINISHED_STATUSES).exists?
+      unfinished_run = review_runs.where(status: AgentRun::UNFINISHED_STATUSES)
+        .order(created_at: :desc)
+        .first
 
       completed_count = review_runs.where(status: "completed").count
       max_rounds = project.review_method_config("paid_agent")
@@ -819,7 +842,13 @@ module Activities
         return []
       end
 
-      [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]
+      details = if unfinished_run
+        "paid_agent review run is still in progress"
+      else
+        "No paid_agent review found for PR"
+      end
+
+      [ { type: "paid_agent_review_pending", details: details } ]
     end
 
     def body_only_review_bot?(login)
