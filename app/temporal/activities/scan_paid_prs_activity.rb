@@ -469,7 +469,9 @@ module Activities
     end
 
     def merge_conflict_rescan_needed?(project, issue)
-      project.auto_fix_merge_conflicts && issue.pr_review_phase.in?(%w[ready escalated])
+      project.auto_fix_merge_conflicts &&
+        issue.pr_review_phase.in?(%w[ready escalated]) &&
+        !followup_limit_reached?(project, issue)
     end
 
     def recently_completed_run?(project, issue)
