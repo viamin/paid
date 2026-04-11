@@ -71,6 +71,59 @@ RSpec.describe Activities::MarkAgentRunCompleteActivity do
         .to have_enqueued_job(ProcessRunQueueJob)
     end
 
+    it "increments draft_review_count for successful tracked no-change draft followups" do
+      issue = create(:issue, :pull_request, project: project, pr_review_phase: "draft", draft_review_count: 1)
+      agent_run = create(:agent_run, :running, project: project, issue: issue,
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: 1)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(issue.reload.draft_review_count).to eq(2)
+    end
+
+    it "records the draft round only after the run completes successfully" do
+      issue = create(:issue, :pull_request, project: project, pr_review_phase: "draft", draft_review_count: 1)
+      agent_run = create(:agent_run, :running, project: project, issue: issue,
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: 1)
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+
+      # Default goal is create_pr, so the activity calls complete_no_output!
+      expect(agent_run).to receive(:complete_no_output!).ordered.and_wrap_original do |method, **kwargs|
+        # Draft round must NOT yet be recorded at this point
+        expect(issue.reload.draft_review_count).to eq(1)
+        method.call(**kwargs)
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+      expect(issue.reload.draft_review_count).to eq(2)
+    end
+
+    it "does not increment draft_review_count for untracked runs" do
+      issue = create(:issue, :pull_request, project: project, pr_review_phase: "draft", draft_review_count: 1)
+      agent_run = create(:agent_run, :running, project: project, issue: issue)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(issue.reload.draft_review_count).to eq(1)
+    end
+
+    it "does not increment draft_review_count when completion fails" do
+      issue = create(:issue, :pull_request, project: project, pr_review_phase: "draft", draft_review_count: 1)
+      agent_run = create(:agent_run, :running, project: project, issue: issue,
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: 1)
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(agent_run).to receive(:complete_no_output!).and_raise(ActiveRecord::ConnectionTimeoutError)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(ActiveRecord::ConnectionTimeoutError)
+
+      expect(issue.reload.draft_review_count).to eq(1)
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       expect {
         activity.execute(agent_run_id: -1)
