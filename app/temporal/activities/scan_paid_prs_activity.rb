@@ -1343,8 +1343,10 @@ module Activities
     # --- Paid-agent review round limit enforcement ---
 
     # Returns the configured max_review_rounds for the paid_agent method,
-    # or nil when the limit is not set or paid_agent is not enabled.
+    # or nil when the limit is not set, paid_agent is not enabled, or
+    # reviews are globally disabled.
     def paid_agent_max_review_rounds(project)
+      return nil unless project.review_enabled?
       return nil unless project.review_method_enabled?("paid_agent")
 
       raw = project.review_method_config("paid_agent").dig("termination", "max_review_rounds")
