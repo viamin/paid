@@ -754,10 +754,14 @@ module Activities
       # after the last create_pr run. If so, the review is already up to date.
       last_review_run = review_runs.where(status: "completed")
         .order(completed_at: :desc).first
-      last_create_run = last_completed_run(project, issue)
+      last_create_pr_run = project.agent_runs
+        .where(source_pull_request_number: issue.github_number, goal: "create_pr")
+        .completed
+        .order(completed_at: :desc)
+        .first
 
-      if last_review_run && last_create_run &&
-          last_review_run.completed_at >= last_create_run.completed_at
+      if last_review_run && last_create_pr_run &&
+          last_review_run.completed_at >= last_create_pr_run.completed_at
         return []
       end
 
