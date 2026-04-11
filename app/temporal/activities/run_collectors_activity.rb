@@ -53,8 +53,7 @@ module Activities
         project: project,
         commit_sha: commit_sha,
         branch: branch,
-        committed_at: committed_at,
-        options: { network_mode: "bridge" }
+        committed_at: committed_at
       )
     end
 
