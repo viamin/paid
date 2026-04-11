@@ -3146,7 +3146,168 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             message: "pr_scanner.scan_complete",
             project_id: project.id,
             prs_scanned: 1,
+            prs_skipped_unchanged: 0,
             prs_triggered: 0
+          )
+        )
+      end
+    end
+
+    context "when skipping unchanged PRs" do
+      let!(:unchanged_pr) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          paid_state: "completed",
+          github_updated_at: 2.hours.ago,
+          last_pr_scan_at: 1.hour.ago)
+      end
+
+      it "skips PRs where github_updated_at < last_pr_scan_at" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
+      it "scans PRs that have never been scanned" do
+        unchanged_pr.update_column(:last_pr_scan_at, nil)
+        stub_github_for_pr
+        activity.execute(project_id: project.id)
+
+        expect(unchanged_pr.reload.last_pr_scan_at).to be_present
+      end
+
+      it "scans PRs where github_updated_at >= last_pr_scan_at" do
+        unchanged_pr.update_columns(
+          github_updated_at: 30.minutes.ago,
+          last_pr_scan_at: 1.hour.ago
+        )
+        stub_github_for_pr
+        activity.execute(project_id: project.id)
+
+        expect(unchanged_pr.reload.last_pr_scan_at).to be > 1.minute.ago
+      end
+
+      it "scans PRs with a recently completed agent run" do
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr
+        activity.execute(project_id: project.id)
+
+        expect(unchanged_pr.reload.last_pr_scan_at).to be_present
+      end
+
+      it "updates last_pr_scan_at after scanning" do
+        unchanged_pr.update_columns(last_pr_scan_at: nil, github_updated_at: Time.current)
+        stub_github_for_pr
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.to change { unchanged_pr.reload.last_pr_scan_at }.from(nil)
+      end
+
+      it "updates last_pr_scan_at even when triggers are emitted" do
+        unchanged_pr.update_columns(last_pr_scan_at: nil, github_updated_at: Time.current)
+        stub_github_for_pr(checks: [ { name: "ci", conclusion: "failure" } ])
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.to change { unchanged_pr.reload.last_pr_scan_at }.from(nil)
+      end
+
+      it "does not update last_pr_scan_at when an active run exists" do
+        unchanged_pr.update_columns(last_pr_scan_at: nil, github_updated_at: Time.current)
+        create(:agent_run,
+          project: project,
+          source_pull_request_number: 42,
+          status: "running")
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.not_to change { unchanged_pr.reload.last_pr_scan_at }
+      end
+
+      it "does not update last_pr_scan_at when API fails" do
+        unchanged_pr.update_columns(last_pr_scan_at: nil, github_updated_at: Time.current)
+        allow(github_client).to receive(:pull_request)
+          .and_raise(GithubClient::Error.new("API error"))
+        allow(github_client).to receive(:review_threads)
+          .with(project.full_name, 42)
+          .and_return([])
+        allow(github_client).to receive(:pull_request_reviews)
+          .with(project.full_name, 42)
+          .and_return([])
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.not_to change { unchanged_pr.reload.last_pr_scan_at }
+      end
+
+      it "does not update last_pr_scan_at when reviews fail in ready phase" do
+        unchanged_pr.update_columns(
+          last_pr_scan_at: nil,
+          github_updated_at: Time.current,
+          pr_review_phase: "ready"
+        )
+        stub_github_for_pr
+        allow(github_client).to receive(:pull_request_reviews)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::Error.new("API error"))
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.not_to change { unchanged_pr.reload.last_pr_scan_at }
+      end
+
+      it "still emits CI failure triggers when reviews fail in ready phase" do
+        unchanged_pr.update_columns(
+          last_pr_scan_at: nil,
+          github_updated_at: Time.current,
+          pr_review_phase: "ready"
+        )
+        stub_github_for_pr(checks: [ { name: "ci", conclusion: "failure" } ])
+        allow(github_client).to receive(:pull_request_reviews)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::Error.new("API error"))
+
+        result = activity.execute(project_id: project.id)
+        triggers = result[:prs_to_trigger].first&.dig(:triggers) || []
+
+        expect(triggers).to include(hash_including(type: "ci_failure"))
+      end
+
+      it "returns :skipped when partial_failure and no triggers in ready phase" do
+        unchanged_pr.update_columns(
+          last_pr_scan_at: nil,
+          github_updated_at: Time.current,
+          pr_review_phase: "ready"
+        )
+        stub_github_for_pr(checks: [ { name: "ci", conclusion: "success" } ])
+        allow(github_client).to receive(:pull_request_reviews)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::Error.new("API error"))
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to be_empty
+        expect(unchanged_pr.reload.last_pr_scan_at).to be_nil
+      end
+
+      it "reports skipped count in log output" do
+        allow(Rails.logger).to receive(:info)
+        allow(Rails.logger).to receive(:debug)
+
+        activity.execute(project_id: project.id)
+
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(
+            message: "pr_scanner.scan_complete",
+            prs_found: 1,
+            prs_scanned: 0,
+            prs_skipped_unchanged: 1
           )
         )
       end
