@@ -28,12 +28,10 @@ module Activities
     # wording changes.
     BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN = /didn'?t find any (?:major )?issues/i
 
-    # paid_agent reviews are posted from regular GitHub accounts (not bot
-    # logins registered in PROVIDER_BOT_USERNAMES), so they are invisible
-    # to review_bot? and enabled_review_bot_logins. The agent includes a
-    # machine-readable HTML comment marker when no major findings remain.
-    # Only the marker is used for detection — no text patterns — to avoid
-    # false positives from human reviewers writing similar phrases.
+    # paid_agent clean reviews include a machine-readable HTML marker in the
+    # review body. Once the dedicated paid-code-reviewer bot is registered in
+    # PROVIDER_BOT_USERNAMES, we can safely key off both author identity and
+    # the marker without matching human-authored text.
     PAID_REVIEW_CLEAN_MARKER = "<!-- paid-review-clean -->"
 
     def execute(input)
@@ -45,12 +43,30 @@ module Activities
       client = project.github_token.client
       paid_prs = find_paid_prs(project)
 
-      prs_to_trigger = paid_prs.filter_map { |issue| scan_pr(project, client, issue) }
+      scanned_count = 0
+      unchanged_count = 0
+      prs_to_trigger = paid_prs.filter_map do |issue|
+        if skip_unchanged_pr?(project, issue)
+          unchanged_count += 1
+          next nil
+        end
+
+        result = scan_pr(project, client, issue)
+        # Only count as scanned when the scan actually completed — scan_pr
+        # returns :skipped when short-circuited (active run exists) or when
+        # API failures prevented full evaluation.
+        next nil if result == :skipped
+        scanned_count += 1
+        issue.update_column(:last_pr_scan_at, Time.current)
+        result
+      end
 
       logger.info(
         message: "pr_scanner.scan_complete",
         project_id: project_id,
-        prs_scanned: paid_prs.size,
+        prs_found: paid_prs.size,
+        prs_scanned: scanned_count,
+        prs_skipped_unchanged: unchanged_count,
         prs_triggered: prs_to_trigger.size
       )
 
@@ -68,7 +84,7 @@ module Activities
     end
 
     def scan_pr(project, client, issue)
-      return nil if active_run_exists?(project, issue)
+      return :skipped if active_run_exists?(project, issue)
 
       case issue.pr_review_phase
       when "draft", "restarted"
@@ -164,8 +180,10 @@ module Activities
 
       if all_triggers.empty?
         # If we couldn't fetch PR data, don't prematurely advance the phase.
-        return nil if pr_data.nil?
-        return nil if reviews.nil?
+        # Return :skipped so the caller knows the scan was incomplete and
+        # should not update last_pr_scan_at.
+        return :skipped if pr_data.nil?
+        return :skipped if reviews.nil?
 
         # A draft PR is only ready to leave draft after the latest review-bot
         # review is explicitly clean. Resolved threads alone are not enough.
@@ -206,7 +224,7 @@ module Activities
     # --- Ready phase scanning ---
 
     def scan_ready_pr(project, client, issue, pr_data:)
-      return nil if pr_data.nil?
+      return :skipped if pr_data.nil?
 
       checks = fetch_check_runs(client, project, pr_data)
       reviews = fetch_reviews(client, project, issue)
@@ -218,7 +236,9 @@ module Activities
           checks.present? &&
           all_checks_green?(checks) &&
           mergeable == true &&
-          no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks)
+          no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks) &&
+          all_blocking_review_methods_complete?(project, reviews, checks) &&
+          !review_stale_for_head?(client, project, issue, pr_data, reviews)
         return owner_approved_trigger(issue)
       end
 
@@ -226,6 +246,7 @@ module Activities
 
       triggers = detect_ready_triggers(project, client, issue,
         pr_data: pr_data, checks: checks, reviews: reviews)
+      return :skipped if triggers.nil?
       return nil if triggers.empty?
 
       log_triggers(project, issue, triggers)
@@ -246,6 +267,7 @@ module Activities
       return nil if followup_limit_reached?(project, issue)
 
       triggers = detect_ready_triggers(project, client, issue, pr_data: pr_data)
+      return :skipped if triggers.nil?
       return nil if triggers.empty?
 
       log_triggers(project, issue, triggers)
@@ -312,6 +334,15 @@ module Activities
 
     # --- Shared detection logic ---
 
+    # Returns an array of trigger hashes, or nil when critical API
+    # fetches failed *and* no actionable triggers were found — callers
+    # use nil to avoid stamping last_pr_scan_at on an incomplete scan.
+    #
+    # Partial API failures no longer suppress the entire result: triggers
+    # that can be evaluated without the failed endpoint (CI failures,
+    # actionable labels, merge conflicts, etc.) are still returned. Only
+    # when no triggers are found despite missing signal sources do we
+    # return nil to prevent a false "all clear".
     def detect_ready_triggers(project, client, issue, pr_data: nil, checks: nil, reviews: nil,
       unresolved_threads: nil)
       last_run = last_completed_run(project, issue)
@@ -319,6 +350,9 @@ module Activities
       checks ||= fetch_check_runs(client, project, pr_data)
       reviews ||= fetch_reviews(client, project, issue)
       unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
+
+      partial_failure = pr_data.nil? || reviews.nil? || unresolved_threads.nil?
+
       triggers = []
 
       triggers.concat(ci_failure_triggers(checks))
@@ -330,6 +364,13 @@ module Activities
       triggers.concat(check_actionable_labels(project, issue))
       triggers.concat(check_merge_conflicts(project, pr_data))
       triggers.concat(non_bot_review_gate_triggers(project, reviews, checks))
+
+      # When a critical signal source failed but we found actionable
+      # triggers from other sources, return them so downstream actions
+      # are not suppressed. When no triggers were found and some sources
+      # were unavailable, return nil to prevent stamping last_pr_scan_at
+      # on a potentially incomplete "all clear".
+      return nil if triggers.empty? && partial_failure
 
       triggers
     end
@@ -356,6 +397,30 @@ module Activities
       true
     end
 
+    def skip_unchanged_pr?(project, issue)
+      return false unless issue.last_pr_scan_at
+      return false if issue.github_updated_at >= issue.last_pr_scan_at
+      return false if recently_completed_run?(project, issue)
+
+      logger.debug(
+        message: "pr_scanner.skipped_unchanged",
+        project_id: project.id,
+        pr_number: issue.github_number,
+        last_pr_scan_at: issue.last_pr_scan_at,
+        github_updated_at: issue.github_updated_at
+      )
+
+      true
+    end
+
+    def recently_completed_run?(project, issue)
+      project.agent_runs
+        .where(source_pull_request_number: issue.github_number)
+        .or(project.agent_runs.where(pull_request_number: issue.github_number))
+        .where("completed_at >= ?", issue.last_pr_scan_at)
+        .exists?
+    end
+
     def active_run_exists?(project, issue)
       project.agent_runs
         .where(source_pull_request_number: issue.github_number)
@@ -369,10 +434,13 @@ module Activities
     end
 
     # Circuit breaker: if the last N automatic draft follow-up runs on
-    # this PR all ended without producing any output (timeout/failed/
-    # cancelled with zero iterations), stop requeueing to prevent
-    # infinite retry loops. Scoped to automatic create_pr runs so that
-    # manual runs or review-phase followups don't trip the breaker.
+    # this PR all ended without producing any output, stop requeueing
+    # to prevent infinite retry loops. A run is "unproductive" if it
+    # finished as no_output (completed with zero commits), or if it
+    # failed/cancelled/timed out with zero iterations. Runs that did
+    # real work before failing don't trip the breaker. Scoped to
+    # automatic create_pr runs so that manual runs or review-phase
+    # followups don't trip the breaker.
     #
     # The draft_review_count guard ensures we only consider runs from the
     # current draft phase. maybe_restart_draft resets draft_review_count
@@ -381,7 +449,7 @@ module Activities
     def consecutive_draft_failures_breaker?(project, issue)
       return false if issue.draft_review_count < MAX_CONSECUTIVE_DRAFT_FAILURES
 
-      failure_statuses = AgentRun::FAILURE_STATUSES + %w[cancelled]
+      unproductive_statuses = AgentRun::FAILURE_STATUSES + %w[cancelled no_output]
 
       recent_runs = project.agent_runs
         .where(source_pull_request_number: issue.github_number)
@@ -393,7 +461,7 @@ module Activities
       return false if recent_runs.size < MAX_CONSECUTIVE_DRAFT_FAILURES
 
       recent_runs.all? do |run|
-        failure_statuses.include?(run.status) && run.iterations.to_i.zero?
+        unproductive_statuses.include?(run.status) && (run.status == "no_output" || run.iterations.to_i.zero?)
       end
     end
 
@@ -530,6 +598,7 @@ module Activities
     def review_bot_review_status_from(reviews, latest)
       return :unknown if reviews.nil?
       return :no_review if latest.nil?
+      return :clean if paid_agent_clean_review?(latest)
 
       REVIEW_BOT_CLEAN_PATTERN.match?(latest[:body]) ? :clean : :has_comments
     end
@@ -583,33 +652,11 @@ module Activities
         return []
       end
 
-      # paid_agent reviews are authored by regular GitHub accounts, not
-      # bot logins registered in PROVIDER_BOT_USERNAMES. When paid_agent
-      # is enabled and the most recent review contains the clean marker,
-      # treat the review cycle as complete — the agent has signaled "no
-      # major findings remaining." Only bypass when no registered bot method
-      # could produce independent triggers; in mixed configurations
-      # (e.g. paid_agent + copilot), each bot's status is evaluated
-      # independently below.
-      #
-      # Today the existing flow already returns [] for paid_agent-only
-      # configs (no bot login → :no_review → nil login → []), so this
-      # early return is functionally redundant. It becomes load-bearing
-      # if paid_agent ever registers a bot login in PROVIDER_BOT_USERNAMES,
-      # which would cause `allowed` to be non-empty and the :no_review /
-      # :has_comments branches to fire. The explicit check keeps that
-      # future transition safe and documents the intended semantics.
-      if project&.review_method_enabled?("paid_agent") &&
-         paid_agent_clean_review_present?(reviews) &&
-         (allowed.nil? || allowed.empty?)
-        return []
-      end
-
       status = review_bot_review_status_from(reviews, latest)
 
       case status
       when :clean
-        []
+        clean_review_thread_triggers(unresolved_threads)
       when :no_review
         # Only emit a pending trigger when a requestable review bot is
         # configured. When login is nil — reviews globally disabled, or
@@ -988,28 +1035,149 @@ module Activities
       true
     end
 
+    # --- Blocking review method completeness gate ---
+
+    # Returns true when every enabled blocking review method has a
+    # completion signal. Review methods and their completion criteria:
+    #
+    #   copilot / codex / paid_agent — checked by no_outstanding_review_feedback?
+    #     (review bot status + thread resolution). Not re-checked here.
+    #   ci_action — the check run named by action_name must be present
+    #     and have a successful conclusion.
+    #   manual — at least one trusted non-bot user must have submitted
+    #     an APPROVED review (distinct from owner approval, which gates
+    #     the merge trigger itself).
+    def all_blocking_review_methods_complete?(project, reviews, checks)
+      return true unless project.review_enabled? && project.wait_for_reviews?
+
+      if project.review_method_enabled?("ci_action")
+        return false unless ci_action_review_complete?(project, checks)
+      end
+
+      if project.review_method_enabled?("manual")
+        return false unless manual_review_complete?(project, reviews)
+      end
+
+      true
+    end
+
+    # ci_action is complete when the configured action_name appears in
+    # the check-run list with a "success" conclusion.
+    def ci_action_review_complete?(project, checks)
+      action_name = project.review_method_config("ci_action").to_h["action_name"]
+      if action_name.blank?
+        Rails.logger.warn(message: "reviews.ci_action_missing_action_name", project_id: project.id)
+        return false
+      end
+
+      checks.any? { |c| c[:name] == action_name && c[:conclusion] == "success" }
+    end
+
+    # Manual review is complete when the configured reviewer_login has
+    # submitted an APPROVED review. This aligns with manual_reviewer_approved?
+    # (used in detect_ready_triggers) so the same user gates both paths.
+    def manual_review_complete?(project, reviews)
+      return false if reviews.nil?
+
+      reviewer = project.review_method_config("manual").to_h["reviewer_login"]
+      return false if reviewer.blank?
+
+      reviews.any? do |r|
+        r[:state] == "APPROVED" &&
+          r[:user_login]&.downcase == reviewer.strip.downcase &&
+          project.trusted_github_user?(r[:user_login]) &&
+          !bot_user?(r[:user_login])
+      end
+    end
+
+    # --- Stale review detection ---
+
+    # Returns true when any enabled blocking review signal has a stale
+    # approval — i.e. the HEAD commit was pushed after the relevant
+    # reviewer's latest approval. Each blocking signal is checked
+    # individually so that an owner re-approval cannot mask a stale
+    # manual review from the configured reviewer.
+    def review_stale_for_head?(client, project, issue, pr_data, reviews)
+      return false if reviews.nil?
+
+      head_committed_at = fetch_head_commit_date(client, project, issue, pr_data)
+      return false if head_committed_at.nil?
+
+      blocking_approval_timestamps(project, reviews).any? do |ts|
+        head_committed_at > ts
+      end
+    end
+
+    def fetch_head_commit_date(client, project, issue, pr_data)
+      sha = pr_data&.head&.sha
+      return nil if sha.nil?
+
+      commit_data = client.commit(project.full_name, sha)
+      commit_data&.commit&.committer&.date
+    rescue GithubClient::Error => e
+      log_signal_error("fetch_head_commit", project, issue, e)
+      nil
+    end
+
+    # Returns the latest approval timestamp for each enabled blocking
+    # review signal. The owner approval is always included (gated by
+    # owner_approved_or_self_authored? upstream). When the manual review
+    # method is enabled, the configured reviewer_login's latest approval
+    # is checked separately so a fresh owner re-approval cannot mask a
+    # stale manual review.
+    def blocking_approval_timestamps(project, reviews)
+      timestamps = []
+
+      owner_ts = latest_approval_timestamp_for(project, reviews) do |r|
+        r[:user_login]&.downcase == project.owner_reviewer_login&.downcase
+      end
+      timestamps << owner_ts if owner_ts
+
+      if project.review_method_enabled?("manual")
+        reviewer = project.review_method_config("manual").to_h["reviewer_login"]
+        if reviewer.present?
+          manual_ts = latest_approval_timestamp_for(project, reviews) do |r|
+            r[:user_login]&.downcase == reviewer.strip.downcase
+          end
+          timestamps << manual_ts if manual_ts
+        end
+      end
+
+      timestamps
+    end
+
+    # Returns the most recent submitted_at timestamp among APPROVED
+    # reviews from trusted non-bot users matching the given block filter.
+    def latest_approval_timestamp_for(project, reviews)
+      approvals = reviews.select do |r|
+        r[:state] == "APPROVED" &&
+          project.trusted_github_user?(r[:user_login]) &&
+          !bot_user?(r[:user_login]) &&
+          yield(r)
+      end
+
+      return nil if approvals.empty?
+
+      approvals.filter_map { |r| r[:submitted_at] }.max
+    end
+
     # --- Helpers ---
 
     def review_bot?(login)
       ProviderSupport.provider_bot_username?(login)
     end
 
+    def paid_agent_clean_review?(review)
+      return false unless review.is_a?(Hash)
+      return false unless ProviderSupport.provider_bot_username_for?("paid_agent", review[:user_login])
+
+      paid_agent_review_clean?(review[:body])
+    end
+
     def paid_agent_review_clean?(body)
       return false if body.nil?
 
       body.include?(PAID_REVIEW_CLEAN_MARKER)
-    end
-
-    # TODO(#918): paid_agent posts reviews from regular GitHub accounts — there is
-    # no dedicated bot login to filter by. This method checks the latest
-    # review from *any* author. The HTML marker (<!-- paid-review-clean -->)
-    # is unlikely to appear in human-authored reviews, but once the project
-    # stores the paid_agent's GitHub login, this should filter by it.
-    def paid_agent_clean_review_present?(reviews)
-      return false if reviews.nil? || reviews.empty?
-
-      latest = reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
-      paid_agent_review_clean?(latest[:body])
     end
 
     def extract_actionable_labels(triggers)
@@ -1030,6 +1198,19 @@ module Activities
 
     def system_generated_comment?(body)
       Activities::CompleteExistingPrRunActivity.agent_update_comment?(body)
+    end
+
+    def clean_review_thread_triggers(unresolved_threads)
+      return [] if unresolved_threads.nil?
+
+      bot_thread_triggers = review_bot_thread_triggers(unresolved_threads)
+      return [] if bot_thread_triggers.empty?
+
+      [
+        { type: "review_bot_review_pending", details: "A review bot still has unresolved feedback" },
+        { type: "review_bot_comments", details: "A review bot still has unresolved comments" },
+        *bot_thread_triggers
+      ]
     end
 
     def log_signal_error(signal, project, issue, error)

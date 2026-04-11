@@ -14,6 +14,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(pull_requests: [], create_pull_request: pr_response)
     allow(github_client).to receive(:add_labels_to_issue)
+    allow(github_client).to receive(:compare_changed_files).and_return([])
     # Stub external agent harness so Llm::GeneratePrDescription runs without real external calls.
     # By default, return a failed response so the activity falls back to raw summary.
     allow(AgentHarness).to receive(:send_message)
@@ -286,6 +287,296 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect {
         activity.execute(agent_run_id: -1)
       }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
+    context "when agent summary references a different issue (scope mismatch)" do
+      let(:other_issue) { create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open") }
+
+      before do
+        other_issue # ensure created
+        agent_run.log!("stdout", "Updated relationships_parsed_at for ##{other_issue.github_number}")
+      end
+
+      it "logs a scope mismatch warning" do
+        mock_logger = instance_double(ActiveSupport::Logger, info: nil)
+        allow(activity).to receive(:logger).and_return(mock_logger)
+        expect(mock_logger).to receive(:warn).with(hash_including(
+          message: "agent_execution.summary_scope_mismatch",
+          agent_run_id: agent_run.id,
+          issue_number: issue.github_number,
+          cross_referenced_issues: [ other_issue.github_number ]
+        ))
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "adds a system log to the agent run about the mismatch" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        warning_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+          .find { |l| l.content.include?("summary may describe a different issue") }
+        expect(warning_log).to be_present
+        expect(warning_log.content).to include("##{other_issue.github_number}")
+      end
+
+      it "still creates the PR successfully" do
+        result = activity.execute(agent_run_id: agent_run.id)
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+      end
+    end
+
+    context "when agent summary uses qualified owner/repo#NNN refs for a different issue" do
+      let(:other_issue) { create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open") }
+
+      before do
+        other_issue
+        agent_run.log!("stdout", "Fixed #{project.full_name}##{other_issue.github_number} by updating the scanner")
+      end
+
+      it "detects scope mismatch from qualified references" do
+        mock_logger = instance_double(ActiveSupport::Logger, info: nil)
+        allow(activity).to receive(:logger).and_return(mock_logger)
+        expect(mock_logger).to receive(:warn).with(hash_including(
+          message: "agent_execution.summary_scope_mismatch",
+          agent_run_id: agent_run.id,
+          issue_number: issue.github_number,
+          cross_referenced_issues: [ other_issue.github_number ]
+        ))
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
+    context "when agent summary uses qualified owner/repo#NNN ref for its own issue" do
+      before do
+        create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open")
+        agent_run.log!("stdout", "Fixed #{project.full_name}##{issue.github_number} by updating the scanner")
+      end
+
+      it "does not log a scope mismatch warning" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+          .find { |l| l.content.include?("summary may describe a different issue") }
+        expect(mismatch_log).to be_nil
+      end
+    end
+
+    context "when agent summary references an external repo issue with a matching local number" do
+      let(:other_issue) { create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open") }
+
+      before do
+        other_issue
+        # The summary references an external repo whose issue number happens to
+        # match a local sibling issue — this should NOT trigger a mismatch.
+        agent_run.log!("stdout", "See also rails/rails##{other_issue.github_number} for upstream context on ##{issue.github_number}")
+      end
+
+      it "does not log a scope mismatch warning for external qualified references" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+          .find { |l| l.content.include?("summary may describe a different issue") }
+        expect(mismatch_log).to be_nil
+      end
+    end
+
+    context "when agent summary references own issue via external qualified ref with matching number" do
+      let(:other_issue) { create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open") }
+
+      before do
+        other_issue
+        # The summary references an external repo whose issue number matches the
+        # current issue — this should NOT suppress mismatch detection for cross_refs.
+        agent_run.log!("stdout", "See rails/rails##{issue.github_number} and also ##{other_issue.github_number}")
+      end
+
+      it "does not treat external qualified ref as own-issue mention and detects cross-ref mismatch" do
+        mock_logger = instance_double(ActiveSupport::Logger, info: nil)
+        allow(activity).to receive(:logger).and_return(mock_logger)
+        expect(mock_logger).to receive(:warn).with(hash_including(
+          message: "agent_execution.summary_scope_mismatch",
+          agent_run_id: agent_run.id,
+          issue_number: issue.github_number,
+          cross_referenced_issues: [ other_issue.github_number ]
+        ))
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
+    context "when agent summary uses differently-cased qualified ref for own repo" do
+      before do
+        create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open")
+        agent_run.log!("stdout", "Fixed #{project.full_name.upcase}##{issue.github_number} by updating the scanner")
+      end
+
+      it "does not log a scope mismatch warning (case-insensitive match)" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+          .find { |l| l.content.include?("summary may describe a different issue") }
+        expect(mismatch_log).to be_nil
+      end
+    end
+
+    context "when agent summary contains in-token hash references like C#NNN" do
+      let(:other_issue) { create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open") }
+
+      before do
+        other_issue
+        # The summary contains a language/version token (C#) whose number happens
+        # to match a sibling issue — this should NOT trigger a mismatch.
+        agent_run.log!("stdout", "Updated the C##{other_issue.github_number} parser for ##{issue.github_number}")
+      end
+
+      it "does not treat in-token hash references as issue mentions" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+          .find { |l| l.content.include?("summary may describe a different issue") }
+        expect(mismatch_log).to be_nil
+      end
+    end
+
+    context "when agent summary contains no issue references at all" do
+      before do
+        create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open")
+        agent_run.update!(result_commit_sha: "abc123def456789012345678901234567890abcd")
+        agent_run.log!("stdout", "Refactored the parser module for better readability")
+      end
+
+      context "when summary overlaps with changed files" do
+        before do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "app/services/parser.rb" ])
+        end
+
+        it "does not log a scope mismatch warning" do
+          activity.execute(agent_run_id: agent_run.id)
+
+          mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+            .find { |l| l.content.include?("summary may describe a different issue") }
+          expect(mismatch_log).to be_nil
+        end
+      end
+
+      context "when summary has no overlap with changed files" do
+        before do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "app/models/user.rb", "db/migrate/001_create_users.rb" ])
+        end
+
+        it "logs a scope mismatch warning" do
+          mock_logger = instance_double(ActiveSupport::Logger, info: nil, warn: nil)
+          allow(activity).to receive(:logger).and_return(mock_logger)
+          expect(mock_logger).to receive(:warn).with(hash_including(
+            message: "agent_execution.summary_scope_mismatch",
+            agent_run_id: agent_run.id,
+            issue_number: issue.github_number,
+            reason: "no_own_issue_ref_and_no_diff_overlap"
+          ))
+
+          activity.execute(agent_run_id: agent_run.id)
+        end
+
+        it "adds a system log about no overlap" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "app/models/user.rb" ])
+
+          activity.execute(agent_run_id: agent_run.id)
+
+          mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+            .find { |l| l.content.include?("summary may describe a different issue") }
+          expect(mismatch_log).to be_present
+          expect(mismatch_log.content).to include("no overlap with changed files")
+        end
+      end
+
+      context "when compare API is unavailable" do
+        before do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_raise(GithubClient::ApiError.new("Not Found"))
+        end
+
+        it "does not log a scope mismatch warning (fails open)" do
+          activity.execute(agent_run_id: agent_run.id)
+
+          mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+            .find { |l| l.content.include?("summary may describe a different issue") }
+          expect(mismatch_log).to be_nil
+        end
+      end
+    end
+
+    context "when agent summary references both its own issue and a sibling issue" do
+      let(:other_issue) { create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open") }
+
+      before do
+        other_issue
+        agent_run.log!("stdout", "Fixed ##{issue.github_number} and also updated ##{other_issue.github_number}")
+      end
+
+      it "does not log a scope mismatch warning" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+          .find { |l| l.content.include?("summary may describe a different issue") }
+        expect(mismatch_log).to be_nil
+      end
+
+      it "logs cross-references at info level for observability" do
+        mock_logger = instance_double(ActiveSupport::Logger, warn: nil)
+        allow(activity).to receive(:logger).and_return(mock_logger)
+        allow(mock_logger).to receive(:info)
+        expect(mock_logger).to receive(:info).with(hash_including(
+          message: "agent_execution.summary_cross_references",
+          agent_run_id: agent_run.id,
+          issue_number: issue.github_number,
+          cross_referenced_issues: [ other_issue.github_number ]
+        ))
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
+    context "when validate_summary_scope raises an unexpected error" do
+      before do
+        agent_run.log!("stdout", "Fixed ##{issue.github_number} by updating the scanner")
+        allow(activity).to receive(:sibling_open_issue_numbers).and_raise(ActiveRecord::StatementInvalid.new("DB gone"))
+      end
+
+      it "still creates the PR successfully" do
+        result = activity.execute(agent_run_id: agent_run.id)
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+      end
+
+      it "logs the scope check failure" do
+        mock_logger = instance_double(ActiveSupport::Logger, info: nil)
+        allow(activity).to receive(:logger).and_return(mock_logger)
+        expect(mock_logger).to receive(:warn).with(hash_including(
+          message: "agent_execution.summary_scope_check_failed",
+          agent_run_id: agent_run.id,
+          error_class: "ActiveRecord::StatementInvalid"
+        ))
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
+    context "when agent summary correctly references its own issue" do
+      before do
+        create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open")
+        agent_run.log!("stdout", "Fixed ##{issue.github_number} by updating the scanner")
+      end
+
+      it "does not log a scope mismatch warning" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+          .find { |l| l.content.include?("summary may describe a different issue") }
+        expect(mismatch_log).to be_nil
+      end
     end
 
     context "with idempotent retries" do

@@ -67,7 +67,7 @@ module Knowledge
         LANGUAGE_CONFIG.each do |language, config|
           artifacts.concat(collect_language(language, config))
         end
-        artifacts
+        deduplicate_by_content(artifacts)
       end
 
       def collector_type
@@ -203,6 +203,13 @@ module Knowledge
             }
           ]
         }
+      end
+
+      # Prevent content_hash collisions within a single collector run.
+      # The unique index on [collector_run_id, content_hash] rejects
+      # duplicates, so keep only the first artifact per content hash.
+      def deduplicate_by_content(artifacts)
+        artifacts.uniq { |a| Digest::SHA256.hexdigest(a[:content].to_s) }
       end
 
       def ast_grep_log_component
