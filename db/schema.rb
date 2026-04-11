@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_11_080344) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_11_163526) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -998,6 +998,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_11_080344) do
     t.integer "container_timeout_seconds", default: 3600, null: false
     t.datetime "created_at", null: false
     t.string "default_agent_provider", default: "claude", null: false
+    t.jsonb "default_agent_providers_by_goal", default: {}, null: false
     t.jsonb "default_allowed_github_usernames", default: [], null: false
     t.string "default_branch", default: "main", null: false
     t.integer "default_poll_interval_seconds", default: 60, null: false

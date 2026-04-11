@@ -31,12 +31,12 @@ class StaleRunDetectorJob < ApplicationJob
   # Shorter threshold for pending runs. Container provisioning + clone
   # should complete well within this window. Using the full agent timeout
   # (70 min) for pending runs delays detection of stuck runs unnecessarily.
-  PENDING_TIMEOUT = 15.minutes
+  PENDING_TIMEOUT = AgentRun.stale_pending_timeout
 
   # Maximum times a stale pending run can be automatically requeued before
   # being timed out. Prevents infinite retry loops when the underlying
   # issue is persistent (e.g. misconfigured project, missing credentials).
-  MAX_STALE_REQUEUES = 2
+  MAX_STALE_REQUEUES = AgentRun::MAX_STALE_REQUEUES
 
   def perform
     job_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
