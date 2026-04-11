@@ -186,6 +186,14 @@ module ApplicationHelper
     )
   end
 
+  def stylesheet_asset_tag(source, **options)
+    stylesheet_link_tag(source, **options) if asset_available?("#{source}.css")
+  end
+
+  def javascript_asset_tag(source, **options)
+    javascript_include_tag(source, **options) if asset_available?("#{source}.js")
+  end
+
   RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq goal_eq branch_name_cont category_eq active_eq name_cont s].freeze
 
   def sort_link_to(label, attribute, q)
@@ -317,5 +325,11 @@ module ApplicationHelper
     else
       { type: :text, label: text_label, classes: "text-gray-700", tooltip: tooltip }
     end
+  end
+
+  private
+
+  def asset_available?(logical_path)
+    Rails.application.assets.load_path.find(logical_path).present?
   end
 end
