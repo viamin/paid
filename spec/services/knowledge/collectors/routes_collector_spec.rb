@@ -134,7 +134,9 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         instance_double(
           Knowledge::ContainerizedRunner,
           host_repo_dir: "/tmp/repo",
-          options: { workspace_mount: "/workspace" }
+          options: { workspace_mount: "/workspace" },
+          connect_network!: nil,
+          disconnect_network!: nil
         )
       end
       let(:command_collector) do
@@ -186,6 +188,28 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           .and_raise(RuntimeError, "Command failed")
 
         expect { command_collector.collect }.to raise_error(RuntimeError, "Command failed")
+      end
+
+      it "connects network before bundle install and disconnects after" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+          .and_return(fixture_output)
+
+        command_collector.collect
+
+        expect(container_runner).to have_received(:connect_network!).ordered
+        expect(command_collector).to have_received(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300).ordered
+        expect(container_runner).to have_received(:disconnect_network!).ordered
+      end
+
+      it "disconnects network even when bundle install fails" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300)
+          .and_raise(RuntimeError, "bundle install failed")
+
+        expect { command_collector.collect }.to raise_error(RuntimeError, "bundle install failed")
+        expect(container_runner).to have_received(:disconnect_network!)
       end
 
       it "skips bundle install when Gemfile is absent" do
