@@ -462,6 +462,48 @@ RSpec.describe "Projects" do
         expect(response.body).to include(project_agent_run_path(project, run))
       end
 
+      it "shows the stale cleanup button when stale runs exist and the user can update the project" do
+        project = create(:project, account: account, github_token: github_token)
+        create(:agent_run, :running, project: project, started_at: AgentRun.stale_running_cutoff - 1.minute)
+
+        get project_path(project)
+
+        expect(response.body).to include("Clean Up Stale Runs")
+        expect(response.body).to include(cleanup_stale_runs_project_path(project))
+      end
+
+      it "hides the stale cleanup button when no stale runs exist" do
+        project = create(:project, account: account, github_token: github_token)
+        create(:agent_run, :running, project: project, started_at: AgentRun.stale_running_cutoff + 1.minute)
+
+        get project_path(project)
+
+        expect(response.body).not_to include("Clean Up Stale Runs")
+      end
+
+      it "shows the stale cleanup button for stale pending runs" do
+        project = create(:project, account: account, github_token: github_token)
+        stale_run = create(:agent_run, status: "pending", project: project)
+        stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+
+        get project_path(project)
+
+        expect(response.body).to include("Clean Up Stale Runs")
+      end
+
+      it "hides the stale cleanup button for viewers" do
+        viewer = create(:user, :viewer, account: account)
+        project = create(:project, account: account, github_token: github_token)
+        create(:agent_run, :running, project: project, started_at: AgentRun.stale_running_cutoff - 1.minute)
+
+        sign_out user
+        sign_in viewer
+
+        get project_path(project)
+
+        expect(response.body).not_to include("Clean Up Stale Runs")
+      end
+
       it "shows the Goal column with PR label for create_pr runs" do
         project = create(:project, account: account, github_token: github_token)
         agent_run = create(:agent_run, project: project, status: "completed", goal: "create_pr")
@@ -955,6 +997,26 @@ RSpec.describe "Projects" do
           expect(response).to have_http_status(:unprocessable_content)
           expect(project.reload.review_settings).to eq({})
         end
+
+        it "persists manual reviewer_login and casts blank to nil" do
+          params_with_reviewer = { enabled: "1", wait_for_reviews: "0",
+                                   methods: { manual: { enabled: "1", reviewer_login: "alice",
+                                                        termination: { max_review_rounds: "3", stop_when_no_comments: "1",
+                                                                       quality_threshold: "", timeout_minutes: "" } } } }
+          patch project_path(project), params: { project: { review_settings: params_with_reviewer } }
+
+          expect(response).to redirect_to(project_path(project))
+          manual = project.reload.review_settings.dig("methods", "manual")
+          expect(manual).to include("enabled" => true, "reviewer_login" => "alice")
+
+          params_blank_reviewer = { enabled: "0", wait_for_reviews: "0",
+                                    methods: { manual: { enabled: "0", reviewer_login: "" } } }
+          patch project_path(project), params: { project: { review_settings: params_blank_reviewer } }
+
+          expect(response).to redirect_to(project_path(project))
+          manual = project.reload.review_settings.dig("methods", "manual")
+          expect(manual["reviewer_login"]).to be_nil
+        end
       end
     end
   end
@@ -1102,6 +1164,58 @@ RSpec.describe "Projects" do
         post toggle_auto_merge_project_path(project)
         expect(response).to redirect_to(root_path)
         expect(flash[:alert]).to include("not authorized")
+      end
+    end
+  end
+
+  describe "POST /projects/:id/cleanup_stale_runs" do
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "cleans up stale running runs and redirects back to the project" do
+        project = create(:project, account: account, github_token: github_token)
+        stale_run = create(:agent_run, :running, project: project, started_at: AgentRun.stale_running_cutoff - 1.minute)
+
+        post cleanup_stale_runs_project_path(project)
+
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:notice]).to eq("Cleaned up 1 stale agent run(s).")
+        expect(stale_run.reload.status).to eq("timeout")
+      end
+
+      it "requeues stale pending runs" do
+        project = create(:project, account: account, github_token: github_token)
+        stale_run = create(:agent_run, status: "pending", project: project)
+        stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+
+        post cleanup_stale_runs_project_path(project)
+
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:notice]).to eq("Cleaned up 1 stale agent run(s).")
+        expect(stale_run.reload.status).to eq("queued")
+        expect(stale_run.stale_requeue_count).to eq(1)
+      end
+
+      it "shows a no-op notice when no stale runs need cleanup" do
+        project = create(:project, account: account, github_token: github_token)
+
+        post cleanup_stale_runs_project_path(project)
+
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:notice]).to eq("No stale agent runs needed cleanup.")
+      end
+
+      it "forbids viewers" do
+        viewer = create(:user, :viewer, account: account)
+        project = create(:project, account: account, github_token: github_token)
+
+        sign_out user
+        sign_in viewer
+
+        post cleanup_stale_runs_project_path(project)
+
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to eq("You are not authorized to perform this action.")
       end
     end
   end

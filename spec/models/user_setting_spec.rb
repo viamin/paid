@@ -142,6 +142,62 @@ RSpec.describe UserSetting do
     end
   end
 
+  describe "goal-specific default providers" do
+    let(:user) { create(:user) }
+
+    before do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor codex])
+    end
+
+    it "normalizes configured goal defaults to provider identifiers" do
+      cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
+      setting = build(
+        :user_setting,
+        user: user,
+        default_agent_providers_by_goal: {
+          "create_pr" => "cursor",
+          "review" => "claude",
+          "create_issue" => ""
+        }
+      )
+
+      expect(setting).to be_valid
+      expect(setting.default_agent_providers_by_goal).to eq(
+        "create_pr" => cursor.routing_key,
+        "review" => user.providers.find_by!(provider_key: "claude").routing_key
+      )
+    end
+
+    it "falls back to the global default when no goal-specific provider is set" do
+      codex = user.providers.create!(provider_key: "codex", enabled_for_agent_runs: true)
+      setting = create(:user_setting, user: user, default_agent_provider: codex.routing_key)
+
+      expect(setting.default_provider_identifier_for_goal("review")).to eq(codex.routing_key)
+    end
+
+    it "uses the goal-specific provider ahead of the global default" do
+      cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      codex = user.providers.create!(provider_key: "codex", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      setting = create(
+        :user_setting,
+        user: user,
+        default_agent_provider: cursor.routing_key,
+        default_agent_providers_by_goal: { "review" => codex.routing_key },
+        fallback_enabled: true
+      )
+
+      expect(setting.default_provider_identifier_for_goal("review")).to eq(codex.routing_key)
+      expect(setting.provider_priority_for_goal("review", identifiers: true).first).to eq(codex.routing_key)
+    end
+
+    it "rejects invalid goals" do
+      setting = build(:user_setting, user: user, default_agent_providers_by_goal: { "ship_it" => "claude" })
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:default_agent_providers_by_goal]).to include("contains invalid goal: ship_it")
+    end
+  end
+
   describe "#container_memory_gb" do
     it "converts bytes to gigabytes" do
       setting = build(:user_setting, container_memory_bytes: 4 * 1024 * 1024 * 1024)

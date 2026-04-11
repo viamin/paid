@@ -23,6 +23,7 @@ class UserSetting < ApplicationRecord
   validates :agent_timeout_seconds,
     numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: PG_INT_MAX }
   validate :validate_default_agent_provider
+  validate :validate_default_agent_providers_by_goal
 
   # Container Resources
   validates :container_memory_bytes,
@@ -202,6 +203,28 @@ class UserSetting < ApplicationRecord
     normalized_default_agent_provider || allowed_provider_identifiers_for_agent_runs.first
   end
 
+  def default_provider_identifier_for_goal(goal)
+    goal = goal.to_s
+    goal_provider = default_agent_providers_by_goal[goal] if goal.present?
+    return default_provider_identifier if goal_provider.blank?
+
+    resolved = identifiers_for_provider_token(goal_provider, candidates: allowed_provider_identifiers_for_agent_runs).first
+    resolved || default_provider_identifier
+  end
+
+  def provider_priority_for_goal(goal, identifiers: false)
+    goal_identifier = default_provider_identifier_for_goal(goal)
+    default = goal_identifier.present? ? [ goal_identifier ] : []
+    priorities = default + fallback_priority_for(
+      primary_provider: goal_identifier || default_agent_provider,
+      identifiers: true
+    )
+
+    return priorities if identifiers
+
+    map_identifiers_to_provider_keys(priorities)
+  end
+
   def sanitize_provider_tokens(tokens, candidates:)
     Array(tokens).flat_map do |token|
       token = token.to_s
@@ -282,6 +305,40 @@ class UserSetting < ApplicationRecord
     end
 
     self.fallback_providers = sanitize_provider_tokens(fallback_providers, candidates: allowed_provider_identifiers_for_fallback)
+  end
+
+  def validate_default_agent_providers_by_goal
+    return if default_agent_providers_by_goal.blank?
+
+    unless default_agent_providers_by_goal.is_a?(Hash)
+      errors.add(:default_agent_providers_by_goal, "must be a hash")
+      return
+    end
+
+    allowed_goals = AgentRun::GOALS
+    allowed_providers = allowed_provider_identifiers_for_agent_runs
+    normalized = {}
+
+    default_agent_providers_by_goal.each do |goal, provider|
+      goal = goal.to_s
+
+      unless allowed_goals.include?(goal)
+        errors.add(:default_agent_providers_by_goal, "contains invalid goal: #{goal}")
+        next
+      end
+
+      next if provider.blank?
+
+      resolved = identifiers_for_provider_token(provider.to_s, candidates: allowed_providers)
+      if resolved.empty? && !allowed_providers.include?(provider.to_s)
+        errors.add(:default_agent_providers_by_goal, "contains invalid provider for #{goal}")
+        next
+      end
+
+      normalized[goal] = resolved.first || provider.to_s
+    end
+
+    self.default_agent_providers_by_goal = normalized
   end
 
   def validate_default_agent_provider
