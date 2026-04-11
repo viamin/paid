@@ -39,11 +39,13 @@ module Knowledge
       cpu_quota: 100_000,                # 1 CPU
       pids_limit: 200,
       timeout_seconds: 300,              # 5 minutes
-      workspace_mount: "/workspace"
+      workspace_mount: "/workspace",
+      network_mode: "none"
     }.freeze
 
     COMMIT_SHA_PATTERN = /\A[0-9a-f]{40}\z/i
     PROJECT_NAME_PATTERN = %r{\A[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+\z}
+    ALLOWED_NETWORK_MODES = %w[none bridge].freeze
 
     attr_reader :project, :commit_sha, :branch, :committed_at, :options, :host_repo_dir
 
@@ -84,6 +86,31 @@ module Knowledge
       )
     ensure
       cleanup!
+    end
+
+    # Temporarily connects the container to the bridge network so it can
+    # reach the internet (e.g. for `bundle install`). Must be followed by
+    # disconnect_network! before executing untrusted code.
+    def connect_network!
+      raise ContainerError, "Container not provisioned" unless @container
+
+      log("containerized_runner.network.connect")
+      bridge = Docker::Network.get("bridge")
+      bridge.connect(@container.id)
+    rescue Docker::Error::DockerError => e
+      raise ContainerError, "Failed to connect network: #{e.message}"
+    end
+
+    # Disconnects the container from the bridge network, restoring full
+    # network isolation before running untrusted code.
+    def disconnect_network!
+      raise ContainerError, "Container not provisioned" unless @container
+
+      log("containerized_runner.network.disconnect")
+      bridge = Docker::Network.get("bridge")
+      bridge.disconnect(@container.id)
+    rescue Docker::Error::DockerError => e
+      raise ContainerError, "Failed to disconnect network: #{e.message}"
     end
 
     # Executes a command inside the collector container and returns stdout.
@@ -274,7 +301,7 @@ module Knowledge
         "Binds" => [
           "#{@workspace_volume}:#{options[:workspace_mount]}:rw"
         ],
-        "NetworkMode" => "none"
+        "NetworkMode" => validated_network_mode
       }
     end
 
@@ -288,6 +315,15 @@ module Knowledge
 
     def container_name
       "paid-collector-#{project.id}-#{SecureRandom.hex(4)}"
+    end
+
+    def validated_network_mode
+      mode = options[:network_mode].to_s
+      unless ALLOWED_NETWORK_MODES.include?(mode)
+        raise ContainerError, "Invalid network_mode: #{mode.inspect}"
+      end
+
+      mode
     end
 
     def validate_commit_sha!(sha)
