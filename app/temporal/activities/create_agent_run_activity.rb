@@ -24,6 +24,12 @@ module Activities
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
       user_settings = resolve_user_settings(project)
+      provider_id, agent_type = resolve_provider_selection(
+        project: project,
+        requested_agent_type: input[:agent_type],
+        requested_provider_id: provider_id,
+        goal: goal
+      )
 
       # Resolve and render prompt version if no custom prompt is provided.
       # Skip for untrusted issues to match the safety behavior in AgentRun#prompt_for_issue.
@@ -128,6 +134,16 @@ module Activities
       return Provider.agent_type_for(provider.provider_key) if provider
 
       requested_agent_type || "claude_code"
+    end
+
+    def resolve_provider_selection(project:, requested_agent_type:, requested_provider_id:, goal:)
+      resolved_agent_type = resolve_agent_type(requested_agent_type, requested_provider_id)
+      return [ requested_provider_id, resolved_agent_type ] if requested_provider_id.present? || requested_agent_type.present?
+
+      provider = default_provider_for(project, goal: goal)
+      return [ nil, resolved_agent_type ] unless provider
+
+      [ provider.id, Provider.agent_type_for(provider.provider_key) ]
     end
 
     def default_provider_for(project, goal:)
