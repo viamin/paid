@@ -96,6 +96,9 @@ config.status
 # Yarn offline mirror cache (created by yarn install with enableGlobalCache: false)
 /.yarn-cache/
 
+# Yarn cache directory (build artifact, not source code)
+/.cache-yarn/
+
 # Yarn temporary shims and compile caches (created by Corepack/Yarn)
 /.yarn-tmp/
 

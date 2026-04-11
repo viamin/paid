@@ -12,7 +12,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       pr_action_labels: [],
       auto_fix_merge_conflicts: false)
   end
-  let(:github_client) { instance_double(GithubClient) }
+  let(:octokit_client) { instance_double(Octokit::Client) }
+  let(:github_client) { instance_double(GithubClient, client: octokit_client) }
 
   # Scanner tests that exercise the ":no_review → emit review_bot_review_pending"
   # path need the project to have a requestable review bot configured. Without
@@ -50,6 +51,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(github_client).to receive(:rate_limit_remaining!).and_return(100)
     allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
   end
 
@@ -70,6 +72,57 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when rate limit is low" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 99,
+          labels: [ project.generated_label_name, project.automation_label_name ],
+          paid_state: "completed")
+      end
+
+      before { pr_issue }
+
+      it "returns partial results when rate budget is exhausted mid-scan" do
+        allow(github_client).to receive(:rate_limit_remaining!).and_return(5)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
+      it "returns empty when no PRs exist even with low rate limit" do
+        pr_issue.update!(github_state: "closed")
+        allow(github_client).to receive(:rate_limit_remaining!).and_return(5)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
+      it "skips PRs with active runs without checking rate budget" do
+        create(:agent_run, project: project, source_pull_request_number: 99, status: "running")
+        allow(github_client).to receive(:rate_limit_remaining!).and_return(5)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+        expect(github_client).not_to have_received(:rate_limit_remaining!)
+      end
+
+      it "escalates draft PRs at max review rounds without checking rate budget" do
+        project.update!(max_draft_review_rounds: 3)
+        pr_issue.update!(pr_review_phase: "draft", draft_review_count: 3)
+        allow(github_client).to receive(:rate_limit_remaining!).and_return(5)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("escalate_to_owner")
+        expect(github_client).not_to have_received(:rate_limit_remaining!)
       end
     end
 
