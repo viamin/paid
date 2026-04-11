@@ -230,7 +230,9 @@ module Activities
           checks.present? &&
           all_checks_green?(checks) &&
           mergeable == true &&
-          no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks)
+          no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks) &&
+          all_blocking_review_methods_complete?(project, reviews, checks) &&
+          !review_stale_for_head?(client, project, issue, pr_data, reviews)
         return owner_approved_trigger(issue)
       end
 
@@ -983,6 +985,132 @@ module Activities
       return false if non_bot_review_gate_triggers(project, reviews, effective_checks).any?
 
       true
+    end
+
+    # --- Blocking review method completeness gate ---
+
+    # Returns true when every enabled blocking review method has a
+    # completion signal. Review methods and their completion criteria:
+    #
+    #   copilot / codex / paid_agent — checked by no_outstanding_review_feedback?
+    #     (review bot status + thread resolution). Not re-checked here.
+    #   ci_action — the check run named by action_name must be present
+    #     and have a successful conclusion.
+    #   manual — at least one trusted non-bot user must have submitted
+    #     an APPROVED review (distinct from owner approval, which gates
+    #     the merge trigger itself).
+    def all_blocking_review_methods_complete?(project, reviews, checks)
+      return true unless project.review_enabled? && project.wait_for_reviews?
+
+      if project.review_method_enabled?("ci_action")
+        return false unless ci_action_review_complete?(project, checks)
+      end
+
+      if project.review_method_enabled?("manual")
+        return false unless manual_review_complete?(project, reviews)
+      end
+
+      true
+    end
+
+    # ci_action is complete when the configured action_name appears in
+    # the check-run list with a "success" conclusion.
+    def ci_action_review_complete?(project, checks)
+      action_name = project.review_method_config("ci_action").to_h["action_name"]
+      if action_name.blank?
+        Rails.logger.warn(message: "reviews.ci_action_missing_action_name", project_id: project.id)
+        return false
+      end
+
+      checks.any? { |c| c[:name] == action_name && c[:conclusion] == "success" }
+    end
+
+    # Manual review is complete when the configured reviewer_login has
+    # submitted an APPROVED review. This aligns with manual_reviewer_approved?
+    # (used in detect_ready_triggers) so the same user gates both paths.
+    def manual_review_complete?(project, reviews)
+      return false if reviews.nil?
+
+      reviewer = project.review_method_config("manual").to_h["reviewer_login"]
+      return false if reviewer.blank?
+
+      reviews.any? do |r|
+        r[:state] == "APPROVED" &&
+          r[:user_login]&.downcase == reviewer.strip.downcase &&
+          project.trusted_github_user?(r[:user_login]) &&
+          !bot_user?(r[:user_login])
+      end
+    end
+
+    # --- Stale review detection ---
+
+    # Returns true when any enabled blocking review signal has a stale
+    # approval — i.e. the HEAD commit was pushed after the relevant
+    # reviewer's latest approval. Each blocking signal is checked
+    # individually so that an owner re-approval cannot mask a stale
+    # manual review from the configured reviewer.
+    def review_stale_for_head?(client, project, issue, pr_data, reviews)
+      return false if reviews.nil?
+
+      head_committed_at = fetch_head_commit_date(client, project, issue, pr_data)
+      return false if head_committed_at.nil?
+
+      blocking_approval_timestamps(project, reviews).any? do |ts|
+        head_committed_at > ts
+      end
+    end
+
+    def fetch_head_commit_date(client, project, issue, pr_data)
+      sha = pr_data&.head&.sha
+      return nil if sha.nil?
+
+      commit_data = client.commit(project.full_name, sha)
+      commit_data&.commit&.committer&.date
+    rescue GithubClient::Error => e
+      log_signal_error("fetch_head_commit", project, issue, e)
+      nil
+    end
+
+    # Returns the latest approval timestamp for each enabled blocking
+    # review signal. The owner approval is always included (gated by
+    # owner_approved_or_self_authored? upstream). When the manual review
+    # method is enabled, the configured reviewer_login's latest approval
+    # is checked separately so a fresh owner re-approval cannot mask a
+    # stale manual review.
+    def blocking_approval_timestamps(project, reviews)
+      timestamps = []
+
+      owner_ts = latest_approval_timestamp_for(project, reviews) do |r|
+        r[:user_login]&.downcase == project.owner_reviewer_login&.downcase
+      end
+      timestamps << owner_ts if owner_ts
+
+      if project.review_method_enabled?("manual")
+        reviewer = project.review_method_config("manual").to_h["reviewer_login"]
+        if reviewer.present?
+          manual_ts = latest_approval_timestamp_for(project, reviews) do |r|
+            r[:user_login]&.downcase == reviewer.strip.downcase
+          end
+          timestamps << manual_ts if manual_ts
+        end
+      end
+
+      timestamps
+    end
+
+    # Returns the most recent submitted_at timestamp among APPROVED
+    # reviews from trusted non-bot users matching the given block filter.
+    def latest_approval_timestamp_for(project, reviews)
+      approvals = reviews.select do |r|
+        r[:state] == "APPROVED" &&
+          project.trusted_github_user?(r[:user_login]) &&
+          !bot_user?(r[:user_login]) &&
+          yield(r)
+      end
+
+      return nil if approvals.empty?
+
+      approvals.filter_map { |r| r[:submitted_at] }.max
     end
 
     # --- Helpers ---
