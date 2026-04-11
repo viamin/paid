@@ -6,6 +6,7 @@
   "dockerComposeFile": "compose.yaml",
   "service": "rails-app",
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  // Use a minimal init so orphaned child processes get reaped inside the container.
   "init": true,
   // Features to add to the dev container. More info: https://containers.dev/features.
   "features": {
