@@ -39,7 +39,6 @@ RSpec.describe Activities::RunCollectorsActivity, :no_db do
           commit_sha: commit_sha,
           branch: "main",
           committed_at: nil,
-          options: { network_mode: "bridge" }
         )
         expect(result[:success]).to be true
         expect(result[:containerized]).to be true
@@ -95,8 +94,7 @@ RSpec.describe Activities::RunCollectorsActivity, :no_db do
         project: project,
         commit_sha: commit_sha,
         branch: "develop",
-        committed_at: "2026-01-01T00:00:00Z",
-        options: { network_mode: "bridge" }
+        committed_at: "2026-01-01T00:00:00Z"
       )
     end
   end
