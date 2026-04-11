@@ -1048,16 +1048,18 @@ module Activities
       checks.any? { |c| c[:name] == action_name && c[:conclusion] == "success" }
     end
 
-    # manual review is complete when at least one trusted non-bot user
-    # (other than the owner) has submitted an APPROVED review. The owner's
-    # approval gates the merge trigger via owner_approved_or_self_authored?,
-    # so manual review requires a distinct second reviewer.
+    # Manual review is complete when the configured reviewer_login has
+    # submitted an APPROVED review. This aligns with manual_reviewer_approved?
+    # (used in detect_ready_triggers) so the same user gates both paths.
     def manual_review_complete?(project, reviews)
       return false if reviews.nil?
 
+      reviewer = project.review_method_config("manual").to_h["reviewer_login"]
+      return false if reviewer.blank?
+
       reviews.any? do |r|
         r[:state] == "APPROVED" &&
-          r[:user_login] != project.owner_reviewer_login &&
+          r[:user_login]&.downcase == reviewer.strip.downcase &&
           project.trusted_github_user?(r[:user_login]) &&
           !bot_user?(r[:user_login])
       end
@@ -1101,7 +1103,9 @@ module Activities
     def blocking_approval_timestamps(project, reviews)
       timestamps = []
 
-      owner_ts = latest_approval_timestamp_for(project, reviews) { true }
+      owner_ts = latest_approval_timestamp_for(project, reviews) do |r|
+        r[:user_login]&.downcase == project.owner_reviewer_login&.downcase
+      end
       timestamps << owner_ts if owner_ts
 
       if project.review_method_enabled?("manual")
