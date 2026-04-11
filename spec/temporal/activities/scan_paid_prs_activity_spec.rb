@@ -1965,6 +1965,44 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when reviews are globally disabled but paid_agent method is enabled with max_review_rounds" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => false,
+            "methods" => {
+              "paid_agent" => {
+                "enabled" => true,
+                "termination" => { "max_review_rounds" => 2 }
+              }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 1)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Found issues.", submitted_at: 2.hours.ago },
+            { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Still has issues.", submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "does not enforce paid_agent round limits or escalate" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("escalate_to_owner")
+      end
+    end
+
     context "when paid_agent review round limit is reached and no review exists yet (ready phase)" do
       before do
         project.update!(
