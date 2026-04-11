@@ -95,6 +95,7 @@ config.status
 
 # Yarn offline mirror cache (created by yarn install with enableGlobalCache: false)
 /.yarn-cache/
+/.yarn-cache-v2/
 
 # Yarn cache directory (build artifact, not source code)
 /.cache-yarn/
@@ -180,3 +181,5 @@ config.status
 /.venv/
 __pycache__/
 /.yarn-cache/
+/.yarn-cache-v2/
+/.yarn-local-cache/
