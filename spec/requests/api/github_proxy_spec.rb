@@ -340,6 +340,22 @@ RSpec.describe "Api::GithubProxy" do
         )
       end
 
+      it "does not log a warning when the submitted review includes inline comments" do
+        allow(Rails.logger).to receive(:warn)
+
+        post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+          params: {
+            body: "Found two issues to fix before merge.",
+            event: "COMMENT",
+            comments: [
+              { path: "app/models/user.rb", line: 12, body: "Guard this branch." }
+            ]
+          }.to_json,
+          headers: valid_headers
+
+        expect(Rails.logger).not_to have_received(:warn)
+      end
+
       it "does not log a warning for the clean review body-only format" do
         allow(Rails.logger).to receive(:warn)
         clean_review_response_body = {
