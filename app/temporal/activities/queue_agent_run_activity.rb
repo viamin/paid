@@ -11,6 +11,8 @@ module Activities
       requested_agent_type = input[:agent_type]
       provider_id = input[:provider_id]
       source_pull_request_number = input[:source_pull_request_number]
+      count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
+      expected_draft_review_count = input[:expected_draft_review_count]
 
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
@@ -29,6 +31,9 @@ module Activities
       agent_run, duplicate = AgentRun.transaction do
         existing = find_existing_run(project, issue, source_pull_request_number)
         if existing
+          merge_draft_review_round_tracking!(existing,
+            count_toward_draft_review_round: count_toward_draft_review_round,
+            expected_draft_review_count: expected_draft_review_count)
           [ existing, true ]
         else
           run = AgentRun.create!(
@@ -38,6 +43,8 @@ module Activities
             agent_type: agent_type,
             custom_prompt: custom_prompt,
             source_pull_request_number: source_pull_request_number,
+            count_toward_draft_review_round: count_toward_draft_review_round,
+            expected_draft_review_count: expected_draft_review_count,
             status: "queued"
           )
           [ run, false ]
@@ -45,6 +52,16 @@ module Activities
       rescue ActiveRecord::RecordNotUnique
         existing = find_existing_run(project, issue, source_pull_request_number)
         raise unless existing
+
+        # Runs outside the rolled-back transaction without a row lock. If two
+        # concurrent RecordNotUnique rescues race here, the idempotency guard in
+        # merge_draft_review_round_tracking! prevents double-writes. Both callers
+        # originate from the same poll cycle so they pass identical values; the
+        # last writer wins harmlessly.
+        merge_draft_review_round_tracking!(existing,
+          count_toward_draft_review_round: count_toward_draft_review_round,
+          expected_draft_review_count: expected_draft_review_count)
+
         [ existing, true ]
       end
 
@@ -116,6 +133,25 @@ module Activities
       elsif source_pull_request_number
         scope.where(source_pull_request_number: source_pull_request_number).first
       end
+    end
+
+    def merge_draft_review_round_tracking!(agent_run, count_toward_draft_review_round:, expected_draft_review_count:)
+      return unless count_toward_draft_review_round
+      return if agent_run.count_toward_draft_review_round? &&
+        agent_run.expected_draft_review_count.present?
+
+      if agent_run.trigger_type != "automatic"
+        logger.warn(
+          message: "concurrency.draft_tracking_skipped_manual_run",
+          agent_run_id: agent_run.id
+        )
+        return
+      end
+
+      agent_run.update!(
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: expected_draft_review_count
+      )
     end
   end
 end
