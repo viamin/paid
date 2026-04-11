@@ -25,8 +25,15 @@ module Activities
       ProcessRunQueueJob.perform_later
 
       # Always update issue state so it doesn't stay stuck in "in_progress".
-      if agent_run.issue && agent_run.issue.paid_state != "failed"
-        agent_run.issue.update!(paid_state: "failed")
+      # Review-goal failures restore the issue to "completed" rather than
+      # marking it "failed" — the underlying PR work succeeded; only the
+      # follow-up review run failed. Using "completed" keeps auto-pick
+      # unblocked and lets the scanner re-evaluate the PR on the next cycle.
+      if agent_run.issue
+        target_state = agent_run.review_goal? ? "completed" : "failed"
+        if agent_run.issue.paid_state != target_state
+          agent_run.issue.update!(paid_state: target_state)
+        end
       end
 
       logger.info(

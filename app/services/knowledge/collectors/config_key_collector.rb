@@ -81,7 +81,9 @@ module Knowledge
       end
 
       def deduplicate(artifacts)
-        artifacts.uniq { |a| [ a[:identifier], a[:scope_path] ] }
+        artifacts
+          .uniq { |a| [ a[:identifier], a[:scope_path] ] }
+          .uniq { |a| Digest::SHA256.hexdigest(a[:content].to_s) }
       end
 
       def ast_grep_log_component
