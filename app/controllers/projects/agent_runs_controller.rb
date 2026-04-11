@@ -477,7 +477,7 @@ module Projects
       new_labels = (current_labels - stale_priority_labels) + [ label_name ]
       issue.update!(labels: new_labels)
 
-      sync_priority_label_to_github(issue, label_name, stale_priority_labels)
+      [ label_name, stale_priority_labels ]
     end
 
     def sync_priority_label_to_github(issue, label_name, stale_labels)
@@ -597,10 +597,17 @@ module Projects
       issue = attrs[:issue]
       priority_tier = attrs[:priority_tier]
 
+      github_sync_args = nil
       ActiveRecord::Base.transaction do
         create_agent_run(**attrs)
-        apply_priority_label(issue, priority_tier) if issue && priority_tier
+        github_sync_args = apply_priority_label(issue, priority_tier) if issue && priority_tier
       end
+
+      if github_sync_args
+        label_name, stale_labels = github_sync_args
+        sync_priority_label_to_github(issue, label_name, stale_labels)
+      end
+
       ProcessRunQueueJob.perform_later
 
       capacity_user = settings_owner || current_user
