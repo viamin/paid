@@ -487,6 +487,33 @@ RSpec.describe "AgentRuns" do
         }.to have_enqueued_job(ProcessRunQueueJob)
       end
 
+      it "persists the selected priority tier and syncs the issue label" do
+        github_client = instance_double(GithubClient, remove_label_from_issue: true, add_labels_to_issue: true)
+        allow(GithubClient).to receive(:new).and_return(github_client)
+        issue.update!(labels: [ "bug", "P3" ])
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id, priority_tier: "P1" }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(AgentRun.last.priority_tier).to eq("P1")
+        expect(issue.reload.labels).to contain_exactly("bug", "P1")
+        expect(github_client).to have_received(:remove_label_from_issue).with(project.full_name, issue.github_number, "P3")
+        expect(github_client).to have_received(:add_labels_to_issue).with(project.full_name, issue.github_number, [ "P1" ])
+      end
+
+      it "rolls back the agent run when the local issue label update fails" do
+        expect(GithubClient).not_to receive(:new)
+        issue.update_column(:paid_state, "bogus")
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id, priority_tier: "P1" }
+        }.not_to change(AgentRun, :count)
+
+        expect(issue.reload.labels).to be_blank
+        expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
+      end
+
       it "redirects with error when no issue selected" do
         post project_agent_runs_path(project)
         expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))

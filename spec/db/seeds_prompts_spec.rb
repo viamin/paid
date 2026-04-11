@@ -86,5 +86,15 @@ RSpec.describe Prompt, type: :model do
     it "FALLBACK_REVIEW_GOAL_PROMPT matches the clean-review pattern" do
       expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT).to match(pattern)
     end
+
+    it "seeded template includes the paid_agent clean marker" do
+      template = described_class.global.find_by(slug: "goal.review_pull_request").current_version.template
+      expect(template).to include(Activities::ScanPaidPrsActivity::PAID_REVIEW_CLEAN_MARKER)
+    end
+
+    it "FALLBACK_REVIEW_GOAL_PROMPT includes the paid_agent clean marker" do
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to include(Activities::ScanPaidPrsActivity::PAID_REVIEW_CLEAN_MARKER)
+    end
   end
 end

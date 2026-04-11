@@ -14,21 +14,85 @@ module Activities
       return { issues: [], project_id: project_id, project_missing: true } unless project
 
       client = project.github_token.client
+      incremental = project.last_issue_sync_at.present?
+      sync_started_at = Time.current
 
-      github_issues, truncated = fetch_all_issues(client, project.full_name)
+      github_issues, truncated = fetch_all_issues(client, project.full_name, since: project.last_issue_sync_at)
 
       synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
       parse_issue_relationships(project, synced_issues) if synced_issues.any?
-      closed_count = close_stale_issues(project, github_issues, truncated: truncated)
+      closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
+
+      if truncated && incremental
+        # Incremental fetches sort ascending (oldest-updated first), so a
+        # truncated result contains the oldest slice of the `since` window.
+        # Advance the watermark to the latest `updated_at` among fetched
+        # issues so the next sync picks up where this one left off.
+        #
+        # Prefer subtracting 1 second for an inclusive boundary: GitHub's
+        # `since` filters as "updated after" the given timestamp, so
+        # issues sharing the exact second-level `updated_at` would be
+        # excluded on the next poll. Overlapping is safe (sync_issue is
+        # idempotent).
+        #
+        # However, if subtracting 1 second would not advance past the
+        # current watermark (i.e. all fetched issues share the same
+        # `updated_at` second as the watermark), use the exact timestamp
+        # to guarantee forward progress. Some same-second issues may be
+        # skipped, but permanent re-fetch of the same window is worse.
+        latest_updated = github_issues.filter_map { |gi| gi.updated_at }.max
+        if latest_updated
+          inclusive_cursor = latest_updated - 1.second
+          # `incremental` is only true when `last_issue_sync_at` is present,
+          # so the nil-guard is unnecessary here.
+          new_watermark = if inclusive_cursor <= project.last_issue_sync_at
+            latest_updated
+          else
+            inclusive_cursor
+          end
+          project.touch_last_issue_sync_at(new_watermark)
+        end
+      elsif !truncated
+        project.touch_last_issue_sync_at(sync_started_at)
+      end
+
+      # Exclude closed issues from downstream processing (DetectLabelsActivity).
+      # sync_issue already persisted their github_state to the DB, but passing
+      # them downstream could incorrectly trigger agent runs for closed work.
+      # Note: parse_issue_relationships receives all synced_issues (including
+      # closed), but filters to github_state: "open" internally (line 227).
+      open_issues = synced_issues.reject { |si| si[:github_state] == "closed" }
+
+      # During incremental fetches, issues whose `updated_at` did not change
+      # on GitHub are not returned by the API. However, those issues may still
+      # need re-evaluation by DetectLabelsActivity — for example when a
+      # blocking dependency was resolved, or project label/trust settings
+      # changed. Append locally-open issues in re-scannable states that were
+      # not already part of this fetch so the workflow passes them downstream.
+      if incremental && !truncated
+        fetched_ids = open_issues.map { |si| si[:id] }.to_set
+        rescannable = project.issues
+          .where(github_state: "open", paid_state: %w[new needs_input recommend_close])
+          .where.not(id: fetched_ids.to_a)
+          .limit(200)
+          .pluck(:id, :github_number, :github_state)
+
+        rescannable.each do |id, github_number, github_state|
+          open_issues << { id: id, github_number: github_number, labels: [],
+                           github_state: github_state, rescan: true }
+        end
+      end
 
       logger.info(
         message: "github_sync.fetch_issues",
         project_id: project.id,
         issue_count: synced_issues.size,
-        closed_count: closed_count
+        closed_count: closed_count,
+        incremental: incremental,
+        rescan_count: incremental ? open_issues.count { |si| si[:rescan] } : 0
       )
 
-      { issues: synced_issues, project_id: project_id }
+      { issues: open_issues, project_id: project_id }
     rescue GithubClient::RateLimitError => e
       raise Temporalio::Error::ApplicationError.new(
         e.message,
@@ -42,17 +106,25 @@ module Activities
 
     # Fetches all open GitHub issues and pull requests for visibility.
     # Trigger eligibility is decided later by DetectLabelsActivity.
-    # Sorts by recently-updated so that newly-labeled issues appear first
-    # even when the page cap is reached in busy repos.
+    #
+    # Full fetches sort descending (newest-updated first) so that
+    # newly-labeled issues appear first even when the page cap is reached.
+    #
+    # Incremental fetches sort ascending (oldest-updated first) so that
+    # a truncated result set still makes forward progress — the watermark
+    # can be advanced to the latest `updated_at` among the fetched issues
+    # instead of stalling at the same `since` window indefinitely.
+    #
     # Returns [issues, truncated] where truncated is true if the
     # DEFAULT_MAX_PAGES cap was reached before all pages were fetched.
-    def fetch_all_issues(client, repo_full_name)
-      fetch_issues_for_label(client, repo_full_name, nil, sort: :updated)
+    def fetch_all_issues(client, repo_full_name, since: nil)
+      direction = since ? :asc : :desc
+      fetch_issues_for_label(client, repo_full_name, nil, sort: :updated, direction: direction, since: since)
     end
 
     # Returns [issues, truncated] where truncated is true when the
     # DEFAULT_MAX_PAGES cap was reached before all pages were fetched.
-    def fetch_issues_for_label(client, repo_full_name, label, sort: nil)
+    def fetch_issues_for_label(client, repo_full_name, label, sort: nil, direction: nil, since: nil)
       issues = []
       page = 1
       truncated = false
@@ -65,6 +137,14 @@ module Activities
           page: page
         }
         opts[:sort] = sort if sort
+        opts[:direction] = direction if direction
+        if since
+          opts[:since] = since.iso8601
+          # Incremental fetches must request all states so that issues closed
+          # on GitHub since the last sync are captured and their local
+          # github_state is updated via sync_issue.
+          opts[:state] = "all"
+        end
 
         page_issues = client.issues(repo_full_name, **opts)
 
@@ -76,14 +156,33 @@ module Activities
         page += 1
 
         if page > DEFAULT_MAX_PAGES
-          truncated = true
-          logger.warn(
-            message: "github_sync.fetch_issues_page_limit",
-            repo: repo_full_name,
-            label: label,
-            fetched_count: issues.size,
-            max_pages: DEFAULT_MAX_PAGES
-          )
+          # Probe the next page to distinguish a genuinely truncated result set
+          # from one that exactly fills DEFAULT_MAX_PAGES * DEFAULT_PER_PAGE.
+          # Without this check a false truncation prevents the watermark from
+          # ever advancing, causing the same window to be re-fetched indefinitely.
+          #
+          # Only probe during incremental fetches where false truncation matters
+          # for watermark advancement. For full fetches, false truncation just
+          # means stale-closure is conservatively skipped — already safe — so
+          # skip the extra API call to avoid unnecessary rate-limit pressure.
+          if since
+            # `page` was already incremented to DEFAULT_MAX_PAGES + 1 on
+            # line above, so this probes the next page beyond the cap.
+            probe_opts = opts.merge(page: page)
+            truncated = client.issues(repo_full_name, **probe_opts).any?
+          else
+            truncated = true
+          end
+
+          if truncated
+            logger.warn(
+              message: "github_sync.fetch_issues_page_limit",
+              repo: repo_full_name,
+              label: label,
+              fetched_count: issues.size,
+              max_pages: DEFAULT_MAX_PAGES
+            )
+          end
           break
         end
       end
@@ -117,7 +216,8 @@ module Activities
         github_updated_at: github_issue.updated_at
       )
 
-      { id: issue.id, github_number: issue.github_number, labels: issue.labels, trusted: trusted }
+      { id: issue.id, github_number: issue.github_number, labels: issue.labels,
+        github_state: issue.github_state, trusted: trusted }
     end
 
     # Parses dependency and parent/child relationships from issue comments.
@@ -272,16 +372,25 @@ module Activities
       nil
     end
 
-    def close_stale_issues(project, github_issues, truncated: false)
+    def close_stale_issues(project, github_issues, truncated: false, incremental: false)
       # When the fetch was truncated by the DEFAULT_MAX_PAGES cap, the fetched list
       # is not an authoritative snapshot. Closing issues not in this list
       # would incorrectly close still-open GitHub issues that were beyond
       # the page limit. Skip stale-closure entirely in this case.
-      if truncated
-        logger.warn(
+      #
+      # Incremental fetches (with `since`) only return recently-updated issues,
+      # not all open issues, so the result set is not exhaustive. However, any
+      # issue whose state changed to closed on GitHub will appear in the
+      # incremental results (because closing updates `updated_at`), so
+      # sync_issue will set its github_state to "closed" via the normal path.
+      # Skip the bulk stale-closure pass to avoid false positives.
+      if truncated || incremental
+        reason = truncated ? "fetch_truncated" : "incremental_fetch"
+        level = truncated ? :warn : :info
+        logger.public_send(level,
           message: "github_sync.stale_closure_skipped",
           project_id: project.id,
-          reason: "fetch_truncated"
+          reason: reason
         )
         return 0
       end
