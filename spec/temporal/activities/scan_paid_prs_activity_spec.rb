@@ -2004,6 +2004,53 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when paid_agent max_review_rounds is stored as a string" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "paid_agent" => {
+                "enabled" => true,
+                "termination" => { "max_review_rounds" => 3 }
+              }
+            }
+          }
+        )
+        settings = project.review_settings.deep_merge(
+          "methods" => { "paid_agent" => { "termination" => { "max_review_rounds" => "3" } } }
+        )
+        project.update_column(:review_settings, settings)
+
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 1)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Found issues.", submitted_at: 3.hours.ago },
+            { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Still issues.", submitted_at: 2.hours.ago },
+            { id: 3, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "More issues.", submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "coerces the value and escalates correctly" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
+        expect(trigger[:triggers].first[:details]).to include("paid_agent review round limit")
+      end
+    end
+
     context "when paid_agent rounds are exhausted but a non-paid_agent bot is the latest blocker" do
       before do
         project.update!(
