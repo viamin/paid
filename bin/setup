@@ -53,9 +53,6 @@ FileUtils.chdir APP_ROOT do
   require_relative "../lib/paid/log_truncator"
   Paid::LogTruncator.truncate_logs("log/dev-update")
 
-  puts "\n== Cleaning up stale state from previous run =="
-  system "bin/rails dev:cleanup"
-
   unless ARGV.include?("--skip-server")
     puts "\n== Starting development server =="
     puts "   (detaching — use 'overmind connect web' to see logs, Ctrl-C to detach)"

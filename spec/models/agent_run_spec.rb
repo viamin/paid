@@ -136,6 +136,16 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe ".stale_running" do
+      it "returns only running runs older than the stale cutoff" do
+        stale_run = create(:agent_run, :running, started_at: described_class.stale_running_cutoff - 1.minute)
+        create(:agent_run, :running, started_at: described_class.stale_running_cutoff + 1.minute)
+        create(:agent_run, status: "pending", started_at: described_class.stale_running_cutoff - 1.minute)
+
+        expect(described_class.stale_running).to contain_exactly(stale_run)
+      end
+    end
+
     describe ".completed" do
       it "returns only completed runs" do
         completed_run = create(:agent_run, :completed)
