@@ -64,6 +64,7 @@ module Projects
       goal = params[:goal].presence || "create_pr"
       custom_prompt = params[:custom_prompt]&.strip.presence
       issue = resolve_issue
+      priority_tier = resolve_priority_tier
 
       if goal == "review"
         pr_ids = Array(params[:pull_request_ids]).filter_map { |id| Integer(id, exception: false) }.select(&:positive?)
@@ -92,7 +93,8 @@ module Projects
           issue: issue,
           custom_prompt: custom_prompt,
           source_pull_request_number: source_pr_number,
-          goal: goal
+          goal: goal,
+          priority_tier: priority_tier
         )
       end
     end
@@ -459,6 +461,49 @@ module Projects
       @project.issues.find(params[:issue_id])
     end
 
+    def resolve_priority_tier
+      tier = params[:priority_tier].presence
+      tier if Project::PRIORITY_TIERS.include?(tier)
+    end
+
+    def apply_priority_label(issue, tier)
+      label_name = @project.priority_label_for(tier)
+      return if label_name.blank?
+
+      current_labels = Array(issue.labels)
+      return if current_labels.include?(label_name)
+
+      stale_priority_labels = current_labels & @project.priority_label_names
+      new_labels = (current_labels - stale_priority_labels) + [ label_name ]
+      issue.update!(labels: new_labels)
+
+      [ label_name, stale_priority_labels ]
+    end
+
+    def sync_priority_label_to_github(issue, label_name, stale_labels)
+      return unless issue.github_number
+
+      client = @project.github_token.client
+      stale_labels.each do |old_label|
+        client.remove_label_from_issue(@project.full_name, issue.github_number, old_label)
+      rescue GithubClient::Error => e
+        Rails.logger.warn(
+          message: "agent_execution.remove_priority_label_failed",
+          issue_id: issue.id,
+          label: old_label,
+          error: e.message
+        )
+      end
+      client.add_labels_to_issue(@project.full_name, issue.github_number, [ label_name ])
+    rescue GithubClient::Error => e
+      Rails.logger.warn(
+        message: "agent_execution.sync_priority_label_failed",
+        issue_id: issue.id,
+        label: label_name,
+        error: e.message
+      )
+    end
+
     def resolve_pull_request
       return nil if params[:pull_request_id].blank?
 
@@ -479,7 +524,7 @@ module Projects
       @agent_run.reload
     end
 
-    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, provider_identifier: nil, goal: nil, trigger_type: "manual")
+    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, provider_identifier: nil, goal: nil, trigger_type: "manual", priority_tier: nil)
       requested_agent_type = agent_type || params[:agent_type].presence
       requested_provider_identifier = provider_identifier || params[:provider].presence
       resolved_provider = resolve_provider_selection(
@@ -502,7 +547,8 @@ module Projects
         source_pull_request_number: source_pull_request_number,
         goal: goal,
         trigger_type: trigger_type,
-        status: "queued"
+        status: "queued",
+        priority_tier: priority_tier
       )
     end
 
@@ -548,7 +594,20 @@ module Projects
         return
       end
 
-      create_agent_run(**attrs)
+      issue = attrs[:issue]
+      priority_tier = attrs[:priority_tier]
+
+      github_sync_args = nil
+      ActiveRecord::Base.transaction do
+        create_agent_run(**attrs)
+        github_sync_args = apply_priority_label(issue, priority_tier) if issue && priority_tier
+      end
+
+      if github_sync_args
+        label_name, stale_labels = github_sync_args
+        sync_priority_label_to_github(issue, label_name, stale_labels)
+      end
+
       ProcessRunQueueJob.perform_later
 
       capacity_user = settings_owner || current_user
@@ -560,6 +619,8 @@ module Projects
 
       redirect_to project_path(@project), notice: notice
     rescue NoRunnableProviderError => e
+      redirect_to on_error_path, alert: e.message
+    rescue ActiveRecord::RecordInvalid => e
       redirect_to on_error_path, alert: e.message
     rescue ActiveRecord::RecordNotUnique => e
       alert = if (e.cause&.message || e.message).include?("proxy_token")
