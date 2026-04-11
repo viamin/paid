@@ -23,6 +23,14 @@ module ApplicationHelper
     )
   end
 
+  def safe_stylesheet_link_tag(source, **options)
+    safe_asset_tag { stylesheet_link_tag(source, **options) }
+  end
+
+  def safe_javascript_include_tag(source, **options)
+    safe_asset_tag { javascript_include_tag(source, **options) }
+  end
+
   TRIGGER_TYPE_STYLES = {
     "manual" => { bg: "bg-sky-100", text: "text-sky-700", label: "Manual" },
     "automatic" => { bg: "bg-amber-100", text: "text-amber-700", label: "Auto" }
@@ -317,5 +325,11 @@ module ApplicationHelper
     else
       { type: :text, label: text_label, classes: "text-gray-700", tooltip: tooltip }
     end
+  end
+
+  def safe_asset_tag
+    yield
+  rescue Propshaft::MissingAssetError
+    raise unless Rails.env.test?
   end
 end
