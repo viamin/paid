@@ -529,6 +529,9 @@ module Projects
     end
 
     def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, provider_identifier: nil, goal: nil, trigger_type: "manual", priority_tier: nil)
+      goal ||= params[:goal].presence || "create_pr"
+      goal = "create_pr" unless AgentRun::GOALS.include?(goal)
+
       requested_agent_type = agent_type || params[:agent_type].presence
       requested_provider_identifier = provider_identifier || params[:provider].presence
       resolved_provider = resolve_provider_selection(
@@ -539,9 +542,6 @@ module Projects
       raise NoRunnableProviderError, "No runnable provider could be resolved for this project." unless resolved_provider
 
       resolved_agent_type = provider_key_to_agent_type(resolved_provider.provider_key)
-
-      goal ||= params[:goal].presence || "create_pr"
-      goal = "create_pr" unless AgentRun::GOALS.include?(goal)
 
       AgentRun.create!(
         project: @project,
