@@ -444,6 +444,48 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("selected")
         expect(response.body).to include("Preselected PR")
       end
+
+      it "exposes goal-specific provider defaults to the goal toggle controller" do
+        owner = project.created_by
+        codex = owner.providers.create!(
+          provider_key: "codex",
+          auth_type: "subscription",
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true
+        )
+        owner.settings.update!(default_agent_providers_by_goal: { "review" => codex.routing_key })
+
+        get new_project_agent_run_path(project)
+
+        doc = Nokogiri::HTML(response.body)
+        form = doc.at_css("form[data-controller='goal-toggle']")
+        defaults = JSON.parse(form["data-goal-toggle-provider-defaults-value"])
+        provider = form.at_css("#provider")
+
+        expect(defaults["create_pr"]).to eq(owner.settings.default_provider_identifier_for_goal("create_pr"))
+        expect(defaults["review"]).to eq(codex.routing_key)
+        expect(provider["data-goal-toggle-target"]).to eq("providerSelect")
+        expect(provider["data-action"]).to include("change->goal-toggle#providerChanged")
+      end
+
+      it "pre-selects the goal-specific provider when goal=review" do
+        owner = project.created_by
+        codex = owner.providers.create!(
+          provider_key: "codex",
+          auth_type: "subscription",
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true
+        )
+        owner.settings.update!(default_agent_providers_by_goal: { "review" => codex.routing_key })
+
+        get new_project_agent_run_path(project, goal: "review")
+
+        doc = Nokogiri::HTML(response.body)
+        provider_select = doc.at_css("#provider")
+        selected_option = provider_select.at_css("option[selected]")
+
+        expect(selected_option["value"]).to eq(codex.routing_key)
+      end
     end
   end
 
@@ -657,8 +699,41 @@ RSpec.describe "AgentRuns" do
         end
       end
 
+      it "normalizes an invalid goal to create_pr and uses the create_pr default provider" do
+        owner = project.created_by
+        codex = owner.providers.create!(
+          provider_key: "codex",
+          auth_type: "subscription",
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true
+        )
+        owner.settings.update!(default_agent_providers_by_goal: { "create_pr" => codex.routing_key })
+
+        post project_agent_runs_path(project), params: { goal: "invalid", issue_id: issue.id }
+
+        agent_run = AgentRun.last
+        expect(agent_run.goal).to eq("create_pr")
+        expect(agent_run.provider).to eq(codex)
+      end
+
       context "with goal=review" do
         let(:pr) { create(:issue, :pull_request, project: project, github_number: 55, title: "Review target PR") }
+
+        it "uses the goal-specific default provider when no provider is selected" do
+          owner = project.created_by
+          codex = owner.providers.create!(
+            provider_key: "codex",
+            auth_type: "subscription",
+            enabled_for_agent_runs: true,
+            enabled_for_fallback: true
+          )
+          owner.settings.update!(default_agent_providers_by_goal: { "review" => codex.routing_key })
+
+          post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id ] }
+
+          expect(AgentRun.last.provider).to eq(codex)
+          expect(AgentRun.last.agent_type).to eq("codex")
+        end
 
         it "creates a review agent run with source_pull_request_number" do
           expect {
