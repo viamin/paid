@@ -320,6 +320,10 @@ class Project < ApplicationRecord
     WorkflowState.record_polling_status(self, status: "running")
   end
 
+  def touch_last_issue_sync_at(timestamp = Time.current)
+    update_column(:last_issue_sync_at, timestamp)
+  end
+
   # Shared staleness window used by both the health-check job and the
   # automation health UI. A poll workflow is considered stale when it has not
   # completed a poll cycle within 3× the configured interval plus a buffer.
@@ -414,7 +418,7 @@ class Project < ApplicationRecord
       self, :project_updates,
       target: "workflow-status",
       partial: "workflow_statuses/status",
-      locals: { project: self, health: health, show_restart: true }
+      locals: { project: self, health: health, show_restart: false }
     )
   end
 
@@ -647,6 +651,10 @@ class Project < ApplicationRecord
       # manual requires a reviewer_login so the system knows who to request review from
       if method_name == "manual" && config["reviewer_login"].blank?
         errors.add(:review_settings, "manual requires a non-blank reviewer_login when enabled")
+      end
+
+      if method_name == "paid_agent" && !Github::ReviewBotInstallationToken.configured?
+        errors.add(:review_settings, "paid_agent requires the paid-code-reviewer GitHub App credentials")
       end
 
       termination = config["termination"]

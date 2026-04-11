@@ -333,15 +333,28 @@ module Workflows
       issue_id = pr_data[:issue_id]
       pr_number = pr_data[:pr_number]
 
-      draft_input = {
-        issue_id: issue_id,
-        expected_draft_review_count: pr_data[:current_draft_review_count]
-      }
+      # TODO(#220): Remove patch guard after all long-running GitHubPollWorkflows
+      # have continued-as-new past this point (i.e. no workflow history contains
+      # the legacy queue-then-record command sequence).
+      unless Temporalio::Workflow.patched("draft-followup-direct-start-v1")
+        run_activity(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: issue_id,
+            source_pull_request_number: pr_number }, timeout: 30)
+        run_activity(Activities::RecordDraftReviewActivity,
+          {
+            issue_id: issue_id,
+            expected_draft_review_count: pr_data[:current_draft_review_count]
+          }, timeout: 30)
+        return
+      end
 
-      run_activity(Activities::QueueAgentRunActivity,
-        { project_id: project_id, issue_id: issue_id,
-          source_pull_request_number: pr_number }, timeout: 30)
-      run_activity(Activities::RecordDraftReviewActivity, draft_input, timeout: 30)
+      run_activity(Activities::QueueAgentRunActivity, {
+        project_id: project_id,
+        issue_id: issue_id,
+        source_pull_request_number: pr_number,
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: pr_data[:current_draft_review_count]
+      }, timeout: 30)
     end
 
     def start_pr_followup_workflow(project_id, pr_data)

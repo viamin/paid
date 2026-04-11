@@ -93,6 +93,13 @@ This project uses **Yarn** (not npm) for JavaScript dependencies. The `package.j
 
 **Never use npm commands** - they will create a conflicting `package-lock.json` file.
 
+### Paid Review Bot Credentials
+
+- Paid Agent PR reviews post through the GitHub App `paid-code-reviewer[bot]` (App ID `3340381`).
+- The app private key is stored in Rails credentials under `paid-code-reviewer-private-key`.
+- When `review_settings.methods.paid_agent.enabled` is true, that GitHub App credential must be configured; project validation now rejects the setting when it is missing.
+- Review-goal proxy requests to `POST /pulls/:number/reviews` use the GitHub App installation token for the target repo instead of the project's GitHub PAT.
+
 ## Architecture
 
 The system has four main layers:
