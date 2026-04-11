@@ -12,7 +12,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       pr_action_labels: [],
       auto_fix_merge_conflicts: false)
   end
-  let(:github_client) { instance_double(GithubClient) }
+  let(:octokit_client) { instance_double(Octokit::Client) }
+  let(:github_client) { instance_double(GithubClient, client: octokit_client) }
 
   # Scanner tests that exercise the ":no_review → emit review_bot_review_pending"
   # path need the project to have a requestable review bot configured. Without
@@ -41,15 +42,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     })
   end
 
-  def enable_paid_agent_review!(proj = project)
+  def enable_paid_agent_review!(proj = project, max_review_rounds: 3)
     proj.update!(review_settings: {
       "enabled" => true,
-      "methods" => { "paid_agent" => { "enabled" => true } }
+      "methods" => {
+        "paid_agent" => {
+          "enabled" => true,
+          "termination" => { "max_review_rounds" => max_review_rounds }
+        }
+      }
     })
   end
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(github_client).to receive(:rate_limit_remaining!).and_return(100)
     allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
   end
 
@@ -70,6 +77,57 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when rate limit is low" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 99,
+          labels: [ project.generated_label_name, project.automation_label_name ],
+          paid_state: "completed")
+      end
+
+      before { pr_issue }
+
+      it "returns partial results when rate budget is exhausted mid-scan" do
+        allow(github_client).to receive(:rate_limit_remaining!).and_return(5)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
+      it "returns empty when no PRs exist even with low rate limit" do
+        pr_issue.update!(github_state: "closed")
+        allow(github_client).to receive(:rate_limit_remaining!).and_return(5)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
+      it "skips PRs with active runs without checking rate budget" do
+        create(:agent_run, project: project, source_pull_request_number: 99, status: "running")
+        allow(github_client).to receive(:rate_limit_remaining!).and_return(5)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+        expect(github_client).not_to have_received(:rate_limit_remaining!)
+      end
+
+      it "escalates draft PRs at max review rounds without checking rate budget" do
+        project.update!(max_draft_review_rounds: 3)
+        pr_issue.update!(pr_review_phase: "draft", draft_review_count: 3)
+        allow(github_client).to receive(:rate_limit_remaining!).and_return(5)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("escalate_to_owner")
+        expect(github_client).not_to have_received(:rate_limit_remaining!)
       end
     end
 
@@ -596,6 +654,25 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when only a review-goal agent run is active" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        create(:agent_run, :running,
+          project: project, source_pull_request_number: 42, goal: "review")
+        stub_github_for_pr(reviews: [])
+      end
+
+      it "does not skip the PR" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).not_to be_empty
       end
     end
 
@@ -1220,6 +1297,87 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when paid_agent posted a body-only review with no last agent run" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+                       body: "Here are some review suggestions.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "emits a review_bot_comments trigger because the feedback is unaddressed" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending")
+      end
+    end
+
+    context "when paid_agent posted a body-only review before the last agent run completed" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+                       body: "Here are some review suggestions.",
+                       submitted_at: 2.hours.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "treats the review as already addressed and does not trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when paid_agent posted a body-only review after the last agent run completed" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 2.hours.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+                       body: "Here are some review suggestions.",
+                       submitted_at: 30.minutes.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "emits a review_bot_comments trigger because the feedback is unaddressed" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments")
+      end
+    end
+
     context "when PR is in draft phase with Claude review threads" do
       before do
         create(:issue, :pull_request,
@@ -1526,14 +1684,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "proceeds through normal flow instead of bypassing via clean signal" do
+      it "emits body-only review triggers instead of bypassing via clean signal" do
         result = activity.execute(project_id: project.id)
 
         trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
-        # With CI green, no bot issues, and owner_reviewer_login set, the
-        # draft scanner emits ready_for_owner — proving the non-clean review
-        # did not trigger the paid_agent clean signal bypass.
-        expect(trigger_types).to include("ready_for_owner")
+        # The non-clean body-only review is detected as unaddressed feedback,
+        # emitting review_bot_comments — proving the clean signal bypass was
+        # not triggered and the body-only anti-loop guard correctly flags the
+        # review for followup.
+        expect(trigger_types).to include("review_bot_comments")
       end
     end
 
@@ -1563,10 +1722,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
-        # With CI green, no bot issues, and owner_reviewer_login set, the
-        # draft scanner reaches the normal flow and emits ready_for_owner —
-        # proving the clean signal bypass was skipped.
-        expect(trigger_types).to include("ready_for_owner")
+        # The latest non-clean body-only review is detected as unaddressed
+        # feedback, emitting review_bot_comments — proving the older clean
+        # signal did not bypass and the body-only anti-loop guard correctly
+        # flags the review for followup.
+        expect(trigger_types).to include("review_bot_comments")
       end
     end
 
@@ -1677,6 +1837,49 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
         expect(trigger[:triggers].first[:details]).to include("paid_agent review round limit")
         expect(trigger[:triggers].first[:details]).to include("3 rounds")
+      end
+    end
+
+    context "when paid_agent review round limit is reached but the latest review is clean" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "paid_agent" => {
+                "enabled" => true,
+                "termination" => { "max_review_rounds" => 3 }
+              }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 1)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Found issues.", submitted_at: 3.hours.ago },
+            { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Still has issues.", submitted_at: 2.hours.ago },
+            { id: 3, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Looks good. <!-- paid-review-clean -->", submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "advances to ready_for_owner instead of escalating" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("ready_for_owner")
+        expect(trigger[:triggers].map { |t| t[:type] }).not_to include("escalate_to_owner")
       end
     end
 
@@ -3256,6 +3459,58 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when owner has approved an escalated PR with auto_merge enabled" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "escalated",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ]
+        )
+      end
+
+      it "returns owner_approved trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("owner_approved")
+      end
+
+      it "does not emit owner_approved when auto_merge is disabled" do
+        project.update!(auto_merge_enabled: false)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when escalated PR has the paid-dismiss-escalation label" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation", "paid-dismiss-escalation" ],
+          pr_review_phase: "escalated",
+          paid_state: "completed")
+        stub_github_for_pr
+      end
+
+      it "returns dismiss_escalation trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("dismiss_escalation")
+        expect(trigger[:phase]).to eq("escalated")
+      end
+    end
+
     context "when a restarted PR has signals" do
       before do
         create(:issue, :pull_request,
@@ -3469,6 +3724,158 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           )
         )
       end
+    end
+  end
+
+  context "when paid_agent is the only review method and no review-goal run exists" do
+    before do
+      enable_paid_agent_review!
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "emits a paid_agent_review_pending trigger alongside ready_for_owner" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+      expect(trigger_types).to include("paid_agent_review_pending")
+      expect(trigger_types).to include("ready_for_owner")
+    end
+  end
+
+  context "when reviews are globally disabled but paid_agent sub-flag is true" do
+    before do
+      project.update!(review_settings: {
+        "enabled" => false,
+        "methods" => { "paid_agent" => { "enabled" => true } }
+      })
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "does not emit a paid_agent_review_pending trigger" do
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("paid_agent_review_pending")
+    end
+  end
+
+  context "when paid_agent is enabled and a review-goal run is already queued" do
+    before do
+      enable_paid_agent_review!
+      issue = create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "review", status: "queued")
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "does not emit a paid_agent_review_pending trigger" do
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("paid_agent_review_pending")
+    end
+  end
+
+  context "when paid_agent is enabled and max_review_rounds is reached" do
+    before do
+      enable_paid_agent_review!(project, max_review_rounds: 2)
+      issue = create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      2.times do
+        create(:agent_run,
+          project: project, issue: issue,
+          source_pull_request_number: 42,
+          goal: "review", status: "completed",
+          completed_at: 1.hour.ago)
+      end
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "does not emit a paid_agent_review_pending trigger" do
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("paid_agent_review_pending")
+    end
+  end
+
+  context "when paid_agent is enabled and the last review is newer than the last create_pr run" do
+    before do
+      enable_paid_agent_review!
+      issue = create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "create_pr", status: "completed",
+        completed_at: 2.hours.ago)
+      create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "review", status: "completed",
+        completed_at: 1.hour.ago)
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "does not emit a paid_agent_review_pending trigger" do
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("paid_agent_review_pending")
+    end
+  end
+
+  context "when paid_agent is enabled and the last create_pr run is newer than the last review" do
+    before do
+      enable_paid_agent_review!
+      issue = create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "review", status: "completed",
+        completed_at: 2.hours.ago)
+      create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "create_pr", status: "completed",
+        completed_at: 1.hour.ago)
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "emits a paid_agent_review_pending trigger" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      expect(trigger[:triggers].map { |t| t[:type] }).to include("paid_agent_review_pending")
     end
   end
 

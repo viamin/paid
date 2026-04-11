@@ -45,20 +45,31 @@ module Activities
 
       scanned_count = 0
       unchanged_count = 0
-      prs_to_trigger = paid_prs.filter_map do |issue|
+      prs_to_trigger = []
+      paid_prs.each do |issue|
         if skip_unchanged_pr?(project, issue)
           unchanged_count += 1
-          next nil
+          next
         end
 
         result = scan_pr(project, client, issue)
         # Only count as scanned when the scan actually completed — scan_pr
         # returns :skipped when short-circuited (active run exists) or when
         # API failures prevented full evaluation.
-        next nil if result == :skipped
+        next if result == :skipped
         scanned_count += 1
         issue.update_column(:last_pr_scan_at, Time.current)
-        result
+        prs_to_trigger << result if result
+      rescue Temporalio::Error::ApplicationError => e
+        raise unless e.type == "RateLimit"
+
+        logger.warn(
+          message: "pr_scanner.rate_budget_exhausted_mid_scan",
+          project_id: project_id,
+          prs_collected: prs_to_trigger.size,
+          prs_remaining: paid_prs.size - paid_prs.index(issue) - 1
+        )
+        break
       end
 
       logger.info(
@@ -88,8 +99,10 @@ module Activities
 
       case issue.pr_review_phase
       when "draft", "restarted"
+        # Rate budget checked inside scan_draft_pr, after non-API early exits
         scan_draft_pr(project, client, issue)
       when "ready"
+        check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
@@ -97,6 +110,7 @@ module Activities
           scan_ready_pr(project, client, issue, pr_data: pr_data)
         end
       when "escalated"
+        check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
@@ -119,6 +133,8 @@ module Activities
       if consecutive_draft_failures_breaker?(project, issue)
         return escalate_trigger(issue, reason: "Consecutive draft follow-up failures (#{MAX_CONSECUTIVE_DRAFT_FAILURES} runs with no output)")
       end
+
+      check_rate_budget!(client)
 
       skip_comment_signals = project.max_draft_review_rounds.zero?
       unresolved_threads = nil
@@ -148,16 +164,24 @@ module Activities
         end
       end
 
-      # When paid_agent is enabled and its per-method max_review_rounds limit
-      # has been reached, escalate instead of continuing the review cycle.
-      if reviews && paid_agent_review_rounds_exhausted?(project, reviews)
+      # review_bot_review_pending gates draft advancement (the PR must have a
+      # clean review-bot review before it can leave draft).
+      # paid_agent_review_pending is fully non-blocking: it signals the
+      # workflow to start a review run but never prevents ready_for_owner.
+      pending_triggers = (review_bot_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
+      sidecar_triggers = (review_bot_triggers || []).select { |t| t[:type] == "paid_agent_review_pending" }
+      blocking_triggers = (review_bot_triggers || []).reject { |t|
+        t[:type] == "review_bot_review_pending" || t[:type] == "paid_agent_review_pending"
+      }
+      paid_agent_rounds_exhausted = reviews && paid_agent_review_rounds_exhausted?(project, reviews)
+
+      # A clean final paid_agent review should still allow the PR to advance.
+      # Only escalate when the bot review is still non-clean/pending and the
+      # configured round budget means another review cycle cannot be requested.
+      if paid_agent_rounds_exhausted && (pending_triggers.any? || blocking_triggers.any?)
         return escalate_trigger(issue, reason: paid_agent_limit_reason(project))
       end
 
-      # review_bot_review_pending is non-blocking: it requests a review but
-      # should not prevent evaluation of CI, comments, or changes_requested.
-      pending_triggers = (review_bot_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
-      blocking_triggers = (review_bot_triggers || []).reject { |t| t[:type] == "review_bot_review_pending" }
       all_triggers = blocking_triggers + (human_triggers || [])
 
       # Only fetch PR data and check runs if blocking review triggers aren't enough.
@@ -189,7 +213,7 @@ module Activities
         # A draft PR is only ready to leave draft after the latest review-bot
         # review is explicitly clean. Resolved threads alone are not enough.
         if pending_triggers.any?
-          triggers = pending_triggers
+          triggers = pending_triggers + sidecar_triggers
           log_triggers(project, issue, triggers)
           return draft_trigger_payload(issue, triggers)
         end
@@ -202,12 +226,12 @@ module Activities
           reviews ||= fetch_reviews(client, project, issue) # safety: reviews already fetched above
           gate_triggers = non_bot_review_gate_triggers(project, reviews, checks)
           if gate_triggers.any?
-            all_pending = pending_triggers + gate_triggers
+            all_pending = pending_triggers + sidecar_triggers + gate_triggers
             log_triggers(project, issue, all_pending)
             return draft_trigger_payload(issue, all_pending)
           end
 
-          return ready_for_owner_trigger(issue)
+          return ready_for_owner_trigger(issue, sidecar_triggers: sidecar_triggers)
         end
 
         return nil # CI still pending or checks unavailable
@@ -215,6 +239,7 @@ module Activities
 
       # Re-add pending triggers so the workflow can request the review.
       all_triggers.concat(pending_triggers)
+      all_triggers.concat(sidecar_triggers)
 
       triggers = all_triggers
       log_triggers(project, issue, triggers)
@@ -263,7 +288,33 @@ module Activities
 
     # --- Escalated phase scanning ---
 
+    DISMISS_ESCALATION_LABEL = "paid-dismiss-escalation"
+
     def scan_escalated_pr(project, client, issue, pr_data: nil)
+      pr_data ||= fetch_pr_data(client, project, issue)
+
+      # Owner can dismiss escalation by adding the dismiss label.
+      if issue.has_label?(DISMISS_ESCALATION_LABEL)
+        return dismiss_escalation_trigger(issue)
+      end
+
+      # Owner approval on an escalated PR unblocks auto-merge.
+      if project.auto_merge_enabled? && pr_data.present?
+        checks = fetch_check_runs(client, project, pr_data)
+        reviews = fetch_reviews(client, project, issue)
+        mergeable = pr_data[:mergeable]
+
+        if owner_approved_or_self_authored?(project, reviews, pr_data) &&
+            checks.present? &&
+            all_checks_green?(checks) &&
+            mergeable == true &&
+            no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks) &&
+            all_blocking_review_methods_complete?(project, reviews, checks) &&
+            !review_stale_for_head?(client, project, issue, pr_data, reviews)
+          return owner_approved_trigger(issue)
+        end
+      end
+
       return nil if followup_limit_reached?(project, issue)
 
       triggers = detect_ready_triggers(project, client, issue, pr_data: pr_data)
@@ -284,13 +335,14 @@ module Activities
 
     # --- Special trigger builders ---
 
-    def ready_for_owner_trigger(issue)
-      log_triggers(issue.project, issue, [ { type: "ready_for_owner" } ])
+    def ready_for_owner_trigger(issue, sidecar_triggers: [])
+      triggers = [ { type: "ready_for_owner", details: "CI green, review bots clean" } ] + sidecar_triggers
+      log_triggers(issue.project, issue, triggers)
 
       {
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: "ready_for_owner", details: "CI green, review bots clean" } ],
+        triggers: triggers,
         phase: issue.pr_review_phase,
         owner_reviewer_login: issue.project.owner_reviewer_login
       }
@@ -305,6 +357,18 @@ module Activities
         triggers: [ { type: "escalate_to_owner", details: reason } ],
         phase: issue.pr_review_phase,
         current_draft_review_count: issue.draft_review_count,
+        owner_reviewer_login: issue.project.owner_reviewer_login
+      }
+    end
+
+    def dismiss_escalation_trigger(issue)
+      log_triggers(issue.project, issue, [ { type: "dismiss_escalation" } ])
+
+      {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: [ { type: "dismiss_escalation", details: "Owner dismissed escalation via label" } ],
+        phase: "escalated",
         owner_reviewer_login: issue.project.owner_reviewer_login
       }
     end
@@ -424,6 +488,7 @@ module Activities
       project.agent_runs
         .where(source_pull_request_number: issue.github_number)
         .where(status: AgentRun::UNFINISHED_STATUSES)
+        .where(goal: "create_pr")
         .exists?
     end
 
@@ -625,8 +690,8 @@ module Activities
     # rather than as inline review threads. These bots need the body-only
     # anti-loop guard in check_review_bot_status because thread resolution
     # cannot be used to detect "already addressed" state.
-    BODY_ONLY_REVIEW_BOT_LOGINS = ProviderSupport::PROVIDER_BOT_USERNAMES
-      .fetch("codex", [])
+    BODY_ONLY_REVIEW_BOT_LOGINS = %w[codex paid_agent]
+      .flat_map { |key| ProviderSupport::PROVIDER_BOT_USERNAMES.fetch(key, []) }
       .map(&:downcase)
       .to_set
       .freeze
@@ -634,8 +699,10 @@ module Activities
     def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
       allowed = project&.review_enabled? ? (project.enabled_review_bot_logins.presence || Set.new) : nil
       latest = latest_allowed_bot_review(reviews, allowed)
+      paid_agent_limit_reached_for_latest_review =
+        paid_agent_review_limit_reached_for_review?(project, reviews, latest)
 
-      # Body-only bots (Codex) can post their CLEAN signal as an issue
+      # Body-only bots (Codex, paid_agent) can post their CLEAN signal as an issue
       # comment — e.g. "Codex Review: Didn't find any major issues. Bravo." —
       # which is invisible to pull_request_reviews. When such a comment is
       # the most recent body-only-bot signal on the PR, treat the bot as
@@ -670,6 +737,8 @@ module Activities
         login = project && review_bot_request_login(project)
         if login && !paid_agent_review_rounds_exhausted?(project, reviews)
           [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
+        elsif project&.review_enabled? && project.review_method_enabled?("paid_agent")
+          check_paid_agent_review_status(project, issue)
         else
           []
         end
@@ -679,11 +748,18 @@ module Activities
         # cannot tell whether bot threads are truly resolved, so treat the
         # status as pending to avoid prematurely advancing the PR.
         if unresolved_threads.nil?
-          [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean" } ]
+          if paid_agent_limit_reached_for_latest_review
+            [ { type: "review_bot_comments", details: "Latest review bot review generated comments (body-only)" } ]
+          else
+            [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean" } ]
+          end
         else
           bot_thread_triggers = review_bot_thread_triggers(unresolved_threads)
           body_only_pending_triggers = [
             { type: "review_bot_review_pending", details: "Latest review bot review was not clean" },
+            { type: "review_bot_comments", details: "Latest review bot review generated comments (body-only)" }
+          ]
+          body_only_exhausted_triggers = [
             { type: "review_bot_comments", details: "Latest review bot review generated comments (body-only)" }
           ]
           if bot_thread_triggers.any?
@@ -703,7 +779,7 @@ module Activities
             # The "(body-only)" suffix on review_bot_comments lets
             # structured-log consumers distinguish this path from the
             # thread-based Copilot flow above.
-            body_only_pending_triggers
+            paid_agent_limit_reached_for_latest_review ? body_only_exhausted_triggers : body_only_pending_triggers
           elsif body_only_review_bot?(latest&.dig(:user_login)) &&
               !review_diff_touches_reviewed_files?(client, project, issue, latest)
             # Body-only bot whose review pre-dates the last agent run
@@ -711,7 +787,7 @@ module Activities
             # touch any file mentioned in the review's inline comments.
             # Treat as still-unaddressed to prevent unrelated changes
             # (e.g. a CI schema fix) from clearing review findings.
-            body_only_pending_triggers
+            paid_agent_limit_reached_for_latest_review ? body_only_exhausted_triggers : body_only_pending_triggers
           else
             # Thread-based bot with all bot threads resolved, or body-only
             # review already addressed by a subsequent agent run whose diff
@@ -724,6 +800,48 @@ module Activities
       when :unknown
         review_bot_thread_triggers(unresolved_threads)
       end
+    end
+
+    # Checks whether a paid_agent review-goal run is needed for this PR.
+    # Returns a paid_agent_review_pending trigger when no completed review-goal
+    # run exists and the max_review_rounds limit has not been reached. Returns
+    # an empty array when the review is already satisfied or the limit is hit.
+    def check_paid_agent_review_status(project, issue)
+      return [] unless issue
+
+      pr_number = issue.github_number
+      review_runs = project.agent_runs.where(
+        source_pull_request_number: pr_number,
+        goal: "review"
+      )
+
+      # A review-goal run is already queued or running — no new trigger needed.
+      return [] if review_runs.where(status: AgentRun::UNFINISHED_STATUSES).exists?
+
+      completed_count = review_runs.where(status: "completed").count
+      max_rounds = project.review_method_config("paid_agent")
+        .dig("termination", "max_review_rounds")
+
+      if max_rounds.present? && completed_count >= max_rounds.to_i
+        return []
+      end
+
+      # Check whether the most recent completed review-goal run was posted
+      # after the last create_pr run. If so, the review is already up to date.
+      last_review_run = review_runs.where(status: "completed")
+        .order(completed_at: :desc).first
+      last_create_pr_run = project.agent_runs
+        .where(source_pull_request_number: issue.github_number, goal: "create_pr")
+        .completed
+        .order(completed_at: :desc)
+        .first
+
+      if last_review_run && last_create_pr_run &&
+          last_review_run.completed_at >= last_create_pr_run.completed_at
+        return []
+      end
+
+      [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]
     end
 
     def body_only_review_bot?(login)
@@ -1140,6 +1258,13 @@ module Activities
       return false if body.nil?
 
       body.include?(PAID_REVIEW_CLEAN_MARKER)
+    end
+
+    def paid_agent_review_limit_reached_for_review?(project, reviews, review)
+      return false unless review.is_a?(Hash)
+      return false unless ProviderSupport.provider_bot_username_for?("paid_agent", review[:user_login])
+
+      paid_agent_review_rounds_exhausted?(project, reviews)
     end
 
     # --- Paid-agent review round limit enforcement ---

@@ -1,0 +1,11 @@
+<%= turbo_frame_tag "notification_dropdown_content" do %>
+  <% if notifications.any? %>
+    <% notifications.each do |notification| %>
+      <%= render "notifications/dropdown_item", notification: notification %>
+    <% end %>
+  <% else %>
+    <div class="px-4 py-6 text-center text-sm text-gray-500">
+      No unread notifications
+    </div>
+  <% end %>
+<% end %>
