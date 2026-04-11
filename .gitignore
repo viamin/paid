@@ -183,3 +183,6 @@ __pycache__/
 /.yarn-cache/
 /.yarn-cache-v2/
 /.yarn-local-cache/
+
+# Aider tool artifacts
+.aider*

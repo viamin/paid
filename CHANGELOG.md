@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.19.0](https://github.com/viamin/paid/compare/v0.18.0...v0.19.0) (2026-04-11)
+
+
+### Features
+
+* **projects:** add manual stale run cleanup ([e482e7b](https://github.com/viamin/paid/commit/e482e7b9c095a845264e5fba28ef4212e33e6201))
+* **providers:** support default providers by run type ([5df778a](https://github.com/viamin/paid/commit/5df778aa934176dd7010d71b90c543e683b216fd))
+
+
+### Bug Fixes
+
+* add missing reviewer_login field to manual review settings form ([5d04465](https://github.com/viamin/paid/commit/5d04465d34adb241a3585d0e5e81afb06b5e5965))
+* add missing reviewer_login field to manual review settings form ([755976e](https://github.com/viamin/paid/commit/755976e6a63333a713f03f5710aed1a6d80226f8))
+* **agent-runs:** clear container_id before Docker cleanup and lazy-evaluate stale count ([b9a8ba5](https://github.com/viamin/paid/commit/b9a8ba53c7de8cd8557cc12a1b80bfc90283f64b))
+* **agent-runs:** include stale pending manual cleanup ([2ed8684](https://github.com/viamin/paid/commit/2ed86846e7a5ac4d843190e2f38946233d309ced))
+* **agent-runs:** sync provider default with selected goal ([0e8ea34](https://github.com/viamin/paid/commit/0e8ea34ec36120fadfe13c7f52af2630f41dc819))
+* **devcontainer:** enable init for zombie reaping ([0cc8d62](https://github.com/viamin/paid/commit/0cc8d62c4964b4f9e6a39d0e3867ea827ce2729e))
+* permit reviewer_login in manual review strong params ([f83e17f](https://github.com/viamin/paid/commit/f83e17fc4cf126c2abad6d61cf1d75f6727663e1))
+* **providers:** preserve goal defaults on invalid params ([99ee33d](https://github.com/viamin/paid/commit/99ee33d8b11627fe96f2ecd6f72c6c5967d9f4c6))
+* **scanner:** block draft exit when paid_agent is the only review method ([429fe99](https://github.com/viamin/paid/commit/429fe990289179029ef97331ba18f3ea67a04dc6)), closes [#914](https://github.com/viamin/paid/issues/914)
+* **scanner:** body-only reviews persist across auto-continue pushes ([e56c502](https://github.com/viamin/paid/commit/e56c5021abdc98d680418f071aec048ae00b85ab)), closes [#1015](https://github.com/viamin/paid/issues/1015)
+* **scanner:** detect merge conflicts when github_updated_at unchanged ([2e63bb0](https://github.com/viamin/paid/commit/2e63bb06db1ee8cca28027c06981b70a77d0a3f5)), closes [#1024](https://github.com/viamin/paid/issues/1024)
+* **scanner:** scope merge-conflict rescan to conflict detection only ([8fe001c](https://github.com/viamin/paid/commit/8fe001ce57cf11bcb234e8b8e2b72ffcc5bb89a0))
+* **test:** tolerate missing built assets in request specs ([b9f1457](https://github.com/viamin/paid/commit/b9f145769e4ed4e0d58a170856c93d4620324461))
+
 ## [0.18.0](https://github.com/viamin/paid/compare/v0.17.0...v0.18.0) (2026-04-11)
 
 

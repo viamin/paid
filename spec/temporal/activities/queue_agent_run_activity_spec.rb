@@ -67,6 +67,17 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.agent_type).to eq("codex")
     end
 
+    it "uses the goal-specific provider when goal is review" do
+      codex_provider = user.providers.find_or_create_by!(provider_key: "codex", auth_type: "subscription")
+      user.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
+
+      result = activity.execute(project_id: project.id, source_pull_request_number: 42, goal: "review")
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.provider).to eq(codex_provider)
+      expect(agent_run.agent_type).to eq("codex")
+    end
+
     it "stores custom_prompt and source_pull_request_number" do
       result = activity.execute(
         project_id: project.id,
