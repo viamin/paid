@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_09_231400) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_10_204751) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -172,6 +172,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_09_231400) do
     t.datetime "paused_at"
     t.float "peak_cpu_percent"
     t.bigint "peak_memory_bytes"
+    t.string "priority_tier", limit: 10
     t.bigint "project_id", null: false
     t.bigint "prompt_version_id"
     t.bigint "provider_id"
@@ -639,6 +640,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_09_231400) do
     t.index ["selector_type"], name: "index_model_selections_on_selector_type"
   end
 
+  create_table "notifications", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "action_url"
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.datetime "dismissed_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.string "nav_section"
+    t.datetime "read_at"
+    t.datetime "resolved_at"
+    t.integer "severity", default: 0, null: false
+    t.string "source", null: false
+    t.bigint "subject_id"
+    t.string "subject_type"
+    t.string "title", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index ["account_id", "nav_section", "read_at"], name: "index_notifications_on_badge"
+    t.index ["account_id", "read_at", "dismissed_at"], name: "index_notifications_on_unread"
+    t.index ["account_id", "user_id", "source", "subject_type", "subject_id"], name: "index_notifications_on_dedup", unique: true
+    t.index ["subject_type", "subject_id"], name: "index_notifications_on_subject"
+    t.index ["user_id"], name: "index_notifications_on_user_id"
+  end
+
   create_table "pre_commit_requirements", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "check_type", limit: 50, default: "shell_command", null: false
@@ -1101,6 +1126,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_09_231400) do
   add_foreign_key "mcp_server_definitions", "accounts"
   add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
   add_foreign_key "model_selections", "llm_models"
+  add_foreign_key "notifications", "accounts"
+  add_foreign_key "notifications", "users"
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
