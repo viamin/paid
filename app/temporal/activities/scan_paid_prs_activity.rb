@@ -176,9 +176,12 @@ module Activities
       paid_agent_rounds_exhausted = reviews && paid_agent_review_rounds_exhausted?(project, reviews)
 
       # A clean final paid_agent review should still allow the PR to advance.
-      # Only escalate when the bot review is still non-clean/pending and the
+      # Only escalate when the latest blocking review is from paid_agent and the
       # configured round budget means another review cycle cannot be requested.
-      if paid_agent_rounds_exhausted && (pending_triggers.any? || blocking_triggers.any?)
+      # In mixed-method projects, non-paid_agent bot triggers (e.g. Copilot
+      # unresolved-thread triggers) must not cause escalation — those bots can
+      # still make progress within their own review cycle.
+      if paid_agent_rounds_exhausted && paid_agent_is_latest_blocker?(project, reviews, pending_triggers, blocking_triggers)
         return escalate_trigger(issue, reason: paid_agent_limit_reason(project))
       end
 
@@ -1300,6 +1303,23 @@ module Activities
     def paid_agent_limit_reason(project)
       max_rounds = paid_agent_max_review_rounds(project) || 0
       "the paid_agent review round limit (#{max_rounds} rounds) has been reached"
+    end
+
+    # Returns true when the latest review-bot review on this PR is from a
+    # paid_agent account AND there are pending or blocking review triggers.
+    # In mixed-method projects this prevents non-paid_agent bot triggers
+    # (e.g. Copilot unresolved-thread triggers) from causing premature
+    # escalation when paid_agent's round budget is exhausted but the other
+    # bot's cycle can still proceed.
+    def paid_agent_is_latest_blocker?(project, reviews, pending_triggers, blocking_triggers)
+      return false if reviews.nil?
+      return false unless pending_triggers.any? || blocking_triggers.any?
+
+      allowed = project.enabled_review_bot_logins.presence
+      latest = latest_allowed_bot_review(reviews, allowed)
+      return false unless latest
+
+      ProviderSupport.provider_bot_username_for?("paid_agent", latest[:user_login])
     end
 
     def extract_actionable_labels(triggers)
