@@ -699,6 +699,23 @@ RSpec.describe "AgentRuns" do
         end
       end
 
+      it "normalizes an invalid goal to create_pr and uses the create_pr default provider" do
+        owner = project.created_by
+        codex = owner.providers.create!(
+          provider_key: "codex",
+          auth_type: "subscription",
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true
+        )
+        owner.settings.update!(default_agent_providers_by_goal: { "create_pr" => codex.routing_key })
+
+        post project_agent_runs_path(project), params: { goal: "invalid", issue_id: issue.id }
+
+        agent_run = AgentRun.last
+        expect(agent_run.goal).to eq("create_pr")
+        expect(agent_run.provider).to eq(codex)
+      end
+
       context "with goal=review" do
         let(:pr) { create(:issue, :pull_request, project: project, github_number: 55, title: "Review target PR") }
 
