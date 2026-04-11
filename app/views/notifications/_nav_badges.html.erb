@@ -1,4 +1,5 @@
+<% counts = local_assigns.key?(:badge_counts) ? badge_counts : notification_badge_counts %>
 <div id="notification_nav_badges"
      data-controller="nav-badges"
-     data-nav-badges-counts-value="<%= notification_badge_counts.to_json %>">
+     data-nav-badges-counts-value="<%= counts.to_json %>">
 </div>
