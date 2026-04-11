@@ -97,6 +97,14 @@ module Activities
     def scan_pr(project, client, issue)
       return :skipped if active_run_exists?(project, issue)
 
+      # Escalate when review-goal retries are exhausted so the PR does not
+      # wedge indefinitely after repeated review failures (#1002).
+      if review_goal_retry_limit_reached?(project, issue)
+        return escalate_trigger(issue,
+          reason: "Review-goal retry limit reached " \
+                  "(#{review_goal_failure_count(project, issue)} consecutive failures)")
+      end
+
       case issue.pr_review_phase
       when "draft", "restarted"
         # Rate budget checked inside scan_draft_pr, after non-API early exits
@@ -780,10 +788,17 @@ module Activities
       end
     end
 
+    MAX_REVIEW_GOAL_RETRIES = 3
+
     # Checks whether a paid_agent review-goal run is needed for this PR.
     # Returns a paid_agent_review_pending trigger when no completed review-goal
     # run exists and the max_review_rounds limit has not been reached. Returns
     # an empty array when the review is already satisfied or the limit is hit.
+    #
+    # When the most recent review-goal run failed, re-emits the trigger so the
+    # scanner queues a retry — up to max_review_goal_retries (default 3).
+    # Callers must check review_goal_retry_limit_reached? separately and
+    # escalate when the cap is hit (#1002).
     def check_paid_agent_review_status(project, issue)
       return [] unless issue
 
@@ -819,7 +834,45 @@ module Activities
         return []
       end
 
+      # When review-goal runs have failed, re-emit the trigger so the
+      # scanner queues a retry. The retry cap is enforced by
+      # review_goal_retry_limit_reached? which callers check separately
+      # to escalate when the cap is hit.
+      failed_count = review_goal_failure_count(project, issue)
+      if failed_count > 0
+        max_retries = review_goal_max_retries(project)
+        return [ { type: "paid_agent_review_pending",
+                   details: "Retrying failed review-goal run (attempt #{failed_count + 1}/#{max_retries})" } ]
+      end
+
       [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]
+    end
+
+    # Returns true when the number of failed review-goal runs for this PR
+    # has reached the configurable retry limit. Callers should escalate to
+    # the owner when this returns true to prevent the PR from wedging
+    # indefinitely after repeated review-goal failures (#1002).
+    def review_goal_retry_limit_reached?(project, issue)
+      return false unless project.review_method_enabled?("paid_agent")
+
+      count = review_goal_failure_count(project, issue)
+      return false if count.zero?
+
+      count >= review_goal_max_retries(project)
+    end
+
+    def review_goal_failure_count(project, issue)
+      project.agent_runs.where(
+        source_pull_request_number: issue.github_number,
+        goal: "review",
+        status: AgentRun::FAILURE_STATUSES
+      ).count
+    end
+
+    def review_goal_max_retries(project)
+      configured = project.review_method_config("paid_agent")
+        .dig("termination", "max_review_goal_retries")
+      configured.present? ? configured.to_i : MAX_REVIEW_GOAL_RETRIES
     end
 
     def body_only_review_bot?(login)

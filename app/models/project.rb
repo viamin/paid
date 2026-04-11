@@ -26,6 +26,7 @@ class Project < ApplicationRecord
         "enabled" => false,
         "termination" => {
           "max_review_rounds" => 3,
+          "max_review_goal_retries" => 3,
           "stop_when_no_comments" => true,
           "quality_threshold" => nil,
           "timeout_minutes" => 30
@@ -679,6 +680,11 @@ class Project < ApplicationRecord
     rounds = termination["max_review_rounds"]
     if rounds.present? && (!rounds.is_a?(Integer) || rounds < 1)
       errors.add(:review_settings, "#{method_name} max_review_rounds must be a positive integer")
+    end
+
+    retries = termination["max_review_goal_retries"]
+    if retries.present? && (!retries.is_a?(Integer) || retries < 1)
+      errors.add(:review_settings, "#{method_name} max_review_goal_retries must be a positive integer")
     end
 
     timeout = termination["timeout_minutes"]
