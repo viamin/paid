@@ -250,6 +250,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:patched)
         .with("draft-followup-direct-start-v1")
         .and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("escalation-reason-payload-v1")
+        .and_return(true)
     end
 
     it "routes ready_for_owner to MarkPrReadyActivity and RequestReviewActivity" do
@@ -343,6 +346,23 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       pr_data = {
         issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
         triggers: [ { type: "escalate_to_owner" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkEscalatedActivity,
+          { issue_id: 10 }, timeout: anything)
+    end
+
+    it "sends old payload without reason before the escalation-reason patch" do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("escalation-reason-payload-v1")
+        .and_return(false)
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
+        triggers: [ { type: "escalate_to_owner", details: "Draft review limit reached" } ]
       }
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)

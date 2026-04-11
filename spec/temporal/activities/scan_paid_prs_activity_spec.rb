@@ -2002,6 +2002,53 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when paid_agent rounds are exhausted but a non-paid_agent bot is the latest blocker" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "paid_agent" => {
+                "enabled" => true,
+                "termination" => { "max_review_rounds" => 2 }
+              },
+              "copilot" => {
+                "enabled" => true
+              }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 1)
+        copilot_thread = {
+          is_resolved: false,
+          comments: [ { author: "copilot-pull-request-reviewer[bot]", body: "Please fix this" } ]
+        }
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Found issues.", submitted_at: 3.hours.ago },
+            { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Still has issues.", submitted_at: 2.hours.ago },
+            { id: 3, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot found issues.", submitted_at: 1.hour.ago }
+          ],
+          review_threads: [ copilot_thread ]
+        )
+      end
+
+      it "does not escalate because the blocking review is from copilot, not paid_agent" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("escalate_to_owner")
+      end
+    end
+
     context "when draft PR has CI green and no Copilot threads" do
       before do
         project.update!(owner_reviewer_login: "viamin")
