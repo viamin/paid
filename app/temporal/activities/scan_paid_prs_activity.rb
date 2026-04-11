@@ -619,8 +619,8 @@ module Activities
     # rather than as inline review threads. These bots need the body-only
     # anti-loop guard in check_review_bot_status because thread resolution
     # cannot be used to detect "already addressed" state.
-    BODY_ONLY_REVIEW_BOT_LOGINS = ProviderSupport::PROVIDER_BOT_USERNAMES
-      .fetch("codex", [])
+    BODY_ONLY_REVIEW_BOT_LOGINS = %w[codex paid_agent]
+      .flat_map { |key| ProviderSupport::PROVIDER_BOT_USERNAMES.fetch(key, []) }
       .map(&:downcase)
       .to_set
       .freeze
@@ -629,7 +629,7 @@ module Activities
       allowed = project&.review_enabled? ? (project.enabled_review_bot_logins.presence || Set.new) : nil
       latest = latest_allowed_bot_review(reviews, allowed)
 
-      # Body-only bots (Codex) can post their CLEAN signal as an issue
+      # Body-only bots (Codex, paid_agent) can post their CLEAN signal as an issue
       # comment — e.g. "Codex Review: Didn't find any major issues. Bravo." —
       # which is invisible to pull_request_reviews. When such a comment is
       # the most recent body-only-bot signal on the PR, treat the bot as
