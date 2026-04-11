@@ -166,10 +166,21 @@ module Activities
 
       # review_bot_review_pending gates draft advancement (the PR must have a
       # clean review-bot review before it can leave draft).
-      # paid_agent_review_pending is fully non-blocking: it signals the
-      # workflow to start a review run but never prevents ready_for_owner.
+      # paid_agent_review_pending is normally a non-blocking sidecar that
+      # signals the workflow to start a review run without preventing
+      # ready_for_owner.  However, when paid_agent is the *only* enabled
+      # review method there is no other bot that can gate draft exit, so
+      # paid_agent_review_pending must block advancement just like
+      # review_bot_review_pending does for copilot/codex.
+      paid_agent_sole_reviewer = paid_agent_sole_review_method?(project)
       pending_triggers = (review_bot_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
       sidecar_triggers = (review_bot_triggers || []).select { |t| t[:type] == "paid_agent_review_pending" }
+
+      if paid_agent_sole_reviewer && sidecar_triggers.any?
+        pending_triggers.concat(sidecar_triggers)
+        sidecar_triggers = []
+      end
+
       blocking_triggers = (review_bot_triggers || []).reject { |t|
         t[:type] == "review_bot_review_pending" || t[:type] == "paid_agent_review_pending"
       }
@@ -778,6 +789,17 @@ module Activities
       when :unknown
         review_bot_thread_triggers(unresolved_threads)
       end
+    end
+
+    # Returns true when paid_agent is the only enabled bot review method,
+    # meaning its pending trigger must block draft exit since no other bot
+    # can gate the PR.
+    def paid_agent_sole_review_method?(project)
+      return false unless project&.review_enabled?
+      return false unless project.review_method_enabled?("paid_agent")
+
+      bot_methods = project.enabled_review_methods & %w[copilot codex paid_agent]
+      bot_methods == %w[paid_agent]
     end
 
     # Checks whether a paid_agent review-goal run is needed for this PR.
