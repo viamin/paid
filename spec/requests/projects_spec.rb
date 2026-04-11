@@ -997,6 +997,26 @@ RSpec.describe "Projects" do
           expect(response).to have_http_status(:unprocessable_content)
           expect(project.reload.review_settings).to eq({})
         end
+
+        it "persists manual reviewer_login and casts blank to nil" do
+          params_with_reviewer = { enabled: "1", wait_for_reviews: "0",
+                                   methods: { manual: { enabled: "1", reviewer_login: "alice",
+                                                        termination: { max_review_rounds: "3", stop_when_no_comments: "1",
+                                                                       quality_threshold: "", timeout_minutes: "" } } } }
+          patch project_path(project), params: { project: { review_settings: params_with_reviewer } }
+
+          expect(response).to redirect_to(project_path(project))
+          manual = project.reload.review_settings.dig("methods", "manual")
+          expect(manual).to include("enabled" => true, "reviewer_login" => "alice")
+
+          params_blank_reviewer = { enabled: "0", wait_for_reviews: "0",
+                                    methods: { manual: { enabled: "0", reviewer_login: "" } } }
+          patch project_path(project), params: { project: { review_settings: params_blank_reviewer } }
+
+          expect(response).to redirect_to(project_path(project))
+          manual = project.reload.review_settings.dig("methods", "manual")
+          expect(manual["reviewer_login"]).to be_nil
+        end
       end
     end
   end
