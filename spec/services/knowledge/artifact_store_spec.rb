@@ -53,6 +53,24 @@ RSpec.describe Knowledge::ArtifactStore do
       end
     end
 
+    context "when two artifacts have the same content but different scope_path" do
+      let(:duplicate_data) do
+        artifact_data.merge(
+          scope_path: "config/other_routes.rb",
+          identifier: "GET /api/users (alt)"
+        )
+      end
+
+      it "does not raise RecordNotUnique" do
+        expect { store.store_all([ artifact_data, duplicate_data ]) }.not_to raise_error
+      end
+
+      it "stores only one artifact (content_hash is unique per run)" do
+        store.store_all([ artifact_data, duplicate_data ])
+        expect(KnowledgeArtifact.count).to eq(1)
+      end
+    end
+
     context "when content changes (different hash)" do
       let(:new_version) { create(:project_version, project: project) }
       let(:new_run) { create(:collector_run, project_version: new_version, collector_type: "test") }
