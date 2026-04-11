@@ -21,6 +21,7 @@ RSpec.describe ApplicationJob do
         AgentRunResourceJanitorJob
         DockerOrphanCleanupJob
         KnowledgeAuditRetentionJob
+        OrphanBranchReaperJob
         PollWorkflowHealthCheckJob
         RecoverMissingPullRequestLabelsJob
         ServiceContainerReconciliationJob

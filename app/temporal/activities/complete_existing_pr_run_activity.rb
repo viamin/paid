@@ -42,6 +42,7 @@ module Activities
           pr_url: pr.html_url,
           pr_number: pr.number
         )
+        record_draft_review_round_if_needed(agent_run)
 
         post_update_comment(client, project, pr.number, agent_run)
 

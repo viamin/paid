@@ -44,6 +44,8 @@ module Notifications
       notification.save!
       broadcast_notification_updates(account)
       notification
+    rescue ActiveRecord::RecordNotUnique
+      retry
     end
 
     private

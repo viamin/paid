@@ -98,6 +98,20 @@
           </div>
         </div>
 
+        <div data-goal-toggle-target="prioritySection">
+          <h2 class="text-base font-semibold text-gray-900">Priority</h2>
+          <p class="mt-1 text-sm text-gray-500">Optionally assign a priority level to the resulting issue (existing or auto-created).</p>
+
+          <div class="mt-4">
+            <select name="priority_tier" id="priority_tier" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+              <option value="">-- No priority --</option>
+              <% Project::PRIORITY_TIERS.each do |tier| %>
+                <option value="<%= tier %>"><%= @project.priority_label_for(tier) || tier %></option>
+              <% end %>
+            </select>
+          </div>
+        </div>
+
         <div>
           <h2 class="text-base font-semibold text-gray-900">Provider</h2>
           <div class="mt-4">
