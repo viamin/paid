@@ -149,13 +149,14 @@ module AgentRuns
     def cleanup_container(agent_run, old_container_id)
       return if old_container_id.blank?
 
+      AgentRun.where(id: agent_run.id, container_id: old_container_id).update_all(container_id: nil)
+
       service = Containers::Provision.reconnect(
         agent_run: agent_run,
         container_id: old_container_id,
         worktree_path: agent_run.worktree_path
       )
       service.cleanup(force: true)
-      AgentRun.where(id: agent_run.id, container_id: old_container_id).update_all(container_id: nil)
     rescue => e
       Rails.logger.warn(
         message: "agent_runs.cleanup_stale_container_failed",
