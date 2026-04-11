@@ -146,6 +146,29 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe ".stale_pending" do
+      it "returns only pending runs older than the stale cutoff" do
+        stale_run = create(:agent_run, status: "pending")
+        stale_run.update_column(:updated_at, described_class.stale_pending_cutoff - 1.minute)
+        fresh_run = create(:agent_run, status: "pending")
+        fresh_run.update_column(:updated_at, described_class.stale_pending_cutoff + 1.minute)
+        create(:agent_run, :running, started_at: described_class.stale_running_cutoff - 1.minute)
+
+        expect(described_class.stale_pending).to contain_exactly(stale_run)
+      end
+    end
+
+    describe ".stale_for_cleanup" do
+      it "includes stale running and pending runs" do
+        stale_running = create(:agent_run, :running, started_at: described_class.stale_running_cutoff - 1.minute)
+        stale_pending = create(:agent_run, status: "pending")
+        stale_pending.update_column(:updated_at, described_class.stale_pending_cutoff - 1.minute)
+        create(:agent_run, :running, started_at: described_class.stale_running_cutoff + 1.minute)
+
+        expect(described_class.stale_for_cleanup).to contain_exactly(stale_running, stale_pending)
+      end
+    end
+
     describe ".completed" do
       it "returns only completed runs" do
         completed_run = create(:agent_run, :completed)

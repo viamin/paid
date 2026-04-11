@@ -22,7 +22,7 @@ class ProjectsController < ApplicationController
   def show
     authorize @project
     @recent_agent_runs = @project.agent_runs.recent.includes(:issue).limit(10).to_a
-    @stale_agent_runs_count = @project.agent_runs.stale_running.count
+    @stale_agent_runs_count = @project.agent_runs.stale_for_cleanup.count
     @show_stale_cleanup_action = policy(@project).update? && @stale_agent_runs_count.positive?
     AgentRun.preload_source_pull_requests(@recent_agent_runs)
     settings = current_user.settings
