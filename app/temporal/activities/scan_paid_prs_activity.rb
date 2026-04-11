@@ -48,6 +48,15 @@ module Activities
       prs_to_trigger = []
       paid_prs.each do |issue|
         if skip_unchanged_pr?(project, issue)
+          if merge_conflict_rescan_needed?(project, issue)
+            result = scan_merge_conflict_only(project, client, issue)
+            if result && result != :skipped
+              scanned_count += 1
+              issue.update_column(:last_pr_scan_at, Time.current)
+              prs_to_trigger << result
+              next
+            end
+          end
           unchanged_count += 1
           next
         end
@@ -455,7 +464,6 @@ module Activities
       return false unless issue.last_pr_scan_at
       return false if issue.github_updated_at >= issue.last_pr_scan_at
       return false if recently_completed_run?(project, issue)
-      return false if merge_conflict_rescan_needed?(project, issue)
 
       logger.debug(
         message: "pr_scanner.skipped_unchanged",
@@ -472,6 +480,28 @@ module Activities
       project.auto_fix_merge_conflicts &&
         issue.pr_review_phase.in?(%w[ready escalated]) &&
         !followup_limit_reached?(project, issue)
+    end
+
+    def scan_merge_conflict_only(project, client, issue)
+      return :skipped if active_run_exists?(project, issue)
+
+      check_rate_budget!(client)
+      pr_data = fetch_pr_data(client, project, issue)
+      return :skipped if pr_data.nil?
+
+      triggers = check_merge_conflicts(project, pr_data)
+      return nil if triggers.empty?
+
+      log_triggers(project, issue, triggers)
+
+      {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: triggers,
+        phase: issue.pr_review_phase,
+        labels_to_remove: [],
+        current_followup_count: issue.pr_followup_count
+      }
     end
 
     def recently_completed_run?(project, issue)
