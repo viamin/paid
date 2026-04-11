@@ -71,6 +71,27 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.goal).to eq("review")
     end
 
+    it "refreshes automatic runs to the goal-specific default provider on resume" do
+      codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
+      queued_run = create(
+        :agent_run,
+        :queued,
+        project: project,
+        issue: issue,
+        source_pull_request_number: 42,
+        trigger_type: "automatic",
+        goal: "review"
+      )
+      project.created_by.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
+
+      result = activity.execute(agent_run_id: queued_run.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.provider).to eq(codex_provider)
+      expect(agent_run.agent_type).to eq("codex")
+      expect(agent_run.status).to eq("pending")
+    end
+
     it "persists draft review round tracking metadata when provided" do
       result = activity.execute(
         project_id: project.id,

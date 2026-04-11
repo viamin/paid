@@ -122,7 +122,13 @@ class ProvidersController < ApplicationController
 
     update_fallback_provider_flags!
 
-    if @user_setting.update(provider_settings_params)
+    attrs = provider_settings_params
+    attrs[:default_agent_providers_by_goal] ||= sanitize_goal_default_provider_identifiers(
+      @user_setting,
+      enabled_agent_provider_identifiers
+    )
+
+    if @user_setting.update(attrs)
       redirect_to providers_path, notice: "Provider settings saved successfully."
     else
       load_index_context
@@ -260,7 +266,8 @@ class ProvidersController < ApplicationController
     fallback_identifiers = fallback_candidate_provider_identifiers
 
     attrs = {
-      fallback_providers: settings.sanitize_provider_tokens(settings.fallback_providers, candidates: fallback_identifiers)
+      fallback_providers: settings.sanitize_provider_tokens(settings.fallback_providers, candidates: fallback_identifiers),
+      default_agent_providers_by_goal: sanitize_goal_default_provider_identifiers(settings, run_identifiers)
     }
 
     default_identifier = settings.default_provider_identifier
@@ -304,6 +311,12 @@ class ProvidersController < ApplicationController
     @enabled_agent_providers = enabled_agent_provider_identifiers
     @fallback_candidate_providers = fallback_candidate_provider_identifiers
     @default_provider_identifier = @user_setting.default_provider_identifier
+    @goal_provider_labels = {
+      "create_pr" => "PR Agent",
+      "review" => "Code Review Agent",
+      "create_issue" => "Issue Agent"
+    }
+    @explicit_goal_default_providers = @user_setting.default_agent_providers_by_goal.slice(*AgentRun::GOALS)
     @saved_fallback_provider_tokens = @user_setting.sanitize_provider_tokens(
       @user_setting.fallback_providers,
       candidates: (@enabled_agent_providers + @fallback_candidate_providers).uniq
@@ -343,7 +356,8 @@ class ProvidersController < ApplicationController
     permitted = params.require(:user_setting).permit(
       :default_agent_provider,
       :fallback_enabled,
-      :fallback_providers
+      :fallback_providers,
+      default_agent_providers_by_goal: AgentRun::GOALS
     )
 
     if permitted.key?(:fallback_providers)
@@ -377,5 +391,17 @@ class ProvidersController < ApplicationController
       .where(provider_key: executable_keys)
       .ordered
     UserSetting.provider_identifiers_for(providers, identifiers: true)
+  end
+
+  def sanitize_goal_default_provider_identifiers(settings, candidates)
+    AgentRun::GOALS.each_with_object({}) do |goal, normalized|
+      token = settings.default_agent_providers_by_goal[goal]
+      next if token.blank?
+
+      resolved = settings.sanitize_provider_tokens([ token ], candidates: candidates)
+      next if resolved.blank?
+
+      normalized[goal] = resolved.first
+    end
   end
 end
