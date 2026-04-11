@@ -159,6 +159,7 @@ RSpec.describe "Api::GithubProxy" do
   describe "POST /api/proxy/github/repos/:owner/:repo/pulls/:number/reviews" do
     let(:agent_run) { create(:agent_run, :running, :review_goal, project: project) }
     let(:target_url) { "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews" }
+    let(:review_bot_token_provider) { instance_double(Github::ReviewBotInstallationToken, fetch: "ghs_review_bot_token") }
     let(:review_response_body) do
       {
         id: 999,
@@ -271,6 +272,56 @@ RSpec.describe "Api::GithubProxy" do
 
       agent_run.reload
       expect(agent_run.review_posted_at).to be_nil
+    end
+
+    context "when paid_agent review is enabled" do
+      before do
+        allow(Github::ReviewBotInstallationToken).to receive_messages(
+          configured?: true,
+          new: review_bot_token_provider
+        )
+        project.update!(review_settings: {
+          "enabled" => true,
+          "methods" => { "paid_agent" => { "enabled" => true } }
+        })
+      end
+
+      it "forwards review creation with the review bot token" do
+        post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+          params: { body: "Looks good", event: "COMMENT" }.to_json,
+          headers: valid_headers
+
+        expect(WebMock).to have_requested(:post, target_url)
+          .with(headers: {
+            "Authorization" => "Bearer ghs_review_bot_token",
+            "Accept" => "application/vnd.github+json"
+          })
+      end
+
+      it "does not touch last_used_at on the project GitHub token" do
+        freeze_time do
+          github_token.update_column(:last_used_at, 2.days.ago)
+
+          expect {
+            post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+              params: { body: "Looks good", event: "COMMENT" }.to_json,
+              headers: valid_headers
+          }.not_to change { github_token.reload.last_used_at }
+        end
+      end
+
+      it "returns 503 when the review bot is not configured" do
+        allow(review_bot_token_provider)
+          .to receive(:fetch)
+          .and_raise(Github::ReviewBotInstallationToken::ConfigurationError, "Paid review bot GitHub App is not configured")
+
+        post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+          params: { body: "Looks good", event: "COMMENT" }.to_json,
+          headers: valid_headers
+
+        expect(response).to have_http_status(:service_unavailable)
+        expect(JSON.parse(response.body)["error"]).to include("not configured")
+      end
     end
   end
 
