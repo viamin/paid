@@ -350,6 +350,81 @@ RSpec.describe Activities::FetchIssuesActivity do
         )
       end
 
+      it "does not advance the sync watermark when a full fetch is truncated" do
+        allow(Rails.logger).to receive(:warn)
+
+        activity.execute(project_id: project.id)
+
+        project.reload
+        expect(project.last_issue_sync_at).to be_nil
+      end
+
+      context "when an incremental fetch is truncated" do
+        let(:latest_updated) { 5.minutes.ago }
+
+        before do
+          project.update!(last_issue_sync_at: 1.hour.ago)
+
+          allow(github_client).to receive(:issues) do |_repo, **opts|
+            page = opts[:page] || 1
+            offset = (page - 1) * 5
+            Array.new(5) do |i|
+              OpenStruct.new(
+                id: 4000 + offset + i, number: offset + i + 1,
+                title: "Issue #{offset + i + 1}", body: "Body", state: "open",
+                labels: [ OpenStruct.new(name: "paid-build") ], pull_request: nil,
+                user: OpenStruct.new(login: "viamin"),
+                created_at: 2.days.ago, updated_at: latest_updated - (offset + i).minutes
+              )
+            end
+          end
+
+          allow(Rails.logger).to receive(:warn)
+        end
+
+        it "advances the watermark to one second before the latest updated_at" do
+          activity.execute(project_id: project.id)
+
+          project.reload
+          # Watermark is set 1 second before the latest updated_at to ensure
+          # the boundary is inclusive on the next poll (GitHub's `since` is exclusive).
+          expect(project.last_issue_sync_at).to be_within(1.second).of(latest_updated - 1.second)
+        end
+      end
+
+      context "when all fetched issues share the same updated_at as the watermark" do
+        let(:stuck_time) { 1.hour.ago.change(usec: 0) }
+
+        before do
+          project.update!(last_issue_sync_at: stuck_time - 1.second)
+
+          allow(github_client).to receive(:issues) do |_repo, **opts|
+            page = opts[:page] || 1
+            offset = (page - 1) * 5
+            Array.new(5) do |i|
+              OpenStruct.new(
+                id: 4000 + offset + i, number: offset + i + 1,
+                title: "Issue #{offset + i + 1}", body: "Body", state: "open",
+                labels: [ OpenStruct.new(name: "paid-build") ], pull_request: nil,
+                user: OpenStruct.new(login: "viamin"),
+                created_at: 2.days.ago, updated_at: stuck_time
+              )
+            end
+          end
+
+          allow(Rails.logger).to receive(:warn)
+        end
+
+        it "uses the exact timestamp to guarantee forward progress" do
+          activity.execute(project_id: project.id)
+
+          project.reload
+          # When subtracting 1 second would not advance past the current
+          # watermark, use the exact latest_updated to avoid permanent re-fetch.
+          expect(project.last_issue_sync_at).to be_within(1.second).of(stuck_time)
+        end
+      end
+
       it "does not close locally-open issues when the fetch is truncated" do
         # This issue is locally open but not in the truncated fetch results —
         # it should NOT be closed because the fetch is not authoritative.
@@ -361,6 +436,36 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         stale.reload
         expect(stale.github_state).to eq("open")
+      end
+
+      context "when the result set exactly fills the page cap" do
+        before do
+          project.update!(last_issue_sync_at: 1.hour.ago)
+
+          allow(github_client).to receive(:issues) do |_repo, **opts|
+            page = opts[:page] || 1
+            # Pages 1–3 return full pages; the probe (page 4) returns empty.
+            next [] if page > 3
+
+            offset = (page - 1) * 5
+            Array.new(5) do |i|
+              OpenStruct.new(
+                id: 4000 + offset + i, number: offset + i + 1,
+                title: "Issue #{offset + i + 1}", body: "Body", state: "open",
+                labels: [ OpenStruct.new(name: "paid-build") ], pull_request: nil,
+                user: OpenStruct.new(login: "viamin"),
+                created_at: 2.days.ago, updated_at: 1.day.ago
+              )
+            end
+          end
+        end
+
+        it "advances the watermark when the probe page is empty" do
+          activity.execute(project_id: project.id)
+
+          project.reload
+          expect(project.last_issue_sync_at).to be > 1.hour.ago
+        end
       end
     end
 
@@ -869,6 +974,181 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(issue).to be_present
         expect(issue.is_pull_request).to be true
         expect(issue.labels).to include("paid-generated")
+      end
+    end
+
+    context "when project has last_issue_sync_at set (incremental fetch)" do
+      let(:sync_time) { 10.minutes.ago }
+      let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, last_issue_sync_at: sync_time) }
+
+      let(:updated_issue) do
+        OpenStruct.new(
+          id: 1001,
+          number: 1,
+          title: "Updated issue",
+          body: "Updated body",
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago,
+          updated_at: 5.minutes.ago
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:issues).and_return([ updated_issue ])
+      end
+
+      it "passes since parameter, state: all, and direction: asc to the API" do
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issues).with(
+          project.full_name,
+          hash_including(since: sync_time.iso8601, state: "all", direction: :asc)
+        ).once
+      end
+
+      it "updates last_issue_sync_at after sync" do
+        freeze_time do
+          activity.execute(project_id: project.id)
+
+          project.reload
+          expect(project.last_issue_sync_at).to be_within(1.second).of(Time.current)
+        end
+      end
+
+      it "skips stale closure during incremental fetch" do
+        stale = create(:issue, project: project, github_issue_id: 5000, github_number: 50, github_state: "open")
+
+        activity.execute(project_id: project.id)
+
+        expect(stale.reload.github_state).to eq("open")
+      end
+
+      it "includes re-scannable open issues not in the incremental fetch results" do
+        # This issue was not updated on GitHub (so not returned by the API),
+        # but it's in a re-scannable state — it should still be passed
+        # downstream so DetectLabelsActivity can re-evaluate it (e.g., a
+        # blocking dependency may have been resolved).
+        blocked = create(:issue, project: project, github_issue_id: 5000,
+                         github_number: 50, github_state: "open", paid_state: "new")
+        # This issue is in_progress and should NOT be re-scanned.
+        in_progress = create(:issue, project: project, github_issue_id: 5001,
+                             github_number: 51, github_state: "open", paid_state: "in_progress")
+
+        result = activity.execute(project_id: project.id)
+
+        returned_ids = result[:issues].map { |i| i[:id] }
+        expect(returned_ids).to include(blocked.id)
+        expect(returned_ids).not_to include(in_progress.id)
+      end
+
+      it "does not duplicate issues already in the incremental fetch results" do
+        # Pre-create the issue so that it exists in both the fetch and the DB
+        create(:issue, project: project, github_issue_id: 1001,
+               github_number: 1, github_state: "open", paid_state: "new")
+
+        result = activity.execute(project_id: project.id)
+
+        returned_numbers = result[:issues].map { |i| i[:github_number] }
+        expect(returned_numbers.count(1)).to eq(1)
+      end
+
+      it "syncs closed issues to DB but excludes them from returned results" do
+        closed_issue = OpenStruct.new(
+          id: 1002,
+          number: 2,
+          title: "Closed issue",
+          body: "Body",
+          state: "closed",
+          labels: [],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago,
+          updated_at: 5.minutes.ago
+        )
+
+        allow(github_client).to receive(:issues).and_return([ updated_issue, closed_issue ])
+
+        result = activity.execute(project_id: project.id)
+
+        # Closed issue is persisted to DB
+        issue = project.issues.find_by(github_issue_id: 1002)
+        expect(issue.github_state).to eq("closed")
+
+        # But excluded from returned results for downstream processing
+        returned_ids = result[:issues].map { |i| i[:id] }
+        expect(returned_ids).not_to include(issue.id)
+        expect(result[:issues].size).to eq(1)
+      end
+
+      context "when incremental fetch is truncated" do
+        before do
+          allow(github_client).to receive(:issues) do |_repo, **opts|
+            page = opts[:page] || 1
+            if page <= described_class::DEFAULT_MAX_PAGES
+              Array.new(described_class::DEFAULT_PER_PAGE) do |i|
+                offset = (page - 1) * described_class::DEFAULT_PER_PAGE + i
+                OpenStruct.new(
+                  id: 4000 + offset, number: offset + 1,
+                  title: "Issue #{offset + 1}", body: "Body", state: "open",
+                  labels: [ OpenStruct.new(name: "paid-build") ], pull_request: nil,
+                  user: OpenStruct.new(login: "viamin"),
+                  created_at: 2.days.ago, updated_at: 5.minutes.ago
+                )
+              end
+            else
+              [ OpenStruct.new(
+                id: 9999, number: 9999, title: "Probe", body: "Body", state: "open",
+                labels: [], pull_request: nil, user: OpenStruct.new(login: "viamin"),
+                created_at: 2.days.ago, updated_at: 5.minutes.ago
+              ) ]
+            end
+          end
+
+          allow(Rails.logger).to receive(:warn)
+        end
+
+        it "skips local re-scan fallback" do
+          rescannable = create(:issue, project: project, github_issue_id: 5000,
+                               github_number: 50, github_state: "open", paid_state: "new")
+
+          result = activity.execute(project_id: project.id)
+
+          returned_ids = result[:issues].map { |i| i[:id] }
+          expect(returned_ids).not_to include(rescannable.id)
+        end
+      end
+    end
+
+    context "when project has no last_issue_sync_at (first sync)" do
+      let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, last_issue_sync_at: nil) }
+
+      before do
+        allow(github_client).to receive(:issues).and_return([])
+      end
+
+      it "does not pass since parameter to the API" do
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issues).with(
+          project.full_name,
+          hash_including(state: "open")
+        )
+        expect(github_client).not_to have_received(:issues).with(
+          project.full_name,
+          hash_including(since: anything)
+        )
+      end
+
+      it "sets last_issue_sync_at after first sync" do
+        freeze_time do
+          activity.execute(project_id: project.id)
+
+          project.reload
+          expect(project.last_issue_sync_at).to be_within(1.second).of(Time.current)
+        end
       end
     end
   end

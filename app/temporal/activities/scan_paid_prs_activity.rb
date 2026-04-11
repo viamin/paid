@@ -28,12 +28,10 @@ module Activities
     # wording changes.
     BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN = /didn'?t find any (?:major )?issues/i
 
-    # paid_agent reviews are posted from regular GitHub accounts (not bot
-    # logins registered in PROVIDER_BOT_USERNAMES), so they are invisible
-    # to review_bot? and enabled_review_bot_logins. The agent includes a
-    # machine-readable HTML comment marker when no major findings remain.
-    # Only the marker is used for detection — no text patterns — to avoid
-    # false positives from human reviewers writing similar phrases.
+    # paid_agent clean reviews include a machine-readable HTML marker in the
+    # review body. Once the dedicated paid-code-reviewer bot is registered in
+    # PROVIDER_BOT_USERNAMES, we can safely key off both author identity and
+    # the marker without matching human-authored text.
     PAID_REVIEW_CLEAN_MARKER = "<!-- paid-review-clean -->"
 
     def execute(input)
@@ -248,7 +246,9 @@ module Activities
           checks.present? &&
           all_checks_green?(checks) &&
           mergeable == true &&
-          no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks)
+          no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks) &&
+          all_blocking_review_methods_complete?(project, reviews, checks) &&
+          !review_stale_for_head?(client, project, issue, pr_data, reviews)
         return owner_approved_trigger(issue)
       end
 
@@ -606,6 +606,7 @@ module Activities
     def review_bot_review_status_from(reviews, latest)
       return :unknown if reviews.nil?
       return :no_review if latest.nil?
+      return :clean if paid_agent_clean_review?(latest)
 
       REVIEW_BOT_CLEAN_PATTERN.match?(latest[:body]) ? :clean : :has_comments
     end
@@ -659,33 +660,11 @@ module Activities
         return []
       end
 
-      # paid_agent reviews are authored by regular GitHub accounts, not
-      # bot logins registered in PROVIDER_BOT_USERNAMES. When paid_agent
-      # is enabled and the most recent review contains the clean marker,
-      # treat the review cycle as complete — the agent has signaled "no
-      # major findings remaining." Only bypass when no registered bot method
-      # could produce independent triggers; in mixed configurations
-      # (e.g. paid_agent + copilot), each bot's status is evaluated
-      # independently below.
-      #
-      # Today the existing flow already returns [] for paid_agent-only
-      # configs (no bot login → :no_review → nil login → []), so this
-      # early return is functionally redundant. It becomes load-bearing
-      # if paid_agent ever registers a bot login in PROVIDER_BOT_USERNAMES,
-      # which would cause `allowed` to be non-empty and the :no_review /
-      # :has_comments branches to fire. The explicit check keeps that
-      # future transition safe and documents the intended semantics.
-      if project&.review_method_enabled?("paid_agent") &&
-         paid_agent_clean_review_present?(reviews) &&
-         (allowed.nil? || allowed.empty?)
-        return []
-      end
-
       status = review_bot_review_status_from(reviews, latest)
 
       case status
       when :clean
-        []
+        clean_review_thread_triggers(unresolved_threads)
       when :no_review
         # Only emit a pending trigger when a requestable review bot is
         # configured. When login is nil — reviews globally disabled, or
@@ -1024,28 +1003,149 @@ module Activities
       true
     end
 
+    # --- Blocking review method completeness gate ---
+
+    # Returns true when every enabled blocking review method has a
+    # completion signal. Review methods and their completion criteria:
+    #
+    #   copilot / codex / paid_agent — checked by no_outstanding_review_feedback?
+    #     (review bot status + thread resolution). Not re-checked here.
+    #   ci_action — the check run named by action_name must be present
+    #     and have a successful conclusion.
+    #   manual — at least one trusted non-bot user must have submitted
+    #     an APPROVED review (distinct from owner approval, which gates
+    #     the merge trigger itself).
+    def all_blocking_review_methods_complete?(project, reviews, checks)
+      return true unless project.review_enabled? && project.wait_for_reviews?
+
+      if project.review_method_enabled?("ci_action")
+        return false unless ci_action_review_complete?(project, checks)
+      end
+
+      if project.review_method_enabled?("manual")
+        return false unless manual_review_complete?(project, reviews)
+      end
+
+      true
+    end
+
+    # ci_action is complete when the configured action_name appears in
+    # the check-run list with a "success" conclusion.
+    def ci_action_review_complete?(project, checks)
+      action_name = project.review_method_config("ci_action").to_h["action_name"]
+      if action_name.blank?
+        Rails.logger.warn(message: "reviews.ci_action_missing_action_name", project_id: project.id)
+        return false
+      end
+
+      checks.any? { |c| c[:name] == action_name && c[:conclusion] == "success" }
+    end
+
+    # Manual review is complete when the configured reviewer_login has
+    # submitted an APPROVED review. This aligns with manual_reviewer_approved?
+    # (used in detect_ready_triggers) so the same user gates both paths.
+    def manual_review_complete?(project, reviews)
+      return false if reviews.nil?
+
+      reviewer = project.review_method_config("manual").to_h["reviewer_login"]
+      return false if reviewer.blank?
+
+      reviews.any? do |r|
+        r[:state] == "APPROVED" &&
+          r[:user_login]&.downcase == reviewer.strip.downcase &&
+          project.trusted_github_user?(r[:user_login]) &&
+          !bot_user?(r[:user_login])
+      end
+    end
+
+    # --- Stale review detection ---
+
+    # Returns true when any enabled blocking review signal has a stale
+    # approval — i.e. the HEAD commit was pushed after the relevant
+    # reviewer's latest approval. Each blocking signal is checked
+    # individually so that an owner re-approval cannot mask a stale
+    # manual review from the configured reviewer.
+    def review_stale_for_head?(client, project, issue, pr_data, reviews)
+      return false if reviews.nil?
+
+      head_committed_at = fetch_head_commit_date(client, project, issue, pr_data)
+      return false if head_committed_at.nil?
+
+      blocking_approval_timestamps(project, reviews).any? do |ts|
+        head_committed_at > ts
+      end
+    end
+
+    def fetch_head_commit_date(client, project, issue, pr_data)
+      sha = pr_data&.head&.sha
+      return nil if sha.nil?
+
+      commit_data = client.commit(project.full_name, sha)
+      commit_data&.commit&.committer&.date
+    rescue GithubClient::Error => e
+      log_signal_error("fetch_head_commit", project, issue, e)
+      nil
+    end
+
+    # Returns the latest approval timestamp for each enabled blocking
+    # review signal. The owner approval is always included (gated by
+    # owner_approved_or_self_authored? upstream). When the manual review
+    # method is enabled, the configured reviewer_login's latest approval
+    # is checked separately so a fresh owner re-approval cannot mask a
+    # stale manual review.
+    def blocking_approval_timestamps(project, reviews)
+      timestamps = []
+
+      owner_ts = latest_approval_timestamp_for(project, reviews) do |r|
+        r[:user_login]&.downcase == project.owner_reviewer_login&.downcase
+      end
+      timestamps << owner_ts if owner_ts
+
+      if project.review_method_enabled?("manual")
+        reviewer = project.review_method_config("manual").to_h["reviewer_login"]
+        if reviewer.present?
+          manual_ts = latest_approval_timestamp_for(project, reviews) do |r|
+            r[:user_login]&.downcase == reviewer.strip.downcase
+          end
+          timestamps << manual_ts if manual_ts
+        end
+      end
+
+      timestamps
+    end
+
+    # Returns the most recent submitted_at timestamp among APPROVED
+    # reviews from trusted non-bot users matching the given block filter.
+    def latest_approval_timestamp_for(project, reviews)
+      approvals = reviews.select do |r|
+        r[:state] == "APPROVED" &&
+          project.trusted_github_user?(r[:user_login]) &&
+          !bot_user?(r[:user_login]) &&
+          yield(r)
+      end
+
+      return nil if approvals.empty?
+
+      approvals.filter_map { |r| r[:submitted_at] }.max
+    end
+
     # --- Helpers ---
 
     def review_bot?(login)
       ProviderSupport.provider_bot_username?(login)
     end
 
+    def paid_agent_clean_review?(review)
+      return false unless review.is_a?(Hash)
+      return false unless ProviderSupport.provider_bot_username_for?("paid_agent", review[:user_login])
+
+      paid_agent_review_clean?(review[:body])
+    end
+
     def paid_agent_review_clean?(body)
       return false if body.nil?
 
       body.include?(PAID_REVIEW_CLEAN_MARKER)
-    end
-
-    # TODO(#918): paid_agent posts reviews from regular GitHub accounts — there is
-    # no dedicated bot login to filter by. This method checks the latest
-    # review from *any* author. The HTML marker (<!-- paid-review-clean -->)
-    # is unlikely to appear in human-authored reviews, but once the project
-    # stores the paid_agent's GitHub login, this should filter by it.
-    def paid_agent_clean_review_present?(reviews)
-      return false if reviews.nil? || reviews.empty?
-
-      latest = reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
-      paid_agent_review_clean?(latest[:body])
     end
 
     def extract_actionable_labels(triggers)
@@ -1066,6 +1166,19 @@ module Activities
 
     def system_generated_comment?(body)
       Activities::CompleteExistingPrRunActivity.agent_update_comment?(body)
+    end
+
+    def clean_review_thread_triggers(unresolved_threads)
+      return [] if unresolved_threads.nil?
+
+      bot_thread_triggers = review_bot_thread_triggers(unresolved_threads)
+      return [] if bot_thread_triggers.empty?
+
+      [
+        { type: "review_bot_review_pending", details: "A review bot still has unresolved feedback" },
+        { type: "review_bot_comments", details: "A review bot still has unresolved comments" },
+        *bot_thread_triggers
+      ]
     end
 
     def log_signal_error(signal, project, issue, error)

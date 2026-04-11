@@ -47,8 +47,11 @@ module Knowledge
             mark_prior_stale(data)
             create_artifact(data, content_hash)
           end
-        rescue ActiveRecord::RecordNotUnique
+        rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+          raise unless content_hash_conflict?(e)
+
           existing_after_conflict = find_existing_artifact(data, content_hash)
+          existing_after_conflict ||= find_by_run_and_hash(content_hash)
 
           if existing_after_conflict
             reassign_to_current_run(existing_after_conflict)
@@ -71,6 +74,18 @@ module Knowledge
           status: "active"
         )
         .first
+    end
+
+    # Broadened lookup using only the columns covered by the unique index
+    # (collector_run_id, content_hash). This handles cross-scope hash
+    # collisions where a different scope_path/identifier produced the same
+    # content_hash within the same collector run.
+    def find_by_run_and_hash(content_hash)
+      KnowledgeArtifact.find_by(
+        collector_run: collector_run,
+        content_hash: content_hash,
+        status: "active"
+      )
     end
 
     def reassign_to_current_run(artifact)
@@ -161,6 +176,17 @@ module Knowledge
           sequence: chunk[:sequence] || index,
           status: "active"
         )
+      end
+    end
+
+    def content_hash_conflict?(exception)
+      case exception
+      when ActiveRecord::RecordNotUnique
+        true
+      when ActiveRecord::RecordInvalid
+        exception.record.errors[:content_hash].any?
+      else
+        false
       end
     end
 

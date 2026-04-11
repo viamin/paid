@@ -617,6 +617,15 @@ class GithubClient
     handle_errors { client.ref(repo, ref) }
   end
 
+  # Fetches a single commit by SHA.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param sha [String] Commit SHA
+  # @return [Sawyer::Resource] The commit object with :commit containing :committer/:author dates
+  def commit(repo, sha)
+    handle_errors { client.commit(repo, sha) }
+  end
+
   # Creates a git reference (branch or tag).
   #
   # @param repo [String] Repository in "owner/name" format
