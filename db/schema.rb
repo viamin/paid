@@ -1000,8 +1000,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_11_022311) do
     t.string "default_agent_provider", default: "claude", null: false
     t.jsonb "default_allowed_github_usernames", default: [], null: false
     t.string "default_branch", default: "main", null: false
+    t.string "default_create_issue_provider"
+    t.string "default_create_pr_provider"
     t.integer "default_poll_interval_seconds", default: 60, null: false
     t.boolean "default_project_active", default: true, null: false
+    t.string "default_review_provider"
     t.boolean "fallback_enabled", default: false, null: false
     t.jsonb "fallback_providers", default: [], null: false
     t.integer "git_clone_timeout_seconds", default: 600, null: false
@@ -1052,6 +1055,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_11_022311) do
     t.text "error_message"
     t.jsonb "input_data"
     t.bigint "project_id"
+    t.text "restart_reason"
     t.jsonb "result_data"
     t.datetime "started_at"
     t.string "status", limit: 50, default: "running", null: false

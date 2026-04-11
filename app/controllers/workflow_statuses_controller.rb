@@ -37,6 +37,15 @@ class WorkflowStatusesController < ApplicationController
   private
 
   def compute_automation_health
+    # Try WorkflowState first (avoids per-request Temporal RPC).
+    health = WorkflowState.compute_health_for(@project)
+    return health if health
+
+    # Fall back to Temporal when no WorkflowState record exists yet.
+    compute_automation_health_from_temporal
+  end
+
+  def compute_automation_health_from_temporal
     unless @project.active?
       return {
         status: :inactive,
@@ -45,9 +54,6 @@ class WorkflowStatusesController < ApplicationController
       }
     end
 
-    # Query Temporal directly for the authoritative workflow state.
-    # WorkflowState records are not reliably persisted by all activity paths,
-    # so we use ProjectWorkflowManager which calls the Temporal API.
     temporal_status = ProjectWorkflowManager.workflow_status(@project)
 
     unless temporal_status[:running]
