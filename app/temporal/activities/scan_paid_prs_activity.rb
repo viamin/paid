@@ -781,7 +781,7 @@ module Activities
     end
 
     # Checks whether a paid_agent review-goal run is needed for this PR.
-    # Returns a paid_agent_review_pending trigger when no completed review-goal
+    # Returns a paid_agent_review_pending trigger when no finished review-goal
     # run exists and the max_review_rounds limit has not been reached. Returns
     # an empty array when the review is already satisfied or the limit is hit.
     def check_paid_agent_review_status(project, issue)
