@@ -461,6 +461,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_09_231400) do
     t.datetime "github_updated_at", null: false
     t.boolean "is_pull_request", default: false, null: false
     t.jsonb "labels", default: [], null: false
+    t.datetime "last_pr_scan_at"
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
     t.integer "pr_followup_count", default: 0, null: false
