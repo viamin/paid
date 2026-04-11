@@ -660,6 +660,22 @@ RSpec.describe "AgentRuns" do
       context "with goal=review" do
         let(:pr) { create(:issue, :pull_request, project: project, github_number: 55, title: "Review target PR") }
 
+        it "uses the goal-specific default provider when no provider is selected" do
+          owner = project.created_by
+          codex = owner.providers.create!(
+            provider_key: "codex",
+            auth_type: "subscription",
+            enabled_for_agent_runs: true,
+            enabled_for_fallback: true
+          )
+          owner.settings.update!(default_agent_providers_by_goal: { "review" => codex.routing_key })
+
+          post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id ] }
+
+          expect(AgentRun.last.provider).to eq(codex)
+          expect(AgentRun.last.agent_type).to eq("codex")
+        end
+
         it "creates a review agent run with source_pull_request_number" do
           expect {
             post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id ] }
