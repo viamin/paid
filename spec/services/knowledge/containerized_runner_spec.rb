@@ -300,6 +300,79 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
     end
   end
 
+  describe "network_mode validation" do
+    let(:runner_result) do
+      { project_version: Object.new, results: [] }
+    end
+
+    before do
+      allow(Knowledge::CollectorRunner).to receive(:call).and_return(runner_result)
+    end
+
+    it "accepts network_mode: none" do
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha, options: { network_mode: "none" }).run
+      }.not_to raise_error
+    end
+
+    it "accepts network_mode: bridge" do
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha, options: { network_mode: "bridge" }).run
+      }.not_to raise_error
+    end
+
+    it "rejects invalid network_mode" do
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha, options: { network_mode: "host" }).run
+      }.to raise_error(Knowledge::ContainerizedRunner::ContainerError, /Invalid network_mode/)
+    end
+  end
+
+  describe "#connect_network! and #disconnect_network!" do
+    let(:runner_result) do
+      { project_version: Object.new, results: [] }
+    end
+
+    let(:mock_bridge_network) do
+      instance_double(Docker::Network, connect: true, disconnect: true)
+    end
+
+    before do
+      allow(Knowledge::CollectorRunner).to receive(:call).and_return(runner_result)
+      allow(Docker::Network).to receive(:get).with("bridge").and_return(mock_bridge_network)
+    end
+
+    it "connects and disconnects the container from the bridge network" do
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+
+      allow(Knowledge::CollectorRunner).to receive(:call) do |args|
+        cr = args[:options][:container_runner]
+        cr.connect_network!
+        cr.disconnect_network!
+        runner_result
+      end
+
+      runner.run
+
+      expect(mock_bridge_network).to have_received(:connect).with("collector123")
+      expect(mock_bridge_network).to have_received(:disconnect).with("collector123")
+    end
+
+    it "raises ContainerError when connect_network! is called without a container" do
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+      expect { runner.connect_network! }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError, /not provisioned/
+      )
+    end
+
+    it "raises ContainerError when disconnect_network! is called without a container" do
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+      expect { runner.disconnect_network! }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError, /not provisioned/
+      )
+    end
+  end
+
   describe "input validation" do
     it "rejects invalid commit SHA" do
       expect {

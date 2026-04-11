@@ -134,7 +134,9 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         instance_double(
           Knowledge::ContainerizedRunner,
           host_repo_dir: "/tmp/repo",
-          options: { workspace_mount: "/workspace" }
+          options: { workspace_mount: "/workspace" },
+          connect_network!: nil,
+          disconnect_network!: nil
         )
       end
       let(:command_collector) do
@@ -153,11 +155,28 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           .with("config/routes.rb").and_return(true)
         allow(command_collector).to receive(:repo_file_exists?)
           .with("bin/rails").and_return(true)
+        allow(command_collector).to receive(:repo_file_exists?)
+          .with("Gemfile").and_return(true)
+        # Stub bundle install (gem installation step)
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300)
+          .and_return("")
+      end
+
+      it "runs bundle install before bin/rails routes" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+          .and_return(fixture_output)
+
+        command_collector.collect
+
+        expect(command_collector).to have_received(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300)
       end
 
       it "runs bin/rails routes --expanded" do
         allow(command_collector).to receive(:run_command)
-          .with("bin/rails", "routes", "--expanded", timeout: 60)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
           .and_return(fixture_output)
 
         expect(command_collector.collect.length).to eq(11)
@@ -165,9 +184,45 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
 
       it "raises when the command fails" do
         allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
           .and_raise(RuntimeError, "Command failed")
 
         expect { command_collector.collect }.to raise_error(RuntimeError, "Command failed")
+      end
+
+      it "connects network before bundle install and disconnects after" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+          .and_return(fixture_output)
+
+        command_collector.collect
+
+        expect(container_runner).to have_received(:connect_network!).ordered
+        expect(command_collector).to have_received(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300).ordered
+        expect(container_runner).to have_received(:disconnect_network!).ordered
+      end
+
+      it "disconnects network even when bundle install fails" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300)
+          .and_raise(RuntimeError, "bundle install failed")
+
+        expect { command_collector.collect }.to raise_error(RuntimeError, "bundle install failed")
+        expect(container_runner).to have_received(:disconnect_network!)
+      end
+
+      it "skips bundle install when Gemfile is absent" do
+        allow(command_collector).to receive(:repo_file_exists?)
+          .with("Gemfile").and_return(false)
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+          .and_return(fixture_output)
+
+        command_collector.collect
+
+        expect(command_collector).not_to have_received(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300)
       end
 
       it "raises SkipCollector when config/routes.rb is missing" do
