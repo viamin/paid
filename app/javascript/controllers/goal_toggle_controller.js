@@ -9,13 +9,24 @@ export default class extends Controller {
     "prDropdown",
     "prTable",
     "prioritySection",
+    "providerSelect",
   ]
+  static values = {
+    currentGoal: String,
+    providerDefaults: Object,
+    providerManuallySelected: { type: Boolean, default: false },
+  }
 
   connect() {
     this.toggle()
   }
 
+  providerChanged() {
+    this.providerManuallySelectedValue = true
+  }
+
   toggle() {
+    const previousGoal = this.currentGoalValue || "create_pr"
     const selected = this.element.querySelector("input[name='goal']:checked")
     const goal = selected ? selected.value : "create_pr"
 
@@ -90,5 +101,31 @@ export default class extends Controller {
           "Push changes to an existing pull request's branch instead of creating a new one."
       })
     }
+
+    this.syncProviderDefault(previousGoal, goal)
+    this.currentGoalValue = goal
+  }
+
+  syncProviderDefault(previousGoal, goal) {
+    if (!this.hasProviderSelectTarget) return
+
+    const previousDefault = this.defaultProviderForGoal(previousGoal)
+    const nextDefault = this.defaultProviderForGoal(goal)
+    if (!nextDefault) return
+
+    const shouldSync =
+      !this.providerManuallySelectedValue ||
+      this.providerSelectTarget.value === previousDefault
+
+    if (!shouldSync) return
+
+    this.providerSelectTarget.value = nextDefault
+    this.providerManuallySelectedValue = false
+  }
+
+  defaultProviderForGoal(goal) {
+    if (!this.hasProviderDefaultsValue) return null
+
+    return this.providerDefaultsValue[goal] || null
   }
 }

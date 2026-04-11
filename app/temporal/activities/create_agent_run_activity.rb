@@ -24,6 +24,12 @@ module Activities
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
       user_settings = resolve_user_settings(project)
+      provider_id, agent_type = resolve_provider_selection(
+        project: project,
+        requested_agent_type: input[:agent_type],
+        requested_provider_id: provider_id,
+        goal: goal
+      )
 
       # Resolve and render prompt version if no custom prompt is provided.
       # Skip for untrusted issues to match the safety behavior in AgentRun#prompt_for_issue.
@@ -130,20 +136,30 @@ module Activities
       requested_agent_type || "claude_code"
     end
 
-    def default_provider_for(project)
+    def resolve_provider_selection(project:, requested_agent_type:, requested_provider_id:, goal:)
+      resolved_agent_type = resolve_agent_type(requested_agent_type, requested_provider_id)
+      return [ requested_provider_id, resolved_agent_type ] if requested_provider_id.present? || requested_agent_type.present?
+
+      provider = default_provider_for(project, goal: goal)
+      return [ nil, resolved_agent_type ] unless provider
+
+      [ provider.id, Provider.agent_type_for(provider.provider_key) ]
+    end
+
+    def default_provider_for(project, goal:)
       owner = project.effective_owner
       return unless owner
 
       settings = AgentRuns::UserSettingsResolver.call(project: project, strict: false)
       return Provider.ensure_default_for(owner) unless settings
 
-      Provider.for_identifier(settings.user, settings.default_provider_identifier) || Provider.ensure_default_for(settings.user)
+      Provider.for_identifier(settings.user, settings.default_provider_identifier_for_goal(goal)) || Provider.ensure_default_for(settings.user)
     end
 
     def refresh_automatic_run_provider!(agent_run)
       return unless agent_run.automatic?
 
-      provider = default_provider_for(agent_run.project)
+      provider = default_provider_for(agent_run.project, goal: agent_run.goal)
       return unless provider
 
       agent_run.update!(

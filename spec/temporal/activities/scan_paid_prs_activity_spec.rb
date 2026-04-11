@@ -3415,6 +3415,94 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(unchanged_pr.reload.last_pr_scan_at).to be_present
       end
 
+      it "scans ready PRs for merge conflicts when auto-fix is enabled" do
+        project.update!(auto_fix_merge_conflicts: true)
+        unchanged_pr.update!(pr_review_phase: "ready")
+        stub_github_for_pr(mergeable: false)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to contain_exactly(
+          hash_including(
+            pr_number: 42,
+            phase: "ready",
+            triggers: include(hash_including(type: "merge_conflicts"))
+          )
+        )
+      end
+
+      it "scans escalated PRs for merge conflicts when auto-fix is enabled" do
+        project.update!(auto_fix_merge_conflicts: true)
+        unchanged_pr.update!(pr_review_phase: "escalated")
+        stub_github_for_pr(mergeable: false)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to contain_exactly(
+          hash_including(
+            pr_number: 42,
+            phase: "escalated",
+            triggers: include(hash_including(type: "merge_conflicts"))
+          )
+        )
+      end
+
+      it "still skips draft PRs when auto-fix is enabled" do
+        project.update!(auto_fix_merge_conflicts: true)
+        unchanged_pr.update!(pr_review_phase: "draft")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
+      it "still skips ready PRs when auto-fix is disabled" do
+        unchanged_pr.update!(pr_review_phase: "ready")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
+      it "still skips ready PRs at the follow-up limit when auto-fix is enabled" do
+        project.update!(auto_fix_merge_conflicts: true, max_pr_followup_runs: 1)
+        unchanged_pr.update!(pr_review_phase: "ready", pr_followup_count: 1)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
+      it "does not re-emit non-conflict triggers during merge-conflict rescan" do
+        project.update!(auto_fix_merge_conflicts: true)
+        unchanged_pr.update!(pr_review_phase: "ready")
+        stub_github_for_pr(
+          mergeable: false,
+          checks: [ { name: "ci", conclusion: "failure" } ],
+          reviews: [ { id: 200, user_login: "reviewer", state: "CHANGES_REQUESTED",
+                       body: nil, submitted_at: 1.hour.ago } ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to contain_exactly(
+          hash_including(
+            pr_number: 42,
+            triggers: contain_exactly(hash_including(type: "merge_conflicts"))
+          )
+        )
+      end
+
+      it "skips unchanged ready PRs with no merge conflict when auto-fix is enabled" do
+        project.update!(auto_fix_merge_conflicts: true)
+        unchanged_pr.update!(pr_review_phase: "ready")
+        stub_github_for_pr(mergeable: true)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
       it "updates last_pr_scan_at after scanning" do
         unchanged_pr.update_columns(last_pr_scan_at: nil, github_updated_at: Time.current)
         stub_github_for_pr
@@ -3540,14 +3628,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_github_for_pr(reviews: [])
     end
 
-    it "emits a paid_agent_review_pending trigger alongside ready_for_owner" do
+    it "blocks draft exit with a paid_agent_review_pending trigger (no ready_for_owner)" do
       result = activity.execute(project_id: project.id)
 
       expect(result[:prs_to_trigger].size).to eq(1)
       trigger = result[:prs_to_trigger].first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("paid_agent_review_pending")
-      expect(trigger_types).to include("ready_for_owner")
+      expect(trigger_types).not_to include("ready_for_owner")
     end
   end
 
@@ -3588,11 +3676,43 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_github_for_pr(reviews: [])
     end
 
-    it "does not emit a paid_agent_review_pending trigger" do
+    it "keeps the paid_agent_review_pending trigger active" do
       result = activity.execute(project_id: project.id)
 
-      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
-      expect(triggers).not_to include("paid_agent_review_pending")
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      pending_trigger = trigger[:triggers].find { |t| t[:type] == "paid_agent_review_pending" }
+
+      expect(pending_trigger).to be_present
+      expect(pending_trigger[:details]).to eq("paid_agent review run is still in progress")
+      expect(trigger[:triggers].map { |t| t[:type] }).not_to include("ready_for_owner")
+    end
+  end
+
+  context "when paid_agent is the only review method and a review-goal run is already running" do
+    before do
+      enable_paid_agent_review!
+      issue = create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "review", status: "running")
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "still blocks draft exit until the review is posted" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+
+      expect(trigger_types).to include("paid_agent_review_pending")
+      expect(trigger_types).not_to include("ready_for_owner")
     end
   end
 
@@ -3678,6 +3798,60 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(result[:prs_to_trigger].size).to eq(1)
       trigger = result[:prs_to_trigger].first
       expect(trigger[:triggers].map { |t| t[:type] }).to include("paid_agent_review_pending")
+    end
+  end
+
+  context "when paid_agent is the only review method and a clean review exists" do
+    before do
+      enable_paid_agent_review!
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      stub_github_for_pr(reviews: [
+        { id: 200, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+          body: "Review complete.\n<!-- paid-review-clean -->", submitted_at: 1.hour.ago }
+      ])
+    end
+
+    it "allows draft exit with ready_for_owner when paid_agent review is clean" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+      expect(trigger_types).to include("ready_for_owner")
+      expect(trigger_types).not_to include("paid_agent_review_pending")
+    end
+  end
+
+  context "when paid_agent is enabled alongside copilot with no reviews" do
+    before do
+      project.update!(review_settings: {
+        "enabled" => true,
+        "methods" => {
+          "copilot" => { "enabled" => true },
+          "paid_agent" => { "enabled" => true }
+        }
+      })
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "gates draft exit via copilot (paid_agent does not independently block)" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+      # copilot gates draft exit with review_bot_review_pending
+      expect(trigger_types).to include("review_bot_review_pending")
+      expect(trigger_types).not_to include("ready_for_owner")
     end
   end
 
