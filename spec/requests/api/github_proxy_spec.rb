@@ -323,6 +323,48 @@ RSpec.describe "Api::GithubProxy" do
       )
     end
 
+    it "does not log a warning for approved body-only reviews" do
+      approved_response = {
+        id: 999,
+        body: "Looks good to me",
+        html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
+        state: "APPROVED"
+      }.to_json
+      stub_request(:post, target_url)
+        .to_return(status: 200, body: approved_response, headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Looks good to me", event: "APPROVE" }.to_json,
+        headers: valid_headers
+
+      expect(Rails.logger).not_to have_received(:warn).with(
+        hash_including(message: "github_proxy.review_missing_inline_comments")
+      )
+    end
+
+    it "does not log a warning when review body includes the clean marker" do
+      clean_review_response = {
+        id: 999,
+        body: "Generated no new comments. <!-- paid-review-clean -->",
+        html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
+        state: "commented"
+      }.to_json
+      stub_request(:post, target_url)
+        .to_return(status: 200, body: clean_review_response, headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: {
+          body: "Generated no new comments. <!-- paid-review-clean -->",
+          event: "COMMENT",
+          comments: []
+        }.to_json,
+        headers: valid_headers
+
+      expect(Rails.logger).not_to have_received(:warn).with(
+        hash_including(message: "github_proxy.review_missing_inline_comments")
+      )
+    end
+
     context "when paid_agent review is enabled" do
       before do
         allow(Github::ReviewBotInstallationToken).to receive_messages(

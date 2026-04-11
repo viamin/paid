@@ -180,7 +180,7 @@ module Api
       comment_count = Array(request_body&.dig("comments")).length
 
       return unless comment_count.zero?
-      return if response_body["body"].to_s.match?(/generated no (?:new )?comments/i)
+      return unless non_clean_review?(request_body, response_body)
 
       Rails.logger.warn(
         message: "github_proxy.review_missing_inline_comments",
@@ -196,6 +196,28 @@ module Api
       JSON.parse(body)
     rescue JSON::ParserError
       nil
+    end
+
+    def non_clean_review?(request_body, response_body)
+      return false if clean_review_event?(request_body)
+      return false if clean_review_state?(response_body)
+      return false if clean_review_body?(response_body["body"])
+
+      true
+    end
+
+    def clean_review_event?(request_body)
+      request_body&.dig("event").to_s.casecmp("APPROVE").zero?
+    end
+
+    def clean_review_state?(response_body)
+      response_body["state"].to_s.casecmp("APPROVED").zero?
+    end
+
+    def clean_review_body?(body)
+      normalized_body = body.to_s
+      normalized_body.include?("<!-- paid-review-clean -->") ||
+        normalized_body.match?(/generated no (?:new )?comments/i)
     end
 
     def log_error(message, error)
