@@ -1637,6 +1637,168 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when paid_agent review round limit is reached in draft phase" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "paid_agent" => {
+                "enabled" => true,
+                "termination" => { "max_review_rounds" => 3 }
+              }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 1)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Found issues.", submitted_at: 3.hours.ago },
+            { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Still has issues.", submitted_at: 2.hours.ago },
+            { id: 3, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "More issues.", submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "escalates to owner instead of continuing review cycle" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
+        expect(trigger[:triggers].first[:details]).to include("paid_agent review round limit")
+        expect(trigger[:triggers].first[:details]).to include("3 rounds")
+      end
+    end
+
+    context "when paid_agent review rounds are below the limit in draft phase" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "paid_agent" => {
+                "enabled" => true,
+                "termination" => { "max_review_rounds" => 3 }
+              }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Found issues.", submitted_at: 2.hours.ago },
+            { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Still has issues.", submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "continues the review cycle normally" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("escalate_to_owner")
+      end
+    end
+
+    context "when paid_agent max_review_rounds is not set" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "paid_agent" => {
+                "enabled" => true,
+                "termination" => { "max_review_rounds" => nil, "stop_when_no_comments" => true }
+              }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Found issues.", submitted_at: 3.hours.ago },
+            { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Still has issues.", submitted_at: 2.hours.ago },
+            { id: 3, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "More issues.", submitted_at: 1.hour.ago },
+            { id: 4, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Yet more issues.", submitted_at: 30.minutes.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "does not enforce a review round limit" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("escalate_to_owner")
+      end
+    end
+
+    context "when paid_agent review round limit is reached and no review exists yet (ready phase)" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          max_pr_followup_runs: 10,
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "paid_agent" => {
+                "enabled" => true,
+                "termination" => { "max_review_rounds" => 2 }
+              }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Found issues.", submitted_at: 2.hours.ago },
+            { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Still has issues.", submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "does not emit review_bot_review_pending when round limit is reached" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending")
+      end
+    end
+
     context "when draft PR has CI green and no Copilot threads" do
       before do
         project.update!(owner_reviewer_login: "viamin")

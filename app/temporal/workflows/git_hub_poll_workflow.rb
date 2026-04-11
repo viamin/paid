@@ -218,9 +218,12 @@ module Workflows
     end
 
     def handle_escalate_to_owner(project_id, pr_data)
+      escalate_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "escalate_to_owner" }
+      reason = escalate_trigger&.dig(:details)
+
       # Transition to escalated phase so the scanner stops re-emitting this trigger
       run_activity(Activities::MarkEscalatedActivity,
-        { issue_id: pr_data[:issue_id] },
+        { issue_id: pr_data[:issue_id], reason: reason }.compact,
         timeout: 30)
 
       request_owner_review(project_id, pr_data)

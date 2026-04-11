@@ -148,6 +148,12 @@ module Activities
         end
       end
 
+      # When paid_agent is enabled and its per-method max_review_rounds limit
+      # has been reached, escalate instead of continuing the review cycle.
+      if reviews && paid_agent_review_rounds_exhausted?(project, reviews)
+        return escalate_trigger(issue, reason: paid_agent_limit_reason(project))
+      end
+
       # review_bot_review_pending is non-blocking: it requests a review but
       # should not prevent evaluation of CI, comments, or changes_requested.
       pending_triggers = (review_bot_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
@@ -657,8 +663,12 @@ module Activities
         # the draft scanner in a perpetual "waiting for bot review" state
         # with no path out (handle_review_bot_review_pending skips the
         # RequestReviewActivity call when login is nil).
+        #
+        # Also suppress the trigger when the paid_agent review round limit
+        # has been reached — requesting another review would start a cycle
+        # that can never complete within the configured budget.
         login = project && review_bot_request_login(project)
-        if login
+        if login && !paid_agent_review_rounds_exhausted?(project, reviews)
           [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
         else
           []
@@ -1130,6 +1140,41 @@ module Activities
       return false if body.nil?
 
       body.include?(PAID_REVIEW_CLEAN_MARKER)
+    end
+
+    # --- Paid-agent review round limit enforcement ---
+
+    # Returns the configured max_review_rounds for the paid_agent method,
+    # or nil when the limit is not set or paid_agent is not enabled.
+    def paid_agent_max_review_rounds(project)
+      return nil unless project.review_method_enabled?("paid_agent")
+
+      project.review_method_config("paid_agent").dig("termination", "max_review_rounds")
+    end
+
+    # Counts the number of reviews submitted by the paid_agent bot account
+    # on this PR. Each review submission counts as one round regardless of
+    # state (APPROVED, COMMENTED, CHANGES_REQUESTED).
+    def paid_agent_review_count(reviews)
+      return 0 if reviews.nil?
+
+      paid_agent_logins = ProviderSupport::PROVIDER_BOT_USERNAMES.fetch("paid_agent", []).map(&:downcase).to_set
+      reviews.count { |r| paid_agent_logins.include?(r[:user_login]&.downcase) }
+    end
+
+    # Returns true when the paid_agent review method is enabled and the
+    # number of reviews from the bot account on this PR has reached or
+    # exceeded the configured max_review_rounds limit.
+    def paid_agent_review_rounds_exhausted?(project, reviews)
+      max_rounds = paid_agent_max_review_rounds(project)
+      return false if max_rounds.nil? || max_rounds <= 0
+
+      paid_agent_review_count(reviews) >= max_rounds
+    end
+
+    def paid_agent_limit_reason(project)
+      max_rounds = paid_agent_max_review_rounds(project) || 0
+      "the paid_agent review round limit (#{max_rounds} rounds) has been reached"
     end
 
     def extract_actionable_labels(triggers)
