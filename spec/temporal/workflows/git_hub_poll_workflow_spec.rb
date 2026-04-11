@@ -607,14 +607,15 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     it "routes review_goal_retry to RecordReviewGoalRetryActivity and QueueAgentRunActivity with review goal" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
-        triggers: [ { type: "review_goal_retry", details: "Retrying failed review-goal run" } ]
+        triggers: [ { type: "review_goal_retry", details: "Retrying failed review-goal run" } ],
+        current_review_goal_retry_count: 1
       }
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RecordReviewGoalRetryActivity,
-          hash_including(issue_id: 10), timeout: anything)
+          hash_including(issue_id: 10, expected_review_goal_retry_count: 1), timeout: anything)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
           hash_including(

@@ -3638,6 +3638,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("review_goal_retry")
+        expect(trigger[:current_review_goal_retry_count]).to eq(pr_issue.review_goal_retry_count)
       end
 
       it "does not emit review_goal_retry when most recent review-goal run completed" do

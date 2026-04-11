@@ -625,7 +625,8 @@ module Activities
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: [ { type: "review_goal_retry", details: "Retrying failed review-goal run (attempt #{issue.review_goal_retry_count + 1}/#{MAX_REVIEW_GOAL_RETRIES})" } ],
-        phase: issue.pr_review_phase
+        phase: issue.pr_review_phase,
+        current_review_goal_retry_count: issue.review_goal_retry_count
       }
     end
 

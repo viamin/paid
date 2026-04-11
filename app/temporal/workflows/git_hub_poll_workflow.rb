@@ -306,7 +306,9 @@ module Workflows
       pr_number = pr_data[:pr_number]
 
       run_activity(Activities::RecordReviewGoalRetryActivity,
-        { issue_id: issue_id }, timeout: 30)
+        { issue_id: issue_id,
+          expected_review_goal_retry_count: pr_data[:current_review_goal_retry_count] },
+        timeout: 30)
 
       run_activity(Activities::QueueAgentRunActivity, {
         project_id: project_id,
