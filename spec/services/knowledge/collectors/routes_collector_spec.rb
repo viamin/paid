@@ -12,10 +12,11 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
     )
   end
 
-  let(:project) { Struct.new(:id).new(1) }
+  let(:project) { instance_double(Project, id: 1, github_token: github_token) }
   let(:project_version) { Struct.new(:id).new(1) }
   let(:collector_run) { Struct.new(:id).new(1) }
   let(:fixture_file) { Rails.root.join("spec/fixtures/knowledge/routes_expanded.txt").to_s }
+  let(:github_token) { nil }
 
   describe "#collector_type" do
     it "returns routes" do
@@ -149,6 +150,14 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       end
 
       let(:fixture_output) { File.read(fixture_file) }
+      let(:active_github_token) do
+        instance_double(
+          GithubToken,
+          active?: true,
+          token: "github_pat_test_token",
+          touch_last_used!: true
+        )
+      end
 
       before do
         allow(command_collector).to receive(:repo_file_exists?)
@@ -159,7 +168,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           .with("Gemfile").and_return(true)
         # Stub bundle install (gem installation step)
         allow(command_collector).to receive(:run_command)
-          .with("sh", "-c", /bundle install/, timeout: 300)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
           .and_return("")
       end
 
@@ -171,7 +180,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         command_collector.collect
 
         expect(command_collector).to have_received(:run_command)
-          .with("sh", "-c", /bundle install/, timeout: 300)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
       end
 
       it "runs bin/rails routes --expanded" do
@@ -199,17 +208,48 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
 
         expect(container_runner).to have_received(:connect_network!).ordered
         expect(command_collector).to have_received(:run_command)
-          .with("sh", "-c", /bundle install/, timeout: 300).ordered
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash)).ordered
         expect(container_runner).to have_received(:disconnect_network!).ordered
       end
 
       it "disconnects network even when bundle install fails" do
         allow(command_collector).to receive(:run_command)
-          .with("sh", "-c", /bundle install/, timeout: 300)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
           .and_raise(RuntimeError, "bundle install failed")
 
         expect { command_collector.collect }.to raise_error(RuntimeError, "bundle install failed")
         expect(container_runner).to have_received(:disconnect_network!)
+      end
+
+      it "skips when bundle install fails for a git-sourced gem" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
+          .and_raise(RuntimeError, "Bundler::GitError: repo is not yet checked out")
+
+        expect { command_collector.collect }.to raise_error(
+          Knowledge::SkipCollector, /git-sourced gem/
+        )
+        expect(container_runner).to have_received(:disconnect_network!)
+      end
+
+      it "passes github token auth env for bundle install when available" do
+        allow(project).to receive(:github_token).and_return(active_github_token)
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+          .and_return(fixture_output)
+
+        command_collector.collect
+
+        expect(command_collector).to have_received(:run_command).with(
+          "sh", "-c", /bundle install/,
+          timeout: 300,
+          env: hash_including(
+            "HOME" => "/tmp/paid-bundle-home",
+            "PAID_GITHUB_TOKEN" => "github_pat_test_token",
+            "BUNDLE_GITHUB__COM" => "x-access-token:github_pat_test_token"
+          )
+        )
+        expect(active_github_token).to have_received(:touch_last_used!)
       end
 
       it "skips bundle install when Gemfile is absent" do
@@ -222,7 +262,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         command_collector.collect
 
         expect(command_collector).not_to have_received(:run_command)
-          .with("sh", "-c", /bundle install/, timeout: 300)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
       end
 
       it "raises SkipCollector when config/routes.rb is missing" do

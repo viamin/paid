@@ -4,6 +4,18 @@ module Knowledge
   module Collectors
     class RoutesCollector < BaseCollector
       SCOPE_PATH = "config/routes.rb"
+      BUNDLE_HOME = "/tmp/paid-bundle-home"
+      GIT_INSTALL_ERROR_PATTERNS = [
+        /Bundler::GitError/i,
+        /not yet checked out/i,
+        /Authentication failed/i,
+        /could not read Username/i,
+        /Repository not found/i,
+        /couldn['’]t find remote ref/i,
+        /remote branch .* not found/i,
+        /revision .* does not exist/i,
+        /host key verification failed/i
+      ].freeze
 
       def collect
         output = read_routes_output
@@ -93,13 +105,55 @@ module Knowledge
         container_runner.connect_network!
         run_command(
           "sh", "-c",
-          "BUNDLE_PATH=/tmp/bundle BUNDLE_APP_CONFIG=/tmp/bundle-config " \
-          "BUNDLE_FROZEN=true " \
-          "bundle install --jobs 4 --retry 3",
-          timeout: 300
+          install_bundle_command,
+          timeout: 300,
+          env: install_bundle_env
         )
+      rescue => e
+        raise unless git_dependency_install_error?(e)
+
+        skip!("bundle install failed for a git-sourced gem: #{sanitize_install_error(e.message)}")
       ensure
         container_runner.disconnect_network!
+      end
+
+      def install_bundle_command
+        "mkdir -p #{BUNDLE_HOME} && " \
+          "if [ -n \"${PAID_GITHUB_TOKEN:-}\" ]; then " \
+          "printf 'machine github.com\\nlogin x-access-token\\npassword %s\\n' \"$PAID_GITHUB_TOKEN\" > #{BUNDLE_HOME}/.netrc && " \
+          "chmod 600 #{BUNDLE_HOME}/.netrc && " \
+          "git config --global url.\\\"https://github.com/\\\".insteadOf ssh://git@github.com/ && " \
+          "git config --global url.\\\"https://github.com/\\\".insteadOf git@github.com:; " \
+          "fi && " \
+          "bundle install --jobs 4 --retry 3"
+      end
+
+      def install_bundle_env
+        env = {
+          "HOME" => BUNDLE_HOME,
+          "BUNDLE_PATH" => "/tmp/bundle",
+          "BUNDLE_APP_CONFIG" => "/tmp/bundle-config",
+          "BUNDLE_FROZEN" => "true"
+        }
+
+        github_token = project.github_token
+        return env unless github_token&.active?
+
+        github_token.touch_last_used!
+        env.merge(
+          "PAID_GITHUB_TOKEN" => github_token.token,
+          "BUNDLE_GITHUB__COM" => "x-access-token:#{github_token.token}"
+        )
+      end
+
+      def git_dependency_install_error?(error)
+        GIT_INSTALL_ERROR_PATTERNS.any? { |pattern| error.message.match?(pattern) }
+      end
+
+      def sanitize_install_error(message)
+        message
+          .gsub(%r{x-access-token:[^@/\s]+@github\.com}, "x-access-token:[REDACTED]@github.com")
+          .truncate(200)
       end
 
       def parse_expanded_output(output)
