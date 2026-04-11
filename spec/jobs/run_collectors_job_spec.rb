@@ -122,7 +122,8 @@ RSpec.describe RunCollectorsJob do
           project: project,
           commit_sha: commit_sha,
           branch: "main",
-          committed_at: nil
+          committed_at: nil,
+          options: { network_mode: "bridge" }
         )
 
         described_class.new.perform(project.id, commit_sha)
