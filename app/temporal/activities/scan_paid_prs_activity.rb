@@ -45,20 +45,31 @@ module Activities
 
       scanned_count = 0
       unchanged_count = 0
-      prs_to_trigger = paid_prs.filter_map do |issue|
+      prs_to_trigger = []
+      paid_prs.each do |issue|
         if skip_unchanged_pr?(project, issue)
           unchanged_count += 1
-          next nil
+          next
         end
 
         result = scan_pr(project, client, issue)
         # Only count as scanned when the scan actually completed — scan_pr
         # returns :skipped when short-circuited (active run exists) or when
         # API failures prevented full evaluation.
-        next nil if result == :skipped
+        next if result == :skipped
         scanned_count += 1
         issue.update_column(:last_pr_scan_at, Time.current)
-        result
+        prs_to_trigger << result if result
+      rescue Temporalio::Error::ApplicationError => e
+        raise unless e.type == "RateLimit"
+
+        logger.warn(
+          message: "pr_scanner.rate_budget_exhausted_mid_scan",
+          project_id: project_id,
+          prs_collected: prs_to_trigger.size,
+          prs_remaining: paid_prs.size - paid_prs.index(issue) - 1
+        )
+        break
       end
 
       logger.info(
@@ -88,8 +99,10 @@ module Activities
 
       case issue.pr_review_phase
       when "draft", "restarted"
+        # Rate budget checked inside scan_draft_pr, after non-API early exits
         scan_draft_pr(project, client, issue)
       when "ready"
+        check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
@@ -97,6 +110,7 @@ module Activities
           scan_ready_pr(project, client, issue, pr_data: pr_data)
         end
       when "escalated"
+        check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
@@ -119,6 +133,8 @@ module Activities
       if consecutive_draft_failures_breaker?(project, issue)
         return escalate_trigger(issue, reason: "Consecutive draft follow-up failures (#{MAX_CONSECUTIVE_DRAFT_FAILURES} runs with no output)")
       end
+
+      check_rate_budget!(client)
 
       skip_comment_signals = project.max_draft_review_rounds.zero?
       unresolved_threads = nil

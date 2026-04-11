@@ -72,7 +72,34 @@ module Knowledge
           raise "routes collector requires containerized mode — failing on host for security"
         end
 
-        run_command("bin/rails", "routes", "--expanded", timeout: 60)
+        # Install gems so `bin/rails routes` can boot the application.
+        # The container workspace is read-only, so gems are installed to
+        # /tmp/bundle (a writable tmpfs mount).
+        # Network is temporarily enabled for bundle install, then disabled
+        # before running bin/rails routes (which executes untrusted code).
+        if repo_file_exists?("Gemfile")
+          install_gems_in_container
+        end
+
+        run_command(
+          "sh", "-c",
+          "BUNDLE_PATH=/tmp/bundle BUNDLE_APP_CONFIG=/tmp/bundle-config " \
+          "bin/rails routes --expanded",
+          timeout: 120
+        )
+      end
+
+      def install_gems_in_container
+        container_runner.connect_network!
+        run_command(
+          "sh", "-c",
+          "BUNDLE_PATH=/tmp/bundle BUNDLE_APP_CONFIG=/tmp/bundle-config " \
+          "BUNDLE_FROZEN=true " \
+          "bundle install --jobs 4 --retry 3",
+          timeout: 300
+        )
+      ensure
+        container_runner.disconnect_network!
       end
 
       def parse_expanded_output(output)
