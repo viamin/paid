@@ -14,6 +14,7 @@ module Activities
         else
           agent_run.complete!
         end
+        record_draft_review_round_if_needed(agent_run)
         agent_run.log!("system", "Completed without output: #{reason}")
 
         if agent_run.issue && agent_run.status != "no_output"

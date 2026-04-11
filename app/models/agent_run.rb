@@ -8,6 +8,7 @@ class AgentRun < ApplicationRecord
   ACTIVE_STATUSES = %w[pending running].freeze
   FINISHED_STATUSES = %w[completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
+  TERMINAL_FAILURE_STATUSES = (FAILURE_STATUSES + %w[cancelled]).freeze
   UNFINISHED_STATUSES = %w[queued pending running paused].freeze
   GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
@@ -72,6 +73,7 @@ class AgentRun < ApplicationRecord
   validates :cost_cents, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :duration_seconds, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :source_pull_request_number, numericality: { greater_than: 0 }, allow_nil: true
+  validates :expected_draft_review_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
   validates :auth_provider, length: { maximum: 50 }
   validates :diagnosis_status, inclusion: { in: %w[in_progress processing completed failed] }, allow_nil: true
   validates :diagnosis_issue_url, length: { maximum: 500 }
@@ -80,9 +82,11 @@ class AgentRun < ApplicationRecord
   validates :stale_requeue_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :token_limit_status, inclusion: { in: TOKEN_LIMIT_STATUSES }, allow_nil: true
   validates :guardrail_violation_type, inclusion: { in: GUARDRAIL_VIOLATION_TYPES }, allow_nil: true
+  validates :priority_tier, inclusion: { in: Project::PRIORITY_TIERS }, allow_nil: true
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
   validate :provider_belongs_to_project_owner, if: -> { provider.present? }
   validate :has_prompt_source, on: :create
+  validate :draft_review_round_tracking_is_consistent
 
   scope :by_status, ->(status) { where(status: status) }
   scope :queued, -> { where(status: "queued") }
@@ -949,6 +953,19 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  # Guard: only fires when these specific columns are being changed, so unrelated
+  # saves skip this check. Safe because no code path clears expected_draft_review_count
+  # independently — both columns are always set together at creation or merge time.
+  def draft_review_round_tracking_is_consistent
+    return unless count_toward_draft_review_round?
+    return unless will_save_change_to_count_toward_draft_review_round? ||
+                  will_save_change_to_expected_draft_review_count?
+
+    if expected_draft_review_count.blank?
+      errors.add(:expected_draft_review_count, "is required when counting toward draft review rounds")
+    end
+  end
 
   def normalize_log_content(content)
     text = content.to_s
