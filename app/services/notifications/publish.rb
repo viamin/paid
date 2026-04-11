@@ -37,6 +37,7 @@ module Notifications
         action_url: action_url,
         nav_section: nav_section,
         user: user,
+        read_at: nil,
         resolved_at: nil,
         dismissed_at: nil
       )
