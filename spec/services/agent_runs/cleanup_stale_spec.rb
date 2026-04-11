@@ -80,6 +80,42 @@ RSpec.describe AgentRuns::CleanupStale do
       expect(stale_run.issue.reload.paid_state).to eq("failed")
     end
 
+    it "clears container_id even when Docker reconnect fails" do
+      stale_run = create(:agent_run, :running, project: project,
+        started_at: AgentRun.stale_running_cutoff - 1.minute,
+        container_id: "container-gone")
+      relation = instance_double(ActiveRecord::Relation)
+      provisioner = instance_double(Containers::ServiceProvisioner, cleanup: true)
+
+      allow(project.agent_runs).to receive(:stale_for_cleanup).and_return(relation)
+      allow(relation).to receive(:find_each).and_yield(stale_run)
+      allow(Containers::Provision).to receive(:reconnect).and_raise(Docker::Error::NotFoundError, "container gone")
+      allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+
+      described_class.call(project: project)
+
+      expect(stale_run.reload.container_id).to be_nil
+    end
+
+    it "clears container_id even when Docker cleanup fails" do
+      stale_run = create(:agent_run, :running, project: project,
+        started_at: AgentRun.stale_running_cutoff - 1.minute,
+        container_id: "container-broken")
+      relation = instance_double(ActiveRecord::Relation)
+      container_service = instance_double(Containers::Provision)
+      provisioner = instance_double(Containers::ServiceProvisioner, cleanup: true)
+
+      allow(container_service).to receive(:cleanup).and_raise(Docker::Error::ServerError, "cleanup failed")
+      allow(project.agent_runs).to receive(:stale_for_cleanup).and_return(relation)
+      allow(relation).to receive(:find_each).and_yield(stale_run)
+      allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
+      allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+
+      described_class.call(project: project)
+
+      expect(stale_run.reload.container_id).to be_nil
+    end
+
     it "returns the number of cleaned runs" do
       create(:agent_run, :running, project: project, started_at: AgentRun.stale_running_cutoff - 1.minute)
       stale_pending = create(:agent_run, status: "pending", project: project)
