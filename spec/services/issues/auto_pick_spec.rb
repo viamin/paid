@@ -144,6 +144,15 @@ RSpec.describe Issues::AutoPick do
       expect(result).to be_nil
     end
 
+    it "does not skip issues whose linked PRs are closed" do
+      issue = create(:issue, project: project, github_number: 1)
+      create(:issue, :pull_request, project: project, parent_issue: issue, github_state: "closed")
+
+      result = described_class.new(project).call
+
+      expect(result.issue).to eq(issue)
+    end
+
     it "picks another eligible issue when the project already has an active run" do
       issue_with_run = create(:issue, project: project)
       create(:agent_run, :queued, project: project, issue: issue_with_run)

@@ -59,7 +59,7 @@ module Issues
         .where(paid_state: %w[new planning failed])
         .where.not(id: AgentRun.where(project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).where.not(issue_id: nil).select(:issue_id))
         .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
-        .where.not(id: Issue.where(project: project).where.not(parent_issue_id: nil).distinct.select(:parent_issue_id))
+        .where.not(id: Issue.where(project: project, is_pull_request: false).where.not(parent_issue_id: nil).distinct.select(:parent_issue_id))
         .where.not(id: Issue.where(project: project, is_pull_request: true, github_state: "open").where.not(parent_issue_id: nil).select(:parent_issue_id))
 
       trusted_usernames = Array(project.allowed_github_usernames).presence
