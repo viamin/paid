@@ -414,7 +414,7 @@ class Project < ApplicationRecord
       self, :project_updates,
       target: "workflow-status",
       partial: "workflow_statuses/status",
-      locals: { project: self, health: health }
+      locals: { project: self, health: health, show_restart: true }
     )
   end
 
