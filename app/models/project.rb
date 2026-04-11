@@ -640,6 +640,10 @@ class Project < ApplicationRecord
         errors.add(:review_settings, "manual requires a non-blank reviewer_login when enabled")
       end
 
+      if method_name == "paid_agent" && !Github::ReviewBotInstallationToken.configured?
+        errors.add(:review_settings, "paid_agent requires the paid-code-reviewer GitHub App credentials")
+      end
+
       termination = config["termination"]
       if termination.present? && !termination.is_a?(Hash)
         errors.add(:review_settings, "#{method_name} termination must be a JSON object")
