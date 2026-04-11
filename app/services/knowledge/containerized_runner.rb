@@ -39,7 +39,8 @@ module Knowledge
       cpu_quota: 100_000,                # 1 CPU
       pids_limit: 200,
       timeout_seconds: 300,              # 5 minutes
-      workspace_mount: "/workspace"
+      workspace_mount: "/workspace",
+      network_mode: "none"
     }.freeze
 
     COMMIT_SHA_PATTERN = /\A[0-9a-f]{40}\z/i
@@ -274,7 +275,7 @@ module Knowledge
         "Binds" => [
           "#{@workspace_volume}:#{options[:workspace_mount]}:rw"
         ],
-        "NetworkMode" => "none"
+        "NetworkMode" => options[:network_mode]
       }
     end
 

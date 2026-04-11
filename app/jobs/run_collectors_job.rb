@@ -23,7 +23,8 @@ class RunCollectorsJob < ApplicationJob
         project: project,
         commit_sha: commit_sha,
         branch: branch,
-        committed_at: committed_at
+        committed_at: committed_at,
+        options: { network_mode: "bridge" }
       )
     else
       Knowledge::CollectorRunner.call(
