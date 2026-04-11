@@ -225,7 +225,7 @@ class ProjectsController < ApplicationController
           copilot: [ :enabled, termination_permit ],
           paid_agent: [ :enabled, termination_permit ],
           ci_action: [ :enabled, :action_name, termination_permit ],
-          manual: [ :enabled, termination_permit ],
+          manual: [ :enabled, :reviewer_login, termination_permit ],
           codex: [ :enabled, termination_permit ]
         } }
       ]
@@ -247,6 +247,7 @@ class ProjectsController < ApplicationController
 
         config["enabled"] = ActiveModel::Type::Boolean.new.cast(config["enabled"]) if config.key?("enabled")
         config["action_name"] = config["action_name"].presence if config.key?("action_name")
+        config["reviewer_login"] = config["reviewer_login"].presence if config.key?("reviewer_login")
         next unless config["termination"].is_a?(Hash)
 
         term = config["termination"]
