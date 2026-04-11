@@ -3466,6 +3466,36 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger]).to eq([])
       end
 
+      it "does not re-emit non-conflict triggers during merge-conflict rescan" do
+        project.update!(auto_fix_merge_conflicts: true)
+        unchanged_pr.update!(pr_review_phase: "ready")
+        stub_github_for_pr(
+          mergeable: false,
+          checks: [ { name: "ci", conclusion: "failure" } ],
+          reviews: [ { id: 200, user_login: "reviewer", state: "CHANGES_REQUESTED",
+                       body: nil, submitted_at: 1.hour.ago } ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to contain_exactly(
+          hash_including(
+            pr_number: 42,
+            triggers: contain_exactly(hash_including(type: "merge_conflicts"))
+          )
+        )
+      end
+
+      it "skips unchanged ready PRs with no merge conflict when auto-fix is enabled" do
+        project.update!(auto_fix_merge_conflicts: true)
+        unchanged_pr.update!(pr_review_phase: "ready")
+        stub_github_for_pr(mergeable: true)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
       it "updates last_pr_scan_at after scanning" do
         unchanged_pr.update_columns(last_pr_scan_at: nil, github_updated_at: Time.current)
         stub_github_for_pr
