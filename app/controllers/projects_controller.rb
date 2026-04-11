@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ProjectsController < ApplicationController
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :detect_services ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :detect_services, :cleanup_stale_runs ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -22,6 +22,8 @@ class ProjectsController < ApplicationController
   def show
     authorize @project
     @recent_agent_runs = @project.agent_runs.recent.includes(:issue).limit(10).to_a
+    @stale_agent_runs_count = @project.agent_runs.stale_for_cleanup.count
+    @show_stale_cleanup_action = policy(@project).update? && @stale_agent_runs_count.positive?
     AgentRun.preload_source_pull_requests(@recent_agent_runs)
     settings = current_user.settings
     open_items = @project.issues.where(github_state: "open").order(github_number: :desc)
@@ -139,6 +141,14 @@ class ProjectsController < ApplicationController
     redirect_to edit_project_path(@project), alert: "Could not detect services: #{e.message}"
   end
 
+  def cleanup_stale_runs
+    authorize @project, :update?
+
+    cleaned_count = AgentRuns::CleanupStale.call(project: @project)
+    message = cleaned_count.positive? ? "Cleaned up #{cleaned_count} stale agent run(s)." : "No stale agent runs needed cleanup."
+    redirect_to project_path(@project), notice: message
+  end
+
   def destroy
     authorize @project
 
@@ -215,7 +225,7 @@ class ProjectsController < ApplicationController
           copilot: [ :enabled, termination_permit ],
           paid_agent: [ :enabled, termination_permit ],
           ci_action: [ :enabled, :action_name, termination_permit ],
-          manual: [ :enabled, termination_permit ],
+          manual: [ :enabled, :reviewer_login, termination_permit ],
           codex: [ :enabled, termination_permit ]
         } }
       ]
@@ -237,6 +247,7 @@ class ProjectsController < ApplicationController
 
         config["enabled"] = ActiveModel::Type::Boolean.new.cast(config["enabled"]) if config.key?("enabled")
         config["action_name"] = config["action_name"].presence if config.key?("action_name")
+        config["reviewer_login"] = config["reviewer_login"].presence if config.key?("reviewer_login")
         next unless config["termination"].is_a?(Hash)
 
         term = config["termination"]
