@@ -48,6 +48,15 @@ module Activities
       prs_to_trigger = []
       paid_prs.each do |issue|
         if skip_unchanged_pr?(project, issue)
+          if merge_conflict_rescan_needed?(project, issue)
+            result = scan_merge_conflict_only(project, client, issue)
+            if result && result != :skipped
+              scanned_count += 1
+              issue.update_column(:last_pr_scan_at, Time.current)
+              prs_to_trigger << result
+              next
+            end
+          end
           unchanged_count += 1
           next
         end
@@ -110,13 +119,14 @@ module Activities
         check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
+          if review_goal_retry_limit_reached?(project, issue)
+            return escalate_trigger(issue,
+              reason: "Review-goal retry limit reached " \
+                      "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
+          end
+
           scan_draft_pr(project, client, issue, pr_data: pr_data)
         else
-          # Escalate when review-goal retries are exhausted so the PR does not
-          # wedge indefinitely after repeated review failures (#1002).
-          # Checked after maybe_restart_draft so that a PR converted back to
-          # draft on GitHub can transition to "restarted" instead of being
-          # trapped in perpetual escalation.
           if review_goal_retry_limit_reached?(project, issue)
             return escalate_trigger(issue,
               reason: "Review-goal retry limit reached " \
@@ -129,6 +139,12 @@ module Activities
         check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
+          if review_goal_retry_limit_reached?(project, issue)
+            return escalate_trigger(issue,
+              reason: "Review-goal retry limit reached " \
+                      "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
+          end
+
           scan_draft_pr(project, client, issue, pr_data: pr_data)
         else
           scan_escalated_pr(project, client, issue, pr_data: pr_data)
@@ -182,10 +198,21 @@ module Activities
 
       # review_bot_review_pending gates draft advancement (the PR must have a
       # clean review-bot review before it can leave draft).
-      # paid_agent_review_pending is fully non-blocking: it signals the
-      # workflow to start a review run but never prevents ready_for_owner.
+      # paid_agent_review_pending is normally a non-blocking sidecar that
+      # signals the workflow to start a review run without preventing
+      # ready_for_owner.  However, when paid_agent is the *only* enabled
+      # review method there is no other bot that can gate draft exit, so
+      # paid_agent_review_pending must block advancement just like
+      # review_bot_review_pending does for copilot/codex.
+      paid_agent_sole_reviewer = paid_agent_sole_review_method?(project)
       pending_triggers = (review_bot_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
       sidecar_triggers = (review_bot_triggers || []).select { |t| t[:type] == "paid_agent_review_pending" }
+
+      if paid_agent_sole_reviewer && sidecar_triggers.any?
+        pending_triggers.concat(sidecar_triggers)
+        sidecar_triggers = []
+      end
+
       blocking_triggers = (review_bot_triggers || []).reject { |t|
         t[:type] == "review_bot_review_pending" || t[:type] == "paid_agent_review_pending"
       }
@@ -481,6 +508,34 @@ module Activities
       )
 
       true
+    end
+
+    def merge_conflict_rescan_needed?(project, issue)
+      project.auto_fix_merge_conflicts &&
+        issue.pr_review_phase.in?(%w[ready escalated]) &&
+        !followup_limit_reached?(project, issue)
+    end
+
+    def scan_merge_conflict_only(project, client, issue)
+      return :skipped if active_run_exists?(project, issue)
+
+      check_rate_budget!(client)
+      pr_data = fetch_pr_data(client, project, issue)
+      return :skipped if pr_data.nil?
+
+      triggers = check_merge_conflicts(project, pr_data)
+      return nil if triggers.empty?
+
+      log_triggers(project, issue, triggers)
+
+      {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: triggers,
+        phase: issue.pr_review_phase,
+        labels_to_remove: [],
+        current_followup_count: issue.pr_followup_count
+      }
     end
 
     def recently_completed_run?(project, issue)
@@ -798,10 +853,22 @@ module Activities
 
     MAX_REVIEW_GOAL_RETRIES = 3
 
+    # Returns true when paid_agent is the only enabled bot review method,
+    # meaning its pending trigger must block draft exit since no other bot
+    # can gate the PR.
+    def paid_agent_sole_review_method?(project)
+      return false unless project&.review_enabled?
+      return false unless project.review_method_enabled?("paid_agent")
+
+      bot_methods = project.enabled_review_methods & %w[copilot codex paid_agent]
+      bot_methods == %w[paid_agent]
+    end
+
     # Checks whether a paid_agent review-goal run is needed for this PR.
-    # Returns a paid_agent_review_pending trigger when no completed review-goal
-    # run exists and the max_review_rounds limit has not been reached. Returns
-    # an empty array when the review is already satisfied or the limit is hit.
+    # Returns a paid_agent_review_pending trigger when no up-to-date completed
+    # review-goal run exists and the max_review_rounds limit has not been
+    # reached. Unfinished review runs keep emitting the pending trigger so the
+    # draft-phase gate remains active until the review is actually posted.
     #
     # When the most recent review-goal run failed, re-emits the trigger so the
     # scanner queues a retry — up to max_review_goal_retries (default 3).
@@ -815,9 +882,9 @@ module Activities
         source_pull_request_number: pr_number,
         goal: "review"
       )
-
-      # A review-goal run is already queued or running — no new trigger needed.
-      return [] if review_runs.where(status: AgentRun::UNFINISHED_STATUSES).exists?
+      unfinished_run = review_runs.where(status: AgentRun::UNFINISHED_STATUSES)
+        .order(created_at: :desc)
+        .first
 
       completed_count = review_runs.where(status: "completed").count
       max_rounds = project.review_method_config("paid_agent")
@@ -853,7 +920,13 @@ module Activities
                    details: "Retrying failed review-goal run (attempt #{failed_count + 1}/#{max_retries})" } ]
       end
 
-      [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]
+      details = if unfinished_run
+        "paid_agent review run is still in progress"
+      else
+        "No paid_agent review found for PR"
+      end
+
+      [ { type: "paid_agent_review_pending", details: details } ]
     end
 
     # Returns true when the number of consecutive failed review-goal runs in
@@ -959,8 +1032,8 @@ module Activities
 
     # Returns true when the diff between the review's commit and the PR
     # HEAD touches at least one file mentioned in the review's inline
-    # comments. Falls back to true (assumes addressed) when inline
-    # comments have no file paths or the comparison cannot be fetched.
+    # comments. Returns false (assumes NOT addressed) when the review
+    # has no inline comments, since we cannot verify file overlap.
     def review_diff_touches_reviewed_files?(client, project, issue, review)
       return true if client.nil? || project.nil? || issue.nil?
 
@@ -979,7 +1052,7 @@ module Activities
         .select { |c| c[:pull_request_review_id] == review_id }
         .filter_map { |c| c[:path] }
         .to_set
-      return true if reviewed_paths.empty?
+      return false if reviewed_paths.empty?
 
       # NOTE: pr_data is already fetched in scan_pr, but check_review_bot_status
       # does not receive it. This extra API call is behind multiple guard
