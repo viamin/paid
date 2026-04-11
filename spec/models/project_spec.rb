@@ -664,6 +664,10 @@ RSpec.describe Project do
   end
 
   describe "review_settings" do
+    before do
+      allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+    end
+
     describe "#effective_review_settings" do
       it "returns defaults when review_settings is empty" do
         project = build(:project, review_settings: {})
@@ -776,6 +780,14 @@ RSpec.describe Project do
           "methods" => { "codex" => { "enabled" => true } }
         })
         expect(project.enabled_review_bot_logins).to include("chatgpt-codex-connector", "chatgpt-codex-connector[bot]")
+      end
+
+      it "returns paid_agent logins when paid_agent is enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "paid_agent" => { "enabled" => true } }
+        })
+        expect(project.enabled_review_bot_logins).to include("paid-code-reviewer", "paid-code-reviewer[bot]")
       end
 
       it "does not include logins for disabled methods" do
@@ -911,6 +923,22 @@ RSpec.describe Project do
         })
         expect(project).not_to be_valid
         expect(project.errors[:review_settings].join).to include("timeout_minutes must be a positive integer")
+      end
+
+      it "rejects paid_agent when the review bot credentials are not configured" do
+        allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(false)
+
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => {
+              "enabled" => true
+            }
+          }
+        })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("paid-code-reviewer GitHub App credentials")
       end
 
       it "rejects enabled reviews with no methods enabled" do
