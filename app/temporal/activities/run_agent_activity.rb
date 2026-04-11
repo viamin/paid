@@ -1136,6 +1136,9 @@ module Activities
       IMPORTANT: Your goal is to REVIEW A PULL REQUEST, not to write code, create issues, or create PRs.
 
       Review PR #{{pr_number}} in {{repo}}. Examine the code changes and post a review on the PR.
+      Your review will be posted to GitHub under the `paid-code-reviewer[bot]`
+      account, so write in a direct review voice and do not mention that you
+      are unable to post as a bot.
 
       You have access to the repository code (already cloned). To examine the code changes, either:
       - Use the GitHub API (via the proxy) to retrieve the PR's `/pulls/{{pr_number}}/files` patches and review those diffs; or
@@ -1204,14 +1207,16 @@ module Activities
 
       # Case B — clean PR, no actionable issues: post a single review with an EMPTY
       # comments array and a body that begins with the EXACT phrase
-      # "Generated no new comments." This phrase is the signal Paid uses to mark
-      # the review as clean and stop the review loop. Do NOT paraphrase it.
+      # "Generated no new comments." Include the exact HTML marker
+      # "<!-- paid-review-clean -->" somewhere in the body. These are the
+      # signals Paid uses to mark the review as clean and stop the review loop.
+      # Do NOT paraphrase either signal.
       curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/reviews" \
         -H "Content-Type: application/json" \
         -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
         -H "X-Proxy-Token: $PROXY_TOKEN" \
         -d '{
-          "body": "Generated no new comments. The PR looks ready as-is.",
+          "body": "Generated no new comments. The PR looks ready as-is. <!-- paid-review-clean -->",
           "event": "COMMENT",
           "comments": []
         }'

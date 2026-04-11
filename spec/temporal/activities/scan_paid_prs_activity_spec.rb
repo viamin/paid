@@ -50,6 +50,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
   end
 
   describe "#execute" do
@@ -1279,7 +1280,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
-    context "when review bot review body says generated no comments" do
+    context "when review bot review body says generated no comments but unresolved bot threads remain" do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -1300,11 +1301,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "does not return review_bot_threads trigger when review body is clean" do
+      it "still returns review_bot_threads because unresolved bot feedback remains" do
         result = activity.execute(project_id: project.id)
 
         trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
-        expect(trigger_types).not_to include("review_bot_threads")
+        expect(trigger_types).to include("review_bot_threads", "review_bot_review_pending")
       end
     end
 
@@ -1493,7 +1494,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
-          reviews: [ { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+          reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
                        body: "Looks good. <!-- paid-review-clean -->",
                        submitted_at: 1.hour.ago } ],
           review_threads: []
@@ -1501,11 +1502,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "treats the review as clean and emits no review_bot triggers" do
-        # Verify the bypass short-circuits before review_bot_review_status_from
-        # is reached — without this spy, the test would pass trivially because
-        # paid_agent-only configs already return [] via the :no_review path.
-        expect(activity).not_to receive(:review_bot_review_status_from)
-
         result = activity.execute(project_id: project.id)
 
         trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
@@ -1523,7 +1519,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
-          reviews: [ { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+          reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
                        body: "Found a few things to fix in the error handling.",
                        submitted_at: 1.hour.ago } ],
           review_threads: []
@@ -1552,10 +1548,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft_review_count: 0)
         stub_github_for_pr(
           reviews: [
-            { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
               body: "Looks good. <!-- paid-review-clean -->",
               submitted_at: 2.hours.ago },
-            { id: 2, user_login: "human-reviewer", state: "COMMENTED",
+            { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
               body: "Found new issues after the latest push.",
               submitted_at: 1.hour.ago }
           ],
@@ -1591,7 +1587,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft_review_count: 0)
         stub_github_for_pr(
           reviews: [
-            { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
               body: "Looks good. <!-- paid-review-clean -->",
               submitted_at: 30.minutes.ago },
             { id: 2, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
@@ -1626,7 +1622,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
-          reviews: [ { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+          reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
                        body: "Looks good. <!-- paid-review-clean -->",
                        submitted_at: 1.hour.ago } ],
           review_threads: []
