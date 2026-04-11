@@ -1519,7 +1519,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
-          reviews: [ { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+          reviews: [ { id: 1, user_login: "paid-agent[bot]", state: "COMMENTED",
                        body: "Looks good. <!-- paid-review-clean -->",
                        submitted_at: 1.hour.ago } ],
           review_threads: []
@@ -1580,10 +1580,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft_review_count: 0)
         stub_github_for_pr(
           reviews: [
-            { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+            { id: 1, user_login: "paid-agent[bot]", state: "COMMENTED",
               body: "Looks good. <!-- paid-review-clean -->",
               submitted_at: 2.hours.ago },
-            { id: 2, user_login: "human-reviewer", state: "COMMENTED",
+            { id: 2, user_login: "paid-agent[bot]", state: "COMMENTED",
               body: "Found new issues after the latest push.",
               submitted_at: 1.hour.ago }
           ],
@@ -1620,7 +1620,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft_review_count: 0)
         stub_github_for_pr(
           reviews: [
-            { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+            { id: 1, user_login: "paid-agent[bot]", state: "COMMENTED",
               body: "Looks good. <!-- paid-review-clean -->",
               submitted_at: 30.minutes.ago },
             { id: 2, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
@@ -1655,7 +1655,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
-          reviews: [ { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+          reviews: [ { id: 1, user_login: "paid-agent[bot]", state: "COMMENTED",
                        body: "Looks good. <!-- paid-review-clean -->",
                        submitted_at: 1.hour.ago } ],
           review_threads: []

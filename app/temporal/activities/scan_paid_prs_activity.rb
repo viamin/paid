@@ -32,8 +32,9 @@ module Activities
     # wording changes.
     BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN = /didn'?t find any (?:major )?issues/i
 
-    # paid_agent reviews are posted from regular GitHub accounts, not the
-    # bot logins registered in PROVIDER_BOT_USERNAMES. The agent includes
+    # paid_agent reviews use bot logins registered in PROVIDER_BOT_USERNAMES,
+    # but are evaluated separately from the shared bot-review path (see
+    # check_review_bot_status). The agent includes
     # a machine-readable HTML comment marker when no major findings remain.
     # Only the marker is used for detection — no text patterns — to avoid
     # false positives from human reviewers writing similar phrases.
@@ -971,15 +972,16 @@ module Activities
         REVIEW_BOT_PAID_CLEAN_PATTERN.match?(body)
     end
 
-    # TODO(#918): paid_agent posts reviews from regular GitHub accounts — there is
-    # no dedicated bot login to filter by. This method checks the latest
-    # review from *any* author. The HTML marker (<!-- paid-review-clean -->)
-    # is unlikely to appear in human-authored reviews, but once the project
-    # stores the paid_agent's GitHub login, this should filter by it.
+    # Filter reviews to those authored by the paid-agent bot logins, then
+    # check the latest one for the clean marker.
     def paid_agent_clean_review_present?(reviews)
       return false if reviews.nil? || reviews.empty?
 
-      latest = reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+      paid_logins = ProviderSupport::PROVIDER_BOT_USERNAMES.fetch("paid_agent", [])
+      paid_reviews = reviews.select { |r| paid_logins.include?(r[:user_login]) }
+      return false if paid_reviews.empty?
+
+      latest = paid_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
       paid_agent_review_clean?(latest[:body])
     end
 
