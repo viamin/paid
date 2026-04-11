@@ -36,6 +36,14 @@ FactoryBot.define do
       pull_request_number { 1 }
     end
 
+    trait :no_output do
+      status { "no_output" }
+      started_at { 10.minutes.ago }
+      completed_at { Time.current }
+      duration_seconds { 600 }
+      error_message { "no_changes" }
+    end
+
     trait :failed do
       status { "failed" }
       started_at { 10.minutes.ago }

@@ -45,12 +45,30 @@ module Activities
       client = project.github_token.client
       paid_prs = find_paid_prs(project)
 
-      prs_to_trigger = paid_prs.filter_map { |issue| scan_pr(project, client, issue) }
+      scanned_count = 0
+      unchanged_count = 0
+      prs_to_trigger = paid_prs.filter_map do |issue|
+        if skip_unchanged_pr?(project, issue)
+          unchanged_count += 1
+          next nil
+        end
+
+        result = scan_pr(project, client, issue)
+        # Only count as scanned when the scan actually completed — scan_pr
+        # returns :skipped when short-circuited (active run exists) or when
+        # API failures prevented full evaluation.
+        next nil if result == :skipped
+        scanned_count += 1
+        issue.update_column(:last_pr_scan_at, Time.current)
+        result
+      end
 
       logger.info(
         message: "pr_scanner.scan_complete",
         project_id: project_id,
-        prs_scanned: paid_prs.size,
+        prs_found: paid_prs.size,
+        prs_scanned: scanned_count,
+        prs_skipped_unchanged: unchanged_count,
         prs_triggered: prs_to_trigger.size
       )
 
@@ -68,7 +86,7 @@ module Activities
     end
 
     def scan_pr(project, client, issue)
-      return nil if active_run_exists?(project, issue)
+      return :skipped if active_run_exists?(project, issue)
 
       case issue.pr_review_phase
       when "draft", "restarted"
@@ -159,8 +177,10 @@ module Activities
 
       if all_triggers.empty?
         # If we couldn't fetch PR data, don't prematurely advance the phase.
-        return nil if pr_data.nil?
-        return nil if reviews.nil?
+        # Return :skipped so the caller knows the scan was incomplete and
+        # should not update last_pr_scan_at.
+        return :skipped if pr_data.nil?
+        return :skipped if reviews.nil?
 
         # A draft PR is only ready to leave draft after the latest review-bot
         # review is explicitly clean. Resolved threads alone are not enough.
@@ -200,7 +220,7 @@ module Activities
     # --- Ready phase scanning ---
 
     def scan_ready_pr(project, client, issue, pr_data:)
-      return nil if pr_data.nil?
+      return :skipped if pr_data.nil?
 
       checks = fetch_check_runs(client, project, pr_data)
       reviews = fetch_reviews(client, project, issue)
@@ -220,6 +240,7 @@ module Activities
 
       triggers = detect_ready_triggers(project, client, issue,
         pr_data: pr_data, checks: checks, reviews: reviews)
+      return :skipped if triggers.nil?
       return nil if triggers.empty?
 
       log_triggers(project, issue, triggers)
@@ -240,6 +261,7 @@ module Activities
       return nil if followup_limit_reached?(project, issue)
 
       triggers = detect_ready_triggers(project, client, issue, pr_data: pr_data)
+      return :skipped if triggers.nil?
       return nil if triggers.empty?
 
       log_triggers(project, issue, triggers)
@@ -305,6 +327,15 @@ module Activities
 
     # --- Shared detection logic ---
 
+    # Returns an array of trigger hashes, or nil when critical API
+    # fetches failed *and* no actionable triggers were found — callers
+    # use nil to avoid stamping last_pr_scan_at on an incomplete scan.
+    #
+    # Partial API failures no longer suppress the entire result: triggers
+    # that can be evaluated without the failed endpoint (CI failures,
+    # actionable labels, merge conflicts, etc.) are still returned. Only
+    # when no triggers are found despite missing signal sources do we
+    # return nil to prevent a false "all clear".
     def detect_ready_triggers(project, client, issue, pr_data: nil, checks: nil, reviews: nil,
       unresolved_threads: nil)
       last_run = last_completed_run(project, issue)
@@ -312,6 +343,9 @@ module Activities
       checks ||= fetch_check_runs(client, project, pr_data)
       reviews ||= fetch_reviews(client, project, issue)
       unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
+
+      partial_failure = pr_data.nil? || reviews.nil? || unresolved_threads.nil?
+
       triggers = []
 
       triggers.concat(ci_failure_triggers(checks))
@@ -323,6 +357,13 @@ module Activities
       triggers.concat(check_actionable_labels(project, issue))
       triggers.concat(check_merge_conflicts(project, pr_data))
       triggers.concat(non_bot_review_gate_triggers(project, reviews, checks))
+
+      # When a critical signal source failed but we found actionable
+      # triggers from other sources, return them so downstream actions
+      # are not suppressed. When no triggers were found and some sources
+      # were unavailable, return nil to prevent stamping last_pr_scan_at
+      # on a potentially incomplete "all clear".
+      return nil if triggers.empty? && partial_failure
 
       triggers
     end
@@ -349,6 +390,30 @@ module Activities
       true
     end
 
+    def skip_unchanged_pr?(project, issue)
+      return false unless issue.last_pr_scan_at
+      return false if issue.github_updated_at >= issue.last_pr_scan_at
+      return false if recently_completed_run?(project, issue)
+
+      logger.debug(
+        message: "pr_scanner.skipped_unchanged",
+        project_id: project.id,
+        pr_number: issue.github_number,
+        last_pr_scan_at: issue.last_pr_scan_at,
+        github_updated_at: issue.github_updated_at
+      )
+
+      true
+    end
+
+    def recently_completed_run?(project, issue)
+      project.agent_runs
+        .where(source_pull_request_number: issue.github_number)
+        .or(project.agent_runs.where(pull_request_number: issue.github_number))
+        .where("completed_at >= ?", issue.last_pr_scan_at)
+        .exists?
+    end
+
     def active_run_exists?(project, issue)
       project.agent_runs
         .where(source_pull_request_number: issue.github_number)
@@ -361,10 +426,13 @@ module Activities
     end
 
     # Circuit breaker: if the last N automatic draft follow-up runs on
-    # this PR all ended without producing any output (timeout/failed/
-    # cancelled with zero iterations), stop requeueing to prevent
-    # infinite retry loops. Scoped to automatic create_pr runs so that
-    # manual runs or review-phase followups don't trip the breaker.
+    # this PR all ended without producing any output, stop requeueing
+    # to prevent infinite retry loops. A run is "unproductive" if it
+    # finished as no_output (completed with zero commits), or if it
+    # failed/cancelled/timed out with zero iterations. Runs that did
+    # real work before failing don't trip the breaker. Scoped to
+    # automatic create_pr runs so that manual runs or review-phase
+    # followups don't trip the breaker.
     #
     # The draft_review_count guard ensures we only consider runs from the
     # current draft phase. maybe_restart_draft resets draft_review_count
@@ -373,7 +441,7 @@ module Activities
     def consecutive_draft_failures_breaker?(project, issue)
       return false if issue.draft_review_count < MAX_CONSECUTIVE_DRAFT_FAILURES
 
-      failure_statuses = AgentRun::FAILURE_STATUSES + %w[cancelled]
+      unproductive_statuses = AgentRun::FAILURE_STATUSES + %w[cancelled no_output]
 
       recent_runs = project.agent_runs
         .where(source_pull_request_number: issue.github_number)
@@ -385,7 +453,7 @@ module Activities
       return false if recent_runs.size < MAX_CONSECUTIVE_DRAFT_FAILURES
 
       recent_runs.all? do |run|
-        failure_statuses.include?(run.status) && run.iterations.to_i.zero?
+        unproductive_statuses.include?(run.status) && (run.status == "no_output" || run.iterations.to_i.zero?)
       end
     end
 

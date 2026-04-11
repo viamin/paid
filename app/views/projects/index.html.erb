@@ -49,6 +49,13 @@
                 </span>
               <% end %>
             </div>
+            <% if project.review_enabled? && project.enabled_review_methods.any? %>
+              <div class="mt-1 flex flex-wrap gap-1">
+                <% project.enabled_review_methods.each do |method| %>
+                  <%= review_method_badge(method) %>
+                <% end %>
+              </div>
+            <% end %>
             <p class="mt-1 text-sm text-gray-500 truncate">
               <%= link_to project.full_name, project.github_url, target: "_blank", rel: "noopener noreferrer", class: "hover:text-indigo-600" %>
             </p>
