@@ -4285,6 +4285,47 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  context "when paid_agent is enabled alongside copilot and review-goal retries are exhausted" do
+    let(:mixed_retry_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+    end
+
+    before do
+      project.update!(review_settings: {
+        "enabled" => true,
+        "methods" => {
+          "copilot" => { "enabled" => true },
+          "paid_agent" => {
+            "enabled" => true,
+            "termination" => { "max_review_rounds" => 3 }
+          }
+        }
+      })
+      3.times do
+        create(:agent_run,
+          project: project, issue: mixed_retry_issue,
+          source_pull_request_number: 42,
+          goal: "review", status: "failed",
+          started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      end
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "does not escalate because copilot can still gate the PR" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+      expect(trigger_types).not_to include("escalate_to_owner")
+      expect(trigger_types).to include("review_bot_review_pending")
+    end
+  end
+
   private
 
   # Helper to stub GitHub API calls with sensible defaults.
