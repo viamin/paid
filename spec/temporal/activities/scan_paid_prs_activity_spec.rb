@@ -3457,6 +3457,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger]).to eq([])
       end
 
+      it "still skips ready PRs at the follow-up limit when auto-fix is enabled" do
+        project.update!(auto_fix_merge_conflicts: true, max_pr_followup_runs: 1)
+        unchanged_pr.update!(pr_review_phase: "ready", pr_followup_count: 1)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
       it "updates last_pr_scan_at after scanning" do
         unchanged_pr.update_columns(last_pr_scan_at: nil, github_updated_at: Time.current)
         stub_github_for_pr
