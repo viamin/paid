@@ -76,13 +76,16 @@ module Activities
 
     def build_escalation_comment(reason, project, issue)
       reason = default_reason(project, issue) if reason.blank?
+      owner = project.owner_reviewer_login
 
       lines = [ COMMENT_MARKER, "**Escalation Note**", "" ]
       lines << "This has been escalated because #{reason}."
+      lines << "@#{owner} — manual review is required." if owner.present?
       lines << ""
-      lines << "**Questions:**"
-      lines << "- Are there specific changes you'd like to see in the pull request?"
-      lines << "- Should the automated review cycle be restarted with different guidance?"
+      lines << "**How to resolve:**"
+      lines << "- **Approve** this PR to allow auto-merge (if enabled)"
+      lines << "- **Add the `paid-dismiss-escalation` label** to move back to the `ready` phase without merging"
+      lines << "- **Convert to draft** on GitHub to restart the automated review cycle"
       lines.join("\n")
     end
 

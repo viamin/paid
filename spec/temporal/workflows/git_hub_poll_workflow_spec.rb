@@ -339,6 +339,18 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           { issue_id: 10 }, timeout: anything)
     end
 
+    it "routes dismiss_escalation to DismissEscalationActivity" do
+      pr_data = {
+        issue_id: 10, pr_number: 42,
+        triggers: [ { type: "dismiss_escalation" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::DismissEscalationActivity, hash_including(issue_id: 10), timeout: anything)
+    end
+
     it "routes owner_approved to MergePullRequestActivity" do
       pr_data = {
         issue_id: 10, pr_number: 42,

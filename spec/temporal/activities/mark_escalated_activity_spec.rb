@@ -51,11 +51,27 @@ RSpec.describe Activities::MarkEscalatedActivity do
           .with(anything, anything, a_string_including("automated draft review limit"))
       end
 
-      it "includes questions in the escalation comment" do
+      it "includes resolution instructions in the escalation comment" do
         activity.execute(issue_id: issue.id)
 
         expect(github_client).to have_received(:add_comment)
-          .with(anything, anything, a_string_including("**Questions:**"))
+          .with(anything, anything, a_string_including("**How to resolve:**"))
+      end
+
+      it "mentions the owner in the escalation comment" do
+        issue.project.update!(owner_reviewer_login: "viamin")
+
+        activity.execute(issue_id: issue.id)
+
+        expect(github_client).to have_received(:add_comment)
+          .with(anything, anything, a_string_including("@viamin"))
+      end
+
+      it "includes the dismiss label instruction" do
+        activity.execute(issue_id: issue.id)
+
+        expect(github_client).to have_received(:add_comment)
+          .with(anything, anything, a_string_including("paid-dismiss-escalation"))
       end
 
       it "includes the hidden comment marker for future identification" do
