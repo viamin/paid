@@ -191,6 +191,46 @@ RSpec.describe Activities::QueueAgentRunActivity do
         expect(result[:queued]).to be true
         expect(result[:duplicate]).to be_nil
       end
+
+      it "detects duplicate review-goal runs separately from create_pr runs" do
+        existing = create(:agent_run, :queued, project: project,
+          source_pull_request_number: 42, goal: "review")
+
+        result = activity.execute(
+          project_id: project.id,
+          source_pull_request_number: 42,
+          goal: "review"
+        )
+
+        expect(result[:agent_run_id]).to eq(existing.id)
+        expect(result[:duplicate]).to be true
+      end
+
+      it "allows queueing a review run when a create_pr run is active for the same PR" do
+        create(:agent_run, :running, project: project,
+          source_pull_request_number: 42, goal: "create_pr")
+
+        result = activity.execute(
+          project_id: project.id,
+          source_pull_request_number: 42,
+          goal: "review"
+        )
+
+        expect(result[:queued]).to be true
+        expect(result[:duplicate]).to be_nil
+      end
+    end
+
+    it "creates a review-goal agent run when goal is review" do
+      result = activity.execute(
+        project_id: project.id,
+        source_pull_request_number: 42,
+        goal: "review"
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.goal).to eq("review")
+      expect(agent_run.source_pull_request_number).to eq(42)
     end
   end
 end

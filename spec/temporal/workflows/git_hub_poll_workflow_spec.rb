@@ -270,6 +270,32 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "viamin" ]), timeout: anything)
     end
 
+    it "queues paid_agent review sidecar when bundled with ready_for_owner" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
+        .and_return({ marked_ready: true })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
+        triggers: [
+          { type: "ready_for_owner" },
+          { type: "paid_agent_review_pending" }
+        ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(project_id: 1, issue_id: 10,
+            source_pull_request_number: 42, goal: "review"),
+          timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkPrReadyActivity, hash_including(pr_number: 42), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "viamin" ]), timeout: anything)
+    end
+
     it "skips owner review when MarkPrReadyActivity returns marked_ready: false" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
@@ -311,6 +337,18 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::MarkEscalatedActivity,
           { issue_id: 10 }, timeout: anything)
+    end
+
+    it "routes dismiss_escalation to DismissEscalationActivity" do
+      pr_data = {
+        issue_id: 10, pr_number: 42,
+        triggers: [ { type: "dismiss_escalation" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::DismissEscalationActivity, hash_including(issue_id: 10), timeout: anything)
     end
 
     it "routes owner_approved to MergePullRequestActivity" do
@@ -582,6 +620,43 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RequestReviewActivity, anything, timeout: anything)
+    end
+
+    it "routes paid_agent_review_pending to QueueAgentRunActivity with review goal" do
+      pr_data = {
+        issue_id: 10, pr_number: 42,
+        triggers: [ { type: "paid_agent_review_pending" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(project_id: 1, issue_id: 10,
+            source_pull_request_number: 42, goal: "review"),
+          timeout: anything)
+    end
+
+    it "routes paid_agent_review_pending with other triggers to followup workflow" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [
+          { type: "paid_agent_review_pending" },
+          { type: "ci_failure", details: "CI failed" }
+        ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(count_toward_draft_review_round: true, expected_draft_review_count: 0),
+          timeout: anything)
     end
   end
 end

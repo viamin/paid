@@ -58,6 +58,45 @@ RSpec.describe Activities::BaseActivity do
     end
   end
 
+  describe "#check_rate_budget!" do
+    let(:activity_class) do
+      Class.new(described_class) do
+        def execute(input)
+          input
+        end
+      end
+    end
+    let(:activity) do
+      stub_const("TestRateBudgetActivity", activity_class)
+      TestRateBudgetActivity.new
+    end
+    let(:client) { instance_double(GithubClient) }
+
+    before do
+      allow(client).to receive(:rate_limit_remaining!).and_return(100)
+    end
+
+    it "does nothing when rate limit is not low" do
+      expect { activity.send(:check_rate_budget!, client) }.not_to raise_error
+    end
+
+    it "raises a retryable ApplicationError when rate limit is low" do
+      allow(client).to receive(:rate_limit_remaining!).and_return(5)
+
+      expect { activity.send(:check_rate_budget!, client) }.to raise_error(
+        Temporalio::Error::ApplicationError, /rate limit budget low/i
+      ) do |error|
+        expect(error.type).to eq("RateLimit")
+      end
+    end
+
+    it "skips the check when the rate-limit probe fails" do
+      allow(client).to receive(:rate_limit_remaining!).and_raise(Octokit::Unauthorized.new)
+
+      expect { activity.send(:check_rate_budget!, client) }.not_to raise_error
+    end
+  end
+
   describe "#apply_legacy_draft_followup_fallback!" do
     let(:testable_class) do
       Class.new(described_class) do
