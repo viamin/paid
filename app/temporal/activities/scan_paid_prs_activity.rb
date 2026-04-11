@@ -257,7 +257,33 @@ module Activities
 
     # --- Escalated phase scanning ---
 
+    DISMISS_ESCALATION_LABEL = "paid-dismiss-escalation"
+
     def scan_escalated_pr(project, client, issue, pr_data: nil)
+      pr_data ||= fetch_pr_data(client, project, issue)
+
+      # Owner can dismiss escalation by adding the dismiss label.
+      if issue.has_label?(DISMISS_ESCALATION_LABEL)
+        return dismiss_escalation_trigger(issue)
+      end
+
+      # Owner approval on an escalated PR unblocks auto-merge.
+      if project.auto_merge_enabled? && pr_data.present?
+        checks = fetch_check_runs(client, project, pr_data)
+        reviews = fetch_reviews(client, project, issue)
+        mergeable = pr_data[:mergeable]
+
+        if owner_approved_or_self_authored?(project, reviews, pr_data) &&
+            checks.present? &&
+            all_checks_green?(checks) &&
+            mergeable == true &&
+            no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks) &&
+            all_blocking_review_methods_complete?(project, reviews, checks) &&
+            !review_stale_for_head?(client, project, issue, pr_data, reviews)
+          return owner_approved_trigger(issue)
+        end
+      end
+
       return nil if followup_limit_reached?(project, issue)
 
       triggers = detect_ready_triggers(project, client, issue, pr_data: pr_data)
@@ -299,6 +325,18 @@ module Activities
         triggers: [ { type: "escalate_to_owner", details: reason } ],
         phase: issue.pr_review_phase,
         current_draft_review_count: issue.draft_review_count,
+        owner_reviewer_login: issue.project.owner_reviewer_login
+      }
+    end
+
+    def dismiss_escalation_trigger(issue)
+      log_triggers(issue.project, issue, [ { type: "dismiss_escalation" } ])
+
+      {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: [ { type: "dismiss_escalation", details: "Owner dismissed escalation via label" } ],
+        phase: "escalated",
         owner_reviewer_login: issue.project.owner_reviewer_login
       }
     end

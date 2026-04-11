@@ -3094,6 +3094,58 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when owner has approved an escalated PR with auto_merge enabled" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "escalated",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ]
+        )
+      end
+
+      it "returns owner_approved trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("owner_approved")
+      end
+
+      it "does not emit owner_approved when auto_merge is disabled" do
+        project.update!(auto_merge_enabled: false)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when escalated PR has the paid-dismiss-escalation label" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation", "paid-dismiss-escalation" ],
+          pr_review_phase: "escalated",
+          paid_state: "completed")
+        stub_github_for_pr
+      end
+
+      it "returns dismiss_escalation trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("dismiss_escalation")
+        expect(trigger[:phase]).to eq("escalated")
+      end
+    end
+
     context "when a restarted PR has signals" do
       before do
         create(:issue, :pull_request,
