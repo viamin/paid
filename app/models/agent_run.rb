@@ -748,15 +748,11 @@ class AgentRun < ApplicationRecord
   # @param metadata [Hash] Optional metadata to store as JSON
   # @return [AgentRunLog] The created log entry
   def log!(type, content, metadata: nil)
-    create_log_entry!(type, content, metadata: metadata)
-  rescue ActiveRecord::ConnectionFailed
-    pool = self.class.connection_pool
-    pool.release_connection if pool.respond_to?(:active_connection?) && pool.active_connection?
-    if defined?(ActiveRecord::Base) && ActiveRecord::Base.respond_to?(:connection_handler)
-      ActiveRecord::Base.connection_handler.clear_active_connections!
-    end
-    association(:agent_run_logs).reset
-    create_log_entry!(type, content, metadata: metadata)
+    agent_run_logs.create!(
+      log_type: type,
+      content: normalize_log_content(content),
+      metadata: metadata
+    )
   end
 
   # Agent execution integration methods.
@@ -981,14 +977,6 @@ class AgentRun < ApplicationRecord
   end
 
   private
-
-  def create_log_entry!(type, content, metadata: nil)
-    agent_run_logs.create!(
-      log_type: type,
-      content: normalize_log_content(content),
-      metadata: metadata
-    )
-  end
 
   # Guard: only fires when these specific columns are being changed, so unrelated
   # saves skip this check. Safe because no code path clears expected_draft_review_count

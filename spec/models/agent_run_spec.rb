@@ -895,31 +895,6 @@ RSpec.describe AgentRun do
           agent_run.log!("invalid_type", "content")
         }.to raise_error(ActiveRecord::RecordInvalid)
       end
-
-      it "retries once after reconnecting when the active connection drops" do
-        agent_run = create(:agent_run)
-        attempts = 0
-        pool = described_class.connection_pool
-
-        allow(pool).to receive(:active_connection?).and_return(true)
-        allow(pool).to receive(:release_connection)
-        handler = ActiveRecord::Base.connection_handler
-        allow(handler).to receive(:clear_active_connections!)
-        allow(agent_run.agent_run_logs).to receive(:create!).and_wrap_original do |original, *args, **kwargs|
-          attempts += 1
-          raise ActiveRecord::ConnectionFailed, "db bounced" if attempts == 1
-
-          original.call(*args, **kwargs)
-        end
-
-        expect {
-          agent_run.log!("stdout", "Recovered log line")
-        }.to change(AgentRunLog, :count).by(1)
-
-        expect(attempts).to eq(2)
-        expect(handler).to have_received(:clear_active_connections!)
-        expect(pool).to have_received(:release_connection)
-      end
     end
 
     describe "#execute_agent" do
