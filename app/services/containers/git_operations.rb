@@ -846,10 +846,16 @@ module Containers
     end
 
     def forbidden_artifact?(path)
-      FORBIDDEN_DIRECTORY_PREFIXES.any? { |pattern| File.fnmatch?("#{pattern}*", path) } ||
+      FORBIDDEN_DIRECTORY_PREFIXES.any? { |pattern| artifact_path_match?(path, pattern) } ||
         FORBIDDEN_BINARY_EXTENSIONS.any? { |ext| path.end_with?(ext) } ||
         path.end_with?(".so") ||
         (File.basename(path) =~ VERSIONED_SO_PATTERN)
+    end
+
+    def artifact_path_match?(path, pattern)
+      path.split("/").each_index.any? do |index|
+        File.fnmatch?("#{pattern}*", path.split("/")[index..].join("/"))
+      end
     end
 
     def install_hook(hook_name, script)

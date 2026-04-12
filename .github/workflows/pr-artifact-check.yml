@@ -131,7 +131,7 @@ jobs:
           violations=""
           while IFS= read -r file; do
             for prefix in "${forbidden_prefixes[@]}"; do
-              if [[ "${file}" == ${prefix}* ]]; then
+              if [[ "${file}" == ${prefix}* || "${file}" == */${prefix}* ]]; then
                 violations="${violations}${file}"$'\n'
                 break
               fi
