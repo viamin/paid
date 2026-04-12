@@ -100,6 +100,28 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("#7")
       end
 
+      it "links to PR in context column for review goal runs" do
+        run = create(:agent_run, :review_goal, :completed, project: project)
+        get agent_runs_path
+        expected_url = "#{project.github_url}/pull/#{run.source_pull_request_number}"
+        expect(response.body).to include("PR ##{run.source_pull_request_number}")
+        expect(response.body).to include(expected_url)
+      end
+
+      it "shows review link in actions column when review_url is present" do
+        create(:agent_run, :with_review, project: project)
+        get agent_runs_path
+        expect(response.body).to include("Review")
+        expect(response.body).to include("https://github.com/example/repo/pull/10#pullrequestreview-123456")
+      end
+
+      it "shows PR link in actions column for completed create_pr runs" do
+        create(:agent_run, :completed, project: project)
+        get agent_runs_path
+        expect(response.body).to include(">PR</a>")
+        expect(response.body).to include("https://github.com/example/repo/pull/1")
+      end
+
       it "does not show runs from other accounts" do
         other_account = create(:account)
         other_token = create(:github_token, account: other_account)
@@ -184,6 +206,28 @@ RSpec.describe "AgentRuns" do
         create(:agent_run, project: project, issue: issue, goal: "create_pr")
         get project_agent_runs_path(project)
         expect(response.body).to include("#7")
+      end
+
+      it "links to PR in context column for review goal runs" do
+        run = create(:agent_run, :review_goal, :completed, project: project)
+        get project_agent_runs_path(project)
+        expected_url = "#{project.github_url}/pull/#{run.source_pull_request_number}"
+        expect(response.body).to include("PR ##{run.source_pull_request_number}")
+        expect(response.body).to include(expected_url)
+      end
+
+      it "shows review link in actions column when review_url is present" do
+        create(:agent_run, :with_review, project: project)
+        get project_agent_runs_path(project)
+        expect(response.body).to include("Review")
+        expect(response.body).to include("https://github.com/example/repo/pull/10#pullrequestreview-123456")
+      end
+
+      it "shows PR link in actions column for completed create_pr runs" do
+        create(:agent_run, :completed, project: project)
+        get project_agent_runs_path(project)
+        expect(response.body).to include(">PR</a>")
+        expect(response.body).to include("https://github.com/example/repo/pull/1")
       end
 
       it "does not show runs from other accounts" do
@@ -444,6 +488,48 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("selected")
         expect(response.body).to include("Preselected PR")
       end
+
+      it "exposes goal-specific provider defaults to the goal toggle controller" do
+        owner = project.created_by
+        codex = owner.providers.create!(
+          provider_key: "codex",
+          auth_type: "subscription",
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true
+        )
+        owner.settings.update!(default_agent_providers_by_goal: { "review" => codex.routing_key })
+
+        get new_project_agent_run_path(project)
+
+        doc = Nokogiri::HTML(response.body)
+        form = doc.at_css("form[data-controller='goal-toggle']")
+        defaults = JSON.parse(form["data-goal-toggle-provider-defaults-value"])
+        provider = form.at_css("#provider")
+
+        expect(defaults["create_pr"]).to eq(owner.settings.default_provider_identifier_for_goal("create_pr"))
+        expect(defaults["review"]).to eq(codex.routing_key)
+        expect(provider["data-goal-toggle-target"]).to eq("providerSelect")
+        expect(provider["data-action"]).to include("change->goal-toggle#providerChanged")
+      end
+
+      it "pre-selects the goal-specific provider when goal=review" do
+        owner = project.created_by
+        codex = owner.providers.create!(
+          provider_key: "codex",
+          auth_type: "subscription",
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true
+        )
+        owner.settings.update!(default_agent_providers_by_goal: { "review" => codex.routing_key })
+
+        get new_project_agent_run_path(project, goal: "review")
+
+        doc = Nokogiri::HTML(response.body)
+        provider_select = doc.at_css("#provider")
+        selected_option = provider_select.at_css("option[selected]")
+
+        expect(selected_option["value"]).to eq(codex.routing_key)
+      end
     end
   end
 
@@ -657,8 +743,41 @@ RSpec.describe "AgentRuns" do
         end
       end
 
+      it "normalizes an invalid goal to create_pr and uses the create_pr default provider" do
+        owner = project.created_by
+        codex = owner.providers.create!(
+          provider_key: "codex",
+          auth_type: "subscription",
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true
+        )
+        owner.settings.update!(default_agent_providers_by_goal: { "create_pr" => codex.routing_key })
+
+        post project_agent_runs_path(project), params: { goal: "invalid", issue_id: issue.id }
+
+        agent_run = AgentRun.last
+        expect(agent_run.goal).to eq("create_pr")
+        expect(agent_run.provider).to eq(codex)
+      end
+
       context "with goal=review" do
         let(:pr) { create(:issue, :pull_request, project: project, github_number: 55, title: "Review target PR") }
+
+        it "uses the goal-specific default provider when no provider is selected" do
+          owner = project.created_by
+          codex = owner.providers.create!(
+            provider_key: "codex",
+            auth_type: "subscription",
+            enabled_for_agent_runs: true,
+            enabled_for_fallback: true
+          )
+          owner.settings.update!(default_agent_providers_by_goal: { "review" => codex.routing_key })
+
+          post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id ] }
+
+          expect(AgentRun.last.provider).to eq(codex)
+          expect(AgentRun.last.agent_type).to eq("codex")
+        end
 
         it "creates a review agent run with source_pull_request_number" do
           expect {

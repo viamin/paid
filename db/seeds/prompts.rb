@@ -627,6 +627,11 @@ upsert_global_prompt.call(
       -H "X-Proxy-Token: $PROXY_TOKEN"
 
     # Case A — actionable issues found: post a review with inline comments.
+    # MANDATORY: When you find actionable issues, each issue MUST include an
+    # inline comment in the "comments" array with a specific "path" and
+    # "line" number. A review body that describes problems without matching
+    # inline comments is incomplete. If you cannot identify a specific file
+    # path and line number for an issue, do not include that issue in the review.
     # Note: "side" must be "RIGHT" (new code) or "LEFT" (deleted code).
     curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/reviews" \
       -H "Content-Type: application/json" \
@@ -673,6 +678,10 @@ upsert_global_prompt.call(
     actionable comments) or Case B (clean review). This is how your review is
     tracked as complete. Standalone PR comments via
     `/issues/{{pr_number}}/comments` do NOT satisfy the review requirement.
+
+    Before submitting your review, verify your JSON payload:
+    - Case A: "comments" is NON-EMPTY and every entry has "path", "line", and "body"
+    - Case B: the body starts with EXACTLY "Generated no new comments." and "comments" is []
 
     Available endpoints:
     - GET  $GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}} — get PR details
