@@ -127,6 +127,8 @@ module Activities
 
           scan_draft_pr(project, client, issue, pr_data: pr_data)
         else
+          return :skipped if pr_data.nil?
+
           if review_goal_retry_limit_reached?(project, issue)
             return escalate_trigger(issue,
               reason: "Review-goal retry limit reached " \
