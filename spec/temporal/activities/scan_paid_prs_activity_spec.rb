@@ -4966,6 +4966,92 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  context "when paid_agent is enabled alongside manual and review-goal retries are exhausted" do
+    let(:manual_retry_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+    end
+
+    before do
+      project.update!(review_settings: {
+        "enabled" => true,
+        "methods" => {
+          "paid_agent" => {
+            "enabled" => true,
+            "termination" => { "max_review_rounds" => 5 }
+          },
+          "manual" => {
+            "enabled" => true,
+            "reviewer_login" => "project-owner"
+          }
+        }
+      })
+      3.times do
+        create(:agent_run,
+          project: project, issue: manual_retry_issue,
+          source_pull_request_number: 42,
+          goal: "review", status: "failed",
+          started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      end
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "does not escalate because manual review can still gate the PR" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+      expect(trigger_types).not_to include("escalate_to_owner")
+    end
+  end
+
+  context "when paid_agent is enabled alongside ci_action and review-goal retries are exhausted" do
+    let(:ci_retry_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+    end
+
+    before do
+      project.update!(review_settings: {
+        "enabled" => true,
+        "methods" => {
+          "paid_agent" => {
+            "enabled" => true,
+            "termination" => { "max_review_rounds" => 5 }
+          },
+          "ci_action" => {
+            "enabled" => true,
+            "action_name" => "ci-review"
+          }
+        }
+      })
+      3.times do
+        create(:agent_run,
+          project: project, issue: ci_retry_issue,
+          source_pull_request_number: 42,
+          goal: "review", status: "failed",
+          started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      end
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "does not escalate because ci_action can still gate the PR" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+      expect(trigger_types).not_to include("escalate_to_owner")
+    end
+  end
+
   private
 
   # Helper to stub GitHub API calls with sensible defaults.

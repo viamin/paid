@@ -977,7 +977,10 @@ module Activities
     # A completed review or newer create_pr run resets the breaker so old
     # failures do not cause permanent escalation (#1002).
     def review_goal_retry_limit_reached?(project, issue)
-      return false unless paid_agent_sole_review_method?(project)
+      return false unless project&.review_enabled?
+      return false unless project.review_method_enabled?("paid_agent")
+
+      return false if project.enabled_review_methods.any? { |m| m != "paid_agent" }
 
       count = review_goal_consecutive_failure_count(project, issue)
       return false if count.zero?
