@@ -22,6 +22,7 @@ module Activities
       /\b502\s+Bad\s+Gateway\b/i
     ].freeze
     ISSUE_CREATION_FAILURE_LOG_LIMIT = 200
+    ISSUE_CREATION_FAILURE_CONTEXT_LINES = 5
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
@@ -111,18 +112,22 @@ module Activities
     end
 
     def failed_issue_creation_attempt?(agent_run)
-      recent_output = agent_run.agent_run_logs
-        .where(log_type: %w[stdout stderr])
+      recent_output_lines = agent_run.agent_run_logs
+        .where(log_type: "stderr")
         .order(created_at: :desc, id: :desc)
         .limit(ISSUE_CREATION_FAILURE_LOG_LIMIT)
         .pluck(:content)
         .reverse
-        .join("\n")
+        .flat_map { |content| content.lines(chomp: true) }
 
-      return false if recent_output.blank?
-      return false unless recent_output.match?(ISSUE_CREATION_ATTEMPT_PATTERN)
+      return false if recent_output_lines.empty?
 
-      ISSUE_CREATION_FAILURE_PATTERNS.any? { |pattern| pattern.match?(recent_output) }
+      recent_output_lines.each_with_index.any? do |line, index|
+        next false unless line.match?(ISSUE_CREATION_ATTEMPT_PATTERN)
+
+        failure_context = recent_output_lines[index, ISSUE_CREATION_FAILURE_CONTEXT_LINES].join("\n")
+        ISSUE_CREATION_FAILURE_PATTERNS.any? { |pattern| pattern.match?(failure_context) }
+      end
     end
 
     def sync_issue_record(project, gh_issue)
