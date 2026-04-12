@@ -57,7 +57,7 @@ jobs:
             exit 1
           fi
 
-          # --- Check 2: Forbidden directory prefixes ---
+          # --- Check 2: Forbidden artifact path patterns ---
           forbidden_prefixes=(
             ".corepack/"
             ".yarn-cache/"
@@ -98,12 +98,16 @@ jobs:
             ".local-include/"
             ".local-deps/"
             ".venv/"
+            "__pycache__/"
             ".apt-cache/"
             ".cache-pkg/"
             ".xdg-cache/"
             ".cache/"
             ".tmp/"
+            ".tmp-*/"
             ".build/"
+            ".*-build/"
+            ".*_build/"
             ".mise-cache/"
             ".mise-data/"
             ".mise-home/"
@@ -116,6 +120,9 @@ jobs:
             ".libyaml_src/"
             ".rubocop-cache/"
             ".rubocop_cache/"
+            ".pg_log.txt"
+            ".ruby_env.sh"
+            ".aider*"
             "vendor/bundle/"
             "vendor/gems/"
             "node_modules/"
@@ -124,7 +131,7 @@ jobs:
           violations=""
           while IFS= read -r file; do
             for prefix in "${forbidden_prefixes[@]}"; do
-              if [[ "${file}" == "${prefix}"* ]]; then
+              if [[ "${file}" == ${prefix}* ]]; then
                 violations="${violations}${file}"$'\n'
                 break
               fi

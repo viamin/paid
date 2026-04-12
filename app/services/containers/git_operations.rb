@@ -147,9 +147,8 @@ module Containers
     # a separate check on the basename.
     VERSIONED_SO_PATTERN = /\.so\.\d/
 
-    # Directory prefixes that indicate build artifacts rather than source.
-    # Any staged file whose path starts with one of these is rejected.
-    # Keep this aligned with the directory-shaped entries in
+    # Artifact path patterns that indicate build artifacts rather than source.
+    # Keep this aligned with directory/file-shaped entries in
     # CONTAINER_ARTIFACT_EXCLUDES and the CI pr-artifact-check workflow.
     FORBIDDEN_DIRECTORY_PREFIXES = %w[
       .corepack/
@@ -191,12 +190,16 @@ module Containers
       .local-include/
       .local-deps/
       .venv/
+      __pycache__/
       .apt-cache/
       .cache-pkg/
       .xdg-cache/
       .cache/
       .tmp/
+      .tmp-*/
       .build/
+      .*-build/
+      .*_build/
       .mise-cache/
       .mise-data/
       .mise-home/
@@ -209,6 +212,9 @@ module Containers
       .libyaml_src/
       .rubocop-cache/
       .rubocop_cache/
+      .pg_log.txt
+      .ruby_env.sh
+      .aider*
       vendor/bundle/
       vendor/gems/
       node_modules/
@@ -840,7 +846,7 @@ module Containers
     end
 
     def forbidden_artifact?(path)
-      FORBIDDEN_DIRECTORY_PREFIXES.any? { |prefix| path.start_with?(prefix) } ||
+      FORBIDDEN_DIRECTORY_PREFIXES.any? { |pattern| File.fnmatch?("#{pattern}*", path) } ||
         FORBIDDEN_BINARY_EXTENSIONS.any? { |ext| path.end_with?(ext) } ||
         path.end_with?(".so") ||
         (File.basename(path) =~ VERSIONED_SO_PATTERN)
