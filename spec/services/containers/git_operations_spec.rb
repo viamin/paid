@@ -685,6 +685,27 @@ RSpec.describe Containers::GitOperations do
       )
     end
 
+    it "raises Error when staged file validation cannot list staged files" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_failure = Containers::Provision::Result.failure(error: "fatal: bad revision", exit_code: 128)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_failure)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /Failed to list staged files for artifact validation/
+      )
+    end
+
     it "rejects commits with forbidden artifact directories" do
       status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)

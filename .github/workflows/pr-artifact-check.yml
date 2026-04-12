@@ -71,6 +71,7 @@ jobs:
             ".xdg-cache/"
             ".mise-cache/"
             ".mise-data/"
+            ".mise-home/"
             ".npm-cache/"
             ".rubocop-cache/"
             "vendor/bundle/"

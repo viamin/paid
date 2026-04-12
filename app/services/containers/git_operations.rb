@@ -773,7 +773,8 @@ module Containers
     # be blocked by this guard.
     def validate_staged_files!
       staged = execute_git("diff", "--cached", "--name-only", "--diff-filter=d")
-      return unless staged.success? && staged[:stdout].present?
+      raise Error, "Failed to list staged files for artifact validation: #{error_with_stderr(staged)}" if staged.failure?
+      return if staged[:stdout].blank?
 
       files = staged[:stdout].lines.map(&:strip).reject(&:blank?)
 
