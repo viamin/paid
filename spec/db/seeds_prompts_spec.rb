@@ -96,5 +96,18 @@ RSpec.describe Prompt, type: :model do
       expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
         .to include(Activities::ScanPaidPrsActivity::PAID_REVIEW_CLEAN_MARKER)
     end
+
+    it "seeded template includes the inline comment verification checklist" do
+      template = described_class.global.find_by(slug: "goal.review_pull_request").current_version.template
+      expect(template).to include('Case A: "comments" is NON-EMPTY and every entry has "path", "line", and "body"')
+      expect(template).to include('Case B: the body starts with EXACTLY "Generated no new comments." and "comments" is []')
+    end
+
+    it "FALLBACK_REVIEW_GOAL_PROMPT includes the inline comment verification checklist" do
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to include('Case A: "comments" is NON-EMPTY and every entry has "path", "line", and "body"')
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to include('Case B: the body starts with EXACTLY "Generated no new comments." and "comments" is []')
+    end
   end
 end
