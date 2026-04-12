@@ -871,10 +871,10 @@ module Activities
     end
 
     # Checks whether a paid_agent review-goal run is needed for this PR.
-    # Returns a paid_agent_review_pending trigger when no up-to-date completed
-    # review-goal run exists and the max_review_rounds limit has not been
-    # reached. Unfinished review runs keep emitting the pending trigger so the
-    # draft-phase gate remains active until the review is actually posted.
+    # Returns a paid_agent_review_pending trigger when no finished review-goal
+    # run exists and the max_review_rounds limit has not been reached. Unfinished
+    # review runs keep emitting the pending trigger so the draft-phase gate
+    # remains active until the review is actually posted.
     def check_paid_agent_review_status(project, issue)
       return [] unless issue
 
@@ -883,31 +883,39 @@ module Activities
         source_pull_request_number: pr_number,
         goal: "review"
       )
+      attempted_review_runs = review_runs.where.not(status: "retried")
       unfinished_run = review_runs.where(status: AgentRun::UNFINISHED_STATUSES)
         .order(created_at: :desc)
         .first
 
-      completed_count = review_runs.where(status: "completed").count
+      # Count all finished review attempts (including failed/timed-out) toward
+      # the max_review_rounds limit, but exclude retried runs because retry
+      # bookkeeping marks the superseded run as retried before enqueuing its
+      # replacement. Counting both would burn two rounds for one logical retry.
+      finished_count = attempted_review_runs.finished.count
       max_rounds = project.review_method_config("paid_agent")
         .dig("termination", "max_review_rounds")
 
-      if max_rounds.present? && completed_count >= max_rounds.to_i
+      if max_rounds.present? && finished_count >= max_rounds.to_i
         return []
       end
 
-      # Check whether the most recent completed review-goal run was posted
-      # after the last create_pr run. If so, the review is already up to date.
-      last_review_run = review_runs.where(status: "completed")
-        .order(completed_at: :desc).first
+      # Check whether the most recent finished review-goal run (regardless of
+      # success) was attempted after the last create_pr run. If so, the review
+      # was already attempted for the current code — don't re-trigger.
+      # Previously only checked completed runs, which let timed-out reviews
+      # re-trigger on every scan cycle (#830).
+      last_review_run = attempted_review_runs.finished
+        .order(Arel.sql("COALESCE(completed_at, updated_at) DESC")).first
       last_create_pr_run = project.agent_runs
         .where(source_pull_request_number: issue.github_number, goal: "create_pr")
         .completed
         .order(completed_at: :desc)
         .first
 
-      if last_review_run && last_create_pr_run &&
-          last_review_run.completed_at >= last_create_pr_run.completed_at
-        return []
+      if last_review_run && last_create_pr_run
+        review_timestamp = last_review_run.completed_at || last_review_run.updated_at
+        return [] if review_timestamp >= last_create_pr_run.completed_at
       end
 
       details = if unfinished_run
