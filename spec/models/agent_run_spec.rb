@@ -945,6 +945,58 @@ RSpec.describe AgentRun do
         expect(handler).to have_received(:clear_active_connections!)
         expect(pool).to have_received(:release_connection)
       end
+
+      it "retries when a dropped postgres connection is wrapped in StatementInvalid" do
+        agent_run = create(:agent_run)
+        attempts = 0
+        pool = described_class.connection_pool
+        statement_error = ActiveRecord::StatementInvalid.new("statement failed")
+
+        allow(statement_error).to receive(:cause).and_return(PG::ConnectionBad.new("server closed the connection"))
+        allow(pool).to receive(:active_connection?).and_return(true)
+        allow(pool).to receive(:release_connection)
+        handler = ActiveRecord::Base.connection_handler
+        allow(handler).to receive(:clear_active_connections!)
+        allow(agent_run.agent_run_logs).to receive(:create!).and_wrap_original do |original, *args, **kwargs|
+          attempts += 1
+          raise statement_error if attempts == 1
+
+          original.call(*args, **kwargs)
+        end
+
+        expect {
+          agent_run.log!("stdout", "Recovered wrapped connection error")
+        }.to change(AgentRunLog, :count).by(1)
+
+        expect(attempts).to eq(2)
+        expect(handler).to have_received(:clear_active_connections!)
+        expect(pool).to have_received(:release_connection)
+      end
+
+      it "does not retry non-connection StatementInvalid errors" do
+        agent_run = create(:agent_run)
+        attempts = 0
+        pool = described_class.connection_pool
+        statement_error = ActiveRecord::StatementInvalid.new("syntax error")
+
+        allow(statement_error).to receive(:cause).and_return(StandardError.new("bad SQL"))
+        allow(pool).to receive(:active_connection?).and_return(true)
+        allow(pool).to receive(:release_connection)
+        handler = ActiveRecord::Base.connection_handler
+        allow(handler).to receive(:clear_active_connections!)
+        allow(agent_run.agent_run_logs).to receive(:create!).and_wrap_original do |_original, *_args, **_kwargs|
+          attempts += 1
+          raise statement_error
+        end
+
+        expect {
+          agent_run.log!("stdout", "Should fail immediately")
+        }.to raise_error(ActiveRecord::StatementInvalid, "syntax error")
+
+        expect(attempts).to eq(1)
+        expect(handler).not_to have_received(:clear_active_connections!)
+        expect(pool).not_to have_received(:release_connection)
+      end
     end
 
     describe "#execute_agent" do
