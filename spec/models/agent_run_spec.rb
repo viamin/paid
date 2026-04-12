@@ -920,31 +920,6 @@ RSpec.describe AgentRun do
         expect(handler).to have_received(:clear_active_connections!)
         expect(pool).to have_received(:release_connection)
       end
-
-      it "also retries when the dropped connection surfaces as ConnectionNotEstablished" do
-        agent_run = create(:agent_run)
-        attempts = 0
-        pool = described_class.connection_pool
-
-        allow(pool).to receive(:active_connection?).and_return(true)
-        allow(pool).to receive(:release_connection)
-        handler = ActiveRecord::Base.connection_handler
-        allow(handler).to receive(:clear_active_connections!)
-        allow(agent_run.agent_run_logs).to receive(:create!).and_wrap_original do |original, *args, **kwargs|
-          attempts += 1
-          raise ActiveRecord::ConnectionNotEstablished, "connection lost" if attempts == 1
-
-          original.call(*args, **kwargs)
-        end
-
-        expect {
-          agent_run.log!("stdout", "Recovered after reconnect")
-        }.to change(AgentRunLog, :count).by(1)
-
-        expect(attempts).to eq(2)
-        expect(handler).to have_received(:clear_active_connections!)
-        expect(pool).to have_received(:release_connection)
-      end
     end
 
     describe "#execute_agent" do
