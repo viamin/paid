@@ -12,10 +12,11 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
     )
   end
 
-  let(:project) { Struct.new(:id).new(1) }
+  let(:project) { instance_double(Project, id: 1, github_token: github_token) }
   let(:project_version) { Struct.new(:id).new(1) }
   let(:collector_run) { Struct.new(:id).new(1) }
   let(:fixture_file) { Rails.root.join("spec/fixtures/knowledge/routes_expanded.txt").to_s }
+  let(:github_token) { nil }
 
   describe "#collector_type" do
     it "returns routes" do
@@ -149,6 +150,14 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       end
 
       let(:fixture_output) { File.read(fixture_file) }
+      let(:active_github_token) do
+        instance_double(
+          GithubToken,
+          active?: true,
+          token: "github_pat_test_token",
+          touch_last_used!: true
+        )
+      end
 
       before do
         allow(command_collector).to receive(:repo_file_exists?)
@@ -157,9 +166,11 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           .with("bin/rails").and_return(true)
         allow(command_collector).to receive(:repo_file_exists?)
           .with("Gemfile").and_return(true)
-        # Stub bundle install (gem installation step)
         allow(command_collector).to receive(:run_command)
-          .with("sh", "-c", /bundle install/, timeout: 300)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
+          .and_return("")
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /rm -rf \/tmp\/paid-bundle-home.*! test -e \/tmp\/paid-bundle-home/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
           .and_return("")
       end
 
@@ -171,7 +182,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         command_collector.collect
 
         expect(command_collector).to have_received(:run_command)
-          .with("sh", "-c", /bundle install/, timeout: 300)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
       end
 
       it "runs bin/rails routes --expanded" do
@@ -190,7 +201,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect { command_collector.collect }.to raise_error(RuntimeError, "Command failed")
       end
 
-      it "connects network before bundle install and disconnects after" do
+      it "cleans up credentials and disconnects network before running routes" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
           .and_return(fixture_output)
@@ -199,17 +210,76 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
 
         expect(container_runner).to have_received(:connect_network!).ordered
         expect(command_collector).to have_received(:run_command)
-          .with("sh", "-c", /bundle install/, timeout: 300).ordered
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash)).ordered
+        expect(command_collector).to have_received(:run_command)
+          .with("sh", "-c", /rm -rf \/tmp\/paid-bundle-home.*! test -e \/tmp\/paid-bundle-home/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" }).ordered
         expect(container_runner).to have_received(:disconnect_network!).ordered
+        expect(command_collector).to have_received(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120).ordered
       end
 
       it "disconnects network even when bundle install fails" do
         allow(command_collector).to receive(:run_command)
-          .with("sh", "-c", /bundle install/, timeout: 300)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
           .and_raise(RuntimeError, "bundle install failed")
 
         expect { command_collector.collect }.to raise_error(RuntimeError, "bundle install failed")
+        expect(command_collector).to have_received(:run_command)
+          .with("sh", "-c", /rm -rf \/tmp\/paid-bundle-home.*! test -e \/tmp\/paid-bundle-home/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
         expect(container_runner).to have_received(:disconnect_network!)
+      end
+
+      it "preserves bundle install errors when cleanup also fails" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
+          .and_raise(RuntimeError, "bundle install timed out")
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /rm -rf \/tmp\/paid-bundle-home.*! test -e \/tmp\/paid-bundle-home/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
+          .and_raise(Knowledge::ContainerizedRunner::ContainerError, "cleanup failed after timeout")
+
+        expect { command_collector.collect }.to raise_error(RuntimeError, "bundle install timed out")
+        expect(container_runner).to have_received(:disconnect_network!)
+      end
+
+      it "preserves bundle install errors when disconnect also fails" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
+          .and_raise(RuntimeError, "bundle install timed out")
+        allow(container_runner).to receive(:disconnect_network!)
+          .and_raise(Knowledge::ContainerizedRunner::ContainerError, "disconnect failed after timeout")
+
+        expect { command_collector.collect }.to raise_error(RuntimeError, "bundle install timed out")
+      end
+
+      it "fails when bundle install raises a git-sourced gem error" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
+          .and_raise(RuntimeError, "Bundler::GitError: repo is not yet checked out")
+
+        expect { command_collector.collect }.to raise_error(
+          RuntimeError, /Bundler::GitError/
+        )
+        expect(container_runner).to have_received(:disconnect_network!)
+      end
+
+      it "does not forward project github tokens into bundle install" do
+        allow(project).to receive(:github_token).and_return(active_github_token)
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+          .and_return(fixture_output)
+
+        command_collector.collect
+
+        expect(command_collector).to have_received(:run_command).with(
+          "sh", "-c", /bundle install/,
+          timeout: 300,
+          env: satisfy { |env|
+            env["HOME"] == "/tmp/paid-bundle-home" &&
+              !env.key?("PAID_GITHUB_TOKEN") &&
+              !env.key?("BUNDLE_GITHUB__COM")
+          }
+        )
+        expect(active_github_token).not_to have_received(:touch_last_used!)
       end
 
       it "skips bundle install when Gemfile is absent" do
@@ -222,7 +292,53 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         command_collector.collect
 
         expect(command_collector).not_to have_received(:run_command)
-          .with("sh", "-c", /bundle install/, timeout: 300)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
+      end
+
+      it "uses git url rewrites without writing a github token file" do
+        install_cmd = command_collector.send(:install_bundle_command)
+        expect(install_cmd).to include('git config --global --add url.\"https://github.com/\".insteadOf ssh://git@github.com/')
+        expect(install_cmd).to include('git config --global --add url.\"https://github.com/\".insteadOf git@github.com:')
+        expect(install_cmd).not_to include(".netrc")
+        expect(install_cmd).not_to include("PAID_GITHUB_TOKEN")
+      end
+
+      it "removes the temporary credential home after bundle install" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+          .and_return(fixture_output)
+
+        command_collector.collect
+
+        expect(command_collector).to have_received(:run_command)
+          .with("sh", "-c", /rm -rf \/tmp\/paid-bundle-home.*! test -e \/tmp\/paid-bundle-home/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
+      end
+
+      it "aborts when credential cleanup fails" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /rm -rf \/tmp\/paid-bundle-home.*! test -e \/tmp\/paid-bundle-home/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
+          .and_raise(RuntimeError, "credential cleanup verification failed")
+
+        expect { command_collector.collect }.to raise_error(
+          RuntimeError, /credential cleanup verification failed/
+        )
+        expect(command_collector).not_to have_received(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+        expect(container_runner).to have_received(:disconnect_network!)
+      end
+
+      it "preserves network connect errors without attempting cleanup or disconnect" do
+        allow(container_runner).to receive(:connect_network!)
+          .and_raise(Knowledge::ContainerizedRunner::ContainerError, "Failed to connect network: boom")
+
+        expect { command_collector.collect }.to raise_error(
+          Knowledge::ContainerizedRunner::ContainerError, /Failed to connect network: boom/
+        )
+        expect(command_collector).not_to have_received(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
+        expect(command_collector).not_to have_received(:run_command)
+          .with("sh", "-c", /rm -rf \/tmp\/paid-bundle-home.*! test -e \/tmp\/paid-bundle-home/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
+        expect(container_runner).not_to have_received(:disconnect_network!)
       end
 
       it "raises SkipCollector when config/routes.rb is missing" do

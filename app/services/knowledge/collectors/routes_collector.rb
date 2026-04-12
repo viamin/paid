@@ -4,6 +4,7 @@ module Knowledge
   module Collectors
     class RoutesCollector < BaseCollector
       SCOPE_PATH = "config/routes.rb"
+      BUNDLE_HOME = "/tmp/paid-bundle-home"
 
       def collect
         output = read_routes_output
@@ -75,8 +76,10 @@ module Knowledge
         # Install gems so `bin/rails routes` can boot the application.
         # The container workspace is read-only, so gems are installed to
         # /tmp/bundle (a writable tmpfs mount).
-        # Network is temporarily enabled for bundle install, then disabled
-        # before running bin/rails routes (which executes untrusted code).
+        # Network is temporarily enabled for bundle install, then disabled.
+        # install_gems_in_container also removes the temporary HOME used for
+        # git config before returning, so `bin/rails routes` never runs with
+        # install-time git settings lingering on disk.
         if repo_file_exists?("Gemfile")
           install_gems_in_container
         end
@@ -90,16 +93,67 @@ module Knowledge
       end
 
       def install_gems_in_container
+        network_connected = false
+        original_error = nil
         container_runner.connect_network!
+        network_connected = true
         run_command(
           "sh", "-c",
-          "BUNDLE_PATH=/tmp/bundle BUNDLE_APP_CONFIG=/tmp/bundle-config " \
-          "BUNDLE_FROZEN=true " \
-          "bundle install --jobs 4 --retry 3",
-          timeout: 300
+          install_bundle_command,
+          timeout: 300,
+          env: install_bundle_env
         )
+      rescue StandardError => error
+        original_error = error
+        raise
       ensure
-        container_runner.disconnect_network!
+        cleanup_bundle_install_state(network_connected:, original_error:)
+      end
+
+      def install_bundle_command
+        "mkdir -p #{BUNDLE_HOME} && " \
+          "git config --global --add url.\\\"https://github.com/\\\".insteadOf ssh://git@github.com/ && " \
+          "git config --global --add url.\\\"https://github.com/\\\".insteadOf git@github.com: && " \
+          "bundle install --jobs 4 --retry 3"
+      end
+
+      def install_bundle_env
+        {
+          "HOME" => BUNDLE_HOME,
+          "BUNDLE_PATH" => "/tmp/bundle",
+          "BUNDLE_APP_CONFIG" => "/tmp/bundle-config",
+          "BUNDLE_FROZEN" => "true"
+        }
+      end
+
+      def cleanup_bundle_home_in_container
+        run_command(
+          "sh", "-c",
+          "rm -rf #{BUNDLE_HOME} && " \
+          "! test -e #{BUNDLE_HOME}",
+          timeout: 10,
+          env: { "HOME" => BUNDLE_HOME }
+        )
+      end
+
+      def cleanup_bundle_install_state(network_connected:, original_error:)
+        return unless network_connected
+
+        teardown_error = nil
+
+        begin
+          cleanup_bundle_home_in_container
+        rescue StandardError => error
+          teardown_error ||= error
+        ensure
+          begin
+            container_runner.disconnect_network!
+          rescue StandardError => error
+            teardown_error ||= error
+          end
+        end
+
+        raise teardown_error if original_error.nil? && teardown_error
       end
 
       def parse_expanded_output(output)
