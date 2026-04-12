@@ -309,6 +309,7 @@ module Workflows
     end
 
     def handle_review_goal_retry(project_id, pr_data)
+      trigger_types = (pr_data[:triggers] || []).map { |t| t[:type] }
       issue_id = pr_data[:issue_id]
       pr_number = pr_data[:pr_number]
 
@@ -324,6 +325,16 @@ module Workflows
         goal: "review"
       }, timeout: 30)
 
+      if trigger_types.include?("ready_for_owner")
+        handle_ready_for_owner(project_id, pr_data)
+        return
+      elsif trigger_types.include?("owner_approved")
+        handle_owner_approved(project_id, pr_data)
+        return
+      end
+
+      dispatch_manual_review_request(project_id, pr_data)
+
       followup_trigger_types = %w[
         ci_failure review_threads conversation_comments changes_requested
         actionable_labels merge_conflicts review_bot_comments review_bot_threads
@@ -337,30 +348,32 @@ module Workflows
           start_pr_followup_workflow(project_id, pr_data)
         end
       else
-        dispatch_pending_review_requests(project_id, pr_data)
+        dispatch_bot_review_request(project_id, pr_data)
       end
     end
 
-    def dispatch_pending_review_requests(project_id, pr_data)
-      pending_bot = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
-      if pending_bot
-        login = pending_bot[:request_login]
-        if login
-          request_review(project_id, pr_data[:pr_number],
-            [ login ],
-            log_key: "pr_review.request_review_bot_review_failed")
-        end
-      end
-
+    def dispatch_manual_review_request(project_id, pr_data)
       manual = (pr_data[:triggers] || []).find { |t| t[:type] == "manual_review_pending" }
-      if manual
-        login = manual[:reviewer_login]
-        if login
-          request_review(project_id, pr_data[:pr_number],
-            [ login ],
-            log_key: "pr_review.request_manual_review_failed")
-        end
-      end
+      return unless manual
+
+      login = manual[:reviewer_login]
+      return unless login
+
+      request_review(project_id, pr_data[:pr_number],
+        [ login ],
+        log_key: "pr_review.request_manual_review_failed")
+    end
+
+    def dispatch_bot_review_request(project_id, pr_data)
+      pending_bot = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
+      return unless pending_bot
+
+      login = pending_bot[:request_login]
+      return unless login
+
+      request_review(project_id, pr_data[:pr_number],
+        [ login ],
+        log_key: "pr_review.request_review_bot_review_failed")
     end
 
     def handle_non_bot_review_pending(project_id, pr_data, trigger_types)

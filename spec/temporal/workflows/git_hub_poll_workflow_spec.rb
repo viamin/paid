@@ -811,12 +811,13 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           hash_including(reviewers: [ "human-reviewer" ]), timeout: anything)
     end
 
-    it "defers review_bot dispatch when followup triggers coexist with review_goal_retry" do
+    it "defers bot review but dispatches manual review when followup triggers coexist" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "ready",
         triggers: [
           { type: "review_goal_retry", details: "Retrying failed review-goal run" },
           { type: "review_bot_review_pending", request_login: "copilot-bot" },
+          { type: "manual_review_pending", reviewer_login: "human-reviewer" },
           { type: "ci_failure", details: [ "rspec" ] }
         ],
         current_review_goal_retry_count: 1
@@ -825,18 +826,20 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::RecordReviewGoalRetryActivity,
-          hash_including(issue_id: 10), timeout: anything)
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::QueueAgentRunActivity,
-          hash_including(goal: "review"), timeout: anything)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "review"), timeout: anything)
       expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::RequestReviewActivity, anything, timeout: anything)
+        .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "copilot-bot" ]), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "human-reviewer" ]), timeout: anything)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RecordPrFollowupActivity, anything, timeout: anything)
     end
 
-    it "prioritizes review_goal_retry over ready_for_owner when both are present" do
+    it "processes ready_for_owner alongside review_goal_retry" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
+        .and_return({ marked_ready: true })
+
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "ready",
         triggers: [
@@ -854,8 +857,33 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
           hash_including(goal: "review"), timeout: anything)
-      expect(workflow).not_to have_received(:run_activity)
+      expect(workflow).to have_received(:run_activity)
         .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
+    end
+
+    it "processes owner_approved alongside review_goal_retry" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MergePullRequestActivity, anything, timeout: anything)
+        .and_return({ merged: true })
+      allow(Temporalio::Workflow).to receive(:patched).and_call_original
+      allow(Temporalio::Workflow).to receive(:patched).with("add-dev-environment-update-v1").and_return(false)
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "owner_approved" }
+        ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(goal: "review"), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MergePullRequestActivity, anything, timeout: anything)
     end
 
     it "skips owner review request when owner_reviewer_login is blank" do
