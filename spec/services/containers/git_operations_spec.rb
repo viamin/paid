@@ -588,6 +588,11 @@ RSpec.describe Containers::GitOperations do
         .with([ "git", "add", "-A" ], timeout: nil, stream: false)
         .and_return(success_result)
 
+      staged_result = Containers::Provision::Result.success(stdout: "file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
       expect(container_service).to receive(:execute)
         .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
         .and_return(success_result)
@@ -604,6 +609,11 @@ RSpec.describe Containers::GitOperations do
       allow(container_service).to receive(:execute)
         .with([ "git", "add", "-A" ], timeout: nil, stream: false)
         .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(stdout: "file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
 
       project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
 
@@ -641,11 +651,253 @@ RSpec.describe Containers::GitOperations do
         .with([ "git", "add", "-A" ], timeout: nil, stream: false)
         .and_return(success_result)
 
+      staged_result = Containers::Provision::Result.success(stdout: "file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
       allow(container_service).to receive(:execute)
         .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
         .and_return(failure_result)
 
       expect { git_ops.commit_uncommitted_changes }.to raise_error(described_class::Error, /Failed to commit/)
+    end
+
+    it "rejects commits with too many staged files" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      files = (1..101).map { |i| ".bundle-pr-908/ruby/3.4.0/gems/gem-#{i}/lib.rb" }
+      staged_result = Containers::Provision::Result.success(stdout: "#{files.join("\n")}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /Auto-commit rejected: 101 files staged/
+      )
+    end
+
+    it "raises Error when staged file validation cannot list staged files" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_failure = Containers::Provision::Result.failure(error: "fatal: bad revision", exit_code: 128)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_failure)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /Failed to list staged files for artifact validation/
+      )
+    end
+
+    it "rejects commits with forbidden artifact directories" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\nvendor/bundle/gem/lib.rb\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /forbidden artifact files detected/
+      )
+    end
+
+    it "rejects commits with artifact prefixes that bypass exclude installation" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\n.bundle/config\n.venv/pyvenv.cfg\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /forbidden artifact files detected/
+      )
+    end
+
+    it "rejects wildcard artifact patterns when excludes are bypassed" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\n.bundle-pr-123/config\n.tmp-build/cache.txt\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /forbidden artifact files detected/
+      )
+    end
+
+    it "rejects nested artifact paths in subdirectories" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\nfrontend/node_modules/react/index.js\nservices/api/.venv/bin/python\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /forbidden artifact files detected/
+      )
+    end
+
+    it "rejects commits with binary files" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\nlib/native_extension.so\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /forbidden artifact files detected/
+      )
+    end
+
+    it "rejects commits with versioned shared objects" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\nlib/temporalio_bridge.so.3.3\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /forbidden artifact files detected/
+      )
+    end
+
+    it "allows non-binary filenames that merely mention versioned shared objects" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "docs/libfoo.so.3.md\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be true
+    end
+
+    it "allows commits that only delete forbidden artifact files" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be true
     end
   end
 
