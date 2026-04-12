@@ -332,7 +332,8 @@ module Workflows
       }, timeout: 30)
 
       if trigger_types.include?("ready_for_owner")
-        handle_ready_for_owner(project_id, pr_data)
+        without_paid_agent_review = pr_data[:triggers].reject { |t| t[:type] == "paid_agent_review_pending" }
+        handle_ready_for_owner(project_id, pr_data.merge(triggers: without_paid_agent_review))
         return
       end
 

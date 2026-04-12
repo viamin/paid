@@ -861,6 +861,30 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
     end
 
+    it "does not queue duplicate review when paid_agent_review_pending is bundled with review_goal_retry and ready_for_owner" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
+        .and_return({ marked_ready: true })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "ready_for_owner" },
+          { type: "paid_agent_review_pending" }
+        ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "review"), timeout: anything)
+        .once
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
+    end
+
     it "skips retry queueing when owner_approved will merge the PR" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::MergePullRequestActivity, anything, timeout: anything)

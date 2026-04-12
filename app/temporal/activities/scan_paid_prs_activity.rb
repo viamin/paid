@@ -161,11 +161,11 @@ module Activities
 
     def merge_retry_trigger(result, retry_trigger, issue)
       return result unless retry_trigger
+      return result if result == :skipped
 
       if result.is_a?(Hash)
         result[:triggers] = [ retry_trigger ] + (result[:triggers] || [])
         result[:current_review_goal_retry_count] = issue.review_goal_retry_count
-        log_triggers(issue.project, issue, result[:triggers])
         result
       else
         review_goal_retry_trigger(issue)
