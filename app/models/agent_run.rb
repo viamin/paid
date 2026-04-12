@@ -749,7 +749,7 @@ class AgentRun < ApplicationRecord
   # @return [AgentRunLog] The created log entry
   def log!(type, content, metadata: nil)
     create_log_entry!(type, content, metadata: metadata)
-  rescue ActiveRecord::ConnectionFailed
+  rescue ActiveRecord::ConnectionFailed, ActiveRecord::ConnectionNotEstablished
     pool = self.class.connection_pool
     pool.release_connection if pool.respond_to?(:active_connection?) && pool.active_connection?
     if defined?(ActiveRecord::Base) && ActiveRecord::Base.respond_to?(:connection_handler)
