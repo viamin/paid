@@ -172,6 +172,7 @@ RSpec.describe "Api::GithubProxy" do
     before do
       stub_request(:post, target_url)
         .to_return(status: 200, body: review_response_body, headers: { "Content-Type" => "application/json" })
+      allow(Rails.logger).to receive(:warn).and_call_original
     end
 
     it "proxies review creation" do
@@ -272,6 +273,96 @@ RSpec.describe "Api::GithubProxy" do
 
       agent_run.reload
       expect(agent_run.review_posted_at).to be_nil
+    end
+
+    it "logs a warning when review has zero inline comments and actionable body" do
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Several issues found", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "github_proxy.review_missing_inline_comments",
+          agent_run_id: agent_run.id,
+          review_id: 999,
+          comment_count: 0
+        )
+      )
+    end
+
+    it "does not log a warning when review includes inline comments" do
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: {
+          body: "Some issues",
+          event: "COMMENT",
+          comments: [ { path: "file.rb", position: 1, body: "Fix this" } ]
+        }.to_json,
+        headers: valid_headers
+
+      expect(Rails.logger).not_to have_received(:warn).with(
+        hash_including(message: "github_proxy.review_missing_inline_comments")
+      )
+    end
+
+    it "logs a warning when body-only review lacks the paid clean marker" do
+      no_marker_response = {
+        id: 999,
+        body: "Generated no new comments",
+        html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
+        state: "commented"
+      }.to_json
+      stub_request(:post, target_url)
+        .to_return(status: 200, body: no_marker_response, headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Generated no new comments", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(message: "github_proxy.review_missing_inline_comments")
+      )
+    end
+
+    it "does not log a warning for approved body-only reviews" do
+      approved_response = {
+        id: 999,
+        body: "Looks good to me",
+        html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
+        state: "APPROVED"
+      }.to_json
+      stub_request(:post, target_url)
+        .to_return(status: 200, body: approved_response, headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Looks good to me", event: "APPROVE" }.to_json,
+        headers: valid_headers
+
+      expect(Rails.logger).not_to have_received(:warn).with(
+        hash_including(message: "github_proxy.review_missing_inline_comments")
+      )
+    end
+
+    it "does not log a warning when review body includes the clean marker" do
+      clean_review_response = {
+        id: 999,
+        body: "Generated no new comments. <!-- paid-review-clean -->",
+        html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
+        state: "commented"
+      }.to_json
+      stub_request(:post, target_url)
+        .to_return(status: 200, body: clean_review_response, headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: {
+          body: "Generated no new comments. <!-- paid-review-clean -->",
+          event: "COMMENT",
+          comments: []
+        }.to_json,
+        headers: valid_headers
+
+      expect(Rails.logger).not_to have_received(:warn).with(
+        hash_including(message: "github_proxy.review_missing_inline_comments")
+      )
     end
 
     context "when paid_agent review is enabled" do
