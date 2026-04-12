@@ -4891,6 +4891,27 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger[:triggers].first[:details]).to include("Review-goal retry limit reached")
       end
 
+      it "does not escalate when an automatic review-goal run is still queued" do
+        pr_issue.update!(review_goal_retry_count: 3)
+        3.times do
+          create(:agent_run, :failed,
+            project: project,
+            goal: "review",
+            source_pull_request_number: 42)
+        end
+        create(:agent_run, :automatic,
+          project: project,
+          goal: "review",
+          status: "queued",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("escalate_to_owner")
+        expect(triggered_types).not_to include("review_goal_retry")
+      end
+
       it "does not re-escalate when issue is already escalated" do
         pr_issue.update!(review_goal_retry_count: 3, pr_review_phase: "escalated")
         3.times do
@@ -4940,6 +4961,28 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
         expect(trigger[:triggers].first[:details]).to include("Review-goal retry limit reached")
+      end
+
+      it "does not escalate in ready phase while an automatic review-goal run is still running" do
+        pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
+        3.times do
+          create(:agent_run, :failed,
+            project: project,
+            goal: "review",
+            source_pull_request_number: 42)
+        end
+        create(:agent_run, :automatic,
+          project: project,
+          goal: "review",
+          status: "running",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("escalate_to_owner")
+        expect(triggered_types).not_to include("review_goal_retry")
+        expect(pr_issue.reload.pr_review_phase).to eq("ready")
       end
 
       it "skips escalation when pr_data fetch fails in ready phase at retry limit" do

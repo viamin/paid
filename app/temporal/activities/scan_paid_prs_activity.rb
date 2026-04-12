@@ -983,15 +983,6 @@ module Activities
     def check_paid_agent_review_status(project, issue)
       return [] unless issue
 
-      return [] if review_goal_retry_limit_reached?(project, issue)
-
-      # When a review-goal retry is already being emitted as an explicit
-      # review_goal_retry trigger, suppress the sidecar-only pending trigger
-      # for mixed-bot projects so the remaining bot can keep gating the PR.
-      # Paid-agent-only projects still need paid_agent_review_pending to block
-      # draft exit until the retried review is posted.
-      return [] if review_goal_retry_needed?(project, issue) && !paid_agent_sole_review_method?(project)
-
       pr_number = issue.github_number
       automatic_review_runs = project.agent_runs.where(
         source_pull_request_number: pr_number,
@@ -1003,6 +994,20 @@ module Activities
         .order(created_at: :desc)
         .first
       current_cycle_review_runs = review_runs_for_current_cycle(attempted_review_runs, issue)
+
+      if unfinished_run
+        return [ { type: "paid_agent_review_pending",
+                   details: "paid_agent review run is still in progress" } ]
+      end
+
+      return [] if review_goal_retry_limit_reached?(project, issue)
+
+      # When a review-goal retry is already being emitted as an explicit
+      # review_goal_retry trigger, suppress the sidecar-only pending trigger
+      # for mixed-bot projects so the remaining bot can keep gating the PR.
+      # Paid-agent-only projects still need paid_agent_review_pending to block
+      # draft exit until the retried review is posted.
+      return [] if review_goal_retry_needed?(project, issue) && !paid_agent_sole_review_method?(project)
 
       # Count all finished review attempts (including failed/timed-out) toward
       # the max_review_rounds limit, but exclude retried runs because retry
@@ -1047,13 +1052,7 @@ module Activities
         return [] if review_timestamp >= last_create_pr_run.completed_at
       end
 
-      details = if unfinished_run
-        "paid_agent review run is still in progress"
-      else
-        "No paid_agent review found for PR"
-      end
-
-      [ { type: "paid_agent_review_pending", details: details } ]
+      [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]
     end
 
     def review_runs_for_current_cycle(review_runs, issue)
@@ -1085,8 +1084,21 @@ module Activities
     # stop retrying paid_agent but keep flowing through the remaining bot.
     def review_goal_retry_limit_requires_escalation?(project, issue)
       return false unless review_goal_retry_limit_reached?(project, issue)
+      return false if automatic_review_run_in_progress?(project, issue)
 
       (project.enabled_review_methods & %w[copilot codex]).empty?
+    end
+
+    def automatic_review_run_in_progress?(project, issue)
+      automatic_review_runs = project.agent_runs.where(
+        source_pull_request_number: issue.github_number,
+        goal: "review",
+        trigger_type: "automatic"
+      )
+
+      review_runs_for_current_cycle(automatic_review_runs, issue)
+        .where(status: AgentRun::UNFINISHED_STATUSES)
+        .exists?
     end
 
     def review_goal_consecutive_failure_count(project, issue)
