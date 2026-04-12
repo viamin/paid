@@ -679,10 +679,6 @@ upsert_global_prompt.call(
     tracked as complete. Standalone PR comments via
     `/issues/{{pr_number}}/comments` do NOT satisfy the review requirement.
 
-    Before submitting your review, verify your JSON payload:
-    - Case A: "comments" is NON-EMPTY and every entry has "path", "line", and "body"
-    - Case B: the body starts with EXACTLY "Generated no new comments." and "comments" is []
-
     Available endpoints:
     - GET  $GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}} — get PR details
     - GET  $GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/files — list changed files
