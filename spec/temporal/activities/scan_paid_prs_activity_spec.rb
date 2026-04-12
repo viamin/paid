@@ -5254,13 +5254,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_github_for_pr(reviews: [])
     end
 
-    it "does not escalate because copilot can still gate the PR" do
+    it "stops retrying paid_agent and lets copilot keep gating the PR" do
       result = activity.execute(project_id: project.id)
 
       expect(result[:prs_to_trigger].size).to eq(1)
       trigger = result[:prs_to_trigger].first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).not_to include("escalate_to_owner")
+      expect(trigger_types).not_to include("paid_agent_review_pending")
       expect(trigger_types).to include("review_bot_review_pending")
     end
   end
@@ -5295,11 +5296,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       )
     end
 
-    it "does not escalate and emits body-only review triggers so codex can continue" do
+    it "does not escalate or retry paid_agent and lets codex continue" do
       result = activity.execute(project_id: project.id)
 
       trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
       expect(trigger_types).not_to include("escalate_to_owner")
+      expect(trigger_types).not_to include("paid_agent_review_pending")
       expect(trigger_types).to include("review_bot_comments")
     end
   end

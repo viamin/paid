@@ -108,7 +108,7 @@ module Activities
 
       case issue.pr_review_phase
       when "draft", "restarted"
-        if review_goal_retry_limit_reached?(project, issue)
+        if review_goal_retry_limit_requires_escalation?(project, issue)
           return escalate_trigger(issue,
             reason: "Review-goal retry limit reached " \
                     "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
@@ -119,7 +119,7 @@ module Activities
         check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
-          if review_goal_retry_limit_reached?(project, issue)
+          if review_goal_retry_limit_requires_escalation?(project, issue)
             return escalate_trigger(issue,
               reason: "Review-goal retry limit reached " \
                       "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
@@ -135,7 +135,7 @@ module Activities
         check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
-          if review_goal_retry_limit_reached?(project, issue)
+          if review_goal_retry_limit_requires_escalation?(project, issue)
             return escalate_trigger(issue,
               reason: "Review-goal retry limit reached " \
                       "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
@@ -312,7 +312,7 @@ module Activities
         return owner_approved_trigger(issue)
       end
 
-      if review_goal_retry_limit_reached?(project, issue)
+      if review_goal_retry_limit_requires_escalation?(project, issue)
         return escalate_trigger(issue,
           reason: "Review-goal retry limit reached " \
                   "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
@@ -910,8 +910,8 @@ module Activities
     # trigger so the scanner queues a retry — up to max_review_goal_retries
     # (default 3).
     # Returns [] when the retry limit is reached so no more review-goal runs
-    # are queued (#1002). Callers still check review_goal_retry_limit_reached?
-    # to escalate before entering phase-specific scan methods.
+    # are queued (#1002). Callers separately decide whether that exhaustion
+    # should escalate the PR or let another enabled bot continue review gating.
     def check_paid_agent_review_status(project, issue)
       return [] unless issue
 
@@ -990,26 +990,28 @@ module Activities
       review_runs.where("COALESCE(completed_at, updated_at) > ?", reset_at)
     end
 
-    # Returns true when the number of consecutive unsuccessful review-goal runs
-    # in the current review cycle has reached the configurable retry limit.
-    # Any completed review or newer create_pr run resets the breaker so old
-    # failures do not cause permanent escalation (#1002).
-    #
-    # Non-bot review methods (manual, ci_action) do not provide a recovery
-    # path from unsuccessful paid_agent runs because paid_agent_review_pending
-    # becomes a blocking trigger when paid_agent is the sole bot, preventing
-    # the draft from advancing to the non-bot gate stage. Only other bot
-    # methods (copilot, codex) can take over review gating.
+    # Returns true when the number of consecutive unsuccessful automatic
+    # paid_agent review-goal runs in the current review cycle has reached the
+    # configurable retry limit. Any completed review or newer create_pr run
+    # resets the breaker so old failures do not cause permanent escalation
+    # (#1002).
     def review_goal_retry_limit_reached?(project, issue)
       return false unless project&.review_enabled?
       return false unless project.review_method_enabled?("paid_agent")
-
-      return false if (project.enabled_review_methods & %w[copilot codex]).any?
 
       count = review_goal_consecutive_failure_count(project, issue)
       return false if count.zero?
 
       count >= review_goal_max_retries(project)
+    end
+
+    # Escalate only when exhausting paid_agent retries leaves no other bot
+    # review method that can continue gating the PR. Mixed bot projects should
+    # stop retrying paid_agent but keep flowing through the remaining bot.
+    def review_goal_retry_limit_requires_escalation?(project, issue)
+      return false unless review_goal_retry_limit_reached?(project, issue)
+
+      (project.enabled_review_methods & %w[copilot codex]).empty?
     end
 
     def review_goal_consecutive_failure_count(project, issue)
