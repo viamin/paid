@@ -122,8 +122,8 @@ module Knowledge
           "if [ -n \"${PAID_GITHUB_TOKEN:-}\" ]; then " \
           "printf 'machine github.com\\nlogin x-access-token\\npassword %s\\n' \"$PAID_GITHUB_TOKEN\" > #{BUNDLE_HOME}/.netrc && " \
           "chmod 600 #{BUNDLE_HOME}/.netrc && " \
-          "git config --global url.\\\"https://github.com/\\\".insteadOf ssh://git@github.com/ && " \
-          "git config --global url.\\\"https://github.com/\\\".insteadOf git@github.com:; " \
+          "git config --global --add url.\\\"https://github.com/\\\".insteadOf ssh://git@github.com/ && " \
+          "git config --global --add url.\\\"https://github.com/\\\".insteadOf git@github.com:; " \
           "fi && " \
           "bundle install --jobs 4 --retry 3"
       end
