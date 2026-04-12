@@ -1041,6 +1041,17 @@ RSpec.describe "Projects" do
           manual = project.reload.review_settings.dig("methods", "manual")
           expect(manual["reviewer_login"]).to be_nil
         end
+
+        it "persists address_all_bot_reviews as a boolean" do
+          params = { enabled: "1", wait_for_reviews: "1", address_all_bot_reviews: "1",
+                     methods: { copilot: { enabled: "1",
+                                           termination: { max_review_rounds: "2", stop_when_no_comments: "1",
+                                                          quality_threshold: "", timeout_minutes: "" } } } }
+          patch project_path(project), params: { project: { review_settings: params } }
+
+          expect(response).to redirect_to(project_path(project))
+          expect(project.reload.review_settings).to include("address_all_bot_reviews" => true)
+        end
       end
     end
   end

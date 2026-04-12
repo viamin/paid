@@ -162,7 +162,6 @@ module Activities
         review_bot_triggers = check_review_bot_status(reviews, unresolved_threads,
           project: project, last_run: last_run, client: client, issue: issue)
       else
-        # Fetch review threads first; only fetch full reviews when needed.
         unresolved_threads = fetch_unresolved_threads(client, project, issue)
         human_triggers = human_review_thread_triggers(project, unresolved_threads)
 
@@ -171,6 +170,13 @@ module Activities
           review_bot_triggers = check_review_bot_status(reviews, unresolved_threads,
             project: project, last_run: last_run, client: client, issue: issue)
         end
+      end
+
+      review_bot_triggers ||= []
+      if project.address_all_bot_reviews?
+        reviews ||= fetch_reviews(client, project, issue)
+        review_bot_triggers += check_non_enabled_bot_reviews(reviews, unresolved_threads,
+          project: project, last_run: last_run)
       end
 
       # review_bot_review_pending gates draft advancement (the PR must have a
@@ -447,6 +453,8 @@ module Activities
       triggers.concat(ci_failure_triggers(checks))
       triggers.concat(check_review_bot_status(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue))
+      triggers.concat(check_non_enabled_bot_reviews(reviews, unresolved_threads,
+        project: project, last_run: last_run))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
@@ -1196,6 +1204,8 @@ module Activities
         )
       end
       return false if non_bot_review_gate_triggers(project, reviews, effective_checks).any?
+      return false if check_non_enabled_bot_reviews(reviews, unresolved_threads,
+        project: project, last_run: last_run).any?
 
       true
     end
@@ -1330,6 +1340,65 @@ module Activities
 
     def review_bot?(login)
       ProviderSupport.provider_bot_username?(login)
+    end
+
+    def check_non_enabled_bot_reviews(reviews, unresolved_threads, project:, last_run:)
+      return [] unless project&.address_all_bot_reviews?
+      return [] if reviews.nil?
+
+      enabled_logins = project.enabled_review_bot_logins
+      all_bot_logins = ProviderSupport.all_bot_usernames
+      non_enabled_logins = all_bot_logins - enabled_logins
+
+      return [] if non_enabled_logins.empty?
+
+      non_enabled_reviews = reviews.select do |r|
+        non_enabled_logins.include?(r[:user_login]&.downcase)
+      end
+
+      return [] if non_enabled_reviews.empty?
+
+      latest = non_enabled_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+
+      triggers = non_enabled_bot_triggers_for(latest, unresolved_threads, non_enabled_logins, last_run)
+      return triggers if triggers.any?
+
+      non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)
+    end
+
+    def non_enabled_bot_triggers_for(latest, unresolved_threads, non_enabled_logins, last_run)
+      return [] if latest.nil?
+
+      body = latest[:body].to_s
+      if REVIEW_BOT_CLEAN_PATTERN.match?(body) || paid_agent_review_clean?(latest)
+        return []
+      end
+
+      submitted_at = latest[:submitted_at]
+      cutoff = last_run&.completed_at
+      return [] if submitted_at && cutoff && submitted_at <= cutoff
+
+      thread_triggers = non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)
+      if thread_triggers.any?
+        return [
+          { type: "review_bot_comments", details: "Non-configured bot review has unaddressed feedback" },
+          *thread_triggers
+        ]
+      end
+
+      [ { type: "review_bot_comments", details: "Non-configured bot review has unaddressed feedback" } ]
+    end
+
+    def non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)
+      return [] if unresolved_threads.nil?
+
+      bot_threads = unresolved_threads.select do |thread|
+        thread[:comments].any? { |c| non_enabled_logins.include?(c[:author]&.downcase) }
+      end
+
+      return [] if bot_threads.empty?
+
+      [ { type: "review_bot_threads", details: "#{bot_threads.size} unresolved thread(s) from non-configured bot(s)" } ]
     end
 
     def paid_agent_clean_review?(review)
