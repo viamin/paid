@@ -626,6 +626,54 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           ), timeout: anything)
     end
 
+    it "starts draft followup when review_goal_retry is combined with actionable triggers" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "ci_failure", details: [ "rspec" ] }
+        ],
+        current_review_goal_retry_count: 1,
+        current_draft_review_count: 2
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity,
+          hash_including(issue_id: 10, expected_review_goal_retry_count: 1), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(goal: "review"), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(count_toward_draft_review_round: true, expected_draft_review_count: 2),
+          timeout: anything)
+    end
+
+    it "does not start followup when review_goal_retry is combined with only gate triggers" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "paid_agent_review_pending" }
+        ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity,
+          hash_including(issue_id: 10, expected_review_goal_retry_count: 1), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(goal: "review"), timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(:count_toward_draft_review_round), timeout: anything)
+    end
+
     it "skips owner review request when owner_reviewer_login is blank" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::MarkPrReadyActivity, anything, timeout: anything)

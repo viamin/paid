@@ -108,32 +108,38 @@ module Activities
 
       retry_needed = review_goal_retry_needed?(project, issue)
       retry_limit_reached = retry_needed && review_goal_retry_limit_reached?(issue)
+      sole_reviewer = paid_agent_sole_review_method?(project)
 
       # When a review-goal run has failed but the retry limit hasn't been
-      # reached, queue a retry immediately — no PR fetch needed.
+      # reached, build the retry trigger and continue to phase-specific
+      # scanning so other signals (CI failures, unresolved threads, etc.)
+      # are still evaluated alongside the retry.
+      retry_trigger = nil
       if retry_needed && !retry_limit_reached
-        return review_goal_retry_trigger(issue)
+        retry_trigger = {
+          type: "review_goal_retry",
+          details: "Retrying failed review-goal run (attempt #{issue.review_goal_retry_count + 1}/#{MAX_REVIEW_GOAL_RETRIES})"
+        }
       end
 
-      # When retry limit is reached for draft/restarted phases, escalate
-      # immediately — no draft-conversion detection needed. For ready/
-      # escalated phases, fall through to fetch live PR data first so that
-      # maybe_restart_draft can detect a user's draft conversion and reset
-      # counters instead of escalating.
-      if retry_limit_reached && %w[draft restarted].include?(issue.pr_review_phase)
+      # When retry limit is reached AND paid_agent is the sole blocking
+      # review method, escalate for draft/restarted phases — no other
+      # review method can advance the PR. When paid_agent is a non-blocking
+      # sidecar, fall through to phase-specific scanning so other signals
+      # are still evaluated.
+      if retry_limit_reached && sole_reviewer && %w[draft restarted].include?(issue.pr_review_phase)
         return escalate_trigger(issue, reason: "Review-goal retries exhausted (#{MAX_REVIEW_GOAL_RETRIES} consecutive failures)")
       end
 
-      case issue.pr_review_phase
+      result = case issue.pr_review_phase
       when "draft", "restarted"
-        # Rate budget checked inside scan_draft_pr, after non-API early exits
         scan_draft_pr(project, client, issue)
       when "ready"
         check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
-        elsif retry_limit_reached
+        elsif retry_limit_reached && sole_reviewer
           escalate_trigger(issue, reason: "Review-goal retries exhausted (#{MAX_REVIEW_GOAL_RETRIES} consecutive failures)")
         else
           scan_ready_pr(project, client, issue, pr_data: pr_data)
@@ -146,6 +152,21 @@ module Activities
         else
           scan_escalated_pr(project, client, issue, pr_data: pr_data)
         end
+      end
+
+      merge_retry_trigger(result, retry_trigger, issue)
+    end
+
+    def merge_retry_trigger(result, retry_trigger, issue)
+      return result unless retry_trigger
+
+      if result.is_a?(Hash)
+        result[:triggers] = [ retry_trigger ] + (result[:triggers] || [])
+        result[:current_review_goal_retry_count] = issue.review_goal_retry_count
+        log_triggers(issue.project, issue, result[:triggers])
+        result
+      else
+        review_goal_retry_trigger(issue)
       end
     end
 
@@ -909,6 +930,18 @@ module Activities
     # draft-phase gate remains active until the review is actually posted.
     def check_paid_agent_review_status(project, issue)
       return [] unless issue
+
+      # When review-goal retries are exhausted and paid_agent is not the sole
+      # reviewer, stop emitting paid_agent_review_pending — the sidecar
+      # failure should not block other signals from driving the PR forward.
+      if issue.review_goal_retry_count >= MAX_REVIEW_GOAL_RETRIES && !paid_agent_sole_review_method?(project)
+        return []
+      end
+
+      # When a review-goal retry is needed, the scanner already emits
+      # review_goal_retry which queues the review run. Suppress the
+      # paid_agent_review_pending trigger to avoid duplication.
+      return [] if review_goal_retry_needed?(project, issue)
 
       pr_number = issue.github_number
       review_runs = project.agent_runs.where(

@@ -3754,6 +3754,89 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).not_to include("review_goal_retry")
       end
+
+      it "continues scanning other signals alongside review_goal_retry" do
+        stub_github_for_pr(
+          reviews: [],
+          checks: [ { name: "rspec", conclusion: "failure" } ]
+        )
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_goal_retry")
+        expect(trigger_types).to include("ci_failure")
+      end
+
+      it "does not escalate at retry limit when paid_agent is not the sole review method" do
+        project.update!(review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true },
+            "copilot" => { "enabled" => true }
+          }
+        })
+        pr_issue.update!(review_goal_retry_count: 3)
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("escalate_to_owner")
+        expect(triggered_types).not_to include("review_goal_retry")
+        expect(triggered_types).not_to include("paid_agent_review_pending")
+      end
+    end
+
+    context "when a review-goal run has failed and paid_agent is a sidecar alongside copilot" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          paid_state: "completed",
+          pr_review_phase: "ready",
+          review_goal_retry_count: 3)
+      end
+
+      before do
+        project.update!(review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true },
+            "copilot" => { "enabled" => true }
+          }
+        })
+        pr_issue
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+        stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+                       body: "Copilot reviewed 5 out of 5 changed files and generated no comments.",
+                       submitted_at: 1.hour.ago } ],
+          checks: [ { name: "rspec", conclusion: "failure" } ]
+        )
+      end
+
+      it "does not escalate at retry limit and still evaluates CI signals" do
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("escalate_to_owner")
+        expect(triggered_types).to include("ci_failure")
+        expect(triggered_types).not_to include("paid_agent_review_pending")
+      end
     end
   end
 
