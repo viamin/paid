@@ -240,7 +240,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(container_runner).to have_received(:disconnect_network!)
       end
 
-      it "passes github token auth env for bundle install when available" do
+      it "does not forward project github tokens into bundle install" do
         allow(project).to receive(:github_token).and_return(active_github_token)
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
@@ -253,11 +253,11 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           timeout: 300,
           env: satisfy { |env|
             env["HOME"] == "/tmp/paid-bundle-home" &&
-              env["PAID_GITHUB_TOKEN"] == "github_pat_test_token" &&
+              !env.key?("PAID_GITHUB_TOKEN") &&
               !env.key?("BUNDLE_GITHUB__COM")
           }
         )
-        expect(active_github_token).to have_received(:touch_last_used!)
+        expect(active_github_token).not_to have_received(:touch_last_used!)
       end
 
       it "skips bundle install when Gemfile is absent" do
@@ -273,17 +273,12 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
       end
 
-      it "unsets PAID_GITHUB_TOKEN before bundle install runs" do
-        allow(project).to receive(:github_token).and_return(active_github_token)
-        allow(command_collector).to receive(:run_command)
-          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
-          .and_return(fixture_output)
-
-        command_collector.collect
-
+      it "uses git url rewrites without writing a github token file" do
         install_cmd = command_collector.send(:install_bundle_command)
-        expect(install_cmd).to include("unset PAID_GITHUB_TOKEN")
-        expect(install_cmd.index("unset PAID_GITHUB_TOKEN")).to be < install_cmd.index("bundle install")
+        expect(install_cmd).to include('git config --global --add url.\"https://github.com/\".insteadOf ssh://git@github.com/')
+        expect(install_cmd).to include('git config --global --add url.\"https://github.com/\".insteadOf git@github.com:')
+        expect(install_cmd).not_to include(".netrc")
+        expect(install_cmd).not_to include("PAID_GITHUB_TOKEN")
       end
 
       it "removes the temporary credential home after bundle install" do

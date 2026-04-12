@@ -78,8 +78,8 @@ module Knowledge
         # /tmp/bundle (a writable tmpfs mount).
         # Network is temporarily enabled for bundle install, then disabled.
         # install_gems_in_container also removes the temporary HOME used for
-        # git credentials before returning, so `bin/rails routes` never runs
-        # with auth material still present on disk.
+        # git config before returning, so `bin/rails routes` never runs with
+        # install-time git settings lingering on disk.
         if repo_file_exists?("Gemfile")
           install_gems_in_container
         end
@@ -104,7 +104,7 @@ module Knowledge
         )
       ensure
         begin
-          cleanup_credentials_in_container if network_connected
+          cleanup_bundle_home_in_container if network_connected
         ensure
           container_runner.disconnect_network! if network_connected
         end
@@ -112,33 +112,21 @@ module Knowledge
 
       def install_bundle_command
         "mkdir -p #{BUNDLE_HOME} && " \
-          "if [ -n \"${PAID_GITHUB_TOKEN:-}\" ]; then " \
-          "printf 'machine github.com\\nlogin x-access-token\\npassword %s\\n' \"$PAID_GITHUB_TOKEN\" > #{BUNDLE_HOME}/.netrc && " \
-          "chmod 600 #{BUNDLE_HOME}/.netrc && " \
           "git config --global --add url.\\\"https://github.com/\\\".insteadOf ssh://git@github.com/ && " \
           "git config --global --add url.\\\"https://github.com/\\\".insteadOf git@github.com: && " \
-          "unset PAID_GITHUB_TOKEN; " \
-          "fi && " \
           "bundle install --jobs 4 --retry 3"
       end
 
       def install_bundle_env
-        env = {
+        {
           "HOME" => BUNDLE_HOME,
           "BUNDLE_PATH" => "/tmp/bundle",
           "BUNDLE_APP_CONFIG" => "/tmp/bundle-config",
           "BUNDLE_FROZEN" => "true"
         }
-
-        github_token = project.github_token
-        return env unless github_token&.active?
-
-        github_token.touch_last_used!
-        env["PAID_GITHUB_TOKEN"] = github_token.token
-        env
       end
 
-      def cleanup_credentials_in_container
+      def cleanup_bundle_home_in_container
         run_command(
           "sh", "-c",
           "rm -rf #{BUNDLE_HOME} && " \
