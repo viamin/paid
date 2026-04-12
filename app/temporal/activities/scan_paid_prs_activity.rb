@@ -1017,7 +1017,7 @@ module Activities
 
       [
         issue.review_goal_retry_reset_at,
-        run_scope.where(goal: "review", status: "completed").maximum(:completed_at),
+        run_scope.where(goal: "review", status: "completed", trigger_type: "automatic").maximum(:completed_at),
         run_scope.where(goal: "create_pr", status: "completed").maximum(:completed_at)
       ].compact.max
     end
