@@ -23,7 +23,7 @@ module Activities
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
     # Body-only review bots (currently Codex) signal "no findings" by posting
     # an *issue comment* — not a review — with text like
-    # "Codex Review: Didn't find any major issues. Bravo." Match the
+    # "Codex Review: Didn't find any major issues. Hooray!" Match the
     # distinctive phrase rather than the prefix so we are robust to minor
     # wording changes.
     BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN = /didn'?t find any (?:major )?issues/i
@@ -106,15 +106,43 @@ module Activities
     def scan_pr(project, client, issue)
       return :skipped if active_run_exists?(project, issue)
 
-      case issue.pr_review_phase
+      retry_needed = review_goal_retry_needed?(project, issue)
+      retry_limit_reached = retry_needed && review_goal_retry_limit_reached?(issue)
+      sole_reviewer = paid_agent_sole_review_method?(project)
+
+      # When a review-goal run has failed but the retry limit hasn't been
+      # reached, build the retry trigger and continue to phase-specific
+      # scanning so other signals (CI failures, unresolved threads, etc.)
+      # are still evaluated alongside the retry.
+      retry_trigger = nil
+      if retry_needed && !retry_limit_reached
+        retry_trigger = {
+          type: "review_goal_retry",
+          details: "Retrying failed review-goal run (attempt #{issue.review_goal_retry_count + 1}/#{MAX_REVIEW_GOAL_RETRIES})"
+        }
+      end
+
+      # When retry limit is reached AND paid_agent is the sole blocking
+      # review method, escalate for draft/restarted phases — no other
+      # review method can advance the PR. When paid_agent is a non-blocking
+      # sidecar, fall through to phase-specific scanning so other signals
+      # are still evaluated.
+      if retry_limit_reached && sole_reviewer && %w[draft restarted].include?(issue.pr_review_phase)
+        return escalate_trigger(issue, reason: "Review-goal retries exhausted (#{MAX_REVIEW_GOAL_RETRIES} consecutive failures)")
+      end
+
+      result = case issue.pr_review_phase
       when "draft", "restarted"
-        # Rate budget checked inside scan_draft_pr, after non-API early exits
         scan_draft_pr(project, client, issue)
       when "ready"
         check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
+        elsif pr_data.nil?
+          :skipped
+        elsif retry_limit_reached && sole_reviewer
+          escalate_trigger(issue, reason: "Review-goal retries exhausted (#{MAX_REVIEW_GOAL_RETRIES} consecutive failures)")
         else
           scan_ready_pr(project, client, issue, pr_data: pr_data)
         end
@@ -127,9 +155,25 @@ module Activities
           scan_escalated_pr(project, client, issue, pr_data: pr_data)
         end
       end
+
+      merge_retry_trigger(result, retry_trigger, issue)
+    end
+
+    def merge_retry_trigger(result, retry_trigger, issue)
+      return result unless retry_trigger
+      return result if result == :skipped
+
+      if result.is_a?(Hash)
+        result[:triggers] = [ retry_trigger ] + (result[:triggers] || [])
+        result[:current_review_goal_retry_count] = issue.review_goal_retry_count
+        result
+      else
+        review_goal_retry_trigger(issue)
+      end
     end
 
     MAX_CONSECUTIVE_DRAFT_FAILURES = 3
+    MAX_REVIEW_GOAL_RETRIES = 3
 
     # --- Draft phase scanning ---
 
@@ -483,7 +527,8 @@ module Activities
       issue.update!(
         pr_review_phase: "restarted",
         draft_review_count: 0,
-        pr_followup_count: 0
+        pr_followup_count: 0,
+        review_goal_retry_count: 0
       )
 
       logger.info(
@@ -590,6 +635,48 @@ module Activities
       recent_runs.all? do |run|
         unproductive_statuses.include?(run.status) && (run.status == "no_output" || run.iterations.to_i.zero?)
       end
+    end
+
+    # Returns true when the most recent review-goal run for this PR failed
+    # and no successful review-goal run has completed since. Only applies
+    # when the paid_agent review method is enabled (review-goal runs are
+    # how paid_agent posts reviews).
+    def review_goal_retry_needed?(project, issue)
+      return false unless project.review_enabled?
+      return false unless project.review_method_enabled?("paid_agent")
+
+      # Don't retry while a review-goal run is already queued or running.
+      return false if project.agent_runs
+        .where(source_pull_request_number: issue.github_number, goal: "review")
+        .where(status: AgentRun::UNFINISHED_STATUSES)
+        .exists?
+
+      latest_review_run = project.agent_runs
+        .where(source_pull_request_number: issue.github_number, goal: "review")
+        .finished
+        .order(created_at: :desc)
+        .first
+
+      return false unless latest_review_run
+      return false unless AgentRun::FAILURE_STATUSES.include?(latest_review_run.status)
+
+      true
+    end
+
+    def review_goal_retry_limit_reached?(issue)
+      issue.review_goal_retry_count >= MAX_REVIEW_GOAL_RETRIES
+    end
+
+    def review_goal_retry_trigger(issue)
+      log_triggers(issue.project, issue, [ { type: "review_goal_retry" } ])
+
+      {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: [ { type: "review_goal_retry", details: "Retrying failed review-goal run (attempt #{issue.review_goal_retry_count + 1}/#{MAX_REVIEW_GOAL_RETRIES})" } ],
+        phase: issue.pr_review_phase,
+        current_review_goal_retry_count: issue.review_goal_retry_count
+      }
     end
 
     def last_completed_run(project, issue)
@@ -760,6 +847,8 @@ module Activities
       .to_set
       .freeze
 
+    BODY_ONLY_REVIEW_PROVIDER_KEYS = %w[codex paid_agent].freeze
+
     def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
       allowed = project&.review_enabled? ? (project.enabled_review_bot_logins.presence || Set.new) : nil
       latest = latest_allowed_bot_review(reviews, allowed)
@@ -869,15 +958,14 @@ module Activities
       end
     end
 
-    # Returns true when paid_agent is the only enabled bot review method,
-    # meaning its pending trigger must block draft exit since no other bot
-    # can gate the PR.
+    # Returns true when paid_agent is the only enabled review method,
+    # meaning its pending trigger must block draft exit since no other
+    # configured review path can advance the PR.
     def paid_agent_sole_review_method?(project)
       return false unless project&.review_enabled?
       return false unless project.review_method_enabled?("paid_agent")
 
-      bot_methods = project.enabled_review_methods & %w[copilot codex paid_agent]
-      bot_methods == %w[paid_agent]
+      project.enabled_review_methods == %w[paid_agent]
     end
 
     # Checks whether a paid_agent review-goal run is needed for this PR.
@@ -887,6 +975,22 @@ module Activities
     # remains active until the review is actually posted.
     def check_paid_agent_review_status(project, issue)
       return [] unless issue
+
+      # When review-goal retries are exhausted and paid_agent is not the sole
+      # reviewer, stop emitting paid_agent_review_pending — the sidecar
+      # failure should not block other signals from driving the PR forward.
+      if issue.review_goal_retry_count >= MAX_REVIEW_GOAL_RETRIES && !paid_agent_sole_review_method?(project)
+        return []
+      end
+
+      # When a review-goal retry is needed, the scanner already emits
+      # review_goal_retry which queues the review run. Suppress the
+      # paid_agent_review_pending trigger for non-blocking sidecars to
+      # avoid duplication. When paid_agent IS the sole reviewer, keep
+      # the trigger so the draft gate remains active — without it, a
+      # draft PR with green CI can advance to ready before the retried
+      # review is posted.
+      return [] if review_goal_retry_needed?(project, issue) && !paid_agent_sole_review_method?(project)
 
       pr_number = issue.github_number
       review_runs = project.agent_runs.where(
@@ -943,10 +1047,18 @@ module Activities
       BODY_ONLY_REVIEW_BOT_LOGINS.include?(login.downcase)
     end
 
-    # Returns true when the most recent issue comment authored by a body-only
-    # review bot (e.g. Codex) matches the clean signal pattern AND can speak
-    # authoritatively for the project's review configuration AND is at least
-    # as recent as that bot's latest review on this PR.
+    def body_only_review_provider_key_for(login)
+      return nil if login.blank?
+
+      BODY_ONLY_REVIEW_PROVIDER_KEYS.find do |provider_key|
+        ProviderSupport.provider_bot_username_for?(provider_key, login)
+      end
+    end
+
+    # Returns true when a clean issue comment authored by a body-only review
+    # bot (e.g. Codex) can speak authoritatively for the project's review
+    # configuration AND is at least as recent as that bot's latest review on
+    # this PR.
     #
     # The override is restricted to projects whose enabled review bots are
     # ALL body-only — i.e. no thread-based bot like Copilot is also enabled.
@@ -956,6 +1068,13 @@ module Activities
     #
     # The comment-vs-review timestamp comparison prevents an older "Bravo"
     # comment from masking a newer non-clean review on a subsequent commit.
+    # We intentionally do not require the bot's absolute latest issue comment
+    # to be clean, because body-only bots can emit later informational
+    # comments (for example setup guidance) that do not request PR changes and
+    # should not suppress an earlier clean completion signal. The bypass is
+    # also restricted to projects whose enabled body-only bot methods all map
+    # to the same provider family as the clean comment; a Codex clean comment
+    # cannot speak for an outstanding paid_agent review.
     def body_only_bot_clean_comment_present?(client, project, issue, latest_review, allowed_bot_logins)
       return false if allowed_bot_logins.nil? || allowed_bot_logins.empty?
       return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
@@ -967,11 +1086,19 @@ module Activities
       end
       return false if bot_comments.empty?
 
-      latest_bot_comment = bot_comments.max_by { |c| c.created_at || Time.at(0) }
-      return false unless BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN.match?(latest_bot_comment.body.to_s)
+      latest_clean_comment = bot_comments
+        .select { |c| BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN.match?(c.body.to_s) }
+        .max_by { |c| c.created_at || Time.at(0) }
+      return false unless latest_clean_comment
+
+      provider_key = body_only_review_provider_key_for(latest_clean_comment.user&.login)
+      return false if provider_key.nil?
+
+      latest_review_provider_key = body_only_review_provider_key_for(latest_review&.dig(:user_login))
+      return false if latest_review_provider_key && latest_review_provider_key != provider_key
 
       review_time = latest_review&.dig(:submitted_at)
-      comment_time = latest_bot_comment.created_at
+      comment_time = latest_clean_comment.created_at
       return true if review_time.nil? || comment_time.nil?
 
       comment_time >= review_time

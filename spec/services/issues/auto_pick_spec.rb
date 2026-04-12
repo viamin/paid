@@ -125,6 +125,43 @@ RSpec.describe Issues::AutoPick do
       expect(result).to be_nil
     end
 
+    it "skips issues that already have an open PR linked via parent_issue_id" do
+      issue_with_pr = create(:issue, project: project, github_number: 1)
+      create(:issue, :pull_request, project: project, parent_issue: issue_with_pr, github_state: "open")
+      eligible = create(:issue, project: project, github_number: 2)
+
+      result = described_class.new(project).call
+
+      expect(result.issue).to eq(eligible)
+    end
+
+    it "returns nil when all issues have open PRs" do
+      issue = create(:issue, project: project, github_number: 1)
+      create(:issue, :pull_request, project: project, parent_issue: issue, github_state: "open")
+
+      result = described_class.new(project).call
+
+      expect(result).to be_nil
+    end
+
+    it "does not skip issues whose linked PRs are closed" do
+      issue = create(:issue, project: project, github_number: 1)
+      create(:issue, :pull_request, project: project, parent_issue: issue, github_state: "closed")
+
+      result = described_class.new(project).call
+
+      expect(result.issue).to eq(issue)
+    end
+
+    it "does not let unrelated open PRs without a parent issue suppress picking" do
+      create(:issue, :pull_request, project: project, parent_issue: nil, github_state: "open")
+      issue = create(:issue, project: project, github_number: 1)
+
+      result = described_class.new(project).call
+
+      expect(result.issue).to eq(issue)
+    end
+
     it "picks another eligible issue when the project already has an active run" do
       issue_with_run = create(:issue, project: project)
       create(:agent_run, :queued, project: project, issue: issue_with_run)
@@ -523,6 +560,26 @@ RSpec.describe Issues::AutoPick do
         expect(result).to be_a(AgentRun)
         expect(result.issue).to eq(issue)
       end
+
+      it "returns the existing run when a concurrent picker races on the same issue" do
+        # Simulates a TOCTOU race: two pickers both SELECT the same issue as
+        # eligible, then both INSERT. The DB unique partial index
+        # (idx_agent_runs_unique_active_issue) rejects the second INSERT.
+        # AutoPick rescues RecordNotUnique and returns the first run.
+        issue = create(:issue, project: project)
+
+        existing_run = nil
+        original_create = AgentRun.method(:create!)
+        allow(AgentRun).to receive(:create!) do |**attrs|
+          existing_run = original_create.call(**attrs)
+          raise ActiveRecord::RecordNotUnique, "idx_agent_runs_unique_active_issue"
+        end
+
+        result = described_class.new(project).call
+
+        expect(result).to eq(existing_run)
+        expect(AgentRun.where(issue: issue, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).count).to eq(1)
+      end
     end
 
     context "when project has PRs needing attention" do
@@ -759,6 +816,35 @@ RSpec.describe Issues::AutoPick do
       result = described_class.eligible_issue_ids([])
 
       expect(result).to eq(Set.new)
+    end
+
+    it "excludes issues with open PRs linked via parent_issue_id" do
+      with_pr = create(:issue, project: project, github_number: 1)
+      create(:issue, :pull_request, project: project, parent_issue: with_pr, github_state: "open")
+      without_pr = create(:issue, project: project, github_number: 2)
+
+      result = described_class.eligible_issue_ids([ with_pr, without_pr ])
+
+      expect(result).not_to include(with_pr.id)
+      expect(result).to include(without_pr.id)
+    end
+
+    it "includes issues whose linked PRs are closed" do
+      with_closed_pr = create(:issue, project: project, github_number: 1)
+      create(:issue, :pull_request, project: project, parent_issue: with_closed_pr, github_state: "closed")
+
+      result = described_class.eligible_issue_ids([ with_closed_pr ])
+
+      expect(result).to include(with_closed_pr.id)
+    end
+
+    it "does not exclude issues because of open PRs without a parent issue" do
+      create(:issue, :pull_request, project: project, parent_issue: nil, github_state: "open")
+      issue = create(:issue, project: project, github_number: 1)
+
+      result = described_class.eligible_issue_ids([ issue ])
+
+      expect(result).to include(issue.id)
     end
 
     it "excludes tracker issues with open body-referenced issues" do

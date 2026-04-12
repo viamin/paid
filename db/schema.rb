@@ -471,6 +471,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_11_163526) do
     t.string "pr_review_phase", default: "draft", null: false
     t.bigint "project_id", null: false
     t.datetime "relationships_parsed_at"
+    t.integer "review_goal_retry_count", default: 0, null: false
     t.string "source", default: "github", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false

@@ -942,6 +942,131 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a clean codex comment is followed by a newer informational codex comment" do
+      before do
+        enable_codex_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector"),
+          body: "Codex Review: Didn't find any major issues. Hooray!",
+          created_at: 10.minutes.ago
+        )
+        info_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector"),
+          body: "To use Codex here, create an environment for this repo.",
+          created_at: 5.minutes.ago
+        )
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: [],
+          recent_issue_comments: [ clean_comment, info_comment ]
+        )
+      end
+
+      it "still treats the bot as clean because later informational comments do not invalidate the clean signal" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+      end
+    end
+
+    context "when codex and paid_agent are both enabled and only codex posted a clean comment" do
+      before do
+        project.update!(
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "codex" => { "enabled" => true },
+              "paid_agent" => {
+                "enabled" => true,
+                "termination" => { "max_review_rounds" => 2 }
+              }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector"),
+          body: "Codex Review: Didn't find any major issues. Hooray!",
+          created_at: 10.minutes.ago
+        )
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+                       body: "Found issues that still need fixes.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: [],
+          recent_issue_comments: [ clean_comment ]
+        )
+      end
+
+      it "does not let codex's clean comment suppress paid_agent feedback" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).to include("review_bot_comments")
+      end
+    end
+
+    context "when codex and paid_agent are both enabled and codex clears codex-owned feedback" do
+      before do
+        project.update!(
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "codex" => { "enabled" => true },
+              "paid_agent" => {
+                "enabled" => true,
+                "termination" => { "max_review_rounds" => 2 }
+              }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector"),
+          body: "Codex Review: Didn't find any major issues. Hooray!",
+          created_at: 10.minutes.ago
+        )
+        info_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector"),
+          body: "To use Codex here, create an environment for this repo.",
+          created_at: 5.minutes.ago
+        )
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: [],
+          recent_issue_comments: [ clean_comment, info_comment ]
+        )
+      end
+
+      it "treats codex's clean comment as authoritative for codex-owned feedback" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+      end
+    end
+
     context "when a project enables both Copilot and Codex and Copilot has unresolved threads" do
       before do
         enable_copilot_and_codex_review!
@@ -4495,6 +4620,391 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             prs_skipped_unchanged: 1
           )
         )
+      end
+    end
+
+    context "when a review-goal run has failed and paid_agent is enabled" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          paid_state: "completed",
+          pr_review_phase: "draft")
+      end
+
+      before do
+        enable_paid_agent_review!
+        pr_issue
+        stub_github_for_pr(reviews: [])
+      end
+
+      it "emits review_goal_retry when most recent review-goal run failed" do
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("review_goal_retry")
+        expect(trigger[:current_review_goal_retry_count]).to eq(pr_issue.review_goal_retry_count)
+      end
+
+      it "does not emit review_goal_retry when most recent review-goal run completed" do
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42,
+          created_at: 2.hours.ago)
+        create(:agent_run, :completed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42,
+          created_at: 1.hour.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("review_goal_retry")
+      end
+
+      it "does not emit review_goal_retry when paid_agent is not enabled" do
+        project.update!(review_settings: { "enabled" => true, "methods" => { "copilot" => { "enabled" => true } } })
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("review_goal_retry")
+      end
+
+      it "does not emit review_goal_retry when reviews are globally disabled" do
+        project.update!(review_settings: { "enabled" => false, "methods" => { "paid_agent" => { "enabled" => true } } })
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("review_goal_retry")
+      end
+
+      it "escalates when retry limit is reached" do
+        pr_issue.update!(review_goal_retry_count: 3)
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
+        expect(trigger[:triggers].first[:details]).to include("Review-goal retries exhausted")
+      end
+
+      it "does not re-escalate when issue is already escalated" do
+        pr_issue.update!(review_goal_retry_count: 3, pr_review_phase: "escalated")
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("escalate_to_owner")
+        expect(triggered_types).not_to include("review_goal_retry")
+      end
+
+      it "detects draft conversion before escalating at retry limit in ready phase" do
+        pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        stub_github_for_pr(draft: true, reviews: [])
+
+        activity.execute(project_id: project.id)
+
+        pr_issue.reload
+        expect(pr_issue.pr_review_phase).to eq("restarted")
+        expect(pr_issue.review_goal_retry_count).to eq(0)
+      end
+
+      it "escalates at retry limit in ready phase when PR is not draft" do
+        pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
+        expect(trigger[:triggers].first[:details]).to include("Review-goal retries exhausted")
+      end
+
+      it "skips escalation when pr_data fetch fails in ready phase at retry limit" do
+        pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::Error, "transient API error")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to be_empty
+      end
+
+      it "does not emit review_goal_retry when pr_data fetch fails in ready phase" do
+        pr_issue.update!(pr_review_phase: "ready")
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::Error, "transient API error")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to be_empty
+      end
+
+      it "resets review_goal_retry_count when PR is converted back to draft" do
+        pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
+
+        stub_github_for_pr(draft: true, reviews: [])
+
+        activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload.review_goal_retry_count).to eq(0)
+        expect(pr_issue.reload.pr_review_phase).to eq("restarted")
+      end
+
+      it "does not emit review_goal_retry when no review-goal runs exist" do
+        create(:agent_run, :failed,
+          project: project,
+          goal: "create_pr",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("review_goal_retry")
+      end
+
+      it "continues scanning other signals alongside review_goal_retry" do
+        stub_github_for_pr(
+          reviews: [],
+          checks: [ { name: "rspec", conclusion: "failure" } ]
+        )
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_goal_retry")
+        expect(trigger_types).to include("ci_failure")
+      end
+
+      it "does not escalate at retry limit when paid_agent is not the sole review method" do
+        project.update!(review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true },
+            "copilot" => { "enabled" => true }
+          }
+        })
+        pr_issue.update!(review_goal_retry_count: 3)
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("escalate_to_owner")
+        expect(triggered_types).not_to include("review_goal_retry")
+        expect(triggered_types).not_to include("paid_agent_review_pending")
+      end
+
+      it "preserves paid_agent_review_pending draft gate when sole reviewer and retry is needed" do
+        stub_github_for_pr(reviews: [])
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_goal_retry")
+        expect(trigger_types).to include("paid_agent_review_pending")
+        expect(trigger_types).not_to include("ready_for_owner")
+      end
+
+      it "suppresses paid_agent_review_pending when not sole reviewer and retry is needed" do
+        project.update!(review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true },
+            "copilot" => { "enabled" => true }
+          }
+        })
+        stub_github_for_pr(reviews: [])
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_goal_retry")
+        expect(trigger_types).not_to include("paid_agent_review_pending")
+      end
+    end
+
+    context "when a review-goal run has failed and paid_agent is a sidecar alongside copilot" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          paid_state: "completed",
+          pr_review_phase: "ready",
+          review_goal_retry_count: 3)
+      end
+
+      before do
+        project.update!(review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true },
+            "copilot" => { "enabled" => true }
+          }
+        })
+        pr_issue
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+        stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+                       body: "Copilot reviewed 5 out of 5 changed files and generated no comments.",
+                       submitted_at: 1.hour.ago } ],
+          checks: [ { name: "rspec", conclusion: "failure" } ]
+        )
+      end
+
+      it "does not escalate at retry limit and still evaluates CI signals" do
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("escalate_to_owner")
+        expect(triggered_types).to include("ci_failure")
+        expect(triggered_types).not_to include("paid_agent_review_pending")
+      end
+    end
+
+    context "when a review-goal run has failed and paid_agent is a sidecar alongside manual review" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          paid_state: "completed",
+          pr_review_phase: "ready",
+          review_goal_retry_count: 3)
+      end
+
+      before do
+        project.update!(review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true },
+            "manual" => { "enabled" => true, "reviewer_login" => "alice" }
+          }
+        })
+        pr_issue
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+        stub_github_for_pr(reviews: [], checks: [ { name: "rspec", conclusion: "success" } ])
+      end
+
+      it "does not escalate at retry limit and still emits manual review gating" do
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("escalate_to_owner")
+        expect(triggered_types).to include("manual_review_pending")
+        expect(triggered_types).not_to include("paid_agent_review_pending")
+      end
+    end
+
+    context "when a review-goal run has failed and paid_agent is a sidecar alongside ci_action" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          paid_state: "completed",
+          pr_review_phase: "ready",
+          review_goal_retry_count: 3)
+      end
+
+      before do
+        project.update!(review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true },
+            "ci_action" => { "enabled" => true, "action_name" => "e2e-suite" }
+          }
+        })
+        pr_issue
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+        stub_github_for_pr(reviews: [], checks: [ { name: "rspec", conclusion: "success" } ])
+      end
+
+      it "does not escalate at retry limit and still emits ci_action gating" do
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("escalate_to_owner")
+        expect(triggered_types).to include("ci_action_pending")
+        expect(triggered_types).not_to include("paid_agent_review_pending")
       end
     end
   end
