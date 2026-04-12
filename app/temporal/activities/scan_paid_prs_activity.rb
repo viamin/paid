@@ -990,10 +990,10 @@ module Activities
         trigger_type: "automatic"
       )
       attempted_review_runs = automatic_review_runs.where.not(status: "retried")
-      unfinished_run = automatic_review_runs.where(status: AgentRun::UNFINISHED_STATUSES)
+      current_cycle_review_runs = review_runs_for_current_cycle(attempted_review_runs, issue)
+      unfinished_run = current_cycle_review_runs.where(status: AgentRun::UNFINISHED_STATUSES)
         .order(created_at: :desc)
         .first
-      current_cycle_review_runs = review_runs_for_current_cycle(attempted_review_runs, issue)
 
       if unfinished_run
         return [ { type: "paid_agent_review_pending",

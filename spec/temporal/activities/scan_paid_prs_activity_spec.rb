@@ -4361,6 +4361,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger_types).to include("paid_agent_review_pending")
         expect(trigger_types).not_to include("ready_for_owner")
       end
+
+      it "ignores unfinished automatic review runs from the pre-restart cycle" do
+        create(:agent_run, :automatic,
+          project: project, issue: pr_issue,
+          source_pull_request_number: 42,
+          goal: "review",
+          status: "running",
+          started_at: 30.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        trigger = result[:prs_to_trigger].first
+        pending_trigger = trigger[:triggers].find { |entry| entry[:type] == "paid_agent_review_pending" }
+
+        expect(trigger[:phase]).to eq("restarted")
+        expect(pending_trigger[:details]).to eq("No paid_agent review found for PR")
+      end
     end
 
     context "when an escalated PR exhausted paid_agent review rounds before draft restart" do
