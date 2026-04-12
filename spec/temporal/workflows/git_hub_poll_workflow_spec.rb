@@ -741,6 +741,76 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           hash_including(:count_toward_draft_review_round), timeout: anything)
     end
 
+    it "dispatches review_bot_review_pending when bundled with review_goal_retry" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "review_bot_review_pending", request_login: "copilot-bot" }
+        ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity,
+          hash_including(issue_id: 10), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(goal: "review"), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(pr_number: 42, reviewers: [ "copilot-bot" ]), timeout: anything)
+    end
+
+    it "dispatches manual_review_pending when bundled with review_goal_retry" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "manual_review_pending", reviewer_login: "human-reviewer" }
+        ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity,
+          hash_including(issue_id: 10), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(goal: "review"), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(pr_number: 42, reviewers: [ "human-reviewer" ]), timeout: anything)
+    end
+
+    it "dispatches both bot and manual review when bundled with review_goal_retry" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "review_bot_review_pending", request_login: "copilot-bot" },
+          { type: "manual_review_pending", reviewer_login: "human-reviewer" }
+        ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(goal: "review"), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: [ "copilot-bot" ]), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: [ "human-reviewer" ]), timeout: anything)
+    end
+
     it "prioritizes review_goal_retry over ready_for_owner when both are present" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "ready",

@@ -324,6 +324,8 @@ module Workflows
         goal: "review"
       }, timeout: 30)
 
+      dispatch_pending_review_requests(project_id, pr_data)
+
       followup_trigger_types = %w[
         ci_failure review_threads conversation_comments changes_requested
         actionable_labels merge_conflicts review_bot_comments review_bot_threads
@@ -335,6 +337,28 @@ module Workflows
         start_draft_followup_workflow(project_id, pr_data)
       else
         start_pr_followup_workflow(project_id, pr_data)
+      end
+    end
+
+    def dispatch_pending_review_requests(project_id, pr_data)
+      pending_bot = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
+      if pending_bot
+        login = pending_bot[:request_login]
+        if login
+          request_review(project_id, pr_data[:pr_number],
+            [ login ],
+            log_key: "pr_review.request_review_bot_review_failed")
+        end
+      end
+
+      manual = (pr_data[:triggers] || []).find { |t| t[:type] == "manual_review_pending" }
+      if manual
+        login = manual[:reviewer_login]
+        if login
+          request_review(project_id, pr_data[:pr_number],
+            [ login ],
+            log_key: "pr_review.request_manual_review_failed")
+        end
       end
     end
 
