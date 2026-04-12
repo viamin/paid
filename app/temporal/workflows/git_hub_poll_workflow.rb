@@ -310,6 +310,12 @@ module Workflows
 
     def handle_review_goal_retry(project_id, pr_data)
       trigger_types = (pr_data[:triggers] || []).map { |t| t[:type] }
+
+      if trigger_types.include?("owner_approved")
+        handle_owner_approved(project_id, pr_data)
+        return
+      end
+
       issue_id = pr_data[:issue_id]
       pr_number = pr_data[:pr_number]
 
@@ -327,9 +333,6 @@ module Workflows
 
       if trigger_types.include?("ready_for_owner")
         handle_ready_for_owner(project_id, pr_data)
-        return
-      elsif trigger_types.include?("owner_approved")
-        handle_owner_approved(project_id, pr_data)
         return
       end
 

@@ -861,27 +861,24 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
     end
 
-    it "processes owner_approved alongside review_goal_retry" do
+    it "skips retry queueing when owner_approved will merge the PR" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::MergePullRequestActivity, anything, timeout: anything)
         .and_return({ merged: true })
       allow(Temporalio::Workflow).to receive(:patched).and_call_original
-      allow(Temporalio::Workflow).to receive(:patched).with("add-dev-environment-update-v1").and_return(false)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("add-dev-environment-update-v1").and_return(false)
 
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "ready",
-        triggers: [
-          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
-          { type: "owner_approved" }
-        ],
+        triggers: [ { type: "review_goal_retry" }, { type: "owner_approved" } ],
         current_review_goal_retry_count: 1
       }
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::QueueAgentRunActivity,
-          hash_including(goal: "review"), timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity, anything, timeout: anything)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::MergePullRequestActivity, anything, timeout: anything)
     end
