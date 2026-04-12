@@ -99,8 +99,11 @@ module Knowledge
           env: install_bundle_env
         )
       ensure
-        cleanup_credentials_in_container
-        container_runner.disconnect_network!
+        begin
+          cleanup_credentials_in_container
+        ensure
+          container_runner.disconnect_network!
+        end
       end
 
       def install_bundle_command

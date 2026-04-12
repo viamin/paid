@@ -305,6 +305,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         )
         expect(command_collector).not_to have_received(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+        expect(container_runner).to have_received(:disconnect_network!)
       end
 
       it "raises SkipCollector when config/routes.rb is missing" do
