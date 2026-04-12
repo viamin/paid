@@ -749,10 +749,13 @@ class AgentRun < ApplicationRecord
   # @return [AgentRunLog] The created log entry
   def log!(type, content, metadata: nil)
     create_log_entry!(type, content, metadata: metadata)
-  rescue ActiveRecord::ConnectionFailed, ActiveRecord::ConnectionNotEstablished, ActiveRecord::StatementInvalid => error
-    raise unless reconnectable_log_error?(error)
-
-    reset_log_connection_state!
+  rescue ActiveRecord::ConnectionFailed, ActiveRecord::ConnectionNotEstablished
+    pool = self.class.connection_pool
+    pool.release_connection if pool.respond_to?(:active_connection?) && pool.active_connection?
+    if defined?(ActiveRecord::Base) && ActiveRecord::Base.respond_to?(:connection_handler)
+      ActiveRecord::Base.connection_handler.clear_active_connections!
+    end
+    association(:agent_run_logs).reset
     create_log_entry!(type, content, metadata: metadata)
   end
 
@@ -978,35 +981,6 @@ class AgentRun < ApplicationRecord
   end
 
   private
-
-  def reconnectable_log_error?(error)
-    return true if error.is_a?(ActiveRecord::ConnectionFailed) || error.is_a?(ActiveRecord::ConnectionNotEstablished)
-    return false unless error.is_a?(ActiveRecord::StatementInvalid)
-
-    each_exception_cause(error).any? do |cause|
-      cause.is_a?(PG::ConnectionBad) || (defined?(PG::UnableToSend) && cause.is_a?(PG::UnableToSend))
-    end
-  end
-
-  def each_exception_cause(error)
-    [].tap do |causes|
-      current = error.cause
-
-      while current && !causes.include?(current)
-        causes << current
-        current = current.cause
-      end
-    end
-  end
-
-  def reset_log_connection_state!
-    pool = self.class.connection_pool
-    pool.release_connection if pool.respond_to?(:active_connection?) && pool.active_connection?
-    if defined?(ActiveRecord::Base) && ActiveRecord::Base.respond_to?(:connection_handler)
-      ActiveRecord::Base.connection_handler.clear_active_connections!
-    end
-    association(:agent_run_logs).reset
-  end
 
   def create_log_entry!(type, content, metadata: nil)
     agent_run_logs.create!(
