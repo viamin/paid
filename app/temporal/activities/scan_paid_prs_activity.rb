@@ -872,10 +872,13 @@ module Activities
     #
     # When the most recent review-goal run failed, re-emits the trigger so the
     # scanner queues a retry — up to max_review_goal_retries (default 3).
-    # Callers must check review_goal_retry_limit_reached? separately and
-    # escalate when the cap is hit (#1002).
+    # Returns [] when the retry limit is reached so no more review-goal runs
+    # are queued (#1002). Callers still check review_goal_retry_limit_reached?
+    # to escalate before entering phase-specific scan methods.
     def check_paid_agent_review_status(project, issue)
       return [] unless issue
+
+      return [] if review_goal_retry_limit_reached?(project, issue)
 
       pr_number = issue.github_number
       review_runs = project.agent_runs.where(

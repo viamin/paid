@@ -4232,6 +4232,42 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  context "when escalated PR at retry limit has no dismiss label" do
+    let(:escalated_no_dismiss_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "escalated",
+        paid_state: "completed")
+    end
+
+    before do
+      enable_paid_agent_review!
+      3.times do
+        create(:agent_run,
+          project: project, issue: escalated_no_dismiss_issue,
+          source_pull_request_number: 42,
+          goal: "review", status: "failed",
+          started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      end
+      stub_github_for_pr
+    end
+
+    it "does not emit paid_agent_review_pending at the retry limit" do
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("paid_agent_review_pending")
+    end
+
+    it "does not emit escalate_to_owner for an already-escalated PR" do
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("escalate_to_owner")
+    end
+  end
+
   context "when paid_agent is the only review method and a clean review exists" do
     before do
       enable_paid_agent_review!
