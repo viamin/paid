@@ -145,7 +145,7 @@ module Containers
     # Shared-object extensions are versioned (.so.1, .so.1.2.3) which
     # String#end_with? cannot match with a single pattern.  Handled as
     # a separate check on the basename.
-    VERSIONED_SO_PATTERN = /\.so\.\d/
+    VERSIONED_SO_PATTERN = /\.so\.\d+(?:\.\d+)*\z/
 
     # Artifact path patterns that indicate build artifacts rather than source.
     # Keep this aligned with directory/file-shaped entries in
