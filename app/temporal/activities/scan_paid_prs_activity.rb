@@ -129,12 +129,6 @@ module Activities
         else
           return :skipped if pr_data.nil?
 
-          if review_goal_retry_limit_reached?(project, issue)
-            return escalate_trigger(issue,
-              reason: "Review-goal retry limit reached " \
-                      "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
-          end
-
           scan_ready_pr(project, client, issue, pr_data: pr_data)
         end
       when "escalated"
@@ -316,6 +310,12 @@ module Activities
           all_blocking_review_methods_complete?(project, reviews, checks) &&
           !review_stale_for_head?(client, project, issue, pr_data, reviews)
         return owner_approved_trigger(issue)
+      end
+
+      if review_goal_retry_limit_reached?(project, issue)
+        return escalate_trigger(issue,
+          reason: "Review-goal retry limit reached " \
+                  "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
       end
 
       return nil if followup_limit_reached?(project, issue)
