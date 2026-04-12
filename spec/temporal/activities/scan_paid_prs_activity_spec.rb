@@ -1596,6 +1596,69 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when address_all_bot_reviews is enabled and multiple non-configured bots have reviews" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Codex reviewed 3 files and generated no new comments.", submitted_at: 45.minutes.ago },
+            { id: 3, user_login: "claude-code[bot]", state: "COMMENTED",
+              body: "Please fix the error handling.", submitted_at: 30.minutes.ago }
+          ],
+          review_threads: [],
+          checks: [ { name: "ci", conclusion: "success" } ]
+        )
+      end
+
+      it "detects actionable reviews from each non-configured bot independently" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments")
+      end
+    end
+
+    context "when address_all_bot_reviews is enabled and one non-configured bot is clean but another has feedback" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Codex reviewed 3 files and generated no new comments.", submitted_at: 30.minutes.ago },
+            { id: 3, user_login: "claude-code[bot]", state: "COMMENTED",
+              body: "Please fix the error handling.", submitted_at: 20.minutes.ago }
+          ],
+          review_threads: [],
+          checks: [ { name: "ci", conclusion: "success" } ]
+        )
+      end
+
+      it "still detects the actionable bot review even though another bot is clean" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(trigger_types).to include("review_bot_comments")
+      end
+    end
+
     context "when review bot review body says generated no comments but unresolved bot threads remain" do
       before do
         create(:issue, :pull_request,

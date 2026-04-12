@@ -162,6 +162,7 @@ module Activities
         review_bot_triggers = check_review_bot_status(reviews, unresolved_threads,
           project: project, last_run: last_run, client: client, issue: issue)
       else
+        # Fetch review threads first; only fetch full reviews when needed.
         unresolved_threads = fetch_unresolved_threads(client, project, issue)
         human_triggers = human_review_thread_triggers(project, unresolved_threads)
 
@@ -1358,19 +1359,28 @@ module Activities
 
       return [] if non_enabled_reviews.empty?
 
-      latest = non_enabled_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+      # Group reviews by bot login so each bot is evaluated independently.
+      # A newer clean review from one bot must not mask older unresolved
+      # feedback from another bot (see P2 review feedback).
+      all_triggers = []
+      non_enabled_reviews
+        .group_by { |r| r[:user_login]&.downcase }
+        .each_value do |bot_reviews|
+          latest = bot_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+          triggers = non_enabled_bot_triggers_for(latest, unresolved_threads, non_enabled_logins, last_run)
+          all_triggers.concat(triggers)
+        end
 
-      triggers = non_enabled_bot_triggers_for(latest, unresolved_threads, non_enabled_logins, last_run)
-      return triggers if triggers.any?
+      all_triggers.concat(non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)) if all_triggers.empty?
 
-      non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)
+      all_triggers
     end
 
     def non_enabled_bot_triggers_for(latest, unresolved_threads, non_enabled_logins, last_run)
       return [] if latest.nil?
 
       body = latest[:body].to_s
-      if REVIEW_BOT_CLEAN_PATTERN.match?(body) || paid_agent_review_clean?(latest)
+      if REVIEW_BOT_CLEAN_PATTERN.match?(body) || paid_agent_review_clean?(body)
         return []
       end
 
