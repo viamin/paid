@@ -1022,6 +1022,20 @@ RSpec.describe "Projects" do
           expect(project.reload.review_settings).to eq({})
         end
 
+        it "persists max_review_goal_retries for paid_agent and casts correctly" do
+          allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+          params_with_retries = { enabled: "1", wait_for_reviews: "0",
+                                  methods: { paid_agent: { enabled: "1",
+                                                           termination: { max_review_rounds: "3", max_review_goal_retries: "5",
+                                                                          stop_when_no_comments: "1",
+                                                                          quality_threshold: "", timeout_minutes: "" } } } }
+          patch project_path(project), params: { project: { review_settings: params_with_retries } }
+
+          expect(response).to redirect_to(project_path(project))
+          term = project.reload.review_settings.dig("methods", "paid_agent", "termination")
+          expect(term).to include("max_review_goal_retries" => 5, "max_review_rounds" => 3)
+        end
+
         it "persists manual reviewer_login and casts blank to nil" do
           params_with_reviewer = { enabled: "1", wait_for_reviews: "0",
                                    methods: { manual: { enabled: "1", reviewer_login: "alice",

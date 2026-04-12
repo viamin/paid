@@ -214,7 +214,7 @@ class ProjectsController < ApplicationController
       priority_labels: Project::PRIORITY_TIERS)
   end
 
-  TERMINATION_KEYS = %i[max_review_rounds stop_when_no_comments quality_threshold timeout_minutes].freeze
+  TERMINATION_KEYS = %i[max_review_rounds max_review_goal_retries stop_when_no_comments quality_threshold timeout_minutes].freeze
 
   def build_review_settings
     termination_permit = { termination: TERMINATION_KEYS }
@@ -252,6 +252,7 @@ class ProjectsController < ApplicationController
 
         term = config["termination"]
         term["max_review_rounds"] = term["max_review_rounds"].present? ? term["max_review_rounds"].to_i : nil
+        term["max_review_goal_retries"] = term["max_review_goal_retries"].present? ? term["max_review_goal_retries"].to_i : nil
         term["timeout_minutes"] = term["timeout_minutes"].present? ? term["timeout_minutes"].to_i : nil
         term["stop_when_no_comments"] = ActiveModel::Type::Boolean.new.cast(term["stop_when_no_comments"]) if term.key?("stop_when_no_comments")
         term["quality_threshold"] = term["quality_threshold"].presence
