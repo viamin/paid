@@ -1358,11 +1358,10 @@ module Activities
         non_enabled_logins.include?(r[:user_login]&.downcase)
       end
 
-      return [] if non_enabled_reviews.empty?
+      if non_enabled_reviews.empty?
+        return non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)
+      end
 
-      # Group reviews by bot login so each bot is evaluated independently.
-      # A newer clean review from one bot must not mask older unresolved
-      # feedback from another bot (see P2 review feedback).
       all_triggers = []
       non_enabled_reviews
         .group_by { |r| r[:user_login]&.downcase }

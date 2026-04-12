@@ -1507,6 +1507,36 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when address_all_bot_reviews is enabled and a non-configured bot has thread-only feedback without a review object" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [],
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "chatgpt-codex-connector" } ]
+            }
+          ]
+        )
+      end
+
+      it "detects non-configured bot threads even without a matching review object" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_threads")
+      end
+    end
+
     context "when address_all_bot_reviews is disabled and a non-configured bot has comments" do
       before do
         enable_copilot_review!
