@@ -1376,10 +1376,11 @@ module Activities
 
       all_triggers = []
       non_enabled_reviews
-        .group_by { |r| r[:user_login]&.downcase }
+        .group_by { |r| provider_key_or_login_for(r[:user_login]) }
         .each_value do |bot_reviews|
           latest = bot_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
-          triggers = non_enabled_bot_triggers_for(latest, unresolved_threads, non_enabled_logins, last_run,
+          triggers = non_enabled_bot_triggers_for(latest, unresolved_threads, last_run,
+            bot_logins: provider_bot_logins_for(latest[:user_login]),
             client: client, project: project, issue: issue)
           all_triggers.concat(triggers)
         end
@@ -1389,10 +1390,11 @@ module Activities
       all_triggers
     end
 
-    def non_enabled_bot_triggers_for(latest, unresolved_threads, non_enabled_logins, last_run, client: nil, project: nil, issue: nil)
+    def non_enabled_bot_triggers_for(latest, unresolved_threads, last_run, bot_logins:, client: nil, project: nil, issue: nil)
       return [] if latest.nil?
 
       bot_login = latest[:user_login]&.downcase
+      source_provider = ProviderSupport.provider_key_for_bot_username(bot_login)
       if body_only_bot_clean_comment_supersedes_review?(client, project, issue, bot_login, latest)
         return []
       end
@@ -1402,22 +1404,34 @@ module Activities
         return []
       end
 
-      submitted_at = latest[:submitted_at]
-      cutoff = last_run&.completed_at
-      return [] if submitted_at && cutoff && submitted_at <= cutoff
+      thread_triggers = non_enabled_bot_thread_triggers(unresolved_threads, bot_logins, source_provider: source_provider)
+      if body_only_review_bot?(bot_login)
+        return non_enabled_bot_comment_triggers(source_provider, thread_triggers) if body_only_review_needs_followup?(latest, last_run)
+        return non_enabled_bot_comment_triggers(source_provider, thread_triggers) unless review_diff_touches_reviewed_files?(client, project, issue, latest)
 
-      thread_triggers = non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)
-      if thread_triggers.any?
-        return [
-          { type: "review_bot_comments", details: "Non-configured bot review has unaddressed feedback" },
-          *thread_triggers
-        ]
+        return []
       end
 
-      [ { type: "review_bot_comments", details: "Non-configured bot review has unaddressed feedback" } ]
+      return non_enabled_bot_comment_triggers(source_provider, thread_triggers, data_incomplete: true) if unresolved_threads.nil?
+
+      return [] if thread_triggers.empty?
+
+      non_enabled_bot_comment_triggers(source_provider, thread_triggers)
     end
 
-    def non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)
+    def non_enabled_bot_comment_triggers(source_provider, thread_triggers = [], data_incomplete: false)
+      [
+        {
+          type: "review_bot_comments",
+          details: "Non-configured bot review has unaddressed feedback",
+          source_provider: source_provider,
+          data_incomplete: data_incomplete
+        }.compact,
+        *thread_triggers
+      ]
+    end
+
+    def non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins, source_provider: nil)
       return [] if unresolved_threads.nil?
 
       bot_threads = unresolved_threads.select do |thread|
@@ -1426,7 +1440,11 @@ module Activities
 
       return [] if bot_threads.empty?
 
-      [ { type: "review_bot_threads", details: "#{bot_threads.size} unresolved thread(s) from non-configured bot(s)" } ]
+      [ {
+        type: "review_bot_threads",
+        details: "#{bot_threads.size} unresolved thread(s) from non-configured bot(s)",
+        source_provider: source_provider
+      }.compact ]
     end
 
     def paid_agent_clean_review?(review)
@@ -1508,6 +1526,7 @@ module Activities
     def paid_agent_is_latest_blocker?(project, reviews, pending_triggers, blocking_triggers)
       return false if reviews.nil?
       return false unless pending_triggers.any? || blocking_triggers.any?
+      return false if (pending_triggers + blocking_triggers).any? { |t| t[:source_provider] && t[:source_provider] != "paid_agent" }
 
       has_non_paid_agent_thread_triggers = blocking_triggers.any? { |t| t[:type] == "review_bot_threads" }
       return false if has_non_paid_agent_thread_triggers
@@ -1534,6 +1553,17 @@ module Activities
         BODY_ONLY_REVIEW_BOT_LOGINS.include?(login.downcase) &&
           !ProviderSupport.provider_bot_username_for?("paid_agent", login)
       end
+    end
+
+    def provider_bot_logins_for(login)
+      provider_key = ProviderSupport.provider_key_for_bot_username(login)
+      return ProviderSupport.provider_bot_usernames_for(provider_key) if provider_key.present?
+
+      Set.new([ login&.downcase ].compact)
+    end
+
+    def provider_key_or_login_for(login)
+      ProviderSupport.provider_key_for_bot_username(login) || login&.downcase
     end
 
     def extract_actionable_labels(triggers)
