@@ -242,6 +242,25 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
+    it "still creates a valid issue that describes the issues endpoint returning 500" do
+      agent_run.log!("stdout", <<~TEXT)
+        # Proxy issue creation fails with 500s
+
+        When POST to /repos/acme/app/issues returns 500 Internal Server Error, the
+        fallback issue should still be published so the incident can be tracked.
+      TEXT
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(
+          title: "Proxy issue creation fails with 500s",
+          body: a_string_including("POST to /repos/acme/app/issues returns 500 Internal Server Error")
+        )
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
     context "when auto_add_labels_enabled is false" do
       before { project.update!(auto_add_labels_enabled: false) }
 

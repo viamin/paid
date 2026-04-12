@@ -4,13 +4,16 @@ module Activities
   class CreateGithubIssueActivity < BaseActivity
     activity_name "CreateGithubIssue"
     ISSUE_CREATION_ATTEMPT_PATTERN = /
+      ^.*?
+      \b(?:curl|gh)\b
+      .*?
       (
         -X\s+POST |
-        --request\s+POST |
-        POST\s+to
+        --request\s+POST
       )
       .*?
       \/repos\/[^\/\s]+\/[^\/\s]+\/issues\b
+      .*$
     /imx
     ISSUE_CREATION_FAILURE_PATTERNS = [
       /ActiveRecord::PendingMigrationError/,
