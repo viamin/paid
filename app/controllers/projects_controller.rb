@@ -220,7 +220,7 @@ class ProjectsController < ApplicationController
     termination_permit = { termination: TERMINATION_KEYS }
     rs = params.require(:project).permit(
       review_settings: [
-        :enabled, :wait_for_reviews,
+        :enabled, :wait_for_reviews, :address_all_bot_reviews,
         { methods: {
           copilot: [ :enabled, termination_permit ],
           paid_agent: [ :enabled, termination_permit ],
@@ -240,6 +240,7 @@ class ProjectsController < ApplicationController
   def cast_review_settings(settings)
     settings["enabled"] = ActiveModel::Type::Boolean.new.cast(settings["enabled"]) if settings.key?("enabled")
     settings["wait_for_reviews"] = ActiveModel::Type::Boolean.new.cast(settings["wait_for_reviews"]) if settings.key?("wait_for_reviews")
+    settings["address_all_bot_reviews"] = ActiveModel::Type::Boolean.new.cast(settings["address_all_bot_reviews"]) if settings.key?("address_all_bot_reviews")
 
     if settings["methods"].is_a?(Hash)
       settings["methods"].each_value do |config|

@@ -244,4 +244,41 @@ RSpec.describe ProviderSupport do
       expect(described_class.provider_bot_username_for?("unknown", "claude[bot]")).to be false
     end
   end
+
+  describe ".provider_key_for_bot_username" do
+    it "returns the provider key for any known alias" do
+      expect(described_class.provider_key_for_bot_username("chatgpt-codex-connector")).to eq("codex")
+      expect(described_class.provider_key_for_bot_username("chatgpt-codex-connector[bot]")).to eq("codex")
+    end
+
+    it "returns nil for unknown usernames" do
+      expect(described_class.provider_key_for_bot_username("random-user")).to be_nil
+    end
+  end
+
+  describe ".provider_bot_usernames_for" do
+    it "returns all aliases for the provider as lowercase usernames" do
+      expect(described_class.provider_bot_usernames_for("codex"))
+        .to eq(Set["chatgpt-codex-connector", "chatgpt-codex-connector[bot]"])
+    end
+
+    it "returns an empty set for unknown providers" do
+      expect(described_class.provider_bot_usernames_for("unknown")).to eq(Set.new)
+    end
+  end
+
+  describe ".all_bot_usernames" do
+    it "returns a set of all known bot usernames" do
+      result = described_class.all_bot_usernames
+      expect(result).to be_a(Set)
+      expect(result).to include("copilot", "copilot[bot]", "copilot-pull-request-reviewer[bot]")
+      expect(result).to include("claude[bot]", "claude-code[bot]")
+      expect(result).to include("chatgpt-codex-connector", "chatgpt-codex-connector[bot]")
+      expect(result).to include("paid-code-reviewer", "paid-code-reviewer[bot]")
+    end
+
+    it "returns all lowercase usernames" do
+      expect(described_class.all_bot_usernames.map(&:downcase)).to eq(described_class.all_bot_usernames.to_a)
+    end
+  end
 end
