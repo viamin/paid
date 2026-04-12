@@ -534,7 +534,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RequestReviewActivity, anything, timeout: anything)
     end
 
-    it "requests review and does not dispatch followup when other triggers are present in draft" do
+    it "requests review and dispatches draft followup when other triggers are present in draft" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
         current_draft_review_count: 1,
@@ -549,7 +549,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
           hash_including(reviewers: array_including(Activities::RequestReviewActivity::COPILOT_LOGIN)), timeout: anything)
-      expect(workflow).not_to have_received(:run_activity)
+      expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity, expected_draft_queue_input(count: 1), timeout: 30)
     end
 
