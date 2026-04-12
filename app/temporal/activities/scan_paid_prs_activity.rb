@@ -660,16 +660,8 @@ module Activities
       return false unless project.review_enabled?
       return false unless project.review_method_enabled?("paid_agent")
 
-      automatic_review_runs = project.agent_runs.where(
-        source_pull_request_number: issue.github_number,
-        goal: "review",
-        trigger_type: "automatic"
-      )
-
       # Don't retry while a review-goal run is already queued or running.
-      return false if review_runs_for_current_cycle(automatic_review_runs, issue)
-        .where(status: AgentRun::UNFINISHED_STATUSES)
-        .exists?
+      return false if review_run_in_progress?(project, issue)
 
       review_goal_consecutive_failure_count(project, issue).positive?
     end
@@ -983,17 +975,10 @@ module Activities
     def check_paid_agent_review_status(project, issue)
       return [] unless issue
 
-      pr_number = issue.github_number
-      automatic_review_runs = project.agent_runs.where(
-        source_pull_request_number: pr_number,
-        goal: "review",
-        trigger_type: "automatic"
-      )
+      automatic_review_runs = automatic_review_runs(project, issue)
       attempted_review_runs = automatic_review_runs.where.not(status: "retried")
       current_cycle_review_runs = review_runs_for_current_cycle(attempted_review_runs, issue)
-      unfinished_run = current_cycle_review_runs.where(status: AgentRun::UNFINISHED_STATUSES)
-        .order(created_at: :desc)
-        .first
+      unfinished_run = current_cycle_review_run_in_progress(project, issue)
 
       if unfinished_run
         return [ { type: "paid_agent_review_pending",
@@ -1084,21 +1069,35 @@ module Activities
     # stop retrying paid_agent but keep flowing through the remaining bot.
     def review_goal_retry_limit_requires_escalation?(project, issue)
       return false unless review_goal_retry_limit_reached?(project, issue)
-      return false if automatic_review_run_in_progress?(project, issue)
+      return false if review_run_in_progress?(project, issue)
 
       (project.enabled_review_methods & %w[copilot codex]).empty?
     end
 
-    def automatic_review_run_in_progress?(project, issue)
-      automatic_review_runs = project.agent_runs.where(
-        source_pull_request_number: issue.github_number,
-        goal: "review",
-        trigger_type: "automatic"
-      )
+    def review_run_in_progress?(project, issue)
+      current_cycle_review_run_in_progress(project, issue).present?
+    end
 
-      review_runs_for_current_cycle(automatic_review_runs, issue)
+    def current_cycle_review_run_in_progress(project, issue)
+      all_review_runs(project, issue)
         .where(status: AgentRun::UNFINISHED_STATUSES)
-        .exists?
+        .order(created_at: :desc)
+        .first
+    end
+
+    def all_review_runs(project, issue)
+      review_runs_for_current_cycle(
+        project.agent_runs.where(
+          source_pull_request_number: issue.github_number,
+          goal: "review"
+        ),
+        issue
+      )
+    end
+
+    def automatic_review_runs(project, issue)
+      all_review_runs(project, issue)
+        .where(trigger_type: "automatic")
     end
 
     def review_goal_consecutive_failure_count(project, issue)
