@@ -3660,7 +3660,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       before do
-        enable_paid_agent_review!(project)
+        enable_paid_agent_review!(project, max_review_rounds: 5)
         3.times do
           create(:agent_run,
             project: project, issue: pr_issue,
@@ -3671,16 +3671,18 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(draft: true, reviews: [])
       end
 
-      it "transitions to restarted but escalates due to retry limit" do
+      it "resets the retry breaker and scans the restarted draft instead of re-escalating" do
         result = activity.execute(project_id: project.id)
 
         pr_issue.reload
         expect(pr_issue.pr_review_phase).to eq("restarted")
+        expect(pr_issue.review_goal_retry_reset_at).to be_within(1.second).of(Time.current)
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         trigger_types = trigger[:triggers].map { |t| t[:type] }
-        expect(trigger_types).to include("escalate_to_owner")
-        expect(trigger_types).not_to include("paid_agent_review_pending")
+        expect(trigger[:phase]).to eq("restarted")
+        expect(trigger_types).to include("paid_agent_review_pending")
+        expect(trigger_types).not_to include("escalate_to_owner")
       end
     end
 
@@ -3725,7 +3727,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       before do
-        enable_paid_agent_review!(project)
+        enable_paid_agent_review!(project, max_review_rounds: 5)
         3.times do
           create(:agent_run,
             project: project, issue: pr_issue,
@@ -3737,23 +3739,25 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           checks: [ { name: "rspec", conclusion: "failure" } ])
       end
 
-      it "transitions to restarted but still escalates due to retry limit" do
+      it "resets the retry breaker and processes the restarted draft" do
         result = activity.execute(project_id: project.id)
 
         pr_issue.reload
         expect(pr_issue.pr_review_phase).to eq("restarted")
+        expect(pr_issue.review_goal_retry_reset_at).to be_within(1.second).of(Time.current)
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         trigger_types = trigger[:triggers].map { |t| t[:type] }
-        expect(trigger_types).to include("escalate_to_owner")
-        expect(trigger_types).not_to include("paid_agent_review_pending")
+        expect(trigger[:phase]).to eq("restarted")
+        expect(trigger_types).to include("ci_failure")
+        expect(trigger_types).not_to include("escalate_to_owner")
       end
 
-      it "does not emit paid_agent_review_pending despite draft conversion" do
+      it "can emit paid_agent_review_pending again after draft conversion restarts the cycle" do
         result = activity.execute(project_id: project.id)
 
         trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
-        expect(trigger_types).not_to include("paid_agent_review_pending")
+        expect(trigger_types).to include("paid_agent_review_pending")
       end
     end
 

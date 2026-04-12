@@ -498,7 +498,8 @@ module Activities
       issue.update!(
         pr_review_phase: "restarted",
         draft_review_count: 0,
-        pr_followup_count: 0
+        pr_followup_count: 0,
+        review_goal_retry_reset_at: Time.current
       )
 
       logger.info(
