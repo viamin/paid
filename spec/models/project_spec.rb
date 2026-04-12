@@ -976,7 +976,7 @@ RSpec.describe Project do
         expect(project.errors[:review_settings].join).to include("at least one termination condition")
       end
 
-      it "accepts max_review_goal_retries as sole termination condition" do
+      it "accepts max_review_goal_retries as sole termination condition for paid_agent" do
         project = build(:project, review_settings: {
           "methods" => {
             "paid_agent" => {
@@ -992,6 +992,25 @@ RSpec.describe Project do
           }
         })
         expect(project).to be_valid
+      end
+
+      it "rejects max_review_goal_retries as sole termination condition for non-paid_agent methods" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "copilot" => {
+              "enabled" => true,
+              "termination" => {
+                "max_review_rounds" => nil,
+                "max_review_goal_retries" => 3,
+                "stop_when_no_comments" => false,
+                "quality_threshold" => nil,
+                "timeout_minutes" => nil
+              }
+            }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("at least one termination condition")
       end
 
       it "falls back to default termination when termination key is missing" do

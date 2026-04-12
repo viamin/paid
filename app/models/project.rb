@@ -682,9 +682,11 @@ class Project < ApplicationRecord
       errors.add(:review_settings, "#{method_name} max_review_rounds must be a positive integer")
     end
 
-    retries = termination["max_review_goal_retries"]
-    if retries.present? && (!retries.is_a?(Integer) || retries < 1)
-      errors.add(:review_settings, "#{method_name} max_review_goal_retries must be a positive integer")
+    if method_name == "paid_agent"
+      retries = termination["max_review_goal_retries"]
+      if retries.present? && (!retries.is_a?(Integer) || retries < 1)
+        errors.add(:review_settings, "#{method_name} max_review_goal_retries must be a positive integer")
+      end
     end
 
     timeout = termination["timeout_minutes"]
@@ -692,8 +694,9 @@ class Project < ApplicationRecord
       errors.add(:review_settings, "#{method_name} timeout_minutes must be a positive integer")
     end
 
+    paid_agent_retry_condition = method_name == "paid_agent" && termination["max_review_goal_retries"].present?
     has_any_condition = termination["max_review_rounds"].present? ||
-                        termination["max_review_goal_retries"].present? ||
+                        paid_agent_retry_condition ||
                         termination["stop_when_no_comments"] == true ||
                         termination["quality_threshold"].present? ||
                         termination["timeout_minutes"].present?
