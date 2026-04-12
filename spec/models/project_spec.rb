@@ -725,6 +725,23 @@ RSpec.describe Project do
       end
     end
 
+    describe "#address_all_bot_reviews?" do
+      it "returns false by default" do
+        project = build(:project)
+        expect(project.address_all_bot_reviews?).to be false
+      end
+
+      it "returns true when enabled" do
+        project = build(:project, review_settings: { "address_all_bot_reviews" => true })
+        expect(project.address_all_bot_reviews?).to be true
+      end
+
+      it "returns false when explicitly disabled" do
+        project = build(:project, review_settings: { "address_all_bot_reviews" => false })
+        expect(project.address_all_bot_reviews?).to be false
+      end
+    end
+
     describe "#review_method_enabled?" do
       it "returns false by default" do
         project = build(:project)

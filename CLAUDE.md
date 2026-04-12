@@ -14,7 +14,7 @@ Paid (Platform for AI Development) is a Rails 8 application that orchestrates AI
 ## Git Workflow
 
 - **The `main` branch is protected** - Never commit directly to `main`. Always create a feature branch and open a pull request.
-- **Never commit build artifacts or tool caches** - Do not `git add` directories created by setup/install commands (e.g., `.corepack/`, `.pg-install/`, `.apt-cache/`, `.cache-pkg/`, `vendor/bundle/`, `.tmp-build/`, `.venv/`, `__pycache__/`). If `bin/setup`, `bundle install`, `yarn install`, or similar commands create new dotfile directories in the workspace root, those are build artifacts — not source code. Check `.gitignore` and `.git/info/exclude` before staging. When in doubt, use `git add <specific files>` rather than `git add -A`.
+- **Never commit build artifacts or tool caches** - Do not `git add` directories created by setup/install commands (e.g., `.corepack/`, `.pg-install/`, `.apt-cache/`, `.cache-pkg/`, `vendor/bundle/`, `.tmp-build/`, `.venv/`, `__pycache__/`, `.bundle-pr-*/`, `.cache-yarn/`). If `bin/setup`, `bundle install`, `yarn install`, or similar commands create new dotfile directories in the workspace root, those are build artifacts — not source code. Check `.gitignore` and `.git/info/exclude` before staging. **Always use `git add <specific files>`** — never use `git add -A` or `git add .` as these can stage artifact files that bypass exclude rules. The pre-commit hook rejects commits with more than 100 staged files.
 - **Conventional Commits are required** - Commits must use Conventional Commit format so release automation can generate semantic release notes correctly.
 - **Use git worktrees for concurrent branch work** - When working on multiple branches (e.g., making a PR while another branch has uncommitted changes), use `git worktree add` instead of stashing and switching branches. This avoids lost edits, stash conflicts, and accidental branch mix-ups. Remove worktrees when done with `git worktree remove`.
 
@@ -150,6 +150,18 @@ Orchestration code should be mechanically simple - delegate all semantic reasoni
 ### Always Fix Forward
 
 Never skip pre-commit hooks (`--no-verify`), never disable linters, never ignore failing tests. If a check fails, fix the underlying issue. This applies to both human developers, AI agents, and system-level code. The only acceptable use of `--no-verify` is when a hook fails due to an unpatched CVE with no released fix.
+
+### Artifact Prevention (Defense in Depth)
+
+The system has multiple layers to prevent build artifacts from reaching `main`:
+
+1. **`.gitignore`** (host) — excludes known artifact patterns for developers
+2. **`.git/info/exclude`** (container) — `CONTAINER_ARTIFACT_EXCLUDES` is injected by `Containers::GitOperations` to cover patterns the repo's `.gitignore` may miss
+3. **Pre-commit hook** (host) — rejects commits with >100 staged files (`.githooks/pre-commit`)
+4. **`validate_staged_files!`** (container auto-commit) — runs BEFORE the `--no-verify` commit in `commit_uncommitted_changes`, checking both file count and forbidden binary/directory patterns. This cannot be bypassed because it runs in Ruby, not as a git hook
+5. **CI `pr-artifact-check`** — catches artifacts that slip through all other layers by scanning PR diffs for forbidden directories and binary extensions
+
+When adding a new artifact pattern, update ALL of: `.gitignore`, `CONTAINER_ARTIFACT_EXCLUDES` in `git_operations.rb`, and the CI workflow `pr-artifact-check.yml`.
 
 ### Ruby Conventions
 

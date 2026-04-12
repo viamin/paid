@@ -38,6 +38,16 @@ RSpec.describe Activities::CompleteReviewGoalActivity do
         expect { activity.execute(agent_run_id: agent_run.id) }
           .to have_enqueued_job(ProcessRunQueueJob)
       end
+
+      it "resets review_goal_retry_count on the issue" do
+        issue = create(:issue, project: project, review_goal_retry_count: 2)
+        agent_run = create(:agent_run, :running, :review_goal, project: project,
+          issue: issue, review_posted_at: 1.minute.ago)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(issue.reload.review_goal_retry_count).to eq(0)
+      end
     end
 
     context "when no review was posted" do

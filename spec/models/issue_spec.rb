@@ -870,6 +870,42 @@ RSpec.describe Issue do
     end
   end
 
+  describe ".open_pull_request_parent_issue_ids" do
+    let(:project) { create(:project) }
+
+    it "returns parent issue ids for open linked PRs only" do
+      with_open_pr = create(:issue, project: project, github_state: "open")
+      with_closed_pr = create(:issue, project: project, github_state: "open")
+      create(:issue, :pull_request, project: project, parent_issue: with_open_pr, github_state: "open")
+      create(:issue, :pull_request, project: project, parent_issue: with_closed_pr, github_state: "closed")
+
+      result = described_class.open_pull_request_parent_issue_ids(project: project).pluck(:parent_issue_id)
+
+      expect(result).to contain_exactly(with_open_pr.id)
+    end
+
+    it "ignores open PRs that are not linked to a parent issue" do
+      linked_issue = create(:issue, project: project, github_state: "open")
+      create(:issue, :pull_request, project: project, parent_issue: linked_issue, github_state: "open")
+      create(:issue, :pull_request, project: project, parent_issue: nil, github_state: "open")
+
+      result = described_class.open_pull_request_parent_issue_ids(project: project).pluck(:parent_issue_id)
+
+      expect(result).to contain_exactly(linked_issue.id)
+    end
+
+    it "scopes parent issue ids to the provided issue ids" do
+      included = create(:issue, project: project, github_state: "open")
+      excluded = create(:issue, project: project, github_state: "open")
+      create(:issue, :pull_request, project: project, parent_issue: included, github_state: "open")
+      create(:issue, :pull_request, project: project, parent_issue: excluded, github_state: "open")
+
+      result = described_class.open_pull_request_parent_issue_ids(issue_ids: [ included.id ]).pluck(:parent_issue_id)
+
+      expect(result).to contain_exactly(included.id)
+    end
+  end
+
   describe ".lifecycle_statuses" do
     let(:project) { create(:project) }
 
