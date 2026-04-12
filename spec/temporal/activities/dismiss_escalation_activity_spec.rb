@@ -15,6 +15,7 @@ RSpec.describe Activities::DismissEscalationActivity do
       let(:issue) do
         create(:issue, :pull_request,
           pr_review_phase: "escalated",
+          review_goal_retry_count: 3,
           labels: [ "paid-generated", "paid-escalated", "paid-dismiss-escalation" ])
       end
 
@@ -26,6 +27,12 @@ RSpec.describe Activities::DismissEscalationActivity do
         activity.execute(issue_id: issue.id)
 
         expect(issue.reload.pr_review_phase).to eq("ready")
+      end
+
+      it "resets review_goal_retry_count to zero" do
+        activity.execute(issue_id: issue.id)
+
+        expect(issue.reload.review_goal_retry_count).to eq(0)
       end
 
       it "removes the paid-dismiss-escalation label" do
