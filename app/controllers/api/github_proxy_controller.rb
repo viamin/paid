@@ -166,14 +166,28 @@ module Api
         review_url: body["html_url"]
       )
 
-      request_body = parse_request_body(request.raw_post)
-
-      log_missing_inline_comments(body, request_body)
       log_info("github_proxy.review_created",
         review_id: body["id"],
         review_url: body["html_url"])
+
+      warn_if_missing_inline_comments(body)
     rescue => e
       log_error("github_proxy.track_review_failed", e.message)
+    end
+
+    def warn_if_missing_inline_comments(response_body)
+      request_body = parse_request_body(request.raw_post)
+      comment_count = Array(request_body["comments"]).length
+
+      return unless comment_count.zero?
+      return unless non_clean_review?(request_body, response_body)
+
+      Rails.logger.warn(
+        message: "github_proxy.review_missing_inline_comments",
+        agent_run_id: @agent_run.id,
+        review_id: response_body["id"],
+        comment_count: comment_count
+      )
     end
 
     def parse_response_body(body)
@@ -192,19 +206,24 @@ module Api
       {}
     end
 
-    def log_missing_inline_comments(body, request_body)
-      review_body = body["body"].to_s
-      comment_count = Array(request_body["comments"]).length
-      return unless comment_count.zero?
-      return if review_body.blank?
-      return if review_body.match?(/\AGenerated no (?:new )?comments\./i)
+    def non_clean_review?(request_body, response_body)
+      return false if clean_review_event?(request_body)
+      return false if clean_review_state?(response_body)
+      return false if clean_review_body?(response_body["body"])
 
-      Rails.logger.warn(
-        message: "github_proxy.review_missing_inline_comments",
-        agent_run_id: @agent_run.id,
-        review_id: body["id"],
-        comment_count: comment_count
-      )
+      true
+    end
+
+    def clean_review_event?(request_body)
+      request_body&.dig("event").to_s.casecmp("APPROVE").zero?
+    end
+
+    def clean_review_state?(response_body)
+      response_body["state"].to_s.casecmp("APPROVED").zero?
+    end
+
+    def clean_review_body?(body)
+      body.to_s.include?("<!-- paid-review-clean -->")
     end
 
     def log_error(message, error)
