@@ -785,11 +785,13 @@ module Activities
         # with no path out (handle_review_bot_review_pending skips the
         # RequestReviewActivity call when login is nil).
         #
-        # Also suppress the trigger when the paid_agent review round limit
-        # has been reached — requesting another review would start a cycle
-        # that can never complete within the configured budget.
+        # When review_bot_request_login returns a non-paid_agent login (e.g.
+        # codex), paid_agent exhaustion must not suppress the request — the
+        # other bot can still complete its review cycle. Suppress only when
+        # login is nil (paid_agent-only project) and rounds are exhausted;
+        # the elsif branch handles that via check_paid_agent_review_status.
         login = project && review_bot_request_login(project)
-        if login && !paid_agent_review_rounds_exhausted?(project, reviews)
+        if login
           [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
         elsif project&.review_enabled? && project.review_method_enabled?("paid_agent")
           check_paid_agent_review_status(project, issue)
@@ -1390,6 +1392,12 @@ module Activities
     # different bot (e.g. Copilot). When such triggers are present the
     # remaining blocker is not paid_agent-owned, so we return false to
     # allow the other bot's cycle to continue.
+    #
+    # Codex is also a body-only bot and never produces review_bot_threads
+    # triggers. When codex (or any other non-paid_agent body-only bot) is
+    # enabled alongside paid_agent, its review cycle can still make
+    # progress after paid_agent's rounds are exhausted, so escalation
+    # would be premature.
     def paid_agent_is_latest_blocker?(project, reviews, pending_triggers, blocking_triggers)
       return false if reviews.nil?
       return false unless pending_triggers.any? || blocking_triggers.any?
@@ -1397,11 +1405,28 @@ module Activities
       has_non_paid_agent_thread_triggers = blocking_triggers.any? { |t| t[:type] == "review_bot_threads" }
       return false if has_non_paid_agent_thread_triggers
 
+      return false if other_enabled_body_only_bots?(project)
+
       allowed = project.enabled_review_bot_logins.presence
       latest = latest_allowed_bot_review(reviews, allowed)
       return false unless latest
 
       ProviderSupport.provider_bot_username_for?("paid_agent", latest[:user_login])
+    end
+
+    # Returns true when the project has an enabled body-only review bot
+    # other than paid_agent (e.g. codex). These bots never create review
+    # threads, so their presence is invisible to the
+    # review_bot_threads check above, but they can still continue the
+    # automated review cycle after paid_agent's rounds are exhausted.
+    def other_enabled_body_only_bots?(project)
+      enabled = project.enabled_review_bot_logins
+      return false if enabled.blank?
+
+      enabled.any? do |login|
+        BODY_ONLY_REVIEW_BOT_LOGINS.include?(login.downcase) &&
+          !ProviderSupport.provider_bot_username_for?("paid_agent", login)
+      end
     end
 
     def extract_actionable_labels(triggers)
