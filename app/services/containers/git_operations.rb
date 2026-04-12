@@ -767,8 +767,12 @@ module Containers
     # This is the last line of defense since hooks are bypassed.
     # Rejects commits that stage too many files or contain binary
     # artifacts / forbidden directories that slipped past exclude rules.
+    #
+    # Uses --diff-filter=d to exclude deletions — a commit that removes
+    # previously tracked artifacts is a valid remediation and must not
+    # be blocked by this guard.
     def validate_staged_files!
-      staged = execute_git("diff", "--cached", "--name-only")
+      staged = execute_git("diff", "--cached", "--name-only", "--diff-filter=d")
       return unless staged.success? && staged[:stdout].present?
 
       files = staged[:stdout].lines.map(&:strip).reject(&:blank?)

@@ -31,8 +31,9 @@ jobs:
           echo "Head: ${HEAD_SHA}"
           echo ""
 
-          # Get the list of changed files
-          diff_files=$(git diff --name-only "${BASE_SHA}"..."${HEAD_SHA}" 2>/dev/null || true)
+          # Get the list of changed files (exclude deletions — removing
+          # previously committed artifacts is a valid remediation).
+          diff_files=$(git diff --name-only --diff-filter=d "${BASE_SHA}"..."${HEAD_SHA}" 2>/dev/null || true)
           if [ -z "${diff_files}" ]; then
             echo "No diff files found (empty PR or merge commit). Skipping check."
             exit 0

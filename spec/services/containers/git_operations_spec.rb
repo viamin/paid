@@ -590,7 +590,7 @@ RSpec.describe Containers::GitOperations do
 
       staged_result = Containers::Provision::Result.success(stdout: "file.rb\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)
-        .with([ "git", "diff", "--cached", "--name-only" ], timeout: nil, stream: false)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
         .and_return(staged_result)
 
       expect(container_service).to receive(:execute)
@@ -612,7 +612,7 @@ RSpec.describe Containers::GitOperations do
 
       staged_result = Containers::Provision::Result.success(stdout: "file.rb\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)
-        .with([ "git", "diff", "--cached", "--name-only" ], timeout: nil, stream: false)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
         .and_return(staged_result)
 
       project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
@@ -653,7 +653,7 @@ RSpec.describe Containers::GitOperations do
 
       staged_result = Containers::Provision::Result.success(stdout: "file.rb\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)
-        .with([ "git", "diff", "--cached", "--name-only" ], timeout: nil, stream: false)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
         .and_return(staged_result)
 
       allow(container_service).to receive(:execute)
@@ -676,7 +676,7 @@ RSpec.describe Containers::GitOperations do
       files = (1..101).map { |i| ".bundle-pr-908/ruby/3.4.0/gems/gem-#{i}/lib.rb" }
       staged_result = Containers::Provision::Result.success(stdout: "#{files.join("\n")}\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)
-        .with([ "git", "diff", "--cached", "--name-only" ], timeout: nil, stream: false)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
         .and_return(staged_result)
 
       expect { git_ops.commit_uncommitted_changes }.to raise_error(
@@ -700,7 +700,7 @@ RSpec.describe Containers::GitOperations do
         stderr: "", exit_code: 0
       )
       allow(container_service).to receive(:execute)
-        .with([ "git", "diff", "--cached", "--name-only" ], timeout: nil, stream: false)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
         .and_return(staged_result)
 
       expect { git_ops.commit_uncommitted_changes }.to raise_error(
@@ -724,7 +724,7 @@ RSpec.describe Containers::GitOperations do
         stderr: "", exit_code: 0
       )
       allow(container_service).to receive(:execute)
-        .with([ "git", "diff", "--cached", "--name-only" ], timeout: nil, stream: false)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
         .and_return(staged_result)
 
       expect { git_ops.commit_uncommitted_changes }.to raise_error(
@@ -748,13 +748,38 @@ RSpec.describe Containers::GitOperations do
         stderr: "", exit_code: 0
       )
       allow(container_service).to receive(:execute)
-        .with([ "git", "diff", "--cached", "--name-only" ], timeout: nil, stream: false)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
         .and_return(staged_result)
 
       expect { git_ops.commit_uncommitted_changes }.to raise_error(
         described_class::Error,
         /forbidden artifact files detected/
       )
+    end
+
+    it "allows commits that only delete forbidden artifact files" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be true
     end
   end
 
