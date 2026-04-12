@@ -981,7 +981,7 @@ module Activities
 
     # Returns true when the number of consecutive unsuccessful review-goal runs
     # in the current review cycle has reached the configurable retry limit.
-    # A completed review or newer create_pr run resets the breaker so old
+    # Any completed review or newer create_pr run resets the breaker so old
     # failures do not cause permanent escalation (#1002).
     #
     # Non-bot review methods (manual, ci_action) do not provide a recovery
@@ -1019,7 +1019,7 @@ module Activities
 
       [
         issue.review_goal_retry_reset_at,
-        run_scope.where(goal: "review", status: "completed", trigger_type: "automatic").maximum(:completed_at),
+        run_scope.where(goal: "review", status: "completed").maximum(:completed_at),
         run_scope.where(goal: "create_pr", status: "completed").maximum(:completed_at)
       ].compact.max
     end

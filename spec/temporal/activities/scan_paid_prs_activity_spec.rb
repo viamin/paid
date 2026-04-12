@@ -4561,7 +4561,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(trigger_types).not_to include("escalate_to_owner")
     end
 
-    it "does not let a manual clean review reset the automatic retry breaker" do
+    it "lets a manual clean review reset the automatic retry breaker" do
       enable_paid_agent_review!(project, max_review_rounds: 5)
       retry_limit_issue.agent_runs.destroy_all
       [ 3.hours.ago, 2.hours.ago ].each do |timestamp|
@@ -4579,8 +4579,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       result = activity.execute(project_id: project.id)
 
       trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
-      expect(trigger_types).to include("escalate_to_owner")
-      expect(trigger_types).not_to include("paid_agent_review_pending")
+      expect(trigger_types).to include("paid_agent_review_pending")
+      expect(trigger_types).not_to include("escalate_to_owner")
     end
 
     it "does not count manual review runs toward paid_agent max_review_rounds" do
