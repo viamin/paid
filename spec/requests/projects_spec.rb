@@ -464,10 +464,10 @@ RSpec.describe "Projects" do
 
       it "links to PR in context column for review goal runs on project page" do
         project = create(:project, account: account, github_token: github_token)
-        create(:agent_run, :review_goal, :completed, project: project)
+        run = create(:agent_run, :review_goal, :completed, project: project)
         get project_path(project)
-        expect(response.body).to include("PR #10")
-        expect(response.body).to include("#{project.github_url}/pull/10")
+        expect(response.body).to include("PR ##{run.source_pull_request_number}")
+        expect(response.body).to include("#{project.github_url}/pull/#{run.source_pull_request_number}")
       end
 
       it "shows review link in actions column when review_url is present on project page" do
