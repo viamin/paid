@@ -927,12 +927,13 @@ module Activities
       unfinished_run = automatic_review_runs.where(status: AgentRun::UNFINISHED_STATUSES)
         .order(created_at: :desc)
         .first
+      current_cycle_review_runs = review_runs_for_current_cycle(attempted_review_runs, issue)
 
       # Count all finished review attempts (including failed/timed-out) toward
       # the max_review_rounds limit, but exclude retried runs because retry
       # bookkeeping marks the superseded run as retried before enqueuing its
       # replacement. Counting both would burn two rounds for one logical retry.
-      finished_count = attempted_review_runs.finished.count
+      finished_count = current_cycle_review_runs.finished.count
       max_rounds = project.review_method_config("paid_agent")
         .dig("termination", "max_review_rounds")
 
@@ -958,7 +959,7 @@ module Activities
       # was already attempted for the current code — don't re-trigger.
       # Previously only checked completed runs, which let timed-out reviews
       # re-trigger on every scan cycle (#830).
-      last_review_run = attempted_review_runs.finished
+      last_review_run = current_cycle_review_runs.finished
         .order(Arel.sql("COALESCE(completed_at, updated_at) DESC")).first
       last_create_pr_run = project.agent_runs
         .where(source_pull_request_number: issue.github_number, goal: "create_pr")
@@ -978,6 +979,15 @@ module Activities
       end
 
       [ { type: "paid_agent_review_pending", details: details } ]
+    end
+
+    def review_runs_for_current_cycle(review_runs, issue)
+      return review_runs unless issue.pr_review_phase == "restarted"
+
+      reset_at = issue.review_goal_retry_reset_at
+      return review_runs unless reset_at
+
+      review_runs.where("COALESCE(completed_at, updated_at) > ?", reset_at)
     end
 
     # Returns true when the number of consecutive unsuccessful review-goal runs

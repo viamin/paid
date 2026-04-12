@@ -3673,7 +3673,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "resets the retry breaker and scans the restarted draft instead of re-escalating" do
         result = activity.execute(project_id: project.id)
-
         pr_issue.reload
         expect(pr_issue.pr_review_phase).to eq("restarted")
         expect(pr_issue.review_goal_retry_reset_at).to be_within(1.second).of(Time.current)
@@ -3758,6 +3757,68 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).to include("paid_agent_review_pending")
+      end
+    end
+
+    context "when a ready PR exhausted paid_agent review rounds before draft restart" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          draft_review_count: 5,
+          pr_followup_count: 3)
+      end
+
+      before do
+        enable_paid_agent_review!(project, max_review_rounds: 3)
+        3.times do
+          create(:agent_run,
+            project: project, issue: pr_issue,
+            source_pull_request_number: 42,
+            goal: "review", status: "failed",
+            started_at: 1.hour.ago, completed_at: 1.hour.ago)
+        end
+        stub_github_for_pr(draft: true, reviews: [])
+      end
+
+      it "re-emits paid_agent_review_pending for the restarted draft cycle" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+        expect(trigger_types).to include("paid_agent_review_pending")
+        expect(trigger_types).not_to include("ready_for_owner")
+      end
+    end
+
+    context "when an escalated PR exhausted paid_agent review rounds before draft restart" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "escalated",
+          draft_review_count: 10,
+          pr_followup_count: 3)
+      end
+
+      before do
+        enable_paid_agent_review!(project, max_review_rounds: 3)
+        3.times do
+          create(:agent_run,
+            project: project, issue: pr_issue,
+            source_pull_request_number: 42,
+            goal: "review", status: "failed",
+            started_at: 1.hour.ago, completed_at: 1.hour.ago)
+        end
+        stub_github_for_pr(draft: true, reviews: [])
+      end
+
+      it "re-emits paid_agent_review_pending for the restarted draft cycle" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+        expect(trigger_types).to include("paid_agent_review_pending")
+        expect(trigger_types).not_to include("escalate_to_owner")
       end
     end
 
