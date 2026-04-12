@@ -94,6 +94,7 @@ module Knowledge
 
       def install_gems_in_container
         network_connected = false
+        original_error = nil
         container_runner.connect_network!
         network_connected = true
         run_command(
@@ -102,12 +103,11 @@ module Knowledge
           timeout: 300,
           env: install_bundle_env
         )
+      rescue StandardError => error
+        original_error = error
+        raise
       ensure
-        begin
-          cleanup_bundle_home_in_container if network_connected
-        ensure
-          container_runner.disconnect_network! if network_connected
-        end
+        cleanup_bundle_install_state(network_connected:, original_error:)
       end
 
       def install_bundle_command
@@ -134,6 +134,26 @@ module Knowledge
           timeout: 10,
           env: { "HOME" => BUNDLE_HOME }
         )
+      end
+
+      def cleanup_bundle_install_state(network_connected:, original_error:)
+        return unless network_connected
+
+        teardown_error = nil
+
+        begin
+          cleanup_bundle_home_in_container
+        rescue StandardError => error
+          teardown_error ||= error
+        ensure
+          begin
+            container_runner.disconnect_network!
+          rescue StandardError => error
+            teardown_error ||= error
+          end
+        end
+
+        raise teardown_error if original_error.nil? && teardown_error
       end
 
       def parse_expanded_output(output)

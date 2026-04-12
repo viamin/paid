@@ -229,6 +229,28 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(container_runner).to have_received(:disconnect_network!)
       end
 
+      it "preserves bundle install errors when cleanup also fails" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
+          .and_raise(RuntimeError, "bundle install timed out")
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /rm -rf \/tmp\/paid-bundle-home.*! test -e \/tmp\/paid-bundle-home/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
+          .and_raise(Knowledge::ContainerizedRunner::ContainerError, "cleanup failed after timeout")
+
+        expect { command_collector.collect }.to raise_error(RuntimeError, "bundle install timed out")
+        expect(container_runner).to have_received(:disconnect_network!)
+      end
+
+      it "preserves bundle install errors when disconnect also fails" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
+          .and_raise(RuntimeError, "bundle install timed out")
+        allow(container_runner).to receive(:disconnect_network!)
+          .and_raise(Knowledge::ContainerizedRunner::ContainerError, "disconnect failed after timeout")
+
+        expect { command_collector.collect }.to raise_error(RuntimeError, "bundle install timed out")
+      end
+
       it "fails when bundle install raises a git-sourced gem error" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
