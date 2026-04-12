@@ -28,6 +28,14 @@ RSpec.describe Activities::DismissEscalationActivity do
         expect(issue.reload.pr_review_phase).to eq("ready")
       end
 
+      it "resets the review-goal retry breaker" do
+        freeze_time do
+          activity.execute(issue_id: issue.id)
+
+          expect(issue.reload.review_goal_retry_reset_at).to be_within(1.second).of(Time.current)
+        end
+      end
+
       it "removes the paid-dismiss-escalation label" do
         activity.execute(issue_id: issue.id)
 

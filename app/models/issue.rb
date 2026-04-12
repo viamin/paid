@@ -183,6 +183,13 @@ class Issue < ApplicationRecord
     pr_review_phase == "merged"
   end
 
+  def reset_review_goal_retry_breaker!
+    update!(
+      pr_review_phase: "ready",
+      review_goal_retry_reset_at: Time.current
+    )
+  end
+
   def ready_to_work?
     blocking_issues.none? && blocking_external_dependencies.none?
   end

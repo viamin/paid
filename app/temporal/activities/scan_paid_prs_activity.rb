@@ -1012,6 +1012,7 @@ module Activities
       run_scope = project.agent_runs.where(source_pull_request_number: issue.github_number)
 
       [
+        issue.review_goal_retry_reset_at,
         run_scope.where(goal: "review", status: "completed").maximum(:completed_at),
         run_scope.where(goal: "create_pr", status: "completed").maximum(:completed_at)
       ].compact.max

@@ -4598,6 +4598,36 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  context "when a ready PR was recently dismissed from escalation" do
+    let(:dismissed_retry_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "ready",
+        pr_followup_count: 0,
+        review_goal_retry_reset_at: Time.current)
+    end
+
+    before do
+      enable_paid_agent_review!(project)
+      3.times do
+        create(:agent_run,
+          project: project, issue: dismissed_retry_issue,
+          source_pull_request_number: 42,
+          goal: "review", status: "failed",
+          started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      end
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "does not immediately re-escalate on the next scan" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger]).to be_empty
+      expect(dismissed_retry_issue.reload.pr_review_phase).to eq("ready")
+    end
+  end
+
   context "when a ready PR at retry limit has a transient fetch_pr_data failure" do
     let(:fetch_fail_issue) do
       create(:issue, :pull_request,
