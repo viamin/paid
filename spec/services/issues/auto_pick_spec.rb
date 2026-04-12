@@ -153,6 +153,15 @@ RSpec.describe Issues::AutoPick do
       expect(result.issue).to eq(issue)
     end
 
+    it "does not let unrelated open PRs without a parent issue suppress picking" do
+      create(:issue, :pull_request, project: project, parent_issue: nil, github_state: "open")
+      issue = create(:issue, project: project, github_number: 1)
+
+      result = described_class.new(project).call
+
+      expect(result.issue).to eq(issue)
+    end
+
     it "picks another eligible issue when the project already has an active run" do
       issue_with_run = create(:issue, project: project)
       create(:agent_run, :queued, project: project, issue: issue_with_run)
@@ -827,6 +836,15 @@ RSpec.describe Issues::AutoPick do
       result = described_class.eligible_issue_ids([ with_closed_pr ])
 
       expect(result).to include(with_closed_pr.id)
+    end
+
+    it "does not exclude issues because of open PRs without a parent issue" do
+      create(:issue, :pull_request, project: project, parent_issue: nil, github_state: "open")
+      issue = create(:issue, project: project, github_number: 1)
+
+      result = described_class.eligible_issue_ids([ issue ])
+
+      expect(result).to include(issue.id)
     end
 
     it "excludes tracker issues with open body-referenced issues" do

@@ -884,6 +884,16 @@ RSpec.describe Issue do
       expect(result).to contain_exactly(with_open_pr.id)
     end
 
+    it "ignores open PRs that are not linked to a parent issue" do
+      linked_issue = create(:issue, project: project, github_state: "open")
+      create(:issue, :pull_request, project: project, parent_issue: linked_issue, github_state: "open")
+      create(:issue, :pull_request, project: project, parent_issue: nil, github_state: "open")
+
+      result = described_class.open_pull_request_parent_issue_ids(project: project).pluck(:parent_issue_id)
+
+      expect(result).to contain_exactly(linked_issue.id)
+    end
+
     it "scopes parent issue ids to the provided issue ids" do
       included = create(:issue, project: project, github_state: "open")
       excluded = create(:issue, project: project, github_state: "open")
