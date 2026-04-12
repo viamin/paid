@@ -946,15 +946,14 @@ module Activities
       end
     end
 
-    # Returns true when paid_agent is the only enabled bot review method,
-    # meaning its pending trigger must block draft exit since no other bot
-    # can gate the PR.
+    # Returns true when paid_agent is the only enabled review method,
+    # meaning its pending trigger must block draft exit since no other
+    # configured review path can advance the PR.
     def paid_agent_sole_review_method?(project)
       return false unless project&.review_enabled?
       return false unless project.review_method_enabled?("paid_agent")
 
-      bot_methods = project.enabled_review_methods & %w[copilot codex paid_agent]
-      bot_methods == %w[paid_agent]
+      project.enabled_review_methods == %w[paid_agent]
     end
 
     # Checks whether a paid_agent review-goal run is needed for this PR.
