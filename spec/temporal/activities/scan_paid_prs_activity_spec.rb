@@ -1020,6 +1020,53 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when codex and paid_agent are both enabled and codex clears codex-owned feedback" do
+      before do
+        project.update!(
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "codex" => { "enabled" => true },
+              "paid_agent" => {
+                "enabled" => true,
+                "termination" => { "max_review_rounds" => 2 }
+              }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector"),
+          body: "Codex Review: Didn't find any major issues. Hooray!",
+          created_at: 10.minutes.ago
+        )
+        info_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector"),
+          body: "To use Codex here, create an environment for this repo.",
+          created_at: 5.minutes.ago
+        )
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: [],
+          recent_issue_comments: [ clean_comment, info_comment ]
+        )
+      end
+
+      it "treats codex's clean comment as authoritative for codex-owned feedback" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+      end
+    end
+
     context "when a project enables both Copilot and Codex and Copilot has unresolved threads" do
       before do
         enable_copilot_and_codex_review!

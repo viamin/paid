@@ -982,11 +982,8 @@ module Activities
       provider_key = body_only_review_provider_key_for(latest_clean_comment.user&.login)
       return false if provider_key.nil?
 
-      provider_logins = ProviderSupport::PROVIDER_BOT_USERNAMES
-        .fetch(provider_key, [])
-        .map(&:downcase)
-        .to_set
-      return false unless allowed_bot_logins.subset?(provider_logins)
+      latest_review_provider_key = body_only_review_provider_key_for(latest_review&.dig(:user_login))
+      return false if latest_review_provider_key && latest_review_provider_key != provider_key
 
       review_time = latest_review&.dig(:submitted_at)
       comment_time = latest_clean_comment.created_at
