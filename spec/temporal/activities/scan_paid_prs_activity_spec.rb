@@ -5030,13 +5030,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_github_for_pr(reviews: [])
     end
 
-    it "does not escalate because manual review can still gate the PR" do
+    it "escalates because paid_agent is the sole bot and manual cannot recover failed review-goal runs" do
       result = activity.execute(project_id: project.id)
 
       expect(result[:prs_to_trigger].size).to eq(1)
       trigger = result[:prs_to_trigger].first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
-      expect(trigger_types).not_to include("escalate_to_owner")
+      expect(trigger_types).to include("escalate_to_owner")
     end
   end
 
@@ -5073,13 +5073,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_github_for_pr(reviews: [])
     end
 
-    it "does not escalate because ci_action can still gate the PR" do
+    it "escalates because paid_agent is the sole bot and ci_action cannot recover failed review-goal runs" do
       result = activity.execute(project_id: project.id)
 
       expect(result[:prs_to_trigger].size).to eq(1)
       trigger = result[:prs_to_trigger].first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
-      expect(trigger_types).not_to include("escalate_to_owner")
+      expect(trigger_types).to include("escalate_to_owner")
     end
   end
 

@@ -978,11 +978,17 @@ module Activities
     # the current review cycle has reached the configurable retry limit.
     # A completed review or newer create_pr run resets the breaker so old
     # failures do not cause permanent escalation (#1002).
+    #
+    # Non-bot review methods (manual, ci_action) do not provide a recovery
+    # path from failed paid_agent runs because paid_agent_review_pending
+    # becomes a blocking trigger when paid_agent is the sole bot, preventing
+    # the draft from advancing to the non-bot gate stage. Only other bot
+    # methods (copilot, codex) can take over review gating.
     def review_goal_retry_limit_reached?(project, issue)
       return false unless project&.review_enabled?
       return false unless project.review_method_enabled?("paid_agent")
 
-      return false if project.enabled_review_methods.any? { |m| m != "paid_agent" }
+      return false if (project.enabled_review_methods & %w[copilot codex]).any?
 
       count = review_goal_consecutive_failure_count(project, issue)
       return false if count.zero?
