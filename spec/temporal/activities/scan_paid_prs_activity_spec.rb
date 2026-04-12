@@ -4232,6 +4232,100 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  context "when paid_agent is enabled and the last review run timed out (no new code since)" do
+    before do
+      enable_paid_agent_review!
+      issue = create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "create_pr", status: "completed",
+        completed_at: 2.hours.ago)
+      run = create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "review", status: "timeout")
+      run.update_columns(updated_at: 1.hour.ago)
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "does not emit a paid_agent_review_pending trigger" do
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("paid_agent_review_pending")
+    end
+  end
+
+  context "when paid_agent is enabled and timed-out review runs hit max_review_rounds" do
+    before do
+      enable_paid_agent_review!(project, max_review_rounds: 2)
+      issue = create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      2.times do
+        create(:agent_run,
+          project: project, issue: issue,
+          source_pull_request_number: 42,
+          goal: "review", status: "timeout")
+      end
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "does not emit a paid_agent_review_pending trigger" do
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("paid_agent_review_pending")
+    end
+  end
+
+  context "when paid_agent review retries are present" do
+    before do
+      enable_paid_agent_review!(project, max_review_rounds: 2)
+      issue = create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "create_pr", status: "completed",
+        completed_at: 3.hours.ago)
+      retried_run = create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "review", status: "retried")
+      retried_run.update_columns(updated_at: 2.hours.ago)
+      create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "review", status: "completed",
+        completed_at: 90.minutes.ago)
+      create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "create_pr", status: "completed",
+        completed_at: 1.hour.ago)
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "emits a paid_agent_review_pending trigger because retried runs do not consume review rounds" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      expect(trigger[:triggers].map { |t| t[:type] }).to include("paid_agent_review_pending")
+    end
+  end
+
   context "when paid_agent is enabled and the last create_pr run is newer than the last review" do
     before do
       enable_paid_agent_review!
