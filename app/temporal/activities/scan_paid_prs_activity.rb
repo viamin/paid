@@ -23,7 +23,7 @@ module Activities
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
     # Body-only review bots (currently Codex) signal "no findings" by posting
     # an *issue comment* — not a review — with text like
-    # "Codex Review: Didn't find any major issues. Bravo." Match the
+    # "Codex Review: Didn't find any major issues. Hooray!" Match the
     # distinctive phrase rather than the prefix so we are robust to minor
     # wording changes.
     BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN = /didn'?t find any (?:major )?issues/i
@@ -750,6 +750,8 @@ module Activities
       .to_set
       .freeze
 
+    BODY_ONLY_REVIEW_PROVIDER_KEYS = %w[codex paid_agent].freeze
+
     def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
       allowed = project&.review_enabled? ? (project.enabled_review_bot_logins.presence || Set.new) : nil
       latest = latest_allowed_bot_review(reviews, allowed)
@@ -933,10 +935,18 @@ module Activities
       BODY_ONLY_REVIEW_BOT_LOGINS.include?(login.downcase)
     end
 
-    # Returns true when the most recent issue comment authored by a body-only
-    # review bot (e.g. Codex) matches the clean signal pattern AND can speak
-    # authoritatively for the project's review configuration AND is at least
-    # as recent as that bot's latest review on this PR.
+    def body_only_review_provider_key_for(login)
+      return nil if login.blank?
+
+      BODY_ONLY_REVIEW_PROVIDER_KEYS.find do |provider_key|
+        ProviderSupport.provider_bot_username_for?(provider_key, login)
+      end
+    end
+
+    # Returns true when a clean issue comment authored by a body-only review
+    # bot (e.g. Codex) can speak authoritatively for the project's review
+    # configuration AND is at least as recent as that bot's latest review on
+    # this PR.
     #
     # The override is restricted to projects whose enabled review bots are
     # ALL body-only — i.e. no thread-based bot like Copilot is also enabled.
@@ -946,6 +956,13 @@ module Activities
     #
     # The comment-vs-review timestamp comparison prevents an older "Bravo"
     # comment from masking a newer non-clean review on a subsequent commit.
+    # We intentionally do not require the bot's absolute latest issue comment
+    # to be clean, because body-only bots can emit later informational
+    # comments (for example setup guidance) that do not request PR changes and
+    # should not suppress an earlier clean completion signal. The bypass is
+    # also restricted to projects whose enabled body-only bot methods all map
+    # to the same provider family as the clean comment; a Codex clean comment
+    # cannot speak for an outstanding paid_agent review.
     def body_only_bot_clean_comment_present?(client, project, issue, latest_review, allowed_bot_logins)
       return false if allowed_bot_logins.nil? || allowed_bot_logins.empty?
       return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
@@ -957,11 +974,22 @@ module Activities
       end
       return false if bot_comments.empty?
 
-      latest_bot_comment = bot_comments.max_by { |c| c.created_at || Time.at(0) }
-      return false unless BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN.match?(latest_bot_comment.body.to_s)
+      latest_clean_comment = bot_comments
+        .select { |c| BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN.match?(c.body.to_s) }
+        .max_by { |c| c.created_at || Time.at(0) }
+      return false unless latest_clean_comment
+
+      provider_key = body_only_review_provider_key_for(latest_clean_comment.user&.login)
+      return false if provider_key.nil?
+
+      provider_logins = ProviderSupport::PROVIDER_BOT_USERNAMES
+        .fetch(provider_key, [])
+        .map(&:downcase)
+        .to_set
+      return false unless allowed_bot_logins.subset?(provider_logins)
 
       review_time = latest_review&.dig(:submitted_at)
-      comment_time = latest_bot_comment.created_at
+      comment_time = latest_clean_comment.created_at
       return true if review_time.nil? || comment_time.nil?
 
       comment_time >= review_time
