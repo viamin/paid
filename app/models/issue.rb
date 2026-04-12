@@ -231,8 +231,7 @@ class Issue < ApplicationRecord
       .pluck(:issue_id)
       .to_set
 
-    has_open_pr_ids = Issue
-      .where(parent_issue_id: issue_ids, is_pull_request: true, github_state: "open")
+    has_open_pr_ids = open_pull_request_parent_issue_ids(issue_ids: issue_ids)
       .distinct
       .pluck(:parent_issue_id)
       .to_set
@@ -248,6 +247,13 @@ class Issue < ApplicationRecord
         :eligible
       end
     end
+  end
+
+  def self.open_pull_request_parent_issue_ids(project: nil, issue_ids: nil)
+    scope = where(is_pull_request: true, github_state: "open").where.not(parent_issue_id: nil)
+    scope = scope.where(project: project) if project
+    scope = scope.where(parent_issue_id: issue_ids) if issue_ids
+    scope.select(:parent_issue_id)
   end
 
   private
