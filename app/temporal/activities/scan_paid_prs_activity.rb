@@ -176,6 +176,7 @@ module Activities
       review_bot_triggers ||= []
       if project.address_all_bot_reviews?
         reviews ||= fetch_reviews(client, project, issue)
+        unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
         review_bot_triggers += check_non_enabled_bot_reviews(reviews, unresolved_threads,
           project: project, last_run: last_run)
       end

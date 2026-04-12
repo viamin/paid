@@ -3192,6 +3192,28 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(result[:prs_to_trigger]).to eq([])
       end
+
+      it "detects non-configured bot unresolved threads with address_all_bot_reviews enabled" do
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 200, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Codex has reviewed the pull request and determined it is ready to merge.",
+              submitted_at: 1.hour.ago }
+          ],
+          review_threads: [
+            { id: "thread_bot", is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 5,
+                            author: "chatgpt-codex-connector" } ] }
+          ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to include("review_bot_comments")
+      end
     end
 
     # --- Ready phase scanning ---
