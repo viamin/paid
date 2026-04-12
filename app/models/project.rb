@@ -687,6 +687,10 @@ class Project < ApplicationRecord
       if retries.present? && (!retries.is_a?(Integer) || retries < 1)
         errors.add(:review_settings, "#{method_name} max_review_goal_retries must be a positive integer")
       end
+
+      if retries.is_a?(Integer) && retries >= 1 && rounds.is_a?(Integer) && rounds >= 1 && retries > rounds
+        errors.add(:review_settings, "#{method_name} max_review_goal_retries (#{retries}) must not exceed max_review_rounds (#{rounds})")
+      end
     end
 
     timeout = termination["timeout_minutes"]
