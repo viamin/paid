@@ -1005,7 +1005,8 @@ module Activities
       scope = project.agent_runs.where(
         source_pull_request_number: issue.github_number,
         goal: "review",
-        status: REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES
+        status: REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES,
+        trigger_type: "automatic"
       )
       scope = scope.where("completed_at > ?", reset_at) if reset_at
       scope.count
