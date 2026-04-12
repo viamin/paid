@@ -1253,7 +1253,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           .and_return([])
       end
 
-      it "treats the body-only review as NOT addressed" do
+      it "keeps the review actionable because empty review paths cannot prove it was addressed" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
@@ -1339,15 +1339,20 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
                        body: "Here are some review suggestions.",
-                       submitted_at: 2.hours.ago } ],
+                       submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
           review_threads: []
         )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([])
       end
 
-      it "treats the review as already addressed and does not trigger" do
+      it "keeps the review actionable because empty review paths cannot prove it was addressed" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending")
       end
     end
 

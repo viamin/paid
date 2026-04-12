@@ -989,8 +989,10 @@ module Activities
 
     # Returns true when the diff between the review's commit and the PR
     # HEAD touches at least one file mentioned in the review's inline
-    # comments. Returns false (assumes NOT addressed) when the review
-    # has no inline comments, since we cannot verify file overlap.
+    # comments. Falls back to false when inline comments have no file
+    # paths, because a body-only review gives us no evidence that a
+    # subsequent run addressed the feedback. Comparison fetch failures
+    # still fall back to true to avoid wedging on API errors.
     def review_diff_touches_reviewed_files?(client, project, issue, review)
       return true if client.nil? || project.nil? || issue.nil?
 
