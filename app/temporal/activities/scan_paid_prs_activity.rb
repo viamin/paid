@@ -984,7 +984,8 @@ module Activities
       return false unless body_only_review_bot?(bot_login)
       return false if client.nil? || project.nil? || issue.nil?
 
-      bot_logins = Set.new([ bot_login ])
+      provider_key = ProviderSupport.provider_key_for_bot_username(bot_login)
+      bot_logins = ProviderSupport.provider_bot_usernames_for(provider_key)
       body_only_bot_clean_comment_present?(client, project, issue, latest_review, bot_logins)
     rescue GithubClient::Error => e
       log_signal_error("non_enabled_body_only_bot_clean_comment", project, issue, e)
