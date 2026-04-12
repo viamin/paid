@@ -280,31 +280,31 @@ module Workflows
     end
 
     def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
-      # If there are other triggers besides review_bot_review_pending, a followup
-      # agent will run and push changes. Defer the review request to the
-      # AgentExecutionWorkflow so the bot reviews the fixed code, not the pre-fix
-      # state. When review_bot_review_pending is the only trigger, request
-      # immediately since no followup will run.
-      other_triggers = trigger_types - [ "review_bot_review_pending" ]
-
-      if other_triggers.empty?
-        # Use the login from the trigger: nil means the bot auto-reviews (e.g.
-        # Codex via GitHub App) and no explicit request is needed.
-        pending_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
-        login = pending_trigger&.dig(:request_login)
-
-        if login
-          request_review(project_id, pr_data[:pr_number],
-            [ login ],
-            log_key: "pr_review.request_review_bot_review_failed")
-        end
+      # review_bot_review_pending is a draft-phase gate: once the current head
+      # is waiting on a bot review, do not start another draft follow-up run
+      # from that same stale review state. Request the review when needed, then
+      # wait for the next scan after the review completes or a new push lands.
+      if pr_data[:phase].in?(%w[draft restarted])
+        dispatch_review_bot_review_request(project_id, pr_data)
         return
       end
 
-      if pr_data[:phase].in?(%w[draft restarted])
-        start_draft_followup_workflow(project_id, pr_data)
-      else
-        start_pr_followup_workflow(project_id, pr_data)
+      other_triggers = trigger_types - [ "review_bot_review_pending" ]
+      return dispatch_review_bot_review_request(project_id, pr_data) if other_triggers.empty?
+
+      start_pr_followup_workflow(project_id, pr_data)
+    end
+
+    def dispatch_review_bot_review_request(project_id, pr_data)
+      # Use the login from the trigger: nil means the bot auto-reviews (e.g.
+      # Codex via GitHub App) and no explicit request is needed.
+      pending_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
+      login = pending_trigger&.dig(:request_login)
+
+      if login
+        request_review(project_id, pr_data[:pr_number],
+          [ login ],
+          log_key: "pr_review.request_review_bot_review_failed")
       end
     end
 
