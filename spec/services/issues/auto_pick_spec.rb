@@ -820,6 +820,15 @@ RSpec.describe Issues::AutoPick do
       expect(result).to include(without_pr.id)
     end
 
+    it "includes issues whose linked PRs are closed" do
+      with_closed_pr = create(:issue, project: project, github_number: 1)
+      create(:issue, :pull_request, project: project, parent_issue: with_closed_pr, github_state: "closed")
+
+      result = described_class.eligible_issue_ids([ with_closed_pr ])
+
+      expect(result).to include(with_closed_pr.id)
+    end
+
     it "excludes tracker issues with open body-referenced issues" do
       tracker = create(:issue, project: project, github_number: 413,
         title: "Remaining work tracker",
