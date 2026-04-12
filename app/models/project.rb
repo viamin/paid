@@ -665,16 +665,14 @@ class Project < ApplicationRecord
       end
 
       # Validate against the effective (defaults-merged) termination config so
-      # missing termination falls back to the per-method defaults.
-      effective_termination =
-        termination ||
-        DEFAULT_REVIEW_SETTINGS.dig("methods", method_name, "termination") ||
-        {}
-      validate_termination_config(method_name, effective_termination)
+      # partial overrides behave the same way as runtime review_method_config.
+      default_termination = DEFAULT_REVIEW_SETTINGS.dig("methods", method_name, "termination") || {}
+      effective_termination = default_termination.deep_merge(termination || {})
+      validate_termination_config(method_name, effective_termination, explicit_termination: termination || {})
     end
   end
 
-  def validate_termination_config(method_name, termination)
+  def validate_termination_config(method_name, termination, explicit_termination: {})
     return unless termination.is_a?(Hash)
 
     rounds = termination["max_review_rounds"]
@@ -688,7 +686,9 @@ class Project < ApplicationRecord
         errors.add(:review_settings, "#{method_name} max_review_goal_retries must be a positive integer")
       end
 
-      if retries.is_a?(Integer) && retries >= 1 && rounds.is_a?(Integer) && rounds >= 1 && retries > rounds
+      explicit_retries = explicit_termination["max_review_goal_retries"]
+      if explicit_retries.is_a?(Integer) && explicit_retries >= 1 &&
+          rounds.is_a?(Integer) && rounds >= 1 && retries > rounds
         errors.add(:review_settings, "#{method_name} max_review_goal_retries (#{retries}) must not exceed max_review_rounds (#{rounds})")
       end
     end

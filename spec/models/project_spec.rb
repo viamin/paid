@@ -1060,6 +1060,35 @@ RSpec.describe Project do
         expect(project).to be_valid
       end
 
+      it "falls back to default termination values when termination has partial overrides" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "manual" => {
+              "enabled" => true,
+              "reviewer_login" => "alice",
+              "termination" => {}
+            }
+          }
+        })
+        expect(project).to be_valid
+      end
+
+      it "accepts paid_agent max_review_rounds below the default retry limit" do
+        allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+
+        project = build(:project, review_settings: {
+          "methods" => {
+            "paid_agent" => {
+              "enabled" => true,
+              "termination" => {
+                "max_review_rounds" => 1
+              }
+            }
+          }
+        })
+        expect(project).to be_valid
+      end
+
       it "skips termination validation for disabled methods" do
         project = build(:project, review_settings: {
           "methods" => {
