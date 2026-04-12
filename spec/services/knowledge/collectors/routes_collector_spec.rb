@@ -310,6 +310,20 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(container_runner).to have_received(:disconnect_network!)
       end
 
+      it "preserves network connect errors without attempting cleanup or disconnect" do
+        allow(container_runner).to receive(:connect_network!)
+          .and_raise(Knowledge::ContainerizedRunner::ContainerError, "Failed to connect network: boom")
+
+        expect { command_collector.collect }.to raise_error(
+          Knowledge::ContainerizedRunner::ContainerError, /Failed to connect network: boom/
+        )
+        expect(command_collector).not_to have_received(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
+        expect(command_collector).not_to have_received(:run_command)
+          .with("sh", "-c", /rm -rf \/tmp\/paid-bundle-home.*! test -e \/tmp\/paid-bundle-home/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
+        expect(container_runner).not_to have_received(:disconnect_network!)
+      end
+
       it "raises SkipCollector when config/routes.rb is missing" do
         allow(command_collector).to receive(:repo_file_exists?)
           .with("config/routes.rb").and_return(false)

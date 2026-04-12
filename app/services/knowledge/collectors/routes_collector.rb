@@ -93,7 +93,9 @@ module Knowledge
       end
 
       def install_gems_in_container
+        network_connected = false
         container_runner.connect_network!
+        network_connected = true
         run_command(
           "sh", "-c",
           install_bundle_command,
@@ -102,9 +104,9 @@ module Knowledge
         )
       ensure
         begin
-          cleanup_credentials_in_container
+          cleanup_credentials_in_container if network_connected
         ensure
-          container_runner.disconnect_network!
+          container_runner.disconnect_network! if network_connected
         end
       end
 
