@@ -114,6 +114,7 @@ module Knowledge
 
         skip!("bundle install failed for a git-sourced gem: #{sanitize_install_error(e.message)}")
       ensure
+        cleanup_credentials_in_container
         container_runner.disconnect_network!
       end
 
@@ -144,6 +145,18 @@ module Knowledge
           "PAID_GITHUB_TOKEN" => github_token.token,
           "BUNDLE_GITHUB__COM" => "x-access-token:#{github_token.token}"
         )
+      end
+
+      def cleanup_credentials_in_container
+        run_command(
+          "sh", "-c",
+          "rm -f #{BUNDLE_HOME}/.netrc; " \
+          "git config --global --unset-all url.\"https://github.com/\".insteadOf 2>/dev/null; " \
+          "true",
+          timeout: 10
+        )
+      rescue
+        nil
       end
 
       def git_dependency_install_error?(error)

@@ -166,9 +166,11 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           .with("bin/rails").and_return(true)
         allow(command_collector).to receive(:repo_file_exists?)
           .with("Gemfile").and_return(true)
-        # Stub bundle install (gem installation step)
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
+          .and_return("")
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /\.netrc/, timeout: 10)
           .and_return("")
       end
 
@@ -209,6 +211,8 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(container_runner).to have_received(:connect_network!).ordered
         expect(command_collector).to have_received(:run_command)
           .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash)).ordered
+        expect(command_collector).to have_received(:run_command)
+          .with("sh", "-c", /\.netrc/, timeout: 10).ordered
         expect(container_runner).to have_received(:disconnect_network!).ordered
       end
 
@@ -218,6 +222,8 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           .and_raise(RuntimeError, "bundle install failed")
 
         expect { command_collector.collect }.to raise_error(RuntimeError, "bundle install failed")
+        expect(command_collector).to have_received(:run_command)
+          .with("sh", "-c", /\.netrc/, timeout: 10)
         expect(container_runner).to have_received(:disconnect_network!)
       end
 
@@ -263,6 +269,17 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
 
         expect(command_collector).not_to have_received(:run_command)
           .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
+      end
+
+      it "cleans up credentials after bundle install" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+          .and_return(fixture_output)
+
+        command_collector.collect
+
+        expect(command_collector).to have_received(:run_command)
+          .with("sh", "-c", /rm -f .*\.netrc.*unset-all/, timeout: 10)
       end
 
       it "raises SkipCollector when config/routes.rb is missing" do
