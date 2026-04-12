@@ -202,6 +202,46 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       expect(synced.github_number).to eq(10)
     end
 
+    it "refuses to create a fallback issue from issue-creation failure output" do
+      agent_run.log!("stderr", <<~TEXT)
+        /bin/bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"'
+        HTTP/1.1 500 Internal Server Error
+        ActiveRecord::PendingMigrationError
+      TEXT
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+
+      expect(agent_run.reload.status).not_to eq("completed")
+      expect(agent_run.created_issue_url).to be_nil
+      expect(agent_run.created_issue_number).to be_nil
+      expect(agent_run.agent_run_logs.last.content)
+        .to include("Refused fallback issue creation")
+    end
+
+    it "still creates a valid issue whose content mentions pending migrations" do
+      agent_run.log!("stdout", <<~TEXT)
+        # Proxy write path crashes with PendingMigrationError
+
+        Creating an issue through the proxy can fail with `ActiveRecord::PendingMigrationError`.
+      TEXT
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(
+          title: "Proxy write path crashes with PendingMigrationError",
+          body: a_string_including("ActiveRecord::PendingMigrationError")
+        )
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
     context "when auto_add_labels_enabled is false" do
       before { project.update!(auto_add_labels_enabled: false) }
 

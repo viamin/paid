@@ -3,6 +3,22 @@
 module Activities
   class CreateGithubIssueActivity < BaseActivity
     activity_name "CreateGithubIssue"
+    ISSUE_CREATION_ATTEMPT_PATTERN = /
+      (
+        -X\s+POST |
+        --request\s+POST |
+        POST\s+to
+      )
+      .*?
+      \/repos\/[^\/\s]+\/[^\/\s]+\/issues\b
+    /imx
+    ISSUE_CREATION_FAILURE_PATTERNS = [
+      /ActiveRecord::PendingMigrationError/,
+      /Upstream request failed/i,
+      /\b500\s+Internal\s+Server\s+Error\b/i,
+      /\b502\s+Bad\s+Gateway\b/i
+    ].freeze
+    ISSUE_CREATION_FAILURE_LOG_LIMIT = 200
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
@@ -12,6 +28,7 @@ module Activities
 
         client = project.github_token.client
         summary = agent_run.agent_summary_with_stderr_fallback
+        validate_issue_creation_attempt!(agent_run)
         title = extract_title(summary, agent_run.custom_prompt)
         body = issue_body(summary)
 
@@ -73,6 +90,36 @@ module Activities
       return nil if agent_run.priority_tier.blank?
 
       agent_run.project.priority_label_for(agent_run.priority_tier)
+    end
+
+    def validate_issue_creation_attempt!(agent_run)
+      return unless failed_issue_creation_attempt?(agent_run)
+
+      agent_run.log!(
+        "system",
+        "Refused fallback issue creation because the agent already attempted and failed to create the GitHub issue"
+      )
+
+      raise Temporalio::Error::ApplicationError.new(
+        "Agent already attempted and failed to create the GitHub issue; refusing fallback issue creation",
+        type: "IssueDraftInvalid",
+        non_retryable: true
+      )
+    end
+
+    def failed_issue_creation_attempt?(agent_run)
+      recent_output = agent_run.agent_run_logs
+        .where(log_type: %w[stdout stderr])
+        .order(created_at: :desc, id: :desc)
+        .limit(ISSUE_CREATION_FAILURE_LOG_LIMIT)
+        .pluck(:content)
+        .reverse
+        .join("\n")
+
+      return false if recent_output.blank?
+      return false unless recent_output.match?(ISSUE_CREATION_ATTEMPT_PATTERN)
+
+      ISSUE_CREATION_FAILURE_PATTERNS.any? { |pattern| pattern.match?(recent_output) }
     end
 
     def sync_issue_record(project, gh_issue)
