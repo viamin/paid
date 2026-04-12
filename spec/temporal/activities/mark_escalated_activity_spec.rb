@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe Activities::MarkEscalatedActivity do
   let(:activity) { described_class.new }

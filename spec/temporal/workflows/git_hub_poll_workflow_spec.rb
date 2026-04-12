@@ -250,6 +250,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:patched)
         .with("draft-followup-direct-start-v1")
         .and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("escalation-reason-payload-v1")
+        .and_return(true)
     end
 
     it "routes ready_for_owner to MarkPrReadyActivity and RequestReviewActivity" do
@@ -326,7 +329,37 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "viamin" ]), timeout: anything)
     end
 
-    it "lets MarkEscalatedActivity compute the default reason" do
+    it "forwards escalation reason from trigger details to MarkEscalatedActivity" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
+        triggers: [ { type: "escalate_to_owner", details: "Draft review limit reached" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkEscalatedActivity,
+          { issue_id: 10, reason: "Draft review limit reached" }, timeout: anything)
+    end
+
+    it "omits reason key when trigger has no details" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
+        triggers: [ { type: "escalate_to_owner" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkEscalatedActivity,
+          { issue_id: 10 }, timeout: anything)
+    end
+
+    it "sends old payload without reason before the escalation-reason patch" do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("escalation-reason-payload-v1")
+        .and_return(false)
+
       pr_data = {
         issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
         triggers: [ { type: "escalate_to_owner", details: "Draft review limit reached" } ]
@@ -349,6 +382,40 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::DismissEscalationActivity, hash_including(issue_id: 10), timeout: anything)
+    end
+
+    it "prioritizes escalate_to_owner over review_goal_retry in mixed payloads" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review" },
+          { type: "escalate_to_owner", details: "Draft review limit reached" }
+        ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkEscalatedActivity, hash_including(issue_id: 10), timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity, anything, timeout: anything)
+    end
+
+    it "prioritizes dismiss_escalation over review_goal_retry in mixed payloads" do
+      pr_data = {
+        issue_id: 10, pr_number: 42,
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review" },
+          { type: "dismiss_escalation" }
+        ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::DismissEscalationActivity, hash_including(issue_id: 10), timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity, anything, timeout: anything)
     end
 
     it "routes owner_approved to MergePullRequestActivity" do

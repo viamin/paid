@@ -67,6 +67,10 @@
                       &middot;
                       <%= link_to "PR", run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
                     <% end %>
+                    <% if safe_github_url?(run.review_url) %>
+                      &middot;
+                      <%= link_to "Review", run.review_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
+                    <% end %>
                     <% if safe_github_url?(run.created_issue_url) %>
                       &middot;
                       <% issue_link_text = run.created_issue_number.present? ? "Issue ##{run.created_issue_number}" : "Issue" %>

@@ -18,7 +18,8 @@ RSpec.describe ApplicationHelper do
         pull_request_url: nil,
         created_issue_url: nil,
         created_issue_number: nil,
-        "finished?": false
+        "finished?": false,
+        project: nil
       }
       attrs = defaults.merge(overrides)
       Struct.new(*attrs.keys, keyword_init: true).new(**attrs)
@@ -28,6 +29,10 @@ RSpec.describe ApplicationHelper do
       attrs = { github_number: github_number, github_url: github_url,
                 "is_pull_request?": is_pull_request, title: title }
       Struct.new(*attrs.keys, keyword_init: true).new(**attrs)
+    end
+
+    def stub_project(github_url:)
+      Struct.new(:github_url, keyword_init: true).new(github_url: github_url)
     end
 
     context "when create_pr goal with issue" do
@@ -94,11 +99,22 @@ RSpec.describe ApplicationHelper do
     end
 
     context "when create_pr goal without issue" do
-      it "shows source PR number as text" do
-        run = stub_run("create_pr_goal?": true, source_pull_request_number: 7)
+      it "shows source PR number as link when project has a github_url" do
+        project = stub_project(github_url: "https://github.com/o/r")
+        run = stub_run("create_pr_goal?": true, source_pull_request_number: 7, project: project)
         result = helper.agent_run_context_display(run)
 
         expect(result).to include("PR #7")
+        expect(result).to include("https://github.com/o/r/pull/7")
+        expect(result).to include("<a")
+      end
+
+      it "shows source PR number as text when project is nil" do
+        run = stub_run("create_pr_goal?": true, source_pull_request_number: 7, project: nil)
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include("PR #7")
+        expect(result).not_to include("<a")
       end
 
       it "shows pull request number as link" do
@@ -145,11 +161,22 @@ RSpec.describe ApplicationHelper do
     end
 
     context "when review goal" do
-      it "shows PR number" do
-        run = stub_run("review_goal?": true, source_pull_request_number: 15)
+      it "shows PR number as link when project has a github_url" do
+        project = stub_project(github_url: "https://github.com/o/r")
+        run = stub_run("review_goal?": true, source_pull_request_number: 15, project: project)
         result = helper.agent_run_context_display(run)
 
         expect(result).to include("PR #15")
+        expect(result).to include("https://github.com/o/r/pull/15")
+        expect(result).to include("<a")
+      end
+
+      it "shows PR number as text when project is nil" do
+        run = stub_run("review_goal?": true, source_pull_request_number: 15, project: nil)
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include("PR #15")
+        expect(result).not_to include("<a")
       end
 
       it "shows placeholder without PR number" do
