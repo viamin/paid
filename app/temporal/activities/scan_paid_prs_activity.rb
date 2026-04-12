@@ -899,9 +899,10 @@ module Activities
     end
 
     # Returns a paid_agent_review_pending trigger when no up-to-date completed
-    # review-goal run exists and the max_review_rounds limit has not been
-    # reached. Unfinished review runs keep emitting the pending trigger so the
-    # draft-phase gate remains active until the review is actually posted.
+    # automatic paid_agent review-goal run exists and the max_review_rounds
+    # limit has not been reached. Unfinished automatic review runs keep
+    # emitting the pending trigger so the draft-phase gate remains active
+    # until the review is actually posted.
     #
     # When the most recent review-goal run ended without producing a usable
     # review (for example failed, timed out, or no_output), re-emits the
@@ -916,12 +917,13 @@ module Activities
       return [] if review_goal_retry_limit_reached?(project, issue)
 
       pr_number = issue.github_number
-      review_runs = project.agent_runs.where(
+      automatic_review_runs = project.agent_runs.where(
         source_pull_request_number: pr_number,
-        goal: "review"
+        goal: "review",
+        trigger_type: "automatic"
       )
-      attempted_review_runs = review_runs.where.not(status: "retried")
-      unfinished_run = review_runs.where(status: AgentRun::UNFINISHED_STATUSES)
+      attempted_review_runs = automatic_review_runs.where.not(status: "retried")
+      unfinished_run = automatic_review_runs.where(status: AgentRun::UNFINISHED_STATUSES)
         .order(created_at: :desc)
         .first
 

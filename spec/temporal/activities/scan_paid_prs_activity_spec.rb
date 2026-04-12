@@ -4582,6 +4582,43 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(trigger_types).to include("escalate_to_owner")
       expect(trigger_types).not_to include("paid_agent_review_pending")
     end
+
+    it "does not count manual review runs toward paid_agent max_review_rounds" do
+      enable_paid_agent_review!(project, max_review_rounds: 1)
+      retry_limit_issue.agent_runs.destroy_all
+      create(:agent_run,
+        project: project, issue: retry_limit_issue,
+        source_pull_request_number: 42,
+        goal: "review", status: "completed", trigger_type: "manual",
+        started_at: 1.hour.ago, completed_at: 1.hour.ago)
+
+      result = activity.execute(project_id: project.id)
+
+      trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+      expect(trigger_types).to include("paid_agent_review_pending")
+      expect(trigger_types).not_to include("escalate_to_owner")
+    end
+
+    it "does not let a manual review suppress paid_agent retries after create_pr" do
+      enable_paid_agent_review!(project, max_review_rounds: 5)
+      retry_limit_issue.agent_runs.destroy_all
+      create(:agent_run,
+        project: project, issue: retry_limit_issue,
+        source_pull_request_number: 42,
+        goal: "create_pr", status: "completed",
+        completed_at: 2.hours.ago)
+      create(:agent_run,
+        project: project, issue: retry_limit_issue,
+        source_pull_request_number: 42,
+        goal: "review", status: "completed", trigger_type: "manual",
+        started_at: 1.hour.ago, completed_at: 1.hour.ago)
+
+      result = activity.execute(project_id: project.id)
+
+      trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+      expect(trigger_types).to include("paid_agent_review_pending")
+      expect(trigger_types).not_to include("escalate_to_owner")
+    end
   end
 
   context "when max_review_rounds is lower than default MAX_REVIEW_GOAL_RETRIES" do
