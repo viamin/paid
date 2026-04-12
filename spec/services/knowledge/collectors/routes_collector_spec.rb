@@ -227,13 +227,13 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(container_runner).to have_received(:disconnect_network!)
       end
 
-      it "skips when bundle install fails for a git-sourced gem" do
+      it "fails when bundle install raises a git-sourced gem error" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
           .and_raise(RuntimeError, "Bundler::GitError: repo is not yet checked out")
 
         expect { command_collector.collect }.to raise_error(
-          Knowledge::SkipCollector, /git-sourced gem/
+          RuntimeError, /Bundler::GitError/
         )
         expect(container_runner).to have_received(:disconnect_network!)
       end

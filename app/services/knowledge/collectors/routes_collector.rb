@@ -5,17 +5,6 @@ module Knowledge
     class RoutesCollector < BaseCollector
       SCOPE_PATH = "config/routes.rb"
       BUNDLE_HOME = "/tmp/paid-bundle-home"
-      GIT_INSTALL_ERROR_PATTERNS = [
-        /Bundler::GitError/i,
-        /not yet checked out/i,
-        /Authentication failed/i,
-        /could not read Username/i,
-        /Repository not found/i,
-        /couldn['’]t find remote ref/i,
-        /remote branch .* not found/i,
-        /revision .* does not exist/i,
-        /host key verification failed/i
-      ].freeze
 
       def collect
         output = read_routes_output
@@ -109,10 +98,6 @@ module Knowledge
           timeout: 300,
           env: install_bundle_env
         )
-      rescue => e
-        raise unless git_dependency_install_error?(e)
-
-        skip!("bundle install failed for a git-sourced gem: #{sanitize_install_error(e.message)}")
       ensure
         cleanup_credentials_in_container
         container_runner.disconnect_network!
@@ -157,16 +142,6 @@ module Knowledge
         )
       rescue
         nil
-      end
-
-      def git_dependency_install_error?(error)
-        GIT_INSTALL_ERROR_PATTERNS.any? { |pattern| error.message.match?(pattern) }
-      end
-
-      def sanitize_install_error(message)
-        message
-          .gsub(%r{x-access-token:[^@/\s]+@github\.com}, "x-access-token:[REDACTED]@github.com")
-          .truncate(200)
       end
 
       def parse_expanded_output(output)
