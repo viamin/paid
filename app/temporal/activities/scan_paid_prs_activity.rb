@@ -972,8 +972,12 @@ module Activities
 
       # When a review-goal retry is needed, the scanner already emits
       # review_goal_retry which queues the review run. Suppress the
-      # paid_agent_review_pending trigger to avoid duplication.
-      return [] if review_goal_retry_needed?(project, issue)
+      # paid_agent_review_pending trigger for non-blocking sidecars to
+      # avoid duplication. When paid_agent IS the sole reviewer, keep
+      # the trigger so the draft gate remains active — without it, a
+      # draft PR with green CI can advance to ready before the retried
+      # review is posted.
+      return [] if review_goal_retry_needed?(project, issue) && !paid_agent_sole_review_method?(project)
 
       pr_number = issue.github_number
       review_runs = project.agent_runs.where(

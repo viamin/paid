@@ -4279,6 +4279,44 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(triggered_types).not_to include("review_goal_retry")
         expect(triggered_types).not_to include("paid_agent_review_pending")
       end
+
+      it "preserves paid_agent_review_pending draft gate when sole reviewer and retry is needed" do
+        stub_github_for_pr(reviews: [])
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_goal_retry")
+        expect(trigger_types).to include("paid_agent_review_pending")
+        expect(trigger_types).not_to include("ready_for_owner")
+      end
+
+      it "suppresses paid_agent_review_pending when not sole reviewer and retry is needed" do
+        project.update!(review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true },
+            "copilot" => { "enabled" => true }
+          }
+        })
+        stub_github_for_pr(reviews: [])
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_goal_retry")
+        expect(trigger_types).not_to include("paid_agent_review_pending")
+      end
     end
 
     context "when a review-goal run has failed and paid_agent is a sidecar alongside copilot" do
