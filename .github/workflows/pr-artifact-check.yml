@@ -101,9 +101,9 @@ jobs:
 
           # --- Check 3: Binary files that should not be committed ---
           binary_extensions=(
-            ".so" ".dll" ".dylib" ".o" ".a" ".exe"
+            ".so" ".dll" ".dylib" ".o" ".a" ".lib" ".exe"
             ".gem" ".deb" ".rpm" ".whl"
-            ".pyc" ".pyo" ".class" ".jar"
+            ".pyc" ".pyo" ".class" ".jar" ".war"
             ".sqlite3" ".db"
           )
 
