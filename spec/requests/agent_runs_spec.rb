@@ -100,6 +100,28 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("#7")
       end
 
+      it "links to PR in context column for review goal runs" do
+        run = create(:agent_run, :review_goal, :completed, project: project)
+        get agent_runs_path
+        expected_url = "#{project.github_url}/pull/#{run.source_pull_request_number}"
+        expect(response.body).to include("PR ##{run.source_pull_request_number}")
+        expect(response.body).to include(expected_url)
+      end
+
+      it "shows review link in actions column when review_url is present" do
+        create(:agent_run, :with_review, project: project)
+        get agent_runs_path
+        expect(response.body).to include("Review")
+        expect(response.body).to include("https://github.com/example/repo/pull/10#pullrequestreview-123456")
+      end
+
+      it "shows PR link in actions column for completed create_pr runs" do
+        create(:agent_run, :completed, project: project)
+        get agent_runs_path
+        expect(response.body).to include(">PR</a>")
+        expect(response.body).to include("https://github.com/example/repo/pull/1")
+      end
+
       it "does not show runs from other accounts" do
         other_account = create(:account)
         other_token = create(:github_token, account: other_account)
@@ -184,6 +206,28 @@ RSpec.describe "AgentRuns" do
         create(:agent_run, project: project, issue: issue, goal: "create_pr")
         get project_agent_runs_path(project)
         expect(response.body).to include("#7")
+      end
+
+      it "links to PR in context column for review goal runs" do
+        run = create(:agent_run, :review_goal, :completed, project: project)
+        get project_agent_runs_path(project)
+        expected_url = "#{project.github_url}/pull/#{run.source_pull_request_number}"
+        expect(response.body).to include("PR ##{run.source_pull_request_number}")
+        expect(response.body).to include(expected_url)
+      end
+
+      it "shows review link in actions column when review_url is present" do
+        create(:agent_run, :with_review, project: project)
+        get project_agent_runs_path(project)
+        expect(response.body).to include("Review")
+        expect(response.body).to include("https://github.com/example/repo/pull/10#pullrequestreview-123456")
+      end
+
+      it "shows PR link in actions column for completed create_pr runs" do
+        create(:agent_run, :completed, project: project)
+        get project_agent_runs_path(project)
+        expect(response.body).to include(">PR</a>")
+        expect(response.body).to include("https://github.com/example/repo/pull/1")
       end
 
       it "does not show runs from other accounts" do
