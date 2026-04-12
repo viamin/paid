@@ -1173,6 +1173,12 @@ module Activities
       ```
       ````
 
+      MANDATORY: When you find actionable issues (Case A), each issue MUST include an
+      inline comment in the "comments" array with a specific "path" and "line" number.
+      A review body describing problems WITHOUT corresponding inline comments is
+      incomplete. If you cannot identify specific file paths and line numbers, do not
+      include that issue in the review.
+
       Post your review using the GitHub API proxy:
 
       ```bash
@@ -1227,15 +1233,17 @@ module Activities
         }'
       ```
 
+      # Pre-submission verification
+
+      Before submitting your review, verify your JSON payload:
+      - Case A: "comments" array is NON-EMPTY, each entry has "path", "line", and "body"
+      - Case B: body starts with EXACTLY "Generated no new comments." and "comments" is []
+
       IMPORTANT: You MUST post exactly one PR review via the
       `/pulls/{{pr_number}}/reviews` endpoint — either Case A (with inline
       actionable comments) or Case B (clean review). This is how your review is
       tracked as complete. Standalone PR comments via
       `/issues/{{pr_number}}/comments` do NOT satisfy the review requirement.
-
-      Before submitting your review, verify your JSON payload:
-      - Case A: "comments" is NON-EMPTY and every entry has "path", "line", and "body"
-      - Case B: the body starts with EXACTLY "Generated no new comments." and "comments" is []
 
       Available endpoints:
       - GET  $GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}} — get PR details

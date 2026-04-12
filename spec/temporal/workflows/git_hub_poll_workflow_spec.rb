@@ -384,6 +384,40 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::DismissEscalationActivity, hash_including(issue_id: 10), timeout: anything)
     end
 
+    it "prioritizes escalate_to_owner over review_goal_retry in mixed payloads" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review" },
+          { type: "escalate_to_owner", details: "Draft review limit reached" }
+        ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkEscalatedActivity, hash_including(issue_id: 10), timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity, anything, timeout: anything)
+    end
+
+    it "prioritizes dismiss_escalation over review_goal_retry in mixed payloads" do
+      pr_data = {
+        issue_id: 10, pr_number: 42,
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review" },
+          { type: "dismiss_escalation" }
+        ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::DismissEscalationActivity, hash_including(issue_id: 10), timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity, anything, timeout: anything)
+    end
+
     it "routes owner_approved to MergePullRequestActivity" do
       pr_data = {
         issue_id: 10, pr_number: 42,
@@ -635,6 +669,242 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::QueueAgentRunActivity,
           hash_including(count_toward_draft_review_round: true, expected_draft_review_count: 0),
           timeout: anything)
+    end
+
+    it "routes review_goal_retry to RecordReviewGoalRetryActivity and QueueAgentRunActivity with review goal" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [ { type: "review_goal_retry", details: "Retrying failed review-goal run" } ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity,
+          hash_including(issue_id: 10, expected_review_goal_retry_count: 1), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(
+            project_id: project_id,
+            issue_id: 10,
+            source_pull_request_number: 42,
+            goal: "review"
+          ), timeout: anything)
+    end
+
+    it "starts draft followup when review_goal_retry is combined with actionable triggers" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "ci_failure", details: [ "rspec" ] }
+        ],
+        current_review_goal_retry_count: 1,
+        current_draft_review_count: 2
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity,
+          hash_including(issue_id: 10, expected_review_goal_retry_count: 1), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(goal: "review"), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(count_toward_draft_review_round: true, expected_draft_review_count: 2),
+          timeout: anything)
+    end
+
+    it "does not start followup when review_goal_retry is combined with only gate triggers" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "paid_agent_review_pending" }
+        ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity,
+          hash_including(issue_id: 10, expected_review_goal_retry_count: 1), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(goal: "review"), timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(:count_toward_draft_review_round), timeout: anything)
+    end
+
+    it "dispatches review_bot_review_pending when bundled with review_goal_retry" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "review_bot_review_pending", request_login: "copilot-bot" }
+        ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity,
+          hash_including(issue_id: 10), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(goal: "review"), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(pr_number: 42, reviewers: [ "copilot-bot" ]), timeout: anything)
+    end
+
+    it "dispatches manual_review_pending when bundled with review_goal_retry" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "manual_review_pending", reviewer_login: "human-reviewer" }
+        ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity,
+          hash_including(issue_id: 10), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(goal: "review"), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(pr_number: 42, reviewers: [ "human-reviewer" ]), timeout: anything)
+    end
+
+    it "dispatches both bot and manual review when bundled with review_goal_retry" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "review_bot_review_pending", request_login: "copilot-bot" },
+          { type: "manual_review_pending", reviewer_login: "human-reviewer" }
+        ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(goal: "review"), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: [ "copilot-bot" ]), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: [ "human-reviewer" ]), timeout: anything)
+    end
+
+    it "defers bot review but dispatches manual review when followup triggers coexist" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "review_bot_review_pending", request_login: "copilot-bot" },
+          { type: "manual_review_pending", reviewer_login: "human-reviewer" },
+          { type: "ci_failure", details: [ "rspec" ] }
+        ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "review"), timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "copilot-bot" ]), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "human-reviewer" ]), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordPrFollowupActivity, anything, timeout: anything)
+    end
+
+    it "processes ready_for_owner alongside review_goal_retry" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
+        .and_return({ marked_ready: true })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "ready_for_owner" }
+        ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity,
+          hash_including(issue_id: 10, expected_review_goal_retry_count: 1), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(goal: "review"), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
+    end
+
+    it "does not queue duplicate review when paid_agent_review_pending is bundled with review_goal_retry and ready_for_owner" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
+        .and_return({ marked_ready: true })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "ready_for_owner" },
+          { type: "paid_agent_review_pending" }
+        ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "review"), timeout: anything)
+        .once
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
+    end
+
+    it "skips retry queueing when owner_approved will merge the PR" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MergePullRequestActivity, anything, timeout: anything)
+        .and_return({ merged: true })
+      allow(Temporalio::Workflow).to receive(:patched).and_call_original
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("add-dev-environment-update-v1").and_return(false)
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        triggers: [ { type: "review_goal_retry" }, { type: "owner_approved" } ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity, anything, timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MergePullRequestActivity, anything, timeout: anything)
     end
 
     it "skips owner review request when owner_reviewer_login is blank" do
