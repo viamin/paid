@@ -149,22 +149,66 @@ module Containers
 
     # Directory prefixes that indicate build artifacts rather than source.
     # Any staged file whose path starts with one of these is rejected.
+    # Keep this aligned with the directory-shaped entries in
+    # CONTAINER_ARTIFACT_EXCLUDES and the CI pr-artifact-check workflow.
     FORBIDDEN_DIRECTORY_PREFIXES = %w[
+      .corepack/
+      .yarn-cache/
+      .yarn-cache-v2/
+      .yarn-local-cache/
+      .yarn-tmp/
+      .bundle/
+      .bundle-*/
+      .bundle-install/
+      .bundle-gems/
+      .bundle_path/
       .bundle-pr-
+      .gem/
+      .gems/
+      .gem-home/
+      .gem-spec-cache/
+      .gem_cache/
+      .gem-cache/
+      .gem_home/
       .cache-yarn/
+      .pg/
+      .pg-bin/
       .pg-local/
       .pg-data/
       .pg-install/
+      .pg-lib/
+      .pg-share/
+      .pg-src/
       .pgbuild/
       .pgdata/
+      .pg_build/
+      .pg_data/
+      .pg_src/
+      .pg_bin/
+      pgdata/
+      .postgres/
+      .local/
+      .local-include/
+      .local-deps/
+      .venv/
       .apt-cache/
       .cache-pkg/
       .xdg-cache/
+      .cache/
+      .tmp/
+      .build/
       .mise-cache/
       .mise-data/
       .mise-home/
       .npm-cache/
+      .npm/
+      .rubies/
+      .libyaml-build/
+      .libyaml-src/
+      .libyaml_build/
+      .libyaml_src/
       .rubocop-cache/
+      .rubocop_cache/
       vendor/bundle/
       vendor/gems/
       node_modules/
