@@ -67,7 +67,16 @@ module Knowledge
         LANGUAGE_CONFIG.each do |language, config|
           artifacts.concat(collect_language(language, config))
         end
-        deduplicate_by_content(artifacts)
+        deduplicate_by_content(artifacts).sort_by do |artifact|
+          metadata = artifact[:metadata] || {}
+          [
+            artifact[:scope_path].to_s,
+            metadata[:line].to_i,
+            metadata[:element_type].to_s,
+            metadata[:name].to_s,
+            artifact[:identifier].to_s
+          ]
+        end
       end
 
       def collector_type

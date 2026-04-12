@@ -28,6 +28,7 @@ module Activities
         # the PR produced by the run. Review runs use source_pull_request_number
         # to track which PR was reviewed, keeping the two semantics distinct.
         agent_run.complete!
+        agent_run.issue&.update!(review_goal_retry_count: 0) if agent_run.issue&.review_goal_retry_count&.positive?
         agent_run.log!("system", "Completed: review goal finished for PR ##{agent_run.source_pull_request_number}")
 
         logger.info(
