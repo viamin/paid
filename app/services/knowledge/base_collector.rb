@@ -92,14 +92,14 @@ module Knowledge
       path.exist? ? path.to_s : nil
     end
 
-    def run_command(*argv, timeout: 30)
-      return container_runner.execute(argv, timeout: timeout) if containerized?
+    def run_command(*argv, timeout: 30, env: {})
+      return container_runner.execute(argv, timeout: timeout, env: env) if containerized?
 
       stdout_str = +""
       stderr_str = +""
       status = nil
 
-      Open3.popen3(*argv, pgroup: true) do |stdin, stdout, stderr, wait_thr|
+      Open3.popen3(env, *argv, pgroup: true) do |stdin, stdout, stderr, wait_thr|
         stdin&.close
 
         out_thread = Thread.new do

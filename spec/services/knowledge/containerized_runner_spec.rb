@@ -423,6 +423,22 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       runner.run
     end
 
+    it "passes exec environment variables to Docker" do
+      runner_result = { project_version: Object.new, results: [] }
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+
+      allow(Knowledge::CollectorRunner).to receive(:call) do |args|
+        container_runner = args[:options][:container_runner]
+        allow(mock_container).to receive(:exec)
+          .with([ "echo", "hello" ], hash_including(wait: 300, Env: [ "FOO=bar" ]))
+          .and_return([ [ "hello" ], [ "" ], 0 ])
+        expect(container_runner.execute([ "echo", "hello" ], env: { "FOO" => "bar" })).to eq("hello")
+        runner_result
+      end
+
+      runner.run
+    end
+
     it "raises ContainerError when command fails" do
       runner_result = { project_version: Object.new, results: [] }
       runner = described_class.new(project: project, commit_sha: commit_sha)
@@ -432,6 +448,29 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
         allow(mock_container).to receive(:exec).and_return([ [ "" ], [ "error msg" ], 1 ])
         expect { container_runner.execute("bad command") }.to raise_error(
           Knowledge::ContainerizedRunner::ContainerError, /Command failed/
+        )
+        runner_result
+      end
+
+      runner.run
+    end
+
+    it "redacts secret env values from command failures" do
+      runner_result = { project_version: Object.new, results: [] }
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+
+      allow(Knowledge::CollectorRunner).to receive(:call) do |args|
+        container_runner = args[:options][:container_runner]
+        allow(mock_container).to receive(:exec).and_return([
+          [ "" ],
+          [ "fatal: repository 'https://x-access-token:secret123@github.com/owner/private.git/' not found" ],
+          1
+        ])
+        expect {
+          container_runner.execute("bad command", env: { "PAID_GITHUB_TOKEN" => "secret123" })
+        }.to raise_error(
+          Knowledge::ContainerizedRunner::ContainerError,
+          /x-access-token:\[REDACTED\]@github\.com/
         )
         runner_result
       end

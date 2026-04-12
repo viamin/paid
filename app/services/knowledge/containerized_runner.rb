@@ -122,12 +122,13 @@ module Knowledge
     # @return [String] stdout output
     # @raise [ContainerError] when command fails
     # @raise [TimeoutError] when command exceeds timeout
-    def execute(command, timeout: nil)
+    def execute(command, timeout: nil, env: {})
       raise ContainerError, "Container not provisioned" unless @container
 
       timeout ||= options[:timeout_seconds]
       cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
-
+      exec_options = { wait: timeout }
+      exec_options[:Env] = env.map { |key, value| "#{key}=#{value}" } if env.present?
       mutex = Mutex.new
       exec_completed = false
       timed_out = false
@@ -142,7 +143,7 @@ module Knowledge
       end
 
       begin
-        result = @container.exec(cmd_array, wait: timeout)
+        result = @container.exec(cmd_array, exec_options)
       rescue Docker::Error::DockerError => e
         raise TimeoutError, "Command timed out after #{timeout} seconds" if mutex.synchronize { timed_out }
         raise ContainerError, "Command execution failed: #{e.message}"
@@ -154,7 +155,7 @@ module Knowledge
       raise TimeoutError, "Command timed out after #{timeout} seconds" if mutex.synchronize { timed_out }
 
       stdout = Array(result[0]).join
-      stderr = Array(result[1]).join
+      stderr = redact_secrets(Array(result[1]).join, env)
       exit_code = result[2]
 
       unless exit_code == 0
@@ -373,6 +374,28 @@ module Knowledge
 
       watchdog.kill
       watchdog.join(1)
+    end
+
+    def redact_secrets(text, env)
+      return text if text.blank? || env.blank?
+
+      redacted = text.dup
+      secret_values_for(env).each do |secret|
+        redacted.gsub!(secret, "[REDACTED]")
+      end
+      redacted.gsub!(%r{x-access-token:[^@/\s]+@github\.com}, "x-access-token:[REDACTED]@github.com")
+      redacted
+    end
+
+    def secret_values_for(env)
+      env.each_with_object([]) do |(key, value), secrets|
+        if key.match?(/TOKEN|PASSWORD|SECRET|CREDENTIAL/i)
+          secrets << value
+          next
+        end
+
+        secrets << Regexp.last_match(1) if value.to_s.match(%r{x-access-token:([^@/\s]+)})
+      end.compact.uniq
     end
 
     def cleanup!
