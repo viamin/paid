@@ -3672,6 +3672,19 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(triggered_types).not_to include("review_goal_retry")
       end
 
+      it "does not emit review_goal_retry when reviews are globally disabled" do
+        project.update!(review_settings: { "enabled" => false, "methods" => { "paid_agent" => { "enabled" => true } } })
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("review_goal_retry")
+      end
+
       it "escalates when retry limit is reached" do
         pr_issue.update!(review_goal_retry_count: 3)
         create(:agent_run, :failed,

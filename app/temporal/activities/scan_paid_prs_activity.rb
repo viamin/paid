@@ -615,6 +615,7 @@ module Activities
     # when the paid_agent review method is enabled (review-goal runs are
     # how paid_agent posts reviews).
     def review_goal_retry_needed?(project, issue)
+      return false unless project.review_enabled?
       return false unless project.review_method_enabled?("paid_agent")
 
       # Don't retry while a review-goal run is already queued or running.
