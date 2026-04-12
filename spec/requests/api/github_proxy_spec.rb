@@ -304,21 +304,21 @@ RSpec.describe "Api::GithubProxy" do
       )
     end
 
-    it "does not log a warning when review body indicates no comments generated" do
-      no_comments_response = {
+    it "logs a warning when body-only review lacks the paid clean marker" do
+      no_marker_response = {
         id: 999,
         body: "Generated no new comments",
         html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
         state: "commented"
       }.to_json
       stub_request(:post, target_url)
-        .to_return(status: 200, body: no_comments_response, headers: { "Content-Type" => "application/json" })
+        .to_return(status: 200, body: no_marker_response, headers: { "Content-Type" => "application/json" })
 
       post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
         params: { body: "Generated no new comments", event: "COMMENT" }.to_json,
         headers: valid_headers
 
-      expect(Rails.logger).not_to have_received(:warn).with(
+      expect(Rails.logger).to have_received(:warn).with(
         hash_including(message: "github_proxy.review_missing_inline_comments")
       )
     end
@@ -412,6 +412,62 @@ RSpec.describe "Api::GithubProxy" do
 
         expect(response).to have_http_status(:service_unavailable)
         expect(JSON.parse(response.body)["error"]).to include("not configured")
+      end
+
+      it "logs a warning when a non-clean review body is posted without inline comments" do
+        allow(Rails.logger).to receive(:warn)
+
+        post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+          params: { body: "Found two issues to fix before merge.", event: "COMMENT", comments: [] }.to_json,
+          headers: valid_headers
+
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(
+            message: "github_proxy.review_missing_inline_comments",
+            agent_run_id: agent_run.id,
+            review_id: 999,
+            comment_count: 0
+          )
+        )
+      end
+
+      it "does not log a warning when the submitted review includes inline comments" do
+        allow(Rails.logger).to receive(:warn)
+
+        post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+          params: {
+            body: "Found two issues to fix before merge.",
+            event: "COMMENT",
+            comments: [
+              { path: "app/models/user.rb", line: 12, body: "Guard this branch." }
+            ]
+          }.to_json,
+          headers: valid_headers
+
+        expect(Rails.logger).not_to have_received(:warn)
+      end
+
+      it "does not log a warning for the clean review body-only format" do
+        allow(Rails.logger).to receive(:warn)
+        clean_review_response_body = {
+          id: 999,
+          body: "Generated no new comments. The PR looks ready as-is. <!-- paid-review-clean -->",
+          html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
+          state: "commented",
+          comments: []
+        }.to_json
+        stub_request(:post, target_url)
+          .to_return(status: 200, body: clean_review_response_body, headers: { "Content-Type" => "application/json" })
+
+        post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+          params: {
+            body: "Generated no new comments. The PR looks ready as-is. <!-- paid-review-clean -->",
+            event: "COMMENT",
+            comments: []
+          }.to_json,
+          headers: valid_headers
+
+        expect(Rails.logger).not_to have_received(:warn)
       end
     end
   end

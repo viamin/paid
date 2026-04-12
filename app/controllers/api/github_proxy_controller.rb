@@ -176,8 +176,8 @@ module Api
     end
 
     def warn_if_missing_inline_comments(response_body)
-      request_body = parse_response_body(request.raw_post) rescue nil
-      comment_count = Array(request_body&.dig("comments")).length
+      request_body = parse_request_body(request.raw_post)
+      comment_count = Array(request_body["comments"]).length
 
       return unless comment_count.zero?
       return unless non_clean_review?(request_body, response_body)
@@ -198,6 +198,14 @@ module Api
       nil
     end
 
+    def parse_request_body(body)
+      return {} if body.blank?
+
+      JSON.parse(body)
+    rescue JSON::ParserError
+      {}
+    end
+
     def non_clean_review?(request_body, response_body)
       return false if clean_review_event?(request_body)
       return false if clean_review_state?(response_body)
@@ -215,9 +223,7 @@ module Api
     end
 
     def clean_review_body?(body)
-      normalized_body = body.to_s
-      normalized_body.include?("<!-- paid-review-clean -->") ||
-        normalized_body.match?(/generated no (?:new )?comments/i)
+      body.to_s.include?("<!-- paid-review-clean -->")
     end
 
     def log_error(message, error)

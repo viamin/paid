@@ -950,7 +950,7 @@ module Containers
     end
 
     def fallback_providers_require_direct_outbound?(settings)
-      primary_identifier = agent_run.provider&.routing_key || settings.default_provider_identifier
+      primary_identifier = agent_run.provider&.routing_key || settings.default_provider_identifier_for_goal(agent_run.goal)
       fallback_identifiers = settings.fallback_priority_for(primary_provider: primary_identifier, identifiers: true)
       fallback_providers_by_id = settings.user.providers.where(
         id: fallback_identifiers.filter_map { |identifier| Provider.id_from_routing_key(identifier) }

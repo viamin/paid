@@ -1,10 +1,7 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
-
 require "rubygems"
 require "bundler/setup"
 
-# Rely on Dependabot to keep brakeman up to date (weekly PRs).
-# Actual findings are enforced via --exit-on-warn/--exit-on-error in bin/audit.
+ARGV.unshift("--ensure-latest")
 
 load Gem.bin_path("brakeman", "brakeman")

@@ -27,6 +27,9 @@ RSpec.describe "Providers" do
         expect(response.body).to include("Providers")
         expect(response.body).to include("Provider Priority")
         expect(response.body).to include("Primary Provider")
+        expect(response.body).to include("Per-Run-Type Defaults")
+        expect(response.body).to include("PR Agent")
+        expect(response.body).to include("Code Review Agent")
       end
 
       it "shows empty state when no addable providers remain" do
@@ -96,10 +99,12 @@ RSpec.describe "Providers" do
     it "updates provider priority settings from the providers page" do
       cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
       aider = user.providers.create!(provider_key: "aider", enabled_for_agent_runs: false, enabled_for_fallback: true)
+      claude = user.providers.find_by!(provider_key: "claude")
 
       patch settings_providers_path, params: {
         user_setting: {
           default_agent_provider: "cursor",
+          default_agent_providers_by_goal: { create_pr: "cursor", review: "claude" },
           fallback_enabled: true,
           fallback_providers: %w[claude aider].to_json
         }
@@ -108,8 +113,57 @@ RSpec.describe "Providers" do
       expect(response).to redirect_to(providers_path)
       settings = user.reload.settings
       expect(settings.default_agent_provider).to eq(cursor.routing_key)
+      expect(settings.default_agent_providers_by_goal).to eq("create_pr" => cursor.routing_key, "review" => claude.routing_key)
       expect(settings.fallback_enabled).to be(true)
-      expect(settings.fallback_providers).to eq([ user.providers.find_by!(provider_key: "claude").routing_key, aider.routing_key ])
+      expect(settings.fallback_providers).to eq([ claude.routing_key, aider.routing_key ])
+    end
+
+    it "drops goal-specific defaults whose providers are no longer enabled during reconciliation" do
+      cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      user.settings.update!(
+        default_agent_provider: "claude",
+        default_agent_providers_by_goal: {
+          "create_pr" => cursor.routing_key,
+          "review" => user.providers.find_by!(provider_key: "claude").routing_key
+        }
+      )
+
+      cursor.update!(enabled_for_agent_runs: false)
+
+      patch settings_providers_path, params: {
+        user_setting: {
+          default_agent_provider: "claude",
+          fallback_enabled: false,
+          fallback_providers: [].to_json
+        }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      expect(user.reload.settings.default_agent_providers_by_goal).to eq(
+        "review" => user.providers.find_by!(provider_key: "claude").routing_key
+      )
+    end
+
+    it "preserves saved goal defaults when submitted nested keys are all unpermitted" do
+      claude = user.providers.find_by!(provider_key: "claude")
+      user.settings.update!(
+        default_agent_provider: claude.routing_key,
+        default_agent_providers_by_goal: { "review" => claude.routing_key }
+      )
+
+      patch settings_providers_path, params: {
+        user_setting: {
+          default_agent_provider: "claude",
+          default_agent_providers_by_goal: { ship_it: "claude" },
+          fallback_enabled: false,
+          fallback_providers: [].to_json
+        }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      expect(user.reload.settings.default_agent_providers_by_goal).to eq(
+        "review" => claude.routing_key
+      )
     end
 
     it "disables fallback for providers not in enabled_fallback_provider_keys" do

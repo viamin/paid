@@ -23,6 +23,14 @@ module ApplicationHelper
     )
   end
 
+  def safe_stylesheet_link_tag(source, **options)
+    safe_asset_tag { stylesheet_link_tag(source, **options) }
+  end
+
+  def safe_javascript_include_tag(source, **options)
+    safe_asset_tag { javascript_include_tag(source, **options) }
+  end
+
   TRIGGER_TYPE_STYLES = {
     "manual" => { bg: "bg-sky-100", text: "text-sky-700", label: "Manual" },
     "automatic" => { bg: "bg-amber-100", text: "text-amber-700", label: "Auto" }
@@ -269,7 +277,9 @@ module ApplicationHelper
       label = "#{prefix} ##{run.issue.github_number}"
       github_link_or_text(label, label, run.issue.github_url, tooltip: run.issue.title)
     elsif run.source_pull_request_number.present?
-      { type: :text, label: "PR ##{run.source_pull_request_number}", classes: "text-gray-700" }
+      url = source_pull_request_url(run)
+      label = "PR ##{run.source_pull_request_number}"
+      github_link_or_text(label, label, url)
     elsif run.pull_request_number.present?
       github_link_or_text("PR ##{run.pull_request_number}", "PR ##{run.pull_request_number}", run.pull_request_url)
     else
@@ -288,11 +298,11 @@ module ApplicationHelper
     end
   end
 
-  # Tooltip not available here: source_pull_request_number has no associated title
-  # column, and fetching titles from GitHub would introduce N+1 queries.
   def review_context(run)
     if run.source_pull_request_number.present?
-      { type: :text, label: "PR ##{run.source_pull_request_number}", classes: "text-gray-700" }
+      url = source_pull_request_url(run)
+      label = "PR ##{run.source_pull_request_number}"
+      github_link_or_text(label, label, url)
     else
       { type: :placeholder }
     end
@@ -317,5 +327,17 @@ module ApplicationHelper
     else
       { type: :text, label: text_label, classes: "text-gray-700", tooltip: tooltip }
     end
+  end
+
+  def source_pull_request_url(run)
+    return nil unless run.source_pull_request_number.present? && run.project.present?
+
+    "#{run.project.github_url}/pull/#{run.source_pull_request_number}"
+  end
+
+  def safe_asset_tag
+    yield
+  rescue Propshaft::MissingAssetError
+    raise unless Rails.env.test?
   end
 end

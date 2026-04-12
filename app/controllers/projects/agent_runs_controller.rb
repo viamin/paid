@@ -36,7 +36,11 @@ module Projects
 
     def new
       authorize @project, :run_agent?
-      @default_provider_identifier = settings_owner&.settings&.provider_priority(identifiers: true)&.first
+      selected_goal = params[:goal].presence || "create_pr"
+      @default_provider_identifiers_by_goal = AgentRun::GOALS.index_with do |goal|
+        settings_owner&.settings&.default_provider_identifier_for_goal(goal)
+      end.compact
+      @default_provider_identifier = @default_provider_identifiers_by_goal[selected_goal]
       @available_run_provider_options = available_run_provider_options
       @issues = @project.issues
         .issues_only
@@ -120,7 +124,7 @@ module Projects
       create_run_and_redirect(
         on_error_path: project_path(@project),
         issue: issue,
-        provider_identifier: settings_owner&.settings&.default_provider_identifier,
+        provider_identifier: settings_owner&.settings&.default_provider_identifier_for_goal("create_pr"),
         goal: "create_pr",
         source_pull_request_number: source_pr_number
       )
@@ -525,18 +529,19 @@ module Projects
     end
 
     def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, provider_identifier: nil, goal: nil, trigger_type: "manual", priority_tier: nil)
+      goal ||= params[:goal].presence || "create_pr"
+      goal = "create_pr" unless AgentRun::GOALS.include?(goal)
+
       requested_agent_type = agent_type || params[:agent_type].presence
       requested_provider_identifier = provider_identifier || params[:provider].presence
       resolved_provider = resolve_provider_selection(
         requested_agent_type: requested_agent_type,
-        requested_provider_identifier: requested_provider_identifier
+        requested_provider_identifier: requested_provider_identifier,
+        goal: goal
       )
       raise NoRunnableProviderError, "No runnable provider could be resolved for this project." unless resolved_provider
 
       resolved_agent_type = provider_key_to_agent_type(resolved_provider.provider_key)
-
-      goal ||= params[:goal].presence || "create_pr"
-      goal = "create_pr" unless AgentRun::GOALS.include?(goal)
 
       AgentRun.create!(
         project: @project,
@@ -555,7 +560,7 @@ module Projects
     def enqueue_resume_run(pr)
       create_agent_run(
         source_pull_request_number: pr.github_number,
-        provider_identifier: settings_owner&.settings&.default_provider_identifier,
+        provider_identifier: settings_owner&.settings&.default_provider_identifier_for_goal("create_pr"),
         goal: "create_pr",
         trigger_type: "automatic"
       )
@@ -694,12 +699,12 @@ module Projects
       enabled_retry_providers.any? { |provider| provider.provider_key == provider_key }
     end
 
-    def resolve_provider_selection(requested_agent_type:, requested_provider_identifier:)
+    def resolve_provider_selection(requested_agent_type:, requested_provider_identifier:, goal:)
       owner = settings_owner
       return unless owner
 
       configured_identifiers = UserSetting.enabled_agent_providers(owner, identifiers: true)
-      priority_identifiers = owner.settings.provider_priority(identifiers: true)
+      priority_identifiers = owner.settings.provider_priority_for_goal(goal, identifiers: true)
       default_identifier = priority_identifiers.first
 
       if requested_provider_identifier.present?
