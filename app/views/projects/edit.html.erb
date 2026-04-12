@@ -167,6 +167,17 @@
               <p class="mt-1 ml-7 text-xs text-gray-500">Block workflow until all configured reviews have completed before proceeding.</p>
             </div>
 
+            <div>
+              <div class="flex items-center">
+                <input type="hidden" name="project[review_settings][address_all_bot_reviews]" value="0" />
+                <input type="checkbox" name="project[review_settings][address_all_bot_reviews]" value="1" id="project_review_settings_address_all_bot_reviews"
+                  <%= "checked" if rs["address_all_bot_reviews"] %>
+                  class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                <label for="project_review_settings_address_all_bot_reviews" class="ml-3 block text-sm font-medium leading-6 text-gray-900">Address All Bot Reviews</label>
+              </div>
+              <p class="mt-1 ml-7 text-xs text-gray-500">Detect and address reviews from all bot accounts (e.g. Codex, Claude, Copilot), not just the configured review type. Human reviews follow existing configured behavior.</p>
+            </div>
+
             <div id="review-methods" class="space-y-4 border-t border-gray-200 pt-4">
               <p class="text-sm font-medium text-gray-700">Review Methods</p>
 

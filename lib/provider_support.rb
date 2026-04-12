@@ -125,6 +125,21 @@ module ProviderSupport
     PROVIDER_BOT_USERNAMES.any? { |_provider, usernames| usernames.include?(normalized) }
   end
 
+  def all_bot_usernames
+    PROVIDER_BOT_USERNAMES.values.flatten.map(&:downcase).to_set
+  end
+
+  def provider_key_for_bot_username(login)
+    return nil if login.blank?
+
+    normalized = login.downcase
+    PROVIDER_BOT_USERNAMES.find { |_provider, usernames| usernames.include?(normalized) }&.first
+  end
+
+  def provider_bot_usernames_for(provider_key)
+    PROVIDER_BOT_USERNAMES.fetch(provider_key.to_s, []).map(&:downcase).to_set
+  end
+
   # Returns true if the given login matches a known bot username for the
   # specified provider key.
   def provider_bot_username_for?(provider_key, login)

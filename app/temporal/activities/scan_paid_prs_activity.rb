@@ -217,6 +217,14 @@ module Activities
         end
       end
 
+      review_bot_triggers ||= []
+      if project.address_all_bot_reviews?
+        reviews ||= fetch_reviews(client, project, issue)
+        unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
+        review_bot_triggers += check_non_enabled_bot_reviews(reviews, unresolved_threads,
+          project: project, last_run: last_run, client: client, issue: issue)
+      end
+
       # review_bot_review_pending gates draft advancement (the PR must have a
       # clean review-bot review before it can leave draft).
       # paid_agent_review_pending is normally a non-blocking sidecar that
@@ -490,6 +498,8 @@ module Activities
 
       triggers.concat(ci_failure_triggers(checks))
       triggers.concat(check_review_bot_status(reviews, unresolved_threads,
+        project: project, last_run: last_run, client: client, issue: issue))
+      triggers.concat(check_non_enabled_bot_reviews(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
@@ -1097,6 +1107,18 @@ module Activities
       false
     end
 
+    def body_only_bot_clean_comment_supersedes_review?(client, project, issue, bot_login, latest_review)
+      return false unless body_only_review_bot?(bot_login)
+      return false if client.nil? || project.nil? || issue.nil?
+
+      provider_key = ProviderSupport.provider_key_for_bot_username(bot_login)
+      bot_logins = ProviderSupport.provider_bot_usernames_for(provider_key)
+      body_only_bot_clean_comment_present?(client, project, issue, latest_review, bot_logins)
+    rescue GithubClient::Error => e
+      log_signal_error("non_enabled_body_only_bot_clean_comment", project, issue, e)
+      false
+    end
+
     # Anti-loop guard for body-only review bots: returns true when the bot's
     # latest review was submitted after the last agent run completed, meaning
     # the agent has not yet addressed the feedback. Treats missing timestamps
@@ -1323,6 +1345,8 @@ module Activities
         )
       end
       return false if non_bot_review_gate_triggers(project, reviews, effective_checks).any?
+      return false if check_non_enabled_bot_reviews(reviews, unresolved_threads,
+        project: project, last_run: last_run, client: client, issue: issue).any?
 
       true
     end
@@ -1459,6 +1483,96 @@ module Activities
       ProviderSupport.provider_bot_username?(login)
     end
 
+    def check_non_enabled_bot_reviews(reviews, unresolved_threads, project:, last_run:, client: nil, issue: nil)
+      return [] unless project&.address_all_bot_reviews?
+
+      enabled_logins = project.enabled_review_bot_logins
+      all_bot_logins = ProviderSupport.all_bot_usernames
+      non_enabled_logins = all_bot_logins - enabled_logins
+
+      return [] if non_enabled_logins.empty?
+
+      non_enabled_reviews = Array(reviews).select do |r|
+        non_enabled_logins.include?(r[:user_login]&.downcase)
+      end
+
+      if non_enabled_reviews.empty?
+        return non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)
+      end
+
+      all_triggers = []
+      non_enabled_reviews
+        .group_by { |r| provider_key_or_login_for(r[:user_login]) }
+        .each_value do |bot_reviews|
+          latest = bot_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+          triggers = non_enabled_bot_triggers_for(latest, unresolved_threads, last_run,
+            bot_logins: provider_bot_logins_for(latest[:user_login]),
+            client: client, project: project, issue: issue)
+          all_triggers.concat(triggers)
+        end
+
+      all_triggers.concat(non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)) if all_triggers.empty?
+
+      all_triggers
+    end
+
+    def non_enabled_bot_triggers_for(latest, unresolved_threads, last_run, bot_logins:, client: nil, project: nil, issue: nil)
+      return [] if latest.nil?
+
+      bot_login = latest[:user_login]&.downcase
+      source_provider = ProviderSupport.provider_key_for_bot_username(bot_login)
+      if body_only_bot_clean_comment_supersedes_review?(client, project, issue, bot_login, latest)
+        return []
+      end
+
+      body = latest[:body].to_s
+      if REVIEW_BOT_CLEAN_PATTERN.match?(body) || paid_agent_review_clean?(body)
+        return []
+      end
+
+      thread_triggers = non_enabled_bot_thread_triggers(unresolved_threads, bot_logins, source_provider: source_provider)
+      if body_only_review_bot?(bot_login)
+        return non_enabled_bot_comment_triggers(source_provider, thread_triggers) if body_only_review_needs_followup?(latest, last_run)
+        return non_enabled_bot_comment_triggers(source_provider, thread_triggers) unless review_diff_touches_reviewed_files?(client, project, issue, latest)
+
+        return []
+      end
+
+      return non_enabled_bot_comment_triggers(source_provider, thread_triggers, data_incomplete: true) if unresolved_threads.nil?
+
+      return [] if thread_triggers.empty?
+
+      non_enabled_bot_comment_triggers(source_provider, thread_triggers)
+    end
+
+    def non_enabled_bot_comment_triggers(source_provider, thread_triggers = [], data_incomplete: false)
+      [
+        {
+          type: "review_bot_comments",
+          details: "Non-configured bot review has unaddressed feedback",
+          source_provider: source_provider,
+          data_incomplete: data_incomplete
+        }.compact,
+        *thread_triggers
+      ]
+    end
+
+    def non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins, source_provider: nil)
+      return [] if unresolved_threads.nil?
+
+      bot_threads = unresolved_threads.select do |thread|
+        thread[:comments].any? { |c| non_enabled_logins.include?(c[:author]&.downcase) }
+      end
+
+      return [] if bot_threads.empty?
+
+      [ {
+        type: "review_bot_threads",
+        details: "#{bot_threads.size} unresolved thread(s) from non-configured bot(s)",
+        source_provider: source_provider
+      }.compact ]
+    end
+
     def paid_agent_clean_review?(review)
       return false unless review.is_a?(Hash)
       return false unless ProviderSupport.provider_bot_username_for?("paid_agent", review[:user_login])
@@ -1538,6 +1652,7 @@ module Activities
     def paid_agent_is_latest_blocker?(project, reviews, pending_triggers, blocking_triggers)
       return false if reviews.nil?
       return false unless pending_triggers.any? || blocking_triggers.any?
+      return false if (pending_triggers + blocking_triggers).any? { |t| t[:source_provider] && t[:source_provider] != "paid_agent" }
 
       has_non_paid_agent_thread_triggers = blocking_triggers.any? { |t| t[:type] == "review_bot_threads" }
       return false if has_non_paid_agent_thread_triggers
@@ -1564,6 +1679,17 @@ module Activities
         BODY_ONLY_REVIEW_BOT_LOGINS.include?(login.downcase) &&
           !ProviderSupport.provider_bot_username_for?("paid_agent", login)
       end
+    end
+
+    def provider_bot_logins_for(login)
+      provider_key = ProviderSupport.provider_key_for_bot_username(login)
+      return ProviderSupport.provider_bot_usernames_for(provider_key) if provider_key.present?
+
+      Set.new([ login&.downcase ].compact)
+    end
+
+    def provider_key_or_login_for(login)
+      ProviderSupport.provider_key_for_bot_username(login) || login&.downcase
     end
 
     def extract_actionable_labels(triggers)

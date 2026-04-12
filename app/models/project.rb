@@ -12,6 +12,7 @@ class Project < ApplicationRecord
   DEFAULT_REVIEW_SETTINGS = {
     "enabled" => false,
     "wait_for_reviews" => true,
+    "address_all_bot_reviews" => false,
     "methods" => {
       "copilot" => {
         "enabled" => false,
@@ -458,6 +459,10 @@ class Project < ApplicationRecord
 
   def wait_for_reviews?
     effective_review_settings["wait_for_reviews"] != false
+  end
+
+  def address_all_bot_reviews?
+    effective_review_settings["address_all_bot_reviews"] == true
   end
 
   def review_method_enabled?(method)

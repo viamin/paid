@@ -1570,6 +1570,400 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when address_all_bot_reviews is enabled and a non-configured bot has a body-only review" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "detects the non-configured bot review and emits review_bot_comments" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments")
+      end
+    end
+
+    context "when address_all_bot_reviews is enabled and a non-configured bot has unresolved threads" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago }
+          ],
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "claude-code[bot]" } ]
+            }
+          ]
+        )
+      end
+
+      it "detects non-configured bot threads and emits review_bot_threads" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_threads", "review_bot_comments")
+      end
+    end
+
+    context "when address_all_bot_reviews is enabled and a non-configured bot has thread-only feedback without a review object" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [],
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "chatgpt-codex-connector" } ]
+            }
+          ]
+        )
+      end
+
+      it "detects non-configured bot threads even without a matching review object" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_threads")
+      end
+    end
+
+    context "when address_all_bot_reviews is disabled and a non-configured bot has comments" do
+      before do
+        enable_copilot_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
+          ],
+          review_threads: [],
+          checks: [ { name: "ci", conclusion: "success" } ]
+        )
+      end
+
+      it "ignores the non-configured bot review" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(trigger_types).not_to include("review_bot_comments")
+      end
+    end
+
+    context "when address_all_bot_reviews is enabled and non-configured bot review predates last agent run and diff touches a reviewed file" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Some old feedback.", submitted_at: 2.hours.ago, commit_id: "rev_sha" }
+          ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: 10, user_login: "chatgpt-codex-connector", body: "Fix this",
+              created_at: 2.hours.ago, path: "app/model.rb", pull_request_review_id: 2 }
+          ])
+        allow(github_client).to receive(:compare_changed_files)
+          .with(project.full_name, "rev_sha", "abc123")
+          .and_return([ "app/model.rb" ])
+      end
+
+      it "does not emit triggers for the already-addressed non-configured bot review" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(trigger_types).not_to include("review_bot_comments")
+      end
+    end
+
+    context "when address_all_bot_reviews is enabled and non-configured bot review predates last agent run but diff misses reviewed files" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Some old feedback.", submitted_at: 2.hours.ago, commit_id: "rev_sha" }
+          ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: 10, user_login: "chatgpt-codex-connector", body: "Fix this",
+              created_at: 2.hours.ago, path: "app/model.rb", pull_request_review_id: 2 }
+          ])
+        allow(github_client).to receive(:compare_changed_files)
+          .with(project.full_name, "rev_sha", "abc123")
+          .and_return([ "app/other_file.rb" ])
+      end
+
+      it "keeps the non-configured bot feedback actionable" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(trigger_types).to include("review_bot_comments")
+      end
+    end
+
+    context "when address_all_bot_reviews is enabled and non-configured bot review is clean" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Codex reviewed 3 files and generated no new comments.", submitted_at: 30.minutes.ago }
+          ],
+          review_threads: [],
+          checks: [ { name: "ci", conclusion: "success" } ]
+        )
+      end
+
+      it "does not emit triggers for clean non-configured bot reviews" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(trigger_types).not_to include("review_bot_comments")
+      end
+    end
+
+    context "when address_all_bot_reviews is enabled and a non-enabled body-only bot posts a clean comment superseding an older review" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+          body: "Codex Review: Didn't find any major issues. Bravo.",
+          created_at: 10.minutes.ago
+        )
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
+              body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
+          ],
+          review_threads: [],
+          checks: [ { name: "ci", conclusion: "success" } ],
+          recent_issue_comments: [ clean_comment ]
+        )
+      end
+
+      it "does not emit triggers when a clean issue comment supersedes the older non-clean review" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(trigger_types).not_to include("review_bot_comments")
+      end
+    end
+
+    context "when the non-enabled body-only bot review login differs from the clean comment alias" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+          body: "Codex Review: Didn't find any major issues. Bravo.",
+          created_at: 10.minutes.ago
+        )
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
+          ],
+          review_threads: [],
+          checks: [ { name: "ci", conclusion: "success" } ],
+          recent_issue_comments: [ clean_comment ]
+        )
+      end
+
+      it "treats provider aliases as the same bot for clean comment supersession" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(trigger_types).not_to include("review_bot_comments")
+      end
+    end
+
+    context "when address_all_bot_reviews is enabled and multiple non-configured bots have reviews" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Codex reviewed 3 files and generated no new comments.", submitted_at: 45.minutes.ago },
+            { id: 3, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Please fix the error handling.", submitted_at: 30.minutes.ago }
+          ],
+          review_threads: [],
+          checks: [ { name: "ci", conclusion: "success" } ]
+        )
+      end
+
+      it "detects actionable reviews from each non-configured bot independently" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments")
+      end
+    end
+
+    context "when address_all_bot_reviews is enabled and one non-configured bot is clean but another has feedback" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Codex reviewed 3 files and generated no new comments.", submitted_at: 30.minutes.ago },
+            { id: 3, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Please fix the error handling.", submitted_at: 20.minutes.ago }
+          ],
+          review_threads: [],
+          checks: [ { name: "ci", conclusion: "success" } ]
+        )
+      end
+
+      it "still detects the actionable bot review even though another bot is clean" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(trigger_types).to include("review_bot_comments")
+      end
+    end
+
+    context "when paid_agent rounds are exhausted but the remaining blocker is a non-enabled bot" do
+      before do
+        enable_paid_agent_review!(max_review_rounds: 1)
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "<!-- PAID_AGENT_REVIEW_STATUS: clean -->", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "does not escalate to owner" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments")
+        expect(trigger_types).not_to include("escalate_to_owner")
+      end
+    end
+
     context "when review bot review body says generated no comments but unresolved bot threads remain" do
       before do
         create(:issue, :pull_request,
@@ -1689,6 +2083,37 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when address_all_bot_reviews is enabled and review fetch fails but non-configured bot threads exist" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "chatgpt-codex-connector" } ]
+            }
+          ]
+        )
+        allow(github_client).to receive(:pull_request_reviews)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::Error, "GitHub review API unavailable")
+      end
+
+      it "keeps the non-configured bot thread actionable" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
       end
     end
 
@@ -3102,6 +3527,28 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+      end
+
+      it "detects non-configured bot unresolved threads with address_all_bot_reviews enabled" do
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 200, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Codex has reviewed the pull request and determined it is ready to merge.",
+              submitted_at: 1.hour.ago }
+          ],
+          review_threads: [
+            { id: "thread_bot", is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 5,
+                            author: "chatgpt-codex-connector" } ] }
+          ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to include("review_bot_comments")
       end
     end
 

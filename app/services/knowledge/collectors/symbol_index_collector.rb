@@ -24,10 +24,14 @@ module Knowledge
           extensions = LANGUAGE_EXTENSIONS[language]
           all_results = collect_all_results(patterns, language, extensions)
 
-          all_results.group_by { |r| r[:file_path] }.each do |file_path, file_results|
-            scope_stack = build_scope_stack(file_results)
+          all_results
+            .group_by { |r| r[:file_path] }
+            .sort_by { |file_path, _| file_path }
+            .each do |file_path, file_results|
+            sorted_file_results = sort_symbol_results(file_results)
+            scope_stack = build_scope_stack(sorted_file_results)
 
-            file_results.each do |result|
+            sorted_file_results.each do |result|
               qualified_name = qualified_scope_name(scope_stack, result)
               identifier = build_identifier(file_path, result[:symbol_type], qualified_name)
               content = result[:content]
@@ -102,9 +106,12 @@ module Knowledge
       # Build a sorted list of class/module scopes from file results,
       # used to compute fully-qualified names for all symbols.
       def build_scope_stack(file_results)
-        file_results
+        sort_symbol_results(file_results)
           .select { |r| r[:symbol_type] == :class || r[:symbol_type] == :module }
-          .sort_by { |r| [ r[:line], r[:column] || 0 ] }
+      end
+
+      def sort_symbol_results(results)
+        results.sort_by { |r| [ r[:line], r[:column] || 0, r[:symbol_type].to_s, r[:name].to_s, r[:file_path].to_s ] }
       end
 
       # Compute the fully-qualified name for a symbol by walking enclosing
