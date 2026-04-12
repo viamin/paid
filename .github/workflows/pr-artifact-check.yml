@@ -33,7 +33,11 @@ jobs:
 
           # Get the list of changed files (exclude deletions — removing
           # previously committed artifacts is a valid remediation).
-          diff_files=$(git diff --name-only --diff-filter=d "${BASE_SHA}"..."${HEAD_SHA}" 2>/dev/null || true)
+          if ! diff_files=$(git diff --name-only --diff-filter=d "${BASE_SHA}"..."${HEAD_SHA}"); then
+            echo "::error::Failed to diff ${BASE_SHA}...${HEAD_SHA}; refusing to skip artifact validation."
+            exit 1
+          fi
+
           if [ -z "${diff_files}" ]; then
             echo "No diff files found (empty PR or merge commit). Skipping check."
             exit 0
@@ -110,6 +114,10 @@ jobs:
                 break
               fi
             done
+
+            if [[ "$(basename "${file}")" =~ \.so\.[0-9] ]]; then
+              binary_violations="${binary_violations}${file}"$'\n'
+            fi
           done <<< "${diff_files}"
 
           if [ -n "${binary_violations}" ]; then
