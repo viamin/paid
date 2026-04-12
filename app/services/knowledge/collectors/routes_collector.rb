@@ -152,7 +152,8 @@ module Knowledge
           "rm -f #{BUNDLE_HOME}/.netrc; " \
           "git config --global --unset-all url.\"https://github.com/\".insteadOf 2>/dev/null; " \
           "true",
-          timeout: 10
+          timeout: 10,
+          env: { "HOME" => BUNDLE_HOME }
         )
       rescue
         nil
