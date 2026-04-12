@@ -324,19 +324,20 @@ module Workflows
         goal: "review"
       }, timeout: 30)
 
-      dispatch_pending_review_requests(project_id, pr_data)
-
       followup_trigger_types = %w[
         ci_failure review_threads conversation_comments changes_requested
         actionable_labels merge_conflicts review_bot_comments review_bot_threads
       ]
       followup_triggers = (pr_data[:triggers] || []).any? { |t| followup_trigger_types.include?(t[:type]) }
-      return unless followup_triggers
 
-      if pr_data[:phase].in?(%w[draft restarted])
-        start_draft_followup_workflow(project_id, pr_data)
+      if followup_triggers
+        if pr_data[:phase].in?(%w[draft restarted])
+          start_draft_followup_workflow(project_id, pr_data)
+        else
+          start_pr_followup_workflow(project_id, pr_data)
+        end
       else
-        start_pr_followup_workflow(project_id, pr_data)
+        dispatch_pending_review_requests(project_id, pr_data)
       end
     end
 

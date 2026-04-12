@@ -811,6 +811,31 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           hash_including(reviewers: [ "human-reviewer" ]), timeout: anything)
     end
 
+    it "defers review_bot dispatch when followup triggers coexist with review_goal_retry" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "review_bot_review_pending", request_login: "copilot-bot" },
+          { type: "ci_failure", details: [ "rspec" ] }
+        ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordReviewGoalRetryActivity,
+          hash_including(issue_id: 10), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(goal: "review"), timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, anything, timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordPrFollowupActivity, anything, timeout: anything)
+    end
+
     it "prioritizes review_goal_retry over ready_for_owner when both are present" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "ready",
