@@ -1018,9 +1018,22 @@ module Activities
     end
 
     def review_goal_max_retries(project)
-      configured = project.review_method_config("paid_agent")
-        .dig("termination", "max_review_goal_retries")
-      configured.present? ? configured.to_i : MAX_REVIEW_GOAL_RETRIES
+      termination = project.review_method_config("paid_agent")
+        .dig("termination") || {}
+      retries = termination["max_review_goal_retries"]
+      max_rounds = termination["max_review_rounds"]
+
+      effective = if retries.present?
+        retries.to_i
+      else
+        MAX_REVIEW_GOAL_RETRIES
+      end
+
+      if max_rounds.present?
+        [ effective, max_rounds.to_i ].min
+      else
+        effective
+      end
     end
 
     def body_only_review_bot?(login)
