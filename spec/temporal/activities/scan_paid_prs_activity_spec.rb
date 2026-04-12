@@ -2183,6 +2183,47 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when paid_agent rounds are exhausted in a paid_agent + codex project (no copilot)" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "paid_agent" => {
+                "enabled" => true,
+                "termination" => { "max_review_rounds" => 2 }
+              },
+              "codex" => {
+                "enabled" => true
+              }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 1)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Found issues.", submitted_at: 2.hours.ago },
+            { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Still has issues.", submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "does not escalate because codex can continue the automated review cycle" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("escalate_to_owner")
+      end
+    end
+
     context "when paid_agent rounds are exhausted and thread data is unavailable (API failure)" do
       before do
         project.update!(
@@ -4272,6 +4313,45 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       # copilot gates draft exit with review_bot_review_pending
       expect(trigger_types).to include("review_bot_review_pending")
       expect(trigger_types).not_to include("ready_for_owner")
+    end
+  end
+
+  context "when paid_agent is enabled alongside codex with no reviews and paid_agent rounds exhausted" do
+    before do
+      project.update!(
+        owner_reviewer_login: "viamin",
+        review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => {
+              "enabled" => true,
+              "termination" => { "max_review_rounds" => 2 }
+            },
+            "codex" => { "enabled" => true }
+          }
+        }
+      )
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 1)
+      stub_github_for_pr(
+        reviews: [
+          { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+            body: "Found issues.", submitted_at: 2.hours.ago },
+          { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+            body: "Still has issues.", submitted_at: 1.hour.ago }
+        ]
+      )
+    end
+
+    it "does not escalate and emits body-only review triggers so codex can continue" do
+      result = activity.execute(project_id: project.id)
+
+      trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+      expect(trigger_types).not_to include("escalate_to_owner")
+      expect(trigger_types).to include("review_bot_comments")
     end
   end
 
