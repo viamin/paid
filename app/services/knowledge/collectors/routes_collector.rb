@@ -134,14 +134,12 @@ module Knowledge
       def cleanup_credentials_in_container
         run_command(
           "sh", "-c",
-          "rm -f #{BUNDLE_HOME}/.netrc; " \
+          "rm -f #{BUNDLE_HOME}/.netrc && " \
           "git config --global --unset-all url.\"https://github.com/\".insteadOf 2>/dev/null; " \
-          "true",
+          "! test -f #{BUNDLE_HOME}/.netrc",
           timeout: 10,
           env: { "HOME" => BUNDLE_HOME }
         )
-      rescue
-        nil
       end
 
       def parse_expanded_output(output)

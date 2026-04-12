@@ -284,7 +284,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(install_cmd.index("unset PAID_GITHUB_TOKEN")).to be < install_cmd.index("bundle install")
       end
 
-      it "cleans up credentials after bundle install" do
+      it "cleans up credentials after bundle install and verifies removal" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
           .and_return(fixture_output)
@@ -292,7 +292,19 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         command_collector.collect
 
         expect(command_collector).to have_received(:run_command)
-          .with("sh", "-c", /rm -f .*\.netrc.*unset-all/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
+          .with("sh", "-c", /rm -f .*\.netrc.*unset-all.*! test -f/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
+      end
+
+      it "aborts when credential cleanup fails" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /\.netrc/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
+          .and_raise(RuntimeError, "credential cleanup verification failed")
+
+        expect { command_collector.collect }.to raise_error(
+          RuntimeError, /credential cleanup verification failed/
+        )
+        expect(command_collector).not_to have_received(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
       end
 
       it "raises SkipCollector when config/routes.rb is missing" do
