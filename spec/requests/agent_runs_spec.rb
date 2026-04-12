@@ -104,7 +104,7 @@ RSpec.describe "AgentRuns" do
         run = create(:agent_run, :review_goal, :completed, project: project)
         get agent_runs_path
         expected_url = "#{project.github_url}/pull/#{run.source_pull_request_number}"
-        expect(response.body).to include("PR #10")
+        expect(response.body).to include("PR ##{run.source_pull_request_number}")
         expect(response.body).to include(expected_url)
       end
 
@@ -212,7 +212,7 @@ RSpec.describe "AgentRuns" do
         run = create(:agent_run, :review_goal, :completed, project: project)
         get project_agent_runs_path(project)
         expected_url = "#{project.github_url}/pull/#{run.source_pull_request_number}"
-        expect(response.body).to include("PR #10")
+        expect(response.body).to include("PR ##{run.source_pull_request_number}")
         expect(response.body).to include(expected_url)
       end
 
