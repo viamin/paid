@@ -1485,7 +1485,6 @@ module Activities
 
     def check_non_enabled_bot_reviews(reviews, unresolved_threads, project:, last_run:, client: nil, issue: nil)
       return [] unless project&.address_all_bot_reviews?
-      return [] if reviews.nil?
 
       enabled_logins = project.enabled_review_bot_logins
       all_bot_logins = ProviderSupport.all_bot_usernames
@@ -1493,7 +1492,7 @@ module Activities
 
       return [] if non_enabled_logins.empty?
 
-      non_enabled_reviews = reviews.select do |r|
+      non_enabled_reviews = Array(reviews).select do |r|
         non_enabled_logins.include?(r[:user_login]&.downcase)
       end
 

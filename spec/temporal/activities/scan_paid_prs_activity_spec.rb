@@ -2086,6 +2086,37 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when address_all_bot_reviews is enabled and review fetch fails but non-configured bot threads exist" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "chatgpt-codex-connector" } ]
+            }
+          ]
+        )
+        allow(github_client).to receive(:pull_request_reviews)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::Error, "GitHub review API unavailable")
+      end
+
+      it "keeps the non-configured bot thread actionable" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
+      end
+    end
+
     context "when review_threads API fails and bot review has comments" do
       before do
         create(:issue, :pull_request,
