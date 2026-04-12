@@ -178,7 +178,7 @@ module Activities
         reviews ||= fetch_reviews(client, project, issue)
         unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
         review_bot_triggers += check_non_enabled_bot_reviews(reviews, unresolved_threads,
-          project: project, last_run: last_run)
+          project: project, last_run: last_run, client: client, issue: issue)
       end
 
       # review_bot_review_pending gates draft advancement (the PR must have a
@@ -456,7 +456,7 @@ module Activities
       triggers.concat(check_review_bot_status(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue))
       triggers.concat(check_non_enabled_bot_reviews(reviews, unresolved_threads,
-        project: project, last_run: last_run))
+        project: project, last_run: last_run, client: client, issue: issue))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
@@ -980,6 +980,17 @@ module Activities
       false
     end
 
+    def body_only_bot_clean_comment_supersedes_review?(client, project, issue, bot_login, latest_review)
+      return false unless body_only_review_bot?(bot_login)
+      return false if client.nil? || project.nil? || issue.nil?
+
+      bot_logins = Set.new([ bot_login ])
+      body_only_bot_clean_comment_present?(client, project, issue, latest_review, bot_logins)
+    rescue GithubClient::Error => e
+      log_signal_error("non_enabled_body_only_bot_clean_comment", project, issue, e)
+      false
+    end
+
     # Anti-loop guard for body-only review bots: returns true when the bot's
     # latest review was submitted after the last agent run completed, meaning
     # the agent has not yet addressed the feedback. Treats missing timestamps
@@ -1207,7 +1218,7 @@ module Activities
       end
       return false if non_bot_review_gate_triggers(project, reviews, effective_checks).any?
       return false if check_non_enabled_bot_reviews(reviews, unresolved_threads,
-        project: project, last_run: last_run).any?
+        project: project, last_run: last_run, client: client, issue: issue).any?
 
       true
     end
@@ -1344,7 +1355,7 @@ module Activities
       ProviderSupport.provider_bot_username?(login)
     end
 
-    def check_non_enabled_bot_reviews(reviews, unresolved_threads, project:, last_run:)
+    def check_non_enabled_bot_reviews(reviews, unresolved_threads, project:, last_run:, client: nil, issue: nil)
       return [] unless project&.address_all_bot_reviews?
       return [] if reviews.nil?
 
@@ -1367,7 +1378,8 @@ module Activities
         .group_by { |r| r[:user_login]&.downcase }
         .each_value do |bot_reviews|
           latest = bot_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
-          triggers = non_enabled_bot_triggers_for(latest, unresolved_threads, non_enabled_logins, last_run)
+          triggers = non_enabled_bot_triggers_for(latest, unresolved_threads, non_enabled_logins, last_run,
+            client: client, project: project, issue: issue)
           all_triggers.concat(triggers)
         end
 
@@ -1376,8 +1388,13 @@ module Activities
       all_triggers
     end
 
-    def non_enabled_bot_triggers_for(latest, unresolved_threads, non_enabled_logins, last_run)
+    def non_enabled_bot_triggers_for(latest, unresolved_threads, non_enabled_logins, last_run, client: nil, project: nil, issue: nil)
       return [] if latest.nil?
+
+      bot_login = latest[:user_login]&.downcase
+      if body_only_bot_clean_comment_supersedes_review?(client, project, issue, bot_login, latest)
+        return []
+      end
 
       body = latest[:body].to_s
       if REVIEW_BOT_CLEAN_PATTERN.match?(body) || paid_agent_review_clean?(body)

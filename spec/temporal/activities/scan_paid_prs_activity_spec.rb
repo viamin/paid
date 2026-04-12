@@ -1626,6 +1626,41 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when address_all_bot_reviews is enabled and a non-enabled body-only bot posts a clean comment superseding an older review" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+          body: "Codex Review: Didn't find any major issues. Bravo.",
+          created_at: 10.minutes.ago
+        )
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
+              body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
+          ],
+          review_threads: [],
+          checks: [ { name: "ci", conclusion: "success" } ],
+          recent_issue_comments: [ clean_comment ]
+        )
+      end
+
+      it "does not emit triggers when a clean issue comment supersedes the older non-clean review" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(trigger_types).not_to include("review_bot_comments")
+      end
+    end
+
     context "when address_all_bot_reviews is enabled and multiple non-configured bots have reviews" do
       before do
         enable_copilot_review!
