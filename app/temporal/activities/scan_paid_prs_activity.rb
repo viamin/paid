@@ -139,6 +139,8 @@ module Activities
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
+        elsif pr_data.nil?
+          :skipped
         elsif retry_limit_reached && sole_reviewer
           escalate_trigger(issue, reason: "Review-goal retries exhausted (#{MAX_REVIEW_GOAL_RETRIES} consecutive failures)")
         else

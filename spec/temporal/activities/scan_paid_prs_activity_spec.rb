@@ -4216,6 +4216,22 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger[:triggers].first[:details]).to include("Review-goal retries exhausted")
       end
 
+      it "skips escalation when pr_data fetch fails in ready phase at retry limit" do
+        pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42)
+
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::Error, "transient API error")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to be_empty
+      end
+
       it "resets review_goal_retry_count when PR is converted back to draft" do
         pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
 
