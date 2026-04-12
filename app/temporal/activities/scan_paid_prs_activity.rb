@@ -193,6 +193,21 @@ module Activities
       blocking_triggers = (review_bot_triggers || []).reject { |t|
         t[:type] == "review_bot_review_pending" || t[:type] == "paid_agent_review_pending"
       }
+      paid_agent_rounds_exhausted = reviews && paid_agent_review_rounds_exhausted?(project, reviews)
+
+      # A clean final paid_agent review should still allow the PR to advance.
+      # Only escalate when the latest blocking review is from paid_agent and the
+      # configured round budget means another review cycle cannot be requested.
+      # In mixed-method projects, non-paid_agent bot triggers (e.g. Copilot
+      # unresolved-thread triggers) must not cause escalation — those bots can
+      # still make progress within their own review cycle.  Skip escalation
+      # when any trigger carries data_incomplete (thread data unavailable due
+      # to a transient API failure or the skip-comment path).
+      data_incomplete = (review_bot_triggers || []).any? { |t| t[:data_incomplete] }
+      if paid_agent_rounds_exhausted && !data_incomplete && paid_agent_is_latest_blocker?(project, reviews, pending_triggers, blocking_triggers)
+        return escalate_trigger(issue, reason: paid_agent_limit_reason(project))
+      end
+
       all_triggers = blocking_triggers + (human_triggers || [])
 
       # Only fetch PR data and check runs if blocking review triggers aren't enough.
@@ -738,6 +753,8 @@ module Activities
     def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
       allowed = project&.review_enabled? ? (project.enabled_review_bot_logins.presence || Set.new) : nil
       latest = latest_allowed_bot_review(reviews, allowed)
+      paid_agent_limit_reached_for_latest_review =
+        paid_agent_review_limit_reached_for_review?(project, reviews, latest)
 
       # Body-only bots (Codex, paid_agent) can post their CLEAN signal as an issue
       # comment — e.g. "Codex Review: Didn't find any major issues. Bravo." —
@@ -767,6 +784,12 @@ module Activities
         # the draft scanner in a perpetual "waiting for bot review" state
         # with no path out (handle_review_bot_review_pending skips the
         # RequestReviewActivity call when login is nil).
+        #
+        # When review_bot_request_login returns a non-paid_agent login (e.g.
+        # codex), paid_agent exhaustion must not suppress the request — the
+        # other bot can still complete its review cycle. Suppress only when
+        # login is nil (paid_agent-only project) and rounds are exhausted;
+        # the elsif branch handles that via check_paid_agent_review_status.
         login = project && review_bot_request_login(project)
         if login
           [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
@@ -781,11 +804,19 @@ module Activities
         # cannot tell whether bot threads are truly resolved, so treat the
         # status as pending to avoid prematurely advancing the PR.
         if unresolved_threads.nil?
-          [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean" } ]
+          # Always keep pending status when thread data is unavailable —
+          # regardless of whether paid_agent rounds are exhausted. A
+          # data_incomplete marker prevents the escalation check from
+          # firing with incomplete information, so a transient
+          # thread-fetch failure cannot trigger premature escalation.
+          [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean", data_incomplete: true } ]
         else
           bot_thread_triggers = review_bot_thread_triggers(unresolved_threads)
           body_only_pending_triggers = [
             { type: "review_bot_review_pending", details: "Latest review bot review was not clean" },
+            { type: "review_bot_comments", details: "Latest review bot review generated comments (body-only)" }
+          ]
+          body_only_exhausted_triggers = [
             { type: "review_bot_comments", details: "Latest review bot review generated comments (body-only)" }
           ]
           if bot_thread_triggers.any?
@@ -805,7 +836,7 @@ module Activities
             # The "(body-only)" suffix on review_bot_comments lets
             # structured-log consumers distinguish this path from the
             # thread-based Copilot flow above.
-            body_only_pending_triggers
+            paid_agent_limit_reached_for_latest_review ? body_only_exhausted_triggers : body_only_pending_triggers
           elsif body_only_review_bot?(latest&.dig(:user_login)) &&
               !review_diff_touches_reviewed_files?(client, project, issue, latest)
             # Body-only bot whose review pre-dates the last agent run
@@ -813,7 +844,7 @@ module Activities
             # touch any file mentioned in the review's inline comments.
             # Treat as still-unaddressed to prevent unrelated changes
             # (e.g. a CI schema fix) from clearing review findings.
-            body_only_pending_triggers
+            paid_agent_limit_reached_for_latest_review ? body_only_exhausted_triggers : body_only_pending_triggers
           else
             # Thread-based bot with all bot threads resolved, or body-only
             # review already addressed by a subsequent agent run whose diff
@@ -1302,6 +1333,100 @@ module Activities
       return false if body.nil?
 
       body.include?(PAID_REVIEW_CLEAN_MARKER)
+    end
+
+    def paid_agent_review_limit_reached_for_review?(project, reviews, review)
+      return false unless review.is_a?(Hash)
+      return false unless ProviderSupport.provider_bot_username_for?("paid_agent", review[:user_login])
+
+      paid_agent_review_rounds_exhausted?(project, reviews)
+    end
+
+    # --- Paid-agent review round limit enforcement ---
+
+    # Returns the configured max_review_rounds for the paid_agent method,
+    # or nil when the limit is not set, paid_agent is not enabled, or
+    # reviews are globally disabled.
+    def paid_agent_max_review_rounds(project)
+      return nil unless project.review_enabled?
+      return nil unless project.review_method_enabled?("paid_agent")
+
+      raw = project.review_method_config("paid_agent").dig("termination", "max_review_rounds")
+      raw.present? ? raw.to_i : nil
+    end
+
+    # Counts the number of reviews submitted by the paid_agent bot account
+    # on this PR. Each review submission counts as one round regardless of
+    # state (APPROVED, COMMENTED, CHANGES_REQUESTED).
+    def paid_agent_review_count(reviews)
+      return 0 if reviews.nil?
+
+      paid_agent_logins = ProviderSupport::PROVIDER_BOT_USERNAMES.fetch("paid_agent", []).map(&:downcase).to_set
+      reviews.count { |r| paid_agent_logins.include?(r[:user_login]&.downcase) }
+    end
+
+    # Returns true when the paid_agent review method is enabled and the
+    # number of reviews from the bot account on this PR has reached or
+    # exceeded the configured max_review_rounds limit.
+    def paid_agent_review_rounds_exhausted?(project, reviews)
+      max_rounds = paid_agent_max_review_rounds(project)
+      return false if max_rounds.nil? || max_rounds <= 0
+
+      paid_agent_review_count(reviews) >= max_rounds
+    end
+
+    def paid_agent_limit_reason(project)
+      max_rounds = paid_agent_max_review_rounds(project) || 0
+      "the paid_agent review round limit (#{max_rounds} rounds) has been reached"
+    end
+
+    # Returns true when the latest review-bot review on this PR is from a
+    # paid_agent account AND all present triggers are attributable to
+    # paid_agent. In mixed-method projects, non-paid_agent bot triggers
+    # (e.g. Copilot unresolved-thread triggers) must not cause escalation
+    # when paid_agent's round budget is exhausted but the other bot's
+    # cycle can still proceed.
+    #
+    # paid_agent is a body-only bot — it never creates review threads.
+    # Any review_bot_threads trigger must therefore originate from a
+    # different bot (e.g. Copilot). When such triggers are present the
+    # remaining blocker is not paid_agent-owned, so we return false to
+    # allow the other bot's cycle to continue.
+    #
+    # Codex is also a body-only bot and never produces review_bot_threads
+    # triggers. When codex (or any other non-paid_agent body-only bot) is
+    # enabled alongside paid_agent, its review cycle can still make
+    # progress after paid_agent's rounds are exhausted, so escalation
+    # would be premature.
+    def paid_agent_is_latest_blocker?(project, reviews, pending_triggers, blocking_triggers)
+      return false if reviews.nil?
+      return false unless pending_triggers.any? || blocking_triggers.any?
+
+      has_non_paid_agent_thread_triggers = blocking_triggers.any? { |t| t[:type] == "review_bot_threads" }
+      return false if has_non_paid_agent_thread_triggers
+
+      return false if other_enabled_body_only_bots?(project)
+
+      allowed = project.enabled_review_bot_logins.presence
+      latest = latest_allowed_bot_review(reviews, allowed)
+      return false unless latest
+
+      ProviderSupport.provider_bot_username_for?("paid_agent", latest[:user_login])
+    end
+
+    # Returns true when the project has an enabled body-only review bot
+    # other than paid_agent (e.g. codex). These bots never create review
+    # threads, so their presence is invisible to the
+    # review_bot_threads check above, but they can still continue the
+    # automated review cycle after paid_agent's rounds are exhausted.
+    def other_enabled_body_only_bots?(project)
+      enabled = project.enabled_review_bot_logins
+      return false if enabled.blank?
+
+      enabled.any? do |login|
+        BODY_ONLY_REVIEW_BOT_LOGINS.include?(login.downcase) &&
+          !ProviderSupport.provider_bot_username_for?("paid_agent", login)
+      end
     end
 
     def extract_actionable_labels(triggers)
