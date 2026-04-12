@@ -885,6 +885,7 @@ module Activities
     end
 
     MAX_REVIEW_GOAL_RETRIES = 3
+    REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES = (AgentRun::FAILURE_STATUSES + %w[no_output]).freeze
 
     # Returns true when paid_agent is the only enabled bot review method,
     # meaning its pending trigger must block draft exit since no other bot
@@ -902,8 +903,10 @@ module Activities
     # reached. Unfinished review runs keep emitting the pending trigger so the
     # draft-phase gate remains active until the review is actually posted.
     #
-    # When the most recent review-goal run failed, re-emits the trigger so the
-    # scanner queues a retry — up to max_review_goal_retries (default 3).
+    # When the most recent review-goal run ended without producing a usable
+    # review (for example failed, timed out, or no_output), re-emits the
+    # trigger so the scanner queues a retry — up to max_review_goal_retries
+    # (default 3).
     # Returns [] when the retry limit is reached so no more review-goal runs
     # are queued (#1002). Callers still check review_goal_retry_limit_reached?
     # to escalate before entering phase-specific scan methods.
@@ -934,17 +937,17 @@ module Activities
         return []
       end
 
-      # When review-goal runs have failed, re-emit the trigger so the
+      # When review-goal runs finish without a usable review, re-emit the trigger so the
       # scanner queues a retry. The retry cap is enforced by
       # review_goal_retry_limit_reached? which callers check separately
       # to escalate when the cap is hit. This check runs before the
-      # #830 "already reviewed" guard so failed reviews are retried even
-      # when the last finished review attempt post-dates the last create_pr.
+      # #830 "already reviewed" guard so failed/no-output reviews are retried
+      # even when the last finished review attempt post-dates the last create_pr.
       failed_count = review_goal_consecutive_failure_count(project, issue)
       if failed_count > 0
         max_retries = review_goal_max_retries(project)
         return [ { type: "paid_agent_review_pending",
-                   details: "Retrying failed review-goal run (attempt #{failed_count + 1}/#{max_retries})" } ]
+                   details: "Retrying unsuccessful review-goal run (attempt #{failed_count + 1}/#{max_retries})" } ]
       end
 
       # Check whether the most recent finished review-goal run (regardless of
@@ -974,13 +977,13 @@ module Activities
       [ { type: "paid_agent_review_pending", details: details } ]
     end
 
-    # Returns true when the number of consecutive failed review-goal runs in
-    # the current review cycle has reached the configurable retry limit.
+    # Returns true when the number of consecutive unsuccessful review-goal runs
+    # in the current review cycle has reached the configurable retry limit.
     # A completed review or newer create_pr run resets the breaker so old
     # failures do not cause permanent escalation (#1002).
     #
     # Non-bot review methods (manual, ci_action) do not provide a recovery
-    # path from failed paid_agent runs because paid_agent_review_pending
+    # path from unsuccessful paid_agent runs because paid_agent_review_pending
     # becomes a blocking trigger when paid_agent is the sole bot, preventing
     # the draft from advancing to the non-bot gate stage. Only other bot
     # methods (copilot, codex) can take over review gating.
@@ -1002,7 +1005,7 @@ module Activities
       scope = project.agent_runs.where(
         source_pull_request_number: issue.github_number,
         goal: "review",
-        status: AgentRun::FAILURE_STATUSES
+        status: REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES
       )
       scope = scope.where("completed_at > ?", reset_at) if reset_at
       scope.count

@@ -4484,7 +4484,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("paid_agent_review_pending")
       details = trigger[:triggers].find { |t| t[:type] == "paid_agent_review_pending" }[:details]
-      expect(details).to match(/Retrying failed review-goal run/)
+      expect(details).to match(/Retrying unsuccessful review-goal run/)
     end
 
     it "does not wedge the PR — trigger is emitted on every scan cycle" do
@@ -4848,6 +4848,66 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       trigger = result[:prs_to_trigger].first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("paid_agent_review_pending")
+    end
+  end
+
+  context "when paid_agent review-goal ends with no_output status" do
+    let(:no_output_review_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+    end
+
+    before do
+      enable_paid_agent_review!
+      create(:agent_run,
+        project: project, issue: no_output_review_issue,
+        source_pull_request_number: 42,
+        goal: "review", status: "no_output",
+        started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "treats no_output as retryable and re-emits paid_agent_review_pending" do
+      result = activity.execute(project_id: project.id)
+
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+      expect(trigger_types).to include("paid_agent_review_pending")
+      expect(trigger_types).not_to include("escalate_to_owner")
+    end
+  end
+
+  context "when paid_agent review-goal reaches the retry limit with no_output runs" do
+    let(:no_output_retry_limit_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+    end
+
+    before do
+      enable_paid_agent_review!(project, max_review_rounds: 3)
+      3.times do
+        create(:agent_run,
+          project: project, issue: no_output_retry_limit_issue,
+          source_pull_request_number: 42,
+          goal: "review", status: "no_output",
+          started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      end
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "escalates instead of getting stuck behind the rounds cap" do
+      result = activity.execute(project_id: project.id)
+
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+      expect(trigger_types).to include("escalate_to_owner")
+      expect(trigger_types).not_to include("paid_agent_review_pending")
     end
   end
 
