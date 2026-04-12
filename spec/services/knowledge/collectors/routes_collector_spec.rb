@@ -201,7 +201,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect { command_collector.collect }.to raise_error(RuntimeError, "Command failed")
       end
 
-      it "connects network before bundle install and disconnects after" do
+      it "cleans up credentials and disconnects network before running routes" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
           .and_return(fixture_output)
@@ -214,6 +214,8 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(command_collector).to have_received(:run_command)
           .with("sh", "-c", /rm -rf \/tmp\/paid-bundle-home.*! test -e \/tmp\/paid-bundle-home/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" }).ordered
         expect(container_runner).to have_received(:disconnect_network!).ordered
+        expect(command_collector).to have_received(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120).ordered
       end
 
       it "disconnects network even when bundle install fails" do

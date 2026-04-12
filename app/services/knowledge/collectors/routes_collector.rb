@@ -76,8 +76,10 @@ module Knowledge
         # Install gems so `bin/rails routes` can boot the application.
         # The container workspace is read-only, so gems are installed to
         # /tmp/bundle (a writable tmpfs mount).
-        # Network is temporarily enabled for bundle install, then disabled
-        # before running bin/rails routes (which executes untrusted code).
+        # Network is temporarily enabled for bundle install, then disabled.
+        # install_gems_in_container also removes the temporary HOME used for
+        # git credentials before returning, so `bin/rails routes` never runs
+        # with auth material still present on disk.
         if repo_file_exists?("Gemfile")
           install_gems_in_container
         end
