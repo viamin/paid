@@ -462,6 +462,30 @@ RSpec.describe "Projects" do
         expect(response.body).to include(project_agent_run_path(project, run))
       end
 
+      it "links to PR in context column for review goal runs on project page" do
+        project = create(:project, account: account, github_token: github_token)
+        create(:agent_run, :review_goal, :completed, project: project)
+        get project_path(project)
+        expect(response.body).to include("PR #10")
+        expect(response.body).to include("#{project.github_url}/pull/10")
+      end
+
+      it "shows review link in actions column when review_url is present on project page" do
+        project = create(:project, account: account, github_token: github_token)
+        create(:agent_run, :with_review, project: project)
+        get project_path(project)
+        expect(response.body).to include("Review")
+        expect(response.body).to include("https://github.com/example/repo/pull/10#pullrequestreview-123456")
+      end
+
+      it "shows PR link in actions column for completed create_pr runs on project page" do
+        project = create(:project, account: account, github_token: github_token)
+        create(:agent_run, :completed, project: project)
+        get project_path(project)
+        expect(response.body).to include(">PR</a>")
+        expect(response.body).to include("https://github.com/example/repo/pull/1")
+      end
+
       it "shows the stale cleanup button when stale runs exist and the user can update the project" do
         project = create(:project, account: account, github_token: github_token)
         create(:agent_run, :running, project: project, started_at: AgentRun.stale_running_cutoff - 1.minute)
