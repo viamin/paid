@@ -170,7 +170,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
           .and_return("")
         allow(command_collector).to receive(:run_command)
-          .with("sh", "-c", /\.netrc/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
+          .with("sh", "-c", /rm -rf \/tmp\/paid-bundle-home.*! test -e \/tmp\/paid-bundle-home/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
           .and_return("")
       end
 
@@ -212,7 +212,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(command_collector).to have_received(:run_command)
           .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash)).ordered
         expect(command_collector).to have_received(:run_command)
-          .with("sh", "-c", /\.netrc/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" }).ordered
+          .with("sh", "-c", /rm -rf \/tmp\/paid-bundle-home.*! test -e \/tmp\/paid-bundle-home/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" }).ordered
         expect(container_runner).to have_received(:disconnect_network!).ordered
       end
 
@@ -223,7 +223,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
 
         expect { command_collector.collect }.to raise_error(RuntimeError, "bundle install failed")
         expect(command_collector).to have_received(:run_command)
-          .with("sh", "-c", /\.netrc/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
+          .with("sh", "-c", /rm -rf \/tmp\/paid-bundle-home.*! test -e \/tmp\/paid-bundle-home/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
         expect(container_runner).to have_received(:disconnect_network!)
       end
 
@@ -284,7 +284,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(install_cmd.index("unset PAID_GITHUB_TOKEN")).to be < install_cmd.index("bundle install")
       end
 
-      it "cleans up credentials after bundle install and verifies removal" do
+      it "removes the temporary credential home after bundle install" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
           .and_return(fixture_output)
@@ -292,12 +292,12 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         command_collector.collect
 
         expect(command_collector).to have_received(:run_command)
-          .with("sh", "-c", /rm -f .*\.netrc.*unset-all.*! test -f/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
+          .with("sh", "-c", /rm -rf \/tmp\/paid-bundle-home.*! test -e \/tmp\/paid-bundle-home/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
       end
 
       it "aborts when credential cleanup fails" do
         allow(command_collector).to receive(:run_command)
-          .with("sh", "-c", /\.netrc/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
+          .with("sh", "-c", /rm -rf \/tmp\/paid-bundle-home.*! test -e \/tmp\/paid-bundle-home/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" })
           .and_raise(RuntimeError, "credential cleanup verification failed")
 
         expect { command_collector.collect }.to raise_error(

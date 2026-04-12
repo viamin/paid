@@ -137,9 +137,8 @@ module Knowledge
       def cleanup_credentials_in_container
         run_command(
           "sh", "-c",
-          "rm -f #{BUNDLE_HOME}/.netrc && " \
-          "git config --global --unset-all url.\"https://github.com/\".insteadOf 2>/dev/null; " \
-          "! test -f #{BUNDLE_HOME}/.netrc",
+          "rm -rf #{BUNDLE_HOME} && " \
+          "! test -e #{BUNDLE_HOME}",
           timeout: 10,
           env: { "HOME" => BUNDLE_HOME }
         )
