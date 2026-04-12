@@ -881,6 +881,34 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "IssueDraftInvalid as known failure" do
+    it "includes IssueDraftInvalid in KNOWN_FAILURE_TYPES" do
+      expect(described_class::KNOWN_FAILURE_TYPES).to include("IssueDraftInvalid")
+    end
+
+    it "does not retain container for IssueDraftInvalid failure" do
+      cause = Temporalio::Error::ApplicationError.new(
+        "issue draft invalid", type: "IssueDraftInvalid", non_retryable: true
+      )
+      error = begin
+        begin
+          raise cause
+        rescue
+          raise Temporalio::Error::ActivityError.new(
+            "activity failed",
+            scheduled_event_id: 1, started_event_id: 2, identity: "",
+            activity_type: "CreateGithubIssue", activity_id: "1",
+            retry_state: Temporalio::Error::RetryState::NON_RETRYABLE_FAILURE
+          )
+        end
+      rescue => e
+        e
+      end
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be false
+    end
+  end
+
   describe "#should_retain_container?" do
     let(:workflow) { described_class.new }
 
