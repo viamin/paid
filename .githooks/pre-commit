@@ -1,15 +1,41 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Check for too many staged files (catches accidental cache/binary commits)
+# Pre-commit hook: rejects commits that look like accidental artifact uploads.
+#
+# Defense layers (see AGENTS.md "Artifact Prevention"):
+#   1. .gitignore (host)
+#   2. .git/info/exclude (container - CONTAINER_ARTIFACT_EXCLUDES)
+#   3. THIS HOOK (host pre-commit)
+#   4. validate_staged_files! in git_operations.rb (container auto-commit)
+#   5. CI pr-artifact-check workflow (PR-level)
+
 if [ "${SKIP_FILE_COUNT_CHECK:-0}" != "1" ]; then
   MAX_FILES="${PRE_COMMIT_MAX_FILES:-100}"
   file_count=$(git diff --cached --name-only | wc -l)
   if [ "$file_count" -gt "$MAX_FILES" ]; then
-    echo "ERROR: This commit stages $file_count files (limit: $MAX_FILES)."
-    echo "This usually indicates unintended files (caches, binaries, data dirs)."
-    echo "Please review your staged files with 'git diff --cached --name-only'."
-    echo "To override, run: SKIP_FILE_COUNT_CHECK=1 git commit ..."
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║  COMMIT REJECTED: Too many staged files                     ║"
+    echo "╠══════════════════════════════════════════════════════════════╣"
+    echo "║  This commit stages ${file_count} files (limit: ${MAX_FILES})."
+    echo "║"
+    echo "║  This almost always means unintended files were staged:"
+    echo "║  build artifacts, caches, binaries, or data directories."
+    echo "║"
+    echo "║  Review your staged files:"
+    echo "║    git diff --cached --name-only"
+    echo "║"
+    echo "║  To commit only specific files:"
+    echo "║    git reset HEAD"
+    echo "║    git add <specific-file-paths>"
+    echo "║"
+    echo "║  To override (only if you are certain):"
+    echo "║    SKIP_FILE_COUNT_CHECK=1 git commit ..."
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "First 20 staged files:"
+    git diff --cached --name-only | head -20 | sed 's/^/  /'
     exit 1
   fi
 fi

@@ -38,24 +38,59 @@ module Containers
     # Patterns appended to .git/info/exclude inside agent containers.
     # Prevents build/tool artifacts from being staged by `git add -A`
     # even when the repo's .gitignore doesn't cover them.
+    #
+    # IMPORTANT: Keep in sync with .gitignore. When a pattern is added here
+    # that has no corresponding .gitignore entry, add one there too so
+    # developers on the host are also protected.
     CONTAINER_ARTIFACT_EXCLUDES = <<~PATTERNS.freeze
       #{CONTAINER_ARTIFACT_EXCLUDES_MARKER}
       # Node corepack cache
       .corepack/
-      # Yarn cache/offline mirror
+      # Yarn cache/offline mirror (created by yarn install)
       .yarn-cache/
+      .yarn-cache-v2/
+      .yarn-local-cache/
+      .yarn-tmp/
+      .cache-yarn/
       # NOTE: .yarn/cache/, .yarn/unplugged/, and .pnp.* are intentionally
       # omitted — Yarn zero-installs repos commit these by design.
-      # Ruby
+      # Ruby bundler (all variants including per-PR worktree bundles)
       vendor/bundle/
+      vendor/gems/
       .bundle/
-      # PostgreSQL build artifacts
+      .bundle-*/
+      .bundle-install/
+      .bundle-gems/
+      .bundle_path/
+      .gem/
+      .gems/
+      .gem-home/
+      .gem-spec-cache/
+      .gem_cache/
+      .gem-cache/
+      .gem_home/
+      # PostgreSQL (all known directory variants)
       .pg-install/
       .pg/
+      .pg-bin/
+      .pg-data/
+      .pg-lib/
+      .pg-share/
+      .pg-src/
+      .pgbuild/
       .pgdata/
       .pg_build/
       .pg_data/
       .pg_src/
+      .pg_bin/
+      .pg-data/
+      .pg-local/
+      .pg_log.txt
+      pgdata/
+      .postgres/
+      .local/
+      .local-include/
+      .local-deps/
       # Python
       .venv/
       __pycache__/
@@ -73,10 +108,67 @@ module Containers
       .*-build/
       .*_build/
       .npm-cache/
+      .npm/
       # mise/asdf
       .mise-cache/
       .mise-data/
+      .mise-home/
+      # Ruby build
+      .rubies/
+      .ruby_env.sh
+      # libyaml builds
+      .libyaml-build/
+      .libyaml-src/
+      .libyaml_build/
+      .libyaml_src/
+      # Tool caches
+      .rubocop-cache/
+      .rubocop_cache/
+      .aider*
     PATTERNS
+
+    # Maximum number of files allowed in the auto-commit safety net.
+    # commit_uncommitted_changes runs with --no-verify, so this guard
+    # is the last line of defense against artifact commits.
+    MAX_AUTO_COMMIT_FILES = 100
+
+    # Binary file extensions that should never appear in agent commits.
+    # Limited to clearly-artifact types (compiled objects, packages, caches)
+    # to avoid false positives on legitimate image/font/doc assets.
+    FORBIDDEN_BINARY_EXTENSIONS = %w[
+      .dll .dylib .o .a .lib .exe
+      .gem .deb .rpm .whl
+      .pyc .pyo .class .jar .war
+      .sqlite3 .db
+    ].freeze
+
+    # Shared-object extensions are versioned (.so.1, .so.1.2.3) which
+    # String#end_with? cannot match with a single pattern.  Handled as
+    # a separate check on the basename.
+    VERSIONED_SO_PATTERN = /\.so\.\d/
+
+    # Directory prefixes that indicate build artifacts rather than source.
+    # Any staged file whose path starts with one of these is rejected.
+    FORBIDDEN_DIRECTORY_PREFIXES = %w[
+      .bundle-pr-
+      .cache-yarn/
+      .pg-local/
+      .pg-data/
+      .pg-install/
+      .pgbuild/
+      .pgdata/
+      .apt-cache/
+      .cache-pkg/
+      .xdg-cache/
+      .mise-cache/
+      .mise-data/
+      .mise-home/
+      .npm-cache/
+      .rubocop-cache/
+      vendor/bundle/
+      vendor/gems/
+      node_modules/
+    ].freeze
 
     attr_reader :container_service, :agent_run
 
@@ -270,6 +362,8 @@ module Containers
 
       add_result = execute_git("add", "-A")
       raise Error, "Failed to stage changes: #{error_with_stderr(add_result)}" if add_result.failure?
+
+      validate_staged_files!
 
       commit_result = execute_git("commit", "--no-verify", "-m", commit_message)
       raise Error, "Failed to commit changes: #{error_with_stderr(commit_result)}" if commit_result.failure?
@@ -667,6 +761,40 @@ module Containers
 
     def validate_branch_name!
       raise PushError, "branch_name is blank" if agent_run.branch_name.blank?
+    end
+
+    # Validates staged files before the --no-verify auto-commit.
+    # This is the last line of defense since hooks are bypassed.
+    # Rejects commits that stage too many files or contain binary
+    # artifacts / forbidden directories that slipped past exclude rules.
+    def validate_staged_files!
+      staged = execute_git("diff", "--cached", "--name-only")
+      return unless staged.success? && staged[:stdout].present?
+
+      files = staged[:stdout].lines.map(&:strip).reject(&:blank?)
+
+      if files.size > MAX_AUTO_COMMIT_FILES
+        sample = files.first(20).join("\n  ")
+        raise Error,
+          "Auto-commit rejected: #{files.size} files staged (limit: #{MAX_AUTO_COMMIT_FILES}). " \
+          "This almost certainly includes unintended build artifacts. " \
+          "First 20 files:\n  #{sample}"
+      end
+
+      forbidden_files = files.select { |f| forbidden_artifact?(f) }
+      if forbidden_files.any?
+        sample = forbidden_files.first(10).join("\n  ")
+        raise Error,
+          "Auto-commit rejected: #{forbidden_files.size} forbidden artifact files detected. " \
+          "These are build artifacts that must not be committed:\n  #{sample}"
+      end
+    end
+
+    def forbidden_artifact?(path)
+      FORBIDDEN_DIRECTORY_PREFIXES.any? { |prefix| path.start_with?(prefix) } ||
+        FORBIDDEN_BINARY_EXTENSIONS.any? { |ext| path.end_with?(ext) } ||
+        path.end_with?(".so") ||
+        (File.basename(path) =~ VERSIONED_SO_PATTERN)
     end
 
     def install_hook(hook_name, script)
