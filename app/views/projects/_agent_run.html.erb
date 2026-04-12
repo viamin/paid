@@ -50,15 +50,15 @@
   </td>
   <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
     <%= link_to "View", project_agent_run_path(project, agent_run), class: "text-indigo-600 hover:text-indigo-900" %>
-    <% if agent_run.pull_request_url.present? %>
+    <% if safe_github_url?(agent_run.pull_request_url) %>
       &middot;
       <%= link_to "PR", agent_run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
     <% end %>
-    <% if agent_run.review_url.present? %>
+    <% if safe_github_url?(agent_run.review_url) %>
       &middot;
       <%= link_to "Review", agent_run.review_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
     <% end %>
-    <% if agent_run.created_issue_url.present? %>
+    <% if safe_github_url?(agent_run.created_issue_url) %>
       &middot;
       <% issue_link_text = agent_run.created_issue_number.present? ? "Issue ##{agent_run.created_issue_number}" : "Issue" %>
       <%= link_to issue_link_text, agent_run.created_issue_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
