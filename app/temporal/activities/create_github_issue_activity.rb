@@ -38,7 +38,7 @@ module Activities
       /\b500\s+Internal\s+Server\s+Error\b/i,
       /\b502\s+Bad\s+Gateway\b/i
     ].freeze
-    ISSUE_CREATION_FAILURE_LOG_LIMIT = 200
+    ISSUE_CREATION_FAILURE_LOG_BATCH_SIZE = 200
     ISSUE_CREATION_FAILURE_CONTEXT_LINES = 8
 
     def execute(input)
@@ -135,12 +135,13 @@ module Activities
     end
 
     def failed_issue_creation_attempt_in_log_type?(agent_run, log_type)
-      log_chunks = agent_run.agent_run_logs
+      log_chunks = []
+      agent_run.agent_run_logs
         .where(log_type: log_type)
-        .order(created_at: :desc, id: :desc)
-        .limit(ISSUE_CREATION_FAILURE_LOG_LIMIT)
-        .pluck(:content)
-        .reverse
+        .select(:id, :content)
+        .find_in_batches(batch_size: ISSUE_CREATION_FAILURE_LOG_BATCH_SIZE) do |batch|
+          log_chunks.concat(batch.sort_by(&:id).map(&:content))
+        end
 
       return false if log_chunks.empty?
 

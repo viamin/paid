@@ -49,6 +49,16 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       agent_run.log!("stdout", "ActiveRecord::PendingMigrationError")
     end
 
+    def log_failed_issue_creation_attempt_with_trailing_noise(log_type: "stderr")
+      agent_run.log!(log_type, %(bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"'))
+      agent_run.log!(log_type, "HTTP/1.1 500 Internal Server Error")
+      agent_run.log!(log_type, "ActiveRecord::PendingMigrationError")
+
+      (described_class::ISSUE_CREATION_FAILURE_LOG_BATCH_SIZE + 5).times do |index|
+        agent_run.log!(log_type, "non-matching trailing log line #{index}")
+      end
+    end
+
     def log_fragmented_failed_issue_creation_attempt
       agent_run.log!("stderr", %(bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/))
       agent_run.log!("stderr", %(repo/issues"'\nHTTP/1.1 500 Internal Server Error\n))
@@ -301,6 +311,18 @@ RSpec.describe Activities::CreateGithubIssueActivity do
 
     it "refuses fallback issue creation when a multi-line stderr chunk prefixes a split command" do
       log_fragmented_failed_issue_creation_attempt_with_leading_text
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses fallback issue creation even when the failed direct create attempt is older than 200 later log rows" do
+      log_failed_issue_creation_attempt_with_trailing_noise
 
       expect(github_client).not_to receive(:create_issue)
 
