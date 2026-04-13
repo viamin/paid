@@ -55,6 +55,13 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       agent_run.log!("stderr", "ActiveRecord::PendingMigrationError\n")
     end
 
+    def log_mid_token_fragmented_failed_issue_creation_attempt
+      agent_run.log!("stderr", %(bash -lc 'cur))
+      agent_run.log!("stderr", %(l -X POST "$GITHUB_API_URL/repos/owner/repo/issues"'\n))
+      agent_run.log!("stderr", "HTTP/1.1 500 Internal Server Error\n")
+      agent_run.log!("stderr", "ActiveRecord::PendingMigrationError\n")
+    end
+
     def log_fragmented_failed_issue_creation_attempt_with_leading_text
       agent_run.log!("stderr", %(Attempting direct issue creation before fallback:\nbash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/))
       agent_run.log!("stderr", %(repo/issues"'\nHTTP/1.1 500 Internal Server Error\n))
@@ -270,6 +277,18 @@ RSpec.describe Activities::CreateGithubIssueActivity do
 
     it "refuses fallback issue creation when the stderr command is split across log rows" do
       log_fragmented_failed_issue_creation_attempt
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses fallback issue creation when the stderr command splits the curl token across log rows" do
+      log_mid_token_fragmented_failed_issue_creation_attempt
 
       expect(github_client).not_to receive(:create_issue)
 

@@ -165,7 +165,7 @@ module Activities
           next
         end
 
-        if chunk_continues_previous_line?(current_chunk)
+        if chunk_continues_previous_line?(current_chunk, chunk)
           current_chunk << chunk
         else
           stitched_chunks << current_chunk
@@ -177,17 +177,24 @@ module Activities
       stitched_chunks.join("\n")
     end
 
-    def chunk_continues_previous_line?(chunk)
-      line = chunk.lines.last.to_s.strip
+    def chunk_continues_previous_line?(chunk, next_chunk)
+      return false if chunk.end_with?("\n")
+
+      line = chunk.lines.last.to_s
+      next_line = next_chunk.lines.first.to_s
+      stripped_line = line.strip
       return false if line.empty?
 
-      line.match?(/\A`{1,2}\z/) || incomplete_issue_creation_attempt_fragment?(line)
+      stripped_line.match?(/\A`{1,2}\z/) ||
+        incomplete_issue_creation_attempt_fragment?(stripped_line, next_line.strip)
     end
 
-    def incomplete_issue_creation_attempt_fragment?(line)
-      return false unless line.match?(/\A(?:bash|sh)\s+-lc\s+(?:["'])?(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s"'\\]+))\s+)*\bcurl\b/im)
+    def incomplete_issue_creation_attempt_fragment?(line, next_line = nil)
+      return false unless line.match?(/\A(?:bash|sh)\s+-lc\s+(?:["'])?(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s"'\\]+))\s+)*(?:\bcur(?:l\b?)?)?/im)
 
-      !issue_creation_attempt_line?(line)
+      combined_line = [ line, next_line.presence ].compact.join
+
+      !issue_creation_attempt_line?(line) && issue_creation_attempt_line?(combined_line)
     end
 
     def failed_issue_creation_attempt_in_lines?(stderr_output)
