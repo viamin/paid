@@ -872,7 +872,10 @@ RSpec.describe GithubClient do
               { id: 401, body: "Newer comment", user: { login: "maintainer" } },
               { id: 402, body: "Newest comment", user: { login: "maintainer" } }
             ].to_json,
-            headers: { "Content-Type" => "application/json" }
+            headers: {
+              "Content-Type" => "application/json",
+              "Link" => %(<#{api_base}/repos/#{repo}/issues/42/comments?page=4&per_page=100>; rel="prev")
+            }
           )
       end
 
@@ -887,6 +890,26 @@ RSpec.describe GithubClient do
       it "marks the result as multi-page" do
         result = client.recent_issue_comments(repo, 42)
 
+        expect(result.multi_page?).to be true
+      end
+
+      it "can include a bounded trailing window of recent pages" do
+        stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments?page=4&per_page=100")
+          .to_return(
+            status: 200,
+            body: [
+              { id: 301, body: "Older recent comment", user: { login: "maintainer" } }
+            ].to_json,
+            headers: {
+              "Content-Type" => "application/json",
+              "Link" => %(<#{api_base}/repos/#{repo}/issues/42/comments?page=3&per_page=100>; rel="prev", ) +
+                %(<#{api_base}/repos/#{repo}/issues/42/comments?page=5&per_page=100>; rel="next")
+            }
+          )
+
+        result = client.recent_issue_comments(repo, 42, pages: 2)
+
+        expect(result.map(&:body)).to eq([ "Older recent comment", "Newer comment", "Newest comment" ])
         expect(result.multi_page?).to be true
       end
     end
