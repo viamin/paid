@@ -849,7 +849,7 @@ module Activities
     BODY_ONLY_REVIEW_PROVIDER_KEYS = %w[codex paid_agent].freeze
 
     def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
-      allowed = project&.review_enabled? ? (project.enabled_review_bot_logins.presence || Set.new) : nil
+      allowed = allowed_review_bot_logins(project)
       latest = latest_allowed_bot_review(reviews, allowed)
       paid_agent_limit_reached_for_latest_review =
         paid_agent_review_limit_reached_for_review?(project, reviews, latest)
@@ -1223,24 +1223,18 @@ module Activities
     # configuration AND is at least as recent as that bot's latest review on
     # this PR.
     #
-    # The override is restricted to projects whose enabled review bots are
-    # ALL body-only — i.e. no thread-based bot like Copilot is also enabled.
-    # A clean codex comment cannot speak for an outstanding Copilot review
-    # whose unresolved threads are tracked separately, so in mixed
-    # configurations we defer to the existing classification path.
-    #
     # The comment-vs-review timestamp comparison prevents an older "Bravo"
     # comment from masking a newer non-clean review on a subsequent commit.
     # We intentionally do not require the bot's absolute latest issue comment
     # to be clean, because body-only bots can emit later informational
     # comments (for example setup guidance) that do not request PR changes and
-    # should not suppress an earlier clean completion signal. The bypass is
-    # also restricted to projects whose enabled body-only bot methods all map
-    # to the same provider family as the clean comment; a Codex clean comment
-    # cannot speak for an outstanding paid_agent review.
+    # should not suppress an earlier clean completion signal. In mixed-bot
+    # projects, a clean body-only comment can supersede only when the latest
+    # review already came from the same body-only provider family; this lets a
+    # codex clean comment clear a stale codex review without satisfying the
+    # separate "configured bot review still pending" state for Copilot.
     def body_only_bot_clean_comment_present?(client, project, issue, latest_review, allowed_bot_logins)
       return false if allowed_bot_logins.nil? || allowed_bot_logins.empty?
-      return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
 
       comments = client.recent_issue_comments(project.full_name, issue.github_number)
       bot_comments = comments.select do |c|
@@ -1258,7 +1252,11 @@ module Activities
       return false if provider_key.nil?
 
       latest_review_provider_key = body_only_review_provider_key_for(latest_review&.dig(:user_login))
-      return false if latest_review_provider_key && latest_review_provider_key != provider_key
+      if latest_review_provider_key
+        return false if latest_review_provider_key != provider_key
+      else
+        return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
+      end
 
       review_time = latest_review&.dig(:submitted_at)
       comment_time = latest_clean_comment.created_at
@@ -1646,6 +1644,14 @@ module Activities
       ProviderSupport.provider_bot_username?(login)
     end
 
+    def allowed_review_bot_logins(project)
+      return nil unless project&.review_enabled?
+
+      return ProviderSupport.all_bot_usernames if project.address_all_bot_reviews?
+
+      project.enabled_review_bot_logins.presence || Set.new
+    end
+
     def check_non_enabled_bot_reviews(reviews, unresolved_threads, project:, last_run:, client: nil, issue: nil)
       return [] unless project&.address_all_bot_reviews?
 
@@ -1822,7 +1828,7 @@ module Activities
 
       return false if other_enabled_body_only_bots?(project)
 
-      allowed = project.enabled_review_bot_logins.presence
+      allowed = allowed_review_bot_logins(project)
       latest = latest_allowed_bot_review(reviews, allowed)
       return false unless latest
 

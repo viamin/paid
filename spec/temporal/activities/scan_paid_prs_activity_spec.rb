@@ -2070,6 +2070,29 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when address_all_bot_reviews is enabled and no bot reviews exist" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(reviews: [])
+      end
+
+      it "still requests review from the configured bot only" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first[:triggers].sole
+        expect(trigger[:type]).to eq("review_bot_review_pending")
+        expect(trigger[:request_login]).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
+      end
+    end
+
     context "when review bot data cannot be fetched and CI is green" do
       before do
         project.update!(owner_reviewer_login: "viamin")
