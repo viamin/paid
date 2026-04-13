@@ -345,7 +345,7 @@ module Activities
       if project.auto_merge_enabled? &&
           pr_data.present? &&
           owner_approved_or_self_authored?(project, reviews, pr_data) &&
-          !checks.nil? &&
+          checks.present? &&
           all_checks_green?(checks) &&
           mergeable == true &&
           no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks) &&
@@ -398,7 +398,7 @@ module Activities
         mergeable = pr_data[:mergeable]
 
         if owner_approved_or_self_authored?(project, reviews, pr_data) &&
-            !checks.nil? &&
+            checks.present? &&
             all_checks_green?(checks) &&
             mergeable == true &&
             no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks) &&
