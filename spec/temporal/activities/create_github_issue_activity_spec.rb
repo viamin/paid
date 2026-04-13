@@ -43,6 +43,12 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       agent_run.log!("stderr", "ActiveRecord::PendingMigrationError")
     end
 
+    def log_fragmented_failed_issue_creation_attempt
+      agent_run.log!("stderr", %(curl -X POST "$GITHUB_API_URL/repos/owner/))
+      agent_run.log!("stderr", %(repo/issues"\nHTTP/1.1 500 Internal Server Error\n))
+      agent_run.log!("stderr", "ActiveRecord::PendingMigrationError\n")
+    end
+
     def log_failed_issue_comment_attempt
       agent_run.log!("stderr", %(curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues/10/comments"))
       agent_run.log!("stderr", "HTTP/1.1 500 Internal Server Error")
@@ -238,6 +244,18 @@ RSpec.describe Activities::CreateGithubIssueActivity do
         .to include("Refused fallback issue creation")
     end
 
+    it "refuses fallback issue creation when the stderr command is split across log rows" do
+      log_fragmented_failed_issue_creation_attempt
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
     it "still creates a valid issue whose content mentions pending migrations" do
       agent_run.log!("stdout", <<~TEXT)
         # Proxy write path crashes with PendingMigrationError
@@ -333,6 +351,25 @@ RSpec.describe Activities::CreateGithubIssueActivity do
         hash_including(
           title: "Proxy issue creation needs a fallback",
           body: a_string_including(%(curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"))
+        )
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still creates a valid stderr fallback draft that describes a curl reproduction in prose" do
+      agent_run.log!("stderr", <<~TEXT)
+        # Proxy issue creation needs a fallback
+
+        To reproduce, run curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"
+        and observe that the proxy returns 500 Internal Server Error.
+      TEXT
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(
+          title: "Proxy issue creation needs a fallback",
+          body: a_string_including(%(run curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"))
         )
       ).and_return(issue_response)
 

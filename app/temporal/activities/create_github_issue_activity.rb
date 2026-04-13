@@ -9,7 +9,18 @@ module Activities
         [\$#>+]\s* |
         (?:bash|sh)\s+-lc\s+
       )?
-      .*?
+      (?:
+        ["']
+      )?
+      (?:
+        [A-Za-z_][A-Za-z0-9_]*=
+        (?:
+          "[^"]*" |
+          '[^']*' |
+          [^\s"'\\]+
+        )
+        \s+
+      )*
       \bcurl\b
       .*?
       (
@@ -121,13 +132,15 @@ module Activities
     end
 
     def failed_issue_creation_attempt?(agent_run)
-      stderr_lines = agent_run.agent_run_logs
+      stderr_stream = agent_run.agent_run_logs
         .where(log_type: "stderr")
         .order(created_at: :desc, id: :desc)
         .limit(ISSUE_CREATION_FAILURE_LOG_LIMIT)
         .pluck(:content)
         .reverse
-        .flat_map { |content| content.to_s.each_line(chomp: true).to_a }
+        .join
+
+      stderr_lines = stderr_stream.each_line(chomp: true).to_a
 
       return false if stderr_lines.empty?
 
