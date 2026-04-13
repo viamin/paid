@@ -18,10 +18,7 @@ module Activities
       project = issue.project
       client = project.github_token.client
 
-      issue.update!(
-        pr_review_phase: "ready",
-        review_goal_retry_count: 0
-      )
+      issue.reset_review_goal_retry_breaker!
 
       remove_label(client, project, issue, DISMISS_ESCALATION_LABEL)
       remove_label(client, project, issue, PAID_ESCALATED_LABEL)

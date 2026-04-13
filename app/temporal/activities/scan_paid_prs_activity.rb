@@ -107,8 +107,9 @@ module Activities
       return :skipped if active_run_exists?(project, issue)
 
       retry_needed = review_goal_retry_needed?(project, issue)
-      retry_limit_reached = retry_needed && review_goal_retry_limit_reached?(issue)
-      sole_reviewer = paid_agent_sole_review_method?(project)
+      retry_limit_reached = retry_needed && review_goal_retry_limit_reached?(project, issue)
+      retry_limit_reason = "Review-goal retry limit reached " \
+        "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)"
 
       # When a review-goal run has failed but the retry limit hasn't been
       # reached, build the retry trigger and continue to phase-specific
@@ -116,33 +117,31 @@ module Activities
       # are still evaluated alongside the retry.
       retry_trigger = nil
       if retry_needed && !retry_limit_reached
+        failed_count = review_goal_consecutive_failure_count(project, issue)
+        max_retries = review_goal_max_retries(project)
         retry_trigger = {
           type: "review_goal_retry",
-          details: "Retrying failed review-goal run (attempt #{issue.review_goal_retry_count + 1}/#{MAX_REVIEW_GOAL_RETRIES})"
+          details: "Retrying failed review-goal run (attempt #{failed_count + 1}/#{max_retries})"
         }
-      end
-
-      # When retry limit is reached AND paid_agent is the sole blocking
-      # review method, escalate for draft/restarted phases — no other
-      # review method can advance the PR. When paid_agent is a non-blocking
-      # sidecar, fall through to phase-specific scanning so other signals
-      # are still evaluated.
-      if retry_limit_reached && sole_reviewer && %w[draft restarted].include?(issue.pr_review_phase)
-        return escalate_trigger(issue, reason: "Review-goal retries exhausted (#{MAX_REVIEW_GOAL_RETRIES} consecutive failures)")
       end
 
       result = case issue.pr_review_phase
       when "draft", "restarted"
+        if review_goal_retry_limit_requires_escalation?(project, issue)
+          return escalate_trigger(issue, reason: retry_limit_reason)
+        end
         scan_draft_pr(project, client, issue)
       when "ready"
         check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
+          if review_goal_retry_limit_requires_escalation?(project, issue)
+            return escalate_trigger(issue, reason: retry_limit_reason)
+          end
+
           scan_draft_pr(project, client, issue, pr_data: pr_data)
         elsif pr_data.nil?
           :skipped
-        elsif retry_limit_reached && sole_reviewer
-          escalate_trigger(issue, reason: "Review-goal retries exhausted (#{MAX_REVIEW_GOAL_RETRIES} consecutive failures)")
         else
           scan_ready_pr(project, client, issue, pr_data: pr_data)
         end
@@ -150,6 +149,10 @@ module Activities
         check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
+          if review_goal_retry_limit_requires_escalation?(project, issue)
+            return escalate_trigger(issue, reason: retry_limit_reason)
+          end
+
           scan_draft_pr(project, client, issue, pr_data: pr_data)
         else
           scan_escalated_pr(project, client, issue, pr_data: pr_data)
@@ -168,12 +171,17 @@ module Activities
         result[:current_review_goal_retry_count] = issue.review_goal_retry_count
         result
       else
-        review_goal_retry_trigger(issue)
+        {
+          issue_id: issue.id,
+          pr_number: issue.github_number,
+          triggers: [ retry_trigger ],
+          phase: issue.pr_review_phase,
+          current_review_goal_retry_count: issue.review_goal_retry_count
+        }
       end
     end
 
     MAX_CONSECUTIVE_DRAFT_FAILURES = 3
-    MAX_REVIEW_GOAL_RETRIES = 3
 
     # --- Draft phase scanning ---
 
@@ -343,6 +351,12 @@ module Activities
           all_blocking_review_methods_complete?(project, reviews, checks) &&
           !review_stale_for_head?(client, project, issue, pr_data, reviews)
         return owner_approved_trigger(issue)
+      end
+
+      if review_goal_retry_limit_requires_escalation?(project, issue)
+        return escalate_trigger(issue,
+          reason: "Review-goal retry limit reached " \
+                  "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
       end
 
       return nil if followup_limit_reached?(project, issue)
@@ -528,7 +542,8 @@ module Activities
         pr_review_phase: "restarted",
         draft_review_count: 0,
         pr_followup_count: 0,
-        review_goal_retry_count: 0
+        review_goal_retry_count: 0,
+        review_goal_retry_reset_at: Time.current
       )
 
       logger.info(
@@ -646,37 +661,9 @@ module Activities
       return false unless project.review_method_enabled?("paid_agent")
 
       # Don't retry while a review-goal run is already queued or running.
-      return false if project.agent_runs
-        .where(source_pull_request_number: issue.github_number, goal: "review")
-        .where(status: AgentRun::UNFINISHED_STATUSES)
-        .exists?
+      return false if review_run_in_progress?(project, issue)
 
-      latest_review_run = project.agent_runs
-        .where(source_pull_request_number: issue.github_number, goal: "review")
-        .finished
-        .order(created_at: :desc)
-        .first
-
-      return false unless latest_review_run
-      return false unless AgentRun::FAILURE_STATUSES.include?(latest_review_run.status)
-
-      true
-    end
-
-    def review_goal_retry_limit_reached?(issue)
-      issue.review_goal_retry_count >= MAX_REVIEW_GOAL_RETRIES
-    end
-
-    def review_goal_retry_trigger(issue)
-      log_triggers(issue.project, issue, [ { type: "review_goal_retry" } ])
-
-      {
-        issue_id: issue.id,
-        pr_number: issue.github_number,
-        triggers: [ { type: "review_goal_retry", details: "Retrying failed review-goal run (attempt #{issue.review_goal_retry_count + 1}/#{MAX_REVIEW_GOAL_RETRIES})" } ],
-        phase: issue.pr_review_phase,
-        current_review_goal_retry_count: issue.review_goal_retry_count
-      }
+      review_goal_consecutive_failure_count(project, issue).positive?
     end
 
     def last_completed_run(project, issue)
@@ -958,55 +945,60 @@ module Activities
       end
     end
 
-    # Returns true when paid_agent is the only enabled review method,
-    # meaning its pending trigger must block draft exit since no other
-    # configured review path can advance the PR.
+    MAX_REVIEW_GOAL_RETRIES = 3
+    REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES = (AgentRun::FAILURE_STATUSES + %w[no_output]).freeze
+
+    # Returns true when paid_agent is the only enabled bot review method,
+    # meaning its pending trigger must block draft exit since no other bot
+    # can gate the PR.
     def paid_agent_sole_review_method?(project)
       return false unless project&.review_enabled?
       return false unless project.review_method_enabled?("paid_agent")
 
-      project.enabled_review_methods == %w[paid_agent]
+      bot_methods = project.enabled_review_methods & %w[copilot codex paid_agent]
+      bot_methods == %w[paid_agent]
     end
 
-    # Checks whether a paid_agent review-goal run is needed for this PR.
-    # Returns a paid_agent_review_pending trigger when no finished review-goal
-    # run exists and the max_review_rounds limit has not been reached. Unfinished
-    # review runs keep emitting the pending trigger so the draft-phase gate
-    # remains active until the review is actually posted.
+    # Returns a paid_agent_review_pending trigger when no up-to-date completed
+    # automatic paid_agent review-goal run exists and the max_review_rounds
+    # limit has not been reached. Unfinished automatic review runs keep
+    # emitting the pending trigger so the draft-phase gate remains active
+    # until the review is actually posted.
+    #
+    # When the most recent review-goal run ended without producing a usable
+    # review (for example failed, timed out, or no_output), re-emits the
+    # trigger so the scanner queues a retry — up to max_review_goal_retries
+    # (default 3).
+    # Returns [] when the retry limit is reached so no more review-goal runs
+    # are queued (#1002). Callers separately decide whether that exhaustion
+    # should escalate the PR or let another enabled bot continue review gating.
     def check_paid_agent_review_status(project, issue)
       return [] unless issue
 
-      # When review-goal retries are exhausted and paid_agent is not the sole
-      # reviewer, stop emitting paid_agent_review_pending — the sidecar
-      # failure should not block other signals from driving the PR forward.
-      if issue.review_goal_retry_count >= MAX_REVIEW_GOAL_RETRIES && !paid_agent_sole_review_method?(project)
-        return []
+      automatic_review_runs = automatic_review_runs(project, issue)
+      attempted_review_runs = automatic_review_runs.where.not(status: "retried")
+      current_cycle_review_runs = review_runs_for_current_cycle(attempted_review_runs, issue)
+      unfinished_run = current_cycle_review_run_in_progress(project, issue)
+
+      if unfinished_run
+        return [ { type: "paid_agent_review_pending",
+                   details: "paid_agent review run is still in progress" } ]
       end
 
-      # When a review-goal retry is needed, the scanner already emits
-      # review_goal_retry which queues the review run. Suppress the
-      # paid_agent_review_pending trigger for non-blocking sidecars to
-      # avoid duplication. When paid_agent IS the sole reviewer, keep
-      # the trigger so the draft gate remains active — without it, a
-      # draft PR with green CI can advance to ready before the retried
-      # review is posted.
-      return [] if review_goal_retry_needed?(project, issue) && !paid_agent_sole_review_method?(project)
+      return [] if review_goal_retry_limit_reached?(project, issue)
 
-      pr_number = issue.github_number
-      review_runs = project.agent_runs.where(
-        source_pull_request_number: pr_number,
-        goal: "review"
-      )
-      attempted_review_runs = review_runs.where.not(status: "retried")
-      unfinished_run = review_runs.where(status: AgentRun::UNFINISHED_STATUSES)
-        .order(created_at: :desc)
-        .first
+      # When a review-goal retry is already being emitted as an explicit
+      # review_goal_retry trigger, suppress the sidecar-only pending trigger
+      # for mixed-bot projects so the remaining bot can keep gating the PR.
+      # Paid-agent-only projects still need paid_agent_review_pending to block
+      # draft exit until the retried review is posted.
+      return [] if review_goal_retry_needed?(project, issue) && !paid_agent_sole_review_method?(project)
 
       # Count all finished review attempts (including failed/timed-out) toward
       # the max_review_rounds limit, but exclude retried runs because retry
       # bookkeeping marks the superseded run as retried before enqueuing its
       # replacement. Counting both would burn two rounds for one logical retry.
-      finished_count = attempted_review_runs.finished.count
+      finished_count = current_cycle_review_runs.finished.count
       max_rounds = project.review_method_config("paid_agent")
         .dig("termination", "max_review_rounds")
 
@@ -1014,31 +1006,170 @@ module Activities
         return []
       end
 
+      # When review-goal runs finish without a usable review, re-emit the trigger so the
+      # scanner queues a retry. The retry cap is enforced by
+      # review_goal_retry_limit_reached? which callers check separately
+      # to escalate when the cap is hit. This check runs before the
+      # #830 "already reviewed" guard so failed/no-output reviews are retried
+      # even when the last finished review attempt post-dates the last create_pr.
+      failed_count = review_goal_consecutive_failure_count(project, issue)
+      if failed_count > 0
+        max_retries = review_goal_max_retries(project)
+        return [ { type: "paid_agent_review_pending",
+                   details: "Retrying unsuccessful review-goal run (attempt #{failed_count + 1}/#{max_retries})" } ]
+      end
+
       # Check whether the most recent finished review-goal run (regardless of
       # success) was attempted after the last create_pr run. If so, the review
       # was already attempted for the current code — don't re-trigger.
       # Previously only checked completed runs, which let timed-out reviews
       # re-trigger on every scan cycle (#830).
-      last_review_run = attempted_review_runs.finished
+      last_review_run = current_cycle_review_runs.finished
         .order(Arel.sql("COALESCE(completed_at, updated_at) DESC")).first
-      last_create_pr_run = project.agent_runs
-        .where(source_pull_request_number: issue.github_number, goal: "create_pr")
-        .completed
-        .order(completed_at: :desc)
-        .first
+      last_create_pr_run = create_pr_runs_for_current_cycle(
+        project.agent_runs
+          .where(source_pull_request_number: issue.github_number, goal: "create_pr")
+          .completed,
+        issue
+      ).order(completed_at: :desc).first
 
       if last_review_run && last_create_pr_run
         review_timestamp = last_review_run.completed_at || last_review_run.updated_at
         return [] if review_timestamp >= last_create_pr_run.completed_at
       end
 
-      details = if unfinished_run
-        "paid_agent review run is still in progress"
-      else
-        "No paid_agent review found for PR"
+      [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]
+    end
+
+    def runs_for_current_review_cycle(runs, issue)
+      return runs unless issue.pr_review_phase == "restarted"
+
+      reset_at = issue.review_goal_retry_reset_at
+      return runs unless reset_at
+
+      # Use the earliest known attempt timestamp instead of completion time so
+      # a run queued before the restart stays in the old cycle even if it
+      # starts or finishes afterward.
+      runs.where(review_run_cycle_boundary.gt(reset_at))
+    end
+
+    def review_runs_for_current_cycle(review_runs, issue)
+      runs_for_current_review_cycle(review_runs, issue)
+    end
+
+    def create_pr_runs_for_current_cycle(create_pr_runs, issue)
+      runs_for_current_review_cycle(create_pr_runs, issue)
+    end
+
+    # Returns true when the number of consecutive unsuccessful automatic
+    # paid_agent review-goal runs in the current review cycle has reached the
+    # configurable retry limit. Any completed review or newer create_pr run
+    # resets the breaker so old failures do not cause permanent escalation
+    # (#1002).
+    def review_goal_retry_limit_reached?(project, issue)
+      return false unless project&.review_enabled?
+      return false unless project.review_method_enabled?("paid_agent")
+
+      count = review_goal_consecutive_failure_count(project, issue)
+      return false if count.zero?
+
+      count >= review_goal_max_retries(project)
+    end
+
+    # Escalate only when exhausting paid_agent retries leaves no other bot
+    # review method that can continue gating the PR. Mixed bot projects should
+    # stop retrying paid_agent but keep flowing through the remaining bot.
+    def review_goal_retry_limit_requires_escalation?(project, issue)
+      return false unless review_goal_retry_limit_reached?(project, issue)
+      return false if review_run_in_progress?(project, issue)
+
+      (project.enabled_review_methods & %w[copilot codex]).empty?
+    end
+
+    def review_run_in_progress?(project, issue)
+      current_cycle_review_run_in_progress(project, issue).present?
+    end
+
+    def current_cycle_review_run_in_progress(project, issue)
+      all_review_runs(project, issue)
+        .where(status: AgentRun::UNFINISHED_STATUSES)
+        .order(created_at: :desc)
+        .first
+    end
+
+    def all_review_runs(project, issue)
+      review_runs_for_current_cycle(
+        project.agent_runs.where(
+          source_pull_request_number: issue.github_number,
+          goal: "review"
+        ),
+        issue
+      )
+    end
+
+    def automatic_review_runs(project, issue)
+      all_review_runs(project, issue)
+        .where(trigger_type: "automatic")
+    end
+
+    def review_goal_consecutive_failure_count(project, issue)
+      reset_at = review_goal_failure_reset_at(project, issue)
+
+      scope = project.agent_runs.where(
+        source_pull_request_number: issue.github_number,
+        goal: "review",
+        status: REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES,
+        trigger_type: "automatic"
+      )
+      scope = scope.where(review_run_cycle_boundary.gt(reset_at)) if reset_at
+      scope.count
+    end
+
+    def review_goal_failure_reset_at(project, issue)
+      run_scope = project.agent_runs.where(source_pull_request_number: issue.github_number)
+      retry_reset_at = issue.review_goal_retry_reset_at
+      if retry_reset_at
+        # After a dismissal/draft restart, only runs attempted in the new
+        # cycle should be able to reset the breaker. A stale pre-restart run
+        # may finish later, but it must not clear fresh-cycle failures.
+        run_scope = run_scope.where(review_run_cycle_boundary.gt(retry_reset_at))
       end
 
-      [ { type: "paid_agent_review_pending", details: details } ]
+      [
+        retry_reset_at,
+        run_scope.where(goal: "review", status: "completed").maximum(:completed_at),
+        run_scope.where(goal: "create_pr", status: "completed").maximum(:completed_at)
+      ].compact.max
+    end
+
+    def review_goal_max_retries(project)
+      termination = project.review_method_config("paid_agent")
+        .dig("termination") || {}
+      retries = termination["max_review_goal_retries"]
+      max_rounds = termination["max_review_rounds"]
+
+      effective = if retries.present?
+        retries.to_i
+      else
+        MAX_REVIEW_GOAL_RETRIES
+      end
+
+      if max_rounds.present?
+        [ effective, max_rounds.to_i ].min
+      else
+        effective
+      end
+    end
+
+    def review_run_cycle_boundary
+      agent_runs = AgentRun.arel_table
+      Arel::Nodes::Case.new
+        .when(agent_runs[:started_at].eq(nil))
+        .then(agent_runs[:created_at])
+        .else(Arel::Nodes::NamedFunction.new("LEAST", [
+          agent_runs[:started_at],
+          agent_runs[:created_at]
+        ]))
     end
 
     def body_only_review_bot?(login)
