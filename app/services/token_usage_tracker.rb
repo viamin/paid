@@ -5,25 +5,28 @@ class TokenUsageTracker
   DEFAULT_INPUT_COST_PER_MILLION = BigDecimal("3.00")
   DEFAULT_OUTPUT_COST_PER_MILLION = BigDecimal("15.00")
 
-  # Tracks token usage for an agent run request.
+  # Tracks token usage for an agent run or knowledge run request.
   #
-  # @param agent_run [AgentRun] the run to attribute usage to
+  # @param agent_run [AgentRun, nil] the agent run to attribute usage to
+  # @param knowledge_run [KnowledgeRun, nil] the knowledge run to attribute usage to
   # @param usage [Hash] token data (:tokens_input, :tokens_output, :llm_model, :request_type, :metadata)
   # @param update_aggregates [Boolean] when false, only creates a TokenUsage record without
   #   updating agent_run/project counters or cost budgets (use for run_summary records
   #   that would otherwise double-count per-request tracking from the secrets proxy)
-  def self.track(agent_run:, usage:, update_aggregates: true)
+  def self.track(agent_run: nil, knowledge_run: nil, usage:, update_aggregates: true)
+    tracked_run = resolve_tracked_run!(agent_run:, knowledge_run:)
     tokens_input  = usage.fetch(:tokens_input, 0).to_i
     tokens_output = usage.fetch(:tokens_output, 0).to_i
     llm_model     = usage[:llm_model]
     request_type  = usage.fetch(:request_type, nil).presence || "agent"
     metadata      = usage.fetch(:metadata, nil).presence || {}
     cost_cents    = calculate_cost(tokens_input, tokens_output, llm_model: llm_model)
-    resolved_hard_limit = agent_run.effective_max_tokens_per_run if update_aggregates
+    resolved_hard_limit = tracked_run.effective_max_tokens_per_run if update_aggregates
 
     ActiveRecord::Base.transaction do
       record_per_request_usage(
         agent_run: agent_run,
+        knowledge_run: knowledge_run,
         input_tokens: tokens_input,
         output_tokens: tokens_output,
         cost_cents: cost_cents,
@@ -33,45 +36,37 @@ class TokenUsageTracker
       )
 
       if update_aggregates
-        agent_run.with_lock do
-          agent_run.increment(:tokens_input, tokens_input)
-          agent_run.increment(:tokens_output, tokens_output)
-          agent_run.increment(:cost_cents, cost_cents)
-          apply_token_limit_status(agent_run, hard_limit: resolved_hard_limit)
-          agent_run.save!
+        tracked_run.with_lock do
+          update_run_aggregates(tracked_run, tokens_input:, tokens_output:, cost_cents:)
+          apply_token_limit_status(tracked_run, hard_limit: resolved_hard_limit)
+          tracked_run.save!
         end
 
-        agent_run.project.increment_metrics!(
+        tracked_run.project.increment_metrics!(
           cost_cents: cost_cents,
           tokens_used: tokens_input + tokens_output
         )
 
-        update_cost_budgets(agent_run.project, cost_cents)
+        update_cost_budgets(tracked_run.project, cost_cents)
       end
 
-      agent_run.log!("metric", {
-        tokens_input: tokens_input,
-        tokens_output: tokens_output,
-        cost_cents: cost_cents,
-        llm_model: llm_model,
-        request_type: request_type
-      }.to_json, metadata: { type: "token_usage" })
+      record_usage_log(tracked_run, tokens_input:, tokens_output:, cost_cents:, llm_model:, request_type:)
     end
 
     # Enforce hard-stop budgets *after* the transaction commits so that:
     # 1. Row locks from the usage write are already released
     # 2. External side-effects (Temporal cancel, container cleanup) don't
     #    run inside a transaction — a failure won't roll back recorded usage
-    enforce_hard_stop_budgets(agent_run) if update_aggregates && cost_cents.positive?
+    enforce_hard_stop_budgets(tracked_run) if update_aggregates && cost_cents.positive? && agent_run.present?
   end
 
   # Evaluates the agent run's cumulative token usage against project limits
   # and updates the token_limit_status field. Logs warnings at the soft
   # threshold and records "exceeded" at the hard limit.
-  def self.apply_token_limit_status(agent_run, hard_limit:)
-    warning_threshold = agent_run.project.token_limit_warning_threshold
+  def self.apply_token_limit_status(tracked_run, hard_limit:)
+    warning_threshold = tracked_run.project.token_limit_warning_threshold
     warning_at = (hard_limit * warning_threshold / 100.0).floor
-    current_tokens = agent_run.total_tokens
+    current_tokens = tracked_run.total_tokens
 
     new_status = if current_tokens >= hard_limit
       "exceeded"
@@ -81,43 +76,45 @@ class TokenUsageTracker
       "ok"
     end
 
-    previous_status = agent_run.token_limit_status
+    previous_status = tracked_run.token_limit_status
 
     return if new_status == previous_status
 
-    agent_run.token_limit_status = new_status
+    tracked_run.token_limit_status = new_status
 
     if new_status == "warning" && previous_status != "warning"
-      agent_run.log!(
-        "system",
-        "Token usage warning: #{current_tokens} of #{hard_limit} tokens used " \
-        "(#{(current_tokens * 100.0 / hard_limit).round(1)}%). " \
-        "Run will be stopped at #{hard_limit} tokens.",
-        metadata: { type: "token_limit_warning" }
-      )
+      record_limit_log(tracked_run, "warning", current_tokens:, hard_limit:)
       Rails.logger.warn(
-        message: "agent_execution.token_limit_warning",
-        agent_run_id: agent_run.id,
-        current_tokens: current_tokens,
-        hard_limit: hard_limit,
-        usage_percent: (current_tokens * 100.0 / hard_limit).round(1)
+        log_payload_for(
+          tracked_run,
+          message: "#{logging_component_for(tracked_run)}.token_limit_warning",
+          current_tokens: current_tokens,
+          hard_limit: hard_limit,
+          usage_percent: (current_tokens * 100.0 / hard_limit).round(1)
+        )
       )
     elsif new_status == "exceeded"
-      agent_run.log!(
-        "system",
-        "Token limit exceeded: #{current_tokens} of #{hard_limit} tokens used. " \
-        "Agent will be stopped after the current operation completes.",
-        metadata: { type: "token_limit_exceeded" }
-      )
+      record_limit_log(tracked_run, "exceeded", current_tokens:, hard_limit:)
       Rails.logger.warn(
-        message: "agent_execution.token_limit_exceeded",
-        agent_run_id: agent_run.id,
-        current_tokens: current_tokens,
-        hard_limit: hard_limit
+        log_payload_for(
+          tracked_run,
+          message: "#{logging_component_for(tracked_run)}.token_limit_exceeded",
+          current_tokens: current_tokens,
+          hard_limit: hard_limit
+        )
       )
     end
   end
   private_class_method :apply_token_limit_status
+
+  def self.log_payload_for(tracked_run, message:, **extra)
+    {
+      message: message,
+      agent_run_id: tracked_run.is_a?(AgentRun) ? tracked_run.id : nil,
+      knowledge_run_id: tracked_run.is_a?(KnowledgeRun) ? tracked_run.id : nil
+    }.merge(extra)
+  end
+  private_class_method :log_payload_for
 
   # Thread-safe in-memory cache of LlmModel records keyed by model_id string.
   # Avoids a DB query per tracked request in the high-volume proxy path.
@@ -156,9 +153,10 @@ class TokenUsageTracker
   end
   private_class_method :lookup_model
 
-  def self.record_per_request_usage(agent_run:, input_tokens:, output_tokens:, cost_cents:, llm_model:, request_type:, metadata:)
+  def self.record_per_request_usage(agent_run:, knowledge_run:, input_tokens:, output_tokens:, cost_cents:, llm_model:, request_type:, metadata:)
     TokenUsage.create!(
       agent_run: agent_run,
+      knowledge_run: knowledge_run,
       input_tokens: input_tokens,
       output_tokens: output_tokens,
       cost_cents: cost_cents,
@@ -168,6 +166,64 @@ class TokenUsageTracker
     )
   end
   private_class_method :record_per_request_usage
+
+  def self.resolve_tracked_run!(agent_run:, knowledge_run:)
+    return agent_run if agent_run.present? && knowledge_run.blank?
+    return knowledge_run if knowledge_run.present? && agent_run.blank?
+
+    raise ArgumentError, "expected exactly one of agent_run or knowledge_run"
+  end
+  private_class_method :resolve_tracked_run!
+
+  def self.update_run_aggregates(tracked_run, tokens_input:, tokens_output:, cost_cents:)
+    if tracked_run.is_a?(AgentRun)
+      tracked_run.increment(:tokens_input, tokens_input)
+      tracked_run.increment(:tokens_output, tokens_output)
+      tracked_run.increment(:cost_cents, cost_cents)
+    else
+      tracked_run.increment(:total_tokens, tokens_input + tokens_output)
+    end
+  end
+  private_class_method :update_run_aggregates
+
+  def self.record_usage_log(tracked_run, tokens_input:, tokens_output:, cost_cents:, llm_model:, request_type:)
+    return unless tracked_run.is_a?(AgentRun)
+
+    tracked_run.log!("metric", {
+      tokens_input: tokens_input,
+      tokens_output: tokens_output,
+      cost_cents: cost_cents,
+      llm_model: llm_model,
+      request_type: request_type
+    }.to_json, metadata: { type: "token_usage" })
+  end
+  private_class_method :record_usage_log
+
+  def self.record_limit_log(tracked_run, state, current_tokens:, hard_limit:)
+    return unless tracked_run.is_a?(AgentRun)
+
+    message =
+      if state == "warning"
+        "Token usage warning: #{current_tokens} of #{hard_limit} tokens used " \
+          "(#{(current_tokens * 100.0 / hard_limit).round(1)}%). " \
+          "Run will be stopped at #{hard_limit} tokens."
+      else
+        "Token limit exceeded: #{current_tokens} of #{hard_limit} tokens used. " \
+          "Agent will be stopped after the current operation completes."
+      end
+
+    tracked_run.log!(
+      "system",
+      message,
+      metadata: { type: "token_limit_#{state}" }
+    )
+  end
+  private_class_method :record_limit_log
+
+  def self.logging_component_for(tracked_run)
+    tracked_run.is_a?(KnowledgeRun) ? "knowledge_execution" : "agent_execution"
+  end
+  private_class_method :logging_component_for
 
   def self.update_cost_budgets(project, cost_cents)
     # Only update daily/monthly budgets. Per-run budgets are enforced by
