@@ -179,19 +179,28 @@ module Activities
       inside_code_fence_before_chunk = markdown_code_fence_state_before_chunks(stderr_chunks)
 
       stderr_chunks.each_index.any? do |index|
-        next false if inside_code_fence_before_chunk[index]
-
         candidate = stderr_chunks[index, ISSUE_CREATION_FAILURE_CONTEXT_LINES].to_a.join
         candidate_lines = candidate.each_line(chomp: true).to_a
         next false if candidate_lines.empty?
 
-        first_line = candidate_lines.first.to_s.strip
-        next false unless issue_creation_attempt_line?(first_line)
+        inside_code_fence = inside_code_fence_before_chunk[index]
 
-        failure_context = candidate_lines.drop(1).join("\n")
-        next false if failure_context.blank?
+        candidate_lines.each_with_index.any? do |line, line_index|
+          stripped_line = line.strip
 
-        issue_creation_failure_marker?(failure_context)
+          if markdown_code_fence_line?(stripped_line)
+            inside_code_fence = !inside_code_fence
+            next false
+          end
+
+          next false if inside_code_fence
+          next false unless issue_creation_attempt_line?(stripped_line)
+
+          failure_context = candidate_lines[line_index + 1, ISSUE_CREATION_FAILURE_CONTEXT_LINES].to_a.join("\n")
+          next false if failure_context.blank?
+
+          issue_creation_failure_marker?(failure_context)
+        end
       end
     end
 
