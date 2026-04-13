@@ -750,6 +750,7 @@ RSpec.describe Activities::RunAgentActivity do
       end
 
       before do
+        user.providers.find_or_create_by!(provider_key: "cursor")
         user.settings.update!(fallback_enabled: true, fallback_providers: [ "cursor" ])
         allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
         allow(container_service).to receive(:execute).and_return(auth_expired_output)
@@ -779,6 +780,8 @@ RSpec.describe Activities::RunAgentActivity do
           exit_code: 1
         )
         allow(container_service).to receive(:execute).and_return(generic_refresh_failure, exec_success)
+        allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
 
         result = activity.execute(agent_run_id: agent_run.id)
 
