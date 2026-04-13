@@ -72,7 +72,7 @@ class UserSettingsController < ApplicationController
     ].each do |key|
       next unless permitted.key?(key)
 
-      permitted[key] = UserSetting.normalize_provider_array_param(permitted[key])
+      permitted[key] = UserSetting.parse_provider_array_param(permitted[key])
     end
 
     permitted

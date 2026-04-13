@@ -155,6 +155,27 @@ RSpec.describe "UserSettings" do
         patch user_settings_path, params: { user_setting: { default_branch: "" } }
         expect(response).to have_http_status(:unprocessable_content)
       end
+
+      it "renders errors for malformed knowledge fallback params" do
+        user.settings.update!(
+          kb_embedding_fallback_providers: [ "openrouter" ],
+          kb_chat_fallback_providers: [ "cursor" ]
+        )
+
+        patch user_settings_path, params: {
+          user_setting: {
+            kb_embedding_fallback_providers: "{invalid json",
+            kb_chat_fallback_providers: "\"claude\""
+          }
+        }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("must be an array")
+
+        settings = user.reload.settings
+        expect(settings.kb_embedding_fallback_providers).to eq([ "openrouter" ])
+        expect(settings.kb_chat_fallback_providers).to eq([ "cursor" ])
+      end
     end
   end
 end

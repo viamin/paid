@@ -109,6 +109,17 @@ class UserSetting < ApplicationRecord
     []
   end
 
+  def self.parse_provider_array_param(value)
+    return value unless value.is_a?(String)
+
+    parsed = JSON.parse(value)
+    return value unless parsed.is_a?(Array)
+
+    parsed.select { |provider| provider.is_a?(String) }
+  rescue JSON::ParserError
+    value
+  end
+
   def self.normalize_fallback_providers_param(value)
     normalize_provider_array_param(value)
   end
