@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.20.2](https://github.com/viamin/paid/compare/v0.20.1...v0.20.2) (2026-04-13)
+
+
+### Bug Fixes
+
+* **auto-merge:** handle zero-check repos correctly ([#1075](https://github.com/viamin/paid/issues/1075)) ([d95e932](https://github.com/viamin/paid/commit/d95e932d49e81db7d0a7c8ebd22e271cf351851c))
+* **knowledge:** restore routes collector networking ([#1073](https://github.com/viamin/paid/issues/1073)) ([33a4d76](https://github.com/viamin/paid/commit/33a4d768fd0114fc23f8e2a4f1690fc090dba6c3))
+* **scanner:** stop review-goal retries after cancelled runs ([#1076](https://github.com/viamin/paid/issues/1076)) ([ae9334a](https://github.com/viamin/paid/commit/ae9334a9cb00719358252206655662a98e90c078))
+
 ## [0.20.1](https://github.com/viamin/paid/compare/v0.20.0...v0.20.1) (2026-04-13)
 
 
