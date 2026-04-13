@@ -210,6 +210,26 @@ RSpec.describe "Api::SecretsProxy" do
         expect(body["error"]).to include("not configured")
       end
     end
+
+    context "with a knowledge run and a project owner API key" do
+      let(:owner) { project.effective_owner }
+
+      before do
+        create(:provider_api_key, user: owner, api_service_type: "anthropic", api_key: "sk-owner-key")
+        allow(Rails.application.credentials).to receive(:dig)
+          .with(:llm, :anthropic_api_key).and_return("sk-ant-test-key")
+      end
+
+      it "uses the owner's API key for the proxied request" do
+        post "/api/proxy/anthropic/v1/messages",
+          params: { model: "claude-3-5-sonnet-20241022" }.to_json,
+          headers: knowledge_headers
+
+        expect(response).to have_http_status(:ok)
+        expect(WebMock).to have_requested(:post, target_url)
+          .with(headers: { "x-api-key" => "sk-owner-key" })
+      end
+    end
   end
 
   describe "POST /api/proxy/openai/*path" do

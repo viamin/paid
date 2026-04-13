@@ -173,6 +173,15 @@ RSpec.describe TokenUsageTracker do
         expect(usage.metadata).to include("operation_type" => "embedding")
       end
 
+      it "defaults the request type to knowledge" do
+        described_class.track(
+          knowledge_run: knowledge_run,
+          usage: { tokens_input: 100, tokens_output: 50 }
+        )
+
+        expect(TokenUsage.last.request_type).to eq("knowledge")
+      end
+
       it "updates project totals for knowledge runs" do
         expect {
           described_class.track(

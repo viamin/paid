@@ -18,7 +18,7 @@ class TokenUsageTracker
     tokens_input  = usage.fetch(:tokens_input, 0).to_i
     tokens_output = usage.fetch(:tokens_output, 0).to_i
     llm_model     = usage[:llm_model]
-    request_type  = usage.fetch(:request_type, nil).presence || "agent"
+    request_type  = usage.fetch(:request_type, nil).presence || default_request_type_for(tracked_run)
     metadata      = usage.fetch(:metadata, nil).presence || {}
     cost_cents    = calculate_cost(tokens_input, tokens_output, llm_model: llm_model)
     resolved_hard_limit = tracked_run.effective_max_tokens_per_run if update_aggregates
@@ -185,6 +185,11 @@ class TokenUsageTracker
     end
   end
   private_class_method :update_run_aggregates
+
+  def self.default_request_type_for(tracked_run)
+    tracked_run.is_a?(KnowledgeRun) ? "knowledge" : "agent"
+  end
+  private_class_method :default_request_type_for
 
   def self.record_usage_log(tracked_run, tokens_input:, tokens_output:, cost_cents:, llm_model:, request_type:)
     return unless tracked_run.is_a?(AgentRun)
