@@ -42,7 +42,8 @@ module Activities
       /\A(?:HTTP\/\d(?:\.\d+)?\s+)?502\s+Bad\s+Gateway\b/i,
       /\AActiveRecord::PendingMigrationError\b/,
       /\AUpstream request failed\b/i,
-      /\A(?:curl|gh):/i
+      /\A(?:curl|gh):/i,
+      /\A\s*\{.*"error"\s*:/i
     ].freeze
     ISSUE_CREATION_FAILURE_LOG_BATCH_SIZE = 200
     ISSUE_CREATION_FAILURE_CONTEXT_LINES = 8

@@ -49,6 +49,11 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       agent_run.log!("stderr", "ActiveRecord::PendingMigrationError")
     end
 
+    def log_failed_plain_curl_issue_creation_attempt_with_json_error
+      agent_run.log!("stderr", %(curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"))
+      agent_run.log!("stderr", '{"error":"Upstream request failed"}')
+    end
+
     def log_failed_issue_creation_attempt_in_stdout
       agent_run.log!("stdout", %(bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"'))
       agent_run.log!("stdout", "HTTP/1.1 500 Internal Server Error")
@@ -319,6 +324,18 @@ RSpec.describe Activities::CreateGithubIssueActivity do
 
     it "refuses to create a fallback issue from a direct curl issue-creation failure output" do
       log_failed_plain_curl_issue_creation_attempt
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses to create a fallback issue from a direct curl issue-creation failure with JSON error body" do
+      log_failed_plain_curl_issue_creation_attempt_with_json_error
 
       expect(github_client).not_to receive(:create_issue)
 
