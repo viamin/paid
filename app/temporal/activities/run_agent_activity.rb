@@ -82,6 +82,15 @@ module Activities
       /out of (?:extra )?usage/i
     ].freeze
 
+    AUTH_EXPIRED_PATTERNS = {
+      "codex" => [
+        /refresh_token_reused/i,
+        /Failed to refresh token/i,
+        /Please log out and sign in again/i,
+        /Your access token could not be refreshed/i
+      ].freeze
+    }.freeze
+
     # Maximum number of log rows to inspect when reclassifying a timeout.
     # Caps memory and DB load on long-running, verbose agent attempts.
     TIMEOUT_RATE_LIMIT_LOG_LIMIT = 200
@@ -288,6 +297,13 @@ module Activities
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "timeout")
             logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message)
             break
+          rescue ProviderAuthExpiredError => e
+            last_error = "auth_expired"
+            auth_provider = ProviderSupport.harness_provider_key_for(e.provider)
+            agent_run.auth_expire!(error: e.message, provider: auth_provider)
+            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "auth_expired")
+            logger.warn(message: "agent_execution.auth_expired", provider: provider, agent_run_id: agent_run.id, error: e.message)
+            break
           rescue ProviderExecutionError => e
             last_error = "error"
             if cancelled_by_cleanup?(agent_run)
@@ -351,6 +367,15 @@ module Activities
       def initialize(message, reset_at: nil)
         super(message)
         @reset_at = reset_at
+      end
+    end
+
+    class ProviderAuthExpiredError < StandardError
+      attr_reader :provider
+
+      def initialize(message, provider:)
+        super(message)
+        @provider = provider
       end
     end
 
@@ -563,6 +588,10 @@ module Activities
       output = (stderr.presence || stdout).to_s.strip
       rate_limit_output = strip_prompt_echo(output, prompt)
 
+      if auth_expired_error?(provider, rate_limit_output)
+        raise ProviderAuthExpiredError.new(output.truncate(500), provider: provider)
+      end
+
       # Check if this is a rate limit error
       if rate_limit_error?(rate_limit_output)
         reset_at = parse_rate_limit_reset(rate_limit_output)
@@ -621,6 +650,12 @@ module Activities
       return false if output.blank?
 
       TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
+    end
+
+    def auth_expired_error?(provider, output)
+      return false if output.blank?
+
+      AUTH_EXPIRED_PATTERNS.fetch(provider.to_s, []).any? { |pattern| output.match?(pattern) }
     end
 
     def strip_prompt_echo(output, prompt)
