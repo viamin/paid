@@ -83,6 +83,24 @@ RSpec.describe PollWorkflowHealthCheckJob do
       ).at_least(:once)
     end
 
+    it "records stale restart context before attempting the restart" do
+      project = create(:project, poll_interval_seconds: 60, last_polled_at: 10.minutes.ago)
+      WorkflowState.record_polling_status(project, status: "running")
+      workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
+      desc = double("description", status: Temporalio::Client::WorkflowExecutionStatus::RUNNING) # rubocop:disable RSpec/VerifiedDoubles
+
+      allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+      allow(workflow_handle).to receive(:describe).and_return(desc)
+      allow(workflow_handle).to receive(:terminate)
+      allow(temporal_client).to receive(:start_workflow).and_raise(StandardError, "restart failed")
+
+      expect { described_class.perform_now }.not_to raise_error
+
+      workflow_state = WorkflowState.find_by!(temporal_workflow_id: "github-poll-#{project.id}")
+      expect(workflow_state.status).to eq("running")
+      expect(workflow_state.restart_reason).to match(/health check: stale RUNNING/)
+    end
+
     it "uses per-project poll interval for staleness threshold" do
       # Project with a long poll interval (600s) — last_polled_at 10 min ago is NOT stale
       create(:project, poll_interval_seconds: 600, last_polled_at: 10.minutes.ago)
