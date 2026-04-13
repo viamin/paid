@@ -38,20 +38,20 @@ RSpec.describe Activities::CreateGithubIssueActivity do
 
   describe "#execute" do
     def log_failed_issue_creation_attempt
-      agent_run.log!("stderr", %(curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"))
+      agent_run.log!("stderr", %(bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"'))
       agent_run.log!("stderr", "HTTP/1.1 500 Internal Server Error")
       agent_run.log!("stderr", "ActiveRecord::PendingMigrationError")
     end
 
     def log_fragmented_failed_issue_creation_attempt
-      agent_run.log!("stderr", %(curl -X POST "$GITHUB_API_URL/repos/owner/))
-      agent_run.log!("stderr", %(repo/issues"\nHTTP/1.1 500 Internal Server Error\n))
+      agent_run.log!("stderr", %(bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/))
+      agent_run.log!("stderr", %(repo/issues"'\nHTTP/1.1 500 Internal Server Error\n))
       agent_run.log!("stderr", "ActiveRecord::PendingMigrationError\n")
     end
 
     def log_fragmented_failed_issue_creation_attempt_with_leading_text
-      agent_run.log!("stderr", %(Attempting direct issue creation before fallback:\ncurl -X POST "$GITHUB_API_URL/repos/owner/))
-      agent_run.log!("stderr", %(repo/issues"\nHTTP/1.1 500 Internal Server Error\n))
+      agent_run.log!("stderr", %(Attempting direct issue creation before fallback:\nbash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/))
+      agent_run.log!("stderr", %(repo/issues"'\nHTTP/1.1 500 Internal Server Error\n))
       agent_run.log!("stderr", "ActiveRecord::PendingMigrationError\n")
     end
 
@@ -385,6 +385,44 @@ RSpec.describe Activities::CreateGithubIssueActivity do
         hash_including(
           title: "Proxy issue creation needs a fallback",
           body: a_string_including(%(curl -X POST "$GITHUB_API_URL/repos/acme/))
+        )
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still creates a valid stderr fallback draft with an unfenced curl reproduction line" do
+      agent_run.log!("stderr", <<~TEXT)
+        # Proxy issue creation needs a fallback
+
+        Reproduction:
+        curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"
+
+        The request currently returns 500 Internal Server Error, so the fallback
+        path should still publish this issue draft.
+      TEXT
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(
+          title: "Proxy issue creation needs a fallback",
+          body: a_string_including(%(curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"))
+        )
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still creates a valid stderr fallback draft when a split code fence wraps a prompt-prefixed curl snippet" do
+      agent_run.log!("stderr", "# Proxy issue creation needs a fallback\n\nReproduction:\n``")
+      agent_run.log!("stderr", %(`sh\n$ curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"\n))
+      agent_run.log!("stderr", "```\n\nThe request currently returns 500 Internal Server Error.\n")
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(
+          title: "Proxy issue creation needs a fallback",
+          body: a_string_including(%($ curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"))
         )
       ).and_return(issue_response)
 

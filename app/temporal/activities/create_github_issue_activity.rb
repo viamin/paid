@@ -5,10 +5,7 @@ module Activities
     activity_name "CreateGithubIssue"
     ISSUE_CREATION_ATTEMPT_PATTERN = /
       \A
-      (?:
-        [\$#>+]\s* |
-        (?:bash|sh)\s+-lc\s+
-      )?
+      (?:[\$#>+]\s+|(?:bash|sh)\s+-lc\s+)
       (?:
         ["']
       )?
@@ -141,8 +138,7 @@ module Activities
 
       return false if stderr_chunks.empty?
 
-      failed_issue_creation_attempt_in_lines?(stderr_chunks) ||
-        failed_issue_creation_attempt_in_fragmented_chunks?(stderr_chunks)
+      failed_issue_creation_attempt_in_lines?(stitch_stderr_chunks(stderr_chunks))
     end
 
     def issue_creation_attempt_line?(line)
@@ -153,8 +149,43 @@ module Activities
       line.start_with?("```")
     end
 
-    def failed_issue_creation_attempt_in_lines?(stderr_chunks)
-      stderr_lines = stderr_chunks.flat_map { |chunk| chunk.each_line(chomp: true).to_a.presence || [ chunk ] }
+    def stitch_stderr_chunks(stderr_chunks)
+      stitched_chunks = []
+      current_chunk = +""
+
+      stderr_chunks.each do |chunk|
+        if current_chunk.empty?
+          current_chunk = chunk.dup
+          next
+        end
+
+        if chunk_continues_previous_line?(current_chunk)
+          current_chunk << chunk
+        else
+          stitched_chunks << current_chunk
+          current_chunk = chunk.dup
+        end
+      end
+
+      stitched_chunks << current_chunk unless current_chunk.empty?
+      stitched_chunks.join("\n")
+    end
+
+    def chunk_continues_previous_line?(chunk)
+      line = chunk.lines.last.to_s.strip
+      return false if line.empty?
+
+      line.match?(/\A`{1,2}\z/) || incomplete_issue_creation_attempt_fragment?(line)
+    end
+
+    def incomplete_issue_creation_attempt_fragment?(line)
+      return false unless line.match?(/\A(?:[\$#>+]\s+|(?:bash|sh)\s+-lc\s+).*\bcurl\b/im)
+
+      !issue_creation_attempt_line?(line)
+    end
+
+    def failed_issue_creation_attempt_in_lines?(stderr_output)
+      stderr_lines = stderr_output.each_line(chomp: true).to_a
       inside_code_fence = false
 
       stderr_lines.each_with_index.any? do |line, index|
@@ -172,49 +203,6 @@ module Activities
         next false if failure_context.blank?
 
         issue_creation_failure_marker?(failure_context)
-      end
-    end
-
-    def failed_issue_creation_attempt_in_fragmented_chunks?(stderr_chunks)
-      inside_code_fence_before_chunk = markdown_code_fence_state_before_chunks(stderr_chunks)
-
-      stderr_chunks.each_index.any? do |index|
-        candidate = stderr_chunks[index, ISSUE_CREATION_FAILURE_CONTEXT_LINES].to_a.join
-        candidate_lines = candidate.each_line(chomp: true).to_a
-        next false if candidate_lines.empty?
-
-        inside_code_fence = inside_code_fence_before_chunk[index]
-
-        candidate_lines.each_with_index.any? do |line, line_index|
-          stripped_line = line.strip
-
-          if markdown_code_fence_line?(stripped_line)
-            inside_code_fence = !inside_code_fence
-            next false
-          end
-
-          next false if inside_code_fence
-          next false unless issue_creation_attempt_line?(stripped_line)
-
-          failure_context = candidate_lines[line_index + 1, ISSUE_CREATION_FAILURE_CONTEXT_LINES].to_a.join("\n")
-          next false if failure_context.blank?
-
-          issue_creation_failure_marker?(failure_context)
-        end
-      end
-    end
-
-    def markdown_code_fence_state_before_chunks(stderr_chunks)
-      inside_code_fence = false
-
-      stderr_chunks.map do |chunk|
-        inside_before_chunk = inside_code_fence
-
-        chunk.each_line(chomp: true) do |line|
-          inside_code_fence = !inside_code_fence if markdown_code_fence_line?(line.strip)
-        end
-
-        inside_before_chunk
       end
     end
 
