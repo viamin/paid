@@ -770,6 +770,28 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.provider_switches).to eq(0)
         expect(container_service).to have_received(:execute).once
       end
+
+      it "treats generic refresh failures as ordinary provider errors" do
+        generic_refresh_failure = Containers::Provision::Result.failure(
+          error: "exit 1",
+          stdout: "",
+          stderr: "ERROR codex_core::auth: Failed to refresh token: 500 Internal Server Error",
+          exit_code: 1
+        )
+        allow(container_service).to receive(:execute).and_return(generic_refresh_failure, exec_success)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        agent_run.reload
+        expect(result).to include(success: true, final_provider: "cursor")
+        expect(agent_run.status).to eq("running")
+        expect(agent_run.providers_attempted).to contain_exactly(
+          hash_including("provider" => "codex", "success" => false, "error_type" => "error"),
+          hash_including("provider" => "cursor", "success" => true)
+        )
+        expect(agent_run.provider_switches).to eq(1)
+        expect(container_service).to have_received(:execute).twice
+      end
     end
 
     context "when agent times out (wall clock)" do

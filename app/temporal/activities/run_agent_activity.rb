@@ -85,7 +85,8 @@ module Activities
     AUTH_EXPIRED_PATTERNS = {
       "codex" => [
         /refresh_token_reused/i,
-        /Failed to refresh token/i,
+        /refresh token has already been used to generate a new access token/i,
+        /refresh token was already used/i,
         /Please log out and sign in again/i,
         /Your access token could not be refreshed/i
       ].freeze
