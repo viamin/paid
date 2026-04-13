@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_11_163526) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_12_165456) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -472,6 +472,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_11_163526) do
     t.bigint "project_id", null: false
     t.datetime "relationships_parsed_at"
     t.integer "review_goal_retry_count", default: 0, null: false
+    t.datetime "review_goal_retry_reset_at"
     t.string "source", default: "github", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false

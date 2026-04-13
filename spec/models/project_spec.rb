@@ -993,6 +993,80 @@ RSpec.describe Project do
         expect(project.errors[:review_settings].join).to include("at least one termination condition")
       end
 
+      it "accepts max_review_goal_retries as sole termination condition for paid_agent" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "paid_agent" => {
+              "enabled" => true,
+              "termination" => {
+                "max_review_rounds" => nil,
+                "max_review_goal_retries" => 3,
+                "stop_when_no_comments" => false,
+                "quality_threshold" => nil,
+                "timeout_minutes" => nil
+              }
+            }
+          }
+        })
+        expect(project).to be_valid
+      end
+
+      it "rejects max_review_goal_retries as sole termination condition for non-paid_agent methods" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "copilot" => {
+              "enabled" => true,
+              "termination" => {
+                "max_review_rounds" => nil,
+                "max_review_goal_retries" => 3,
+                "stop_when_no_comments" => false,
+                "quality_threshold" => nil,
+                "timeout_minutes" => nil
+              }
+            }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("at least one termination condition")
+      end
+
+      it "rejects paid_agent max_review_goal_retries exceeding max_review_rounds" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "paid_agent" => {
+              "enabled" => true,
+              "termination" => {
+                "max_review_rounds" => 3,
+                "max_review_goal_retries" => 5,
+                "stop_when_no_comments" => false,
+                "quality_threshold" => nil,
+                "timeout_minutes" => nil
+              }
+            }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("max_review_goal_retries (5) must not exceed max_review_rounds (3)")
+      end
+
+      it "accepts paid_agent max_review_goal_retries equal to max_review_rounds" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "paid_agent" => {
+              "enabled" => true,
+              "termination" => {
+                "max_review_rounds" => 3,
+                "max_review_goal_retries" => 3,
+                "stop_when_no_comments" => false,
+                "quality_threshold" => nil,
+                "timeout_minutes" => nil
+              }
+            }
+          }
+        })
+        expect(project).to be_valid
+      end
+
       it "falls back to default termination when termination key is missing" do
         project = build(:project, review_settings: {
           "methods" => {
@@ -1000,6 +1074,35 @@ RSpec.describe Project do
           }
         })
         # copilot defaults include stop_when_no_comments: true, so this is valid
+        expect(project).to be_valid
+      end
+
+      it "falls back to default termination values when termination has partial overrides" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "manual" => {
+              "enabled" => true,
+              "reviewer_login" => "alice",
+              "termination" => {}
+            }
+          }
+        })
+        expect(project).to be_valid
+      end
+
+      it "accepts paid_agent max_review_rounds below the default retry limit" do
+        allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+
+        project = build(:project, review_settings: {
+          "methods" => {
+            "paid_agent" => {
+              "enabled" => true,
+              "termination" => {
+                "max_review_rounds" => 1
+              }
+            }
+          }
+        })
         expect(project).to be_valid
       end
 
