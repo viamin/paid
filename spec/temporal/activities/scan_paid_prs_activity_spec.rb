@@ -856,10 +856,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "treats the review as effectively clean and does not request another review" do
+      it "treats the review as effectively clean and advances to ready_for_owner" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "ready_for_owner" ])
       end
     end
 
@@ -3414,10 +3416,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "treats the review as effectively clean when all threads are resolved" do
+      it "treats the review as effectively clean and advances to ready_for_owner" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "ready_for_owner" ])
       end
     end
 
@@ -3521,6 +3525,19 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
       end
 
+      it "returns ready_for_owner when the latest bot review is clean and the repo has no checks" do
+        stub_github_for_pr(
+          checks: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+
       it "does not return ready_for_owner when CI is pending" do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: nil } ],
@@ -3573,6 +3590,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "returns owner_approved trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("owner_approved")
+      end
+
+      it "returns owner_approved when the repo has no checks" do
+        stub_github_for_pr(
+          checks: [],
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ]
+        )
+
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
@@ -4614,6 +4646,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "returns owner_approved trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("owner_approved")
+      end
+
+      it "returns owner_approved when the repo has no checks" do
+        stub_github_for_pr(
+          checks: [],
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ]
+        )
+
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
