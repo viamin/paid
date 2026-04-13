@@ -243,7 +243,7 @@ module AgentHarness
           auth_expired: [
             /oauth.*token.*expired/i,
             /authentication.*error/i,
-            /invalid.*api.*key/i,
+            /invalid api key|api key invalid/i,
             /unauthorized/i,
             /401/,
             /session.*expired/i,

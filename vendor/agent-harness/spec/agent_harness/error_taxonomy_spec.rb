@@ -36,8 +36,15 @@ RSpec.describe AgentHarness::ErrorTaxonomy do
     it "classifies auth errors" do
       expect(described_class.classify_message("unauthorized access")).to eq(:auth_expired)
       expect(described_class.classify_message("invalid api key")).to eq(:auth_expired)
+      expect(described_class.classify_message("token invalid")).to eq(:auth_expired)
       expect(described_class.classify_message("HTTP 401")).to eq(:auth_expired)
       expect(described_class.classify_message("HTTP 403")).to eq(:auth_expired)
+    end
+
+    it "avoids regex backtracking on repeated invalid prefixes" do
+      message = "#{"invalid" * 1_000} token"
+
+      expect(described_class.classify_message(message)).to eq(:auth_expired)
     end
 
     it "classifies timeout errors" do

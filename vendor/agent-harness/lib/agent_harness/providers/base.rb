@@ -42,7 +42,7 @@ module AgentHarness
           /429/
         ],
         auth_expired: [
-          /invalid.*api.*key/i,
+          /invalid api key|api key invalid/i,
           /unauthorized/i,
           /authentication/i
         ],

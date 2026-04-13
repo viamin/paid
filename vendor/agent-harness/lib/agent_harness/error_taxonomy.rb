@@ -111,22 +111,20 @@ module AgentHarness
       private
 
       def classify_generic(message)
-        case message
-        when /rate.?limit|too many requests|429/i
-          :rate_limited
-        when /quota|usage.?limit|billing/i
-          :quota_exceeded
-        when /auth|unauthorized|forbidden|invalid.*(key|token)|401|403/i
-          :auth_expired
-        when /timeout|timed.?out/i
-          :timeout
-        when /temporary|retry|503|502|500/i
-          :transient
-        when /invalid|malformed|bad.?request|400/i
-          :permanent
-        else
-          :unknown
-        end
+        return :rate_limited if message.match?(/rate.?limit|too many requests|429/i)
+        return :quota_exceeded if message.match?(/quota|usage.?limit|billing/i)
+        return :auth_expired if auth_error?(message)
+        return :timeout if message.match?(/timeout|timed.?out/i)
+        return :transient if message.match?(/temporary|retry|503|502|500/i)
+        return :permanent if message.match?(/invalid|malformed|bad.?request|400/i)
+
+        :unknown
+      end
+
+      def auth_error?(message)
+        return true if message.match?(/\bauth\b|unauthorized|forbidden|401|403/i)
+
+        message.include?("invalid") && (message.include?("key") || message.include?("token"))
       end
     end
   end
