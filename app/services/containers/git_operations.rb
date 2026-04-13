@@ -448,14 +448,6 @@ module Containers
       # Check for any uncommitted changes (staged or unstaged)
       status_result = execute_git("status", "--porcelain")
       status_result.success? && status_result[:stdout].present?
-    rescue => e
-      Rails.logger.warn(
-        message: "container_git.has_changes_since_failed",
-        agent_run_id: agent_run.id,
-        commit_sha: commit_sha,
-        error: e.message
-      )
-      false
     end
 
     # Checks whether the agent made any changes.
@@ -473,13 +465,6 @@ module Containers
         result = execute_git("diff", "--stat", "HEAD")
       end
       result.success? && result[:stdout].present?
-    rescue => e
-      Rails.logger.warn(
-        message: "container_git.check_changes_failed",
-        agent_run_id: agent_run.id,
-        error: e.message
-      )
-      false
     end
 
     # Fetches a remote branch inside the container.

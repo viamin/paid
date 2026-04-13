@@ -939,10 +939,11 @@ RSpec.describe Containers::GitOperations do
       expect(git_ops.has_changes_since?(pre_sha)).to be false
     end
 
-    it "returns false on error" do
-      allow(container_service).to receive(:execute).and_raise(StandardError, "container gone")
+    it "propagates container errors" do
+      allow(container_service).to receive(:execute).and_raise(Docker::Error::DockerError, "container gone")
 
-      expect(git_ops.has_changes_since?(pre_sha)).to be false
+      expect { git_ops.has_changes_since?(pre_sha) }
+        .to raise_error(Docker::Error::DockerError, "container gone")
     end
   end
 
@@ -979,10 +980,11 @@ RSpec.describe Containers::GitOperations do
       expect(git_ops.has_changes?).to be false
     end
 
-    it "returns false on error" do
-      allow(container_service).to receive(:execute).and_raise(StandardError, "container gone")
+    it "propagates container errors" do
+      allow(container_service).to receive(:execute).and_raise(Docker::Error::DockerError, "container gone")
 
-      expect(git_ops.has_changes?).to be false
+      expect { git_ops.has_changes? }
+        .to raise_error(Docker::Error::DockerError, "container gone")
     end
   end
 

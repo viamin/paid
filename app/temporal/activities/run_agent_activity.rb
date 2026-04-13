@@ -101,6 +101,8 @@ module Activities
     DEFAULT_ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
     DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
     DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
+    CHANGE_DETECTION_MAX_ATTEMPTS = 3
+    CHANGE_DETECTION_RETRY_BACKOFF = 0.25
 
     def self.provider_order(agent_type:, fallback_enabled:, fallback_providers:)
       return [ agent_type ].select { |p| AGENT_COMMANDS.key?(p) } unless fallback_enabled
@@ -1052,21 +1054,15 @@ module Activities
     def commit_uncommitted_changes(agent_run)
       return unless agent_run.container_id.present?
 
-      container_service = reconnect_container(agent_run)
-      git_ops = Containers::GitOperations.new(
-        container_service: container_service,
-        agent_run: agent_run
-      )
+      with_change_detection_retry(agent_run, operation: "commit_uncommitted_changes") do
+        container_service = reconnect_container(agent_run)
+        git_ops = Containers::GitOperations.new(
+          container_service: container_service,
+          agent_run: agent_run
+        )
 
-      if git_ops.commit_uncommitted_changes
-        agent_run.log!("system", "Auto-committed uncommitted agent changes")
+        agent_run.log!("system", "Auto-committed uncommitted agent changes") if git_ops.commit_uncommitted_changes
       end
-    rescue => e
-      logger.warn(
-        message: "agent_execution.commit_uncommitted_failed",
-        agent_run_id: agent_run.id,
-        error: e.message
-      )
     end
 
     # Evaluates pre-commit requirements for the agent run.
@@ -1091,25 +1087,70 @@ module Activities
     def check_for_changes(agent_run, pre_agent_sha)
       return false unless agent_run.container_id.present?
 
-      container_service = reconnect_container(agent_run)
+      with_change_detection_retry(agent_run, operation: "check_for_changes") do
+        container_service = reconnect_container(agent_run)
 
-      git_ops = Containers::GitOperations.new(
-        container_service: container_service,
-        agent_run: agent_run
-      )
+        git_ops = Containers::GitOperations.new(
+          container_service: container_service,
+          agent_run: agent_run
+        )
 
-      if pre_agent_sha.present?
-        git_ops.has_changes_since?(pre_agent_sha)
-      else
-        git_ops.has_changes?
+        if pre_agent_sha.present?
+          git_ops.has_changes_since?(pre_agent_sha)
+        else
+          git_ops.has_changes?
+        end
       end
-    rescue => e
-      logger.warn(
-        message: "agent_execution.check_changes_failed",
-        agent_run_id: agent_run.id,
-        error: e.message
-      )
-      false
+    end
+
+    def with_change_detection_retry(agent_run, operation:)
+      attempt = 0
+
+      begin
+        attempt += 1
+        yield(attempt)
+      rescue StandardError => e
+        transient = transient_container_error?(e)
+
+        if transient && attempt < CHANGE_DETECTION_MAX_ATTEMPTS
+          logger.warn(
+            message: "agent_execution.change_detection_retry",
+            agent_run_id: agent_run.id,
+            operation: operation,
+            attempt: attempt,
+            max_attempts: CHANGE_DETECTION_MAX_ATTEMPTS,
+            error_class: e.class.name,
+            error: e.message
+          )
+          sleep(CHANGE_DETECTION_RETRY_BACKOFF * attempt)
+          retry
+        end
+
+        logger.error(
+          message: "agent_execution.change_detection_failed",
+          agent_run_id: agent_run.id,
+          operation: operation,
+          attempt: attempt,
+          max_attempts: CHANGE_DETECTION_MAX_ATTEMPTS,
+          transient: transient,
+          error_class: e.class.name,
+          error: e.message
+        )
+        raise
+      end
+    end
+
+    def transient_container_error?(error)
+      [
+        Docker::Error::DockerError,
+        Timeout::Error,
+        EOFError,
+        Errno::ECONNRESET,
+        Errno::EPIPE,
+        Errno::ETIMEDOUT
+      ].any? { |klass| error.is_a?(klass) } ||
+        error.class.ancestors.any? { |ancestor| ancestor.name == "Excon::Error" } ||
+        %w[Net::OpenTimeout Net::ReadTimeout].include?(error.class.name)
     end
 
     def augment_prompt_for_goal(agent_run, prompt)

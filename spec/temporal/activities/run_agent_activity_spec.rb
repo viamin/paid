@@ -412,6 +412,25 @@ RSpec.describe Activities::RunAgentActivity do
     )
   end
 
+  def expect_change_detection_retry_logs(logger, operation:)
+    expect(logger).to have_received(:warn).with(hash_including(
+      message: "agent_execution.change_detection_retry",
+      operation: operation,
+      attempt: 1
+    ))
+    expect(logger).to have_received(:warn).with(hash_including(
+      message: "agent_execution.change_detection_retry",
+      operation: operation,
+      attempt: 2
+    ))
+    expect(logger).to have_received(:error).with(hash_including(
+      message: "agent_execution.change_detection_failed",
+      operation: operation,
+      attempt: 3,
+      transient: true
+    ))
+  end
+
   describe "#execute" do
     context "when agent succeeds in container" do
       before do
@@ -511,12 +530,23 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.providers_attempted.map { |attempt| attempt["provider"] }).to eq([ "claude_code" ])
       end
 
-      it "returns has_changes: false when container check fails" do
-        allow(git_ops).to receive(:has_changes_since?).and_raise(StandardError, "container gone")
+      it "retries transient commit failures before checking for changes" do
+        commit_attempts = 0
+
+        allow(activity).to receive(:sleep)
+        allow(git_ops).to receive(:commit_uncommitted_changes) do
+          commit_attempts += 1
+          raise Docker::Error::DockerError, "docker unavailable" if commit_attempts == 1
+
+          true
+        end
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(true)
 
         result = activity.execute(agent_run_id: agent_run.id)
 
-        expect(result[:has_changes]).to be false
+        expect(result[:has_changes]).to be true
+        expect(git_ops).to have_received(:commit_uncommitted_changes).twice
+        expect(activity).to have_received(:sleep).with(0.25)
       end
 
       it "auto-commits uncommitted changes after agent runs" do
@@ -536,6 +566,43 @@ RSpec.describe Activities::RunAgentActivity do
 
         expect(result[:has_changes]).to be true
         expect(git_ops).not_to have_received(:has_changes_since?)
+      end
+
+      it "retries transient change-detection failures before succeeding" do
+        change_attempts = 0
+
+        allow(activity).to receive(:sleep)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123") do
+          change_attempts += 1
+          raise Docker::Error::DockerError, "docker unavailable" if change_attempts == 1
+
+          true
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be true
+        expect(git_ops).to have_received(:has_changes_since?).twice
+        expect(activity).to have_received(:sleep).with(0.25)
+      end
+
+      it "raises when change detection keeps failing after transient retries" do
+        logger = instance_double(ActiveSupport::Logger, warn: nil, error: nil, info: nil)
+        change_attempts = 0
+
+        allow(activity).to receive(:logger).and_return(logger)
+        allow(activity).to receive(:sleep)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123") do
+          change_attempts += 1
+          raise Docker::Error::DockerError, "docker unavailable"
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Docker::Error::DockerError, "docker unavailable")
+
+        expect(change_attempts).to eq(3)
+        expect_change_detection_retry_logs(logger, operation: "check_for_changes")
       end
 
       it "records the final_provider on success" do
