@@ -1026,11 +1026,12 @@ module Activities
       # re-trigger on every scan cycle (#830).
       last_review_run = current_cycle_review_runs.finished
         .order(Arel.sql("COALESCE(completed_at, updated_at) DESC")).first
-      last_create_pr_run = project.agent_runs
-        .where(source_pull_request_number: issue.github_number, goal: "create_pr")
-        .completed
-        .order(completed_at: :desc)
-        .first
+      last_create_pr_run = create_pr_runs_for_current_cycle(
+        project.agent_runs
+          .where(source_pull_request_number: issue.github_number, goal: "create_pr")
+          .completed,
+        issue
+      ).order(completed_at: :desc).first
 
       if last_review_run && last_create_pr_run
         review_timestamp = last_review_run.completed_at || last_review_run.updated_at
@@ -1040,16 +1041,24 @@ module Activities
       [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]
     end
 
-    def review_runs_for_current_cycle(review_runs, issue)
-      return review_runs unless issue.pr_review_phase == "restarted"
+    def runs_for_current_review_cycle(runs, issue)
+      return runs unless issue.pr_review_phase == "restarted"
 
       reset_at = issue.review_goal_retry_reset_at
-      return review_runs unless reset_at
+      return runs unless reset_at
 
       # Use the earliest known attempt timestamp instead of completion time so
-      # a review queued before the restart stays in the old cycle even if it
+      # a run queued before the restart stays in the old cycle even if it
       # starts or finishes afterward.
-      review_runs.where("#{review_run_cycle_boundary_sql} > ?", reset_at)
+      runs.where("#{review_run_cycle_boundary_sql} > ?", reset_at)
+    end
+
+    def review_runs_for_current_cycle(review_runs, issue)
+      runs_for_current_review_cycle(review_runs, issue)
+    end
+
+    def create_pr_runs_for_current_cycle(create_pr_runs, issue)
+      runs_for_current_review_cycle(create_pr_runs, issue)
     end
 
     # Returns true when the number of consecutive unsuccessful automatic

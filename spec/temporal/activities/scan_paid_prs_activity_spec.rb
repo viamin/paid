@@ -4466,6 +4466,56 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a restarted PR has a stale create_pr run that finishes after the reset" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "restarted",
+          review_goal_retry_reset_at: 1.hour.ago)
+      end
+
+      before do
+        enable_paid_agent_review!(project, max_review_rounds: 5)
+
+        create(:agent_run, :automatic,
+          project: project, issue: pr_issue,
+          source_pull_request_number: 42,
+          goal: "create_pr", status: "completed",
+          created_at: 2.hours.ago,
+          started_at: 90.minutes.ago,
+          completed_at: 10.minutes.ago)
+        create(:agent_run, :automatic,
+          project: project, issue: pr_issue,
+          source_pull_request_number: 42,
+          goal: "create_pr", status: "completed",
+          created_at: 55.minutes.ago,
+          started_at: 55.minutes.ago,
+          completed_at: 55.minutes.ago)
+        create(:agent_run, :automatic,
+          project: project, issue: pr_issue,
+          source_pull_request_number: 42,
+          goal: "review", status: "completed",
+          created_at: 50.minutes.ago,
+          started_at: 50.minutes.ago,
+          completed_at: 50.minutes.ago)
+
+        stub_github_for_pr(draft: true, reviews: [])
+      end
+
+      it "does not let the stale create_pr completion re-open paid_agent review" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |entry| entry[:type] }
+
+        expect(trigger[:phase]).to eq("restarted")
+        expect(trigger_types).to include("ready_for_owner")
+        expect(trigger_types).not_to include("paid_agent_review_pending")
+      end
+    end
+
     context "when an escalated PR exhausted paid_agent review rounds before draft restart" do
       let!(:pr_issue) do
         create(:issue, :pull_request,
