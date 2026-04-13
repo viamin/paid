@@ -129,16 +129,22 @@ module Activities
     end
 
     def failed_issue_creation_attempt?(agent_run)
-      stderr_chunks = agent_run.agent_run_logs
-        .where(log_type: "stderr")
+      %w[stderr stdout].any? do |log_type|
+        failed_issue_creation_attempt_in_log_type?(agent_run, log_type)
+      end
+    end
+
+    def failed_issue_creation_attempt_in_log_type?(agent_run, log_type)
+      log_chunks = agent_run.agent_run_logs
+        .where(log_type: log_type)
         .order(created_at: :desc, id: :desc)
         .limit(ISSUE_CREATION_FAILURE_LOG_LIMIT)
         .pluck(:content)
         .reverse
 
-      return false if stderr_chunks.empty?
+      return false if log_chunks.empty?
 
-      failed_issue_creation_attempt_in_lines?(stitch_stderr_chunks(stderr_chunks))
+      failed_issue_creation_attempt_in_lines?(stitch_log_chunks(log_chunks))
     end
 
     def issue_creation_attempt_line?(line)
@@ -149,11 +155,11 @@ module Activities
       line.start_with?("```")
     end
 
-    def stitch_stderr_chunks(stderr_chunks)
+    def stitch_log_chunks(log_chunks)
       stitched_chunks = []
       current_chunk = +""
 
-      stderr_chunks.each do |chunk|
+      log_chunks.each do |chunk|
         if current_chunk.empty?
           current_chunk = chunk.dup
           next
