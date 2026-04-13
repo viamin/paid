@@ -55,6 +55,7 @@ module Workflows
     KNOWN_FAILURE_TYPES = %w[
       AllProvidersExhausted
       AgentExecutionFailed
+      IssueDraftInvalid
       MissingPrompt
       MissingUser
       ContainerNotProvisioned

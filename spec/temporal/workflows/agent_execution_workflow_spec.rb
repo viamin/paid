@@ -62,6 +62,30 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       end
     end
 
+    def stub_issue_creation_rejected
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: true }
+        when "Activities::CompleteIssueGoalActivity"
+          { agent_run_id: 42, success: true, issue_created: false }
+        when "Activities::CreateGithubIssueActivity"
+          raise Temporalio::Error::ApplicationError.new(
+            "Agent already attempted and failed to create the GitHub issue; refusing fallback issue creation",
+            type: "IssueDraftInvalid",
+            non_retryable: true
+          )
+        when "Activities::MarkAgentRunFailedActivity",
+          "Activities::CleanupContainerActivity",
+          "Activities::CleanupServicesActivity",
+          "Activities::CleanupWorktreeActivity",
+          "Activities::EnqueueJanitorActivity"
+          {}
+        else {}
+        end
+      end
+    end
+
     it "runs CreateGithubIssueActivity when CompleteIssueGoalActivity returns issue_created: false" do
       stub_issue_activities(issue_created: false)
 
@@ -82,6 +106,20 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::CreateGithubIssueActivity, anything,
               timeout: anything, retry_policy: anything)
+    end
+
+    it "marks the run failed when fallback issue creation is rejected" do
+      stub_issue_creation_rejected
+
+      expect {
+        workflow.execute(input)
+      }.to raise_error(Temporalio::Error::ApplicationError)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkAgentRunFailedActivity,
+          hash_including(agent_run_id: 42,
+            error: "Agent already attempted and failed to create the GitHub issue; refusing fallback issue creation"),
+          timeout: 30)
     end
   end
 
@@ -832,6 +870,34 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
             "activity failed",
             scheduled_event_id: 1, started_event_id: 2, identity: "",
             activity_type: "CheckProxyHealth", activity_id: "1",
+            retry_state: Temporalio::Error::RetryState::NON_RETRYABLE_FAILURE
+          )
+        end
+      rescue => e
+        e
+      end
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be false
+    end
+  end
+
+  describe "IssueDraftInvalid as known failure" do
+    it "includes IssueDraftInvalid in KNOWN_FAILURE_TYPES" do
+      expect(described_class::KNOWN_FAILURE_TYPES).to include("IssueDraftInvalid")
+    end
+
+    it "does not retain container for IssueDraftInvalid failure" do
+      cause = Temporalio::Error::ApplicationError.new(
+        "issue draft invalid", type: "IssueDraftInvalid", non_retryable: true
+      )
+      error = begin
+        begin
+          raise cause
+        rescue
+          raise Temporalio::Error::ActivityError.new(
+            "activity failed",
+            scheduled_event_id: 1, started_event_id: 2, identity: "",
+            activity_type: "CreateGithubIssue", activity_id: "1",
             retry_state: Temporalio::Error::RetryState::NON_RETRYABLE_FAILURE
           )
         end
