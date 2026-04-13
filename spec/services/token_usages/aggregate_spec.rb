@@ -54,4 +54,23 @@ RSpec.describe TokenUsages::Aggregate do
       expect(result[:projected_cost_cents]).to be_a(Integer)
     end
   end
+
+  describe "copilot run-level token usage" do
+    it "includes copilot run_delta records while excluding run_summary from billable aggregation" do
+      copilot_run = create(:agent_run, :running, :copilot, project: project)
+      create(:token_usage, agent_run: copilot_run, input_tokens: 2100, output_tokens: 900,
+             cost_cents: 12, llm_model: "claude-sonnet-4.5", request_type: "run_summary")
+      create(:token_usage, agent_run: copilot_run, input_tokens: 600, output_tokens: 300,
+             cost_cents: 4, llm_model: "claude-sonnet-4.5", request_type: "run_delta")
+
+      result = described_class.for_project(project.id)
+
+      expect(result[:total_cost_cents]).to eq(34)
+      expect(result[:total_input_tokens]).to eq(3600)
+      expect(result[:total_output_tokens]).to eq(1800)
+      expect(result[:cost_by_model]).to include("claude-sonnet-4.5" => 4)
+      expect(result[:cost_by_request_type]).to include("run_delta" => 4)
+      expect(result[:cost_by_request_type]).not_to include("run_summary")
+    end
+  end
 end

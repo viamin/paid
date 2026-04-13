@@ -397,6 +397,37 @@ RSpec.describe AgentRuns::Execute do
         described_class.call(agent_run: agent_run, prompt: prompt)
       end
     end
+
+    context "when a copilot run returns token usage" do
+      let(:agent_run) { create(:agent_run, :copilot, project: project) }
+      let(:response) do
+        AgentHarness::Response.new(
+          output: "Done",
+          exit_code: 0,
+          duration: 12.0,
+          provider: :github_copilot,
+          model: "claude-sonnet-4.5",
+          tokens: { input: 2100, output: 900, total: 3000 }
+        )
+      end
+
+      before do
+        allow(AgentHarness).to receive(:send_message).and_return(response)
+      end
+
+      it "tracks run summary and delta using the reported model" do
+        described_class.call(agent_run: agent_run, prompt: prompt)
+
+        expect(agent_run.token_usages.pluck(:request_type, :llm_model, :input_tokens, :output_tokens)).to contain_exactly(
+          [ "run_summary", "claude-sonnet-4.5", 2100, 900 ],
+          [ "run_delta", "claude-sonnet-4.5", 2100, 900 ]
+        )
+
+        agent_run.reload
+        expect(agent_run.tokens_input).to eq(2100)
+        expect(agent_run.tokens_output).to eq(900)
+      end
+    end
   end
 
   describe "provider mapping" do
