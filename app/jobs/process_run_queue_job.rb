@@ -34,12 +34,15 @@ class ProcessRunQueueJob < ApplicationJob
   AUTO_PICK_RESERVED_SLOTS = 1
 
   def perform
+    lock_connection = ActiveRecord::Base.connection_pool.checkout
+    acquired = false
+
     # Use a PostgreSQL advisory lock to ensure only one job processes the queue at a time.
     # If another instance is already running, this job exits immediately (no-op).
-    acquired = ActiveRecord::Base.connection.select_value("SELECT pg_try_advisory_lock(#{ADVISORY_LOCK_KEY})")
-    return unless acquired
-
     begin
+      acquired = lock_connection.select_value("SELECT pg_try_advisory_lock(#{ADVISORY_LOCK_KEY})")
+      return unless acquired
+
       consecutive_failures = 0
       starts_count = 0
       iterations = 0
@@ -103,7 +106,8 @@ class ProcessRunQueueJob < ApplicationJob
       end
 
     ensure
-      ActiveRecord::Base.connection.execute("SELECT pg_advisory_unlock(#{ADVISORY_LOCK_KEY})") if acquired
+      lock_connection.execute("SELECT pg_advisory_unlock(#{ADVISORY_LOCK_KEY})") if acquired
+      ActiveRecord::Base.connection_pool.checkin(lock_connection)
     end
   end
 
