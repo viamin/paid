@@ -46,7 +46,7 @@ gem "docker-api"
 gem "qdrant-ruby"
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
-gem "agent-harness"
+gem "agent-harness", path: "vendor/agent-harness"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
 gem "ruby-maat"
@@ -82,6 +82,7 @@ group :development, :test do
 
   # Additional RuboCop extensions
   gem "rubocop-rspec", require: false
+  gem "standard", ">= 1.35.1", require: false
 
   # Testing framework
   gem "rspec-rails"
