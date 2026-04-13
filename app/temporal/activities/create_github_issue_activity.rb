@@ -3,7 +3,7 @@
 module Activities
   class CreateGithubIssueActivity < BaseActivity
     activity_name "CreateGithubIssue"
-    ISSUE_CREATION_ATTEMPT_PATTERN = /
+    SHELL_ISSUE_CREATION_ATTEMPT_PATTERN = /
       \A
       (?:bash|sh)\s+-lc\s+
       (?:
@@ -23,11 +23,26 @@ module Activities
       (?=.*?\/repos\/[^\/\s]+\/[^\/\s]+\/issues(?:(?=[\s"'?\\])|\z))
       .*$
     /imx
+    BARE_ISSUE_CREATION_ATTEMPT_PATTERN = /
+      \A
+      \bcurl\b
+      (?=.*?(?:-X\s+POST|--request\s+POST))
+      (?=.*?\/repos\/[^\/\s]+\/[^\/\s]+\/issues(?:(?=[\s"'?\\])|\z))
+      .*$
+    /imx
     ISSUE_CREATION_FAILURE_PATTERNS = [
       /ActiveRecord::PendingMigrationError/,
       /Upstream request failed/i,
       /\b500\s+Internal\s+Server\s+Error\b/i,
       /\b502\s+Bad\s+Gateway\b/i
+    ].freeze
+    ISSUE_CREATION_RAW_FAILURE_LINE_PATTERNS = [
+      /\AHTTP\/\d(?:\.\d+)?\s+\d{3}\b/i,
+      /\A(?:HTTP\/\d(?:\.\d+)?\s+)?500\s+Internal\s+Server\s+Error\b/i,
+      /\A(?:HTTP\/\d(?:\.\d+)?\s+)?502\s+Bad\s+Gateway\b/i,
+      /\AActiveRecord::PendingMigrationError\b/,
+      /\AUpstream request failed\b/i,
+      /\A(?:curl|gh):/i
     ].freeze
     ISSUE_CREATION_FAILURE_LOG_BATCH_SIZE = 200
     ISSUE_CREATION_FAILURE_CONTEXT_LINES = 8
@@ -142,7 +157,15 @@ module Activities
     end
 
     def issue_creation_attempt_line?(line)
-      line.match?(ISSUE_CREATION_ATTEMPT_PATTERN)
+      shell_issue_creation_attempt_line?(line) || bare_issue_creation_attempt_line?(line)
+    end
+
+    def shell_issue_creation_attempt_line?(line)
+      line.match?(SHELL_ISSUE_CREATION_ATTEMPT_PATTERN)
+    end
+
+    def bare_issue_creation_attempt_line?(line)
+      line.match?(BARE_ISSUE_CREATION_ATTEMPT_PATTERN)
     end
 
     def markdown_code_fence_line?(line)
@@ -195,11 +218,16 @@ module Activities
     end
 
     def incomplete_issue_creation_attempt_fragment?(line, next_line = nil)
-      return false unless line.match?(/\A(?:bash|sh)\s+-lc\s+(?:["'])?(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s"'\\]+))\s+)*(?:\bcur(?:l\b?)?)?/im)
+      return false unless issue_creation_attempt_fragment_prefix?(line)
 
       combined_line = [ line, next_line.presence ].compact.join
 
       !issue_creation_attempt_line?(line) && issue_creation_attempt_line?(combined_line)
+    end
+
+    def issue_creation_attempt_fragment_prefix?(line)
+      line.match?(/\A(?:bash|sh)\s+-lc\s+(?:["'])?(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s"'\\]+))\s+)*(?:\bcur(?:l\b?)?)?/im) ||
+        line.match?(/\Acur(?:l\b?)?/i)
     end
 
     def failed_issue_creation_attempt_in_lines?(log_lines)
@@ -217,11 +245,29 @@ module Activities
         next false if inside_code_fence[log_type]
         next false unless issue_creation_attempt_line?(stripped_line)
 
-        failure_context = log_lines[index + 1, ISSUE_CREATION_FAILURE_CONTEXT_LINES].to_a.map { |line| line[:line] }.join("\n")
+        failure_lines = log_lines[index + 1, ISSUE_CREATION_FAILURE_CONTEXT_LINES].to_a.map { |line| line[:line] }
+        failure_context = failure_lines.join("\n")
         next false if failure_context.blank?
+        next false if bare_issue_creation_attempt_line?(stripped_line) &&
+          !bare_issue_creation_attempt_output?(failure_lines)
 
         issue_creation_failure_marker?(failure_context)
       end
+    end
+
+    def bare_issue_creation_attempt_output?(failure_lines)
+      first_output_line = failure_lines
+        .map(&:strip)
+        .reject(&:blank?)
+        .drop_while { |line| issue_creation_command_continuation_line?(line) }
+        .first
+      return false if first_output_line.blank?
+
+      ISSUE_CREATION_RAW_FAILURE_LINE_PATTERNS.any? { |pattern| pattern.match?(first_output_line) }
+    end
+
+    def issue_creation_command_continuation_line?(line)
+      line.match?(/\A(?:-[A-Za-z]|--[A-Za-z]|\\)/)
     end
 
     def issue_creation_failure_marker?(text)
