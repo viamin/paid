@@ -503,33 +503,12 @@ module Containers
     end
 
     def seed_codex_credentials!
-      source_files = %w[auth.json config.toml]
-
       unless codex_subscription_auth?
         seed_codex_config!
         return
       end
 
-      # Prefer the source that actually contains auth.json so we don't set
-      # PAID_CODEX_SUBSCRIPTION_AUTH=1 without seeding creds.
-      host = codex_config_host_path
-      if host.present? && File.file?(File.join(host, "auth.json"))
-        seed_host_credentials!(
-          staging_path: "/home/agent/.codex-host",
-          target_path: "/home/agent/.codex",
-          files: source_files,
-          success_log_key: "container.codex_credentials_seeded",
-          failure_log_key: "container.codex_credentials_seed_failed"
-        )
-      elsif codex_local_config_path.present?
-        seed_local_credentials!(
-          source_path: codex_local_config_path,
-          target_path: "/home/agent/.codex",
-          files: source_files,
-          success_log_key: "container.codex_credentials_seeded",
-          failure_log_key: "container.codex_credentials_seed_failed"
-        )
-      end
+      log_system("container.codex_credentials_shared", source_path: codex_subscription_auth_mount_path)
     end
 
     def seed_gemini_credentials!
@@ -836,11 +815,9 @@ module Containers
         binds << "#{claude_config_host_path}:/home/agent/.claude-host:ro"
       end
 
-      if codex_config_host_path.present? &&
-         File.directory?(codex_config_host_path) &&
-         File.file?(File.join(codex_config_host_path, "auth.json")) &&
-         codex_subscription_auth?
-        binds << "#{codex_config_host_path}:/home/agent/.codex-host:ro"
+      if codex_subscription_auth?
+        bind_path = codex_subscription_auth_mount_path
+        binds << "#{bind_path}:/home/agent/.codex:rw" if bind_path.present?
       end
 
       if gemini_config_host_path.present? &&
@@ -868,9 +845,11 @@ module Containers
       # fix_workspace_ownership!-style chown after container start.
       tmpfs["/home/agent/.claude"] = "size=#{256 * 1024 * 1024},mode=0700"
 
-      # Codex CLI stores config and session data under ~/.codex.
-      # Ownership is fixed by fix_codex_tmpfs_ownership! after container start.
-      tmpfs["/home/agent/.codex"] = "size=#{64 * 1024 * 1024},mode=0700"
+      unless codex_subscription_auth?
+        # Codex CLI stores config and session data under ~/.codex.
+        # Ownership is fixed by fix_codex_tmpfs_ownership! after container start.
+        tmpfs["/home/agent/.codex"] = "size=#{64 * 1024 * 1024},mode=0700"
+      end
 
       # Gemini CLI stores config and session data under ~/.gemini.
       # Ownership is fixed by fix_gemini_tmpfs_ownership! after container start.
@@ -1082,6 +1061,13 @@ module Containers
     def codex_subscription_auth?
       paths = [ codex_config_host_path, codex_local_config_path ].compact
       paths.any? { |base| File.file?(File.join(base, "auth.json")) }
+    end
+
+    def codex_subscription_auth_mount_path
+      @codex_subscription_auth_mount_path ||= begin
+        paths = [ codex_config_host_path, codex_local_config_path ].compact
+        paths.find { |base| File.directory?(base) && File.file?(File.join(base, "auth.json")) }
+      end
     end
 
     def copilot_config_host_path

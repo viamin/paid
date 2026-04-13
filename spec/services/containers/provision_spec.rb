@@ -812,26 +812,30 @@ RSpec.describe Containers::Provision do
       it "mounts Codex config at a staging path and sets the subscription marker" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
-          expect(binds).to include("#{codex_config_dir}:/home/agent/.codex-host:ro")
+          expect(binds).to include("#{codex_config_dir}:/home/agent/.codex:rw")
           env = config["Env"]
           expect(env).to include("PAID_CODEX_SUBSCRIPTION_AUTH=1")
           expect(env).to include("ANTHROPIC_BASE_URL=http://web:3000/api/proxy/anthropic")
+          expect(config["HostConfig"]["Tmpfs"]).not_to have_key("/home/agent/.codex")
           mock_container
         end
 
         service.provision
       end
 
-      it "seeds cached Codex auth instead of the proxy config file" do
+      it "uses a shared writable Codex auth mount instead of copying credentials" do
+        allow(agent_run).to receive(:log!).and_call_original
+
         service.provision
 
-        expect(mock_container).to have_received(:exec).with(
-          [ "sh", "-c", include("/home/agent/.codex-host/auth.json").and(include("/home/agent/.codex/auth.json")) ],
-          user: "agent"
-        )
         expect(mock_container).not_to have_received(:exec).with(
           [ "sh", "-lc", include("/home/agent/.codex/config.toml").and(include('model_provider = "paid"')) ],
           user: "agent"
+        )
+        expect(agent_run).to have_received(:log!).with(
+          "system",
+          "container.codex_credentials_shared",
+          metadata: hash_including(source_path: codex_config_dir)
         )
       end
     end
