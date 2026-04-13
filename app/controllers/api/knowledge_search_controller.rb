@@ -24,13 +24,16 @@ module Api
       authorize @project, :search?, policy_class: KnowledgeSearchPolicy
 
       mode = params[:mode]
+      provider_config = mode == "exact" ? nil : @project.knowledge_embedding_provider_configuration
 
-      unless @project.semantic_search_available?
+      if provider_config.nil?
         # When no API key is configured, only exact search is available.
         mode = "exact"
         api_key = nil
+        api_base_url = nil
       else
-        api_key = @project.openai_api_key unless mode == "exact"
+        api_key = provider_config.api_key
+        api_base_url = provider_config.api_base_url
       end
 
       result = Knowledge::Search.call(
@@ -40,7 +43,8 @@ module Api
         artifact_type: params[:type],
         version: params[:version],
         limit: params[:limit],
-        api_key: api_key
+        api_key: api_key,
+        api_base_url: api_base_url
       )
 
       render json: result
