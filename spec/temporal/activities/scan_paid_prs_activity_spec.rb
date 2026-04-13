@@ -3597,7 +3597,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger[:triggers].first[:type]).to eq("owner_approved")
       end
 
-      it "does not return owner_approved when the repo has no checks" do
+      it "returns owner_approved when the repo has no checks" do
         stub_github_for_pr(
           checks: [],
           reviews: default_clean_copilot_review + [
@@ -3607,7 +3607,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("owner_approved")
       end
 
       it "does not emit owner_approved when auto_merge is disabled" do
@@ -4651,7 +4653,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger[:triggers].first[:type]).to eq("owner_approved")
       end
 
-      it "does not return owner_approved when the repo has no checks" do
+      it "returns owner_approved when the repo has no checks" do
         stub_github_for_pr(
           checks: [],
           reviews: default_clean_copilot_review + [
@@ -4661,7 +4663,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("owner_approved")
       end
 
       it "does not emit owner_approved when auto_merge is disabled" do
