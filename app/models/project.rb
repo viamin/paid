@@ -164,6 +164,10 @@ class Project < ApplicationRecord
     "#{owner}/#{repo}"
   end
 
+  def flipper_id
+    "Project;#{id}"
+  end
+
   def github_url
     "https://github.com/#{full_name}"
   end

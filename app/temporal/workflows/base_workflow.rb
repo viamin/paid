@@ -49,6 +49,18 @@ module Workflows
 
     private
 
+    def feature_flag_enabled?(flag_name, project_id:)
+      feature_flags_for(project_id).fetch(flag_name.to_sym)
+    end
+
+    def feature_flags_for(project_id)
+      @feature_flags_by_project ||= {}
+      @feature_flags_by_project[project_id] ||= begin
+        result = run_activity(Activities::LoadFeatureFlagsActivity, { project_id: project_id }, timeout: 10)
+        result.fetch(:flags, {})
+      end
+    end
+
     def deep_symbolize(obj)
       case obj
       when Hash then obj.deep_symbolize_keys
