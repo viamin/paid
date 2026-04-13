@@ -84,6 +84,19 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       agent_run.log!("stderr", "ActiveRecord::PendingMigrationError\n")
     end
 
+    def log_fragmented_failed_issue_creation_attempt_with_interleaved_failures
+      agent_run.log!("stdout", %(bash -lc 'curl ))
+      agent_run.log!("stderr", "HTTP/1.1 500 Internal Server Error")
+      agent_run.log!("stderr", "ActiveRecord::PendingMigrationError")
+      agent_run.log!("stdout", %(-X POST "$GITHUB_API_URL/repos/owner/repo/issues"'\n))
+    end
+
+    def log_failed_issue_creation_attempt_with_url_before_request_option
+      agent_run.log!("stderr", %(bash -lc 'curl "$GITHUB_API_URL/repos/owner/repo/issues" -X POST'))
+      agent_run.log!("stderr", "HTTP/1.1 500 Internal Server Error")
+      agent_run.log!("stderr", "ActiveRecord::PendingMigrationError")
+    end
+
     def log_failed_issue_comment_attempt
       agent_run.log!("stderr", %(curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues/10/comments"))
       agent_run.log!("stderr", "HTTP/1.1 500 Internal Server Error")
@@ -351,8 +364,32 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       }
     end
 
+    it "refuses fallback issue creation when failure lines interleave a fragmented command" do
+      log_fragmented_failed_issue_creation_attempt_with_interleaved_failures
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
     it "refuses fallback issue creation even when the failed direct create attempt is older than 200 later log rows" do
       log_failed_issue_creation_attempt_with_trailing_noise
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses fallback issue creation when curl lists the issues URL before -X POST" do
+      log_failed_issue_creation_attempt_with_url_before_request_option
 
       expect(github_client).not_to receive(:create_issue)
 

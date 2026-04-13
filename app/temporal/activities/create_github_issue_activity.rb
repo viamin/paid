@@ -19,17 +19,8 @@ module Activities
         \s+
       )*
       \bcurl\b
-      .*?
-      (
-        -X\s+POST |
-        --request\s+POST
-      )
-      .*?
-      \/repos\/[^\/\s]+\/[^\/\s]+\/issues
-      (?:
-        (?=[\s"'?\\])
-        | \z
-      )
+      (?=.*?(?:-X\s+POST|--request\s+POST))
+      (?=.*?\/repos\/[^\/\s]+\/[^\/\s]+\/issues(?:(?=[\s"'?\\])|\z))
       .*$
     /imx
     ISSUE_CREATION_FAILURE_PATTERNS = [
@@ -163,9 +154,10 @@ module Activities
         flush_log_line!(log_lines, state)
       end
 
+      state[:line_id] ||= log.id
+      state[:log_type] ||= log.log_type
       state[:buffer] << log.content
       state[:last_id] = log.id
-      state[:log_type] = log.log_type
 
       while (newline_index = state[:buffer].index("\n"))
         emit_log_line!(log_lines, state, state[:buffer].slice!(0, newline_index + 1).delete_suffix("\n"))
@@ -177,11 +169,13 @@ module Activities
 
       emit_log_line!(log_lines, state, state[:buffer])
       state[:buffer] = +""
+      state[:line_id] = nil
+      state[:log_type] = nil
     end
 
     def emit_log_line!(log_lines, state, line)
       log_lines << {
-        id: state[:last_id],
+        id: state[:line_id] || state[:last_id],
         sequence: log_lines.length,
         log_type: state[:log_type],
         line: line
