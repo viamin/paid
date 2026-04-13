@@ -43,6 +43,18 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       agent_run.log!("stderr", "ActiveRecord::PendingMigrationError")
     end
 
+    def log_failed_issue_comment_attempt
+      agent_run.log!("stderr", %(curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues/10/comments"))
+      agent_run.log!("stderr", "HTTP/1.1 500 Internal Server Error")
+      agent_run.log!("stderr", "Upstream request failed")
+    end
+
+    def log_failed_issue_label_attempt
+      agent_run.log!("stderr", %(curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues/10/labels"))
+      agent_run.log!("stderr", "HTTP/1.1 502 Bad Gateway")
+      agent_run.log!("stderr", "Upstream request failed")
+    end
+
     it "creates a GitHub issue via the API" do
       expect(github_client).to receive(:create_issue).with(
         project.full_name,
@@ -259,6 +271,22 @@ RSpec.describe Activities::CreateGithubIssueActivity do
           body: a_string_including("POST to /repos/acme/app/issues returns 500 Internal Server Error")
         )
       ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still creates a fallback issue when only issue comment creation failed" do
+      log_failed_issue_comment_attempt
+
+      expect(github_client).to receive(:create_issue).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still creates a fallback issue when only issue label creation failed" do
+      log_failed_issue_label_attempt
+
+      expect(github_client).to receive(:create_issue).and_return(issue_response)
 
       activity.execute(agent_run_id: agent_run.id)
     end

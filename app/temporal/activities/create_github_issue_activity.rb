@@ -17,7 +17,11 @@ module Activities
         --request\s+POST
       )
       .*?
-      \/repos\/[^\/\s]+\/[^\/\s]+\/issues\b
+      \/repos\/[^\/\s]+\/[^\/\s]+\/issues
+      (?:
+        (?=[\s"'?\\])
+        | \z
+      )
       .*$
     /imx
     ISSUE_CREATION_FAILURE_PATTERNS = [
