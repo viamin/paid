@@ -652,10 +652,10 @@ module Activities
       end
     end
 
-    # Returns true when the most recent review-goal run for this PR failed
-    # and no successful review-goal run has completed since. Only applies
-    # when the paid_agent review method is enabled (review-goal runs are
-    # how paid_agent posts reviews).
+    # Returns true when the latest finished automatic review-goal run in the
+    # current cycle ended in a retryable failure status. Only applies when the
+    # paid_agent review method is enabled (review-goal runs are how paid_agent
+    # posts reviews).
     def review_goal_retry_needed?(project, issue)
       return false unless project.review_enabled?
       return false unless project.review_method_enabled?("paid_agent")
@@ -663,7 +663,7 @@ module Activities
       # Don't retry while a review-goal run is already queued or running.
       return false if review_run_in_progress?(project, issue)
 
-      review_goal_consecutive_failure_count(project, issue).positive?
+      latest_finished_automatic_review_run(project, issue)&.status.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
     end
 
     def last_completed_run(project, issue)
@@ -975,9 +975,7 @@ module Activities
     def check_paid_agent_review_status(project, issue)
       return [] unless issue
 
-      automatic_review_runs = automatic_review_runs(project, issue)
-      attempted_review_runs = automatic_review_runs.where.not(status: "retried")
-      current_cycle_review_runs = review_runs_for_current_cycle(attempted_review_runs, issue)
+      current_cycle_review_runs = attempted_automatic_review_runs(project, issue)
       unfinished_run = current_cycle_review_run_in_progress(project, issue)
 
       if unfinished_run
@@ -1013,7 +1011,8 @@ module Activities
       # #830 "already reviewed" guard so failed/no-output reviews are retried
       # even when the last finished review attempt post-dates the last create_pr.
       failed_count = review_goal_consecutive_failure_count(project, issue)
-      if failed_count > 0
+      latest_failed_run = latest_finished_automatic_review_run(project, issue)
+      if latest_failed_run&.status.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
         max_retries = review_goal_max_retries(project)
         return [ { type: "paid_agent_review_pending",
                    details: "Retrying unsuccessful review-goal run (attempt #{failed_count + 1}/#{max_retries})" } ]
@@ -1110,6 +1109,26 @@ module Activities
     def automatic_review_runs(project, issue)
       all_review_runs(project, issue)
         .where(trigger_type: "automatic")
+    end
+
+    def attempted_automatic_review_runs(project, issue)
+      automatic_review_runs(project, issue)
+        .where.not(status: "retried")
+    end
+
+    def attempted_automatic_review_runs_since_retry_reset(project, issue)
+      scope = attempted_automatic_review_runs(project, issue)
+      reset_at = review_goal_failure_reset_at(project, issue)
+      return scope unless reset_at
+
+      scope.where(review_run_cycle_boundary.gt(reset_at))
+    end
+
+    def latest_finished_automatic_review_run(project, issue)
+      attempted_automatic_review_runs_since_retry_reset(project, issue)
+        .finished
+        .order(Arel.sql("COALESCE(completed_at, updated_at) DESC"))
+        .first
     end
 
     def review_goal_consecutive_failure_count(project, issue)
