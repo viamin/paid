@@ -269,6 +269,7 @@ module Workflows
           # No changes produced by agent
           if source_pull_request_number && pr_run_without_prompt &&
               pr_prompt_result[:includes_review_threads] &&
+              pr_prompt_result[:review_thread_ids].present? &&
               agent_result[:review_threads_already_addressed]
             begin
               run_activity(Activities::ResolveReviewThreadsActivity,

@@ -501,6 +501,26 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       end
     end
 
+    def stub_no_changes_followup_with_marker_without_review_thread_ids
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::ProvisionServicesActivity" then {}
+        when "Activities::ProvisionContainerActivity" then {}
+        when "Activities::CloneRepoActivity" then {}
+        when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
+        when "Activities::PreparePrPromptActivity" then { includes_review_threads: true, review_thread_ids: [] }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: false, review_threads_already_addressed: true }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        when "Activities::RequestReviewActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        else {}
+        end
+      end
+    end
+
     it "requests a review-bot review even when the agent makes no changes on an existing PR" do
       stub_no_changes_followup
 
@@ -525,6 +545,15 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
     it "does not resolve review threads on a no-change PR follow-up unless the prompt included review threads" do
       stub_no_changes_followup
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
+    end
+
+    it "does not resolve review threads on a no-change PR follow-up when the prompt captured no thread ids" do
+      stub_no_changes_followup_with_marker_without_review_thread_ids
 
       workflow.execute(input)
 
