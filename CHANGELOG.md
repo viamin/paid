@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/viamin/paid/compare/v0.20.0...v0.20.1) (2026-04-13)
+
+
+### Bug Fixes
+
+* 1002: fix(scanner): no recovery path when review-goal agent run fails ([#1019](https://github.com/viamin/paid/issues/1019)) ([e7873c0](https://github.com/viamin/paid/commit/e7873c062c6f7c02d4c419295c9a8af8c17056f9))
+
 ## [0.20.0](https://github.com/viamin/paid/compare/v0.19.0...v0.20.0) (2026-04-12)
 
 
