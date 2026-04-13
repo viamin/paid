@@ -184,6 +184,7 @@ module Activities
 
       while (newline_index = state[:buffer].index("\n"))
         emit_log_line!(log_lines, state, state[:buffer].slice!(0, newline_index + 1).delete_suffix("\n"))
+        reset_emitted_line_state!(state, log)
       end
     end
 
@@ -203,6 +204,16 @@ module Activities
         log_type: state[:log_type],
         line: line
       }
+    end
+
+    def reset_emitted_line_state!(state, log)
+      if state[:buffer].present?
+        state[:line_id] = log.id
+        state[:log_type] = log.log_type
+      else
+        state[:line_id] = nil
+        state[:log_type] = nil
+      end
     end
 
     def chunk_continues_previous_line?(chunk, next_chunk)

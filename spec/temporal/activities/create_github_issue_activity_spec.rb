@@ -97,6 +97,13 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       agent_run.log!("stdout", %(-X POST "$GITHUB_API_URL/repos/owner/repo/issues"'\n))
     end
 
+    def log_failed_issue_creation_attempt_with_stale_stdout_line_id
+      agent_run.log!("stdout", "initial stdout noise\n")
+      agent_run.log!("stderr", %(bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"'))
+      agent_run.log!("stdout", "HTTP/1.1 500 Internal Server Error\n")
+      agent_run.log!("stdout", "ActiveRecord::PendingMigrationError\n")
+    end
+
     def log_failed_issue_creation_attempt_with_url_before_request_option
       agent_run.log!("stderr", %(bash -lc 'curl "$GITHUB_API_URL/repos/owner/repo/issues" -X POST'))
       agent_run.log!("stderr", "HTTP/1.1 500 Internal Server Error")
@@ -384,6 +391,18 @@ RSpec.describe Activities::CreateGithubIssueActivity do
 
     it "refuses fallback issue creation when failure lines interleave a fragmented command" do
       log_fragmented_failed_issue_creation_attempt_with_interleaved_failures
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses fallback issue creation when later stdout failure lines follow an earlier stdout line" do
+      log_failed_issue_creation_attempt_with_stale_stdout_line_id
 
       expect(github_client).not_to receive(:create_issue)
 
