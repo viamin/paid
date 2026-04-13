@@ -4380,6 +4380,47 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a restarted PR has stale failed review runs from before the reset" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "restarted",
+          review_goal_retry_reset_at: 1.hour.ago)
+      end
+
+      before do
+        enable_paid_agent_review!(project, max_review_rounds: 5)
+
+        3.times do |index|
+          create(:agent_run, :automatic,
+            project: project, issue: pr_issue,
+            source_pull_request_number: 42,
+            goal: "review", status: "failed",
+            created_at: (2.hours.ago + index.minutes),
+            started_at: (90.minutes.ago + index.minutes),
+            completed_at: (30.minutes.ago + index.minutes))
+        end
+
+        stub_github_for_pr(draft: true, reviews: [])
+      end
+
+      it "ignores failures that were enqueued before the restart" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |entry| entry[:type] }
+        pending_trigger = trigger[:triggers].find { |entry| entry[:type] == "paid_agent_review_pending" }
+
+        expect(trigger[:phase]).to eq("restarted")
+        expect(trigger_types).to include("paid_agent_review_pending")
+        expect(trigger_types).not_to include("review_goal_retry")
+        expect(trigger_types).not_to include("escalate_to_owner")
+        expect(pending_trigger[:details]).to eq("No paid_agent review found for PR")
+      end
+    end
+
     context "when an escalated PR exhausted paid_agent review rounds before draft restart" do
       let!(:pr_issue) do
         create(:issue, :pull_request,
@@ -5495,11 +5536,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_github_for_pr(reviews: [])
     end
 
-    it "does not emit a paid_agent_review_pending trigger" do
+    it "retries the timed-out review" do
       result = activity.execute(project_id: project.id)
 
       triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
-      expect(triggers).not_to include("paid_agent_review_pending")
+      expect(triggers).to include("review_goal_retry")
+      expect(triggers).to include("paid_agent_review_pending")
     end
   end
 

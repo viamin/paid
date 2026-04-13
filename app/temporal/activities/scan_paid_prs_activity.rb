@@ -1046,7 +1046,10 @@ module Activities
       reset_at = issue.review_goal_retry_reset_at
       return review_runs unless reset_at
 
-      review_runs.where("COALESCE(completed_at, updated_at) > ?", reset_at)
+      # Use the earliest known attempt timestamp instead of completion time so
+      # a review queued before the restart stays in the old cycle even if it
+      # starts or finishes afterward.
+      review_runs.where("#{review_run_cycle_boundary_sql} > ?", reset_at)
     end
 
     # Returns true when the number of consecutive unsuccessful automatic
@@ -1109,7 +1112,7 @@ module Activities
         status: REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES,
         trigger_type: "automatic"
       )
-      scope = scope.where("completed_at > ?", reset_at) if reset_at
+      scope = scope.where("#{review_run_cycle_boundary_sql} > ?", reset_at) if reset_at
       scope.count
     end
 
@@ -1140,6 +1143,13 @@ module Activities
       else
         effective
       end
+    end
+
+    def review_run_cycle_boundary_sql
+      "CASE " \
+        "WHEN started_at IS NULL THEN created_at " \
+        "ELSE LEAST(started_at, created_at) " \
+      "END"
     end
 
     def body_only_review_bot?(login)
