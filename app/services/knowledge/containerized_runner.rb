@@ -105,6 +105,8 @@ module Knowledge
       bridge.connect(@container.id)
       @network_connected = true
     rescue Docker::Error::DockerError => e
+      return @network_connected = true if network_already_connected_error?(e)
+
       raise ContainerError, "Failed to connect network: #{e.message}"
     end
 
@@ -119,6 +121,8 @@ module Knowledge
       bridge.disconnect(@container.id)
       @network_connected = false
     rescue Docker::Error::DockerError => e
+      return @network_connected = false if network_not_connected_error?(e)
+
       raise ContainerError, "Failed to disconnect network: #{e.message}"
     end
 
@@ -405,6 +409,14 @@ module Knowledge
 
         secrets << Regexp.last_match(1) if value.to_s.match(%r{x-access-token:([^@/\s]+)})
       end.compact.uniq
+    end
+
+    def network_already_connected_error?(error)
+      error.message.match?(/already exists in network bridge|endpoint with name .* already exists in network bridge/i)
+    end
+
+    def network_not_connected_error?(error)
+      error.message.match?(/is not connected to network bridge|endpoint .* not found/i)
     end
 
     def cleanup!

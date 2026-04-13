@@ -374,6 +374,17 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       )
     end
 
+    it "treats Docker already-connected errors as idempotent success" do
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+      runner.instance_variable_set(:@container, mock_container)
+      runner.instance_variable_set(:@network_connected, false)
+      allow(mock_bridge_network).to receive(:connect).and_raise(
+        Docker::Error::ServerError.new("endpoint with name collector123 already exists in network bridge")
+      )
+
+      expect { runner.connect_network! }.not_to raise_error
+    end
+
     it "raises a clear error when connect_network! is used with network_mode none" do
       runner = described_class.new(project: project, commit_sha: commit_sha, options: { network_mode: "none" })
       runner.instance_variable_set(:@container, mock_container)
@@ -389,6 +400,17 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       expect { runner.disconnect_network! }.to raise_error(
         Knowledge::ContainerizedRunner::ContainerError, /not provisioned/
       )
+    end
+
+    it "treats Docker already-disconnected errors as idempotent success" do
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+      runner.instance_variable_set(:@container, mock_container)
+      runner.instance_variable_set(:@network_connected, true)
+      allow(mock_bridge_network).to receive(:disconnect).and_raise(
+        Docker::Error::ServerError.new("container collector123 is not connected to network bridge")
+      )
+
+      expect { runner.disconnect_network! }.not_to raise_error
     end
   end
 
