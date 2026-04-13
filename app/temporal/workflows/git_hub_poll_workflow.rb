@@ -172,6 +172,7 @@ module Workflows
     def start_agent_workflow(project_id, issue_id, source_pull_request_number: nil)
       queue_input = { project_id: project_id, issue_id: issue_id }
       queue_input[:source_pull_request_number] = source_pull_request_number if source_pull_request_number
+      queue_input[:goal] = "create_pr" if source_pull_request_number
       run_activity(Activities::QueueAgentRunActivity, queue_input, timeout: 30)
     end
 
@@ -460,7 +461,8 @@ module Workflows
       unless Temporalio::Workflow.patched("draft-followup-direct-start-v1")
         run_activity(Activities::QueueAgentRunActivity,
           { project_id: project_id, issue_id: issue_id,
-            source_pull_request_number: pr_number }, timeout: 30)
+            source_pull_request_number: pr_number,
+            goal: "create_pr" }, timeout: 30)
         run_activity(Activities::RecordDraftReviewActivity,
           {
             issue_id: issue_id,
@@ -473,6 +475,7 @@ module Workflows
         project_id: project_id,
         issue_id: issue_id,
         source_pull_request_number: pr_number,
+        goal: "create_pr",
         count_toward_draft_review_round: true,
         expected_draft_review_count: pr_data[:current_draft_review_count]
       }, timeout: 30)
@@ -491,7 +494,8 @@ module Workflows
 
       run_activity(Activities::QueueAgentRunActivity,
         { project_id: project_id, issue_id: issue_id,
-          source_pull_request_number: pr_number }, timeout: 30)
+          source_pull_request_number: pr_number,
+          goal: "create_pr" }, timeout: 30)
       run_activity(Activities::RecordPrFollowupActivity, followup_input, timeout: 30)
     end
   end
