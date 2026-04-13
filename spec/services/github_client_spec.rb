@@ -889,6 +889,52 @@ RSpec.describe GithubClient do
 
         expect(result.multi_page?).to be true
       end
+
+      it "walks backward across a bounded number of pages and returns them in ascending order" do
+        link_header = %(<#{api_base}/repos/#{repo}/issues/42/comments?page=2&per_page=100>; rel="next", ) +
+          %(<#{api_base}/repos/#{repo}/issues/42/comments?page=5&per_page=100>; rel="last")
+        page_five_link_header = %(<#{api_base}/repos/#{repo}/issues/42/comments?page=4&per_page=100>; rel="prev")
+
+        stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
+          .with(query: hash_including("per_page" => "100", "page" => "1"))
+          .to_return(
+            status: 200,
+            body: [ { id: 1, body: "Very old comment", user: { login: "reviewer" } } ].to_json,
+            headers: { "Content-Type" => "application/json", "Link" => link_header }
+          )
+
+        stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
+          .with(query: hash_including("per_page" => "100", "page" => "5"))
+          .to_return(
+            status: 200,
+            body: [
+              { id: 401, body: "Page 5 older", user: { login: "maintainer" } },
+              { id: 402, body: "Page 5 newer", user: { login: "maintainer" } }
+            ].to_json,
+            headers: { "Content-Type" => "application/json", "Link" => page_five_link_header }
+          )
+
+        stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
+          .with(query: hash_including("per_page" => "100", "page" => "4"))
+          .to_return(
+            status: 200,
+            body: [
+              { id: 301, body: "Page 4 older", user: { login: "maintainer" } },
+              { id: 302, body: "Page 4 newer", user: { login: "maintainer" } }
+            ].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
+        result = client.recent_issue_comments(repo, 42, pages: 2)
+
+        expect(result.map(&:body)).to eq([
+          "Page 4 older",
+          "Page 4 newer",
+          "Page 5 older",
+          "Page 5 newer"
+        ])
+        expect(result.multi_page?).to be true
+      end
     end
   end
 
