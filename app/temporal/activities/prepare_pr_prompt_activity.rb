@@ -30,6 +30,7 @@ module Activities
         )
         prompt = prompt_builder.build
         includes_review_threads = prompt_builder.includes_review_threads?
+        review_thread_ids = prompt_builder.unresolved_review_thread_ids
 
         agent_run.update!(custom_prompt: prompt, prompt_version: prompt_version)
 
@@ -38,6 +39,7 @@ module Activities
           agent_run_id: agent_run_id,
           prompt_length: prompt.length,
           includes_review_threads: includes_review_threads,
+          review_thread_count: review_thread_ids.size,
           prompt_version_id: prompt_version&.id
         )
 
@@ -45,6 +47,7 @@ module Activities
           agent_run_id: agent_run_id,
           prompt_length: prompt.length,
           includes_review_threads: includes_review_threads,
+          review_thread_ids: review_thread_ids,
           prompt_version_id: prompt_version&.id
         }
       end

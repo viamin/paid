@@ -41,6 +41,10 @@ module Prompts
       unresolved_threads.any?
     end
 
+    def unresolved_review_thread_ids
+      unresolved_threads.filter_map { |thread| thread[:id] }
+    end
+
     PROMPT_SLUG = "coding.pr_review_rebase"
 
     # Fallback used only if the seeded prompt is missing or deactivated.

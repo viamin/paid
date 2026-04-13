@@ -223,10 +223,11 @@ module Workflows
 
           if source_pull_request_number
             # Resolve review threads (best-effort, non-fatal)
-            if pr_run_without_prompt
+            if pr_run_without_prompt && pr_prompt_result[:review_thread_ids].present?
               begin
                 run_activity(Activities::ResolveReviewThreadsActivity,
-                  { agent_run_id: agent_run_id }, timeout: 60)
+                  { agent_run_id: agent_run_id,
+                    thread_ids: pr_prompt_result[:review_thread_ids] }, timeout: 60)
               rescue => e
                 Temporalio::Workflow.logger.warn(
                   message: "agent_execution.resolve_threads_failed",
@@ -271,7 +272,8 @@ module Workflows
               agent_result[:review_threads_already_addressed]
             begin
               run_activity(Activities::ResolveReviewThreadsActivity,
-                { agent_run_id: agent_run_id }, timeout: 60)
+                { agent_run_id: agent_run_id,
+                  thread_ids: pr_prompt_result[:review_thread_ids] }, timeout: 60)
             rescue => e
               Temporalio::Workflow.logger.warn(
                 message: "agent_execution.resolve_threads_failed",

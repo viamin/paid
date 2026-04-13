@@ -134,6 +134,27 @@ RSpec.describe Prompts::BuildForPr do
     end
   end
 
+  describe "#unresolved_review_thread_ids" do
+    it "returns only unresolved review thread ids" do
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", author: "reviewer" } ] },
+          { id: "thread_2", is_resolved: true, comments: [ { body: "Already fixed", author: "reviewer" } ] },
+          { id: nil, is_resolved: false, comments: [ { body: "Missing id", author: "reviewer" } ] }
+        ])
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(builder.unresolved_review_thread_ids).to eq([ "thread_1" ])
+    end
+  end
+
   describe "merge conflicts section" do
     it "includes merge conflicts instructions when rebase failed" do
       prompt = described_class.call(

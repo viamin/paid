@@ -357,11 +357,32 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         when "Activities::ProvisionContainerActivity" then {}
         when "Activities::CloneRepoActivity" then {}
         when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
-        when "Activities::PreparePrPromptActivity" then {}
+        when "Activities::PreparePrPromptActivity" then { review_thread_ids: [ "thread_1" ] }
         when "Activities::RunAgentActivity" then { success: true, has_changes: true }
         when "Activities::PushBranchActivity" then {}
         when "Activities::ResolveReviewThreadsActivity" then {}
         when "Activities::CompleteExistingPrRunActivity" then { pr_review_phase: pr_review_phase }
+        when "Activities::RequestReviewActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        else {}
+        end
+      end
+    end
+
+    def stub_existing_pr_followup_without_review_threads
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::ProvisionServicesActivity" then {}
+        when "Activities::ProvisionContainerActivity" then {}
+        when "Activities::CloneRepoActivity" then {}
+        when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
+        when "Activities::PreparePrPromptActivity" then { review_thread_ids: [] }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: true }
+        when "Activities::PushBranchActivity" then {}
+        when "Activities::CompleteExistingPrRunActivity" then { pr_review_phase: "ready" }
         when "Activities::RequestReviewActivity" then {}
         when "Activities::CleanupContainerActivity" then {}
         when "Activities::CleanupServicesActivity" then {}
@@ -409,6 +430,26 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
             reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] },
           timeout: 60)
     end
+
+    it "passes prompt-captured review thread ids when resolving after pushing commits" do
+      stub_existing_pr_followup(pr_review_phase: "ready")
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity,
+          { agent_run_id: 42, thread_ids: [ "thread_1" ] },
+          timeout: 60)
+    end
+
+    it "does not resolve review threads after pushing commits when the prompt captured none" do
+      stub_existing_pr_followup_without_review_threads
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
+    end
   end
 
   describe "existing PR follow-up with no changes" do
@@ -427,7 +468,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         when "Activities::ProvisionContainerActivity" then {}
         when "Activities::CloneRepoActivity" then {}
         when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
-        when "Activities::PreparePrPromptActivity" then { includes_review_threads: false }
+        when "Activities::PreparePrPromptActivity" then { includes_review_threads: false, review_thread_ids: [] }
         when "Activities::RunAgentActivity" then { success: true, has_changes: false }
         when "Activities::MarkAgentRunCompleteActivity" then {}
         when "Activities::RequestReviewActivity" then {}
@@ -447,7 +488,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         when "Activities::ProvisionContainerActivity" then {}
         when "Activities::CloneRepoActivity" then {}
         when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
-        when "Activities::PreparePrPromptActivity" then { includes_review_threads: true }
+        when "Activities::PreparePrPromptActivity" then { includes_review_threads: true, review_thread_ids: [ "thread_1" ] }
         when "Activities::RunAgentActivity" then { success: true, has_changes: false, review_threads_already_addressed: true }
         when "Activities::ResolveReviewThreadsActivity" then {}
         when "Activities::MarkAgentRunCompleteActivity" then {}
@@ -478,7 +519,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::ResolveReviewThreadsActivity,
-          { agent_run_id: 42 },
+          { agent_run_id: 42, thread_ids: [ "thread_1" ] },
           timeout: 60)
     end
 

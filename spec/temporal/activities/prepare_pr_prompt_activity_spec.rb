@@ -65,6 +65,7 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(result[:prompt_length]).to be > 0
       expect(result[:agent_run_id]).to eq(agent_run.id)
       expect(result[:includes_review_threads]).to be(false)
+      expect(result[:review_thread_ids]).to eq([])
       expect(result[:prompt_version_id]).to eq(prompt.current_version.id)
     end
 
@@ -122,6 +123,7 @@ RSpec.describe Activities::PreparePrPromptActivity do
         result = activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
 
         expect(result[:includes_review_threads]).to be(true)
+        expect(result[:review_thread_ids]).to eq([ "thread_1" ])
         expect(agent_run.reload.custom_prompt).to include("Code Review Comments")
       end
     end
