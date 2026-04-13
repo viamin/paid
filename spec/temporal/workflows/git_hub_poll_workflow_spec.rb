@@ -168,6 +168,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
         .and_return({ queued: true })
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("queue-agent-run-goal-v1")
+        .and_return(true)
     end
 
     it "queues execute_agent runs instead of starting them directly" do
@@ -188,6 +191,21 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
           { project_id: project_id, issue_id: 10, source_pull_request_number: 42, goal: "create_pr" },
+          timeout: 30)
+    end
+
+    it "omits goal from queue input before the goal patch" do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("queue-agent-run-goal-v1")
+        .and_return(false)
+
+      detection = { action: "execute_agent", issue_id: 10, source_pull_request_number: 42 }
+
+      workflow.send(:handle_detection, detection, project_id)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42 },
           timeout: 30)
     end
 
@@ -264,6 +282,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .and_return(true)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("escalation-reason-payload-v1")
+        .and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("queue-agent-run-goal-v1")
         .and_return(true)
     end
 
@@ -473,6 +494,39 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
+    it "omits goal from legacy draft followup queue input before the goal patch" do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("draft-followup-direct-start-v1")
+        .and_return(false)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("queue-agent-run-goal-v1")
+        .and_return(false)
+
+      workflow.send(:handle_pr_trigger, project_id,
+        draft_pr_data(current_draft_review_count: 1, triggers: [ { type: "ci_failure" } ]))
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42 },
+          timeout: 30)
+    end
+
+    it "omits goal from patched draft followup queue input before the goal patch" do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("queue-agent-run-goal-v1")
+        .and_return(false)
+
+      workflow.send(:handle_pr_trigger, project_id,
+        draft_pr_data(current_draft_review_count: 1, triggers: [ { type: "ci_failure" } ]))
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: 10,
+            source_pull_request_number: 42,
+            count_toward_draft_review_round: true,
+            expected_draft_review_count: 1 }, timeout: 30)
+    end
+
     it "queues draft followup runs without incrementing draft review count yet" do
       workflow.send(:handle_pr_trigger, project_id,
         draft_pr_data(current_draft_review_count: 4, triggers: [ { type: "ci_failure" } ]))
@@ -517,6 +571,27 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::QueueAgentRunActivity,
           { project_id: project_id, issue_id: 10, source_pull_request_number: 42, goal: "create_pr" }, timeout: 30)
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+    end
+
+    it "omits goal from ready-phase followup queue input before the goal patch" do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("queue-agent-run-goal-v1")
+        .and_return(false)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        current_followup_count: 0,
+        triggers: [ { type: "ci_failure" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42 }, timeout: 30)
     end
 
     it "routes review_bot_review_pending to RequestReviewActivity using the trigger's request_login" do
@@ -1030,6 +1105,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with("add-scan-security-alerts-v1").and_return(false)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("add-check-knowledge-staleness-v1").and_return(false)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("queue-agent-run-goal-v1").and_return(true)
       allow(workflow).to receive(:interruptible_sleep)
       allow(workflow).to receive(:run_activity)
         .with(Activities::GetPollIntervalActivity, anything, timeout: anything)
