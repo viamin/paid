@@ -176,7 +176,11 @@ module Activities
     end
 
     def failed_issue_creation_attempt_in_fragmented_chunks?(stderr_chunks)
+      inside_code_fence_before_chunk = markdown_code_fence_state_before_chunks(stderr_chunks)
+
       stderr_chunks.each_index.any? do |index|
+        next false if inside_code_fence_before_chunk[index]
+
         candidate = stderr_chunks[index, ISSUE_CREATION_FAILURE_CONTEXT_LINES].to_a.join
         candidate_lines = candidate.each_line(chomp: true).to_a
         next false if candidate_lines.empty?
@@ -188,6 +192,20 @@ module Activities
         next false if failure_context.blank?
 
         issue_creation_failure_marker?(failure_context)
+      end
+    end
+
+    def markdown_code_fence_state_before_chunks(stderr_chunks)
+      inside_code_fence = false
+
+      stderr_chunks.map do |chunk|
+        inside_before_chunk = inside_code_fence
+
+        chunk.each_line(chomp: true) do |line|
+          inside_code_fence = !inside_code_fence if markdown_code_fence_line?(line.strip)
+        end
+
+        inside_before_chunk
       end
     end
 

@@ -357,6 +357,22 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
+    it "still creates a valid stderr fallback draft when a fenced curl snippet is split across log rows" do
+      agent_run.log!("stderr", "# Proxy issue creation needs a fallback\n\nReproduction:\n```sh\n")
+      agent_run.log!("stderr", %(curl -X POST "$GITHUB_API_URL/repos/acme/))
+      agent_run.log!("stderr", %(app/issues"\n```\n\nThe request returns 500 Internal Server Error.\n))
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(
+          title: "Proxy issue creation needs a fallback",
+          body: a_string_including(%(curl -X POST "$GITHUB_API_URL/repos/acme/))
+        )
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
     it "still creates a valid stderr fallback draft that describes a curl reproduction in prose" do
       agent_run.log!("stderr", <<~TEXT)
         # Proxy issue creation needs a fallback
