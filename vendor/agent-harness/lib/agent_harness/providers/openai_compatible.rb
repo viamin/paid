@@ -227,8 +227,12 @@ module AgentHarness
         seconds = Float(retry_after)
         Time.now + seconds
       rescue ArgumentError
-        Time.httpdate(retry_after)
-      rescue ArgumentError, TypeError
+        begin
+          Time.httpdate(retry_after)
+        rescue ArgumentError, TypeError
+          nil
+        end
+      rescue TypeError
         nil
       end
 

@@ -190,6 +190,7 @@ module AgentHarness
           next unless provider_config.enabled
 
           klass = @registry.get(name)
+          next unless klass
           next unless klass.supports_embeddings?
           next unless provider_supports_model?(provider_config, model)
 

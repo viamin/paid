@@ -91,6 +91,12 @@ module AgentHarness
       #   runtime overrides (model, base_url, api_provider, env, flags, metadata).
       #   A plain Hash is automatically coerced into a ProviderRuntime.
       # @return [Response] the response
+      class << self
+        def supports_embeddings?
+          false
+        end
+      end
+
       def send_message(prompt:, **options)
         log_debug("send_message_start", prompt_length: prompt.length, options: options.keys)
 

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "cgi"
+
 module AgentHarness
   module Providers
     class AzureOpenai < OpenaiCompatible
@@ -23,7 +25,7 @@ module AgentHarness
           runtime&.metadata&.fetch("api_version", nil) ||
           @config.api_version || DEFAULT_API_VERSION
 
-        "/openai/deployments/#{deployment}/embeddings?api-version=#{api_version}"
+        "/openai/deployments/#{URI.encode_www_form_component(deployment)}/embeddings?api-version=#{CGI.escape(api_version)}"
       end
 
       def build_headers(runtime:)
