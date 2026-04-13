@@ -5,7 +5,7 @@ module Activities
     activity_name "CreateGithubIssue"
     ISSUE_CREATION_ATTEMPT_PATTERN = /
       \A
-      (?:[\$#>+]\s+|(?:bash|sh)\s+-lc\s+)
+      (?:bash|sh)\s+-lc\s+
       (?:
         ["']
       )?
@@ -185,7 +185,7 @@ module Activities
     end
 
     def incomplete_issue_creation_attempt_fragment?(line)
-      return false unless line.match?(/\A(?:[\$#>+]\s+|(?:bash|sh)\s+-lc\s+).*\bcurl\b/im)
+      return false unless line.match?(/\A(?:bash|sh)\s+-lc\s+(?:["'])?(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s"'\\]+))\s+)*\bcurl\b/im)
 
       !issue_creation_attempt_line?(line)
     end
