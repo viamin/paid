@@ -58,11 +58,21 @@ class UserSettingsController < ApplicationController
       :max_issues_per_page,
       :max_prs_per_page,
       :fallback_enabled,
-      :fallback_providers
+      :fallback_providers,
+      :kb_embedding_provider,
+      :kb_embedding_fallback_providers,
+      :kb_chat_provider,
+      :kb_chat_fallback_providers
     )
 
-    if permitted.key?(:fallback_providers)
-      permitted[:fallback_providers] = UserSetting.normalize_fallback_providers_param(permitted[:fallback_providers])
+    %i[
+      fallback_providers
+      kb_embedding_fallback_providers
+      kb_chat_fallback_providers
+    ].each do |key|
+      next unless permitted.key?(key)
+
+      permitted[key] = UserSetting.normalize_provider_array_param(permitted[key])
     end
 
     permitted
