@@ -37,6 +37,96 @@ RSpec.describe Activities::CreateGithubIssueActivity do
   end
 
   describe "#execute" do
+    def log_failed_issue_creation_attempt
+      agent_run.log!("stderr", %(bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"'))
+      agent_run.log!("stderr", "HTTP/1.1 500 Internal Server Error")
+      agent_run.log!("stderr", "ActiveRecord::PendingMigrationError")
+    end
+
+    def log_failed_plain_curl_issue_creation_attempt
+      agent_run.log!("stderr", %(curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"))
+      agent_run.log!("stderr", "HTTP/1.1 500 Internal Server Error")
+      agent_run.log!("stderr", "ActiveRecord::PendingMigrationError")
+    end
+
+    def log_failed_plain_curl_issue_creation_attempt_with_json_error
+      agent_run.log!("stderr", %(curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"))
+      agent_run.log!("stderr", '{"error":"Upstream request failed"}')
+    end
+
+    def log_failed_issue_creation_attempt_in_stdout
+      agent_run.log!("stdout", %(bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"'))
+      agent_run.log!("stdout", "HTTP/1.1 500 Internal Server Error")
+      agent_run.log!("stdout", "ActiveRecord::PendingMigrationError")
+    end
+
+    def log_failed_issue_creation_attempt_across_streams(command_log_type:, failure_log_type:)
+      agent_run.log!(command_log_type, %(bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"'))
+      agent_run.log!(failure_log_type, "HTTP/1.1 500 Internal Server Error")
+      agent_run.log!(failure_log_type, "ActiveRecord::PendingMigrationError")
+    end
+
+    def log_failed_issue_creation_attempt_with_trailing_noise(log_type: "stderr")
+      agent_run.log!(log_type, %(bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"'))
+      agent_run.log!(log_type, "HTTP/1.1 500 Internal Server Error")
+      agent_run.log!(log_type, "ActiveRecord::PendingMigrationError")
+
+      (described_class::ISSUE_CREATION_FAILURE_LOG_BATCH_SIZE + 5).times do |index|
+        agent_run.log!(log_type, "non-matching trailing log line #{index}")
+      end
+    end
+
+    def log_fragmented_failed_issue_creation_attempt
+      agent_run.log!("stderr", %(bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/))
+      agent_run.log!("stderr", %(repo/issues"'\nHTTP/1.1 500 Internal Server Error\n))
+      agent_run.log!("stderr", "ActiveRecord::PendingMigrationError\n")
+    end
+
+    def log_mid_token_fragmented_failed_issue_creation_attempt
+      agent_run.log!("stderr", %(bash -lc 'cur))
+      agent_run.log!("stderr", %(l -X POST "$GITHUB_API_URL/repos/owner/repo/issues"'\n))
+      agent_run.log!("stderr", "HTTP/1.1 500 Internal Server Error\n")
+      agent_run.log!("stderr", "ActiveRecord::PendingMigrationError\n")
+    end
+
+    def log_fragmented_failed_issue_creation_attempt_with_leading_text
+      agent_run.log!("stderr", %(Attempting direct issue creation before fallback:\nbash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/))
+      agent_run.log!("stderr", %(repo/issues"'\nHTTP/1.1 500 Internal Server Error\n))
+      agent_run.log!("stderr", "ActiveRecord::PendingMigrationError\n")
+    end
+
+    def log_fragmented_failed_issue_creation_attempt_with_interleaved_failures
+      agent_run.log!("stdout", %(bash -lc 'curl ))
+      agent_run.log!("stderr", "HTTP/1.1 500 Internal Server Error")
+      agent_run.log!("stderr", "ActiveRecord::PendingMigrationError")
+      agent_run.log!("stdout", %(-X POST "$GITHUB_API_URL/repos/owner/repo/issues"'\n))
+    end
+
+    def log_failed_issue_creation_attempt_with_stale_stdout_line_id
+      agent_run.log!("stdout", "initial stdout noise\n")
+      agent_run.log!("stderr", %(bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"'))
+      agent_run.log!("stdout", "HTTP/1.1 500 Internal Server Error\n")
+      agent_run.log!("stdout", "ActiveRecord::PendingMigrationError\n")
+    end
+
+    def log_failed_issue_creation_attempt_with_url_before_request_option
+      agent_run.log!("stderr", %(bash -lc 'curl "$GITHUB_API_URL/repos/owner/repo/issues" -X POST'))
+      agent_run.log!("stderr", "HTTP/1.1 500 Internal Server Error")
+      agent_run.log!("stderr", "ActiveRecord::PendingMigrationError")
+    end
+
+    def log_failed_issue_comment_attempt
+      agent_run.log!("stderr", %(curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues/10/comments"))
+      agent_run.log!("stderr", "HTTP/1.1 500 Internal Server Error")
+      agent_run.log!("stderr", "Upstream request failed")
+    end
+
+    def log_failed_issue_label_attempt
+      agent_run.log!("stderr", %(curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues/10/labels"))
+      agent_run.log!("stderr", "HTTP/1.1 502 Bad Gateway")
+      agent_run.log!("stderr", "Upstream request failed")
+    end
+
     it "creates a GitHub issue via the API" do
       expect(github_client).to receive(:create_issue).with(
         project.full_name,
@@ -200,6 +290,364 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       synced = project.issues.find_by(github_issue_id: 12345)
       expect(synced).to be_present
       expect(synced.github_number).to eq(10)
+    end
+
+    it "refuses to create a fallback issue from issue-creation failure output" do
+      log_failed_issue_creation_attempt
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+
+      expect(agent_run.reload.status).not_to eq("completed")
+      expect(agent_run.created_issue_url).to be_nil
+      expect(agent_run.created_issue_number).to be_nil
+      expect(agent_run.agent_run_logs.last.content)
+        .to include("Refused fallback issue creation")
+    end
+
+    it "refuses to create a fallback issue from stdout issue-creation failure output" do
+      log_failed_issue_creation_attempt_in_stdout
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses to create a fallback issue from a direct curl issue-creation failure output" do
+      log_failed_plain_curl_issue_creation_attempt
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses to create a fallback issue from a direct curl issue-creation failure with JSON error body" do
+      log_failed_plain_curl_issue_creation_attempt_with_json_error
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses fallback issue creation when the command is in stdout and the failure markers are in stderr" do
+      log_failed_issue_creation_attempt_across_streams(command_log_type: "stdout", failure_log_type: "stderr")
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses fallback issue creation when the command is in stderr and the failure markers are in stdout" do
+      log_failed_issue_creation_attempt_across_streams(command_log_type: "stderr", failure_log_type: "stdout")
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses fallback issue creation when the stderr command is split across log rows" do
+      log_fragmented_failed_issue_creation_attempt
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses fallback issue creation when the stderr command splits the curl token across log rows" do
+      log_mid_token_fragmented_failed_issue_creation_attempt
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses fallback issue creation when a multi-line stderr chunk prefixes a split command" do
+      log_fragmented_failed_issue_creation_attempt_with_leading_text
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses fallback issue creation when failure lines interleave a fragmented command" do
+      log_fragmented_failed_issue_creation_attempt_with_interleaved_failures
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses fallback issue creation when later stdout failure lines follow an earlier stdout line" do
+      log_failed_issue_creation_attempt_with_stale_stdout_line_id
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses fallback issue creation even when the failed direct create attempt is older than 200 later log rows" do
+      log_failed_issue_creation_attempt_with_trailing_noise
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses fallback issue creation when curl lists the issues URL before -X POST" do
+      log_failed_issue_creation_attempt_with_url_before_request_option
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "still creates a valid issue whose content mentions pending migrations" do
+      agent_run.log!("stdout", <<~TEXT)
+        # Proxy write path crashes with PendingMigrationError
+
+        Creating an issue through the proxy can fail with `ActiveRecord::PendingMigrationError`.
+      TEXT
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(
+          title: "Proxy write path crashes with PendingMigrationError",
+          body: a_string_including("ActiveRecord::PendingMigrationError")
+        )
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still creates a valid issue that describes the issues endpoint returning 500" do
+      agent_run.log!("stdout", <<~TEXT)
+        # Proxy issue creation fails with 500s
+
+        When POST to /repos/acme/app/issues returns 500 Internal Server Error, the
+        fallback issue should still be published so the incident can be tracked.
+      TEXT
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(
+          title: "Proxy issue creation fails with 500s",
+          body: a_string_including("POST to /repos/acme/app/issues returns 500 Internal Server Error")
+        )
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still creates a fallback issue when only issue comment creation failed" do
+      log_failed_issue_comment_attempt
+
+      expect(github_client).to receive(:create_issue).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still creates a fallback issue when only issue label creation failed" do
+      log_failed_issue_label_attempt
+
+      expect(github_client).to receive(:create_issue).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still creates a valid issue that includes a curl reproduction snippet and 500 text" do
+      agent_run.log!("stdout", <<~TEXT)
+        # Proxy issue creation needs a fallback
+
+        Reproduction:
+        ```sh
+        curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"
+        ```
+
+        The request currently returns 500 Internal Server Error, so the fallback
+        path should still publish this issue draft.
+      TEXT
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(
+          title: "Proxy issue creation needs a fallback",
+          body: a_string_including(%(curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"))
+        )
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still creates a valid issue that includes an unfenced prompt-prefixed curl reproduction line" do
+      agent_run.log!("stdout", <<~TEXT)
+        # Proxy issue creation needs a fallback
+
+        Reproduction:
+        $ curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"
+
+        The request currently returns 500 Internal Server Error, so the fallback
+        path should still publish this issue draft.
+      TEXT
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(
+          title: "Proxy issue creation needs a fallback",
+          body: a_string_including(%($ curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"))
+        )
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still creates a valid stderr fallback draft that includes a curl reproduction snippet and 500 text" do
+      agent_run.log!("stderr", <<~TEXT)
+        # Proxy issue creation needs a fallback
+
+        Reproduction:
+        ```sh
+        curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"
+        ```
+
+        The request currently returns 500 Internal Server Error, so the fallback
+        path should still publish this issue draft.
+      TEXT
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(
+          title: "Proxy issue creation needs a fallback",
+          body: a_string_including(%(curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"))
+        )
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still creates a valid stderr fallback draft when a fenced curl snippet is split across log rows" do
+      agent_run.log!("stderr", "# Proxy issue creation needs a fallback\n\nReproduction:\n```sh\n")
+      agent_run.log!("stderr", %(curl -X POST "$GITHUB_API_URL/repos/acme/))
+      agent_run.log!("stderr", %(app/issues"\n```\n\nThe request returns 500 Internal Server Error.\n))
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(
+          title: "Proxy issue creation needs a fallback",
+          body: a_string_including(%(curl -X POST "$GITHUB_API_URL/repos/acme/))
+        )
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still creates a valid stderr fallback draft with an unfenced curl reproduction line" do
+      agent_run.log!("stderr", <<~TEXT)
+        # Proxy issue creation needs a fallback
+
+        Reproduction:
+        curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"
+
+        The request currently returns 500 Internal Server Error, so the fallback
+        path should still publish this issue draft.
+      TEXT
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(
+          title: "Proxy issue creation needs a fallback",
+          body: a_string_including(%(curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"))
+        )
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still creates a valid stderr fallback draft when a split code fence wraps a prompt-prefixed curl snippet" do
+      agent_run.log!("stderr", "# Proxy issue creation needs a fallback\n\nReproduction:\n``")
+      agent_run.log!("stderr", %(`sh\n$ curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"\n))
+      agent_run.log!("stderr", "```\n\nThe request currently returns 500 Internal Server Error.\n")
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(
+          title: "Proxy issue creation needs a fallback",
+          body: a_string_including(%($ curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"))
+        )
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still creates a valid stderr fallback draft that describes a curl reproduction in prose" do
+      agent_run.log!("stderr", <<~TEXT)
+        # Proxy issue creation needs a fallback
+
+        To reproduce, run curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"
+        and observe that the proxy returns 500 Internal Server Error.
+      TEXT
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(
+          title: "Proxy issue creation needs a fallback",
+          body: a_string_including(%(run curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"))
+        )
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
     end
 
     context "when auto_add_labels_enabled is false" do

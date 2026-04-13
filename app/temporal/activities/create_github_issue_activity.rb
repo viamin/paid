@@ -3,6 +3,50 @@
 module Activities
   class CreateGithubIssueActivity < BaseActivity
     activity_name "CreateGithubIssue"
+    SHELL_ISSUE_CREATION_ATTEMPT_PATTERN = /
+      \A
+      (?:bash|sh)\s+-lc\s+
+      (?:
+        ["']
+      )?
+      (?:
+        [A-Za-z_][A-Za-z0-9_]*=
+        (?:
+          "[^"]*" |
+          '[^']*' |
+          [^\s"'\\]+
+        )
+        \s+
+      )*
+      \bcurl\b
+      (?=.*?(?:-X\s+POST|--request\s+POST))
+      (?=.*?\/repos\/[^\/\s]+\/[^\/\s]+\/issues(?:(?=[\s"'?\\])|\z))
+      .*$
+    /imx
+    BARE_ISSUE_CREATION_ATTEMPT_PATTERN = /
+      \A
+      \bcurl\b
+      (?=.*?(?:-X\s+POST|--request\s+POST))
+      (?=.*?\/repos\/[^\/\s]+\/[^\/\s]+\/issues(?:(?=[\s"'?\\])|\z))
+      .*$
+    /imx
+    ISSUE_CREATION_FAILURE_PATTERNS = [
+      /ActiveRecord::PendingMigrationError/,
+      /Upstream request failed/i,
+      /\b500\s+Internal\s+Server\s+Error\b/i,
+      /\b502\s+Bad\s+Gateway\b/i
+    ].freeze
+    ISSUE_CREATION_RAW_FAILURE_LINE_PATTERNS = [
+      /\AHTTP\/\d(?:\.\d+)?\s+\d{3}\b/i,
+      /\A(?:HTTP\/\d(?:\.\d+)?\s+)?500\s+Internal\s+Server\s+Error\b/i,
+      /\A(?:HTTP\/\d(?:\.\d+)?\s+)?502\s+Bad\s+Gateway\b/i,
+      /\AActiveRecord::PendingMigrationError\b/,
+      /\AUpstream request failed\b/i,
+      /\A(?:curl|gh):/i,
+      /\A\s*\{.*"error"\s*:/i
+    ].freeze
+    ISSUE_CREATION_FAILURE_LOG_BATCH_SIZE = 200
+    ISSUE_CREATION_FAILURE_CONTEXT_LINES = 8
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
@@ -12,6 +56,7 @@ module Activities
 
         client = project.github_token.client
         summary = agent_run.agent_summary_with_stderr_fallback
+        validate_issue_creation_attempt!(agent_run)
         title = extract_title(summary, agent_run.custom_prompt)
         body = issue_body(summary)
 
@@ -73,6 +118,172 @@ module Activities
       return nil if agent_run.priority_tier.blank?
 
       agent_run.project.priority_label_for(agent_run.priority_tier)
+    end
+
+    def validate_issue_creation_attempt!(agent_run)
+      return unless failed_issue_creation_attempt?(agent_run)
+
+      agent_run.log!(
+        "system",
+        "Refused fallback issue creation because the agent already attempted and failed to create the GitHub issue"
+      )
+
+      raise Temporalio::Error::ApplicationError.new(
+        "Agent already attempted and failed to create the GitHub issue; refusing fallback issue creation",
+        type: "IssueDraftInvalid",
+        non_retryable: true
+      )
+    end
+
+    def failed_issue_creation_attempt?(agent_run)
+      log_lines = []
+      stream_states = Hash.new { |states, log_type| states[log_type] = { buffer: +"" } }
+
+      agent_run.agent_run_logs
+        .where(log_type: %w[stderr stdout])
+        .select(:id, :log_type, :content)
+        .find_in_batches(batch_size: ISSUE_CREATION_FAILURE_LOG_BATCH_SIZE) do |batch|
+          batch.sort_by(&:id).each do |log|
+            append_log_lines!(log_lines, stream_states[log.log_type], log)
+          end
+        end
+
+      stream_states.each_value do |state|
+        flush_log_line!(log_lines, state)
+      end
+
+      return false if log_lines.empty?
+
+      failed_issue_creation_attempt_in_lines?(log_lines.sort_by { |entry| [ entry[:id], entry[:sequence] ] })
+    end
+
+    def issue_creation_attempt_line?(line)
+      shell_issue_creation_attempt_line?(line) || bare_issue_creation_attempt_line?(line)
+    end
+
+    def shell_issue_creation_attempt_line?(line)
+      line.match?(SHELL_ISSUE_CREATION_ATTEMPT_PATTERN)
+    end
+
+    def bare_issue_creation_attempt_line?(line)
+      line.match?(BARE_ISSUE_CREATION_ATTEMPT_PATTERN)
+    end
+
+    def markdown_code_fence_line?(line)
+      line.start_with?("```")
+    end
+
+    def append_log_lines!(log_lines, state, log)
+      if state[:buffer].present? && !chunk_continues_previous_line?(state[:buffer], log.content)
+        flush_log_line!(log_lines, state)
+      end
+
+      state[:line_id] ||= log.id
+      state[:log_type] ||= log.log_type
+      state[:buffer] << log.content
+      state[:last_id] = log.id
+
+      while (newline_index = state[:buffer].index("\n"))
+        emit_log_line!(log_lines, state, state[:buffer].slice!(0, newline_index + 1).delete_suffix("\n"))
+        reset_emitted_line_state!(state, log)
+      end
+    end
+
+    def flush_log_line!(log_lines, state)
+      return if state[:buffer].blank?
+
+      emit_log_line!(log_lines, state, state[:buffer])
+      state[:buffer] = +""
+      state[:line_id] = nil
+      state[:log_type] = nil
+    end
+
+    def emit_log_line!(log_lines, state, line)
+      log_lines << {
+        id: state[:line_id] || state[:last_id],
+        sequence: log_lines.length,
+        log_type: state[:log_type],
+        line: line
+      }
+    end
+
+    def reset_emitted_line_state!(state, log)
+      if state[:buffer].present?
+        state[:line_id] = log.id
+        state[:log_type] = log.log_type
+      else
+        state[:line_id] = nil
+        state[:log_type] = nil
+      end
+    end
+
+    def chunk_continues_previous_line?(chunk, next_chunk)
+      return false if chunk.end_with?("\n")
+
+      line = chunk.lines.last.to_s
+      next_line = next_chunk.lines.first.to_s
+      stripped_line = line.strip
+      return false if line.empty?
+
+      stripped_line.match?(/\A`{1,2}\z/) ||
+        incomplete_issue_creation_attempt_fragment?(stripped_line, next_line.strip)
+    end
+
+    def incomplete_issue_creation_attempt_fragment?(line, next_line = nil)
+      return false unless issue_creation_attempt_fragment_prefix?(line)
+
+      combined_line = [ line, next_line.presence ].compact.join
+
+      !issue_creation_attempt_line?(line) && issue_creation_attempt_line?(combined_line)
+    end
+
+    def issue_creation_attempt_fragment_prefix?(line)
+      line.match?(/\A(?:bash|sh)\s+-lc\s+(?:["'])?(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s"'\\]+))\s+)*(?:\bcur(?:l\b?)?)?/im) ||
+        line.match?(/\Acur(?:l\b?)?/i)
+    end
+
+    def failed_issue_creation_attempt_in_lines?(log_lines)
+      inside_code_fence = Hash.new(false)
+
+      log_lines.each_with_index.any? do |entry, index|
+        stripped_line = entry[:line].strip
+        log_type = entry[:log_type]
+
+        if markdown_code_fence_line?(stripped_line)
+          inside_code_fence[log_type] = !inside_code_fence[log_type]
+          next false
+        end
+
+        next false if inside_code_fence[log_type]
+        next false unless issue_creation_attempt_line?(stripped_line)
+
+        failure_lines = log_lines[index + 1, ISSUE_CREATION_FAILURE_CONTEXT_LINES].to_a.map { |line| line[:line] }
+        failure_context = failure_lines.join("\n")
+        next false if failure_context.blank?
+        next false if bare_issue_creation_attempt_line?(stripped_line) &&
+          !bare_issue_creation_attempt_output?(failure_lines)
+
+        issue_creation_failure_marker?(failure_context)
+      end
+    end
+
+    def bare_issue_creation_attempt_output?(failure_lines)
+      first_output_line = failure_lines
+        .map(&:strip)
+        .reject(&:blank?)
+        .drop_while { |line| issue_creation_command_continuation_line?(line) }
+        .first
+      return false if first_output_line.blank?
+
+      ISSUE_CREATION_RAW_FAILURE_LINE_PATTERNS.any? { |pattern| pattern.match?(first_output_line) }
+    end
+
+    def issue_creation_command_continuation_line?(line)
+      line.match?(/\A(?:-[A-Za-z]|--[A-Za-z]|\\)/)
+    end
+
+    def issue_creation_failure_marker?(text)
+      ISSUE_CREATION_FAILURE_PATTERNS.any? { |pattern| pattern.match?(text) }
     end
 
     def sync_issue_record(project, gh_issue)
