@@ -17,6 +17,8 @@ module Prompts
   class BuildForPr
     include ServiceContainerSections
 
+    ALREADY_ADDRESSED_MARKER = "PAID_REVIEW_THREADS_ALREADY_ADDRESSED"
+
     attr_reader :project, :pr_number, :github_client, :rebase_succeeded,
                 :lint_command, :test_command, :issue
 
@@ -62,6 +64,8 @@ module Prompts
       If the commit is rejected, read the error output carefully, fix the issues, and commit again.
       Keep iterating until the commit succeeds. Do not leave uncommitted changes.
 
+      {{already_addressed_instruction}}
+
       When you're done, commit all your changes. Do not push.
 
       # Rules — you MUST follow these
@@ -97,6 +101,7 @@ module Prompts
         priority_list: priority_list,
         setup_database_instruction: setup_database_instruction,
         review_scan_instruction: review_scan_instruction,
+        already_addressed_instruction: already_addressed_instruction,
         lint_command: lint_command,
         test_command: test_command
       }
@@ -234,6 +239,15 @@ module Prompts
       ". Pay special attention to the same classes of issues the reviewers " \
         "raised — if they flagged one instance, scan for similar problems " \
         "elsewhere in your changes"
+    end
+
+    def already_addressed_instruction
+      return "" unless unresolved_threads.any?
+
+      "\n\nIf you verify that every unresolved review thread listed above is already " \
+        "addressed on the current branch and no code changes are needed, do not " \
+        "make a no-op commit. End your final response with a standalone line " \
+        "containing exactly `#{ALREADY_ADDRESSED_MARKER}`."
     end
 
     # Memoized data fetchers

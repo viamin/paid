@@ -55,6 +55,11 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Do not push")
     end
 
+    it "omits the already-addressed marker instruction when no unresolved review threads are present" do
+      expect(prompt).not_to include(Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER)
+      expect(prompt).not_to include("do not make a no-op commit")
+    end
+
     it "includes proactive scan step" do
       expect(prompt).to include("Proactive scan")
       expect(prompt).to include("review the **entire diff**")
@@ -185,6 +190,18 @@ RSpec.describe Prompts::BuildForPr do
 
       expect(prompt).to include("same classes of issues the reviewers")
       expect(prompt).to include("Proactive scan")
+    end
+
+    it "includes the already-addressed marker instruction when unresolved review threads are present" do
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).to include(Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER)
+      expect(prompt).to include("do not make a no-op commit")
     end
 
     it "excludes resolved threads" do

@@ -13,6 +13,17 @@ RSpec.describe Activities::PreparePrPromptActivity do
   end
   let(:github_client) { instance_double(GithubClient) }
   let(:activity) { described_class.new }
+  let!(:prompt) do
+    Prompt.find_by(slug: Prompts::BuildForPr::PROMPT_SLUG)&.destroy!
+    create(:prompt, :global, slug: Prompts::BuildForPr::PROMPT_SLUG).tap do |record|
+      record.create_version!(
+        template: "Priority order:\n{{priority_list}}\nMarker: #{Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER}",
+        variables: [
+          { "name" => "priority_list", "required" => true, "description" => "Priority list" }
+        ]
+      )
+    end
+  end
 
   let(:pr_data) do
     OpenStruct.new(
@@ -42,11 +53,19 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(agent_run.custom_prompt).to include("#42")
     end
 
+    it "stores the resolved prompt version on the agent run" do
+      activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      expect(agent_run.reload.prompt_version).to eq(prompt.current_version)
+    end
+
     it "returns prompt_length" do
       result = activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
 
       expect(result[:prompt_length]).to be > 0
       expect(result[:agent_run_id]).to eq(agent_run.id)
+      expect(result[:includes_review_threads]).to be(false)
+      expect(result[:prompt_version_id]).to eq(prompt.current_version.id)
     end
 
     it "passes rebase_succeeded through to the prompt builder" do
@@ -87,6 +106,23 @@ RSpec.describe Activities::PreparePrPromptActivity do
         expect(agent_run.custom_prompt).to include("Issue Requirements")
         expect(agent_run.custom_prompt).to include("Add feature X")
         expect(agent_run.custom_prompt).to include("#99")
+      end
+    end
+
+    context "when unresolved review threads are present" do
+      before do
+        allow(github_client).to receive(:review_threads)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", path: "app/models/user.rb", line: 42, author: "reviewer" } ] }
+          ])
+      end
+
+      it "reports that the generated prompt included review threads" do
+        result = activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+        expect(result[:includes_review_threads]).to be(true)
+        expect(agent_run.reload.custom_prompt).to include("Code Review Comments")
       end
     end
 

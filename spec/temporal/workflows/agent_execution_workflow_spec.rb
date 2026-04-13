@@ -427,8 +427,29 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         when "Activities::ProvisionContainerActivity" then {}
         when "Activities::CloneRepoActivity" then {}
         when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
-        when "Activities::PreparePrPromptActivity" then {}
+        when "Activities::PreparePrPromptActivity" then { includes_review_threads: false }
         when "Activities::RunAgentActivity" then { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        when "Activities::RequestReviewActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        else {}
+        end
+      end
+    end
+
+    def stub_no_changes_followup_with_marker
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::ProvisionServicesActivity" then {}
+        when "Activities::ProvisionContainerActivity" then {}
+        when "Activities::CloneRepoActivity" then {}
+        when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
+        when "Activities::PreparePrPromptActivity" then { includes_review_threads: true }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: false, review_threads_already_addressed: true }
+        when "Activities::ResolveReviewThreadsActivity" then {}
         when "Activities::MarkAgentRunCompleteActivity" then {}
         when "Activities::RequestReviewActivity" then {}
         when "Activities::CleanupContainerActivity" then {}
@@ -448,6 +469,26 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         .with(Activities::RequestReviewActivity,
           { project_id: 1, pr_number: 42 },
           timeout: 60)
+    end
+
+    it "resolves review threads when a no-change PR follow-up reports they were already addressed" do
+      stub_no_changes_followup_with_marker
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity,
+          { agent_run_id: 42 },
+          timeout: 60)
+    end
+
+    it "does not resolve review threads on a no-change PR follow-up unless the prompt included review threads" do
+      stub_no_changes_followup
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
     end
   end
 

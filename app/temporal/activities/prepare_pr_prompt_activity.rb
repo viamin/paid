@@ -16,6 +16,10 @@ module Activities
       track_phase(agent_run_id: agent_run_id, phase_key: "prepare_pr_prompt", phase_group: "prompt", agent_run: agent_run) do
         project = agent_run.project
         client = project.github_token.client
+        prompt_version = Prompts::Resolve.call(
+          slug: Prompts::BuildForPr::PROMPT_SLUG,
+          project: project
+        )
 
         prompt = Prompts::BuildForPr.call(
           project: project,
@@ -24,16 +28,24 @@ module Activities
           rebase_succeeded: rebase_succeeded,
           issue: agent_run.issue
         )
+        includes_review_threads = prompt.include?("# Code Review Comments")
 
-        agent_run.update!(custom_prompt: prompt)
+        agent_run.update!(custom_prompt: prompt, prompt_version: prompt_version)
 
         logger.info(
           message: "agent_execution.prepare_pr_prompt",
           agent_run_id: agent_run_id,
-          prompt_length: prompt.length
+          prompt_length: prompt.length,
+          includes_review_threads: includes_review_threads,
+          prompt_version_id: prompt_version&.id
         )
 
-        { agent_run_id: agent_run_id, prompt_length: prompt.length }
+        {
+          agent_run_id: agent_run_id,
+          prompt_length: prompt.length,
+          includes_review_threads: includes_review_threads,
+          prompt_version_id: prompt_version&.id
+        }
       end
     end
   end

@@ -144,11 +144,12 @@ module Workflows
         # Skip for review goals — they use their own review-specific prompt and
         # don't need the PR-editing prompt that instructs the agent to commit fixes.
         pr_run_without_prompt = source_pull_request_number.present? && custom_prompt.blank? && goal != "review"
+        pr_prompt_result = {}
         if pr_run_without_prompt
           rebase_result = run_activity(Activities::RebaseBranchActivity,
             { agent_run_id: agent_run_id }, timeout: 120)
 
-          run_activity(Activities::PreparePrPromptActivity,
+          pr_prompt_result = run_activity(Activities::PreparePrPromptActivity,
             { agent_run_id: agent_run_id,
               rebase_succeeded: rebase_result[:rebase_succeeded] }, timeout: 60)
         end
@@ -265,6 +266,22 @@ module Workflows
           end
         else
           # No changes produced by agent
+          if source_pull_request_number && pr_run_without_prompt &&
+              pr_prompt_result[:includes_review_threads] &&
+              agent_result[:review_threads_already_addressed]
+            begin
+              run_activity(Activities::ResolveReviewThreadsActivity,
+                { agent_run_id: agent_run_id }, timeout: 60)
+            rescue => e
+              Temporalio::Workflow.logger.warn(
+                message: "agent_execution.resolve_threads_failed",
+                agent_run_id: agent_run_id,
+                error_class: e.class.name,
+                error: e.message
+              )
+            end
+          end
+
           if issue_id.present? && !source_pull_request_number
             # Issue-based run with no code changes / no PR: classify as
             # needs_input or recommend_close and post an actionable GitHub comment.

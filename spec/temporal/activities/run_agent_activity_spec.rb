@@ -452,6 +452,21 @@ RSpec.describe Activities::RunAgentActivity do
         expect(result[:success]).to be true
       end
 
+      it "returns review_threads_already_addressed when the agent emits the marker" do
+        marker_success = Containers::Provision::Result.success(
+          stdout: "Reviewed the branch.\n#{Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER}\n",
+          stderr: "",
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(marker_success)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:review_threads_already_addressed]).to be(true)
+        expect(result[:has_changes]).to be(false)
+      end
+
       it "succeeds and logs an informational message when provider has no output and no changes" do
         no_output_success = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
         allow(container_service).to receive(:execute).and_return(no_output_success)
