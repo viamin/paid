@@ -38,17 +38,9 @@ RSpec.describe Activities::CreateGithubIssueActivity do
 
   describe "#execute" do
     def log_failed_issue_creation_attempt
-      agent_run.log!(
-        "system",
-        "container.execute.start",
-        metadata: {
-          command: %(/bin/bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"')
-        }
-      )
-      agent_run.log!("stderr", <<~TEXT)
-        HTTP/1.1 500 Internal Server Error
-        ActiveRecord::PendingMigrationError
-      TEXT
+      agent_run.log!("stderr", %(curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"))
+      agent_run.log!("stderr", "HTTP/1.1 500 Internal Server Error")
+      agent_run.log!("stderr", "ActiveRecord::PendingMigrationError")
     end
 
     it "creates a GitHub issue via the API" do

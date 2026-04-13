@@ -4,8 +4,13 @@ module Activities
   class CreateGithubIssueActivity < BaseActivity
     activity_name "CreateGithubIssue"
     ISSUE_CREATION_ATTEMPT_PATTERN = /
-      ^.*?
-      \b(?:curl|gh)\b
+      \A
+      (?:
+        [\$#>+]\s* |
+        (?:bash|sh)\s+-lc\s+
+      )?
+      .*?
+      \bcurl\b
       .*?
       (
         -X\s+POST |
@@ -22,7 +27,7 @@ module Activities
       /\b502\s+Bad\s+Gateway\b/i
     ].freeze
     ISSUE_CREATION_FAILURE_LOG_LIMIT = 200
-    ISSUE_CREATION_FAILURE_CONTEXT_LOGS = 5
+    ISSUE_CREATION_FAILURE_CONTEXT_LINES = 8
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
@@ -112,36 +117,42 @@ module Activities
     end
 
     def failed_issue_creation_attempt?(agent_run)
-      recent_logs = agent_run.agent_run_logs
-        .where(log_type: %w[system stderr])
+      stderr_lines = agent_run.agent_run_logs
+        .where(log_type: "stderr")
         .order(created_at: :desc, id: :desc)
         .limit(ISSUE_CREATION_FAILURE_LOG_LIMIT)
-        .pluck(:log_type, :content, :metadata)
+        .pluck(:content)
         .reverse
+        .flat_map { |content| content.to_s.each_line(chomp: true).to_a }
 
-      return false if recent_logs.empty?
+      return false if stderr_lines.empty?
 
-      recent_logs.each_with_index.any? do |(log_type, content, metadata), index|
-        next false unless issue_creation_attempt_log?(log_type, content, metadata)
+      inside_code_fence = false
 
-        failure_logs = recent_logs[index + 1, ISSUE_CREATION_FAILURE_CONTEXT_LOGS]
-          .to_a
-          .select { |failure_log_type, _failure_content, _failure_metadata| failure_log_type == "stderr" }
-          .map { |_, failure_content, _| failure_content }
+      stderr_lines.each_with_index.any? do |line, index|
+        stripped_line = line.strip
 
-        next false if failure_logs.empty?
+        if markdown_code_fence_line?(stripped_line)
+          inside_code_fence = !inside_code_fence
+          next false
+        end
 
-        failure_context = failure_logs.join("\n")
+        next false if inside_code_fence
+        next false unless issue_creation_attempt_line?(stripped_line)
+
+        failure_context = stderr_lines[index + 1, ISSUE_CREATION_FAILURE_CONTEXT_LINES].to_a.join("\n")
+        next false if failure_context.blank?
+
         ISSUE_CREATION_FAILURE_PATTERNS.any? { |pattern| pattern.match?(failure_context) }
       end
     end
 
-    def issue_creation_attempt_log?(log_type, content, metadata)
-      return false unless log_type == "system"
-      return false unless content == "container.execute.start"
+    def issue_creation_attempt_line?(line)
+      line.match?(ISSUE_CREATION_ATTEMPT_PATTERN)
+    end
 
-      command = metadata&.fetch("command", metadata&.fetch(:command, nil)).to_s
-      command.match?(ISSUE_CREATION_ATTEMPT_PATTERN)
+    def markdown_code_fence_line?(line)
+      line.start_with?("```")
     end
 
     def sync_issue_record(project, gh_issue)
