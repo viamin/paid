@@ -37,6 +37,20 @@ RSpec.describe Activities::CreateGithubIssueActivity do
   end
 
   describe "#execute" do
+    def log_failed_issue_creation_attempt
+      agent_run.log!(
+        "system",
+        "container.execute.start",
+        metadata: {
+          command: %(/bin/bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"')
+        }
+      )
+      agent_run.log!("stderr", <<~TEXT)
+        HTTP/1.1 500 Internal Server Error
+        ActiveRecord::PendingMigrationError
+      TEXT
+    end
+
     it "creates a GitHub issue via the API" do
       expect(github_client).to receive(:create_issue).with(
         project.full_name,
@@ -203,11 +217,7 @@ RSpec.describe Activities::CreateGithubIssueActivity do
     end
 
     it "refuses to create a fallback issue from issue-creation failure output" do
-      agent_run.log!("stderr", <<~TEXT)
-        /bin/bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"'
-        HTTP/1.1 500 Internal Server Error
-        ActiveRecord::PendingMigrationError
-      TEXT
+      log_failed_issue_creation_attempt
 
       expect(github_client).not_to receive(:create_issue)
 
@@ -263,6 +273,30 @@ RSpec.describe Activities::CreateGithubIssueActivity do
 
     it "still creates a valid issue that includes a curl reproduction snippet and 500 text" do
       agent_run.log!("stdout", <<~TEXT)
+        # Proxy issue creation needs a fallback
+
+        Reproduction:
+        ```sh
+        curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"
+        ```
+
+        The request currently returns 500 Internal Server Error, so the fallback
+        path should still publish this issue draft.
+      TEXT
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(
+          title: "Proxy issue creation needs a fallback",
+          body: a_string_including(%(curl -X POST "$GITHUB_API_URL/repos/acme/app/issues"))
+        )
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still creates a valid stderr fallback draft that includes a curl reproduction snippet and 500 text" do
+      agent_run.log!("stderr", <<~TEXT)
         # Proxy issue creation needs a fallback
 
         Reproduction:
