@@ -507,7 +507,7 @@ module Activities
       reviews ||= fetch_reviews(client, project, issue)
       unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
 
-      partial_failure = pr_data.nil? || reviews.nil? || unresolved_threads.nil?
+      partial_failure = pr_data.nil? || checks.nil? || reviews.nil? || unresolved_threads.nil?
 
       triggers = []
 
@@ -735,7 +735,7 @@ module Activities
         end
       end
 
-      if project.review_method_enabled?("ci_action")
+      if project.review_method_enabled?("ci_action") && !checks.nil?
         action_name = project.review_method_config("ci_action")["action_name"]
         if action_name.present? && !ci_action_succeeded?(checks, action_name)
           triggers << { type: "ci_action_pending", action_name: action_name,

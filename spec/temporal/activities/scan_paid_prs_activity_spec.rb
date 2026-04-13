@@ -4983,6 +4983,44 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(unchanged_pr.reload.last_pr_scan_at).to be_nil
       end
 
+      it "returns :skipped when check-run fetch fails in ready phase" do
+        unchanged_pr.update_columns(
+          last_pr_scan_at: nil,
+          github_updated_at: Time.current,
+          pr_review_phase: "ready"
+        )
+        stub_github_for_pr(checks: [ { name: "ci", conclusion: "success" } ])
+        allow(github_client).to receive(:check_runs_for_ref)
+          .and_raise(GithubClient::Error.new("API error"))
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to be_empty
+        expect(unchanged_pr.reload.last_pr_scan_at).to be_nil
+      end
+
+      it "returns :skipped when check-run fetch fails for a ci_action gate in ready phase" do
+        unchanged_pr.update_columns(
+          last_pr_scan_at: nil,
+          github_updated_at: Time.current,
+          pr_review_phase: "ready"
+        )
+        project.update!(
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "ci_action" => { "enabled" => true, "action_name" => "e2e-suite" } }
+          }
+        )
+        stub_github_for_pr(checks: [ { name: "e2e-suite", conclusion: "success" } ])
+        allow(github_client).to receive(:check_runs_for_ref)
+          .and_raise(GithubClient::Error.new("API error"))
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to be_empty
+        expect(unchanged_pr.reload.last_pr_scan_at).to be_nil
+      end
+
       it "reports skipped count in log output" do
         allow(Rails.logger).to receive(:info)
         allow(Rails.logger).to receive(:debug)
