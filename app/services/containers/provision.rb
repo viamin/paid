@@ -191,13 +191,14 @@ module Containers
     # @raise [StartupTimeoutError] when no output is received within +startup_timeout+ seconds
     # @raise [IdleTimeoutError] when output stops for more than +idle_timeout+ seconds
     # @raise [TimeoutError] when total wall-clock +timeout+ is exceeded
-    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {})
+    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil)
       raise ProvisionError, "Container not provisioned" unless container
 
       timeout ||= options[:timeout_seconds]
       cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
       exec_options = { wait: timeout }
       exec_options[:Env] = env.map { |key, value| "#{key}=#{value}" } if env.present?
+      cleanup_steps = apply_execution_preparation(preparation, env: env)
 
       log_system("container.execute.start", command: command.to_s.encode("UTF-8", invalid: :replace).truncate(200))
 
@@ -342,6 +343,7 @@ module Containers
       ensure
         watchdog_mutex.synchronize { exec_completed = true }
         stop_watchdog(watchdog)
+        cleanup_execution_preparation(cleanup_steps, env: env)
       end
     end
 
@@ -430,6 +432,89 @@ module Containers
     end
 
     private
+
+    def apply_execution_preparation(preparation, env:)
+      return [] if preparation.nil? || preparation.empty?
+
+      cleanup_steps = []
+      preparation.file_writes.each do |write|
+        cleanup_steps << materialize_preparation_file(write, env: env)
+      end
+      cleanup_steps
+    rescue StandardError
+      cleanup_execution_preparation(cleanup_steps, env: env)
+      raise
+    end
+
+    def cleanup_execution_preparation(cleanup_steps, env:)
+      Array(cleanup_steps).reverse_each do |cleanup|
+        run_preparation_script(cleanup_script, env: env, script_env: cleanup)
+      rescue Docker::Error::DockerError => e
+        log_system("container.execute.preparation_cleanup_failed", error: e.message)
+      end
+    end
+
+    def materialize_preparation_file(write, env:)
+      target_path = expand_preparation_path(write.path)
+      backup_path = "#{target_path}.paid-backup-#{SecureRandom.hex(8)}"
+      missing_path = "#{backup_path}.missing"
+
+      run_preparation_script(
+        materialize_script(write.mode),
+        env: env,
+        script_env: {
+          "PAID_PREPARATION_TARGET" => target_path,
+          "PAID_PREPARATION_BACKUP" => backup_path,
+          "PAID_PREPARATION_MISSING" => missing_path,
+          "PAID_PREPARATION_B64" => Base64.strict_encode64(write.content)
+        }
+      )
+
+      {
+        "PAID_PREPARATION_TARGET" => target_path,
+        "PAID_PREPARATION_BACKUP" => backup_path,
+        "PAID_PREPARATION_MISSING" => missing_path
+      }
+    end
+
+    def run_preparation_script(script, env:, script_env:)
+      preparation_env = env.merge(script_env)
+      exec_options = { wait: options[:timeout_seconds] }
+      exec_options[:Env] = preparation_env.map { |key, value| "#{key}=#{value}" }
+      container.exec([ "sh", "-lc", script ], exec_options)
+    end
+
+    def expand_preparation_path(path)
+      path.to_s.sub(/\A~(?=\/|$)/, "/home/agent")
+    end
+
+    def materialize_script(mode)
+      chmod_line = mode ? "chmod #{format('%#o', mode)} \"$PAID_PREPARATION_TARGET\"" : ":"
+
+      <<~SH.squish
+        set -e &&
+        mkdir -p "$(dirname "$PAID_PREPARATION_TARGET")" &&
+        if [ -e "$PAID_PREPARATION_TARGET" ]; then
+          cp -p "$PAID_PREPARATION_TARGET" "$PAID_PREPARATION_BACKUP";
+        else
+          : > "$PAID_PREPARATION_MISSING";
+        fi &&
+        printf '%s' "$PAID_PREPARATION_B64" | base64 -d > "$PAID_PREPARATION_TARGET" &&
+        #{chmod_line}
+      SH
+    end
+
+    def cleanup_script
+      <<~SH.squish
+        set -e &&
+        if [ -f "$PAID_PREPARATION_MISSING" ]; then
+          rm -f "$PAID_PREPARATION_TARGET";
+        elif [ -e "$PAID_PREPARATION_BACKUP" ]; then
+          mv "$PAID_PREPARATION_BACKUP" "$PAID_PREPARATION_TARGET";
+        fi &&
+        rm -f "$PAID_PREPARATION_BACKUP" "$PAID_PREPARATION_MISSING"
+      SH
+    end
 
     # Resolves user-configurable container settings from the project's UserSetting.
     # Returns a hash of overrides that sit between DEFAULTS and caller-supplied options.

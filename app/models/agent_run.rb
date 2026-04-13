@@ -910,9 +910,9 @@ class AgentRun < ApplicationRecord
   # @return [Containers::Provision::Result] Result with stdout, stderr, exit_code
   # @raise [Containers::Provision::ProvisionError] When container not provisioned
   # @raise [Containers::Provision::TimeoutError] When command times out
-  def execute_in_container(command, timeout: nil, stream: true, env: {})
+  def execute_in_container(command, timeout: nil, stream: true, env: {}, preparation: nil)
     ensure_container_service!
-    @container_service.execute(command, timeout: timeout, stream: stream, env: env)
+    @container_service.execute(command, timeout: timeout, stream: stream, env: env, preparation: preparation)
   end
 
   # Cleans up the provisioned container.

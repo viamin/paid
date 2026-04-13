@@ -535,7 +535,8 @@ module Activities
         user: user_settings.user
       )
       command = build_command(command_context, prompt)
-      command_env = command_env_for(command_context)
+      command_env = command_env_for(command_context, prompt)
+      command_preparation = command_preparation_for(command_context, prompt)
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 
@@ -575,7 +576,13 @@ module Activities
       # Provider calls can run for many minutes, so without periodic
       # heartbeats the 120s heartbeat_timeout would fire mid-execution.
       result = with_periodic_heartbeat("executing", provider, agent_run: agent_run) do
-        container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout, env: command_env)
+        container_service.execute(
+          command,
+          timeout: effective_timeout,
+          idle_timeout: effective_idle_timeout,
+          env: command_env,
+          preparation: command_preparation
+        )
       end
       stdout = normalize_output_text(result[:stdout])
       stderr = normalize_output_text(result[:stderr])
@@ -900,7 +907,9 @@ module Activities
     def build_command(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
 
-      if provider_entry&.requires_direct_outbound?
+      if provider_entry&.opencode_agent_harness_runtime?
+        direct_outbound_execution_plan(provider_entry, prompt).command
+      elsif provider_entry&.requires_direct_outbound?
         provider_entry.direct_outbound_exec_command(command_prefix: command_context.command_prefix, prompt: prompt)
       elsif ProviderSupport.subscription_auth_unset_vars_for(command_context.provider).any?
         subscription_auth_command(command_context.provider, command_context.command_prefix, prompt)
@@ -909,11 +918,30 @@ module Activities
       end
     end
 
-    def command_env_for(command_context)
+    def command_env_for(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
+      return direct_outbound_execution_plan(provider_entry, prompt).env if provider_entry&.opencode_agent_harness_runtime?
       return {} unless provider_entry&.requires_direct_outbound?
 
       provider_entry.direct_outbound_exec_env
+    end
+
+    def command_preparation_for(command_context, prompt)
+      provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
+      return nil unless provider_entry&.opencode_agent_harness_runtime?
+
+      direct_outbound_execution_plan(provider_entry, prompt).preparation
+    end
+
+    def direct_outbound_execution_plan(provider_entry, prompt)
+      @direct_outbound_execution_plan_cache ||= {}
+      cache_key = [ provider_entry.id, prompt ]
+      return @direct_outbound_execution_plan_cache[cache_key] if @direct_outbound_execution_plan_cache.key?(cache_key)
+
+      @direct_outbound_execution_plan_cache[cache_key] = Providers::HarnessExecutionPlan.call(
+        provider: provider_entry,
+        prompt: prompt
+      )
     end
 
     def provider_command_key(provider_candidate, agent_run, user = nil)

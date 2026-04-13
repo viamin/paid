@@ -310,16 +310,18 @@ RSpec.describe Activities::RunAgentActivity do
     end
 
     context "with a direct-outbound OpenCode provider" do
-      it "passes config via exec env instead of embedding it in the command" do
+      it "builds the command through agent-harness runtime preparation" do
         opencode_context = build_opencode_context(user)
         command = activity.send(:build_command, opencode_context, "ping")
-        env = activity.send(:command_env_for, opencode_context)
+        env = activity.send(:command_env_for, opencode_context, "ping")
+        preparation = activity.send(:command_preparation_for, opencode_context, "ping")
 
-        expect(command[2]).to include('printf \'%s\' "$PAID_OPENCODE_CONFIG_B64" | base64 -d')
-        expect(command[2]).to include('opencode run "$1"')
-        expect(command[2]).not_to include('\$1')
-        expect(command[2]).not_to include("sk-openrouter-secret")
-        expect(Base64.strict_decode64(env.fetch("PAID_OPENCODE_CONFIG_B64"))).to include("sk-openrouter-secret")
+        expect(command).to eq(%w[opencode run ping])
+        expect(env).to include("OPENAI_API_KEY" => "sk-openrouter-secret", "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
+        expect(env["OPENAI_HEADER_X_AGENT_RUN_ID"]).to be_nil
+        expect(env["OPENAI_HEADER_X_PROXY_TOKEN"]).to be_nil
+        expect(preparation.file_writes.first.path).to eq("~/.config/opencode/opencode.json")
+        expect(preparation.file_writes.first.content).to include("\"model\": \"moonshotai/kimi-k2-0905\"")
       end
     end
   end
@@ -372,10 +374,10 @@ RSpec.describe Activities::RunAgentActivity do
       if call_count == 1
         rate_limit_failure
       else
-        expect(command[0..1]).to eq(%w[sh -lc])
-        expect(command[2]).to include('printf \'%s\' "$PAID_OPENCODE_CONFIG_B64" | base64 -d')
-        expect(command[2]).to include('opencode run "$1"')
-        expect(opts[:env]).to include("PAID_OPENCODE_CONFIG_B64")
+        expect(command[0..1]).to eq(%w[opencode run])
+        expect(command.last).to be_a(String)
+        expect(opts[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
+        expect(opts[:preparation].file_writes.first.path).to eq("~/.config/opencode/opencode.json")
         exec_success
       end
     end

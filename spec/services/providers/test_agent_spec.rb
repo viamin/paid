@@ -704,14 +704,19 @@ RSpec.describe Providers::TestAgent do
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
-      it "passes the OpenCode config through exec env instead of the command string" do
+      it "passes agent-harness runtime preparation into the container exec" do
         described_class.call(provider: provider)
 
         expect(test_run).to have_received(:execute_in_container).with(
-          array_including("sh", "-lc", a_string_including('printf \'%s\' "$PAID_OPENCODE_CONFIG_B64" | base64 -d').and(include('opencode run "$1"'))),
+          array_including("opencode", "run", "Respond with exactly: PING OK"),
           timeout: 60,
           stream: false,
-          env: hash_including("PAID_OPENCODE_CONFIG_B64")
+          env: hash_including("OPENAI_API_KEY", "OPENAI_BASE_URL"),
+          preparation: have_attributes(
+            file_writes: [
+              have_attributes(path: "~/.config/opencode/opencode.json")
+            ]
+          )
         )
       end
 
