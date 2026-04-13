@@ -40,7 +40,7 @@ module Knowledge
       pids_limit: 200,
       timeout_seconds: 300,              # 5 minutes
       workspace_mount: "/workspace",
-      network_mode: "none"
+      network_mode: "bridge"
     }.freeze
 
     COMMIT_SHA_PATTERN = /\A[0-9a-f]{40}\z/i
@@ -57,6 +57,7 @@ module Knowledge
       @options = CONTAINER_DEFAULTS.merge(options)
       @container = nil
       @host_repo_dir = nil
+      @network_connected = @options[:network_mode].to_s == "bridge"
     end
 
     def self.call(...)
@@ -76,6 +77,7 @@ module Knowledge
       clone_repo_on_host!
       provision_container!
       seed_workspace!
+      disconnect_network! if @network_connected
 
       Knowledge::CollectorRunner.call(
         project: project,
@@ -93,11 +95,18 @@ module Knowledge
     # disconnect_network! before executing untrusted code.
     def connect_network!
       raise ContainerError, "Container not provisioned" unless @container
+      return if @network_connected
+      if options[:network_mode].to_s == "none"
+        raise ContainerError, "Cannot connect network for containers provisioned with network_mode=none"
+      end
 
       log("containerized_runner.network.connect")
       bridge = Docker::Network.get("bridge")
       bridge.connect(@container.id)
+      @network_connected = true
     rescue Docker::Error::DockerError => e
+      return @network_connected = true if network_already_connected_error?(e)
+
       raise ContainerError, "Failed to connect network: #{e.message}"
     end
 
@@ -105,11 +114,15 @@ module Knowledge
     # network isolation before running untrusted code.
     def disconnect_network!
       raise ContainerError, "Container not provisioned" unless @container
+      return unless @network_connected
 
       log("containerized_runner.network.disconnect")
       bridge = Docker::Network.get("bridge")
       bridge.disconnect(@container.id)
+      @network_connected = false
     rescue Docker::Error::DockerError => e
+      return @network_connected = false if network_not_connected_error?(e)
+
       raise ContainerError, "Failed to disconnect network: #{e.message}"
     end
 
@@ -396,6 +409,14 @@ module Knowledge
 
         secrets << Regexp.last_match(1) if value.to_s.match(%r{x-access-token:([^@/\s]+)})
       end.compact.uniq
+    end
+
+    def network_already_connected_error?(error)
+      error.message.match?(/already exists in network bridge|endpoint with name .* already exists in network bridge/i)
+    end
+
+    def network_not_connected_error?(error)
+      error.message.match?(/is not connected to network bridge|endpoint .* not found/i)
     end
 
     def cleanup!

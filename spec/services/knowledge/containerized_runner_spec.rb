@@ -21,9 +21,14 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
     )
   end
 
+  let(:mock_bridge_network) do
+    instance_double(Docker::Network, connect: true, disconnect: true)
+  end
+
   before do
     allow(Docker::Container).to receive(:create).and_return(mock_container)
     allow(Docker::Volume).to receive_messages(create: mock_volume, get: mock_volume)
+    allow(Docker::Network).to receive(:get).with("bridge").and_return(mock_bridge_network)
     # Stub host-side git clone
     allow(Dir).to receive(:mktmpdir).and_return("/tmp/paid-collector-test")
     allow(Open3).to receive(:capture3).and_return([ "", "", instance_double(Process::Status, success?: true) ])
@@ -120,7 +125,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
         hash_including(
           "Image" => "paid-agent:latest",
           "HostConfig" => hash_including(
-            "NetworkMode" => "none",
+            "NetworkMode" => "bridge",
             "Memory" => 512 * 1024 * 1024,
             "Binds" => [ a_string_matching(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:rw\z}) ]
           )
@@ -282,12 +287,21 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       expect(env).not_to include(a_string_matching(/API_KEY/))
     end
 
-    it "uses network=none for isolation" do
+    it "starts on bridge so routes collection can temporarily enable network" do
       config = nil
       allow(Docker::Container).to receive(:create) { |cfg| config = cfg; mock_container }
       described_class.new(project: project, commit_sha: commit_sha).run
 
-      expect(config.dig("HostConfig", "NetworkMode")).to eq("none")
+      expect(config.dig("HostConfig", "NetworkMode")).to eq("bridge")
+    end
+
+    it "disconnects bridge before collectors run" do
+      mock_bridge_network = instance_double(Docker::Network, disconnect: true)
+      allow(Docker::Network).to receive(:get).with("bridge").and_return(mock_bridge_network)
+
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(mock_bridge_network).to have_received(:disconnect).with("collector123")
     end
 
     it "uses a named volume instead of a host bind mount" do
@@ -333,13 +347,8 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       { project_version: Object.new, results: [] }
     end
 
-    let(:mock_bridge_network) do
-      instance_double(Docker::Network, connect: true, disconnect: true)
-    end
-
     before do
       allow(Knowledge::CollectorRunner).to receive(:call).and_return(runner_result)
-      allow(Docker::Network).to receive(:get).with("bridge").and_return(mock_bridge_network)
     end
 
     it "connects and disconnects the container from the bridge network" do
@@ -355,7 +364,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       runner.run
 
       expect(mock_bridge_network).to have_received(:connect).with("collector123")
-      expect(mock_bridge_network).to have_received(:disconnect).with("collector123")
+      expect(mock_bridge_network).to have_received(:disconnect).twice
     end
 
     it "raises ContainerError when connect_network! is called without a container" do
@@ -365,11 +374,43 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       )
     end
 
+    it "treats Docker already-connected errors as idempotent success" do
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+      runner.instance_variable_set(:@container, mock_container)
+      runner.instance_variable_set(:@network_connected, false)
+      allow(mock_bridge_network).to receive(:connect).and_raise(
+        Docker::Error::ServerError.new("endpoint with name collector123 already exists in network bridge")
+      )
+
+      expect { runner.connect_network! }.not_to raise_error
+    end
+
+    it "raises a clear error when connect_network! is used with network_mode none" do
+      runner = described_class.new(project: project, commit_sha: commit_sha, options: { network_mode: "none" })
+      runner.instance_variable_set(:@container, mock_container)
+
+      expect { runner.connect_network! }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /network_mode=none/
+      )
+    end
+
     it "raises ContainerError when disconnect_network! is called without a container" do
       runner = described_class.new(project: project, commit_sha: commit_sha)
       expect { runner.disconnect_network! }.to raise_error(
         Knowledge::ContainerizedRunner::ContainerError, /not provisioned/
       )
+    end
+
+    it "treats Docker already-disconnected errors as idempotent success" do
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+      runner.instance_variable_set(:@container, mock_container)
+      runner.instance_variable_set(:@network_connected, true)
+      allow(mock_bridge_network).to receive(:disconnect).and_raise(
+        Docker::Error::ServerError.new("container collector123 is not connected to network bridge")
+      )
+
+      expect { runner.disconnect_network! }.not_to raise_error
     end
   end
 
