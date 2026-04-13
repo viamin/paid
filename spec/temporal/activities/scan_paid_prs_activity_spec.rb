@@ -5775,6 +5775,47 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  context "when a failed automatic paid_agent review-goal run is followed by a cancelled automatic run" do
+    let(:cancelled_review_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+    end
+
+    before do
+      enable_paid_agent_review!
+      create(:agent_run,
+        project: project, issue: cancelled_review_issue,
+        source_pull_request_number: 42,
+        goal: "create_pr", status: "completed",
+        trigger_type: "automatic",
+        started_at: 3.hours.ago, completed_at: 3.hours.ago)
+      create(:agent_run,
+        project: project, issue: cancelled_review_issue,
+        source_pull_request_number: 42,
+        goal: "review", status: "failed",
+        trigger_type: "automatic",
+        started_at: 2.hours.ago, completed_at: 2.hours.ago)
+      create(:agent_run,
+        project: project, issue: cancelled_review_issue,
+        source_pull_request_number: 42,
+        goal: "review", status: "cancelled",
+        trigger_type: "automatic",
+        started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "does not emit review_goal_retry or paid_agent_review_pending" do
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("review_goal_retry")
+      expect(triggers).not_to include("paid_agent_review_pending")
+    end
+  end
+
   context "when paid_agent review-goal retry limit is reached" do
     let(:retry_limit_issue) do
       create(:issue, :pull_request,
