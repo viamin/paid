@@ -37,6 +37,10 @@ module Prompts
       new(...).build
     end
 
+    def includes_review_threads?
+      unresolved_threads.any?
+    end
+
     PROMPT_SLUG = "coding.pr_review_rebase"
 
     # Fallback used only if the seeded prompt is missing or deactivated.
@@ -85,7 +89,7 @@ module Prompts
       sections << issue_requirements_section if linked_issue?
       sections << merge_conflicts_section unless rebase_succeeded
       sections << ci_failures_section if failing_checks.any?
-      sections << code_review_section if unresolved_threads.any?
+      sections << code_review_section if includes_review_threads?
       sections << conversation_section if trusted_comments.any?
       sections << instructions_and_rules_shell
       sections << service_environment_section
@@ -119,7 +123,7 @@ module Prompts
       priorities << "Resolve merge conflicts" unless rebase_succeeded
       priorities << "Fix CI failures" if failing_checks.any?
       priorities << "Close implementation gaps against the linked issue" if linked_issue?
-      priorities << "Address code review comments" if unresolved_threads.any?
+      priorities << "Address code review comments" if includes_review_threads?
       priorities << "Address conversation comments" if trusted_comments.any?
       priorities.each_with_index.map { |p, i| "#{i + 1}. #{p}" }.join("\n")
     end
@@ -234,7 +238,7 @@ module Prompts
     # When reviewers have flagged specific issues, tell the agent to scan for
     # the same class of problem across the whole diff — not just the flagged lines.
     def review_scan_instruction
-      return "" unless unresolved_threads.any?
+      return "" unless includes_review_threads?
 
       ". Pay special attention to the same classes of issues the reviewers " \
         "raised — if they flagged one instance, scan for similar problems " \
@@ -242,7 +246,7 @@ module Prompts
     end
 
     def already_addressed_instruction
-      return "" unless unresolved_threads.any?
+      return "" unless includes_review_threads?
 
       "\n\nIf you verify that every unresolved review thread listed above is already " \
         "addressed on the current branch and no code changes are needed, do not " \

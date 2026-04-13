@@ -841,8 +841,6 @@ module Activities
           db_scoped.call
         end
       end
-      worker.report_on_exception = false
-
       canceled = false
       interrupted = false
       begin

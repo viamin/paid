@@ -71,18 +71,6 @@ RSpec.describe Activities::RunAgentActivity do
       }
     end
 
-    it "does not report expected worker exceptions to stderr" do
-      allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
-
-      expect {
-        expect {
-          activity.send(:with_periodic_heartbeat, "test", interval: 0.01) do
-            raise ArgumentError, "boom"
-          end
-        }.to raise_error(ArgumentError, "boom")
-      }.not_to output(/terminated with exception/).to_stderr
-    end
-
     it "yields without heartbeating when outside activity context" do
       allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(nil)
 

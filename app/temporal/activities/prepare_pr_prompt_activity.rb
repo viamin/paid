@@ -21,14 +21,15 @@ module Activities
           project: project
         )
 
-        prompt = Prompts::BuildForPr.call(
+        prompt_builder = Prompts::BuildForPr.new(
           project: project,
           pr_number: agent_run.source_pull_request_number,
           github_client: client,
           rebase_succeeded: rebase_succeeded,
           issue: agent_run.issue
         )
-        includes_review_threads = prompt.include?("# Code Review Comments")
+        prompt = prompt_builder.build
+        includes_review_threads = prompt_builder.includes_review_threads?
 
         agent_run.update!(custom_prompt: prompt, prompt_version: prompt_version)
 

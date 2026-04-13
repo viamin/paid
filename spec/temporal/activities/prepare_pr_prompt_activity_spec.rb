@@ -17,7 +17,7 @@ RSpec.describe Activities::PreparePrPromptActivity do
     Prompt.find_by(slug: Prompts::BuildForPr::PROMPT_SLUG)&.destroy!
     create(:prompt, :global, slug: Prompts::BuildForPr::PROMPT_SLUG).tap do |record|
       record.create_version!(
-        template: "Priority order:\n{{priority_list}}\nMarker: #{Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER}",
+        template: "Priority order:\n{{priority_list}}\n# Code Review Comments",
         variables: [
           { "name" => "priority_list", "required" => true, "description" => "Priority list" }
         ]
