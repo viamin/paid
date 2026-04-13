@@ -4421,6 +4421,51 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a restarted PR has a stale successful review from before the reset" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "restarted",
+          review_goal_retry_reset_at: 1.hour.ago)
+      end
+
+      before do
+        enable_paid_agent_review!(project, max_review_rounds: 5, max_review_goal_retries: 3)
+
+        create(:agent_run, :automatic,
+          project: project, issue: pr_issue,
+          source_pull_request_number: 42,
+          goal: "review", status: "completed",
+          created_at: 2.hours.ago,
+          started_at: 90.minutes.ago,
+          completed_at: 30.minutes.ago)
+        create(:agent_run, :automatic,
+          project: project, issue: pr_issue,
+          source_pull_request_number: 42,
+          goal: "review", status: "failed",
+          created_at: 50.minutes.ago,
+          started_at: 50.minutes.ago,
+          completed_at: 50.minutes.ago)
+
+        stub_github_for_pr(draft: true, reviews: [])
+      end
+
+      it "does not let the stale success clear current-cycle retry failures" do
+        result = activity.execute(project_id: project.id)
+
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |entry| entry[:type] }
+        pending_trigger = trigger[:triggers].find { |entry| entry[:type] == "paid_agent_review_pending" }
+
+        expect(trigger[:phase]).to eq("restarted")
+        expect(trigger_types).to include("review_goal_retry")
+        expect(trigger_types).to include("paid_agent_review_pending")
+        expect(trigger_types).not_to include("escalate_to_owner")
+        expect(pending_trigger[:details]).to match(/Retrying unsuccessful review-goal run/)
+      end
+    end
+
     context "when an escalated PR exhausted paid_agent review rounds before draft restart" do
       let!(:pr_issue) do
         create(:issue, :pull_request,

@@ -1118,9 +1118,16 @@ module Activities
 
     def review_goal_failure_reset_at(project, issue)
       run_scope = project.agent_runs.where(source_pull_request_number: issue.github_number)
+      retry_reset_at = issue.review_goal_retry_reset_at
+      if retry_reset_at
+        # After a dismissal/draft restart, only runs attempted in the new
+        # cycle should be able to reset the breaker. A stale pre-restart run
+        # may finish later, but it must not clear fresh-cycle failures.
+        run_scope = run_scope.where("#{review_run_cycle_boundary_sql} > ?", retry_reset_at)
+      end
 
       [
-        issue.review_goal_retry_reset_at,
+        retry_reset_at,
         run_scope.where(goal: "review", status: "completed").maximum(:completed_at),
         run_scope.where(goal: "create_pr", status: "completed").maximum(:completed_at)
       ].compact.max
