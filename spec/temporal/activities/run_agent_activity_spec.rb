@@ -302,6 +302,27 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command).to eq(described_class::AGENT_COMMANDS["claude"] + [ "ping" ])
     end
 
+    it "builds an API-key wrapper for anthropic-backed fallback entries" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic", api_key: "sk-anthropic-secret")
+      provider = create(:provider, :api_key, user: user, provider_key: "claude", provider_api_key: api_key)
+      context = described_class::CommandContext.new(
+        provider_candidate: provider.routing_key,
+        provider: "claude",
+        command_prefix: described_class::AGENT_COMMANDS["claude"],
+        user: user
+      )
+
+      command = activity.send(:build_command, context, "ping")
+      env = activity.send(:command_env_for, context)
+
+      expect(command[0..1]).to eq(%w[sh -c])
+      expect(command[2]).to include('env -u ANTHROPIC_BASE_URL -u ANTHROPIC_HEADER_X_AGENT_RUN_ID -u ANTHROPIC_HEADER_X_PROXY_TOKEN')
+      expect(command[2]).to include('ANTHROPIC_API_KEY="$PAID_PROVIDER_API_KEY"')
+      expect(command[3]).to eq("--")
+      expect(command[4]).to eq("ping")
+      expect(env).to eq("PAID_PROVIDER_API_KEY" => "sk-anthropic-secret")
+    end
+
     it "uses canonical provider state keys for subscription entries" do
       subscription_provider = user.providers.find_by!(provider_key: "claude")
       state_key = activity.send(:state_key_for, subscription_provider.routing_key, "claude", user)
@@ -385,6 +406,39 @@ RSpec.describe Activities::RunAgentActivity do
     expect(result[:success]).to be true
     expect(result[:final_provider]).to eq(opencode_provider.routing_key)
     expect(agent_run.reload.final_provider).to eq(opencode_provider.routing_key)
+  end
+
+  def expect_same_provider_rate_limit_fallback_execution(fallback_provider)
+    logger = instance_double(ActiveSupport::Logger, info: nil, warn: nil, error: nil)
+    allow(activity).to receive(:logger).and_return(logger)
+
+    allow(container_service).to receive(:execute).twice do |command, **opts|
+      if command.first == "claude"
+        rate_limit_failure
+      else
+        expect(command[0..1]).to eq(%w[sh -c])
+        expect(command[2]).to include('ANTHROPIC_API_KEY="$PAID_PROVIDER_API_KEY"')
+        expect(opts[:env]).to eq("PAID_PROVIDER_API_KEY" => "sk-fallback-secret")
+        exec_success
+      end
+    end
+    allow(git_ops).to receive(:has_changes_since?).and_return(false)
+
+    result = activity.execute(agent_run_id: agent_run.id)
+
+    expect(result[:success]).to be true
+    expect(result[:final_provider]).to eq(fallback_provider.routing_key)
+    expect(agent_run.reload.final_provider).to eq(fallback_provider.routing_key)
+    expect(agent_run.providers_attempted.map { |attempt| attempt["provider"] }).to eq([ "claude_code", fallback_provider.routing_key ])
+    expect(agent_run.provider_switches).to eq(1)
+    expect(logger).to have_received(:info).with(
+      hash_including(
+        message: "agent_execution.rate_limit_fallback_available",
+        provider: "claude",
+        agent_run_id: agent_run.id,
+        fallback_providers: [ fallback_provider.routing_key ]
+      )
+    )
   end
 
   def create_opencode_provider_entry(user:, api_key:, name:, model:)
@@ -1255,21 +1309,20 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.rate_limited_until).to be_present
       end
 
-      it "logs rate-limit fallback availability using the canonical provider key" do
-        logger = instance_double(ActiveSupport::Logger, info: nil, warn: nil, error: nil)
-        allow(activity).to receive(:logger).and_return(logger)
-        allow(UserSetting).to receive(:rate_limit_fallback_providers).with(user).and_return([ "claude" ])
-        allow(container_service).to receive(:execute).and_return(rate_limit_failure)
-
-        expect {
-          activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
-
-        expect(logger).to have_received(:info).with(
-          message: "agent_execution.rate_limit_fallback_available",
-          provider: "claude",
-          agent_run_id: agent_run.id
+      it "executes a rate-limit fallback entry for the same provider key" do
+        api_key = create(:provider_api_key, user: user, api_service_type: "anthropic", api_key: "sk-fallback-secret")
+        fallback_provider = create(
+          :provider,
+          :rate_limit_fallback,
+          user: user,
+          provider_key: "claude",
+          provider_api_key: api_key,
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true,
+          name: "Claude API Key"
         )
+
+        expect_same_provider_rate_limit_fallback_execution(fallback_provider)
       end
 
       it "uses provider display names in exhausted-provider labels" do
