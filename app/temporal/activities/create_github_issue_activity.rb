@@ -129,23 +129,25 @@ module Activities
     end
 
     def failed_issue_creation_attempt?(agent_run)
-      %w[stderr stdout].any? do |log_type|
-        failed_issue_creation_attempt_in_log_type?(agent_run, log_type)
-      end
-    end
+      log_lines = []
+      stream_states = Hash.new { |states, log_type| states[log_type] = { buffer: +"" } }
 
-    def failed_issue_creation_attempt_in_log_type?(agent_run, log_type)
-      log_chunks = []
       agent_run.agent_run_logs
-        .where(log_type: log_type)
-        .select(:id, :content)
+        .where(log_type: %w[stderr stdout])
+        .select(:id, :log_type, :content)
         .find_in_batches(batch_size: ISSUE_CREATION_FAILURE_LOG_BATCH_SIZE) do |batch|
-          log_chunks.concat(batch.sort_by(&:id).map(&:content))
+          batch.sort_by(&:id).each do |log|
+            append_log_lines!(log_lines, stream_states[log.log_type], log)
+          end
         end
 
-      return false if log_chunks.empty?
+      stream_states.each_value do |state|
+        flush_log_line!(log_lines, state)
+      end
 
-      failed_issue_creation_attempt_in_lines?(stitch_log_chunks(log_chunks))
+      return false if log_lines.empty?
+
+      failed_issue_creation_attempt_in_lines?(log_lines.sort_by { |entry| [ entry[:id], entry[:sequence] ] })
     end
 
     def issue_creation_attempt_line?(line)
@@ -156,26 +158,34 @@ module Activities
       line.start_with?("```")
     end
 
-    def stitch_log_chunks(log_chunks)
-      stitched_chunks = []
-      current_chunk = +""
-
-      log_chunks.each do |chunk|
-        if current_chunk.empty?
-          current_chunk = chunk.dup
-          next
-        end
-
-        if chunk_continues_previous_line?(current_chunk, chunk)
-          current_chunk << chunk
-        else
-          stitched_chunks << current_chunk
-          current_chunk = chunk.dup
-        end
+    def append_log_lines!(log_lines, state, log)
+      if state[:buffer].present? && !chunk_continues_previous_line?(state[:buffer], log.content)
+        flush_log_line!(log_lines, state)
       end
 
-      stitched_chunks << current_chunk unless current_chunk.empty?
-      stitched_chunks.join("\n")
+      state[:buffer] << log.content
+      state[:last_id] = log.id
+      state[:log_type] = log.log_type
+
+      while (newline_index = state[:buffer].index("\n"))
+        emit_log_line!(log_lines, state, state[:buffer].slice!(0, newline_index + 1).delete_suffix("\n"))
+      end
+    end
+
+    def flush_log_line!(log_lines, state)
+      return if state[:buffer].blank?
+
+      emit_log_line!(log_lines, state, state[:buffer])
+      state[:buffer] = +""
+    end
+
+    def emit_log_line!(log_lines, state, line)
+      log_lines << {
+        id: state[:last_id],
+        sequence: log_lines.length,
+        log_type: state[:log_type],
+        line: line
+      }
     end
 
     def chunk_continues_previous_line?(chunk, next_chunk)
@@ -198,22 +208,22 @@ module Activities
       !issue_creation_attempt_line?(line) && issue_creation_attempt_line?(combined_line)
     end
 
-    def failed_issue_creation_attempt_in_lines?(stderr_output)
-      stderr_lines = stderr_output.each_line(chomp: true).to_a
-      inside_code_fence = false
+    def failed_issue_creation_attempt_in_lines?(log_lines)
+      inside_code_fence = Hash.new(false)
 
-      stderr_lines.each_with_index.any? do |line, index|
-        stripped_line = line.strip
+      log_lines.each_with_index.any? do |entry, index|
+        stripped_line = entry[:line].strip
+        log_type = entry[:log_type]
 
         if markdown_code_fence_line?(stripped_line)
-          inside_code_fence = !inside_code_fence
+          inside_code_fence[log_type] = !inside_code_fence[log_type]
           next false
         end
 
-        next false if inside_code_fence
+        next false if inside_code_fence[log_type]
         next false unless issue_creation_attempt_line?(stripped_line)
 
-        failure_context = stderr_lines[index + 1, ISSUE_CREATION_FAILURE_CONTEXT_LINES].to_a.join("\n")
+        failure_context = log_lines[index + 1, ISSUE_CREATION_FAILURE_CONTEXT_LINES].to_a.map { |line| line[:line] }.join("\n")
         next false if failure_context.blank?
 
         issue_creation_failure_marker?(failure_context)

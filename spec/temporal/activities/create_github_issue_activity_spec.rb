@@ -49,6 +49,12 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       agent_run.log!("stdout", "ActiveRecord::PendingMigrationError")
     end
 
+    def log_failed_issue_creation_attempt_across_streams(command_log_type:, failure_log_type:)
+      agent_run.log!(command_log_type, %(bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"'))
+      agent_run.log!(failure_log_type, "HTTP/1.1 500 Internal Server Error")
+      agent_run.log!(failure_log_type, "ActiveRecord::PendingMigrationError")
+    end
+
     def log_failed_issue_creation_attempt_with_trailing_noise(log_type: "stderr")
       agent_run.log!(log_type, %(bash -lc 'curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues"'))
       agent_run.log!(log_type, "HTTP/1.1 500 Internal Server Error")
@@ -275,6 +281,30 @@ RSpec.describe Activities::CreateGithubIssueActivity do
 
     it "refuses to create a fallback issue from stdout issue-creation failure output" do
       log_failed_issue_creation_attempt_in_stdout
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses fallback issue creation when the command is in stdout and the failure markers are in stderr" do
+      log_failed_issue_creation_attempt_across_streams(command_log_type: "stdout", failure_log_type: "stderr")
+
+      expect(github_client).not_to receive(:create_issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueDraftInvalid")
+      }
+    end
+
+    it "refuses fallback issue creation when the command is in stderr and the failure markers are in stdout" do
+      log_failed_issue_creation_attempt_across_streams(command_log_type: "stderr", failure_log_type: "stdout")
 
       expect(github_client).not_to receive(:create_issue)
 
