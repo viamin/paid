@@ -304,10 +304,11 @@ module Activities
           return draft_trigger_payload(issue, triggers)
         end
 
-        # Only auto-advance when we have at least one check and all conclusions are green.
-        # all_checks_green? implicitly rejects nil conclusions (pending checks),
-        # and only after a clean review-bot review is present.
-        if checks.present? && all_checks_green?(checks)
+        # Auto-advance when checks were fetched successfully and all known
+        # conclusions are green. Repositories with no CI checks should still
+        # leave draft after a clean review; nil means the check fetch failed
+        # and we must fail closed instead of guessing.
+        if !checks.nil? && all_checks_green?(checks)
           # Check non-bot review gates (manual reviewer, ci_action) before advancing.
           reviews ||= fetch_reviews(client, project, issue) # safety: reviews already fetched above
           gate_triggers = non_bot_review_gate_triggers(project, reviews, checks)
@@ -344,7 +345,7 @@ module Activities
       if project.auto_merge_enabled? &&
           pr_data.present? &&
           owner_approved_or_self_authored?(project, reviews, pr_data) &&
-          checks.present? &&
+          !checks.nil? &&
           all_checks_green?(checks) &&
           mergeable == true &&
           no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks) &&
@@ -397,7 +398,7 @@ module Activities
         mergeable = pr_data[:mergeable]
 
         if owner_approved_or_self_authored?(project, reviews, pr_data) &&
-            checks.present? &&
+            !checks.nil? &&
             all_checks_green?(checks) &&
             mergeable == true &&
             no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks) &&
@@ -506,7 +507,7 @@ module Activities
       reviews ||= fetch_reviews(client, project, issue)
       unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
 
-      partial_failure = pr_data.nil? || reviews.nil? || unresolved_threads.nil?
+      partial_failure = pr_data.nil? || checks.nil? || reviews.nil? || unresolved_threads.nil?
 
       triggers = []
 
@@ -696,10 +697,12 @@ module Activities
         project_id: project.id,
         error: e.message
       )
-      []
+      nil
     end
 
     def ci_failure_triggers(checks)
+      return [] if checks.nil?
+
       completed = checks.select { |c| c[:conclusion].present? }
       return [] if completed.empty?
 
@@ -732,7 +735,7 @@ module Activities
         end
       end
 
-      if project.review_method_enabled?("ci_action")
+      if project.review_method_enabled?("ci_action") && !checks.nil?
         action_name = project.review_method_config("ci_action")["action_name"]
         if action_name.present? && !ci_action_succeeded?(checks, action_name)
           triggers << { type: "ci_action_pending", action_name: action_name,

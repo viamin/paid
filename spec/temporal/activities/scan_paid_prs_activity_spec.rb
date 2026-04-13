@@ -856,10 +856,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "treats the review as effectively clean and does not request another review" do
+      it "treats the review as effectively clean and advances to ready_for_owner" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "ready_for_owner" ])
       end
     end
 
@@ -3414,10 +3416,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "treats the review as effectively clean when all threads are resolved" do
+      it "treats the review as effectively clean and advances to ready_for_owner" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "ready_for_owner" ])
       end
     end
 
@@ -3521,6 +3525,19 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
       end
 
+      it "returns ready_for_owner when the latest bot review is clean and the repo has no checks" do
+        stub_github_for_pr(
+          checks: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+
       it "does not return ready_for_owner when CI is pending" do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: nil } ],
@@ -3573,6 +3590,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "returns owner_approved trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("owner_approved")
+      end
+
+      it "returns owner_approved when the repo has no checks" do
+        stub_github_for_pr(
+          checks: [],
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ]
+        )
+
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
@@ -4621,6 +4653,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger[:triggers].first[:type]).to eq("owner_approved")
       end
 
+      it "returns owner_approved when the repo has no checks" do
+        stub_github_for_pr(
+          checks: [],
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("owner_approved")
+      end
+
       it "does not emit owner_approved when auto_merge is disabled" do
         project.update!(auto_merge_enabled: false)
 
@@ -4928,6 +4975,44 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(checks: [ { name: "ci", conclusion: "success" } ])
         allow(github_client).to receive(:pull_request_reviews)
           .with(project.full_name, 42)
+          .and_raise(GithubClient::Error.new("API error"))
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to be_empty
+        expect(unchanged_pr.reload.last_pr_scan_at).to be_nil
+      end
+
+      it "returns :skipped when check-run fetch fails in ready phase" do
+        unchanged_pr.update_columns(
+          last_pr_scan_at: nil,
+          github_updated_at: Time.current,
+          pr_review_phase: "ready"
+        )
+        stub_github_for_pr(checks: [ { name: "ci", conclusion: "success" } ])
+        allow(github_client).to receive(:check_runs_for_ref)
+          .and_raise(GithubClient::Error.new("API error"))
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to be_empty
+        expect(unchanged_pr.reload.last_pr_scan_at).to be_nil
+      end
+
+      it "returns :skipped when check-run fetch fails for a ci_action gate in ready phase" do
+        unchanged_pr.update_columns(
+          last_pr_scan_at: nil,
+          github_updated_at: Time.current,
+          pr_review_phase: "ready"
+        )
+        project.update!(
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "ci_action" => { "enabled" => true, "action_name" => "e2e-suite" } }
+          }
+        )
+        stub_github_for_pr(checks: [ { name: "e2e-suite", conclusion: "success" } ])
+        allow(github_client).to receive(:check_runs_for_ref)
           .and_raise(GithubClient::Error.new("API error"))
 
         result = activity.execute(project_id: project.id)
