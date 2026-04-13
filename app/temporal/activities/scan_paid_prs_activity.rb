@@ -304,10 +304,11 @@ module Activities
           return draft_trigger_payload(issue, triggers)
         end
 
-        # Only auto-advance when we have at least one check and all conclusions are green.
-        # all_checks_green? implicitly rejects nil conclusions (pending checks),
-        # and only after a clean review-bot review is present.
-        if checks.present? && all_checks_green?(checks)
+        # Auto-advance when checks were fetched successfully and all known
+        # conclusions are green. Repositories with no CI checks should still
+        # leave draft after a clean review; nil means the check fetch failed
+        # and we must fail closed instead of guessing.
+        if !checks.nil? && all_checks_green?(checks)
           # Check non-bot review gates (manual reviewer, ci_action) before advancing.
           reviews ||= fetch_reviews(client, project, issue) # safety: reviews already fetched above
           gate_triggers = non_bot_review_gate_triggers(project, reviews, checks)
@@ -344,7 +345,7 @@ module Activities
       if project.auto_merge_enabled? &&
           pr_data.present? &&
           owner_approved_or_self_authored?(project, reviews, pr_data) &&
-          checks.present? &&
+          !checks.nil? &&
           all_checks_green?(checks) &&
           mergeable == true &&
           no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks) &&
@@ -397,7 +398,7 @@ module Activities
         mergeable = pr_data[:mergeable]
 
         if owner_approved_or_self_authored?(project, reviews, pr_data) &&
-            checks.present? &&
+            !checks.nil? &&
             all_checks_green?(checks) &&
             mergeable == true &&
             no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks) &&
@@ -506,7 +507,7 @@ module Activities
       reviews ||= fetch_reviews(client, project, issue)
       unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
 
-      partial_failure = pr_data.nil? || reviews.nil? || unresolved_threads.nil?
+      partial_failure = pr_data.nil? || checks.nil? || reviews.nil? || unresolved_threads.nil?
 
       triggers = []
 
@@ -652,10 +653,10 @@ module Activities
       end
     end
 
-    # Returns true when the most recent review-goal run for this PR failed
-    # and no successful review-goal run has completed since. Only applies
-    # when the paid_agent review method is enabled (review-goal runs are
-    # how paid_agent posts reviews).
+    # Returns true when the latest finished automatic review-goal run in the
+    # current cycle ended in a retryable failure status. Only applies when the
+    # paid_agent review method is enabled (review-goal runs are how paid_agent
+    # posts reviews).
     def review_goal_retry_needed?(project, issue)
       return false unless project.review_enabled?
       return false unless project.review_method_enabled?("paid_agent")
@@ -663,7 +664,7 @@ module Activities
       # Don't retry while a review-goal run is already queued or running.
       return false if review_run_in_progress?(project, issue)
 
-      review_goal_consecutive_failure_count(project, issue).positive?
+      latest_finished_automatic_review_run(project, issue)&.status.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
     end
 
     def last_completed_run(project, issue)
@@ -696,10 +697,12 @@ module Activities
         project_id: project.id,
         error: e.message
       )
-      []
+      nil
     end
 
     def ci_failure_triggers(checks)
+      return [] if checks.nil?
+
       completed = checks.select { |c| c[:conclusion].present? }
       return [] if completed.empty?
 
@@ -732,7 +735,7 @@ module Activities
         end
       end
 
-      if project.review_method_enabled?("ci_action")
+      if project.review_method_enabled?("ci_action") && !checks.nil?
         action_name = project.review_method_config("ci_action")["action_name"]
         if action_name.present? && !ci_action_succeeded?(checks, action_name)
           triggers << { type: "ci_action_pending", action_name: action_name,
@@ -975,9 +978,7 @@ module Activities
     def check_paid_agent_review_status(project, issue)
       return [] unless issue
 
-      automatic_review_runs = automatic_review_runs(project, issue)
-      attempted_review_runs = automatic_review_runs.where.not(status: "retried")
-      current_cycle_review_runs = review_runs_for_current_cycle(attempted_review_runs, issue)
+      current_cycle_review_runs = attempted_automatic_review_runs(project, issue)
       unfinished_run = current_cycle_review_run_in_progress(project, issue)
 
       if unfinished_run
@@ -1013,7 +1014,8 @@ module Activities
       # #830 "already reviewed" guard so failed/no-output reviews are retried
       # even when the last finished review attempt post-dates the last create_pr.
       failed_count = review_goal_consecutive_failure_count(project, issue)
-      if failed_count > 0
+      latest_failed_run = latest_finished_automatic_review_run(project, issue)
+      if latest_failed_run&.status.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
         max_retries = review_goal_max_retries(project)
         return [ { type: "paid_agent_review_pending",
                    details: "Retrying unsuccessful review-goal run (attempt #{failed_count + 1}/#{max_retries})" } ]
@@ -1110,6 +1112,26 @@ module Activities
     def automatic_review_runs(project, issue)
       all_review_runs(project, issue)
         .where(trigger_type: "automatic")
+    end
+
+    def attempted_automatic_review_runs(project, issue)
+      automatic_review_runs(project, issue)
+        .where.not(status: "retried")
+    end
+
+    def attempted_automatic_review_runs_since_retry_reset(project, issue)
+      scope = attempted_automatic_review_runs(project, issue)
+      reset_at = review_goal_failure_reset_at(project, issue)
+      return scope unless reset_at
+
+      scope.where(review_run_cycle_boundary.gt(reset_at))
+    end
+
+    def latest_finished_automatic_review_run(project, issue)
+      attempted_automatic_review_runs_since_retry_reset(project, issue)
+        .finished
+        .order(Arel.sql("COALESCE(completed_at, updated_at) DESC"))
+        .first
     end
 
     def review_goal_consecutive_failure_count(project, issue)
