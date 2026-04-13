@@ -67,9 +67,13 @@ RSpec.describe PollWorkflowHealthCheckJob do
       allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
       allow(workflow_handle).to receive(:describe).and_return(desc)
       allow(workflow_handle).to receive(:terminate)
+      allow(WorkflowState).to receive(:record_polling_status)
 
       described_class.perform_now
 
+      expect(WorkflowState).to have_received(:record_polling_status).with(
+        project, hash_including(status: "running", restart_reason: /health check: stale RUNNING/)
+      ).at_least(:once)
       expect(workflow_handle).to have_received(:terminate)
       expect(temporal_client).to have_received(:start_workflow).with(
         Workflows::GitHubPollWorkflow,
