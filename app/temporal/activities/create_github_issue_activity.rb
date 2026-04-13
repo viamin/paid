@@ -132,18 +132,29 @@ module Activities
     end
 
     def failed_issue_creation_attempt?(agent_run)
-      stderr_stream = agent_run.agent_run_logs
+      stderr_chunks = agent_run.agent_run_logs
         .where(log_type: "stderr")
         .order(created_at: :desc, id: :desc)
         .limit(ISSUE_CREATION_FAILURE_LOG_LIMIT)
         .pluck(:content)
         .reverse
-        .join
 
-      stderr_lines = stderr_stream.each_line(chomp: true).to_a
+      return false if stderr_chunks.empty?
 
-      return false if stderr_lines.empty?
+      failed_issue_creation_attempt_in_lines?(stderr_chunks) ||
+        failed_issue_creation_attempt_in_fragmented_chunks?(stderr_chunks)
+    end
 
+    def issue_creation_attempt_line?(line)
+      line.match?(ISSUE_CREATION_ATTEMPT_PATTERN)
+    end
+
+    def markdown_code_fence_line?(line)
+      line.start_with?("```")
+    end
+
+    def failed_issue_creation_attempt_in_lines?(stderr_chunks)
+      stderr_lines = stderr_chunks.flat_map { |chunk| chunk.each_line(chomp: true).to_a.presence || [ chunk ] }
       inside_code_fence = false
 
       stderr_lines.each_with_index.any? do |line, index|
@@ -160,16 +171,28 @@ module Activities
         failure_context = stderr_lines[index + 1, ISSUE_CREATION_FAILURE_CONTEXT_LINES].to_a.join("\n")
         next false if failure_context.blank?
 
-        ISSUE_CREATION_FAILURE_PATTERNS.any? { |pattern| pattern.match?(failure_context) }
+        issue_creation_failure_marker?(failure_context)
       end
     end
 
-    def issue_creation_attempt_line?(line)
-      line.match?(ISSUE_CREATION_ATTEMPT_PATTERN)
+    def failed_issue_creation_attempt_in_fragmented_chunks?(stderr_chunks)
+      stderr_chunks.each_index.any? do |index|
+        candidate = stderr_chunks[index, ISSUE_CREATION_FAILURE_CONTEXT_LINES].to_a.join
+        candidate_lines = candidate.each_line(chomp: true).to_a
+        next false if candidate_lines.empty?
+
+        first_line = candidate_lines.first.to_s.strip
+        next false unless issue_creation_attempt_line?(first_line)
+
+        failure_context = candidate_lines.drop(1).join("\n")
+        next false if failure_context.blank?
+
+        issue_creation_failure_marker?(failure_context)
+      end
     end
 
-    def markdown_code_fence_line?(line)
-      line.start_with?("```")
+    def issue_creation_failure_marker?(text)
+      ISSUE_CREATION_FAILURE_PATTERNS.any? { |pattern| pattern.match?(text) }
     end
 
     def sync_issue_record(project, gh_issue)
