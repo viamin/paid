@@ -8,6 +8,7 @@ class BackfillNullReviewGoalRetryResetAtOnIssues < ActiveRecord::Migration[8.1]
   def up
     reset_at = Time.current
     MigrationIssue.unscoped
+      .where(is_pull_request: true, pr_review_phase: "restarted")
       .where(review_goal_retry_reset_at: nil)
       .in_batches
       .update_all(review_goal_retry_reset_at: reset_at)
