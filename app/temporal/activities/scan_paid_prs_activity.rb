@@ -1050,7 +1050,7 @@ module Activities
       # Use the earliest known attempt timestamp instead of completion time so
       # a run queued before the restart stays in the old cycle even if it
       # starts or finishes afterward.
-      runs.where("#{review_run_cycle_boundary_sql} > ?", reset_at)
+      runs.where(review_run_cycle_boundary.gt(reset_at))
     end
 
     def review_runs_for_current_cycle(review_runs, issue)
@@ -1121,7 +1121,7 @@ module Activities
         status: REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES,
         trigger_type: "automatic"
       )
-      scope = scope.where("#{review_run_cycle_boundary_sql} > ?", reset_at) if reset_at
+      scope = scope.where(review_run_cycle_boundary.gt(reset_at)) if reset_at
       scope.count
     end
 
@@ -1132,7 +1132,7 @@ module Activities
         # After a dismissal/draft restart, only runs attempted in the new
         # cycle should be able to reset the breaker. A stale pre-restart run
         # may finish later, but it must not clear fresh-cycle failures.
-        run_scope = run_scope.where("#{review_run_cycle_boundary_sql} > ?", retry_reset_at)
+        run_scope = run_scope.where(review_run_cycle_boundary.gt(retry_reset_at))
       end
 
       [
@@ -1161,11 +1161,15 @@ module Activities
       end
     end
 
-    def review_run_cycle_boundary_sql
-      "CASE " \
-        "WHEN started_at IS NULL THEN created_at " \
-        "ELSE LEAST(started_at, created_at) " \
-      "END"
+    def review_run_cycle_boundary
+      agent_runs = AgentRun.arel_table
+      Arel::Nodes::Case.new
+        .when(agent_runs[:started_at].eq(nil))
+        .then(agent_runs[:created_at])
+        .else(Arel::Nodes::NamedFunction.new("LEAST", [
+          agent_runs[:started_at],
+          agent_runs[:created_at]
+        ]))
     end
 
     def body_only_review_bot?(login)
