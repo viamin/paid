@@ -109,13 +109,14 @@ class PollWorkflowHealthCheckJob < ApplicationJob
       reason: reason
     )
 
-    ProjectWorkflowManager.restart_polling(project, reason: reason)
+    restarted = ProjectWorkflowManager.restart_polling(project, reason: reason)
 
     Rails.logger.info(
       message: "temporal_worker.poll_workflow_restarted",
       project_id: project.id
-    )
-    true
+    ) if restarted
+
+    restarted
   end
 
   # Maps Temporal workflow execution statuses to WorkflowState status strings.

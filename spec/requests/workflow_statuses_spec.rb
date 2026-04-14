@@ -252,6 +252,24 @@ RSpec.describe "WorkflowStatuses" do
         expect(flash[:alert]).to eq("Could not restart issue monitor. Please try again later.")
       end
 
+      it "redirects with alert when restart conflicts with an existing workflow" do
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :not_found, running: false)
+        allow(ProjectWorkflowManager).to receive(:restart_polling)
+          .and_raise(
+            Temporalio::Error::WorkflowAlreadyStartedError.new(
+              workflow_id: "github-poll-#{project.id}",
+              workflow_type: "GitHubPollWorkflow",
+              run_id: "test-run-id"
+            )
+          )
+
+        post restart_project_workflow_status_path(project)
+
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:alert]).to eq("Could not restart issue monitor. Please try again later.")
+      end
+
       it "does not allow restarting for other accounts' projects" do
         other_account = create(:account)
         other_token = create(:github_token, account: other_account)
