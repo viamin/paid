@@ -62,8 +62,6 @@ module ProvidersHelper
     copy = PROVIDER_AUTH_INSTRUCTION_COPY[provider_key]
     return copy.merge(provider_key: provider_key, title: Provider.display_name(provider_key), fallback: false) if copy
 
-    Rails.logger.warn(message: "providers.auth_instructions.missing_copy", provider_key: provider_key)
-
     {
       provider_key: provider_key,
       title: Provider.display_name(provider_key),
