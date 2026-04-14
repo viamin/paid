@@ -25,9 +25,7 @@ RSpec.describe Prompts::BuildForPr do
 
 
     allow(github_client).to receive_messages(check_runs_for_ref: [], review_threads: [], recent_issue_comments: [])
-    allow(AgentRuns::UserSettingsResolver).to receive(:call)
-      .with(project: project, strict: false)
-      .and_return(user_settings)
+    allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(user_settings)
   end
 
   describe ".call" do
@@ -213,7 +211,7 @@ RSpec.describe Prompts::BuildForPr do
 
     before do
       allow(github_client).to receive(:recent_issue_comments)
-        .with(project.full_name, 42, pages: described_class::RECENT_COMMENT_PAGE_WINDOW)
+        .with(project.full_name, 42, pages: 1)
         .and_return(recent_comments)
     end
 
@@ -242,7 +240,7 @@ RSpec.describe Prompts::BuildForPr do
         .with(project: project, strict: false)
         .and_return(limited_settings)
       allow(github_client).to receive(:recent_issue_comments)
-        .with(project.full_name, 42, pages: described_class::RECENT_COMMENT_PAGE_WINDOW)
+        .with(project.full_name, 42, pages: 1)
         .and_return(limited_comments)
 
       prompt = described_class.call(project: project, pr_number: 42, github_client: github_client, rebase_succeeded: true)
@@ -262,12 +260,31 @@ RSpec.describe Prompts::BuildForPr do
         .with(project: project, strict: false)
         .and_return(truncating_settings)
       allow(github_client).to receive(:recent_issue_comments)
-        .with(project.full_name, 42, pages: described_class::RECENT_COMMENT_PAGE_WINDOW)
+        .with(project.full_name, 42, pages: 1)
         .and_return(long_comment)
 
       prompt = described_class.call(project: project, pr_number: 42, github_client: github_client, rebase_succeeded: true)
 
       expect(prompt).to include("This comment is defi… [truncated]")
+    end
+
+    it "fetches enough trailing pages to honor limits above 200 comments" do
+      expanded_settings = instance_double(UserSetting, max_prompt_comments: 205, max_comment_length: 2000)
+      expanded_comments = Array.new(205) do |index|
+        OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "Trusted comment #{index + 1}")
+      end
+
+      allow(AgentRuns::UserSettingsResolver).to receive(:call)
+        .with(project: project, strict: false)
+        .and_return(expanded_settings)
+      allow(github_client).to receive(:recent_issue_comments)
+        .with(project.full_name, 42, pages: 3)
+        .and_return(expanded_comments)
+
+      prompt = described_class.call(project: project, pr_number: 42, github_client: github_client, rebase_succeeded: true)
+
+      expect(prompt).to include("Trusted comment 1")
+      expect(prompt).to include("Trusted comment 205")
     end
   end
 
@@ -416,7 +433,7 @@ RSpec.describe Prompts::BuildForPr do
         review_threads: [ { id: "t1", is_resolved: false, comments: [ { body: "fix", path: "a.rb", line: 1, author: "r" } ] } ]
       )
       allow(github_client).to receive(:recent_issue_comments)
-        .with(project.full_name, 42, pages: described_class::RECENT_COMMENT_PAGE_WINDOW)
+        .with(project.full_name, 42, pages: 1)
         .and_return([ OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "comment") ])
 
       issue = create(:issue, project: project, title: "Issue", github_number: 1, body: "body")
