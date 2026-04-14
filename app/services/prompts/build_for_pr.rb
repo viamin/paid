@@ -299,7 +299,7 @@ module Prompts
         trusted = select_trusted_comments(comments)
 
         return trusted.last(max_prompt_comments) if trusted.size >= max_prompt_comments
-        return trusted unless comments.respond_to?(:multi_page?) && comments.multi_page?
+        return trusted unless comments.respond_to?(:older_pages_available?) && comments.older_pages_available?
         return trusted if pages >= MAX_RECENT_COMMENT_PAGES
 
         pages += 1

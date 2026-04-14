@@ -404,7 +404,7 @@ class GithubClient
       last_rel = client.last_response&.rels&.dig(:last)
 
       unless last_rel
-        return tag_multi_page(first_page, false)
+        return tag_recent_issue_comments_metadata(first_page, multi_page: false, older_pages_available: false)
       end
 
       page_count = [ pages.to_i, 1 ].max
@@ -422,7 +422,11 @@ class GithubClient
         remaining_pages -= 1
       end
 
-      tag_multi_page(recent_pages.reverse.flatten, true)
+      tag_recent_issue_comments_metadata(
+        recent_pages.reverse.flatten,
+        multi_page: true,
+        older_pages_available: client.last_response&.rels&.dig(:prev).present?
+      )
     end
   end
 
@@ -960,9 +964,11 @@ class GithubClient
 
   private
 
-  def tag_multi_page(page, multi)
-    page.instance_variable_set(:@multi_page, multi)
+  def tag_recent_issue_comments_metadata(page, multi_page:, older_pages_available:)
+    page.instance_variable_set(:@multi_page, multi_page)
+    page.instance_variable_set(:@older_pages_available, older_pages_available)
     page.define_singleton_method(:multi_page?) { @multi_page }
+    page.define_singleton_method(:older_pages_available?) { @older_pages_available }
     page
   end
 

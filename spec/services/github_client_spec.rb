@@ -844,6 +844,7 @@ RSpec.describe GithubClient do
         result = client.recent_issue_comments(repo, 42)
 
         expect(result.multi_page?).to be false
+        expect(result.older_pages_available?).to be false
       end
     end
 
@@ -891,6 +892,7 @@ RSpec.describe GithubClient do
         result = client.recent_issue_comments(repo, 42)
 
         expect(result.multi_page?).to be true
+        expect(result.older_pages_available?).to be true
       end
 
       it "can include a bounded trailing window of recent pages" do
@@ -911,6 +913,27 @@ RSpec.describe GithubClient do
 
         expect(result.map(&:body)).to eq([ "Older recent comment", "Newer comment", "Newest comment" ])
         expect(result.multi_page?).to be true
+        expect(result.older_pages_available?).to be true
+      end
+
+      it "marks the result when the fetched window already includes the oldest page" do
+        stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments?page=4&per_page=100")
+          .to_return(
+            status: 200,
+            body: [
+              { id: 301, body: "Older recent comment", user: { login: "maintainer" } }
+            ].to_json,
+            headers: {
+              "Content-Type" => "application/json",
+              "Link" => %(<#{api_base}/repos/#{repo}/issues/42/comments?page=5&per_page=100>; rel="next")
+            }
+          )
+
+        result = client.recent_issue_comments(repo, 42, pages: 5)
+
+        expect(result.map(&:body)).to eq([ "Older recent comment", "Newer comment", "Newest comment" ])
+        expect(result.multi_page?).to be true
+        expect(result.older_pages_available?).to be false
       end
     end
   end
