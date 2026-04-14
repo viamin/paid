@@ -1105,10 +1105,10 @@ module Containers
     end
 
     def codex_subscription_auth_host_mount_path
-      @codex_subscription_auth_host_mount_path ||= begin
-        base = codex_config_host_path
-        base if base.present? && File.directory?(base) && File.file?(File.join(base, "auth.json"))
-      end
+      return @codex_subscription_auth_host_mount_path if defined?(@codex_subscription_auth_host_mount_path)
+
+      base = codex_config_host_path
+      @codex_subscription_auth_host_mount_path = base if base.present? && File.directory?(base) && File.file?(File.join(base, "auth.json"))
     end
 
     def copilot_config_host_path

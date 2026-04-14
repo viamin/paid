@@ -1201,9 +1201,9 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(codex_config_dir)
-        # Clear memoized value so it picks up the new ENV stubs
-        service.instance_variable_set(:@codex_subscription_auth_host_mount_path, nil)
-        service.instance_variable_set(:@codex_config_host_path, nil)
+        # Clear memoized values so they pick up the new ENV stubs
+        service.remove_instance_variable(:@codex_subscription_auth_host_mount_path) if service.instance_variable_defined?(:@codex_subscription_auth_host_mount_path)
+        service.remove_instance_variable(:@codex_config_host_path) if service.instance_variable_defined?(:@codex_config_host_path)
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stdout, "output\n") if block
           [ [ "output\n" ], [], 0 ]
