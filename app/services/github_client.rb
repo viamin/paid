@@ -394,14 +394,11 @@ class GithubClient
   #
   # @param repo [String] Repository in "owner/name" format
   # @param number [Integer] Issue or PR number
-  # @param pages [Integer] Number of trailing 100-comment pages to fetch.
-  #   Defaults to 1. Values less than 1 are treated as 1.
-  # @return [Array<Sawyer::Resource>] Up to (100 * pages) most-recent comments,
-  #   each with .user.login, .body, .created_at. Returned in ascending order
-  #   by ID across the fetched window.
-  def recent_issue_comments(repo, number, pages: 1)
+  # @return [Array<Sawyer::Resource>] Up to 100 most-recent comments, each
+  #   with .user.login, .body, .created_at. Order within the returned page
+  #   is ascending by ID — callers that need a specific order must sort.
+  def recent_issue_comments(repo, number)
     handle_errors do
-      page_window = [ pages.to_i, 1 ].max
       first_page = client.issue_comments(repo, number, per_page: 100, page: 1)
       last_rel = client.last_response&.rels&.dig(:last)
 
@@ -409,16 +406,8 @@ class GithubClient
         return tag_multi_page(first_page, false)
       end
 
-      recent_pages = [ client.get(last_rel.href) ]
-
-      while recent_pages.size < page_window
-        prev_rel = client.last_response&.rels&.dig(:prev)
-        break unless prev_rel
-
-        recent_pages.unshift(client.get(prev_rel.href))
-      end
-
-      tag_multi_page(recent_pages.flatten, true)
+      last_page = client.get(last_rel.href)
+      tag_multi_page(last_page, true)
     end
   end
 
