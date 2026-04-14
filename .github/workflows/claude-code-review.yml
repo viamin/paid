@@ -8,6 +8,7 @@ on:
 
 jobs:
   claude-review:
+    name: Claude Code Review
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -47,6 +48,10 @@ jobs:
           fetch-depth: 1
           ref: ${{ steps.pr.outputs.base_sha }}
           persist-credentials: false
+
+      - name: Skip fork-backed PRs without blocking the CI gate
+        if: steps.pr.outputs.head_repo_fork == 'true'
+        run: echo "Skipping Claude review for fork-backed PR."
 
       - name: Run Claude Code Review
         if: steps.pr.outputs.head_repo_fork != 'true'
