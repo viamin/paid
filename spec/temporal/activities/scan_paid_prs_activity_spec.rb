@@ -5548,6 +5548,31 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  context "when paid_agent is the only review method and wait_for_reviews is disabled" do
+    before do
+      enable_paid_agent_review!
+      project.update!(review_settings: project.effective_review_settings.deep_merge(
+        "wait_for_reviews" => false
+      ))
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      stub_github_for_pr(draft: true, reviews: [])
+    end
+
+    it "advances to ready_for_owner while keeping paid_agent as a queued sidecar" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+      expect(trigger_types).to include("ready_for_owner")
+      expect(trigger_types).to include("paid_agent_review_pending")
+    end
+  end
+
   context "when reviews are globally disabled but paid_agent sub-flag is true" do
     let!(:disabled_reviews_issue) do
       create(:issue, :pull_request,

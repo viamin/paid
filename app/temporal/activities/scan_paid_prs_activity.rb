@@ -241,7 +241,7 @@ module Activities
       # review method there is no other bot that can gate draft exit, so
       # paid_agent_review_pending must block advancement just like
       # review_bot_review_pending does for copilot/codex.
-      paid_agent_sole_reviewer = paid_agent_sole_review_method?(project)
+      paid_agent_sole_reviewer = paid_agent_blocking_draft_gate?(project)
       pending_triggers = (review_bot_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
       sidecar_triggers = (review_bot_triggers || []).select { |t| t[:type] == "paid_agent_review_pending" }
 
@@ -951,11 +951,13 @@ module Activities
     MAX_REVIEW_GOAL_RETRIES = 3
     REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES = (AgentRun::FAILURE_STATUSES + %w[no_output]).freeze
 
-    # Returns true when paid_agent is the only enabled bot review method,
-    # meaning its pending trigger must block draft exit since no other bot
-    # can gate the PR.
-    def paid_agent_sole_review_method?(project)
+    # Returns true when paid_agent is the only enabled bot review method AND
+    # the project is configured to wait for reviews. In that configuration a
+    # pending paid_agent review must block draft exit because no other review
+    # method can gate the PR.
+    def paid_agent_blocking_draft_gate?(project)
       return false unless project&.review_enabled?
+      return false unless project.wait_for_reviews?
       return false unless project.review_method_enabled?("paid_agent")
 
       bot_methods = project.enabled_review_methods & %w[copilot codex paid_agent]
@@ -993,7 +995,7 @@ module Activities
       # for mixed-bot projects so the remaining bot can keep gating the PR.
       # Paid-agent-only projects still need paid_agent_review_pending to block
       # draft exit until the retried review is posted.
-      return [] if review_goal_retry_needed?(project, issue) && !paid_agent_sole_review_method?(project)
+      return [] if review_goal_retry_needed?(project, issue) && !paid_agent_blocking_draft_gate?(project)
 
       # Count all finished review attempts (including failed/timed-out) toward
       # the max_review_rounds limit, but exclude retried runs because retry
