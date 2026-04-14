@@ -87,9 +87,17 @@ class PollWorkflowHealthCheckJob < ApplicationJob
   def check_stale_running(project)
     return unless project.poll_stale_with_recheck?
 
+    reason = "health check: stale RUNNING (last polled #{project.last_polled_at})"
+
+    WorkflowState.record_polling_status(
+      project,
+      status: "running",
+      restart_reason: reason
+    )
+
     restart_workflow(
       project,
-      reason: "health check: stale RUNNING (last polled #{project.last_polled_at})",
+      reason: reason,
       log_message: "temporal_worker.poll_workflow_stale_running"
     )
   end
@@ -101,13 +109,14 @@ class PollWorkflowHealthCheckJob < ApplicationJob
       reason: reason
     )
 
-    ProjectWorkflowManager.restart_polling(project, reason: reason)
+    restarted = ProjectWorkflowManager.restart_polling(project, reason: reason)
 
     Rails.logger.info(
       message: "temporal_worker.poll_workflow_restarted",
       project_id: project.id
-    )
-    true
+    ) if restarted
+
+    restarted
   end
 
   # Maps Temporal workflow execution statuses to WorkflowState status strings.

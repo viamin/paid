@@ -25,10 +25,11 @@ class WorkflowStatusesController < ApplicationController
 
     ProjectWorkflowManager.restart_polling(@project, reason: "manual restart from UI")
     redirect_to project_path(@project), notice: "Issue monitor restarted."
-  rescue Temporalio::Error::RPCError => e
+  rescue Temporalio::Error::RPCError, Temporalio::Error::WorkflowAlreadyStartedError => e
     Rails.logger.error(
       message: "workflow_status.restart_failed",
       project_id: @project.id,
+      error_class: e.class.name,
       error: e.message
     )
     redirect_to project_path(@project), alert: "Could not restart issue monitor. Please try again later."
