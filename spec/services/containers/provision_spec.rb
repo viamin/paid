@@ -838,6 +838,15 @@ RSpec.describe Containers::Provision do
           metadata: hash_including(source_path: codex_config_dir)
         )
       end
+
+      it "does not chown the shared bind mount" do
+        service.provision
+
+        expect(mock_container).not_to have_received(:exec).with(
+          [ "chown", "-R", "agent:agent", "/home/agent/.codex" ],
+          user: "root"
+        )
+      end
     end
 
     context "with Copilot subscription auth (COPILOT_CONFIG_DIR)" do

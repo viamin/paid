@@ -141,7 +141,7 @@ module Containers
       start_container
       fix_workspace_ownership!
       fix_cache_tmpfs_ownership!
-      fix_codex_tmpfs_ownership!
+      fix_codex_tmpfs_ownership! unless codex_subscription_auth?
       seed_codex_credentials!
       fix_gemini_tmpfs_ownership!
       seed_gemini_credentials!
