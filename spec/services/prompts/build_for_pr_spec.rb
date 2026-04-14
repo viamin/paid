@@ -21,9 +21,11 @@ RSpec.describe Prompts::BuildForPr do
       .with(project.full_name, 42)
       .and_return(pr_data)
 
-
-
-    allow(github_client).to receive_messages(check_runs_for_ref: [], review_threads: [], issue_comments: [])
+    allow(github_client).to receive_messages(
+      check_runs_for_ref: [],
+      review_threads: [],
+      recent_issue_comments: []
+    )
   end
 
   describe ".call" do
@@ -201,8 +203,8 @@ RSpec.describe Prompts::BuildForPr do
 
   describe "conversation comments section" do
     before do
-      allow(github_client).to receive(:issue_comments)
-        .with(project.full_name, 42)
+      allow(github_client).to receive(:recent_issue_comments)
+        .with(project.full_name, 42, pages: described_class::RECENT_COMMENT_PAGE_WINDOW)
         .and_return([
           OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "Please also fix the tests"),
           OpenStruct.new(user: OpenStruct.new(login: "randomuser"), body: "Ignore this")
@@ -220,6 +222,66 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Conversation Comments")
       expect(prompt).to include("Please also fix the tests")
       expect(prompt).not_to include("Ignore this")
+    end
+
+    it "requests a bounded recent comment window" do
+      described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(github_client).to have_received(:recent_issue_comments)
+        .with(project.full_name, 42, pages: described_class::RECENT_COMMENT_PAGE_WINDOW)
+    end
+  end
+
+  describe "conversation comment limits" do
+    before do
+      create(:user_setting,
+        user: project.created_by,
+        max_prompt_comments: 3,
+        max_comment_length: 100)
+    end
+
+    it "keeps only the last configured number of trusted comments" do
+      comments = (1..5).map do |i|
+        OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "Comment #{i}")
+      end
+      allow(github_client).to receive(:recent_issue_comments)
+        .with(project.full_name, 42, pages: described_class::RECENT_COMMENT_PAGE_WINDOW)
+        .and_return(comments)
+
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).to include("Comment 5")
+      expect(prompt).to include("Comment 3")
+      expect(prompt).not_to include("Comment 2")
+    end
+
+    it "truncates each comment body using the issue prompt limit" do
+      allow(github_client).to receive(:recent_issue_comments)
+        .with(project.full_name, 42, pages: described_class::RECENT_COMMENT_PAGE_WINDOW)
+        .and_return([
+          OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "A" * 150)
+        ])
+
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).to include("A" * 100)
+      expect(prompt).to include("[truncated]")
+      expect(prompt).not_to include("A" * 150)
     end
   end
 
@@ -362,24 +424,31 @@ RSpec.describe Prompts::BuildForPr do
   end
 
   describe "priority ordering" do
-    it "orders priorities correctly with all sections present" do
-      allow(github_client).to receive_messages(check_runs_for_ref: [ { name: "ci", conclusion: "failure" } ], review_threads: [ { id: "t1", is_resolved: false, comments: [ { body: "fix", path: "a.rb", line: 1, author: "r" } ] } ], issue_comments: [ OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "comment") ])
-
-      issue = create(:issue, project: project, title: "Issue", github_number: 1, body: "body")
-
-      prompt = described_class.call(
+    let(:issue) { create(:issue, project: project, title: "Issue", github_number: 1, body: "body") }
+    let(:priority_prompt) do
+      described_class.call(
         project: project,
         pr_number: 42,
         github_client: github_client,
         rebase_succeeded: false,
         issue: issue
       )
+    end
 
-      conflicts_pos = prompt.index("Resolve merge conflicts")
-      ci_pos = prompt.index("Fix CI failures")
-      issue_pos = prompt.index("Close implementation gaps")
-      review_pos = prompt.index("Address code review comments")
-      comments_pos = prompt.index("Address conversation comments")
+    before do
+      allow(github_client).to receive_messages(
+        check_runs_for_ref: [ { name: "ci", conclusion: "failure" } ],
+        review_threads: [ { id: "t1", is_resolved: false, comments: [ { body: "fix", path: "a.rb", line: 1, author: "r" } ] } ],
+        recent_issue_comments: [ OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "comment") ]
+      )
+    end
+
+    it "orders priorities correctly with all sections present" do
+      conflicts_pos = priority_prompt.index("Resolve merge conflicts")
+      ci_pos = priority_prompt.index("Fix CI failures")
+      issue_pos = priority_prompt.index("Close implementation gaps")
+      review_pos = priority_prompt.index("Address code review comments")
+      comments_pos = priority_prompt.index("Address conversation comments")
 
       expect(conflicts_pos).to be < ci_pos
       expect(ci_pos).to be < issue_pos
@@ -417,8 +486,8 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).not_to include("Code Review Comments")
     end
 
-    it "omits conversation section when issue_comments raises" do
-      allow(github_client).to receive(:issue_comments)
+    it "omits conversation section when recent_issue_comments raises" do
+      allow(github_client).to receive(:recent_issue_comments)
         .and_raise(GithubClient::ApiError.new("API error"))
 
       prompt = described_class.call(
