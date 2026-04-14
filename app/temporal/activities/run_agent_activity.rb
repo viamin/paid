@@ -1052,9 +1052,10 @@ module Activities
       unset_vars = ProviderSupport.harness_runtime_unset_vars_for(provider_entry.provider_key)
       return plan.command if unset_vars.empty?
 
-      base = plan.command.is_a?(Array) ? plan.command.shelljoin : plan.command
+      return [ "env", *unset_vars.flat_map { |var| [ "-u", var ] }, *plan.command ] if plan.command.is_a?(Array)
+
       unset_flags = unset_vars.map { |var| "-u #{var}" }.join(" ")
-      [ "sh", "-c", "env #{unset_flags} #{base}" ]
+      [ "sh", "-c", "env #{unset_flags} #{plan.command}" ]
     end
 
     def capture_head_sha(container_service, agent_run)

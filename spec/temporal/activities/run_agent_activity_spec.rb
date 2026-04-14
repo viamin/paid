@@ -316,10 +316,19 @@ RSpec.describe Activities::RunAgentActivity do
         env = activity.send(:command_env_for, opencode_context, "ping")
         preparation = activity.send(:command_preparation_for, opencode_context, "ping")
 
-        expect(command).to eq([ "sh", "-c", "env -u OPENAI_HEADER_X_AGENT_RUN_ID -u OPENAI_HEADER_X_PROXY_TOKEN opencode run ping" ])
+        expect(command).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", "ping" ])
         expect(env).to include("OPENAI_API_KEY" => "sk-openrouter-secret", "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
         expect(preparation.file_writes.first.path).to eq("~/.config/opencode/opencode.json")
         expect(preparation.file_writes.first.content).to include("\"model\": \"moonshotai/kimi-k2-0905\"")
+      end
+
+      it "preserves multi-line prompts when wrapping the harness runtime command" do
+        opencode_context = build_opencode_context(user)
+        prompt = "line 1\nline 2"
+
+        command = activity.send(:build_command, opencode_context, prompt)
+
+        expect(command).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", prompt ])
       end
     end
   end
@@ -372,8 +381,8 @@ RSpec.describe Activities::RunAgentActivity do
       if call_count == 1
         rate_limit_failure
       else
-        expect(command[0..1]).to eq(%w[sh -c])
-        expect(command[2]).to include("env -u OPENAI_HEADER_X_AGENT_RUN_ID -u OPENAI_HEADER_X_PROXY_TOKEN opencode run")
+        expect(command[0..5]).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode" ])
+        expect(command[6]).to eq("run")
         expect(opts[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
         expect(opts[:preparation].file_writes.first.path).to eq("~/.config/opencode/opencode.json")
         exec_success
