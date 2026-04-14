@@ -254,11 +254,12 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     it "truncates comment bodies using the configured max length" do
-      create(:user_setting, user: project.created_by, max_comment_length: 12)
+      create(:user_setting, user: project.created_by, max_comment_length: 100)
+      long_comment_body = "a" * 120
       allow(github_client).to receive(:recent_issue_comments)
         .with(project.full_name, 42, pages: described_class::RECENT_COMMENT_PAGE_WINDOW)
         .and_return([
-          OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "abcdefghijklmnop")
+          OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: long_comment_body)
         ])
 
       prompt = described_class.call(
@@ -268,8 +269,8 @@ RSpec.describe Prompts::BuildForPr do
         rebase_succeeded: true
       )
 
-      expect(prompt).to include("abcdefghijkl… [truncated]")
-      expect(prompt).not_to include("abcdefghijklmnop")
+      expect(prompt).to include("#{"a" * 100}… [truncated]")
+      expect(prompt).not_to include(long_comment_body)
     end
   end
 
@@ -412,7 +413,7 @@ RSpec.describe Prompts::BuildForPr do
   end
 
   describe "priority ordering" do
-    it "orders priorities correctly with all sections present" do
+    let(:priority_prompt) do
       allow(github_client).to receive_messages(
         check_runs_for_ref: [ { name: "ci", conclusion: "failure" } ],
         review_threads: [ { id: "t1", is_resolved: false, comments: [ { body: "fix", path: "a.rb", line: 1, author: "r" } ] } ],
@@ -421,19 +422,21 @@ RSpec.describe Prompts::BuildForPr do
 
       issue = create(:issue, project: project, title: "Issue", github_number: 1, body: "body")
 
-      prompt = described_class.call(
+      described_class.call(
         project: project,
         pr_number: 42,
         github_client: github_client,
         rebase_succeeded: false,
         issue: issue
       )
+    end
 
-      conflicts_pos = prompt.index("Resolve merge conflicts")
-      ci_pos = prompt.index("Fix CI failures")
-      issue_pos = prompt.index("Close implementation gaps")
-      review_pos = prompt.index("Address code review comments")
-      comments_pos = prompt.index("Address conversation comments")
+    it "orders priorities correctly with all sections present" do
+      conflicts_pos = priority_prompt.index("Resolve merge conflicts")
+      ci_pos = priority_prompt.index("Fix CI failures")
+      issue_pos = priority_prompt.index("Close implementation gaps")
+      review_pos = priority_prompt.index("Address code review comments")
+      comments_pos = priority_prompt.index("Address conversation comments")
 
       expect(conflicts_pos).to be < ci_pos
       expect(ci_pos).to be < issue_pos

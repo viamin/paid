@@ -401,7 +401,7 @@ class GithubClient
   #   by ID across the fetched window.
   def recent_issue_comments(repo, number, pages: 1)
     handle_errors do
-      page_window = [pages.to_i, 1].max
+      page_window = [ pages.to_i, 1 ].max
       first_page = client.issue_comments(repo, number, per_page: 100, page: 1)
       last_rel = client.last_response&.rels&.dig(:last)
 
