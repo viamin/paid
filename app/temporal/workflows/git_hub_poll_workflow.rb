@@ -179,8 +179,18 @@ module Workflows
       return if scan_result[:prs_to_trigger].blank?
 
       scan_result[:prs_to_trigger].each do |pr_data|
+        maybe_queue_paid_agent_review(project_id, pr_data)
         handle_pr_trigger(project_id, pr_data)
       end
+    end
+
+    def maybe_queue_paid_agent_review(project_id, pr_data)
+      return unless pr_data[:queue_paid_agent_review]
+
+      run_activity(Activities::QueueAgentRunActivity,
+        { project_id: project_id, issue_id: pr_data[:issue_id],
+          source_pull_request_number: pr_data[:pr_number],
+          goal: "review" }, timeout: 30)
     end
 
     def handle_pr_trigger(project_id, pr_data)

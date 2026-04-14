@@ -5573,6 +5573,33 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  context "when paid_agent needs a sidecar review during mixed-trigger draft followup" do
+    before do
+      enable_paid_agent_review!
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      stub_github_for_pr(
+        draft: true,
+        checks: [ { name: "ci", conclusion: "failure" } ],
+        reviews: []
+      )
+    end
+
+    it "marks the PR for paid_agent review enqueue on the same poll cycle" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+
+      expect(trigger[:queue_paid_agent_review]).to be(true)
+      expect(trigger[:triggers].map { |entry| entry[:type] })
+        .to include("paid_agent_review_pending", "ci_failure")
+    end
+  end
+
   context "when reviews are globally disabled but paid_agent sub-flag is true" do
     let!(:disabled_reviews_issue) do
       create(:issue, :pull_request,

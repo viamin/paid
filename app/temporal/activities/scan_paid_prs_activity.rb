@@ -159,7 +159,11 @@ module Activities
         end
       end
 
-      merge_retry_trigger(result, retry_trigger, issue)
+      annotate_paid_agent_review_enqueue(
+        merge_retry_trigger(result, retry_trigger, issue),
+        project,
+        issue
+      )
     end
 
     def merge_retry_trigger(result, retry_trigger, issue)
@@ -179,6 +183,13 @@ module Activities
           current_review_goal_retry_count: issue.review_goal_retry_count
         }
       end
+    end
+
+    def annotate_paid_agent_review_enqueue(result, project, issue)
+      return result unless result.is_a?(Hash)
+      return result unless queue_paid_agent_review?(project, issue, result[:triggers] || [])
+
+      result.merge(queue_paid_agent_review: true)
     end
 
     MAX_CONSECUTIVE_DRAFT_FAILURES = 3
@@ -962,6 +973,20 @@ module Activities
 
       bot_methods = project.enabled_review_methods & %w[copilot codex paid_agent]
       bot_methods == %w[paid_agent]
+    end
+
+    def queue_paid_agent_review?(project, issue, triggers)
+      settings = project.effective_review_settings
+      return false unless settings["enabled"] == true
+      return false unless settings.dig("methods", "paid_agent", "enabled") == true
+      return false if current_cycle_review_run_in_progress(project, issue)
+
+      trigger_types = triggers.map { |trigger| trigger[:type] }
+      return false unless trigger_types.include?("paid_agent_review_pending")
+      return false if trigger_types.include?("review_goal_retry")
+      return false if trigger_types.include?("ready_for_owner")
+
+      (trigger_types - [ "paid_agent_review_pending" ]).any?
     end
 
     # Returns a paid_agent_review_pending trigger when no up-to-date completed

@@ -979,4 +979,50 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           timeout: anything)
     end
   end
+
+  describe "#handle_pr_scan_results" do
+    let(:workflow) { described_class.new }
+    let(:project_id) { 1 }
+    let(:scan_result) do
+      {
+        prs_to_trigger: [
+          {
+            issue_id: 10,
+            pr_number: 42,
+            phase: "draft",
+            current_draft_review_count: 0,
+            queue_paid_agent_review: true,
+            triggers: [
+              { type: "paid_agent_review_pending" },
+              { type: "ci_failure", details: "CI failed" }
+            ]
+          }
+        ]
+      }
+    end
+
+    before do
+      allow(workflow).to receive(:run_activity).and_return({})
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("draft-followup-direct-start-v1")
+        .and_return(true)
+
+      workflow.send(:handle_pr_scan_results, scan_result, project_id)
+    end
+
+    it "queues paid_agent review sidecar before starting mixed-trigger draft followup" do
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(project_id: 1, issue_id: 10,
+            source_pull_request_number: 42, goal: "review"),
+          timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(project_id: 1, issue_id: 10,
+            source_pull_request_number: 42,
+            count_toward_draft_review_round: true,
+            expected_draft_review_count: 0),
+          timeout: anything)
+    end
+  end
 end
