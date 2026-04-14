@@ -520,6 +520,15 @@ RSpec.describe UserSetting do
       expect(setting.kb_chat_fallback_providers).to eq(%w[claude cursor])
     end
 
+    it "rejects unsupported knowledge embedding providers" do
+      setting.kb_embedding_provider = "not-a-provider"
+      setting.kb_embedding_fallback_providers = [ "openai", "also-not-a-provider" ]
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:kb_embedding_provider]).to include("is not a supported knowledge embedding provider")
+      expect(setting.errors[:kb_embedding_fallback_providers]).to include("contains unsupported providers: also-not-a-provider")
+    end
+
     it "rejects non-array knowledge fallback provider values" do
       setting.kb_embedding_fallback_providers = "not_an_array"
       setting.kb_chat_fallback_providers = {}

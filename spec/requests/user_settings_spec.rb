@@ -176,6 +176,47 @@ RSpec.describe "UserSettings" do
         expect(settings.kb_embedding_fallback_providers).to eq([ "openrouter" ])
         expect(settings.kb_chat_fallback_providers).to eq([ "cursor" ])
       end
+
+      it "updates knowledge provider settings from array params" do
+        patch user_settings_path, params: {
+          user_setting: {
+            kb_embedding_provider: "openrouter",
+            kb_embedding_fallback_providers: [ "openai", "deepseek" ],
+            kb_chat_provider: "claude",
+            kb_chat_fallback_providers: [ "cursor" ]
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+
+        settings = user.reload.settings
+        expect(settings.kb_embedding_provider).to eq("openrouter")
+        expect(settings.kb_embedding_fallback_providers).to eq(%w[openai deepseek])
+        expect(settings.kb_chat_provider).to eq("claude")
+        expect(settings.kb_chat_fallback_providers).to eq([ "cursor" ])
+      end
+
+      it "renders errors for unsupported knowledge embedding providers" do
+        user.settings.update!(
+          kb_embedding_provider: "openai",
+          kb_embedding_fallback_providers: [ "openrouter" ]
+        )
+
+        patch user_settings_path, params: {
+          user_setting: {
+            kb_embedding_provider: "not-a-provider",
+            kb_embedding_fallback_providers: [ "openai", "also-not-a-provider" ]
+          }
+        }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("supported knowledge embedding provider")
+        expect(response.body).to match(/unsupported providers: also-not-a-provider/i)
+
+        settings = user.reload.settings
+        expect(settings.kb_embedding_provider).to eq("openai")
+        expect(settings.kb_embedding_fallback_providers).to eq([ "openrouter" ])
+      end
     end
   end
 end

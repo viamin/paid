@@ -7,6 +7,7 @@ class UserSetting < ApplicationRecord
   MAX_CONTAINER_MEMORY_BYTES = 64 * 1024 * 1024 * 1024
   # Reasonable upper bound for delay settings (24 hours in seconds)
   MAX_DELAY_SECONDS = 86_400
+  KB_EMBEDDING_PROVIDERS = Provider::DIRECT_OUTBOUND_API_PROVIDERS.keys.freeze
   KB_EMBEDDING_PROVIDER_DEFAULT = "openai"
   KB_CHAT_PROVIDER_DEFAULT = "claude"
 
@@ -330,12 +331,16 @@ class UserSetting < ApplicationRecord
 
   def validate_kb_embedding_provider
     self.kb_embedding_provider = normalize_kb_provider(kb_embedding_provider, default: KB_EMBEDDING_PROVIDER_DEFAULT)
+    return if KB_EMBEDDING_PROVIDERS.include?(kb_embedding_provider)
+
+    errors.add(:kb_embedding_provider, "is not a supported knowledge embedding provider")
   end
 
   def validate_kb_embedding_fallback_providers
     self.kb_embedding_fallback_providers = normalize_kb_provider_list(
       kb_embedding_fallback_providers,
-      attribute: :kb_embedding_fallback_providers
+      attribute: :kb_embedding_fallback_providers,
+      supported_providers: KB_EMBEDDING_PROVIDERS
     )
   end
 
@@ -477,7 +482,7 @@ class UserSetting < ApplicationRecord
     value.to_s.strip.downcase.presence || default
   end
 
-  def normalize_kb_provider_list(value, attribute:)
+  def normalize_kb_provider_list(value, attribute:, supported_providers: nil)
     return [] if value.nil?
 
     unless value.is_a?(Array)
@@ -485,9 +490,18 @@ class UserSetting < ApplicationRecord
       return value
     end
 
-    value.filter_map do |provider|
+    normalized = value.filter_map do |provider|
       provider.to_s.strip.downcase.presence
     end.uniq
+
+    return normalized unless supported_providers
+
+    unsupported = normalized - supported_providers
+    if unsupported.any?
+      errors.add(attribute, "contains unsupported providers: #{unsupported.join(', ')}")
+    end
+
+    normalized
   end
 
   def self.provider_identifiers_for(providers, identifiers:)
