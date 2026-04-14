@@ -1192,6 +1192,45 @@ RSpec.describe Containers::Provision do
         service.execute("echo 'hello'", stream: false)
       end
     end
+
+    context "when codex subscription auth host mount is active" do
+      let(:codex_config_dir) { Dir.mktmpdir("codex-config") }
+
+      before do
+        File.write(File.join(codex_config_dir, "auth.json"), "{}")
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(codex_config_dir)
+        # Clear memoized value so it picks up the new ENV stubs
+        service.instance_variable_set(:@codex_subscription_auth_host_mount_path, nil)
+        service.instance_variable_set(:@codex_config_host_path, nil)
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "output\n") if block
+          [ [ "output\n" ], [], 0 ]
+        end
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
+      end
+
+      after do
+        FileUtils.rm_rf(codex_config_dir)
+      end
+
+      it "acquires a file lock around execution" do
+        service.execute("echo 'hello'")
+
+        expect(File.exist?(described_class::CODEX_AUTH_LOCKFILE)).to be true
+      end
+
+      it "logs lock acquisition" do
+        allow(agent_run).to receive(:log!)
+
+        service.execute("echo 'hello'")
+
+        expect(agent_run).to have_received(:log!).with(
+          "system", "container.codex_auth_lock.acquired", metadata: {}
+        )
+      end
+    end
   end
 
   describe "#cleanup" do

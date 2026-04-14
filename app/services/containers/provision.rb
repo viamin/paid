@@ -87,6 +87,12 @@ module Containers
       keyword_init: true
     )
 
+    # File lock to serialize Codex subscription-auth runs that share a
+    # writable host bind mount.  Without this, two containers can read the
+    # same refresh token and race to rotate it, causing
+    # `refresh_token_reused` failures (see #1037).
+    CODEX_AUTH_LOCKFILE = "/tmp/paid-codex-auth.lock"
+
     # Default resource limits (per issue #23 requirements)
     DEFAULTS = {
       memory_bytes: 4 * 1024 * 1024 * 1024, # 4GB RAM default; overridden by UserSetting#container_memory_bytes
@@ -194,6 +200,10 @@ module Containers
     def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {})
       raise ProvisionError, "Container not provisioned" unless container
 
+      with_codex_auth_lock { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:) }
+    end
+
+    private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {})
       timeout ||= options[:timeout_seconds]
       cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
       exec_options = { wait: timeout }
@@ -519,6 +529,26 @@ module Containers
           success_log_key: "container.codex_credentials_seeded",
           failure_log_key: "container.codex_credentials_seed_failed"
         )
+      end
+    end
+
+    # Serializes the block under a host-level file lock when the container
+    # shares a writable Codex auth bind mount.  This prevents two containers
+    # from racing to refresh the same OAuth token (#1037).  When no shared
+    # host mount is in use the block executes without any lock.
+    def with_codex_auth_lock
+      unless codex_subscription_auth_host_mount_path.present?
+        return yield
+      end
+
+      log_system("container.codex_auth_lock.waiting")
+      File.open(CODEX_AUTH_LOCKFILE, File::WRONLY | File::CREAT, 0o600) do |f|
+        f.flock(File::LOCK_EX)
+        log_system("container.codex_auth_lock.acquired")
+        yield
+      ensure
+        f.flock(File::LOCK_UN)
+        log_system("container.codex_auth_lock.released")
       end
     end
 
