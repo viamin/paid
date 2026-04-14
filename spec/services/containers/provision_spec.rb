@@ -38,8 +38,8 @@ RSpec.describe Containers::Provision do
 
       if script.include?("printf '%s' \"$PAID_PREPARATION_B64\" | base64 -d > \"$PAID_PREPARATION_TARGET\"")
         [ [ "prepared\n" ], [], 0 ]
-      elsif script.include?("mv \"$PAID_PREPARATION_BACKUP\" \"$PAID_PREPARATION_TARGET\"")
-        [ [], [ "mv: cannot stat backup\n" ], 1 ]
+      elsif script.include?("cat \"$PAID_PREPARATION_STATE_DIR/state\"")
+        [ [], [ "missing runtime preparation backup\n" ], 1 ]
       else
         raise "Unexpected shell exec command: #{cmd.inspect} opts=#{opts.inspect}"
       end
@@ -1087,7 +1087,7 @@ RSpec.describe Containers::Provision do
         expect(agent_run).to have_received(:log!).with(
           "system",
           "container.execute.preparation_cleanup_failed",
-          metadata: hash_including(error: "mv: cannot stat backup\n")
+          metadata: hash_including(error: "missing runtime preparation backup\n")
         )
       end
     end
@@ -1307,20 +1307,22 @@ RSpec.describe Containers::Provision do
       service.instance_variable_set(:@container, mock_container)
     end
 
-    it "snapshots symlinks and directories before writing replacement content" do
+    it "snapshots symlinks via readlink and regular files via cp -p, rejecting directories" do
       script = service.send(:materialize_script, nil)
 
-      expect(script).to include('if [ -e "$PAID_PREPARATION_TARGET" ] || [ -L "$PAID_PREPARATION_TARGET" ]; then')
-      expect(script).to include('cp -a "$PAID_PREPARATION_TARGET" "$PAID_PREPARATION_BACKUP"')
-      expect(script).to include('rm -rf "$PAID_PREPARATION_TARGET"')
+      expect(script).to include('if [ -L "$PAID_PREPARATION_TARGET" ]; then')
+      expect(script).to include('readlink "$PAID_PREPARATION_TARGET" > "$PAID_PREPARATION_STATE_DIR/symlink_target"')
+      expect(script).to include('cp -p "$PAID_PREPARATION_TARGET" "$PAID_PREPARATION_STATE_DIR/backup"')
+      expect(script).to include('elif [ -d "$PAID_PREPARATION_TARGET" ]; then')
+      expect(script).to include("exit 1")
     end
 
-    it "removes replacement paths before restoring the backup object" do
+    it "restores symlinks via ln -s, regular files via cp -p, and rejects directory mutations" do
       script = service.send(:cleanup_script)
 
-      expect(script).to include('elif [ -e "$PAID_PREPARATION_BACKUP" ] || [ -L "$PAID_PREPARATION_BACKUP" ]; then')
-      expect(script).to include('rm -rf "$PAID_PREPARATION_TARGET" &&')
-      expect(script).to include('mv "$PAID_PREPARATION_BACKUP" "$PAID_PREPARATION_TARGET"')
+      expect(script).to include('if [ -d "$PAID_PREPARATION_TARGET" ] && [ ! -L "$PAID_PREPARATION_TARGET" ]; then')
+      expect(script).to include('ln -s -- "$(cat "$PAID_PREPARATION_STATE_DIR/symlink_target")" "$PAID_PREPARATION_TARGET"')
+      expect(script).to include('cp -p "$PAID_PREPARATION_STATE_DIR/backup" "$PAID_PREPARATION_TARGET"')
     end
 
     it "does not raise when the preparation script exits successfully" do

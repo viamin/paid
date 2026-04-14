@@ -456,24 +456,21 @@ module Containers
 
     def materialize_preparation_file(write, env:)
       target_path = expand_preparation_path(write.path)
-      backup_path = "#{target_path}.paid-backup-#{SecureRandom.hex(8)}"
-      missing_path = "#{backup_path}.missing"
+      state_dir = "#{target_path}.paid-state-#{SecureRandom.hex(8)}"
 
       run_preparation_script(
         materialize_script(write.mode),
         env: env,
         script_env: {
           "PAID_PREPARATION_TARGET" => target_path,
-          "PAID_PREPARATION_BACKUP" => backup_path,
-          "PAID_PREPARATION_MISSING" => missing_path,
+          "PAID_PREPARATION_STATE_DIR" => state_dir,
           "PAID_PREPARATION_B64" => Base64.strict_encode64(write.content)
         }
       )
 
       {
         "PAID_PREPARATION_TARGET" => target_path,
-        "PAID_PREPARATION_BACKUP" => backup_path,
-        "PAID_PREPARATION_MISSING" => missing_path
+        "PAID_PREPARATION_STATE_DIR" => state_dir
       }
     end
 
@@ -497,17 +494,28 @@ module Containers
       path.to_s.sub(/\A~(?=\/|$)/, "/home/agent")
     end
 
+    # Matches agent-harness lstat-based snapshot semantics: stores the state type
+    # (symlink, file, or missing), preserves symlink targets via readlink, backs
+    # up regular files with cp -p, and rejects directories.
     def materialize_script(mode)
       chmod_line = mode ? "chmod #{format('%#o', mode)} \"$PAID_PREPARATION_TARGET\"" : ":"
 
       <<~SH.squish
         set -e &&
         mkdir -p "$(dirname "$PAID_PREPARATION_TARGET")" &&
-        if [ -e "$PAID_PREPARATION_TARGET" ] || [ -L "$PAID_PREPARATION_TARGET" ]; then
-          cp -a "$PAID_PREPARATION_TARGET" "$PAID_PREPARATION_BACKUP" &&
-          rm -rf "$PAID_PREPARATION_TARGET";
+        mkdir -p "$PAID_PREPARATION_STATE_DIR" &&
+        if [ -L "$PAID_PREPARATION_TARGET" ]; then
+          readlink "$PAID_PREPARATION_TARGET" > "$PAID_PREPARATION_STATE_DIR/symlink_target" &&
+          printf symlink > "$PAID_PREPARATION_STATE_DIR/state" &&
+          rm -f "$PAID_PREPARATION_TARGET";
+        elif [ -d "$PAID_PREPARATION_TARGET" ]; then
+          printf 'preparation target must be a regular file or symlink: %s\n' "$PAID_PREPARATION_TARGET" >&2 && exit 1;
+        elif [ -e "$PAID_PREPARATION_TARGET" ]; then
+          cp -p "$PAID_PREPARATION_TARGET" "$PAID_PREPARATION_STATE_DIR/backup" &&
+          printf file > "$PAID_PREPARATION_STATE_DIR/state" &&
+          rm -f "$PAID_PREPARATION_TARGET";
         else
-          : > "$PAID_PREPARATION_MISSING";
+          printf missing > "$PAID_PREPARATION_STATE_DIR/state";
         fi &&
         printf '%s' "$PAID_PREPARATION_B64" | base64 -d > "$PAID_PREPARATION_TARGET" &&
         #{chmod_line}
@@ -516,14 +524,28 @@ module Containers
 
     def cleanup_script
       <<~SH.squish
-        set -e &&
-        if [ -f "$PAID_PREPARATION_MISSING" ]; then
-          rm -rf "$PAID_PREPARATION_TARGET";
-        elif [ -e "$PAID_PREPARATION_BACKUP" ] || [ -L "$PAID_PREPARATION_BACKUP" ]; then
-          rm -rf "$PAID_PREPARATION_TARGET" &&
-          mv "$PAID_PREPARATION_BACKUP" "$PAID_PREPARATION_TARGET";
+        set -e && cleanup_status=0 &&
+        state_value=$(cat "$PAID_PREPARATION_STATE_DIR/state" 2>/dev/null || echo unknown) &&
+        dir=$(dirname "$PAID_PREPARATION_TARGET") &&
+        if [ -d "$PAID_PREPARATION_TARGET" ] && [ ! -L "$PAID_PREPARATION_TARGET" ]; then
+          printf 'preparation target changed into a directory during execution: %s\n' "$PAID_PREPARATION_TARGET" >&2 && cleanup_status=1;
+        elif [ "$state_value" = symlink ]; then
+          mkdir -p "$dir" && rm -f "$PAID_PREPARATION_TARGET" &&
+          ln -s -- "$(cat "$PAID_PREPARATION_STATE_DIR/symlink_target")" "$PAID_PREPARATION_TARGET" || cleanup_status=$?;
+        elif [ "$state_value" = file ]; then
+          if [ -f "$PAID_PREPARATION_STATE_DIR/backup" ]; then
+            mkdir -p "$dir" && rm -f "$PAID_PREPARATION_TARGET" &&
+            cp -p "$PAID_PREPARATION_STATE_DIR/backup" "$PAID_PREPARATION_TARGET" || cleanup_status=$?;
+          else
+            printf 'missing runtime preparation backup\n' >&2 && cleanup_status=1;
+          fi;
+        elif [ "$state_value" = missing ]; then
+          rm -f "$PAID_PREPARATION_TARGET" || cleanup_status=$?;
+        else
+          cleanup_status=1;
         fi &&
-        rm -rf "$PAID_PREPARATION_BACKUP" "$PAID_PREPARATION_MISSING"
+        rm -rf "$PAID_PREPARATION_STATE_DIR" &&
+        exit "$cleanup_status"
       SH
     end
 
