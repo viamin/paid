@@ -360,30 +360,24 @@ RSpec.describe Prompts::BuildForPr do
   end
 
   describe "priority ordering" do
-    let(:priority_prompt) do
-      allow(github_client).to receive_messages(
-        check_runs_for_ref: [ { name: "ci", conclusion: "failure" } ],
-        review_threads: [ { id: "t1", is_resolved: false, comments: [ { body: "fix", path: "a.rb", line: 1, author: "r" } ] } ],
-        issue_comments: [ OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "comment") ]
-      )
+    it "orders priorities correctly with all sections present" do
+      allow(github_client).to receive_messages(check_runs_for_ref: [ { name: "ci", conclusion: "failure" } ], review_threads: [ { id: "t1", is_resolved: false, comments: [ { body: "fix", path: "a.rb", line: 1, author: "r" } ] } ], issue_comments: [ OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "comment") ])
 
       issue = create(:issue, project: project, title: "Issue", github_number: 1, body: "body")
 
-      described_class.call(
+      prompt = described_class.call(
         project: project,
         pr_number: 42,
         github_client: github_client,
         rebase_succeeded: false,
         issue: issue
       )
-    end
 
-    it "orders priorities correctly with all sections present" do
-      conflicts_pos = priority_prompt.index("Resolve merge conflicts")
-      ci_pos = priority_prompt.index("Fix CI failures")
-      issue_pos = priority_prompt.index("Close implementation gaps")
-      review_pos = priority_prompt.index("Address code review comments")
-      comments_pos = priority_prompt.index("Address conversation comments")
+      conflicts_pos = prompt.index("Resolve merge conflicts")
+      ci_pos = prompt.index("Fix CI failures")
+      issue_pos = prompt.index("Close implementation gaps")
+      review_pos = prompt.index("Address code review comments")
+      comments_pos = prompt.index("Address conversation comments")
 
       expect(conflicts_pos).to be < ci_pos
       expect(ci_pos).to be < issue_pos
