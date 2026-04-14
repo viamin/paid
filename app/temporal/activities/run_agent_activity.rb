@@ -1145,9 +1145,12 @@ module Activities
         Docker::Error::DockerError,
         Timeout::Error,
         EOFError,
+        Errno::ECONNREFUSED,
+        Errno::EHOSTUNREACH,
         Errno::ECONNRESET,
         Errno::EPIPE,
-        Errno::ETIMEDOUT
+        Errno::ETIMEDOUT,
+        SocketError
       ].any? { |klass| error.is_a?(klass) } ||
         error.class.ancestors.any? { |ancestor| ancestor.name == "Excon::Error" } ||
         %w[Net::OpenTimeout Net::ReadTimeout].include?(error.class.name)
