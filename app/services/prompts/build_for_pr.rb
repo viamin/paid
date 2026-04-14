@@ -17,6 +17,8 @@ module Prompts
   class BuildForPr
     include ServiceContainerSections
 
+    RECENT_COMMENT_PAGE_WINDOW = 2
+
     attr_reader :project, :pr_number, :github_client, :rebase_succeeded,
                 :lint_command, :test_command, :issue
 
@@ -212,7 +214,7 @@ module Prompts
 
     def conversation_section
       comment_text = trusted_comments.map do |c|
-        "- **#{c.user.login}**: #{c.body}"
+        "- **#{c.user.login}**: #{truncate_comment_body(c.body.to_s)}"
       end.join("\n")
 
       <<~SECTION
@@ -258,11 +260,35 @@ module Prompts
 
     def trusted_comments
       @trusted_comments ||= begin
-        comments = github_client.issue_comments(project.full_name, pr_number)
-        comments.select { |c| project.trusted_github_user?(c.user&.login) }
+        comments = github_client.recent_issue_comments(
+          project.full_name,
+          pr_number,
+          pages: RECENT_COMMENT_PAGE_WINDOW
+        )
+        comments
+          .select { |c| project.trusted_github_user?(c.user&.login) }
+          .last(max_prompt_comments)
       rescue GithubClient::Error
         []
       end
+    end
+
+    def prompt_settings
+      @prompt_settings ||= AgentRuns::UserSettingsResolver.call(project: project, strict: false)
+    end
+
+    def max_prompt_comments
+      prompt_settings&.max_prompt_comments || BuildForIssue::DEFAULT_MAX_COMMENTS
+    end
+
+    def max_comment_length
+      prompt_settings&.max_comment_length || BuildForIssue::DEFAULT_MAX_COMMENT_LENGTH
+    end
+
+    def truncate_comment_body(body)
+      return body unless body.length > max_comment_length
+
+      "#{body[0, max_comment_length]}… [truncated]"
     end
 
     def detected_language

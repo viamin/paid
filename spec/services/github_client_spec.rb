@@ -848,6 +848,12 @@ RSpec.describe GithubClient do
     end
 
     context "when the comment list spans multiple pages" do
+      let(:page4_link_header) do
+        %(<#{api_base}/repos/#{repo}/issues/42/comments?page=3&per_page=100>; rel="prev", ) +
+          %(<#{api_base}/repos/#{repo}/issues/42/comments?page=5&per_page=100>; rel="next", ) +
+          %(<#{api_base}/repos/#{repo}/issues/42/comments?page=5&per_page=100>; rel="last")
+      end
+
       # The /issues/:number/comments endpoint returns comments in ascending
       # order and ignores sort/direction params, so the first page is the
       # OLDEST comments. To get the most recent comments in a bounded
@@ -855,6 +861,8 @@ RSpec.describe GithubClient do
       before do
         link_header = %(<#{api_base}/repos/#{repo}/issues/42/comments?page=2&per_page=100>; rel="next", ) +
           %(<#{api_base}/repos/#{repo}/issues/42/comments?page=5&per_page=100>; rel="last")
+        last_page_link_header =
+          %(<#{api_base}/repos/#{repo}/issues/42/comments?page=4&per_page=100>; rel="prev")
 
         stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
           .with(query: hash_including("per_page" => "100", "page" => "1"))
@@ -872,7 +880,24 @@ RSpec.describe GithubClient do
               { id: 401, body: "Newer comment", user: { login: "maintainer" } },
               { id: 402, body: "Newest comment", user: { login: "maintainer" } }
             ].to_json,
-            headers: { "Content-Type" => "application/json" }
+            headers: {
+              "Content-Type" => "application/json",
+              "Link" => last_page_link_header
+            }
+          )
+
+        stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
+          .with(query: hash_including("per_page" => "100", "page" => "4"))
+          .to_return(
+            status: 200,
+            body: [
+              { id: 301, body: "Older recent comment", user: { login: "reviewer" } },
+              { id: 302, body: "Oldest on last two pages", user: { login: "reviewer" } }
+            ].to_json,
+            headers: {
+              "Content-Type" => "application/json",
+              "Link" => page4_link_header
+            }
           )
       end
 
@@ -887,6 +912,19 @@ RSpec.describe GithubClient do
       it "marks the result as multi-page" do
         result = client.recent_issue_comments(repo, 42)
 
+        expect(result.multi_page?).to be true
+      end
+
+      it "can fetch multiple trailing pages in ascending ID order" do
+        result = client.recent_issue_comments(repo, 42, pages: 2)
+
+        expect(result.map(&:id)).to eq([ 301, 302, 401, 402 ])
+        expect(result.map(&:body)).to eq([
+          "Older recent comment",
+          "Oldest on last two pages",
+          "Newer comment",
+          "Newest comment"
+        ])
         expect(result.multi_page?).to be true
       end
     end
