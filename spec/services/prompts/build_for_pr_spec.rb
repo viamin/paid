@@ -2,10 +2,12 @@
 
 require "rails_helper"
 require "ostruct"
+require "securerandom"
 
 RSpec.describe Prompts::BuildForPr do
   let(:project) { create(:project, allowed_github_usernames: [ "trusteduser" ]) }
   let(:github_client) { instance_double(GithubClient) }
+  let(:user_settings) { instance_double(UserSetting, max_prompt_comments: 20, max_comment_length: 2000) }
 
   let(:pr_data) do
     OpenStruct.new(
@@ -20,7 +22,8 @@ RSpec.describe Prompts::BuildForPr do
     allow(github_client).to receive(:pull_request)
       .with(project.full_name, 42)
       .and_return(pr_data)
-    allow(github_client).to receive_messages(check_runs_for_ref: [], review_threads: [], issue_comments: [])
+    allow(github_client).to receive_messages(check_runs_for_ref: [], review_threads: [], recent_issue_comments: [])
+    allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(user_settings)
   end
 
   describe ".call" do
@@ -31,6 +34,31 @@ RSpec.describe Prompts::BuildForPr do
         github_client: github_client,
         rebase_succeeded: true
       )
+    end
+
+    it "renders the instructions shell from an explicit prompt version when provided" do
+      prompt = create(:prompt, :global, slug: "test.#{SecureRandom.hex(8)}")
+      stale_version = prompt.create_version!(
+        template: "Pinned instructions {{lint_command}}",
+        variables: [
+          { "name" => "lint_command", "required" => true, "description" => "Lint command" }
+        ]
+      )
+      prompt.create_version!(
+        template: "Current instructions should not render",
+        variables: []
+      )
+
+      rendered = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        prompt_version: stale_version
+      )
+
+      expect(rendered).to include("Pinned instructions bundle exec rubocop")
+      expect(rendered).not_to include("Current instructions should not render")
     end
 
     it "includes the PR title and number" do
@@ -50,6 +78,11 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Install dependencies")
       expect(prompt).to include("commit all your changes")
       expect(prompt).to include("Do not push")
+    end
+
+    it "omits the already-addressed marker instruction when no unresolved review threads are present" do
+      expect(prompt).not_to include(Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER)
+      expect(prompt).not_to include("do not make a no-op commit")
     end
 
     it "includes proactive scan step" do
@@ -93,6 +126,57 @@ RSpec.describe Prompts::BuildForPr do
 
     it "omits issue requirements section when no issue" do
       expect(prompt).not_to include("Issue Requirements")
+    end
+  end
+
+  describe "#includes_review_threads?" do
+    it "returns false when there are no unresolved review threads" do
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(builder.includes_review_threads?).to be(false)
+    end
+
+    it "returns true when unresolved review threads are present" do
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", author: "reviewer" } ] }
+        ])
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(builder.includes_review_threads?).to be(true)
+    end
+  end
+
+  describe "#unresolved_review_thread_ids" do
+    it "returns only unresolved review thread ids" do
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", author: "reviewer" } ] },
+          { id: "thread_2", is_resolved: true, comments: [ { body: "Already fixed", author: "reviewer" } ] },
+          { id: nil, is_resolved: false, comments: [ { body: "Missing id", author: "reviewer" } ] }
+        ])
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(builder.unresolved_review_thread_ids).to eq([ "thread_1" ])
     end
   end
 
@@ -184,6 +268,18 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Proactive scan")
     end
 
+    it "includes the already-addressed marker instruction when unresolved review threads are present" do
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).to include(Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER)
+      expect(prompt).to include("do not make a no-op commit")
+    end
+
     it "excludes resolved threads" do
       prompt = described_class.call(
         project: project,
@@ -197,13 +293,17 @@ RSpec.describe Prompts::BuildForPr do
   end
 
   describe "conversation comments section" do
+    let(:recent_comments) do
+      [
+        OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "Please also fix the tests"),
+        OpenStruct.new(user: OpenStruct.new(login: "randomuser"), body: "Ignore this")
+      ]
+    end
+
     before do
-      allow(github_client).to receive(:issue_comments)
-        .with(project.full_name, 42)
-        .and_return([
-          OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "Please also fix the tests"),
-          OpenStruct.new(user: OpenStruct.new(login: "randomuser"), body: "Ignore this")
-        ])
+      allow(github_client).to receive(:recent_issue_comments)
+        .with(project.full_name, 42, pages: 2)
+        .and_return(recent_comments)
     end
 
     it "includes comments from trusted users only" do
@@ -217,6 +317,62 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Conversation Comments")
       expect(prompt).to include("Please also fix the tests")
       expect(prompt).not_to include("Ignore this")
+    end
+
+    it "keeps only the most recent trusted comments within the limit" do
+      limited_settings = instance_double(UserSetting, max_prompt_comments: 2, max_comment_length: 2000)
+      limited_comments = [
+        OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "Oldest trusted"),
+        OpenStruct.new(user: OpenStruct.new(login: "randomuser"), body: "Untrusted"),
+        OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "Newer trusted"),
+        OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "Newest trusted")
+      ]
+      allow(AgentRuns::UserSettingsResolver).to receive(:call)
+        .with(project: project, strict: false)
+        .and_return(limited_settings)
+      allow(github_client).to receive(:recent_issue_comments)
+        .with(project.full_name, 42, pages: 2)
+        .and_return(limited_comments)
+
+      prompt = described_class.call(project: project, pr_number: 42, github_client: github_client, rebase_succeeded: true)
+
+      expect(prompt).to include("Newer trusted")
+      expect(prompt).to include("Newest trusted")
+      expect(prompt).not_to include("Oldest trusted")
+      expect(prompt).not_to include("Untrusted")
+    end
+
+    it "truncates long recent comment bodies" do
+      truncating_settings = instance_double(UserSetting, max_prompt_comments: 20, max_comment_length: 20)
+      long_comment = [
+        OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "This comment is definitely longer than twenty characters")
+      ]
+      allow(AgentRuns::UserSettingsResolver).to receive(:call)
+        .with(project: project, strict: false)
+        .and_return(truncating_settings)
+      allow(github_client).to receive(:recent_issue_comments)
+        .with(project.full_name, 42, pages: 2)
+        .and_return(long_comment)
+
+      prompt = described_class.call(project: project, pr_number: 42, github_client: github_client, rebase_succeeded: true)
+
+      expect(prompt).to include("This comment is defi… [truncated]")
+    end
+
+    it "fetches a bounded two-page trailing window" do
+      expanded_comments = Array.new(200) do |index|
+        OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "Trusted comment #{index + 1}")
+      end
+
+      allow(github_client).to receive(:recent_issue_comments)
+        .with(project.full_name, 42, pages: 2)
+        .and_return(expanded_comments)
+
+      prompt = described_class.call(project: project, pr_number: 42, github_client: github_client, rebase_succeeded: true)
+
+      expect(prompt).to include("Trusted comment 1")
+      expect(prompt).to include("Trusted comment 20")
+      expect(prompt).not_to include("Trusted comment 21")
     end
   end
 
@@ -360,18 +516,16 @@ RSpec.describe Prompts::BuildForPr do
 
   describe "priority ordering" do
     it "orders priorities correctly with all sections present" do
-      allow(github_client).to receive_messages(check_runs_for_ref: [ { name: "ci", conclusion: "failure" } ], review_threads: [ { id: "t1", is_resolved: false, comments: [ { body: "fix", path: "a.rb", line: 1, author: "r" } ] } ], issue_comments: [ OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "comment") ])
+      allow(github_client).to receive_messages(
+        check_runs_for_ref: [ { name: "ci", conclusion: "failure" } ],
+        review_threads: [ { id: "t1", is_resolved: false, comments: [ { body: "fix", path: "a.rb", line: 1, author: "r" } ] } ]
+      )
+      allow(github_client).to receive(:recent_issue_comments)
+        .with(project.full_name, 42, pages: 2)
+        .and_return([ OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "comment") ])
 
       issue = create(:issue, project: project, title: "Issue", github_number: 1, body: "body")
-
-      prompt = described_class.call(
-        project: project,
-        pr_number: 42,
-        github_client: github_client,
-        rebase_succeeded: false,
-        issue: issue
-      )
-
+      prompt = described_class.call(project: project, pr_number: 42, github_client: github_client, rebase_succeeded: false, issue: issue)
 
       conflicts_pos = prompt.index("Resolve merge conflicts")
       ci_pos = prompt.index("Fix CI failures")
@@ -415,8 +569,8 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).not_to include("Code Review Comments")
     end
 
-    it "omits conversation section when issue_comments raises" do
-      allow(github_client).to receive(:issue_comments)
+    it "omits conversation section when recent_issue_comments raises" do
+      allow(github_client).to receive(:recent_issue_comments)
         .and_raise(GithubClient::ApiError.new("API error"))
 
       prompt = described_class.call(

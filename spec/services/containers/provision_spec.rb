@@ -1307,6 +1307,22 @@ RSpec.describe Containers::Provision do
       service.instance_variable_set(:@container, mock_container)
     end
 
+    it "snapshots symlinks and directories before writing replacement content" do
+      script = service.send(:materialize_script, nil)
+
+      expect(script).to include('if [ -e "$PAID_PREPARATION_TARGET" ] || [ -L "$PAID_PREPARATION_TARGET" ]; then')
+      expect(script).to include('cp -a "$PAID_PREPARATION_TARGET" "$PAID_PREPARATION_BACKUP"')
+      expect(script).to include('rm -rf "$PAID_PREPARATION_TARGET"')
+    end
+
+    it "removes replacement paths before restoring the backup object" do
+      script = service.send(:cleanup_script)
+
+      expect(script).to include('elif [ -e "$PAID_PREPARATION_BACKUP" ] || [ -L "$PAID_PREPARATION_BACKUP" ]; then')
+      expect(script).to include('rm -rf "$PAID_PREPARATION_TARGET" &&')
+      expect(script).to include('mv "$PAID_PREPARATION_BACKUP" "$PAID_PREPARATION_TARGET"')
+    end
+
     it "does not raise when the preparation script exits successfully" do
       allow(mock_container).to receive(:exec).and_return([ "ok", "", 0 ])
 

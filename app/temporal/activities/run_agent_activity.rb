@@ -238,6 +238,7 @@ module Activities
               success: true,
               has_changes: has_changes,
               output_present: provider_result.fetch(:output_present),
+              review_threads_already_addressed: provider_result.fetch(:review_threads_already_addressed, false),
               final_provider: attempt_label
             }
           rescue ProviderRateLimitError => e
@@ -590,7 +591,11 @@ module Activities
       if result.success?
         output_present = stdout.present? || stderr.present?
         agent_run.log!("system", "Agent execution succeeded with #{provider}")
-        return { pre_agent_sha: pre_agent_sha, output_present: output_present }
+        return {
+          pre_agent_sha: pre_agent_sha,
+          output_present: output_present,
+          review_threads_already_addressed: review_threads_already_addressed?(stdout: stdout, stderr: stderr, prompt: prompt)
+        }
       end
 
       output = (stderr.presence || stdout).to_s.strip
@@ -795,6 +800,16 @@ module Activities
       1.hour.from_now
     end
 
+    def review_threads_already_addressed?(stdout:, stderr:, prompt:)
+      signal_present?(strip_prompt_echo(stdout, prompt)) ||
+        signal_present?(strip_prompt_echo(stderr, prompt))
+    end
+
+    def signal_present?(output)
+      marker = Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER
+      output.to_s.each_line.any? { |line| line.strip == marker }
+    end
+
     # Runs a block while sending periodic heartbeats from the activity's
     # execution thread. The activity context is thread/fiber-local, so
     # heartbeats must be emitted from the calling thread — not a background
@@ -833,7 +848,7 @@ module Activities
           db_scoped.call
         end
       end
-
+      worker.report_on_exception = false
       canceled = false
       interrupted = false
       begin

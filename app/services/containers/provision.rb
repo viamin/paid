@@ -503,8 +503,9 @@ module Containers
       <<~SH.squish
         set -e &&
         mkdir -p "$(dirname "$PAID_PREPARATION_TARGET")" &&
-        if [ -e "$PAID_PREPARATION_TARGET" ]; then
-          cp -p "$PAID_PREPARATION_TARGET" "$PAID_PREPARATION_BACKUP";
+        if [ -e "$PAID_PREPARATION_TARGET" ] || [ -L "$PAID_PREPARATION_TARGET" ]; then
+          cp -a "$PAID_PREPARATION_TARGET" "$PAID_PREPARATION_BACKUP" &&
+          rm -rf "$PAID_PREPARATION_TARGET";
         else
           : > "$PAID_PREPARATION_MISSING";
         fi &&
@@ -517,11 +518,12 @@ module Containers
       <<~SH.squish
         set -e &&
         if [ -f "$PAID_PREPARATION_MISSING" ]; then
-          rm -f "$PAID_PREPARATION_TARGET";
-        elif [ -e "$PAID_PREPARATION_BACKUP" ]; then
+          rm -rf "$PAID_PREPARATION_TARGET";
+        elif [ -e "$PAID_PREPARATION_BACKUP" ] || [ -L "$PAID_PREPARATION_BACKUP" ]; then
+          rm -rf "$PAID_PREPARATION_TARGET" &&
           mv "$PAID_PREPARATION_BACKUP" "$PAID_PREPARATION_TARGET";
         fi &&
-        rm -f "$PAID_PREPARATION_BACKUP" "$PAID_PREPARATION_MISSING"
+        rm -rf "$PAID_PREPARATION_BACKUP" "$PAID_PREPARATION_MISSING"
       SH
     end
 

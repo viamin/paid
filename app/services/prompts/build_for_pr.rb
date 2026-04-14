@@ -17,11 +17,16 @@ module Prompts
   class BuildForPr
     include ServiceContainerSections
 
+    DEFAULT_MAX_COMMENTS = BuildForIssue::DEFAULT_MAX_COMMENTS
+    DEFAULT_MAX_COMMENT_LENGTH = BuildForIssue::DEFAULT_MAX_COMMENT_LENGTH
+    RECENT_COMMENT_PAGE_WINDOW = 2
+    ALREADY_ADDRESSED_MARKER = "PAID_REVIEW_THREADS_ALREADY_ADDRESSED"
+
     attr_reader :project, :pr_number, :github_client, :rebase_succeeded,
-                :lint_command, :test_command, :issue
+                :lint_command, :test_command, :issue, :prompt_version
 
     def initialize(project:, pr_number:, github_client:, rebase_succeeded:,
-                   lint_command: nil, test_command: nil, issue: nil)
+                   lint_command: nil, test_command: nil, issue: nil, prompt_version: nil)
       @project = project
       @pr_number = pr_number
       @github_client = github_client
@@ -29,10 +34,19 @@ module Prompts
       @lint_command = lint_command || detected_lint_command
       @test_command = test_command || detected_test_command
       @issue = issue
+      @prompt_version = prompt_version
     end
 
     def self.call(...)
       new(...).build
+    end
+
+    def includes_review_threads?
+      unresolved_threads.any?
+    end
+
+    def unresolved_review_thread_ids
+      unresolved_threads.filter_map { |thread| thread[:id] }
     end
 
     PROMPT_SLUG = "coding.pr_review_rebase"
@@ -62,6 +76,8 @@ module Prompts
       If the commit is rejected, read the error output carefully, fix the issues, and commit again.
       Keep iterating until the commit succeeds. Do not leave uncommitted changes.
 
+      {{already_addressed_instruction}}
+
       When you're done, commit all your changes. Do not push.
 
       # Rules — you MUST follow these
@@ -81,7 +97,7 @@ module Prompts
       sections << issue_requirements_section if linked_issue?
       sections << merge_conflicts_section unless rebase_succeeded
       sections << ci_failures_section if failing_checks.any?
-      sections << code_review_section if unresolved_threads.any?
+      sections << code_review_section if includes_review_threads?
       sections << conversation_section if trusted_comments.any?
       sections << instructions_and_rules_shell
       sections << service_environment_section
@@ -97,9 +113,12 @@ module Prompts
         priority_list: priority_list,
         setup_database_instruction: setup_database_instruction,
         review_scan_instruction: review_scan_instruction,
+        already_addressed_instruction: already_addressed_instruction,
         lint_command: lint_command,
         test_command: test_command
       }
+
+      return prompt_version.render(vars) if prompt_version.present?
 
       Prompts::Render.call(
         slug: PROMPT_SLUG,
@@ -114,7 +133,7 @@ module Prompts
       priorities << "Resolve merge conflicts" unless rebase_succeeded
       priorities << "Fix CI failures" if failing_checks.any?
       priorities << "Close implementation gaps against the linked issue" if linked_issue?
-      priorities << "Address code review comments" if unresolved_threads.any?
+      priorities << "Address code review comments" if includes_review_threads?
       priorities << "Address conversation comments" if trusted_comments.any?
       priorities.each_with_index.map { |p, i| "#{i + 1}. #{p}" }.join("\n")
     end
@@ -212,7 +231,7 @@ module Prompts
 
     def conversation_section
       comment_text = trusted_comments.map do |c|
-        "- **#{c.user.login}**: #{c.body}"
+        "- **#{c.user.login}**: #{truncate_comment_body(c.body.to_s)}"
       end.join("\n")
 
       <<~SECTION
@@ -229,11 +248,20 @@ module Prompts
     # When reviewers have flagged specific issues, tell the agent to scan for
     # the same class of problem across the whole diff — not just the flagged lines.
     def review_scan_instruction
-      return "" unless unresolved_threads.any?
+      return "" unless includes_review_threads?
 
       ". Pay special attention to the same classes of issues the reviewers " \
         "raised — if they flagged one instance, scan for similar problems " \
         "elsewhere in your changes"
+    end
+
+    def already_addressed_instruction
+      return "" unless includes_review_threads?
+
+      "\n\nIf you verify that every unresolved review thread listed above is already " \
+        "addressed on the current branch and no code changes are needed, do not " \
+        "make a no-op commit. End your final response with a standalone line " \
+        "containing exactly `#{ALREADY_ADDRESSED_MARKER}`."
     end
 
     # Memoized data fetchers
@@ -258,11 +286,39 @@ module Prompts
 
     def trusted_comments
       @trusted_comments ||= begin
-        comments = github_client.issue_comments(project.full_name, pr_number)
-        comments.select { |c| project.trusted_github_user?(c.user&.login) }
+        comments = github_client.recent_issue_comments(project.full_name, pr_number, pages: RECENT_COMMENT_PAGE_WINDOW)
+        select_trusted_comments(comments).last(max_prompt_comments)
       rescue GithubClient::Error
         []
       end
+    end
+
+    def prompt_comment_settings
+      @prompt_comment_settings ||= begin
+        settings = AgentRuns::UserSettingsResolver.call(project: project, strict: false)
+        {
+          max_comments: settings&.max_prompt_comments || DEFAULT_MAX_COMMENTS,
+          max_comment_length: settings&.max_comment_length || DEFAULT_MAX_COMMENT_LENGTH
+        }
+      end
+    end
+
+    def max_prompt_comments
+      prompt_comment_settings[:max_comments]
+    end
+
+    def max_comment_length
+      prompt_comment_settings[:max_comment_length]
+    end
+
+    def select_trusted_comments(comments)
+      comments.select { |comment| project.trusted_github_user?(comment.user&.login) }
+    end
+
+    def truncate_comment_body(body)
+      return body if body.length <= max_comment_length
+
+      "#{body[0, max_comment_length]}… [truncated]"
     end
 
     def detected_language
