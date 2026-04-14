@@ -394,13 +394,10 @@ class GithubClient
   #
   # @param repo [String] Repository in "owner/name" format
   # @param number [Integer] Issue or PR number
-  # @param pages [Integer] Number of trailing pages to fetch from the end of
-  #   the comment history (default: 1)
-  # @return [Array<Sawyer::Resource>] Up to (100 * pages) most-recent comments, each
-  #   with .user.login, .body, .created_at. Returned comments stay in
-  #   ascending ID order across fetched pages so callers can safely take
-  #   the tail after filtering.
-  def recent_issue_comments(repo, number, pages: 1)
+  # @return [Array<Sawyer::Resource>] Up to 100 most-recent comments, each
+  #   with .user.login, .body, .created_at. Order within the returned page
+  #   is ascending by ID — callers that need a specific order must sort.
+  def recent_issue_comments(repo, number)
     handle_errors do
       first_page = client.issue_comments(repo, number, per_page: 100, page: 1)
       last_rel = client.last_response&.rels&.dig(:last)
@@ -409,17 +406,8 @@ class GithubClient
         return tag_multi_page(first_page, false)
       end
 
-      fetched_pages = [ client.get(last_rel.href) ]
-      previous_rel = client.last_response&.rels&.dig(:prev)
-      remaining_pages = [ pages.to_i, 1 ].max - 1
-
-      while remaining_pages.positive? && previous_rel
-        fetched_pages << client.get(previous_rel.href)
-        previous_rel = client.last_response&.rels&.dig(:prev)
-        remaining_pages -= 1
-      end
-
-      tag_multi_page(fetched_pages.reverse.flat_map { |page| Array(page) }, true)
+      last_page = client.get(last_rel.href)
+      tag_multi_page(last_page, true)
     end
   end
 
