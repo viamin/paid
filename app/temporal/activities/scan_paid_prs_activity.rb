@@ -992,7 +992,8 @@ module Activities
 
       if unfinished_run
         return [ { type: "paid_agent_review_pending",
-                   details: "paid_agent review run is still in progress" } ]
+                   details: "paid_agent review run is still in progress",
+                   active_run: true } ]
       end
 
       return [] if review_goal_retry_limit_reached?(project, issue)

@@ -5651,6 +5651,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       pending_trigger = trigger[:triggers].find { |t| t[:type] == "paid_agent_review_pending" }
 
       expect(pending_trigger).to be_present
+      expect(pending_trigger[:active_run]).to be(true)
       expect(pending_trigger[:details]).to eq("paid_agent review run is still in progress")
       expect(trigger[:triggers].map { |t| t[:type] }).not_to include("ready_for_owner")
     end

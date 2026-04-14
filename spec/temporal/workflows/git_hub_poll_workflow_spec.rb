@@ -274,6 +274,15 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       }
     end
 
+    def expected_review_queue_input
+      {
+        project_id: project_id,
+        issue_id: 10,
+        source_pull_request_number: 42,
+        goal: "review"
+      }
+    end
+
     before do
       allow(workflow).to receive(:run_activity).and_return({})
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
@@ -285,6 +294,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .and_return(true)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("queue-agent-run-goal-v1")
+        .and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("queue-paid-agent-review-run-v1")
         .and_return(true)
     end
 
@@ -1045,25 +1057,62 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
 
     it "routes paid_agent_review_pending with other triggers to followup workflow" do
-      allow(workflow).to receive(:run_activity)
-        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+      allow(workflow).to receive(:run_activity).with(Activities::QueueAgentRunActivity, anything, timeout: anything)
         .and_return({ queued: true })
 
-      pr_data = {
-        issue_id: 10, pr_number: 42, phase: "draft",
+      pr_data = draft_pr_data(
         current_draft_review_count: 0,
         triggers: [
           { type: "paid_agent_review_pending" },
           { type: "ci_failure", details: "CI failed" }
         ]
+      )
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::QueueAgentRunActivity,
+        expected_review_queue_input,
+        timeout: anything
+      )
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::QueueAgentRunActivity,
+        hash_including(count_toward_draft_review_round: true, expected_draft_review_count: 0),
+        timeout: anything
+      )
+    end
+
+    it "does not queue a duplicate paid_agent review when the trigger reflects an active run" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42,
+        triggers: [ { type: "paid_agent_review_pending", active_run: true } ]
       }
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::QueueAgentRunActivity,
-          hash_including(count_toward_draft_review_round: true, expected_draft_review_count: 0),
-          timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "review"), timeout: anything)
+    end
+
+    it "skips paid_agent review queueing before the Temporal patch" do
+      allow(Temporalio::Workflow).to receive(:patched).and_call_original
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("queue-paid-agent-review-run-v1")
+        .and_return(false)
+
+      pr_data = {
+        issue_id: 10, pr_number: 42,
+        triggers: [ { type: "paid_agent_review_pending" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "review"), timeout: anything)
     end
   end
 
@@ -1107,6 +1156,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with("add-check-knowledge-staleness-v1").and_return(false)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("queue-agent-run-goal-v1").and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("queue-paid-agent-review-run-v1").and_return(true)
       allow(workflow).to receive(:interruptible_sleep)
       allow(workflow).to receive(:run_activity)
         .with(Activities::GetPollIntervalActivity, anything, timeout: anything)
