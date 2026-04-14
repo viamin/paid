@@ -179,6 +179,47 @@ RSpec.describe AgentRuns::Execute do
       end
     end
 
+    context "when aider returns normalized token usage" do
+      let(:agent_run) { create(:agent_run, :aider, project: project) }
+
+      before do
+        allow(AgentHarness).to receive(:send_message).and_return(response)
+      end
+
+      %w[gpt-4o claude-3-5-sonnet-20241022 gemini-2.5-pro].each do |backend_model|
+        context "with backend model #{backend_model}" do
+          let(:response) do
+            AgentHarness::Response.new(
+              output: "Updated the implementation",
+              exit_code: 0,
+              duration: 12.4,
+              provider: :aider,
+              model: backend_model,
+              tokens: { input: 1_000_000, output: 500_000, total: 1_500_000 }
+            )
+          end
+
+          it "persists billable token usage with the backend model name" do
+            described_class.call(agent_run: agent_run, prompt: prompt)
+
+            usages = agent_run.token_usages.order(:request_type)
+
+            expect(usages.pluck(:request_type, :input_tokens, :output_tokens, :llm_model)).to eq([
+              [ "run_delta", 1_000_000, 500_000, backend_model ],
+              [ "run_summary", 1_000_000, 500_000, backend_model ]
+            ])
+
+            aggregate = TokenUsages::Aggregate.new(scope: agent_run.token_usages.billable).call
+
+            expect(aggregate[:total_input_tokens]).to eq(1_000_000)
+            expect(aggregate[:total_output_tokens]).to eq(500_000)
+            expect(aggregate[:cost_by_model].keys).to contain_exactly(backend_model)
+            expect(aggregate[:cost_by_request_type]).to eq("run_delta" => usages.billable.sum(:cost_cents))
+          end
+        end
+      end
+    end
+
     context "when agent times out" do
       before do
         allow(AgentHarness).to receive(:send_message)
