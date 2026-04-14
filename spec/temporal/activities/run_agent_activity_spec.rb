@@ -1328,6 +1328,13 @@ RSpec.describe Activities::RunAgentActivity do
         expect_same_provider_rate_limit_fallback_execution(fallback_provider)
       end
 
+      it "executes a rate-limit fallback entry even when enabled_for_agent_runs is false" do
+        fallback_provider = create_claude_rate_limit_fallback_provider
+        fallback_provider.update!(enabled_for_agent_runs: false)
+
+        expect_same_provider_rate_limit_fallback_execution(fallback_provider)
+      end
+
       it "skips a rate-limit fallback entry whose ProviderState is already rate limited" do
         fallback_provider = create_claude_rate_limit_fallback_provider
         fallback_provider.user.provider_states.find_or_create_by!(provider_name: fallback_provider.routing_key).update!(

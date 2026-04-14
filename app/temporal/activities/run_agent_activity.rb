@@ -979,7 +979,7 @@ module Activities
 
       executable_keys = ProviderSupport.container_executable_provider_keys
 
-      user.providers.api_key.rate_limit_fallback.for_agent_runs.for_fallback
+      user.providers.api_key.rate_limit_fallback.for_fallback
         .where(provider_key: executable_keys)
         .ordered
         .group_by(&:provider_key)
