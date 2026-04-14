@@ -749,7 +749,6 @@ module Activities
         action_name = project.review_method_config("ci_action")["action_name"]
         if action_name.present? && !ci_action_succeeded?(checks, action_name)
           dispatch_needed = ci_action_dispatch_required?(issue, checks, action_name)
-          issue.update_column(:ci_action_dispatched_at, Time.current) if dispatch_needed
           triggers << { type: "ci_action_pending", action_name: action_name,
                         dispatch_required: dispatch_needed,
                         details: "Awaiting successful #{action_name} check" }

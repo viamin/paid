@@ -15,11 +15,15 @@ module Activities
       return { dispatched: false, reason: "ci_action_disabled" } unless project.review_method_enabled?("ci_action")
       return { dispatched: false, reason: "action_name_mismatch" } unless claude_review_action?(project)
 
+      issue = project.issues.find_by!(github_number: pr_number, is_pull_request: true)
+
       project.github_token.client.dispatch_repository_event(
         project.full_name,
         event_type: EVENT_TYPE,
         client_payload: { pr_number: pr_number }
       )
+
+      issue.update_column(:ci_action_dispatched_at, Time.current)
 
       logger.info(
         message: "pr_review.claude_review_dispatched",

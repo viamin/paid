@@ -3087,14 +3087,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "requests a repository_dispatch and stamps ci_action_dispatched_at" do
+      it "marks the missing Claude check as dispatch_required without stamping state" do
         result = activity.execute(project_id: project.id)
 
         pending_trigger = result[:prs_to_trigger].first[:triggers].find { |t| t[:type] == "ci_action_pending" }
         expect(pending_trigger[:dispatch_required]).to be(true)
 
         issue = Issue.find_by(github_number: 42)
-        expect(issue.ci_action_dispatched_at).to be_within(5.seconds).of(Time.current)
+        expect(issue.ci_action_dispatched_at).to be_nil
       end
     end
 
