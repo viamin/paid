@@ -35,8 +35,13 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
       synced_pr = synced_prs[[ agent_run.project_id, agent_run.pull_request_number ]]
 
       unless synced_pr
-        not_synced += 1
-        next
+        synced_pr = backfill_synced_pr(agent_run)
+        if synced_pr
+          synced_prs[[ agent_run.project_id, agent_run.pull_request_number ]] = synced_pr
+        else
+          not_synced += 1
+          next
+        end
       end
 
       labels_to_recover = missing_labels(agent_run.project, synced_pr, agent_run)
@@ -135,6 +140,21 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
     labels << automation unless synced_pr.has_label?(automation)
     labels.concat(inherited_missing)
     labels.uniq
+  end
+
+  def backfill_synced_pr(agent_run)
+    project = agent_run.project
+    github_issue = project.github_token.client.issue(project.full_name, agent_run.pull_request_number)
+    Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
+  rescue GithubClient::Error => e
+    Rails.logger.warn(
+      message: "agent_execution.pr_sync_recovery_failed",
+      agent_run_id: agent_run.id,
+      project_id: project.id,
+      pr_number: agent_run.pull_request_number,
+      error: e.message
+    )
+    nil
   end
 
   def inheritable_priority_labels(project, agent_run)

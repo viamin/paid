@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe RecoverMissingPullRequestLabelsJob do
   describe "#perform" do
@@ -10,6 +11,20 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
     before do
       allow(GithubClient).to receive(:new).and_return(github_client)
       allow(github_client).to receive(:add_labels_to_issue)
+      allow(github_client).to receive(:issue).and_return(
+        OpenStruct.new(
+          id: 9001,
+          number: 416,
+          title: "Recovered PR",
+          body: "Recovered body",
+          state: "open",
+          labels: [],
+          pull_request: OpenStruct.new(html_url: "https://github.com/viamin/paid/pull/416"),
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 1.day.ago,
+          updated_at: Time.current
+        )
+      )
     end
 
     it "reapplies the generated and automation labels when both are missing" do
@@ -190,7 +205,7 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
       expect(pull_request.reload.labels).to eq([])
     end
 
-    it "skips runs with no locally-synced PR record" do
+    it "backfills a missing local PR row before recovering labels" do
       create(:agent_run, :completed,
         project: project,
         issue: nil,
@@ -201,7 +216,9 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
 
       described_class.perform_now
 
-      expect(github_client).not_to have_received(:add_labels_to_issue)
+      expect(github_client).to have_received(:issue).with("viamin/paid", 416)
+      expect(project.issues.pull_requests_only.find_by!(github_number: 416).github_issue_id).to eq(9001)
+      expect(github_client).to have_received(:add_labels_to_issue)
     end
 
     it "deduplicates multiple completed runs for the same PR" do

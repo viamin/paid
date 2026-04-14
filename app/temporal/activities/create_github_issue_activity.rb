@@ -287,18 +287,7 @@ module Activities
     end
 
     def sync_issue_record(project, gh_issue)
-      issue = project.issues.find_or_initialize_by(github_issue_id: gh_issue.id)
-      issue.update!(
-        github_number: gh_issue.number,
-        title: gh_issue.title,
-        body: gh_issue.body,
-        github_creator_login: gh_issue.user&.login || "unknown",
-        github_state: gh_issue.state,
-        labels: (gh_issue.labels || []).map { |l| l.respond_to?(:name) ? l.name : l.to_s },
-        is_pull_request: false,
-        github_created_at: gh_issue.created_at,
-        github_updated_at: gh_issue.updated_at
-      )
+      Issues::UpsertFromGithub.call(project: project, github_issue: gh_issue)
     rescue => e
       logger.warn(
         message: "agent_execution.sync_created_issue_failed",

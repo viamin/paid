@@ -38,6 +38,7 @@ module Activities
 
         # Best-effort post-processing — failures here must not cause the
         # activity to be retried now that the run is already completed.
+        best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
         best_effort(agent_run_id, context: "add_pr_labels") { add_pr_labels(client, project, pr.number, agent_run_id, issue: issue) }
         best_effort(agent_run_id, context: "log_pr_action") { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
 
@@ -319,6 +320,28 @@ module Activities
       return if labels.empty?
 
       client.add_labels_to_issue(project.full_name, pr_number, labels)
+      merge_local_pr_labels(project, pr_number, labels)
+    end
+
+    def sync_pull_request_record(client, project, pr_number)
+      github_issue = client.issue(project.full_name, pr_number)
+      Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
+    rescue => e
+      logger.warn(
+        message: "agent_execution.sync_created_pull_request_failed",
+        project_id: project.id,
+        pr_number: pr_number,
+        error: e.message
+      )
+    end
+
+    def merge_local_pr_labels(project, pr_number, labels)
+      pull_request = project.issues.find_by(github_number: pr_number, is_pull_request: true)
+      return unless pull_request
+
+      pull_request.with_lock do
+        pull_request.update!(labels: (pull_request.labels + labels).uniq)
+      end
     end
   end
 end
