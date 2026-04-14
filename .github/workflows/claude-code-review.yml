@@ -1,0 +1,66 @@
+name: Claude Code Review
+
+# Paid triggers this workflow only when the project's ci_action review method
+# is enabled, using repository_dispatch with the PR number in client_payload.
+on:
+  repository_dispatch:
+    types: [claude-review]
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Resolve pull request metadata
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.client_payload.pr_number }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${PR_NUMBER:-}" ]; then
+            echo "::error::repository_dispatch payload must include client_payload.pr_number"
+            exit 1
+          fi
+
+          pr_json=$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")
+
+          echo "base_sha=$(jq -r '.base.sha' <<<\"${pr_json}\")" >> "$GITHUB_OUTPUT"
+          echo "head_repo_fork=$(jq -r '.head.repo.fork' <<<\"${pr_json}\")" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout repository
+        if: steps.pr.outputs.head_repo_fork != 'true'
+        # Check out the base branch (not the PR head) so that config files
+        # (CLAUDE.md, etc.) come from trusted code. The action retrieves
+        # PR diffs via the GitHub API, so it does not need the PR ref.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          fetch-depth: 1
+          ref: ${{ steps.pr.outputs.base_sha }}
+          persist-credentials: false
+
+      - name: Run Claude Code Review
+        if: steps.pr.outputs.head_repo_fork != 'true'
+        id: claude-review
+        uses: anthropics/claude-code-action@cd77b50d2b0808657f8e6774085c8bf54484351c # v1
+        with:
+          # IMPORTANT: Authentication uses an OAuth token, NOT an API key.
+          # Create the CLAUDE_CODE_OAUTH_TOKEN secret (not an Anthropic API key)
+          # in Settings > Secrets and variables > Actions before enabling.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Plugin marketplace from the claude-code repo (separate from
+          # claude-code-action). Uses main branch since this repo does not
+          # share commit SHAs with the action repo.
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          plugins: 'code-review@claude-code-plugins'
+          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.client_payload.pr_number }}'
+          allowed_bots: 'dependabot[bot]'

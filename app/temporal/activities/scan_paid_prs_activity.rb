@@ -748,6 +748,7 @@ module Activities
         action_name = project.review_method_config("ci_action")["action_name"]
         if action_name.present? && !ci_action_succeeded?(checks, action_name)
           triggers << { type: "ci_action_pending", action_name: action_name,
+                        dispatch_required: ci_action_dispatch_required?(checks, action_name),
                         details: "Awaiting successful #{action_name} check" }
         end
       end
@@ -773,6 +774,12 @@ module Activities
 
       matching = checks.find { |c| c[:name] == action_name.strip }
       matching&.dig(:conclusion) == "success"
+    end
+
+    def ci_action_dispatch_required?(checks, action_name)
+      return true if checks.nil? || checks.empty?
+
+      checks.none? { |c| c[:name] == action_name.strip }
     end
 
     # --- Review checks ---
