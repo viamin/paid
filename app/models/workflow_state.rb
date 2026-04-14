@@ -44,13 +44,14 @@ class WorkflowState < ApplicationRecord
       ws.error_message = nil
     end
 
-    should_broadcast = ws.new_record? || ws.status_changed?
+    should_broadcast =
+      ws.new_record? || ws.status_changed? || ws.restart_reason_changed? || ws.error_message_changed?
     ws.save!
 
     # Broadcast after the transaction commits so listeners never see data that
-    # could be rolled back. Skip when status is unchanged (e.g., healthy →
-    # healthy on every poll cycle) to avoid unnecessary DB queries and
-    # ActionCable traffic.
+    # could be rolled back. Skip when neither status nor user-visible restart
+    # metadata changed (e.g., healthy -> healthy on every poll cycle) to avoid
+    # unnecessary DB queries and ActionCable traffic.
     if should_broadcast
       ActiveRecord.after_all_transactions_commit { project.broadcast_workflow_status_update }
     end

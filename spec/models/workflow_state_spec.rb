@@ -129,4 +129,27 @@ RSpec.describe WorkflowState do
       expect(reloaded.result_data).to eq(result.stringify_keys)
     end
   end
+
+  describe ".record_polling_status" do
+    it "broadcasts when restart_reason changes on a running workflow" do
+      project = create(:project)
+      create(
+        :workflow_state,
+        project: project,
+        temporal_workflow_id: "github-poll-#{project.id}",
+        workflow_type: "GitHubPollWorkflow",
+        status: "running"
+      )
+
+      allow(project).to receive(:broadcast_workflow_status_update)
+
+      described_class.record_polling_status(
+        project,
+        status: "running",
+        restart_reason: "health check: stale RUNNING"
+      )
+
+      expect(project).to have_received(:broadcast_workflow_status_update)
+    end
+  end
 end
