@@ -249,17 +249,16 @@ RSpec.describe Activities::DetectLabelsActivity do
                is_pull_request: true, github_number: 42)
       end
 
-      it "returns execute_agent action with source_pull_request_number" do
+      it "returns none action" do
         result = activity.execute(project_id: project.id, issue_id: pull_request.id)
 
-        expect(result[:action]).to eq("execute_agent")
-        expect(result[:source_pull_request_number]).to eq(42)
+        expect(result[:action]).to eq("none")
       end
 
-      it "updates paid_state to in_progress" do
+      it "does not update paid_state" do
         activity.execute(project_id: project.id, issue_id: pull_request.id)
 
-        expect(pull_request.reload.paid_state).to eq("in_progress")
+        expect(pull_request.reload.paid_state).to eq("new")
       end
     end
 
