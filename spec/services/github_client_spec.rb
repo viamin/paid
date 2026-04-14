@@ -817,6 +817,46 @@ RSpec.describe GithubClient do
 
   describe "#recent_issue_comments" do
     let(:repo) { "owner/repo" }
+    let(:expected_recent_page_bodies) do
+      [
+        "Page 4 older",
+        "Page 4 newer",
+        "Page 5 older",
+        "Page 5 newer"
+      ]
+    end
+
+    def stub_recent_issue_comment_pages(number:, pages:)
+      link_header = %(<#{api_base}/repos/#{repo}/issues/#{number}/comments?page=2&per_page=100>; rel="next", ) +
+        %(<#{api_base}/repos/#{repo}/issues/#{number}/comments?page=5&per_page=100>; rel="last")
+      page_five_link_header = %(<#{api_base}/repos/#{repo}/issues/#{number}/comments?page=4&per_page=100>; rel="prev")
+
+      stub_request(:get, "#{api_base}/repos/#{repo}/issues/#{number}/comments")
+        .with(query: hash_including("per_page" => "100", "page" => "1"))
+        .to_return(
+          status: 200,
+          body: [ { id: 1, body: "Very old comment", user: { login: "reviewer" } } ].to_json,
+          headers: { "Content-Type" => "application/json", "Link" => link_header }
+        )
+
+      stub_request(:get, "#{api_base}/repos/#{repo}/issues/#{number}/comments")
+        .with(query: hash_including("per_page" => "100", "page" => "5"))
+        .to_return(
+          status: 200,
+          body: pages.fetch(5).to_json,
+          headers: { "Content-Type" => "application/json", "Link" => page_five_link_header }
+        )
+
+      return unless pages.key?(4)
+
+      stub_request(:get, "#{api_base}/repos/#{repo}/issues/#{number}/comments")
+        .with(query: hash_including("per_page" => "100", "page" => "4"))
+        .to_return(
+          status: 200,
+          body: pages.fetch(4).to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
 
     context "when the comment list fits in a single page" do
       before do
@@ -887,6 +927,27 @@ RSpec.describe GithubClient do
       it "marks the result as multi-page" do
         result = client.recent_issue_comments(repo, 42)
 
+        expect(result.multi_page?).to be true
+      end
+
+      it "walks backward across a bounded number of pages and returns them in ascending order" do
+        stub_recent_issue_comment_pages(
+          number: 42,
+          pages: {
+            4 => [
+              { id: 301, body: "Page 4 older", user: { login: "maintainer" } },
+              { id: 302, body: "Page 4 newer", user: { login: "maintainer" } }
+            ],
+            5 => [
+              { id: 401, body: "Page 5 older", user: { login: "maintainer" } },
+              { id: 402, body: "Page 5 newer", user: { login: "maintainer" } }
+            ]
+          }
+        )
+
+        result = client.recent_issue_comments(repo, 42, pages: 2)
+
+        expect(result.map(&:body)).to eq(expected_recent_page_bodies)
         expect(result.multi_page?).to be true
       end
     end
