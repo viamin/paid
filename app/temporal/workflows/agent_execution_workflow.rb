@@ -223,20 +223,7 @@ module Workflows
 
           if source_pull_request_number
             # Resolve review threads (best-effort, non-fatal)
-            if pr_run_without_prompt && pr_prompt_result[:review_thread_ids].present?
-              begin
-                run_activity(Activities::ResolveReviewThreadsActivity,
-                  { agent_run_id: agent_run_id,
-                    thread_ids: pr_prompt_result[:review_thread_ids] }, timeout: 60)
-              rescue => e
-                Temporalio::Workflow.logger.warn(
-                  message: "agent_execution.resolve_threads_failed",
-                  agent_run_id: agent_run_id,
-                  error_class: e.class.name,
-                  error: e.message
-                )
-              end
-            end
+            resolve_followup_review_threads_after_push(agent_run_id, pr_run_without_prompt, pr_prompt_result)
 
             # Existing PR: mark complete with existing PR details
             complete_result = run_activity(Activities::CompleteExistingPrRunActivity,
@@ -267,23 +254,11 @@ module Workflows
           end
         else
           # No changes produced by agent
-          if source_pull_request_number && pr_run_without_prompt &&
-              pr_prompt_result[:includes_review_threads] &&
-              pr_prompt_result[:review_thread_ids].present? &&
-              agent_result[:review_threads_already_addressed]
-            begin
-              run_activity(Activities::ResolveReviewThreadsActivity,
-                { agent_run_id: agent_run_id,
-                  thread_ids: pr_prompt_result[:review_thread_ids] }, timeout: 60)
-            rescue => e
-              Temporalio::Workflow.logger.warn(
-                message: "agent_execution.resolve_threads_failed",
-                agent_run_id: agent_run_id,
-                error_class: e.class.name,
-                error: e.message
-              )
-            end
-          end
+          resolve_no_change_followup_review_threads(agent_run_id,
+            source_pull_request_number,
+            pr_run_without_prompt,
+            pr_prompt_result,
+            agent_result)
 
           if issue_id.present? && !source_pull_request_number
             # Issue-based run with no code changes / no PR: classify as
@@ -475,6 +450,51 @@ module Workflows
         message: "agent_execution.review_bot_request_failed",
         project_id: project_id,
         pr_number: pr_number,
+        error: e.message
+      )
+    end
+
+    def resolve_followup_review_threads_after_push(agent_run_id, pr_run_without_prompt, pr_prompt_result)
+      if Temporalio::Workflow.patched("resolve_review_threads_with_prompt_thread_ids")
+        return unless pr_run_without_prompt && pr_prompt_result[:review_thread_ids].present?
+
+        resolve_review_threads(agent_run_id, thread_ids: pr_prompt_result[:review_thread_ids])
+      else
+        return unless pr_run_without_prompt
+
+        resolve_review_threads(agent_run_id)
+      end
+    end
+
+    def resolve_no_change_followup_review_threads(agent_run_id, source_pull_request_number, pr_run_without_prompt, pr_prompt_result, agent_result)
+      if Temporalio::Workflow.patched("resolve_review_threads_with_prompt_thread_ids")
+        return unless source_pull_request_number && pr_run_without_prompt &&
+          pr_prompt_result[:includes_review_threads] &&
+          pr_prompt_result[:review_thread_ids].present? &&
+          agent_result[:review_threads_already_addressed]
+
+        resolve_review_threads(agent_run_id, thread_ids: pr_prompt_result[:review_thread_ids])
+      else
+        return unless source_pull_request_number && pr_run_without_prompt &&
+          pr_prompt_result[:includes_review_threads] &&
+          agent_result[:review_threads_already_addressed]
+
+        resolve_review_threads(agent_run_id)
+      end
+    end
+
+    def resolve_review_threads(agent_run_id, thread_ids: nil)
+      input = { agent_run_id: agent_run_id }
+      input[:thread_ids] = thread_ids if thread_ids.present?
+
+      run_activity(Activities::ResolveReviewThreadsActivity, input, timeout: 60)
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "agent_execution.resolve_threads_failed",
+        agent_run_id: agent_run_id,
+        error_class: e.class.name,
         error: e.message
       )
     end

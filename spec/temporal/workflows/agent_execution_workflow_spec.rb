@@ -392,6 +392,28 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       end
     end
 
+    def stub_existing_pr_followup_legacy_prompt_result
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::ProvisionServicesActivity" then {}
+        when "Activities::ProvisionContainerActivity" then {}
+        when "Activities::CloneRepoActivity" then {}
+        when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
+        when "Activities::PreparePrPromptActivity" then {}
+        when "Activities::RunAgentActivity" then { success: true, has_changes: true }
+        when "Activities::PushBranchActivity" then {}
+        when "Activities::ResolveReviewThreadsActivity" then {}
+        when "Activities::CompleteExistingPrRunActivity" then { pr_review_phase: "ready" }
+        when "Activities::RequestReviewActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        else {}
+        end
+      end
+    end
+
     it "re-requests a review-bot review after pushing commits to a ready PR" do
       stub_existing_pr_followup(pr_review_phase: "ready")
 
@@ -449,6 +471,20 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
+    end
+
+    it "replays the legacy resolve activity after pushing commits when the workflow patch is not set" do
+      allow(Temporalio::Workflow).to receive(:patched).and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("resolve_review_threads_with_prompt_thread_ids").and_return(false)
+      stub_existing_pr_followup_legacy_prompt_result
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity,
+          { agent_run_id: 42 },
+          timeout: 60)
     end
   end
 
@@ -521,6 +557,27 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       end
     end
 
+    def stub_no_changes_followup_legacy_prompt_result
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::ProvisionServicesActivity" then {}
+        when "Activities::ProvisionContainerActivity" then {}
+        when "Activities::CloneRepoActivity" then {}
+        when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
+        when "Activities::PreparePrPromptActivity" then { includes_review_threads: true }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: false, review_threads_already_addressed: true }
+        when "Activities::ResolveReviewThreadsActivity" then {}
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        when "Activities::RequestReviewActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        else {}
+        end
+      end
+    end
+
     it "requests a review-bot review even when the agent makes no changes on an existing PR" do
       stub_no_changes_followup
 
@@ -559,6 +616,20 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
+    end
+
+    it "replays the legacy resolve activity on a no-change PR follow-up when the workflow patch is not set" do
+      allow(Temporalio::Workflow).to receive(:patched).and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("resolve_review_threads_with_prompt_thread_ids").and_return(false)
+      stub_no_changes_followup_legacy_prompt_result
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity,
+          { agent_run_id: 42 },
+          timeout: 60)
     end
   end
 
