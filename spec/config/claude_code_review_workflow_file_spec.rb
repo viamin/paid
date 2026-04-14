@@ -15,10 +15,29 @@ RSpec.describe ClaudeCodeReviewWorkflowFile do
   end
 
   let(:job) { workflow.fetch("jobs").fetch("claude-review") }
+  let(:permissions) { job.fetch("permissions") }
   let(:steps) { job.fetch("steps") }
 
   it "emits the configured Claude Code Review check-run name" do
     expect(job.fetch("name")).to eq("Claude Code Review")
+  end
+
+  it "can write check runs for the PR head sha gate" do
+    expect(permissions.fetch("checks")).to eq("write")
+  end
+
+  it "creates and completes a Claude Code Review check run on the PR head sha" do
+    expect(steps).to include(
+      a_hash_including(
+        "name" => "Start PR head check run",
+        "env" => a_hash_including("HEAD_SHA" => "${{ steps.pr.outputs.head_sha }}")
+      ),
+      a_hash_including(
+        "name" => "Complete PR head check run",
+        "if" => "always()",
+        "env" => a_hash_including("CHECK_RUN_ID" => "${{ steps.check-run.outputs.id }}")
+      )
+    )
   end
 
   it "completes successfully for fork-backed PRs without running Claude" do
