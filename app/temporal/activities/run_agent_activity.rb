@@ -409,7 +409,7 @@ module Activities
     # Builds the ordered list of providers to attempt.
     # Uses fallback providers if enabled, otherwise just the agent's type.
     # Rate-limit fallback providers are tracked separately (via
-    # @rate_limit_fallback_keys) and handled during execution; they do not
+    # @rate_limit_fallbacks) and handled during execution; they do not
     # modify the provider order returned by this method.
     #
     # @return [Array<String>] Provider names in priority order
@@ -824,6 +824,7 @@ module Activities
           db_scoped.call
         end
       end
+      worker.report_on_exception = false
 
       canceled = false
       interrupted = false
