@@ -1573,7 +1573,7 @@ module Activities
         return false
       end
 
-      checks.any? { |c| c[:name] == action_name && c[:conclusion] == "success" }
+      checks.any? { |c| c[:name] == action_name.strip && c[:conclusion] == "success" }
     end
 
     # Manual review is complete when the configured reviewer_login has

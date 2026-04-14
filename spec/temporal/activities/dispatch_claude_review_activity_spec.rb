@@ -57,5 +57,26 @@ RSpec.describe Activities::DispatchClaudeReviewActivity do
 
       expect(issue.reload.ci_action_dispatched_at).to be_nil
     end
+
+    it "dispatches when the configured action name has surrounding whitespace" do
+      project.update!(review_settings: {
+        "enabled" => true,
+        "methods" => {
+          "ci_action" => {
+            "enabled" => true,
+            "action_name" => " #{described_class::ACTION_NAME} "
+          }
+        }
+      })
+
+      result = activity.execute(project_id: project.id, pr_number: 42)
+
+      expect(result).to include(dispatched: true, event_type: described_class::EVENT_TYPE, pr_number: 42)
+      expect(github_client).to have_received(:dispatch_repository_event).with(
+        project.full_name,
+        event_type: described_class::EVENT_TYPE,
+        client_payload: { pr_number: 42 }
+      )
+    end
   end
 end

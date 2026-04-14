@@ -3165,6 +3165,39 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when draft PR has ci_action-only review and the configured action has surrounding whitespace" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "ci_action" => { "enabled" => true, "action_name" => " e2e-suite " } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [
+            { name: "ci", conclusion: "success" },
+            { name: "e2e-suite", conclusion: "success" }
+          ],
+          reviews: [],
+          review_threads: []
+        )
+      end
+
+      it "treats the matching check as complete" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+    end
+
     context "when ready PR has manual review pending and auto-merge is enabled" do
       let(:pr_issue) do
         create(:issue, :pull_request,
