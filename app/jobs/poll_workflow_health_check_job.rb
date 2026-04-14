@@ -30,17 +30,15 @@ class PollWorkflowHealthCheckJob < ApplicationJob
     checked = 0
     restarted = 0
 
-    with_verified_database_connection do
-      Project.active.where("poll_interval_seconds > 0").find_each do |project|
-        checked += 1
-        restarted += 1 if check_and_heal(project)
-      rescue => e
-        Rails.logger.error(
-          message: "temporal_worker.health_check_failed",
-          project_id: project.id,
-          error: e.message
-        )
-      end
+    Project.active.where("poll_interval_seconds > 0").find_each do |project|
+      checked += 1
+      restarted += 1 if check_and_heal(project)
+    rescue => e
+      Rails.logger.error(
+        message: "temporal_worker.health_check_failed",
+        project_id: project.id,
+        error: e.message
+      )
     end
 
     duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
@@ -89,9 +87,17 @@ class PollWorkflowHealthCheckJob < ApplicationJob
   def check_stale_running(project)
     return unless project.poll_stale_with_recheck?
 
+    reason = "health check: stale RUNNING (last polled #{project.last_polled_at})"
+
+    WorkflowState.record_polling_status(
+      project,
+      status: "running",
+      restart_reason: reason
+    )
+
     restart_workflow(
       project,
-      reason: "health check: stale RUNNING (last polled #{project.last_polled_at})",
+      reason: reason,
       log_message: "temporal_worker.poll_workflow_stale_running"
     )
   end
@@ -103,29 +109,14 @@ class PollWorkflowHealthCheckJob < ApplicationJob
       reason: reason
     )
 
-    ProjectWorkflowManager.restart_polling(project, reason: reason)
+    restarted = ProjectWorkflowManager.restart_polling(project, reason: reason)
 
     Rails.logger.info(
       message: "temporal_worker.poll_workflow_restarted",
       project_id: project.id
-    )
-    true
-  end
+    ) if restarted
 
-  def with_verified_database_connection
-    attempts = 0
-
-    begin
-      ActiveRecord::Base.connection_pool.with_connection do |connection|
-        connection.verify!
-        yield
-      end
-    rescue ActiveRecord::ConnectionNotEstablished
-      raise if (attempts += 1) > 1
-
-      ActiveRecord::Base.connection_handler.clear_active_connections!
-      retry
-    end
+    restarted
   end
 
   # Maps Temporal workflow execution statuses to WorkflowState status strings.

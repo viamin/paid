@@ -46,6 +46,17 @@ RSpec.describe Activities::ResolveReviewThreadsActivity do
         expect(result[:failed_count]).to eq(0)
         expect(result[:agent_run_id]).to eq(agent_run.id)
       end
+
+      it "resolves only requested thread ids when provided" do
+        expect(github_client).to receive(:resolve_review_thread).with("thread_3")
+        expect(github_client).not_to receive(:resolve_review_thread).with("thread_1")
+        expect(github_client).not_to receive(:resolve_review_thread).with("thread_2")
+
+        result = activity.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_3", "missing" ])
+
+        expect(result[:requested_thread_ids]).to eq([ "thread_3", "missing" ])
+        expect(result[:resolved_count]).to eq(1)
+      end
     end
 
     context "when individual thread resolution fails" do

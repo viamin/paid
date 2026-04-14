@@ -676,7 +676,7 @@ RSpec.describe Project do
         expect(settings["enabled"]).to be false
         expect(settings["wait_for_reviews"]).to be true
         expect(settings.dig("methods", "copilot", "enabled")).to be false
-        expect(settings.dig("methods", "paid_agent", "termination", "max_review_rounds")).to eq(3)
+        expect(settings.dig("methods", "paid_agent", "termination", "max_review_rounds")).to eq(15)
       end
 
       it "merges custom settings over defaults" do
@@ -688,7 +688,7 @@ RSpec.describe Project do
 
         expect(settings["enabled"]).to be true
         expect(settings.dig("methods", "copilot", "enabled")).to be true
-        expect(settings.dig("methods", "copilot", "termination", "max_review_rounds")).to eq(2)
+        expect(settings.dig("methods", "copilot", "termination", "max_review_rounds")).to eq(15)
       end
 
       it "handles non-Hash review_settings gracefully" do
@@ -884,7 +884,7 @@ RSpec.describe Project do
 
         expect(config["enabled"]).to be true
         expect(config.dig("termination", "timeout_minutes")).to eq(60)
-        expect(config.dig("termination", "max_review_rounds")).to eq(3)
+        expect(config.dig("termination", "max_review_rounds")).to eq(15)
       end
     end
 
@@ -1330,6 +1330,27 @@ RSpec.describe Project do
           target: "pull_requests_project_#{project.id}",
           partial: "projects/pull_requests",
           locals: hash_including(project: project)
+        )
+      end
+    end
+
+    describe "#broadcast_workflow_status_update" do
+      it "broadcasts replace with restart controls enabled" do
+        health = {
+          status: :unhealthy,
+          label: "Not running",
+          description: "The issue monitor is not running."
+        }
+
+        allow(WorkflowState).to receive(:compute_health_for).with(project).and_return(health)
+
+        project.broadcast_workflow_status_update
+
+        expect(project).to have_received(:broadcast_replace_to).with(
+          project, :project_updates,
+          target: "workflow-status",
+          partial: "workflow_statuses/status",
+          locals: { project: project, health: health, show_restart: true }
         )
       end
     end

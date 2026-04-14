@@ -1456,6 +1456,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when paid_agent posted a body-only review before the last agent run completed" do
       before do
+        enable_paid_agent_review!
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -1486,8 +1487,58 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when paid_agent review pre-dates the last run and the diff touches reviewed files" do
+      before do
+        enable_paid_agent_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          goal: "create_pr",
+          trigger_type: "automatic",
+          completed_at: 30.minutes.ago)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          goal: "review",
+          trigger_type: "automatic",
+          completed_at: 2.hours.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+                       body: "Here are some review suggestions.",
+                       submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: 10, user_login: "paid-code-reviewer[bot]", body: "Fix this",
+              created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
+              pull_request_review_id: 1 }
+          ])
+        allow(github_client).to receive(:compare_changed_files)
+          .with(project.full_name, "rev_sha", "abc123")
+          .and_return([ "app/services/fetch_issues_activity.rb", "db/schema.rb" ])
+      end
+
+      it "requests a fresh paid_agent review instead of treating the old review as clean" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("paid_agent_review_pending")
+        expect(trigger_types).not_to include("ready_for_owner")
+      end
+    end
+
     context "when paid_agent posted a body-only review after the last agent run completed" do
       before do
+        enable_paid_agent_review!
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4461,6 +4512,63 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(trigger[:phase]).to eq("restarted")
         expect(pending_trigger[:details]).to eq("No paid_agent review found for PR")
+      end
+    end
+
+    context "when a restarted PR only has stale pre-restart paid_agent reviews" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "restarted",
+          review_goal_retry_reset_at: 1.hour.ago)
+      end
+
+      before do
+        enable_paid_agent_review!(project, max_review_rounds: 3)
+        create(:agent_run, :automatic,
+          project: project, issue: pr_issue,
+          source_pull_request_number: 42,
+          goal: "create_pr",
+          status: "completed",
+          created_at: 40.minutes.ago,
+          started_at: 40.minutes.ago,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          draft: true,
+          reviews: [
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Found issues.", submitted_at: 3.hours.ago },
+            { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Still has issues.", submitted_at: 2.hours.ago },
+            { id: 3, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "More issues.", submitted_at: 90.minutes.ago, commit_id: "rev_sha" }
+          ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: 10, user_login: "paid-code-reviewer[bot]", body: "Fix this",
+              created_at: 90.minutes.ago, path: "app/services/fetch_issues_activity.rb",
+              pull_request_review_id: 3 }
+          ])
+        allow(github_client).to receive(:compare_changed_files)
+          .with(project.full_name, "rev_sha", "abc123")
+          .and_return([ "app/services/fetch_issues_activity.rb" ])
+      end
+
+      it "restarts the review cycle instead of counting the stale reviews against the new draft" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |entry| entry[:type] }
+
+        expect(trigger[:phase]).to eq("restarted")
+        expect(trigger_types).to include("paid_agent_review_pending")
+        expect(trigger_types).not_to include("escalate_to_owner")
+        expect(trigger_types).not_to include("ready_for_owner")
       end
     end
 
