@@ -470,13 +470,6 @@ module Containers
 
       status_result = execute_git("status", "--porcelain")
       status_result.success? && status_result[:stdout].present?
-    rescue => e
-      Rails.logger.warn(
-        message: "container_git.check_changes_failed",
-        agent_run_id: agent_run.id,
-        error: e.message
-      )
-      false
     end
 
     # Fetches a remote branch inside the container.

@@ -630,6 +630,28 @@ RSpec.describe Activities::RunAgentActivity do
         expect(activity).to have_received(:sleep).with(0.25)
       end
 
+      it "retries transient fallback change-detection failures before succeeding" do
+        change_attempts = 0
+
+        allow(activity).to receive(:sleep)
+        allow(git_ops).to receive(:head_sha).and_raise(StandardError, "container not ready")
+        allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
+        allow(git_ops).to receive(:has_changes?) do
+          change_attempts += 1
+          raise Docker::Error::DockerError, "docker unavailable" if change_attempts == 1
+
+          true
+        end
+        allow(git_ops).to receive(:has_changes_since?)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be true
+        expect(git_ops).to have_received(:has_changes?).twice
+        expect(git_ops).not_to have_received(:has_changes_since?)
+        expect(activity).to have_received(:sleep).with(0.25)
+      end
+
       it "retries wrapped container reconnect failures before succeeding" do
         attempts = 0
 
