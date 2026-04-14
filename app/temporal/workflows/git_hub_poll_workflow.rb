@@ -278,6 +278,8 @@ module Workflows
     end
 
     def queue_paid_agent_review_run(project_id, pr_data)
+      return unless Temporalio::Workflow.patched("queue-paid-agent-review-run-v1")
+
       pending_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "paid_agent_review_pending" }
       return if pending_trigger&.dig(:active_run)
 
