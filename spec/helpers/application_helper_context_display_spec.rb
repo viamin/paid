@@ -3,6 +3,26 @@
 require "rails_helper"
 
 RSpec.describe ApplicationHelper do
+  describe "#issue_label_badge_classes" do
+    it "uses GitHub-like styling for default priority labels" do
+      project = build(:project)
+
+      expect(helper.issue_label_badge_classes(project, "P0")).to include("bg-red-700 text-red-50")
+      expect(helper.issue_label_badge_classes(project, "P1")).to include("bg-red-100 text-red-800")
+      expect(helper.issue_label_badge_classes(project, "P2")).to include("bg-orange-100 text-orange-800")
+      expect(helper.issue_label_badge_classes(project, "P3")).to include("bg-blue-100 text-blue-800")
+    end
+
+    it "uses GitHub-like styling for configured priority labels only" do
+      project = build(:project, priority_labels: { "P1" => "urgent", "P2" => "high-touch", "P3" => "later" })
+
+      expect(helper.issue_label_badge_classes(project, "urgent")).to include("bg-red-100 text-red-800")
+      expect(helper.issue_label_badge_classes(project, "high-touch")).to include("bg-orange-100 text-orange-800")
+      expect(helper.issue_label_badge_classes(project, "later")).to include("bg-blue-100 text-blue-800")
+      expect(helper.issue_label_badge_classes(project, "bug")).to include("bg-gray-100 text-gray-600")
+    end
+  end
+
   describe "#agent_run_context_display" do
     # Use plain Structs instead of instance_double to avoid ActiveRecord column
     # lookups that require a database connection (these are pure view-layer tests).
