@@ -216,9 +216,46 @@ RSpec.describe PollWorkflowHealthCheckJob do
         task_queue: "paid-tasks"
       ).at_least(:once)
     end
+
+    it "retries once when the database connection is stale before scanning projects" do
+      project = create(:project)
+      workflow_handle = stub_stale_connection_retry
+
+      described_class.perform_now
+
+      expect(ActiveRecord::Base.connection_handler).to have_received(:clear_active_connections!).once
+      expect(workflow_handle).to have_received(:terminate)
+      expect(temporal_client).to have_received(:start_workflow).with(
+        Workflows::GitHubPollWorkflow,
+        { project_id: project.id },
+        id: "github-poll-#{project.id}",
+        task_queue: "paid-tasks"
+      ).at_least(:once)
+    end
   end
 
   private
+
+  def stub_stale_connection_retry
+    workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
+    desc = double("description", status: Temporalio::Client::WorkflowExecutionStatus::FAILED) # rubocop:disable RSpec/VerifiedDoubles
+    pool = ActiveRecord::Base.connection_pool
+    handler = ActiveRecord::Base.connection_handler
+    attempts = 0
+
+    allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+    allow(workflow_handle).to receive(:describe).and_return(desc)
+    allow(workflow_handle).to receive(:terminate)
+    allow(handler).to receive(:clear_active_connections!).and_call_original
+    allow(pool).to receive(:with_connection).and_wrap_original do |method, *args, &block|
+      attempts += 1
+      raise ActiveRecord::ConnectionNotEstablished, "stale connection" if attempts == 1
+
+      method.call(&block)
+    end
+
+    workflow_handle
+  end
 
   def stub_workflow_handle_with_first_call_error
     call_count = 0

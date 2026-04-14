@@ -30,15 +30,17 @@ class PollWorkflowHealthCheckJob < ApplicationJob
     checked = 0
     restarted = 0
 
-    Project.active.where("poll_interval_seconds > 0").find_each do |project|
-      checked += 1
-      restarted += 1 if check_and_heal(project)
-    rescue => e
-      Rails.logger.error(
-        message: "temporal_worker.health_check_failed",
-        project_id: project.id,
-        error: e.message
-      )
+    with_verified_database_connection do
+      Project.active.where("poll_interval_seconds > 0").find_each do |project|
+        checked += 1
+        restarted += 1 if check_and_heal(project)
+      rescue => e
+        Rails.logger.error(
+          message: "temporal_worker.health_check_failed",
+          project_id: project.id,
+          error: e.message
+        )
+      end
     end
 
     duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
@@ -108,6 +110,22 @@ class PollWorkflowHealthCheckJob < ApplicationJob
       project_id: project.id
     )
     true
+  end
+
+  def with_verified_database_connection
+    attempts = 0
+
+    begin
+      ActiveRecord::Base.connection_pool.with_connection do |connection|
+        connection.verify!
+        yield
+      end
+    rescue ActiveRecord::ConnectionNotEstablished
+      raise if (attempts += 1) > 1
+
+      ActiveRecord::Base.connection_handler.clear_active_connections!
+      retry
+    end
   end
 
   # Maps Temporal workflow execution statuses to WorkflowState status strings.
