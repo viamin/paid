@@ -40,6 +40,8 @@ module Knowledge
     end
 
     def build_embedding_config(provider)
+      return log_unsupported_provider(provider) unless UserSetting::KB_EMBEDDING_PROVIDERS.include?(provider)
+
       config = Provider::DIRECT_OUTBOUND_API_PROVIDERS[provider]
       return log_unsupported_provider(provider) unless config
 

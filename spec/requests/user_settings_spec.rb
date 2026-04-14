@@ -204,7 +204,7 @@ RSpec.describe "UserSettings" do
 
         patch user_settings_path, params: {
           user_setting: {
-            kb_embedding_provider: "not-a-provider",
+            kb_embedding_provider: "anthropic",
             kb_embedding_fallback_providers: [ "openai", "also-not-a-provider" ]
           }
         }

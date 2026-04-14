@@ -51,5 +51,26 @@ RSpec.describe Knowledge::ProviderConfiguration do
       expect(config.api_base_url).to eq("https://proxy.openai.test")
       expect(config.source).to eq(:platform_env)
     end
+
+    it "ignores legacy embedding providers that are not OpenAI-compatible" do
+      owner.settings.update_columns(
+        kb_embedding_provider: "anthropic",
+        kb_embedding_fallback_providers: [ "openai" ]
+      )
+      allow(Rails.logger).to receive(:warn)
+      api_key = create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-openai")
+
+      config = described_class.for_embedding(project: project)
+
+      expect(config.provider).to eq("openai")
+      expect(config.api_key).to eq(api_key.api_key)
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "knowledge.provider_configuration.unsupported_embedding_provider",
+          project_id: project.id,
+          provider: "anthropic"
+        )
+      )
+    end
   end
 end

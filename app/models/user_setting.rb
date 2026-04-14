@@ -7,7 +7,7 @@ class UserSetting < ApplicationRecord
   MAX_CONTAINER_MEMORY_BYTES = 64 * 1024 * 1024 * 1024
   # Reasonable upper bound for delay settings (24 hours in seconds)
   MAX_DELAY_SECONDS = 86_400
-  KB_EMBEDDING_PROVIDERS = Provider::DIRECT_OUTBOUND_API_PROVIDERS.keys.freeze
+  KB_EMBEDDING_PROVIDERS = Provider::OPENAI_COMPATIBLE_DIRECT_OUTBOUND_API_PROVIDER_KEYS.freeze
   KB_EMBEDDING_PROVIDER_DEFAULT = "openai"
   KB_CHAT_PROVIDER_DEFAULT = "claude"
 

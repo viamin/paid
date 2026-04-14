@@ -521,7 +521,7 @@ RSpec.describe UserSetting do
     end
 
     it "rejects unsupported knowledge embedding providers" do
-      setting.kb_embedding_provider = "not-a-provider"
+      setting.kb_embedding_provider = "anthropic"
       setting.kb_embedding_fallback_providers = [ "openai", "also-not-a-provider" ]
 
       expect(setting).not_to be_valid
