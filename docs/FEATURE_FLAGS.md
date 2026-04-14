@@ -34,17 +34,17 @@ List current state:
 
 ```bash
 bundle exec rake feature_flags:list
-bundle exec rake feature_flags:list PROJECT=owner/repo
+bundle exec rake feature_flags:list PROJECT_ID=123
 ```
 
 Enable or disable intentionally:
 
 ```bash
-bundle exec rake "feature_flags:enable[explicit_pr_automation_decisions]" PROJECT=owner/repo
-bundle exec rake "feature_flags:disable[explicit_pr_automation_decisions]" PROJECT=owner/repo
+bundle exec rake "feature_flags:enable[explicit_pr_automation_decisions]" PROJECT_ID=123
+bundle exec rake "feature_flags:disable[explicit_pr_automation_decisions]" PROJECT_ID=123
 ```
 
-Omit `PROJECT=owner/repo` to change the global flag state.
+Omit `PROJECT_ID=123` to change the global flag state. Use the Paid project id, not `owner/repo`, because the same GitHub repository can exist in multiple accounts.
 
 ## Issue convention
 
