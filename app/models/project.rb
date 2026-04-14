@@ -17,7 +17,7 @@ class Project < ApplicationRecord
       "copilot" => {
         "enabled" => false,
         "termination" => {
-          "max_review_rounds" => 2,
+          "max_review_rounds" => 15,
           "stop_when_no_comments" => true,
           "quality_threshold" => nil,
           "timeout_minutes" => nil
@@ -26,7 +26,7 @@ class Project < ApplicationRecord
       "paid_agent" => {
         "enabled" => false,
         "termination" => {
-          "max_review_rounds" => 3,
+          "max_review_rounds" => 15,
           "max_review_goal_retries" => 3,
           "stop_when_no_comments" => true,
           "quality_threshold" => nil,
@@ -36,7 +36,7 @@ class Project < ApplicationRecord
       "codex" => {
         "enabled" => false,
         "termination" => {
-          "max_review_rounds" => 2,
+          "max_review_rounds" => 15,
           "stop_when_no_comments" => true,
           "quality_threshold" => nil,
           "timeout_minutes" => 60
@@ -163,6 +163,10 @@ class Project < ApplicationRecord
 
   def full_name
     "#{owner}/#{repo}"
+  end
+
+  def flipper_id
+    "Project;#{id}"
   end
 
   def github_url

@@ -13,6 +13,17 @@ RSpec.describe Activities::PreparePrPromptActivity do
   end
   let(:github_client) { instance_double(GithubClient) }
   let(:activity) { described_class.new }
+  let!(:prompt) do
+    Prompt.find_by(slug: Prompts::BuildForPr::PROMPT_SLUG)&.destroy!
+    create(:prompt, :global, slug: Prompts::BuildForPr::PROMPT_SLUG).tap do |record|
+      record.create_version!(
+        template: "Priority order:\n{{priority_list}}\n# Code Review Comments",
+        variables: [
+          { "name" => "priority_list", "required" => true, "description" => "Priority list" }
+        ]
+      )
+    end
+  end
 
   let(:pr_data) do
     OpenStruct.new(
@@ -30,11 +41,7 @@ RSpec.describe Activities::PreparePrPromptActivity do
       .with(project.full_name, 42)
       .and_return(pr_data)
 
-    allow(github_client).to receive_messages(
-      check_runs_for_ref: [],
-      review_threads: [],
-      recent_issue_comments: []
-    )
+    allow(github_client).to receive_messages(check_runs_for_ref: [], review_threads: [], recent_issue_comments: [])
   end
 
   describe "#execute" do
@@ -46,11 +53,44 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(agent_run.custom_prompt).to include("#42")
     end
 
+    it "stores the resolved prompt version on the agent run" do
+      activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      expect(agent_run.reload.prompt_version).to eq(prompt.current_version)
+    end
+
+    it "renders the stored prompt from the same resolved prompt version" do
+      pinned_version = prompt.create_version!(
+        template: "Pinned shell {{priority_list}}",
+        variables: [
+          { "name" => "priority_list", "required" => true, "description" => "Priority list" }
+        ]
+      )
+      prompt.create_version!(
+        template: "New current shell",
+        variables: []
+      )
+
+      allow(Prompts::Resolve).to receive(:call)
+        .with(slug: Prompts::BuildForPr::PROMPT_SLUG, project: project)
+        .and_return(pinned_version)
+
+      activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      agent_run.reload
+      expect(agent_run.prompt_version).to eq(pinned_version)
+      expect(agent_run.custom_prompt).to include("Pinned shell")
+      expect(agent_run.custom_prompt).not_to include("New current shell")
+    end
+
     it "returns prompt_length" do
       result = activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
 
       expect(result[:prompt_length]).to be > 0
       expect(result[:agent_run_id]).to eq(agent_run.id)
+      expect(result[:includes_review_threads]).to be(false)
+      expect(result[:review_thread_ids]).to eq([])
+      expect(result[:prompt_version_id]).to eq(prompt.current_version.id)
     end
 
     it "passes rebase_succeeded through to the prompt builder" do
@@ -91,6 +131,24 @@ RSpec.describe Activities::PreparePrPromptActivity do
         expect(agent_run.custom_prompt).to include("Issue Requirements")
         expect(agent_run.custom_prompt).to include("Add feature X")
         expect(agent_run.custom_prompt).to include("#99")
+      end
+    end
+
+    context "when unresolved review threads are present" do
+      before do
+        allow(github_client).to receive(:review_threads)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", path: "app/models/user.rb", line: 42, author: "reviewer" } ] }
+          ])
+      end
+
+      it "reports that the generated prompt included review threads" do
+        result = activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+        expect(result[:includes_review_threads]).to be(true)
+        expect(result[:review_thread_ids]).to eq([ "thread_1" ])
+        expect(agent_run.reload.custom_prompt).to include("Code Review Comments")
       end
     end
 

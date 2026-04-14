@@ -11,6 +11,8 @@ RSpec.describe PollWorkflowHealthCheckJob do
   end
 
   describe "#perform" do
+    let(:job) { described_class.new }
+
     it "restarts workflows that are not running" do
       project = create(:project)
       workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
@@ -67,9 +69,13 @@ RSpec.describe PollWorkflowHealthCheckJob do
       allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
       allow(workflow_handle).to receive(:describe).and_return(desc)
       allow(workflow_handle).to receive(:terminate)
+      allow(WorkflowState).to receive(:record_polling_status)
 
       described_class.perform_now
 
+      expect(WorkflowState).to have_received(:record_polling_status).with(
+        project, hash_including(status: "running", restart_reason: /health check: stale RUNNING/)
+      ).at_least(:once)
       expect(workflow_handle).to have_received(:terminate)
       expect(temporal_client).to have_received(:start_workflow).with(
         Workflows::GitHubPollWorkflow,
@@ -77,6 +83,24 @@ RSpec.describe PollWorkflowHealthCheckJob do
         id: "github-poll-#{project.id}",
         task_queue: "paid-tasks"
       ).at_least(:once)
+    end
+
+    it "records stale restart context before attempting the restart" do
+      project = create(:project, poll_interval_seconds: 60, last_polled_at: 10.minutes.ago)
+      WorkflowState.record_polling_status(project, status: "running")
+      workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
+      desc = double("description", status: Temporalio::Client::WorkflowExecutionStatus::RUNNING) # rubocop:disable RSpec/VerifiedDoubles
+
+      allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+      allow(workflow_handle).to receive(:describe).and_return(desc)
+      allow(workflow_handle).to receive(:terminate)
+      allow(temporal_client).to receive(:start_workflow).and_raise(StandardError, "restart failed")
+
+      expect { described_class.perform_now }.not_to raise_error
+
+      workflow_state = WorkflowState.find_by!(temporal_workflow_id: "github-poll-#{project.id}")
+      expect(workflow_state.status).to eq("running")
+      expect(workflow_state.restart_reason).to match(/health check: stale RUNNING/)
     end
 
     it "uses per-project poll interval for staleness threshold" do
@@ -215,6 +239,18 @@ RSpec.describe PollWorkflowHealthCheckJob do
         id: "github-poll-#{project2.id}",
         task_queue: "paid-tasks"
       ).at_least(:once)
+    end
+
+    it "does not count a failed restart as restarted" do
+      project = create(:project)
+      allow(ProjectWorkflowManager).to receive_messages(
+        workflow_status: { status: Temporalio::Client::WorkflowExecutionStatus::FAILED, running: false },
+        restart_polling: false
+      )
+
+      expect(job.send(:check_and_heal, project)).to be(false)
+      expect(ProjectWorkflowManager).to have_received(:restart_polling)
+        .with(project, reason: "health check: was #{Temporalio::Client::WorkflowExecutionStatus::FAILED}")
     end
   end
 
