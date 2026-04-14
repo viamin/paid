@@ -236,4 +236,19 @@ module ProviderSupport
       GEMINI_CLI_CUSTOM_HEADERS
     ].freeze
   }.freeze
+
+  # Environment variables to unset when a provider runs via the agent-harness
+  # execution plan (direct outbound). These proxy-specific headers are
+  # inherited from container startup but must not leak to the real provider
+  # API. Keyed by provider_key, same pattern as SUBSCRIPTION_AUTH_UNSET_VARS.
+  HARNESS_RUNTIME_UNSET_VARS = {
+    "opencode" => %w[
+      OPENAI_HEADER_X_AGENT_RUN_ID
+      OPENAI_HEADER_X_PROXY_TOKEN
+    ].freeze
+  }.freeze
+
+  def harness_runtime_unset_vars_for(provider_key)
+    HARNESS_RUNTIME_UNSET_VARS.fetch(provider_key.to_s, [])
+  end
 end

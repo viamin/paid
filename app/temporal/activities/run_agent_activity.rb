@@ -908,7 +908,7 @@ module Activities
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
 
       if provider_entry&.opencode_agent_harness_runtime?
-        direct_outbound_execution_plan(provider_entry, prompt).command
+        harness_runtime_command(provider_entry, prompt)
       elsif provider_entry&.requires_direct_outbound?
         provider_entry.direct_outbound_exec_command(command_prefix: command_context.command_prefix, prompt: prompt)
       elsif ProviderSupport.subscription_auth_unset_vars_for(command_context.provider).any?
@@ -1042,6 +1042,19 @@ module Activities
 
     def subscription_auth_unset_vars_for(provider)
       ProviderSupport.subscription_auth_unset_vars_for(provider)
+    end
+
+    # Wraps the harness execution plan command with `env -u` to strip
+    # proxy-specific headers inherited from container startup so they
+    # are not forwarded to the real provider API.
+    def harness_runtime_command(provider_entry, prompt)
+      plan = direct_outbound_execution_plan(provider_entry, prompt)
+      unset_vars = ProviderSupport.harness_runtime_unset_vars_for(provider_entry.provider_key)
+      return plan.command if unset_vars.empty?
+
+      base = plan.command.is_a?(Array) ? plan.command.shelljoin : plan.command
+      unset_flags = unset_vars.map { |var| "-u #{var}" }.join(" ")
+      [ "sh", "-c", "env #{unset_flags} #{base}" ]
     end
 
     def capture_head_sha(container_service, agent_run)

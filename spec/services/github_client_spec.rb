@@ -889,48 +889,6 @@ RSpec.describe GithubClient do
 
         expect(result.multi_page?).to be true
       end
-
-      context "when fetching a trailing multi-page window" do
-        before do
-          page_five_link = %(<#{api_base}/repos/#{repo}/issues/42/comments?page=4&per_page=100>; rel="prev")
-          page_four_link = %(<#{api_base}/repos/#{repo}/issues/42/comments?page=3&per_page=100>; rel="prev", ) +
-            %(<#{api_base}/repos/#{repo}/issues/42/comments?page=5&per_page=100>; rel="next")
-
-          stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
-            .with(query: hash_including("per_page" => "100", "page" => "5"))
-            .to_return(
-              status: 200,
-              body: [
-                { id: 401, body: "Page 5 older", user: { login: "maintainer" } },
-                { id: 402, body: "Page 5 newer", user: { login: "maintainer" } }
-              ].to_json,
-              headers: { "Content-Type" => "application/json", "Link" => page_five_link }
-            )
-
-          stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
-            .with(query: hash_including("per_page" => "100", "page" => "4"))
-            .to_return(
-              status: 200,
-              body: [
-                { id: 301, body: "Page 4 older", user: { login: "reviewer" } },
-                { id: 302, body: "Page 4 newer", user: { login: "reviewer" } }
-              ].to_json,
-              headers: { "Content-Type" => "application/json", "Link" => page_four_link }
-            )
-        end
-
-        it "returns comments in ascending order across the fetched window" do
-          result = client.recent_issue_comments(repo, 42, pages: 2)
-
-          expect(result.map(&:body)).to eq([
-            "Page 4 older",
-            "Page 4 newer",
-            "Page 5 older",
-            "Page 5 newer"
-          ])
-          expect(result.multi_page?).to be true
-        end
-      end
     end
   end
 

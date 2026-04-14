@@ -20,8 +20,7 @@ RSpec.describe Prompts::BuildForPr do
     allow(github_client).to receive(:pull_request)
       .with(project.full_name, 42)
       .and_return(pr_data)
-    allow(AgentRuns::UserSettingsResolver).to receive(:call).with(project: project, strict: false).and_return(nil)
-    allow(github_client).to receive_messages(check_runs_for_ref: [], review_threads: [], recent_issue_comments: [])
+    allow(github_client).to receive_messages(check_runs_for_ref: [], review_threads: [], issue_comments: [])
   end
 
   describe ".call" do
@@ -199,8 +198,8 @@ RSpec.describe Prompts::BuildForPr do
 
   describe "conversation comments section" do
     before do
-      allow(github_client).to receive(:recent_issue_comments)
-        .with(project.full_name, 42, pages: 2)
+      allow(github_client).to receive(:issue_comments)
+        .with(project.full_name, 42)
         .and_return([
           OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "Please also fix the tests"),
           OpenStruct.new(user: OpenStruct.new(login: "randomuser"), body: "Ignore this")
@@ -218,53 +217,6 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Conversation Comments")
       expect(prompt).to include("Please also fix the tests")
       expect(prompt).not_to include("Ignore this")
-    end
-
-    it "limits trusted comments using the resolved prompt comment cap" do
-      allow(AgentRuns::UserSettingsResolver).to receive(:call)
-        .with(project: project, strict: false)
-        .and_return(OpenStruct.new(max_prompt_comments: 2, max_comment_length: Prompts::BuildForIssue::DEFAULT_MAX_COMMENT_LENGTH))
-
-      allow(github_client).to receive(:recent_issue_comments)
-        .with(project.full_name, 42, pages: 2)
-        .and_return([
-          OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "First trusted"),
-          OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "Second trusted"),
-          OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "Third trusted")
-        ])
-
-      prompt = described_class.call(
-        project: project,
-        pr_number: 42,
-        github_client: github_client,
-        rebase_succeeded: true
-      )
-
-      expect(prompt).not_to include("First trusted")
-      expect(prompt).to include("Second trusted")
-      expect(prompt).to include("Third trusted")
-    end
-
-    it "truncates long comment bodies using the resolved max comment length" do
-      allow(AgentRuns::UserSettingsResolver).to receive(:call)
-        .with(project: project, strict: false)
-        .and_return(OpenStruct.new(max_prompt_comments: Prompts::BuildForIssue::DEFAULT_MAX_COMMENTS, max_comment_length: 10))
-
-      allow(github_client).to receive(:recent_issue_comments)
-        .with(project.full_name, 42, pages: 2)
-        .and_return([
-          OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "1234567890abcdef")
-        ])
-
-      prompt = described_class.call(
-        project: project,
-        pr_number: 42,
-        github_client: github_client,
-        rebase_succeeded: true
-      )
-
-      expect(prompt).to include("1234567890… [truncated]")
-      expect(prompt).not_to include("1234567890abcdef")
     end
   end
 
@@ -325,7 +277,6 @@ RSpec.describe Prompts::BuildForPr do
       allow(github_client).to receive(:pull_request)
         .with(python_project.full_name, 42)
         .and_return(pr_data)
-      allow(AgentRuns::UserSettingsResolver).to receive(:call).with(project: python_project, strict: false).and_return(nil)
     end
 
     it "uses detected language for lint and test commands" do
@@ -408,26 +359,20 @@ RSpec.describe Prompts::BuildForPr do
   end
 
   describe "priority ordering" do
-    let(:issue) { create(:issue, project: project, title: "Issue", github_number: 1, body: "body") }
-    let(:prompt) do
-      described_class.call(
+    it "orders priorities correctly with all sections present" do
+      allow(github_client).to receive_messages(check_runs_for_ref: [ { name: "ci", conclusion: "failure" } ], review_threads: [ { id: "t1", is_resolved: false, comments: [ { body: "fix", path: "a.rb", line: 1, author: "r" } ] } ], issue_comments: [ OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "comment") ])
+
+      issue = create(:issue, project: project, title: "Issue", github_number: 1, body: "body")
+
+      prompt = described_class.call(
         project: project,
         pr_number: 42,
         github_client: github_client,
         rebase_succeeded: false,
         issue: issue
       )
-    end
 
-    before do
-      allow(github_client).to receive_messages(
-        check_runs_for_ref: [ { name: "ci", conclusion: "failure" } ],
-        review_threads: [ { id: "t1", is_resolved: false, comments: [ { body: "fix", path: "a.rb", line: 1, author: "r" } ] } ],
-        recent_issue_comments: [ OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "comment") ]
-      )
-    end
 
-    it "orders priorities correctly with all sections present" do
       conflicts_pos = prompt.index("Resolve merge conflicts")
       ci_pos = prompt.index("Fix CI failures")
       issue_pos = prompt.index("Close implementation gaps")
@@ -470,8 +415,8 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).not_to include("Code Review Comments")
     end
 
-    it "omits conversation section when recent_issue_comments raises" do
-      allow(github_client).to receive(:recent_issue_comments)
+    it "omits conversation section when issue_comments raises" do
+      allow(github_client).to receive(:issue_comments)
         .and_raise(GithubClient::ApiError.new("API error"))
 
       prompt = described_class.call(

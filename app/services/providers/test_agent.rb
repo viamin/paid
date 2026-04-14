@@ -379,7 +379,7 @@ module Providers
       # than applying any harness-specific invocation shape.
       return codex_test_command if provider.provider_key == "codex"
       return gemini_test_command if provider.provider_key == "gemini"
-      return direct_outbound_execution_plan.command if provider.opencode_agent_harness_runtime?
+      return harness_runtime_command if provider.opencode_agent_harness_runtime?
       return provider.direct_outbound_exec_command(command_prefix: command, prompt: PROMPT) if provider.requires_direct_outbound?
       return kilocode_test_command if provider.provider_key == "kilocode"
 
@@ -403,6 +403,18 @@ module Providers
         provider: provider,
         prompt: PROMPT
       )
+    end
+
+    # Wraps the harness execution plan command with `env -u` to strip
+    # proxy-specific headers inherited from container startup.
+    def harness_runtime_command
+      plan = direct_outbound_execution_plan
+      unset_vars = ProviderSupport.harness_runtime_unset_vars_for(provider.provider_key)
+      return plan.command if unset_vars.empty?
+
+      base = plan.command.is_a?(Array) ? plan.command.shelljoin : plan.command
+      unset_flags = unset_vars.map { |var| "-u #{var}" }.join(" ")
+      [ "sh", "-c", "env #{unset_flags} #{base}" ]
     end
 
     def classify_failed_response(error_message)

@@ -708,7 +708,7 @@ RSpec.describe Providers::TestAgent do
         described_class.call(provider: provider)
 
         expect(test_run).to have_received(:execute_in_container).with(
-          array_including("opencode", "run", "Respond with exactly: PING OK"),
+          [ "sh", "-c", a_string_including("env -u OPENAI_HEADER_X_AGENT_RUN_ID -u OPENAI_HEADER_X_PROXY_TOKEN opencode run") ],
           timeout: 60,
           stream: false,
           env: hash_including("OPENAI_API_KEY", "OPENAI_BASE_URL"),
