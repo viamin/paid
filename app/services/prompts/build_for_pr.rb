@@ -20,6 +20,7 @@ module Prompts
     DEFAULT_MAX_COMMENTS = BuildForIssue::DEFAULT_MAX_COMMENTS
     DEFAULT_MAX_COMMENT_LENGTH = BuildForIssue::DEFAULT_MAX_COMMENT_LENGTH
     GITHUB_COMMENTS_PER_PAGE = 100
+    MAX_RECENT_COMMENT_PAGES = 10
 
     attr_reader :project, :pr_number, :github_client, :rebase_succeeded,
                 :lint_command, :test_command, :issue
@@ -262,13 +263,7 @@ module Prompts
 
     def trusted_comments
       @trusted_comments ||= begin
-        comments = github_client.recent_issue_comments(
-          project.full_name,
-          pr_number,
-          pages: recent_comment_page_window
-        )
-        comments.select { |c| project.trusted_github_user?(c.user&.login) }
-          .last(max_prompt_comments)
+        recent_trusted_comments
       rescue GithubClient::Error
         []
       end
@@ -294,6 +289,25 @@ module Prompts
 
     def recent_comment_page_window
       [ (max_prompt_comments.to_f / GITHUB_COMMENTS_PER_PAGE).ceil, 1 ].max
+    end
+
+    def recent_trusted_comments
+      pages = recent_comment_page_window
+
+      loop do
+        comments = github_client.recent_issue_comments(project.full_name, pr_number, pages: pages)
+        trusted = select_trusted_comments(comments)
+
+        return trusted.last(max_prompt_comments) if trusted.size >= max_prompt_comments
+        return trusted unless comments.respond_to?(:multi_page?) && comments.multi_page?
+        return trusted if pages >= MAX_RECENT_COMMENT_PAGES
+
+        pages += 1
+      end
+    end
+
+    def select_trusted_comments(comments)
+      comments.select { |comment| project.trusted_github_user?(comment.user&.login) }
     end
 
     def truncate_comment_body(body)

@@ -4,6 +4,25 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe Prompts::BuildForPr do
+  def recent_comments_with_page_state(comments, multi_page:)
+    comments.define_singleton_method(:multi_page?) { multi_page }
+    comments
+  end
+
+  def trusted_recent_comments(count)
+    Array.new(count) { |index| OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "Trusted #{index + 1}") }
+  end
+
+  def untrusted_recent_comments(count)
+    Array.new(count) { |index| OpenStruct.new(user: OpenStruct.new(login: "bot#{index}"), body: "Noise #{index}") }
+  end
+
+  def stub_prompt_comment_settings(project, settings)
+    allow(AgentRuns::UserSettingsResolver).to receive(:call)
+      .with(project: project, strict: false)
+      .and_return(settings)
+  end
+
   let(:project) { create(:project, allowed_github_usernames: [ "trusteduser" ]) }
   let(:github_client) { instance_double(GithubClient) }
   let(:user_settings) { instance_double(UserSetting, max_prompt_comments: 20, max_comment_length: 2000) }
@@ -285,6 +304,32 @@ RSpec.describe Prompts::BuildForPr do
 
       expect(prompt).to include("Trusted comment 1")
       expect(prompt).to include("Trusted comment 205")
+    end
+
+    it "backfills older recent pages until it collects enough trusted comments" do
+      limited_settings = instance_double(UserSetting, max_prompt_comments: 20, max_comment_length: 2000)
+      newest_comments = recent_comments_with_page_state(
+        untrusted_recent_comments(100),
+        multi_page: true
+      )
+      older_recent_comments = recent_comments_with_page_state(
+        trusted_recent_comments(20) + newest_comments,
+        multi_page: true
+      )
+
+      stub_prompt_comment_settings(project, limited_settings)
+      allow(github_client).to receive(:recent_issue_comments)
+        .with(project.full_name, 42, pages: 1)
+        .and_return(newest_comments)
+      allow(github_client).to receive(:recent_issue_comments)
+        .with(project.full_name, 42, pages: 2)
+        .and_return(older_recent_comments)
+
+      prompt = described_class.call(project: project, pr_number: 42, github_client: github_client, rebase_succeeded: true)
+
+      expect(prompt).to include("Trusted 1")
+      expect(prompt).to include("Trusted 20")
+      expect(prompt).not_to include("Noise 0")
     end
   end
 
