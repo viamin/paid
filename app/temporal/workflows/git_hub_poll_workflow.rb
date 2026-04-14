@@ -219,12 +219,7 @@ module Workflows
       trigger_types = (pr_data[:triggers] || []).map { |t| t[:type] }
 
       # Queue paid_agent review sidecar if bundled with ready_for_owner
-      if trigger_types.include?("paid_agent_review_pending")
-        run_activity(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: pr_data[:issue_id],
-            source_pull_request_number: pr_data[:pr_number],
-            goal: "review" }, timeout: 30)
-      end
+      queue_paid_agent_review_run(project_id, pr_data) if trigger_types.include?("paid_agent_review_pending")
 
       result = run_activity(Activities::MarkPrReadyActivity,
         { project_id: project_id, pr_number: pr_data[:pr_number],
@@ -268,17 +263,28 @@ module Workflows
     def handle_paid_agent_review_pending(project_id, pr_data, trigger_types)
       other_triggers = trigger_types - [ "paid_agent_review_pending" ]
 
+      queue_paid_agent_review_run(project_id, pr_data)
+
       if other_triggers.empty?
-        # No other work to do — queue a review-goal agent run directly.
-        run_activity(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: pr_data[:issue_id],
-            source_pull_request_number: pr_data[:pr_number],
-            goal: "review" }, timeout: 30)
+        # No other work to do — the paid-agent review queue above is the only
+        # action needed unless the trigger merely reflects an already-active
+        # review-goal run.
+        nil
       elsif pr_data[:phase].in?(%w[draft restarted])
         start_draft_followup_workflow(project_id, pr_data)
       else
         start_pr_followup_workflow(project_id, pr_data)
       end
+    end
+
+    def queue_paid_agent_review_run(project_id, pr_data)
+      pending_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "paid_agent_review_pending" }
+      return if pending_trigger&.dig(:active_run)
+
+      run_activity(Activities::QueueAgentRunActivity,
+        { project_id: project_id, issue_id: pr_data[:issue_id],
+          source_pull_request_number: pr_data[:pr_number],
+          goal: "review" }, timeout: 30)
     end
 
     def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
