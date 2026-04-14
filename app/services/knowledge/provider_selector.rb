@@ -30,19 +30,41 @@ module Knowledge
     attr_reader :user_setting
 
     def configured_providers_for(operation)
-      providers =
-        case operation.to_sym
-        when :embedding
-          [ user_setting.kb_embedding_provider, *Array(user_setting.kb_embedding_fallback_providers) ]
-        when :chat
-          [ user_setting.kb_chat_provider, *Array(user_setting.kb_chat_fallback_providers) ]
-        else
-          raise ArgumentError, "Unsupported knowledge provider operation: #{operation}"
-        end
-
-      providers.filter_map do |provider|
+      providers = configured_provider_values_for(operation).filter_map do |provider|
         provider.to_s.strip.downcase.presence
       end.uniq
+
+      filter_supported_providers(providers, operation: operation)
+    end
+
+    def configured_provider_values_for(operation)
+      case operation.to_sym
+      when :embedding
+        [ user_setting.kb_embedding_provider, *Array(user_setting.kb_embedding_fallback_providers) ]
+      when :chat
+        [ user_setting.kb_chat_provider, *Array(user_setting.kb_chat_fallback_providers) ]
+      else
+        raise ArgumentError, "Unsupported knowledge provider operation: #{operation}"
+      end
+    end
+
+    def filter_supported_providers(providers, operation:)
+      supported = supported_providers_for(operation)
+      unsupported = providers - supported
+      log_unsupported_providers(operation, unsupported) if unsupported.any?
+
+      providers - unsupported
+    end
+
+    def supported_providers_for(operation)
+      case operation.to_sym
+      when :embedding
+        UserSetting::KB_EMBEDDING_PROVIDERS
+      when :chat
+        UserSetting::KB_CHAT_PROVIDERS
+      else
+        raise ArgumentError, "Unsupported knowledge provider operation: #{operation}"
+      end
     end
 
     def provider_available?(provider, provider_states)
@@ -65,6 +87,15 @@ module Knowledge
         providers: candidates,
         model: Knowledge::Embeddings::Generate::MODEL,
         dimensions: Knowledge::Embeddings::Generate::DIMENSIONS
+      )
+    end
+
+    def log_unsupported_providers(operation, providers)
+      Rails.logger.warn(
+        message: "knowledge.provider_selector.unsupported_provider_configured",
+        user_setting_id: user_setting.id,
+        operation: operation.to_sym,
+        providers: providers
       )
     end
   end

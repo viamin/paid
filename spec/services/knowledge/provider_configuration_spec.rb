@@ -66,9 +66,10 @@ RSpec.describe Knowledge::ProviderConfiguration do
       expect(config.api_key).to eq(api_key.api_key)
       expect(Rails.logger).to have_received(:warn).with(
         hash_including(
-          message: "knowledge.provider_configuration.unsupported_embedding_provider",
-          project_id: project.id,
-          provider: "anthropic"
+          message: "knowledge.provider_selector.unsupported_provider_configured",
+          user_setting_id: owner.settings.id,
+          operation: :embedding,
+          providers: [ "anthropic" ]
         )
       )
     end

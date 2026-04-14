@@ -50,6 +50,24 @@ RSpec.describe Knowledge::ProviderSelector do
       expect(described_class.for_chat(user_setting: setting)).to eq(%w[claude cursor codex])
     end
 
+    it "skips legacy unsupported chat providers and logs a warning" do
+      setting.update_columns(
+        kb_chat_provider: "not-a-provider",
+        kb_chat_fallback_providers: [ "claude", "also-invalid" ]
+      )
+      allow(Rails.logger).to receive(:warn)
+
+      expect(described_class.for_chat(user_setting: setting)).to eq([ "claude" ])
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "knowledge.provider_selector.unsupported_provider_configured",
+          user_setting_id: setting.id,
+          operation: :chat,
+          providers: %w[not-a-provider also-invalid]
+        )
+      )
+    end
+
     it "allows a circuit-open provider back in once the recovery timeout elapses" do
       state = create(
         :provider_state,
