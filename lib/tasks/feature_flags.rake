@@ -10,11 +10,14 @@ module FeatureFlagTasks
     raise ArgumentError, "Use PROJECT_ID=<id> for project-scoped feature flag changes" if project_reference.present?
     return nil if project_id.empty?
 
-    Project.find(Integer(project_id, 10))
+    project_id = Integer(project_id, 10)
+    Project.find(project_id)
   rescue ArgumentError => e
     raise e if e.message == "Use PROJECT_ID=<id> for project-scoped feature flag changes"
 
     raise ArgumentError, "PROJECT_ID must be an integer"
+  rescue ActiveRecord::RecordNotFound
+    raise ArgumentError, "PROJECT_ID=#{project_id} does not match an existing project"
   end
 
   def scope_label(project)

@@ -53,5 +53,13 @@ RSpec.describe Rake::Task do
         enable_task.invoke("explicit_pr_automation_decisions")
       }.to raise_error(ArgumentError, "PROJECT_ID must be an integer")
     end
+
+    it "rejects project ids that do not exist" do
+      ENV["PROJECT_ID"] = "-1"
+
+      expect {
+        list_task.invoke
+      }.to raise_error(ArgumentError, "PROJECT_ID=-1 does not match an existing project")
+    end
   end
 end
