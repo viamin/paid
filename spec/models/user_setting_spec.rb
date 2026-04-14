@@ -529,6 +529,15 @@ RSpec.describe UserSetting do
       expect(setting.errors[:kb_embedding_fallback_providers]).to include("contains unsupported providers: also-not-a-provider")
     end
 
+    it "rejects unsupported knowledge chat providers" do
+      setting.kb_chat_provider = "not-a-provider"
+      setting.kb_chat_fallback_providers = [ "claude", "also-invalid" ]
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:kb_chat_provider]).to include("is not a supported knowledge chat provider")
+      expect(setting.errors[:kb_chat_fallback_providers]).to include("contains unsupported providers: also-invalid")
+    end
+
     it "rejects non-array knowledge fallback provider values" do
       setting.kb_embedding_fallback_providers = "not_an_array"
       setting.kb_chat_fallback_providers = {}

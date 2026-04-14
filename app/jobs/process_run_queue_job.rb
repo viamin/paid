@@ -271,6 +271,8 @@ class ProcessRunQueueJob < ApplicationJob
   # transitions. Skip validations so unrelated model state cannot strand
   # the run in queued/pending, but still save normally so after_commit
   # hooks broadcast the terminal status and enqueue finished-run followups.
+  # Bundled with #1041 because knowledge fallback testing surfaced this
+  # stranded-run bug; splitting would leave the failure path broken on main.
   def force_fail_run(agent_run, error:)
     agent_run.assign_attributes(
       status: "failed",

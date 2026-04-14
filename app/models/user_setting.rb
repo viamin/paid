@@ -9,6 +9,7 @@ class UserSetting < ApplicationRecord
   MAX_DELAY_SECONDS = 86_400
   KB_EMBEDDING_PROVIDERS = Provider::OPENAI_COMPATIBLE_DIRECT_OUTBOUND_API_PROVIDER_KEYS.freeze
   KB_EMBEDDING_PROVIDER_DEFAULT = "openai"
+  KB_CHAT_PROVIDERS = ProviderSupport::APP_TO_HARNESS_PROVIDER_KEYS.keys.freeze
   KB_CHAT_PROVIDER_DEFAULT = "claude"
 
   belongs_to :user
@@ -346,12 +347,16 @@ class UserSetting < ApplicationRecord
 
   def validate_kb_chat_provider
     self.kb_chat_provider = normalize_kb_provider(kb_chat_provider, default: KB_CHAT_PROVIDER_DEFAULT)
+    return if KB_CHAT_PROVIDERS.include?(kb_chat_provider)
+
+    errors.add(:kb_chat_provider, "is not a supported knowledge chat provider")
   end
 
   def validate_kb_chat_fallback_providers
     self.kb_chat_fallback_providers = normalize_kb_provider_list(
       kb_chat_fallback_providers,
-      attribute: :kb_chat_fallback_providers
+      attribute: :kb_chat_fallback_providers,
+      supported_providers: KB_CHAT_PROVIDERS
     )
   end
 
