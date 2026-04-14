@@ -190,6 +190,27 @@ RSpec.describe UserSetting do
       expect(setting.provider_priority_for_goal("review", identifiers: true).first).to eq(codex.routing_key)
     end
 
+    it "wraps fallback order around a goal-specific provider lower in the configured list" do
+      cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      codex = user.providers.create!(provider_key: "codex", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      setting = create(
+        :user_setting,
+        user: user,
+        default_agent_provider: user.providers.find_by!(provider_key: "claude").routing_key,
+        default_agent_providers_by_goal: { "review" => codex.routing_key },
+        fallback_enabled: true,
+        fallback_providers: [
+          user.providers.find_by!(provider_key: "claude").routing_key,
+          cursor.routing_key,
+          codex.routing_key
+        ]
+      )
+
+      expect(setting.provider_priority_for_goal("review", identifiers: true)).to eq(
+        [ codex.routing_key, user.providers.find_by!(provider_key: "claude").routing_key, cursor.routing_key ]
+      )
+    end
+
     it "rejects invalid goals" do
       setting = build(:user_setting, user: user, default_agent_providers_by_goal: { "ship_it" => "claude" })
 
@@ -382,10 +403,10 @@ RSpec.describe UserSetting do
       expect(setting.fallback_priority_for(primary_provider: "claude")).to eq(%w[aider cursor])
     end
 
-    it "excludes the current primary provider from fallback order" do
+    it "wraps configured order after the current primary provider" do
       setting = build(:user_setting, user: user, fallback_providers: %w[claude cursor aider])
 
-      expect(setting.fallback_priority_for(primary_provider: "cursor")).to eq(%w[claude aider])
+      expect(setting.fallback_priority_for(primary_provider: "cursor")).to eq(%w[aider claude])
     end
   end
 

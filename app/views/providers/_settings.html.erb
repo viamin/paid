@@ -71,7 +71,7 @@
           <%= form.check_box :fallback_enabled, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
           <%= form.label :fallback_enabled, "Enable automatic provider fallback", class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>
         </div>
-        <p class="-mt-4 ml-7 text-xs text-gray-500">When enabled, the system will try the other configured fallback providers in the order below.</p>
+        <p class="-mt-4 ml-7 text-xs text-gray-500">When enabled, the system will try the other configured fallback providers using the order below. If the active primary appears in that order, fallback starts after it and wraps around.</p>
 
         <div data-controller="sortable">
           <p class="mb-2 text-sm font-medium text-gray-700">Fallback order:</p>
@@ -124,7 +124,7 @@
                  data-sortable-target="enabledInput">
         </div>
 
-        <p class="text-xs text-gray-500">The primary provider is excluded automatically. Use the checkboxes to enable or disable individual providers as fallbacks.</p>
+        <p class="text-xs text-gray-500">The active primary provider is excluded automatically for each run. Use the checkboxes to enable or disable individual providers as fallbacks.</p>
 
         <div class="flex justify-end">
           <%= form.submit "Save Provider Settings", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
