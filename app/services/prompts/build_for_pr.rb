@@ -17,6 +17,10 @@ module Prompts
   class BuildForPr
     include ServiceContainerSections
 
+    DEFAULT_MAX_COMMENTS = BuildForIssue::DEFAULT_MAX_COMMENTS
+    DEFAULT_MAX_COMMENT_LENGTH = BuildForIssue::DEFAULT_MAX_COMMENT_LENGTH
+    GITHUB_COMMENTS_PER_PAGE = 100
+    MAX_RECENT_COMMENT_PAGES = 10
     ALREADY_ADDRESSED_MARKER = "PAID_REVIEW_THREADS_ALREADY_ADDRESSED"
 
     attr_reader :project, :pr_number, :github_client, :rebase_succeeded,
@@ -228,7 +232,7 @@ module Prompts
 
     def conversation_section
       comment_text = trusted_comments.map do |c|
-        "- **#{c.user.login}**: #{c.body}"
+        "- **#{c.user.login}**: #{truncate_comment_body(c.body.to_s)}"
       end.join("\n")
 
       <<~SECTION
@@ -283,11 +287,62 @@ module Prompts
 
     def trusted_comments
       @trusted_comments ||= begin
-        comments = github_client.issue_comments(project.full_name, pr_number)
-        comments.select { |c| project.trusted_github_user?(c.user&.login) }
+        recent_trusted_comments
       rescue GithubClient::Error
         []
       end
+    end
+
+    def prompt_comment_settings
+      @prompt_comment_settings ||= begin
+        settings = AgentRuns::UserSettingsResolver.call(project: project, strict: false)
+        {
+          max_comments: settings&.max_prompt_comments || DEFAULT_MAX_COMMENTS,
+          max_comment_length: settings&.max_comment_length || DEFAULT_MAX_COMMENT_LENGTH
+        }
+      end
+    end
+
+    def max_prompt_comments
+      prompt_comment_settings[:max_comments]
+    end
+
+    def max_comment_length
+      prompt_comment_settings[:max_comment_length]
+    end
+
+    def recent_comment_page_window
+      [
+        [ (max_prompt_comments.to_f / GITHUB_COMMENTS_PER_PAGE).ceil, 1 ].max,
+        MAX_RECENT_COMMENT_PAGES
+      ].min
+    end
+
+    def recent_trusted_comments
+      comments = github_client.recent_issue_comments(project.full_name, pr_number, pages: recent_comment_page_window)
+      trusted = select_trusted_comments(comments)
+      pages_fetched = recent_comment_page_window
+
+      while trusted.size < max_prompt_comments && pages_fetched < MAX_RECENT_COMMENT_PAGES
+        break unless comments.respond_to?(:next_older_page_url) && comments.next_older_page_url
+
+        older_page = github_client.fetch_issue_comment_page(comments.next_older_page_url)
+        trusted = select_trusted_comments(older_page) + trusted
+        pages_fetched += 1
+        comments = older_page
+      end
+
+      trusted.last(max_prompt_comments)
+    end
+
+    def select_trusted_comments(comments)
+      comments.select { |comment| project.trusted_github_user?(comment.user&.login) }
+    end
+
+    def truncate_comment_body(body)
+      return body if body.length <= max_comment_length
+
+      "#{body[0, max_comment_length]}… [truncated]"
     end
 
     def detected_language
