@@ -5,9 +5,8 @@ require Rails.root.join("db/migrate/20260414154102_backfill_legacy_review_max_ro
 
 RSpec.describe BackfillLegacyReviewMaxRoundsDefaults, :aggregate_failures do
   before do
-    # The paid_agent validation requires GitHub App credentials that don't exist
-    # in the test environment. Migration specs test data that predates the
-    # validation, so stub it out.
+    # This migration exercises persisted legacy review settings that predate the
+    # paid_agent credential validation added later in app code.
     allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
   end
 

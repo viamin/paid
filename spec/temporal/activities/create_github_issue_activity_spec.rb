@@ -11,6 +11,8 @@ RSpec.describe Activities::CreateGithubIssueActivity do
   end
   let(:github_client) { instance_double(GithubClient) }
   let(:issue_response) do
+    # UpsertFromGithub inspects the GitHub issue shape for pull_request even
+    # when the created object is a normal issue.
     Struct.new(:html_url, :number, :id, :title, :body, :state, :user, :labels, :created_at, :updated_at, :pull_request).new(
       "https://github.com/owner/repo/issues/10",
       10,
