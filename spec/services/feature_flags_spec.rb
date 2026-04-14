@@ -41,6 +41,17 @@ RSpec.describe FeatureFlags do
     end
   end
 
+  describe ".disable!" do
+    it "clears actor gates when disabling globally" do
+      described_class.enable!(:explicit_pr_automation_decisions, project:)
+      expect(described_class.enabled?(:explicit_pr_automation_decisions, project:)).to be(true)
+
+      described_class.disable!(:explicit_pr_automation_decisions)
+
+      expect(described_class.enabled?(:explicit_pr_automation_decisions, project:)).to be(false)
+    end
+  end
+
   describe ".snapshot" do
     it "returns the current boolean state for every registered flag" do
       described_class.enable!(:explicit_pr_automation_decisions, project:)

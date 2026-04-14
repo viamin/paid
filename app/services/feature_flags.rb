@@ -43,7 +43,13 @@ class FeatureFlags
 
     def disable!(flag_name, project: nil, actor: nil)
       resolved_actor = resolve_actor(project:, actor:)
-      return feature(flag_name).disable unless resolved_actor
+
+      unless resolved_actor
+        # Flipper's boolean-gate disable already calls clear(feature), which
+        # removes all gates (actor, group, percentage, etc.), so a global
+        # disable is a complete rollback — no stale actor gates survive.
+        return feature(flag_name).disable
+      end
 
       feature(flag_name).disable(resolved_actor)
     end
