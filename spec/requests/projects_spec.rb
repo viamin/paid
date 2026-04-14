@@ -572,6 +572,20 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Quick Run")
       end
 
+      it "color-codes only priority labels in synced issues" do
+        project = create(:project, account: account, github_token: github_token,
+          priority_labels: { "P1" => "urgent", "P2" => "high-touch", "P3" => "later" })
+        create(:issue, project: project, github_number: 5, title: "Styled labels",
+          github_state: "open", labels: [ "urgent", "bug", "later", "P0" ])
+
+        get project_path(project)
+
+        expect(response.body).to match(/<span class="[^"]*bg-red-100 text-red-800[^"]*">urgent<\/span>/)
+        expect(response.body).to match(/<span class="[^"]*bg-blue-100 text-blue-800[^"]*">later<\/span>/)
+        expect(response.body).to match(/<span class="[^"]*bg-red-700 text-red-50[^"]*">P0<\/span>/)
+        expect(response.body).to match(/<span class="[^"]*bg-gray-100 text-gray-600[^"]*">bug<\/span>/)
+      end
+
       it "shows Quick Run buttons next to pull requests" do
         project = create(:project, account: account, github_token: github_token)
         pr = create(:issue, :pull_request, project: project, github_number: 8, title: "Test PR", github_state: "open")

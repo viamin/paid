@@ -11,7 +11,7 @@
     <% if issue.labels.any? %>
       <div class="mt-1 flex flex-wrap gap-1">
         <% issue.labels.each do |label| %>
-          <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"><%= label %></span>
+          <span class="<%= issue_label_badge_classes(project, label) %>"><%= label %></span>
         <% end %>
       </div>
     <% end %>
