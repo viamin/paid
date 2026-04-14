@@ -57,13 +57,6 @@ database_available = begin
   true
 rescue ActiveRecord::PendingMigrationError => e
   abort e.to_s.strip
-rescue ActiveRecord::StatementInvalid => e
-  if e.message.include?("PG::ObjectInUse")
-    warn "[WARN] Test DB purge skipped because lingering sessions still held the database; continuing with the existing test schema."
-    true
-  else
-    raise
-  end
 rescue ActiveRecord::ConnectionNotEstablished => e
   if ENV["ALLOW_DBLESS_SPECS"] == "true"
     warn "[WARN] ActiveRecord::ConnectionNotEstablished during test schema maintenance: #{e.message}. " \

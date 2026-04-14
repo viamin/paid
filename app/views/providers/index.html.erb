@@ -89,37 +89,31 @@
       By default, Test Agent uses the same containerized auth path as real runs. For Codex and Gemini when using Paid-managed proxy keys, it can instead use the agent-harness auth path. Copilot currently stays on the container path because Paid's installed Copilot CLI is not yet invocation-compatible with the built-in agent-harness Copilot adapter. Configure either Paid-managed API keys on the <code>web</code> service or provider-specific subscription credentials that the agent container can copy at runtime.
     </p>
 
-    <div class="mt-4 grid gap-4 md:grid-cols-3">
-      <div class="rounded-md bg-white/80 p-3 shadow-sm ring-1 ring-sky-100">
-        <h3 class="text-sm font-semibold text-gray-900">Claude</h3>
-        <p class="mt-1 text-xs text-gray-600">Use one of these:</p>
-        <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-700">
-          <li>Set <code>ANTHROPIC_API_KEY</code> on the <code>web</code> service for proxy-based auth.</li>
-          <li>Or sign in with <code>claude login</code> and make <code>~/.claude/.credentials.json</code> visible to Paid.</li>
-          <li>If Claude creds live elsewhere, set <code>CLAUDE_CONFIG_DIR</code>.</li>
-        </ul>
-      </div>
-
-      <div class="rounded-md bg-white/80 p-3 shadow-sm ring-1 ring-sky-100">
-        <h3 class="text-sm font-semibold text-gray-900">Codex and OpenCode</h3>
-        <p class="mt-1 text-xs text-gray-600">Use one of these:</p>
-        <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-700">
-          <li>Set <code>OPENAI_API_KEY</code> on the <code>web</code> service for proxy-based auth.</li>
-          <li>OpenCode API-key entries can also talk directly to OpenRouter using a saved OpenRouter key plus a provider-level model ID.</li>
-          <li>Or sign in with the Codex CLI and make <code>~/.codex/auth.json</code> visible to Paid.</li>
-          <li>If Codex creds live elsewhere, set <code>CODEX_CONFIG_DIR</code> or <code>CODEX_HOME</code>. OpenCode uses the proxy path and does not currently have a separate local credential directory.</li>
-        </ul>
-      </div>
-
-      <div class="rounded-md bg-white/80 p-3 shadow-sm ring-1 ring-sky-100">
-        <h3 class="text-sm font-semibold text-gray-900">Gemini</h3>
-        <p class="mt-1 text-xs text-gray-600">Use one of these:</p>
-        <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-700">
-          <li>Set <code>GOOGLE_API_KEY</code> on the <code>web</code> service for proxy-based auth.</li>
-          <li>Or run <code>gemini auth login</code> and make <code>~/.gemini/oauth_creds.json</code> visible to Paid.</li>
-          <li>If Gemini creds live elsewhere, set <code>GEMINI_CONFIG_DIR</code>.</li>
-        </ul>
-      </div>
+    <div class="mt-4 space-y-3" data-provider-auth-instructions>
+      <% provider_auth_instruction_blocks.each do |instruction| %>
+        <details class="rounded-md bg-white/80 shadow-sm ring-1 ring-sky-100" data-provider-instruction-key="<%= instruction[:provider_key] %>">
+          <summary class="cursor-pointer list-none px-4 py-3">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <h3 class="text-sm font-semibold text-gray-900"><%= instruction[:title] %></h3>
+                <p class="mt-1 text-xs text-gray-600"><%= instruction[:summary] %></p>
+              </div>
+              <% if instruction[:fallback] %>
+                <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                  Generic Checklist
+                </span>
+              <% end %>
+            </div>
+          </summary>
+          <div class="border-t border-sky-100 px-4 py-3">
+            <ul class="list-disc space-y-1 pl-5 text-xs text-gray-700">
+              <% instruction[:items].each do |item| %>
+                <li><%= sanitize(item, tags: %w[code]) %></li>
+              <% end %>
+            </ul>
+          </div>
+        </details>
+      <% end %>
     </div>
 
     <p class="mt-4 text-xs text-sky-900">

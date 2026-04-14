@@ -96,6 +96,21 @@ module ApplicationHelper
     )
   end
 
+  GITHUB_PRIORITY_LABEL_STYLES = {
+    "P0" => "bg-red-700 text-red-50",
+    "P1" => "bg-red-100 text-red-800",
+    "P2" => "bg-orange-100 text-orange-800",
+    "P3" => "bg-blue-100 text-blue-800"
+  }.freeze
+
+  DEFAULT_ISSUE_LABEL_STYLE = "bg-gray-100 text-gray-600"
+
+  def issue_label_badge_classes(project, label)
+    priority_tier = priority_tier_for_label(project, label)
+    styles = GITHUB_PRIORITY_LABEL_STYLES.fetch(priority_tier, DEFAULT_ISSUE_LABEL_STYLE)
+    "inline-flex items-center rounded-full px-2 py-0.5 text-xs #{styles}"
+  end
+
   SERVICE_CONTAINER_STATUS_STYLES = {
     "stopped" => { bg: "bg-gray-100", text: "text-gray-700", label: "Stopped" },
     "starting" => { bg: "bg-yellow-100", text: "text-yellow-800", label: "Starting" },
@@ -339,5 +354,16 @@ module ApplicationHelper
     yield
   rescue Propshaft::MissingAssetError
     raise unless Rails.env.test?
+  end
+
+  private
+
+  def priority_tier_for_label(project, label)
+    return "P0" if label == "P0"
+    return if project.blank?
+
+    Project::PRIORITY_TIERS.find do |tier|
+      label == project.priority_label_for(tier)
+    end
   end
 end
