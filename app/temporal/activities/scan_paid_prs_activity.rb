@@ -19,6 +19,7 @@ module Activities
     activity_name "ScanPaidPrs"
 
     MIN_COMMENT_LENGTH = 20
+    CI_ACTION_DISPATCH_GRACE_PERIOD = 2.minutes
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
     # Body-only review bots (currently Codex) signal "no findings" by posting
@@ -320,7 +321,7 @@ module Activities
         if !checks.nil? && all_checks_green?(checks)
           # Check non-bot review gates (manual reviewer, ci_action) before advancing.
           reviews ||= fetch_reviews(client, project, issue) # safety: reviews already fetched above
-          gate_triggers = non_bot_review_gate_triggers(project, reviews, checks)
+          gate_triggers = non_bot_review_gate_triggers(project, issue, reviews, checks)
           if gate_triggers.any?
             all_pending = pending_triggers + sidecar_triggers + gate_triggers
             log_triggers(project, issue, all_pending)
@@ -530,7 +531,7 @@ module Activities
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
       triggers.concat(check_merge_conflicts(project, pr_data))
-      triggers.concat(non_bot_review_gate_triggers(project, reviews, checks))
+      triggers.concat(non_bot_review_gate_triggers(project, issue, reviews, checks))
 
       # When a critical signal source failed but we found actionable
       # triggers from other sources, return them so downstream actions
@@ -731,7 +732,7 @@ module Activities
     # (manual or ci_action) has not yet been satisfied. These gates prevent
     # the scanner from advancing a PR when a human reviewer or a specific
     # CI action has not approved/completed.
-    def non_bot_review_gate_triggers(project, reviews, checks)
+    def non_bot_review_gate_triggers(project, issue, reviews, checks)
       return [] unless project.review_enabled?
 
       triggers = []
@@ -747,8 +748,10 @@ module Activities
       if project.review_method_enabled?("ci_action") && !checks.nil?
         action_name = project.review_method_config("ci_action")["action_name"]
         if action_name.present? && !ci_action_succeeded?(checks, action_name)
+          dispatch_needed = ci_action_dispatch_required?(issue, checks, action_name)
+          issue.update_column(:ci_action_dispatched_at, Time.current) if dispatch_needed
           triggers << { type: "ci_action_pending", action_name: action_name,
-                        dispatch_required: ci_action_dispatch_required?(checks, action_name),
+                        dispatch_required: dispatch_needed,
                         details: "Awaiting successful #{action_name} check" }
         end
       end
@@ -776,10 +779,20 @@ module Activities
       matching&.dig(:conclusion) == "success"
     end
 
-    def ci_action_dispatch_required?(checks, action_name)
+    def ci_action_dispatch_required?(issue, checks, action_name)
+      return false unless claude_review_action?(action_name)
+      return false if ci_action_dispatch_suppressed?(issue)
       return true if checks.nil? || checks.empty?
 
       checks.none? { |c| c[:name] == action_name.strip }
+    end
+
+    def claude_review_action?(action_name)
+      action_name.strip == DispatchClaudeReviewActivity::ACTION_NAME
+    end
+
+    def ci_action_dispatch_suppressed?(issue)
+      issue.ci_action_dispatched_at.present? && issue.ci_action_dispatched_at >= CI_ACTION_DISPATCH_GRACE_PERIOD.ago
     end
 
     # --- Review checks ---
@@ -1519,7 +1532,7 @@ module Activities
           pr_number: issue.github_number
         )
       end
-      return false if non_bot_review_gate_triggers(project, reviews, effective_checks).any?
+      return false if non_bot_review_gate_triggers(project, issue, reviews, effective_checks).any?
       return false if check_non_enabled_bot_reviews(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue).any?
 

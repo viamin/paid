@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_13_193654) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_14_092756) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -454,6 +454,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193654) do
   create_table "issues", force: :cascade do |t|
     t.boolean "auto_continue_paused", default: false, null: false
     t.text "body"
+    t.datetime "ci_action_dispatched_at"
     t.datetime "created_at", null: false
     t.integer "draft_review_count", default: 0, null: false
     t.datetime "github_created_at", null: false

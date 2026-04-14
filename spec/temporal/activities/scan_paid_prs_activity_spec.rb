@@ -3062,6 +3062,73 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(types).not_to include("ready_for_owner")
         pending_trigger = trigger[:triggers].find { |t| t[:type] == "ci_action_pending" }
         expect(pending_trigger[:action_name]).to eq("e2e-suite")
+        expect(pending_trigger[:dispatch_required]).to be(false)
+      end
+    end
+
+    context "when draft PR has Claude ci_action review and the check is still missing on the first scan" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "ci_action" => { "enabled" => true, "action_name" => "Claude Code Review" } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+      end
+
+      it "requests a repository_dispatch and stamps ci_action_dispatched_at" do
+        result = activity.execute(project_id: project.id)
+
+        pending_trigger = result[:prs_to_trigger].first[:triggers].find { |t| t[:type] == "ci_action_pending" }
+        expect(pending_trigger[:dispatch_required]).to be(true)
+
+        issue = Issue.find_by(github_number: 42)
+        expect(issue.ci_action_dispatched_at).to be_within(5.seconds).of(Time.current)
+      end
+    end
+
+    context "when draft PR has Claude ci_action review and a recent scan already requested dispatch" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0,
+          ci_action_dispatched_at: 1.minute.ago)
+      end
+
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "ci_action" => { "enabled" => true, "action_name" => "Claude Code Review" } }
+          }
+        )
+        pr_issue
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+      end
+
+      it "suppresses redispatch until the grace window expires" do
+        result = activity.execute(project_id: project.id)
+
+        pending_trigger = result[:prs_to_trigger].first[:triggers].find { |t| t[:type] == "ci_action_pending" }
+        expect(pending_trigger[:dispatch_required]).to be(false)
       end
     end
 
