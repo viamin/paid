@@ -20,6 +20,10 @@ RSpec.describe EmbedChunksJob do
 
     it "calls the embedding pipeline with a project" do
       allow(Knowledge::Embeddings::Pipeline).to receive(:call)
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("OPENAI_API_BASE_URL", anything).and_call_original
 
       described_class.perform_now(project.id)
 
