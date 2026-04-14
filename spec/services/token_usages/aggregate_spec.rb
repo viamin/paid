@@ -23,6 +23,30 @@ RSpec.describe TokenUsages::Aggregate do
       expect(result[:cost_by_model]).to include("claude-3-5-sonnet-20241022" => 10, "gpt-4o" => 20)
       expect(result[:cost_by_request_type]).to include("agent" => 10, "planning" => 20)
     end
+
+    it "includes run_delta records without double-counting run_summary audit totals" do
+      kilocode_run = create(:agent_run, :kilocode, :running, project: project)
+      create(:token_usage, agent_run: kilocode_run, request_type: "run_summary",
+             input_tokens: 4000, output_tokens: 1500, cost_cents: 26,
+             llm_model: "anthropic/claude-sonnet-4.5")
+      create(:token_usage, agent_run: kilocode_run, request_type: "agent",
+             input_tokens: 1000, output_tokens: 500, cost_cents: 7,
+             llm_model: "anthropic/claude-sonnet-4.5")
+      create(:token_usage, agent_run: kilocode_run, request_type: "run_delta",
+             input_tokens: 3000, output_tokens: 1000, cost_cents: 19,
+             llm_model: "anthropic/claude-sonnet-4.5")
+
+      result = described_class.call
+
+      aggregate_failures do
+        expect(result[:total_cost_cents]).to eq(56)
+        expect(result[:total_input_tokens]).to eq(7000)
+        expect(result[:total_output_tokens]).to eq(3000)
+        expect(result[:cost_by_model]).to include("anthropic/claude-sonnet-4.5" => 26)
+        expect(result[:cost_by_request_type]).to include("agent" => 17, "planning" => 20, "run_delta" => 19)
+        expect(result[:cost_by_request_type]).not_to include("run_summary")
+      end
+    end
   end
 
   describe ".for_project" do
