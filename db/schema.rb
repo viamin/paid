@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_14_154102) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -1047,6 +1047,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
     t.integer "github_token_cache_ttl_minutes", default: 60, null: false
     t.integer "issue_goal_idle_timeout_seconds", default: 120, null: false
     t.integer "issue_goal_timeout_seconds", default: 600, null: false
+    t.jsonb "kb_chat_fallback_providers", default: [], null: false
+    t.string "kb_chat_provider", default: "claude", null: false
+    t.jsonb "kb_embedding_fallback_providers", default: [], null: false
+    t.string "kb_embedding_provider", default: "openai", null: false
     t.integer "max_comment_length", default: 2000, null: false
     t.integer "max_concurrent_runs", default: 2, null: false
     t.integer "max_issues_per_page", default: 50, null: false
