@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require "ostruct"
+require "securerandom"
 
 RSpec.describe Prompts::BuildForPr do
   let(:project) { create(:project, allowed_github_usernames: [ "trusteduser" ]) }
@@ -34,6 +35,31 @@ RSpec.describe Prompts::BuildForPr do
         github_client: github_client,
         rebase_succeeded: true
       )
+    end
+
+    it "renders the instructions shell from an explicit prompt version when provided" do
+      prompt = create(:prompt, :global, slug: "test.#{SecureRandom.hex(8)}")
+      stale_version = prompt.create_version!(
+        template: "Pinned instructions {{lint_command}}",
+        variables: [
+          { "name" => "lint_command", "required" => true, "description" => "Lint command" }
+        ]
+      )
+      prompt.create_version!(
+        template: "Current instructions should not render",
+        variables: []
+      )
+
+      rendered = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        prompt_version: stale_version
+      )
+
+      expect(rendered).to include("Pinned instructions bundle exec rubocop")
+      expect(rendered).not_to include("Current instructions should not render")
     end
 
     it "includes the PR title and number" do

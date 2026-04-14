@@ -20,10 +20,10 @@ module Prompts
     ALREADY_ADDRESSED_MARKER = "PAID_REVIEW_THREADS_ALREADY_ADDRESSED"
 
     attr_reader :project, :pr_number, :github_client, :rebase_succeeded,
-                :lint_command, :test_command, :issue
+                :lint_command, :test_command, :issue, :prompt_version
 
     def initialize(project:, pr_number:, github_client:, rebase_succeeded:,
-                   lint_command: nil, test_command: nil, issue: nil)
+                   lint_command: nil, test_command: nil, issue: nil, prompt_version: nil)
       @project = project
       @pr_number = pr_number
       @github_client = github_client
@@ -31,6 +31,7 @@ module Prompts
       @lint_command = lint_command || detected_lint_command
       @test_command = test_command || detected_test_command
       @issue = issue
+      @prompt_version = prompt_version
     end
 
     def self.call(...)
@@ -113,6 +114,8 @@ module Prompts
         lint_command: lint_command,
         test_command: test_command
       }
+
+      return prompt_version.render(vars) if prompt_version.present?
 
       Prompts::Render.call(
         slug: PROMPT_SLUG,

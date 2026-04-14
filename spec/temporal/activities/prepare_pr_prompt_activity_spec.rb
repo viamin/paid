@@ -59,6 +59,30 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(agent_run.reload.prompt_version).to eq(prompt.current_version)
     end
 
+    it "renders the stored prompt from the same resolved prompt version" do
+      pinned_version = prompt.create_version!(
+        template: "Pinned shell {{priority_list}}",
+        variables: [
+          { "name" => "priority_list", "required" => true, "description" => "Priority list" }
+        ]
+      )
+      prompt.create_version!(
+        template: "New current shell",
+        variables: []
+      )
+
+      allow(Prompts::Resolve).to receive(:call)
+        .with(slug: Prompts::BuildForPr::PROMPT_SLUG, project: project)
+        .and_return(pinned_version)
+
+      activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      agent_run.reload
+      expect(agent_run.prompt_version).to eq(pinned_version)
+      expect(agent_run.custom_prompt).to include("Pinned shell")
+      expect(agent_run.custom_prompt).not_to include("New current shell")
+    end
+
     it "returns prompt_length" do
       result = activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
 
