@@ -241,16 +241,23 @@ class UserSetting < ApplicationRecord
   # Saved order is respected first, then any other configured fallback providers
   # are appended so newly added providers participate automatically.
   #
+  # If the current primary appears in the saved fallback order, fallback wraps
+  # around that position so a goal-specific or manually selected primary lower
+  # in the list still exhausts the providers after it before wrapping to the
+  # providers above it.
+  #
   # @param primary_provider [String] The provider already being attempted
   # @return [Array<String>] Fallback provider keys in attempt order
   def fallback_priority_for(primary_provider:, identifiers: false)
-    primary_identifiers = identifiers_for_provider_token(primary_provider, candidates: allowed_provider_identifiers_for_fallback)
-    candidates = allowed_provider_identifiers_for_fallback.reject { |provider| primary_identifiers.include?(provider) || provider == primary_provider }
+    candidates = allowed_provider_identifiers_for_fallback
     saved_order = Array(fallback_providers).flat_map do |provider|
       identifiers_for_provider_token(provider, candidates: candidates)
     end
-
-    priorities = (saved_order + (candidates - saved_order)).uniq
+    ordered_candidates = (saved_order + (candidates - saved_order)).uniq
+    primary_identifiers = identifiers_for_provider_token(primary_provider, candidates: ordered_candidates)
+    primary_index = saved_order.index { |provider| primary_identifiers.include?(provider) || provider == primary_provider }
+    rotated_candidates = primary_index ? ordered_candidates.rotate(primary_index + 1) : ordered_candidates
+    priorities = rotated_candidates.reject { |provider| primary_identifiers.include?(provider) || provider == primary_provider }
     return priorities if identifiers
 
     map_identifiers_to_provider_keys(priorities)
