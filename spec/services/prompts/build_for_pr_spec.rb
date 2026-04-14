@@ -315,6 +315,28 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Trusted comment 205")
     end
 
+    it "clamps the initial trailing page window to the safety cap" do
+      expanded_settings = instance_double(UserSetting, max_prompt_comments: 5_000, max_comment_length: 2000)
+      expanded_comments = recent_comments_with_page_state(
+        trusted_recent_comments(25),
+        multi_page: true,
+        older_pages_available: false
+      )
+
+      allow(AgentRuns::UserSettingsResolver).to receive(:call)
+        .with(project: project, strict: false)
+        .and_return(expanded_settings)
+      allow(github_client).to receive(:recent_issue_comments)
+        .with(project.full_name, 42, pages: 10)
+        .and_return(expanded_comments)
+
+      described_class.call(project: project, pr_number: 42, github_client: github_client, rebase_succeeded: true)
+
+      expect(github_client).to have_received(:recent_issue_comments)
+        .with(project.full_name, 42, pages: 10)
+        .once
+    end
+
     it "backfills older recent pages until it collects enough trusted comments" do
       limited_settings = instance_double(UserSetting, max_prompt_comments: 20, max_comment_length: 2000)
       newest_comments = recent_comments_with_page_state(

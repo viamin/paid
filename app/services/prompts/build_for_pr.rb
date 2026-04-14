@@ -288,7 +288,10 @@ module Prompts
     end
 
     def recent_comment_page_window
-      [ (max_prompt_comments.to_f / GITHUB_COMMENTS_PER_PAGE).ceil, 1 ].max
+      [
+        [ (max_prompt_comments.to_f / GITHUB_COMMENTS_PER_PAGE).ceil, 1 ].max,
+        MAX_RECENT_COMMENT_PAGES
+      ].min
     end
 
     def recent_trusted_comments
