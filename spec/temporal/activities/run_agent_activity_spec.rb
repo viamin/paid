@@ -556,6 +556,25 @@ RSpec.describe Activities::RunAgentActivity do
         expect(activity).to have_received(:sleep).with(0.25)
       end
 
+      it "retries wrapped container exec failures before checking for changes" do
+        commit_attempts = 0
+
+        allow(activity).to receive(:sleep)
+        allow(git_ops).to receive(:commit_uncommitted_changes) do
+          commit_attempts += 1
+          raise Containers::Provision::ExecutionError, "Docker exec error: Connection reset" if commit_attempts == 1
+
+          true
+        end
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(true)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be true
+        expect(git_ops).to have_received(:commit_uncommitted_changes).twice
+        expect(activity).to have_received(:sleep).with(0.25)
+      end
+
       it "auto-commits uncommitted changes after agent runs" do
         allow(git_ops).to receive(:has_changes_since?).and_return(true)
 
@@ -609,6 +628,49 @@ RSpec.describe Activities::RunAgentActivity do
         expect(result[:has_changes]).to be true
         expect(git_ops).to have_received(:has_changes_since?).twice
         expect(activity).to have_received(:sleep).with(0.25)
+      end
+
+      it "retries wrapped container reconnect failures before succeeding" do
+        attempts = 0
+
+        allow(activity).to receive(:sleep)
+        allow(Containers::Provision).to receive(:reconnect) do
+          attempts += 1
+          raise Containers::Provision::ProvisionError, "Failed to reconnect to container: connection reset" if attempts == 2
+
+          container_service
+        end
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(true)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be true
+        expect(Containers::Provision).to have_received(:reconnect).at_least(:twice)
+        expect(activity).to have_received(:sleep).with(0.25)
+      end
+
+      it "does not retry permanent container-not-found reconnect failures" do
+        allow(activity).to receive(:sleep)
+        attempts = 0
+        allow(Containers::Provision).to receive(:reconnect) do
+          attempts += 1
+          raise Containers::Provision::ProvisionError, "Container #{agent_run.container_id} not found" if attempts == 2
+
+          container_service
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.type).to eq("PostRunBookkeepingFailed")
+          expect(error.non_retryable).to be(true)
+          expect(error.message).to include("Post-run commit_uncommitted_changes failed after 1 attempts")
+          expect(error.message).to include("Containers::Provision::ProvisionError")
+          expect(error.message).to include("not found")
+        }
+
+        expect(activity).not_to have_received(:sleep)
+        expect(Containers::Provision).to have_received(:reconnect).twice
       end
 
       it "raises a non-retryable ApplicationError when change detection keeps failing after transient retries" do

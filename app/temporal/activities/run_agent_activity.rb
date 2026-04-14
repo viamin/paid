@@ -1146,6 +1146,9 @@ module Activities
     end
 
     def transient_container_error?(error)
+      return true if error.is_a?(Containers::Provision::ExecutionError)
+      return true if reconnect_failure?(error)
+
       [
         Docker::Error::DockerError,
         Timeout::Error,
@@ -1159,6 +1162,11 @@ module Activities
       ].any? { |klass| error.is_a?(klass) } ||
         error.class.ancestors.any? { |ancestor| ancestor.name == "Excon::Error" } ||
         %w[Net::OpenTimeout Net::ReadTimeout].include?(error.class.name)
+    end
+
+    def reconnect_failure?(error)
+      error.is_a?(Containers::Provision::ProvisionError) &&
+        error.message.start_with?("Failed to reconnect to container:")
     end
 
     def augment_prompt_for_goal(agent_run, prompt)
