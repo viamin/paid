@@ -9,11 +9,25 @@ RSpec.describe Activities::CreateAggregatedPullRequestActivity do
   let(:client) { instance_double(GithubClient) }
   let(:github_token) { instance_double(GithubToken, client: client) }
   let(:pr_response) { OpenStruct.new(html_url: "https://github.com/test/repo/pull/42", number: 42) }
+  let(:issue_response) do
+    OpenStruct.new(
+      id: 4242,
+      number: 42,
+      title: "Aggregated PR",
+      body: "Body",
+      state: "open",
+      labels: [],
+      pull_request: OpenStruct.new(html_url: "https://github.com/test/repo/pull/42"),
+      user: OpenStruct.new(login: "viamin"),
+      created_at: Time.zone.parse("2026-04-14 00:00:00 UTC"),
+      updated_at: Time.zone.parse("2026-04-14 00:01:00 UTC")
+    )
+  end
 
   before do
     allow(Project).to receive(:find).with(project.id).and_return(project)
     allow(project).to receive(:github_token).and_return(github_token)
-    allow(client).to receive(:create_pull_request).and_return(pr_response)
+    allow(client).to receive_messages(create_pull_request: pr_response, issue: issue_response)
     allow(client).to receive(:add_labels_to_issue)
   end
 
@@ -44,6 +58,12 @@ RSpec.describe Activities::CreateAggregatedPullRequestActivity do
       )
       expect(result[:pull_request_url]).to eq("https://github.com/test/repo/pull/42")
       expect(result[:pull_request_number]).to eq(42)
+    end
+
+    it "syncs a local pull request row for the aggregated PR" do
+      expect {
+        activity.execute(base_input)
+      }.to change { project.issues.pull_requests_only.where(github_number: 42).count }.by(1)
     end
 
     it "includes parent issue in PR title when provided" do
@@ -127,6 +147,8 @@ RSpec.describe Activities::CreateAggregatedPullRequestActivity do
         42,
         [ project.generated_label_name, project.automation_label_name ]
       )
+      expect(project.issues.pull_requests_only.find_by!(github_number: 42).labels)
+        .to include(project.generated_label_name, project.automation_label_name)
     end
 
     it "inherits matching priority labels from the parent issue" do

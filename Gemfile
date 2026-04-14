@@ -51,6 +51,10 @@ gem "agent-harness"
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
 gem "ruby-maat"
 
+# Runtime feature flags for staged rollouts
+gem "flipper"
+gem "flipper-active_record"
+
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem "tzinfo-data", platforms: %i[windows jruby]
 
@@ -102,10 +106,10 @@ group :development do
   gem "web-console"
 end
 
-gem "good_job", "~> 4.14"
+gem "good_job", "~> 4.15"
 
 # Pagination [https://github.com/ddnexus/pagy]
-gem "pagy", "~> 43.4"
+gem "pagy", "~> 43.5"
 
 # Search and filtering [https://github.com/activerecord-hackery/ransack]
 gem "ransack"

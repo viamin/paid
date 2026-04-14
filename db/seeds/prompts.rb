@@ -138,6 +138,8 @@ upsert_global_prompt.call(
     If the commit is rejected, read the error output carefully, fix the issues, and commit again.
     Keep iterating until the commit succeeds. Do not leave uncommitted changes.
 
+    {{already_addressed_instruction}}
+
     When you're done, commit all your changes. Do not push.
 
     # Rules — you MUST follow these
@@ -154,6 +156,7 @@ upsert_global_prompt.call(
     var.call("priority_list", "Numbered priority list assembled from PR state"),
     var.call("setup_database_instruction", "Optional database setup line", required: false),
     var.call("review_scan_instruction", "Extra clause emphasizing same-class issues when reviewers flagged something", required: false),
+    var.call("already_addressed_instruction", "Instruction to emit the already-addressed marker when all listed review threads are already fixed", required: false),
     var.call("lint_command", "Project lint command"),
     var.call("test_command", "Project test command")
   ]
