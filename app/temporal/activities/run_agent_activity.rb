@@ -1148,7 +1148,7 @@ module Activities
     end
 
     def transient_container_error?(error)
-      return true if error.is_a?(Containers::Provision::ExecutionError)
+      return true if error_or_cause_matches?(error, Containers::Provision::ExecutionError)
       return true if reconnect_failure?(error)
 
       [
@@ -1167,8 +1167,22 @@ module Activities
     end
 
     def reconnect_failure?(error)
-      error.is_a?(Containers::Provision::ProvisionError) &&
-        error.message.start_with?("Failed to reconnect to container:")
+      error_or_cause_matches?(error, Containers::Provision::ProvisionError) do |candidate|
+        candidate.message.start_with?("Failed to reconnect to container:")
+      end
+    end
+
+    def error_or_cause_matches?(error, klass, &block)
+      current = error
+
+      while current
+        return true if current.is_a?(klass) && (!block || block.call(current))
+
+        break unless current.respond_to?(:cause)
+        current = current.cause
+      end
+
+      false
     end
 
     def augment_prompt_for_goal(agent_run, prompt)

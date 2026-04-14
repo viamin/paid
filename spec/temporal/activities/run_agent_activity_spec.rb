@@ -438,6 +438,16 @@ RSpec.describe Activities::RunAgentActivity do
     expect(error.message).to include("Post-run #{operation} failed after 3 attempts")
   end
 
+  def wrap_error(inner_error, message = "wrapped failure")
+    begin
+      raise inner_error
+    rescue => e
+      raise StandardError, "#{message}: #{e.class}: #{e.message}"
+    end
+  rescue => wrapped
+    wrapped
+  end
+
   describe "#execute" do
     context "when agent succeeds in container" do
       before do
@@ -562,7 +572,9 @@ RSpec.describe Activities::RunAgentActivity do
         allow(activity).to receive(:sleep)
         allow(git_ops).to receive(:commit_uncommitted_changes) do
           commit_attempts += 1
-          raise Containers::Provision::ExecutionError, "Docker exec error: Connection reset" if commit_attempts == 1
+          raise wrap_error(
+            Containers::Provision::ExecutionError.new("Docker exec error: Connection reset")
+          ) if commit_attempts == 1
 
           true
         end
@@ -658,7 +670,9 @@ RSpec.describe Activities::RunAgentActivity do
         allow(activity).to receive(:sleep)
         allow(Containers::Provision).to receive(:reconnect) do
           attempts += 1
-          raise Containers::Provision::ProvisionError, "Failed to reconnect to container: connection reset" if attempts == 2
+          raise wrap_error(
+            Containers::Provision::ProvisionError.new("Failed to reconnect to container: connection reset")
+          ) if attempts == 2
 
           container_service
         end
@@ -676,7 +690,9 @@ RSpec.describe Activities::RunAgentActivity do
         attempts = 0
         allow(Containers::Provision).to receive(:reconnect) do
           attempts += 1
-          raise Containers::Provision::ProvisionError, "Container #{agent_run.container_id} not found" if attempts == 2
+          raise wrap_error(
+            Containers::Provision::ProvisionError.new("Container #{agent_run.container_id} not found")
+          ) if attempts == 2
 
           container_service
         end
