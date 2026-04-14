@@ -16,43 +16,9 @@ require "rspec/rails"
 # run as spec files by default.
 Dir[Rails.root.join("spec/support/**/*.rb")].each { |f| require f }
 
-def terminate_other_test_db_connections!
-  begin
-    require "pg"
-    require "uri"
-
-    database_url = ENV["DATABASE_URL"]
-    return if database_url.blank?
-
-    uri = URI(database_url)
-    database_name = uri.path.delete_prefix("/")
-    return if database_name.blank?
-
-    admin = PG.connect(
-      host: uri.host,
-      port: uri.port,
-      user: uri.user,
-      password: uri.password,
-      dbname: "postgres"
-    )
-    admin.exec_params(
-      "SELECT pg_terminate_backend(pid) " \
-      "FROM pg_stat_activity " \
-      "WHERE datname = $1 AND pid <> pg_backend_pid()",
-      [ database_name ]
-    )
-  rescue URI::InvalidURIError, PG::Error => e
-    warn "[WARN] Could not clear stale test DB connections: #{e.message}"
-  ensure
-    admin&.close
-  end
-end
-
 # Checks for pending migrations and applies them before tests are run.
 # If you are not using ActiveRecord, you can remove these lines.
 database_available = begin
-  ActiveRecord::Base.connection_handler.clear_all_connections!
-  terminate_other_test_db_connections!
   ActiveRecord::Migration.maintain_test_schema!
   true
 rescue ActiveRecord::PendingMigrationError => e
