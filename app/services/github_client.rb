@@ -380,7 +380,7 @@ class GithubClient
     end
   end
 
-  # Fetches the most recent page of conversation comments. Use this for
+  # Fetches a bounded trailing window of conversation comment pages. Use this for
   # idempotency checks where auto-paginating all comments is unnecessary
   # and wastes API rate limit on long-lived PRs.
   #
@@ -394,10 +394,12 @@ class GithubClient
   #
   # @param repo [String] Repository in "owner/name" format
   # @param number [Integer] Issue or PR number
-  # @return [Array<Sawyer::Resource>] Up to 100 most-recent comments, each
-  #   with .user.login, .body, .created_at. Order within the returned page
-  #   is ascending by ID — callers that need a specific order must sort.
-  def recent_issue_comments(repo, number)
+  # @param pages [Integer] Number of trailing pages to fetch from the end
+  #   of the comment history (default: 1)
+  # @return [Array<Sawyer::Resource>] Up to `pages * 100` most-recent comments,
+  #   each with .user.login, .body, .created_at, returned in ascending ID
+  #   order so callers can safely take the tail.
+  def recent_issue_comments(repo, number, pages: 1)
     handle_errors do
       first_page = client.issue_comments(repo, number, per_page: 100, page: 1)
       last_rel = client.last_response&.rels&.dig(:last)
@@ -406,8 +408,17 @@ class GithubClient
         return tag_multi_page(first_page, false)
       end
 
-      last_page = client.get(last_rel.href)
-      tag_multi_page(last_page, true)
+      trailing_pages = []
+      current_rel = last_rel
+
+      while current_rel && trailing_pages.length < pages
+        trailing_pages << client.get(current_rel.href)
+        current_rel = client.last_response&.rels&.dig(:prev)
+      end
+
+      ordered_comments = trailing_pages.reverse.flat_map(&:to_a)
+      ordered_comments.sort_by! { |comment| comment.id.to_i }
+      tag_multi_page(ordered_comments, true)
     end
   end
 

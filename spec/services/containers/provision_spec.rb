@@ -1254,6 +1254,28 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  describe "preparation scripts" do
+    before do
+      service.instance_variable_set(:@container, mock_container)
+    end
+
+    it "does not raise when the preparation script exits successfully" do
+      allow(mock_container).to receive(:exec).and_return([ "ok", "", 0 ])
+
+      expect do
+        service.send(:run_preparation_script, "echo ok", env: { "BASE" => "1" }, script_env: { "EXTRA" => "2" })
+      end.not_to raise_error
+    end
+
+    it "raises ExecutionError when the preparation script exits non-zero" do
+      allow(mock_container).to receive(:exec).and_return([ "", "base64: invalid input", 1 ])
+
+      expect do
+        service.send(:run_preparation_script, "echo bad", env: {}, script_env: {})
+      end.to raise_error(described_class::ExecutionError, /base64: invalid input/)
+    end
+  end
+
   describe "Result" do
     describe ".success" do
       it "creates a success result with data" do

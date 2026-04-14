@@ -481,7 +481,16 @@ module Containers
       preparation_env = env.merge(script_env)
       exec_options = { wait: options[:timeout_seconds] }
       exec_options[:Env] = preparation_env.map { |key, value| "#{key}=#{value}" }
-      container.exec([ "sh", "-lc", script ], exec_options)
+      stdout, stderr, exit_code = container.exec([ "sh", "-lc", script ], exec_options)
+
+      return if exit_code.to_i.zero?
+
+      raise ExecutionError.new(
+        [ stdout, stderr ].join.presence || "Preparation script exited with code #{exit_code}",
+        exit_code: exit_code,
+        stdout: stdout,
+        stderr: stderr
+      )
     end
 
     def expand_preparation_path(path)

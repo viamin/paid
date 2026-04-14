@@ -212,7 +212,9 @@ module Prompts
 
     def conversation_section
       comment_text = trusted_comments.map do |c|
-        "- **#{c.user.login}**: #{c.body}"
+        body = c.body.to_s
+        body = "#{body[0, max_comment_length]}… [truncated]" if body.length > max_comment_length
+        "- **#{c.user.login}**: #{body}"
       end.join("\n")
 
       <<~SECTION
@@ -258,11 +260,25 @@ module Prompts
 
     def trusted_comments
       @trusted_comments ||= begin
-        comments = github_client.issue_comments(project.full_name, pr_number)
-        comments.select { |c| project.trusted_github_user?(c.user&.login) }
+        comments = github_client.recent_issue_comments(project.full_name, pr_number, pages: 2)
+        comments
+          .select { |c| project.trusted_github_user?(c.user&.login) }
+          .last(max_prompt_comments)
       rescue GithubClient::Error
         []
       end
+    end
+
+    def user_settings
+      @user_settings ||= AgentRuns::UserSettingsResolver.call(project: project, strict: false)
+    end
+
+    def max_prompt_comments
+      user_settings&.max_prompt_comments || BuildForIssue::DEFAULT_MAX_COMMENTS
+    end
+
+    def max_comment_length
+      user_settings&.max_comment_length || BuildForIssue::DEFAULT_MAX_COMMENT_LENGTH
     end
 
     def detected_language
