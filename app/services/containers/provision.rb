@@ -508,7 +508,18 @@ module Containers
         return
       end
 
-      log_system("container.codex_credentials_shared", source_path: codex_subscription_auth_mount_path)
+      host = codex_subscription_auth_host_mount_path
+      if host.present?
+        log_system("container.codex_credentials_shared", source_path: host)
+      else
+        seed_local_credentials!(
+          source_path: codex_local_config_path,
+          target_path: "/home/agent/.codex",
+          files: %w[auth.json config.toml],
+          success_log_key: "container.codex_credentials_seeded",
+          failure_log_key: "container.codex_credentials_seed_failed"
+        )
+      end
     end
 
     def seed_gemini_credentials!
@@ -815,8 +826,8 @@ module Containers
         binds << "#{claude_config_host_path}:/home/agent/.claude-host:ro"
       end
 
-      if codex_subscription_auth?
-        bind_path = codex_subscription_auth_mount_path
+      if codex_subscription_auth_host_mount_path.present?
+        bind_path = codex_subscription_auth_host_mount_path
         binds << "#{bind_path}:/home/agent/.codex:rw" if bind_path.present?
       end
 
@@ -845,7 +856,7 @@ module Containers
       # fix_workspace_ownership!-style chown after container start.
       tmpfs["/home/agent/.claude"] = "size=#{256 * 1024 * 1024},mode=0700"
 
-      unless codex_subscription_auth?
+      unless codex_subscription_auth_host_mount_path.present?
         # Codex CLI stores config and session data under ~/.codex.
         # Ownership is fixed by fix_codex_tmpfs_ownership! after container start.
         tmpfs["/home/agent/.codex"] = "size=#{64 * 1024 * 1024},mode=0700"
@@ -1063,10 +1074,10 @@ module Containers
       paths.any? { |base| File.file?(File.join(base, "auth.json")) }
     end
 
-    def codex_subscription_auth_mount_path
-      @codex_subscription_auth_mount_path ||= begin
-        paths = [ codex_config_host_path, codex_local_config_path ].compact
-        paths.find { |base| File.directory?(base) && File.file?(File.join(base, "auth.json")) }
+    def codex_subscription_auth_host_mount_path
+      @codex_subscription_auth_host_mount_path ||= begin
+        base = codex_config_host_path
+        base if base.present? && File.directory?(base) && File.file?(File.join(base, "auth.json"))
       end
     end
 

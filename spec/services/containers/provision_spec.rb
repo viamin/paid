@@ -849,6 +849,64 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "with Codex subscription auth from the devcontainer filesystem" do
+      let(:codex_local_dir) { Dir.mktmpdir("codex-local") }
+
+      before do
+        File.write(File.join(codex_local_dir, "auth.json"), '{"refresh_token":"test-token"}')
+        File.write(File.join(codex_local_dir, "config.toml"), "model = \"gpt-5\"")
+
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+        allow(service).to receive_messages(
+          claude_local_config_path: nil,
+          codex_local_config_path: codex_local_dir,
+          gemini_local_config_path: nil,
+          copilot_local_config_path: nil
+        )
+      end
+
+      after do
+        FileUtils.rm_rf(codex_local_dir)
+      end
+
+      it "sets the subscription marker without bind-mounting the local path" do
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expect(binds.none? { |bind| bind.include?(":/home/agent/.codex:rw") }).to be true
+          expect(config["Env"]).to include("PAID_CODEX_SUBSCRIPTION_AUTH=1")
+
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs).to have_key("/home/agent/.codex")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "copies local Codex auth files into the writable tmpfs" do
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [ "chown", "-R", "agent:agent", "/home/agent/.codex" ],
+          user: "root"
+        )
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-lc", satisfy { |cmd| cmd.include?("/home/agent/.codex/auth.json") && decoded_base64_content(cmd).include?("refresh_token") } ],
+          user: "agent"
+        )
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-lc", satisfy { |cmd| cmd.include?("/home/agent/.codex/config.toml") && decoded_base64_content(cmd).include?('model = "gpt-5"') } ],
+          user: "agent"
+        )
+      end
+    end
+
     context "with Copilot subscription auth (COPILOT_CONFIG_DIR)" do
       let(:copilot_config_dir) { Dir.mktmpdir("copilot-config") }
 
