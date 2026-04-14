@@ -30,7 +30,7 @@ RSpec.describe "Providers" do
         expect(response.body).to include("Per-Run-Type Defaults")
         expect(response.body).to include("PR Agent")
         expect(response.body).to include("Code Review Agent")
-        expect(response.body).to include("starting after the active primary and wrapping around if needed")
+        expect(response.body).to include("fallback starts after it and wraps around")
         expect(response.body).to include("The active primary provider is excluded automatically for each run")
       end
 
