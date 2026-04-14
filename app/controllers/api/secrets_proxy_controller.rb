@@ -3,6 +3,7 @@
 module Api
   class SecretsProxyController < ActionController::API
     include Api::ContainerAuthentication
+    allow_knowledge_run_authentication!
 
     before_action :check_rate_limit
 
@@ -51,19 +52,19 @@ module Api
 
     def check_rate_limit
       limit = resolve_max_tokens_per_run
-      current_tokens = @agent_run.total_tokens
+      current_tokens = authenticated_run.total_tokens
 
       if current_tokens >= limit
         mark_token_limit_exceeded!(current_tokens:, limit:)
         render json: {
-          error: "Token limit exceeded for this agent run",
+          error: "Token limit exceeded for this #{authenticated_run_name}",
           token_usage: current_tokens,
           token_limit: limit
         }, status: :too_many_requests
         return
       end
 
-      warning_threshold = @agent_run.project.token_limit_warning_threshold
+      warning_threshold = authenticated_run.project.token_limit_warning_threshold
       warning_at = (limit * warning_threshold / 100.0).floor
       if current_tokens >= warning_at
         response.set_header("X-Token-Usage", current_tokens.to_s)
@@ -119,11 +120,13 @@ module Api
 
       TokenUsageTracker.track(
         agent_run: @agent_run,
+        knowledge_run: @knowledge_run,
         usage: {
           tokens_input: input_tokens,
           tokens_output: output_tokens,
           llm_model: model,
-          request_type: "agent"
+          request_type: token_usage_request_type,
+          metadata: token_usage_metadata
         }
       )
     rescue => e
@@ -161,7 +164,8 @@ module Api
     end
 
     def fetch_api_key(provider)
-      key = Rails.application.credentials.dig(:llm, :"#{provider}_api_key")
+      key = knowledge_run_api_key(provider)
+      key ||= Rails.application.credentials.dig(:llm, :"#{provider}_api_key")
       key ||= ENV["#{provider.to_s.upcase}_API_KEY"]
 
       unless key
@@ -174,18 +178,23 @@ module Api
     end
 
     def resolve_max_tokens_per_run
-      @max_tokens_per_run ||= @agent_run.effective_max_tokens_per_run
+      @max_tokens_per_run ||= authenticated_run.effective_max_tokens_per_run
     end
 
     def mark_token_limit_exceeded!(current_tokens:, limit:)
       status_changed = false
 
-      @agent_run.with_lock do
-        next if @agent_run.token_limit_status == "exceeded"
+      authenticated_run.with_lock do
+        next if authenticated_run.token_limit_status == "exceeded"
 
-        @agent_run.token_limit_status = "exceeded"
-        @agent_run.save!
+        authenticated_run.token_limit_status = "exceeded"
+        authenticated_run.save!
         status_changed = true
+      end
+
+      return unless status_changed
+
+      if @agent_run
         @agent_run.log!(
           "system",
           "Token limit exceeded: #{current_tokens} of #{limit} tokens used. " \
@@ -194,11 +203,10 @@ module Api
         )
       end
 
-      return unless status_changed
-
       Rails.logger.warn(
-        message: "agent_execution.token_limit_exceeded",
-        agent_run_id: @agent_run.id,
+        message: "#{logging_component}.token_limit_exceeded",
+        agent_run_id: @agent_run&.id,
+        knowledge_run_id: @knowledge_run&.id,
         current_tokens: current_tokens,
         hard_limit: limit
       )
@@ -208,8 +216,43 @@ module Api
       Rails.logger.error(
         message: message,
         agent_run_id: @agent_run&.id,
+        knowledge_run_id: @knowledge_run&.id,
         error: error
       )
+    end
+
+    def authenticated_run
+      @authenticated_run ||= @knowledge_run || @agent_run
+    end
+
+    def authenticated_run_name
+      @knowledge_run ? "knowledge run" : "agent run"
+    end
+
+    def logging_component
+      @knowledge_run ? "knowledge_execution" : "agent_execution"
+    end
+
+    def knowledge_run_api_key(provider)
+      return unless @knowledge_run
+
+      @knowledge_run.project
+        .effective_owner
+        &.provider_api_keys
+        &.for_api_service_type(provider.to_s)
+        &.order(created_at: :desc, id: :desc)
+        &.first
+        &.api_key
+    end
+
+    def token_usage_request_type
+      @knowledge_run ? "knowledge" : "agent"
+    end
+
+    def token_usage_metadata
+      return {} unless @knowledge_run
+
+      { operation_type: @knowledge_run.operation_type }
     end
   end
 end

@@ -1,17 +1,22 @@
 # frozen_string_literal: true
 
 class TokenUsage < ApplicationRecord
-  REQUEST_TYPES = %w[agent planning evaluation run_summary run_delta].freeze
+  REQUEST_TYPES = %w[agent planning evaluation run_summary run_delta knowledge].freeze
 
-  belongs_to :agent_run
+  belongs_to :agent_run, optional: true
+  belongs_to :knowledge_run, optional: true
 
   validates :request_type, presence: true, inclusion: { in: REQUEST_TYPES }
   validates :input_tokens, numericality: { greater_than_or_equal_to: 0 }
   validates :output_tokens, numericality: { greater_than_or_equal_to: 0 }
   validates :cost_cents, numericality: { greater_than_or_equal_to: 0 }
   validates :llm_model, length: { maximum: 100 }
+  validate :exactly_one_run_present
 
-  scope :by_project, ->(project_id) { joins(:agent_run).where(agent_runs: { project_id: project_id }) }
+  scope :by_project, lambda { |project_id|
+    left_outer_joins(:agent_run, :knowledge_run)
+      .where("agent_runs.project_id = :project_id OR knowledge_runs.project_id = :project_id", project_id: project_id)
+  }
   scope :by_model, ->(llm_model) { where(llm_model: llm_model) }
   scope :by_request_type, ->(type) { where(request_type: type) }
   scope :by_time_period, ->(start_time, end_time) { where(created_at: start_time..end_time) }
@@ -26,7 +31,7 @@ class TokenUsage < ApplicationRecord
   # (e.g., by_time_period(...).billable) doesn't affect which runs are
   # considered to have proxy records.
   scope :billable, -> {
-    runs_with_proxy = unscoped.where.not(request_type: "run_summary").select(:agent_run_id).distinct
+    runs_with_proxy = unscoped.where.not(request_type: "run_summary").where.not(agent_run_id: nil).select(:agent_run_id).distinct
     where.not(request_type: "run_summary")
       .or(where(request_type: "run_summary").where.not(agent_run_id: runs_with_proxy))
   }
@@ -59,5 +64,13 @@ class TokenUsage < ApplicationRecord
     where(created_at: days.days.ago..)
       .group(Arel.sql("DATE(token_usages.created_at)"))
       .sum(:cost_cents)
+  end
+
+  private
+
+  def exactly_one_run_present
+    return if agent_run.present? ^ knowledge_run.present?
+
+    errors.add(:base, "must belong to exactly one run")
   end
 end
