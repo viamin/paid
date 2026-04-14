@@ -27,7 +27,7 @@
             <p class="mt-1 text-xs text-gray-500">Last restart: <%= health[:restart_reason] %></p>
           <% end %>
 
-          <% if local_assigns[:show_restart] && health[:status] == :unhealthy && project.active? %>
+          <% if local_assigns[:show_restart] && health[:status].in?([:unhealthy, :stale]) && project.active? %>
             <div class="mt-3">
               <%= button_to "Restart monitor",
                     restart_project_workflow_status_path(project),

@@ -143,6 +143,15 @@ RSpec.describe "WorkflowStatuses" do
         expect(response.body).not_to include("Restart monitor")
       end
 
+      it "shows restart button when workflow is stale" do
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :running, running: true)
+        project.update_column(:last_polled_at, 10.minutes.ago)
+
+        get project_workflow_status_path(project)
+        expect(response.body).to include("Restart monitor")
+      end
+
       it "does not show restart button when project is inactive" do
         project.update_column(:active, false)
 
@@ -212,10 +221,24 @@ RSpec.describe "WorkflowStatuses" do
       it "redirects with alert when workflow is already running" do
         allow(ProjectWorkflowManager).to receive(:workflow_status)
           .with(project).and_return(status: :running, running: true)
+        project.update_column(:last_polled_at, 30.seconds.ago)
 
         post restart_project_workflow_status_path(project)
         expect(response).to redirect_to(project_path(project))
         expect(flash[:alert]).to eq("Issue monitor is already running.")
+      end
+
+      it "restarts the poll workflow when it is stale" do
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :running, running: true)
+        allow(ProjectWorkflowManager).to receive(:restart_polling)
+        project.update_column(:last_polled_at, 10.minutes.ago)
+
+        post restart_project_workflow_status_path(project)
+        expect(ProjectWorkflowManager).to have_received(:restart_polling)
+          .with(project, reason: "manual restart from UI")
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:notice]).to eq("Issue monitor restarted.")
       end
 
       it "redirects with alert when Temporal is unavailable" do
