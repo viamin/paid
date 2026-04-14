@@ -461,18 +461,23 @@ module Containers
     # Checks whether the agent made any changes.
     #
     # When base_commit_sha is available, compares HEAD against the base to
-    # detect new commits. Falls back to checking uncommitted working-tree
-    # changes only (no base to compare against).
+    # detect new commits. Without a base SHA, falls back to checking for
+    # commits reachable from HEAD that have not been pushed to any remote,
+    # then checks for uncommitted working-tree changes.
     #
     # @return [Boolean]
     def has_changes?
       base = agent_run.base_commit_sha
       if base.present?
         result = execute_git("diff", "--stat", base, "HEAD")
-      else
-        result = execute_git("diff", "--stat", "HEAD")
+        return result.success? && result[:stdout].present?
       end
-      result.success? && result[:stdout].present?
+
+      log_result = execute_git("log", "--oneline", "HEAD", "--not", "--remotes")
+      return true if log_result.success? && log_result[:stdout].present?
+
+      status_result = execute_git("status", "--porcelain")
+      status_result.success? && status_result[:stdout].present?
     rescue => e
       Rails.logger.warn(
         message: "container_git.check_changes_failed",

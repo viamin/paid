@@ -300,6 +300,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_14_154102) do
     t.index ["tags"], name: "index_decision_records_on_tags", using: :gin
   end
 
+  create_table "flipper_features", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "key", null: false
+    t.datetime "updated_at", null: false
+    t.index ["key"], name: "index_flipper_features_on_key", unique: true
+  end
+
+  create_table "flipper_gates", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "feature_key", null: false
+    t.string "key", null: false
+    t.datetime "updated_at", null: false
+    t.text "value"
+    t.index ["feature_key", "key", "value"], name: "index_flipper_gates_on_feature_key_and_key_and_value", unique: true
+  end
+
   create_table "github_tokens", force: :cascade do |t|
     t.jsonb "accessible_repositories", default: [], null: false
     t.bigint "account_id", null: false
