@@ -203,17 +203,10 @@ module Activities
         )
       end
 
-      issue = project.issues.find_or_initialize_by(github_issue_id: github_issue.id)
-      issue.update!(
-        github_number: github_issue.number,
-        title: github_issue.title,
-        body: trusted ? github_issue.body : nil,
-        github_creator_login: creator_login,
-        github_state: github_issue.state,
-        labels: extract_labels(github_issue),
-        is_pull_request: github_issue.pull_request.present?,
-        github_created_at: github_issue.created_at,
-        github_updated_at: github_issue.updated_at
+      issue = Issues::UpsertFromGithub.call(
+        project: project,
+        github_issue: github_issue,
+        body: trusted ? github_issue.body : nil
       )
 
       { id: issue.id, github_number: issue.github_number, labels: issue.labels,
@@ -439,12 +432,6 @@ module Activities
         scope.where(relationships_parsed_at: parsed_before)
       end
       scope.update_all(relationships_parsed_at: issue.github_updated_at)
-    end
-
-    def extract_labels(github_issue)
-      return [] unless github_issue.labels
-
-      github_issue.labels.map { |l| l.respond_to?(:name) ? l.name : l.to_s }
     end
   end
 end

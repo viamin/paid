@@ -233,6 +233,14 @@ class GithubClient
     handle_errors { client.create_pull_request(repo, base, head, title, body, **options) }
   end
 
+  # Fetches an issue-shaped resource by number.
+  #
+  # Pull requests are also exposed through GitHub's issues API; this is the
+  # representation our local issues table stores.
+  def issue(repo, number)
+    handle_errors { client.issue(repo, number) }
+  end
+
   # Lists labels for a repository.
   #
   # @param repo [String] Repository in "owner/name" format
