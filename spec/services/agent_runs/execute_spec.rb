@@ -418,6 +418,13 @@ RSpec.describe AgentRuns::Execute do
         allow(AgentHarness).to receive(:send_message).and_return(response)
       end
 
+      it "depends on agent-harness versions that parse kilocode token totals" do
+        # Kilocode runtime token extraction lives upstream in agent-harness.
+        # This ingestion spec guards Paid's contract against regressing to a
+        # gem version older than the 0.7.0 release that added that support.
+        expect(Gem.loaded_specs.fetch("agent-harness").version).to be >= Gem::Version.new("0.7.0")
+      end
+
       it "persists run_summary and run_delta records for the kilocode model" do
         described_class.call(agent_run: agent_run, prompt: prompt)
 
