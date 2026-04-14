@@ -970,12 +970,39 @@ RSpec.describe Containers::GitOperations do
       expect(git_ops.has_changes?).to be false
     end
 
-    it "falls back to diffing HEAD when base_commit_sha is blank" do
+    it "falls back to local-only commits when base_commit_sha is blank" do
       agent_run.update_column(:base_commit_sha, nil)
-      diff_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+      log_result = Containers::Provision::Result.success(stdout: "def789 Apply agent changes\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)
-        .with([ "git", "diff", "--stat", "HEAD" ], timeout: nil, stream: false)
-        .and_return(diff_result)
+        .with([ "git", "log", "--oneline", "HEAD", "--not", "--remotes" ], timeout: nil, stream: false)
+        .and_return(log_result)
+
+      expect(git_ops.has_changes?).to be true
+    end
+
+    it "falls back to uncommitted changes when base_commit_sha is blank" do
+      agent_run.update_column(:base_commit_sha, nil)
+      empty_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "HEAD", "--not", "--remotes" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      expect(git_ops.has_changes?).to be true
+    end
+
+    it "returns false when base_commit_sha is blank and there are no local changes" do
+      agent_run.update_column(:base_commit_sha, nil)
+      empty_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "HEAD", "--not", "--remotes" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(empty_result)
 
       expect(git_ops.has_changes?).to be false
     end

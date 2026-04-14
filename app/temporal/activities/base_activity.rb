@@ -60,6 +60,10 @@ module Activities
       Rails.logger
     end
 
+    def feature_enabled?(flag_name, project: nil)
+      FeatureFlags.enabled?(flag_name, project:)
+    end
+
     # Raises a retryable Temporal error when the GitHub API rate limit is
     # near exhaustion. Call this before making API requests so polling
     # activities stop early and let the next cycle handle remaining work.
