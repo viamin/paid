@@ -4,9 +4,11 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe Prompts::BuildForPr do
-  def recent_comments_with_page_state(comments, multi_page:, older_pages_available: multi_page)
+  def recent_comments_with_page_state(comments, multi_page:, older_pages_available: multi_page, next_older_page_url: nil)
+    next_url = older_pages_available ? (next_older_page_url || "https://api.github.com/repos/o/r/issues/42/comments?page=1") : nil
     comments.define_singleton_method(:multi_page?) { multi_page }
     comments.define_singleton_method(:older_pages_available?) { older_pages_available }
+    comments.define_singleton_method(:next_older_page_url) { next_url }
     comments
   end
 
@@ -22,14 +24,6 @@ RSpec.describe Prompts::BuildForPr do
     allow(AgentRuns::UserSettingsResolver).to receive(:call)
       .with(project: project, strict: false)
       .and_return(settings)
-  end
-
-  def stub_recent_issue_comments(github_client, project, *responses)
-    responses.each_with_index do |comments, index|
-      allow(github_client).to receive(:recent_issue_comments)
-        .with(project.full_name, 42, pages: index + 1)
-        .and_return(comments)
-    end
   end
 
   let(:project) { create(:project, allowed_github_usernames: [ "trusteduser" ]) }
@@ -337,27 +331,31 @@ RSpec.describe Prompts::BuildForPr do
         .once
     end
 
-    it "backfills older recent pages until it collects enough trusted comments" do
-      limited_settings = instance_double(UserSetting, max_prompt_comments: 20, max_comment_length: 2000)
-      newest_comments = recent_comments_with_page_state(
-        untrusted_recent_comments(100),
-        multi_page: true,
-        older_pages_available: true
-      )
-      older_recent_comments = recent_comments_with_page_state(
-        trusted_recent_comments(20) + newest_comments,
-        multi_page: true,
-        older_pages_available: true
-      )
+    context "when trusted comments are sparse and backfill is needed" do
+      let(:older_page_url) { "https://api.github.com/repos/o/r/issues/42/comments?page=5" }
 
-      stub_prompt_comment_settings(project, limited_settings)
-      stub_recent_issue_comments(github_client, project, newest_comments, older_recent_comments)
+      before do
+        limited_settings = instance_double(UserSetting, max_prompt_comments: 20, max_comment_length: 2000)
+        newest = recent_comments_with_page_state(
+          untrusted_recent_comments(100), multi_page: true, older_pages_available: true,
+          next_older_page_url: older_page_url
+        )
+        older = recent_comments_with_page_state(trusted_recent_comments(20), multi_page: true, older_pages_available: true)
 
-      prompt = described_class.call(project: project, pr_number: 42, github_client: github_client, rebase_succeeded: true)
+        stub_prompt_comment_settings(project, limited_settings)
+        allow(github_client).to receive(:recent_issue_comments).with(project.full_name, 42, pages: 1).and_return(newest)
+        allow(github_client).to receive(:fetch_issue_comment_page).with(older_page_url).and_return(older)
+      end
 
-      expect(prompt).to include("Trusted 1")
-      expect(prompt).to include("Trusted 20")
-      expect(prompt).not_to include("Noise 0")
+      it "fetches older pages incrementally until it collects enough trusted comments" do
+        prompt = described_class.call(project: project, pr_number: 42, github_client: github_client, rebase_succeeded: true)
+
+        expect(prompt).to include("Trusted 1")
+        expect(prompt).to include("Trusted 20")
+        expect(prompt).not_to include("Noise 0")
+        expect(github_client).to have_received(:recent_issue_comments).once
+        expect(github_client).to have_received(:fetch_issue_comment_page).once
+      end
     end
 
     it "stops backfilling once the fetched window already includes the oldest page" do

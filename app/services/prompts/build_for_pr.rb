@@ -295,18 +295,20 @@ module Prompts
     end
 
     def recent_trusted_comments
-      pages = recent_comment_page_window
+      comments = github_client.recent_issue_comments(project.full_name, pr_number, pages: recent_comment_page_window)
+      trusted = select_trusted_comments(comments)
+      pages_fetched = recent_comment_page_window
 
-      loop do
-        comments = github_client.recent_issue_comments(project.full_name, pr_number, pages: pages)
-        trusted = select_trusted_comments(comments)
+      while trusted.size < max_prompt_comments && pages_fetched < MAX_RECENT_COMMENT_PAGES
+        break unless comments.respond_to?(:next_older_page_url) && comments.next_older_page_url
 
-        return trusted.last(max_prompt_comments) if trusted.size >= max_prompt_comments
-        return trusted unless comments.respond_to?(:older_pages_available?) && comments.older_pages_available?
-        return trusted if pages >= MAX_RECENT_COMMENT_PAGES
-
-        pages += 1
+        older_page = github_client.fetch_issue_comment_page(comments.next_older_page_url)
+        trusted = select_trusted_comments(older_page) + trusted
+        pages_fetched += 1
+        comments = older_page
       end
+
+      trusted.last(max_prompt_comments)
     end
 
     def select_trusted_comments(comments)

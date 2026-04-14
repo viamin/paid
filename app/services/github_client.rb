@@ -422,10 +422,29 @@ class GithubClient
         remaining_pages -= 1
       end
 
+      prev_rel = client.last_response&.rels&.dig(:prev)
       tag_recent_issue_comments_metadata(
         recent_pages.reverse.flatten,
         multi_page: true,
-        older_pages_available: client.last_response&.rels&.dig(:prev).present?
+        older_pages_available: prev_rel.present?,
+        next_older_page_url: prev_rel&.href
+      )
+    end
+  end
+
+  # Fetches a single older page of issue comments by URL.
+  #
+  # @param page_url [String] Full GitHub API URL for the page
+  # @return [Array<Sawyer::Resource>] Comments with older_pages_available? and next_older_page_url metadata
+  def fetch_issue_comment_page(page_url)
+    handle_errors do
+      page_response = client.get(page_url)
+      prev_rel = client.last_response&.rels&.dig(:prev)
+      tag_recent_issue_comments_metadata(
+        Array(page_response),
+        multi_page: true,
+        older_pages_available: prev_rel.present?,
+        next_older_page_url: prev_rel&.href
       )
     end
   end
@@ -964,11 +983,13 @@ class GithubClient
 
   private
 
-  def tag_recent_issue_comments_metadata(page, multi_page:, older_pages_available:)
+  def tag_recent_issue_comments_metadata(page, multi_page:, older_pages_available:, next_older_page_url: nil)
     page.instance_variable_set(:@multi_page, multi_page)
     page.instance_variable_set(:@older_pages_available, older_pages_available)
+    page.instance_variable_set(:@next_older_page_url, next_older_page_url)
     page.define_singleton_method(:multi_page?) { @multi_page }
     page.define_singleton_method(:older_pages_available?) { @older_pages_available }
+    page.define_singleton_method(:next_older_page_url) { @next_older_page_url }
     page
   end
 
