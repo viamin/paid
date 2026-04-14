@@ -66,7 +66,7 @@ class ProcessRunQueueJob < ApplicationJob
         user = next_run.project.effective_owner
         unless user
           if (run = AgentRun.claim_next_queued_run(target_id: next_run.id))
-            run.fail!(error: "Cannot resolve project owner for capacity check")
+            force_fail_run(run, error: "Cannot resolve project owner for capacity check")
           end
           next
         end
@@ -258,12 +258,25 @@ class ProcessRunQueueJob < ApplicationJob
     )
     true
   rescue => e
-    agent_run.fail!(error: "Failed to start workflow: #{e.message}")
+    force_fail_run(agent_run, error: "Failed to start workflow: #{e.message}")
     Rails.logger.error(
       message: "process_run_queue.start_failed",
       agent_run_id: agent_run.id,
       error: e.message
     )
     false
+  end
+
+  # Queue-start failures are infrastructure failures, not business-rule
+  # transitions. Persist the terminal state directly so unrelated model
+  # validations or callbacks cannot strand the run in queued/pending.
+  def force_fail_run(agent_run, error:)
+    agent_run.update_columns(
+      status: "failed",
+      completed_at: Time.current,
+      error_message: error,
+      duration_seconds: agent_run.duration,
+      updated_at: Time.current
+    )
   end
 end
