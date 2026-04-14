@@ -1055,15 +1055,17 @@ module Activities
     def commit_uncommitted_changes(agent_run)
       return unless agent_run.container_id.present?
 
-      with_change_detection_retry(agent_run, operation: "commit_uncommitted_changes") do
+      committed = with_change_detection_retry(agent_run, operation: "commit_uncommitted_changes") do
         container_service = reconnect_container(agent_run)
         git_ops = Containers::GitOperations.new(
           container_service: container_service,
           agent_run: agent_run
         )
 
-        agent_run.log!("system", "Auto-committed uncommitted agent changes") if git_ops.commit_uncommitted_changes
+        git_ops.commit_uncommitted_changes
       end
+
+      agent_run.log!("system", "Auto-committed uncommitted agent changes") if committed
     end
 
     # Evaluates pre-commit requirements for the agent run.

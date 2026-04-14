@@ -1007,11 +1007,10 @@ RSpec.describe Containers::GitOperations do
       expect(git_ops.has_changes?).to be false
     end
 
-    it "propagates container errors" do
+    it "rescues container errors and returns false" do
       allow(container_service).to receive(:execute).and_raise(Docker::Error::DockerError, "container gone")
 
-      expect { git_ops.has_changes? }
-        .to raise_error(Docker::Error::DockerError, "container gone")
+      expect(git_ops.has_changes?).to be false
     end
   end
 
