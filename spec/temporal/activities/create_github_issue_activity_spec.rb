@@ -11,7 +11,7 @@ RSpec.describe Activities::CreateGithubIssueActivity do
   end
   let(:github_client) { instance_double(GithubClient) }
   let(:issue_response) do
-    Struct.new(:html_url, :number, :id, :title, :body, :state, :user, :labels, :created_at, :updated_at).new(
+    Struct.new(:html_url, :number, :id, :title, :body, :state, :user, :labels, :created_at, :updated_at, :pull_request).new(
       "https://github.com/owner/repo/issues/10",
       10,
       12345,
@@ -21,7 +21,8 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       Struct.new(:login).new("paid-bot"),
       [],
       Time.current,
-      Time.current
+      Time.current,
+      nil
     )
   end
 
