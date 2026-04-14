@@ -268,15 +268,16 @@ class ProcessRunQueueJob < ApplicationJob
   end
 
   # Queue-start failures are infrastructure failures, not business-rule
-  # transitions. Persist the terminal state directly so unrelated model
-  # validations or callbacks cannot strand the run in queued/pending.
+  # transitions. Skip validations so unrelated model state cannot strand
+  # the run in queued/pending, but still save normally so after_commit
+  # hooks broadcast the terminal status and enqueue finished-run followups.
   def force_fail_run(agent_run, error:)
-    agent_run.update_columns(
+    agent_run.assign_attributes(
       status: "failed",
       completed_at: Time.current,
       error_message: error,
-      duration_seconds: agent_run.duration,
-      updated_at: Time.current
+      duration_seconds: agent_run.duration
     )
+    agent_run.save!(validate: false)
   end
 end
