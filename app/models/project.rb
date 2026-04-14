@@ -104,6 +104,7 @@ class Project < ApplicationRecord
   has_many :project_service_containers, dependent: :destroy
   has_many :service_containers, through: :project_service_containers
   has_many :decision_records, dependent: :destroy
+  has_many :knowledge_runs, dependent: :destroy
   has_many :project_mcp_servers, dependent: :destroy
   has_many :mcp_server_definitions, through: :project_mcp_servers
   has_many :pre_commit_requirements, dependent: :destroy
@@ -420,7 +421,7 @@ class Project < ApplicationRecord
       self, :project_updates,
       target: "workflow-status",
       partial: "workflow_statuses/status",
-      locals: { project: self, health: health, show_restart: false }
+      locals: { project: self, health: health, show_restart: true }
     )
   end
 

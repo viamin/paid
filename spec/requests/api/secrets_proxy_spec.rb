@@ -5,6 +5,7 @@ require "rails_helper"
 RSpec.describe "Api::SecretsProxy" do
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, :running, project: project) }
+  let(:knowledge_run) { create(:knowledge_run, :running, project: project) }
 
   let(:anthropic_response_body) do
     {
@@ -39,6 +40,14 @@ RSpec.describe "Api::SecretsProxy" do
       usageMetadata: { promptTokenCount: 80, candidatesTokenCount: 40, totalTokenCount: 120 },
       modelVersion: "gemini-2.0-flash"
     }.to_json
+  end
+
+  let(:knowledge_headers) do
+    {
+      "Content-Type" => "application/json",
+      "X-Knowledge-Run-Id" => knowledge_run.id.to_s,
+      "X-Proxy-Token" => knowledge_run.proxy_token
+    }
   end
 
   before do
@@ -201,6 +210,26 @@ RSpec.describe "Api::SecretsProxy" do
         expect(body["error"]).to include("not configured")
       end
     end
+
+    context "with a knowledge run and a project owner API key" do
+      let(:owner) { project.effective_owner }
+
+      before do
+        create(:provider_api_key, user: owner, api_service_type: "anthropic", api_key: "sk-owner-key")
+        allow(Rails.application.credentials).to receive(:dig)
+          .with(:llm, :anthropic_api_key).and_return("sk-ant-test-key")
+      end
+
+      it "uses the owner's API key for the proxied request" do
+        post "/api/proxy/anthropic/v1/messages",
+          params: { model: "claude-3-5-sonnet-20241022" }.to_json,
+          headers: knowledge_headers
+
+        expect(response).to have_http_status(:ok)
+        expect(WebMock).to have_requested(:post, target_url)
+          .with(headers: { "x-api-key" => "sk-owner-key" })
+      end
+    end
   end
 
   describe "POST /api/proxy/openai/*path" do
@@ -237,6 +266,16 @@ RSpec.describe "Api::SecretsProxy" do
           headers: valid_headers
       }.to change { agent_run.reload.tokens_input }.by(100)
         .and change { agent_run.reload.tokens_output }.by(50)
+    end
+
+    it "accepts knowledge-run authentication" do
+      post "/api/proxy/openai/v1/chat/completions",
+        params: {}.to_json,
+        headers: knowledge_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(knowledge_run.reload.total_tokens).to eq(150)
+      expect(TokenUsage.last.knowledge_run).to eq(knowledge_run)
     end
   end
 
@@ -275,6 +314,17 @@ RSpec.describe "Api::SecretsProxy" do
       }.to change { agent_run.reload.tokens_input }.by(80)
         .and change { agent_run.reload.tokens_output }.by(40)
     end
+
+    it "accepts embedded knowledge-run credentials in x-goog-api-key" do
+      post "/api/proxy/google/v1beta/models/gemini-2.0-flash:generateContent",
+        params: {}.to_json,
+        headers: {
+          "Content-Type" => "application/json",
+          "x-goog-api-key" => "paid-knowledge-run:#{knowledge_run.id}:#{knowledge_run.proxy_token}"
+        }
+
+      expect(response).to have_http_status(:ok)
+    end
   end
 
   describe "query string forwarding" do
@@ -309,7 +359,7 @@ RSpec.describe "Api::SecretsProxy" do
 
         expect(response).to have_http_status(:unauthorized)
         body = JSON.parse(response.body)
-        expect(body["error"]).to eq("Missing agent run ID")
+        expect(body["error"]).to eq("Missing agent run ID or knowledge run ID")
       end
     end
 
@@ -325,6 +375,17 @@ RSpec.describe "Api::SecretsProxy" do
           headers: {
             "Content-Type" => "application/json",
             "Authorization" => "Bearer paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
+          }
+
+        expect(response).to have_http_status(:ok)
+      end
+
+      it "authenticates knowledge-run requests" do
+        post "/api/proxy/openai/v1/chat/completions",
+          params: {}.to_json,
+          headers: {
+            "Content-Type" => "application/json",
+            "Authorization" => "Bearer paid-knowledge-run:#{knowledge_run.id}:#{knowledge_run.proxy_token}"
           }
 
         expect(response).to have_http_status(:ok)
@@ -455,6 +516,19 @@ RSpec.describe "Api::SecretsProxy" do
         new_token = agent_run.reload.proxy_token
         expect(new_token).to be_present
         expect(new_token).not_to eq(token)
+      end
+    end
+
+    context "with completed knowledge run" do
+      let(:knowledge_run) { create(:knowledge_run, :completed, project: project) }
+
+      it "returns forbidden" do
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: knowledge_headers
+
+        expect(response).to have_http_status(:forbidden)
+        expect(JSON.parse(response.body)["error"]).to eq("Invalid or inactive knowledge run")
       end
     end
   end
@@ -608,6 +682,20 @@ RSpec.describe "Api::SecretsProxy" do
         expect(response.headers["X-Token-Limit-Warning"]).to eq("true")
         expect(response.headers["X-Token-Usage"]).to eq("85000")
         expect(response.headers["X-Token-Limit"]).to eq("100000")
+      end
+    end
+
+    context "when a knowledge run exceeds its own limit" do
+      let(:knowledge_run) { create(:knowledge_run, :running, project: project, total_tokens: 10_000, max_tokens: 10_000) }
+
+      it "returns 429 and marks the knowledge run exceeded" do
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: knowledge_headers
+
+        expect(response).to have_http_status(:too_many_requests)
+        expect(JSON.parse(response.body)["error"]).to eq("Token limit exceeded for this knowledge run")
+        expect(knowledge_run.reload.token_limit_status).to eq("exceeded")
       end
     end
   end

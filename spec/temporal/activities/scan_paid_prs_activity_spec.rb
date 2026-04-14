@@ -4453,6 +4453,49 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a preexisting restarted PR still has a NULL retry reset timestamp" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "restarted",
+          review_goal_retry_reset_at: nil)
+      end
+
+      before do
+        enable_paid_agent_review!(project, max_review_rounds: 5)
+
+        3.times do |index|
+          create(:agent_run, :automatic,
+            project: project, issue: pr_issue,
+            source_pull_request_number: 42,
+            goal: "review", status: "failed",
+            created_at: (2.hours.ago + index.minutes),
+            started_at: (2.hours.ago + index.minutes),
+            completed_at: (2.hours.ago + index.minutes))
+        end
+
+        stub_github_for_pr(draft: true, reviews: [])
+      end
+
+      it "backfills the reset boundary before counting old failures" do
+        freeze_time do
+          result = activity.execute(project_id: project.id)
+
+          expect(pr_issue.reload.review_goal_retry_reset_at).to be_within(1.second).of(Time.current)
+          trigger = result[:prs_to_trigger].first
+          trigger_types = trigger[:triggers].map { |entry| entry[:type] }
+          pending_trigger = trigger[:triggers].find { |entry| entry[:type] == "paid_agent_review_pending" }
+
+          expect(trigger[:phase]).to eq("restarted")
+          expect(trigger_types).to include("paid_agent_review_pending")
+          expect(trigger_types).not_to include("review_goal_retry")
+          expect(trigger_types).not_to include("escalate_to_owner")
+          expect(pending_trigger[:details]).to eq("No paid_agent review found for PR")
+        end
+      end
+    end
+
     context "when a restarted PR has a stale successful review from before the reset" do
       let!(:pr_issue) do
         create(:issue, :pull_request,
@@ -5608,6 +5651,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       pending_trigger = trigger[:triggers].find { |t| t[:type] == "paid_agent_review_pending" }
 
       expect(pending_trigger).to be_present
+      expect(pending_trigger[:active_run]).to be(true)
       expect(pending_trigger[:details]).to eq("paid_agent review run is still in progress")
       expect(trigger[:triggers].map { |t| t[:type] }).not_to include("ready_for_owner")
     end

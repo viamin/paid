@@ -18,7 +18,7 @@ class WorkflowStatusesController < ApplicationController
     end
 
     temporal_status = ProjectWorkflowManager.workflow_status(@project)
-    if temporal_status[:running]
+    if temporal_status[:running] && !@project.poll_stale_with_recheck?
       redirect_to project_path(@project), alert: "Issue monitor is already running."
       return
     end

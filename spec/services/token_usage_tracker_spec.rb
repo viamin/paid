@@ -5,6 +5,7 @@ require "rails_helper"
 RSpec.describe TokenUsageTracker do
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, :running, project: project) }
+  let(:knowledge_run) { create(:knowledge_run, :running, project: project) }
 
   describe ".track" do
     it "increments tokens_input on the agent run" do
@@ -143,6 +144,62 @@ RSpec.describe TokenUsageTracker do
         expect(budget.reload.current_usage_cents).to eq(0)
       end
     end
+
+    context "with a knowledge run" do
+      it "increments total_tokens on the knowledge run" do
+        expect {
+          described_class.track(
+            knowledge_run: knowledge_run,
+            usage: { tokens_input: 80, tokens_output: 20, request_type: "knowledge" }
+          )
+        }.to change { knowledge_run.reload.total_tokens }.by(100)
+      end
+
+      it "creates a TokenUsage record for the knowledge run" do
+        described_class.track(
+          knowledge_run: knowledge_run,
+          usage: {
+            tokens_input: 1000,
+            tokens_output: 500,
+            llm_model: "text-embedding-3-large",
+            request_type: "knowledge",
+            metadata: { operation_type: "embedding" }
+          }
+        )
+
+        usage = TokenUsage.last
+        expect(usage.knowledge_run).to eq(knowledge_run)
+        expect(usage.agent_run).to be_nil
+        expect(usage.metadata).to include("operation_type" => "embedding")
+      end
+
+      it "defaults the request type to knowledge" do
+        described_class.track(
+          knowledge_run: knowledge_run,
+          usage: { tokens_input: 100, tokens_output: 50 }
+        )
+
+        expect(TokenUsage.last.request_type).to eq("knowledge")
+      end
+
+      it "updates project totals for knowledge runs" do
+        expect {
+          described_class.track(
+            knowledge_run: knowledge_run,
+            usage: { tokens_input: 100, tokens_output: 50, request_type: "knowledge" }
+          )
+        }.to change { project.reload.total_tokens_used }.by(150)
+      end
+
+      it "does not create an agent run log entry" do
+        expect {
+          described_class.track(
+            knowledge_run: knowledge_run,
+            usage: { tokens_input: 100, tokens_output: 50, request_type: "knowledge" }
+          )
+        }.not_to change(AgentRunLog, :count)
+      end
+    end
   end
 
   describe "token limit checking" do
@@ -261,6 +318,31 @@ RSpec.describe TokenUsageTracker do
       # 10M input = $30 = 3000 cents
       # 5M output = $75 = 7500 cents
       expect(described_class.calculate_cost(10_000_000, 5_000_000)).to eq(10_500)
+    end
+  end
+
+  describe "knowledge run token limit checking" do
+    before do
+      project.update!(token_limit_warning_threshold: 80)
+      knowledge_run.update!(max_tokens: 100)
+    end
+
+    it "sets warning when usage crosses the threshold" do
+      described_class.track(
+        knowledge_run: knowledge_run,
+        usage: { tokens_input: 60, tokens_output: 20, request_type: "knowledge" }
+      )
+
+      expect(knowledge_run.reload.token_limit_status).to eq("warning")
+    end
+
+    it "sets exceeded when usage reaches the hard limit" do
+      described_class.track(
+        knowledge_run: knowledge_run,
+        usage: { tokens_input: 60, tokens_output: 40, request_type: "knowledge" }
+      )
+
+      expect(knowledge_run.reload.token_limit_status).to eq("exceeded")
     end
   end
 end

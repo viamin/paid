@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_13_193654) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -300,22 +300,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
     t.index ["tags"], name: "index_decision_records_on_tags", using: :gin
   end
 
-  create_table "flipper_features", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.string "key", null: false
-    t.datetime "updated_at", null: false
-    t.index ["key"], name: "index_flipper_features_on_key", unique: true
-  end
-
-  create_table "flipper_gates", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.string "feature_key", null: false
-    t.string "key", null: false
-    t.datetime "updated_at", null: false
-    t.text "value"
-    t.index ["feature_key", "key", "value"], name: "index_flipper_gates_on_feature_key_and_key_and_value", unique: true
-  end
-
   create_table "github_tokens", force: :cascade do |t|
     t.jsonb "accessible_repositories", default: [], null: false
     t.bigint "account_id", null: false
@@ -575,6 +559,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
     t.index ["link_type"], name: "index_knowledge_links_on_link_type"
     t.index ["source_chunk_id", "target_chunk_id", "link_type"], name: "idx_knowledge_links_uniqueness", unique: true
     t.index ["target_chunk_id"], name: "index_knowledge_links_on_target_chunk_id"
+  end
+
+  create_table "knowledge_runs", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "final_provider", limit: 50
+    t.integer "max_tokens"
+    t.string "operation_type", limit: 50, null: false
+    t.bigint "project_id", null: false
+    t.jsonb "provider_attempts", default: [], null: false
+    t.string "proxy_token", limit: 64
+    t.string "status", limit: 50, default: "pending", null: false
+    t.string "token_limit_status", limit: 50
+    t.integer "total_tokens", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "status"], name: "index_knowledge_runs_on_project_id_and_status"
+    t.index ["project_id"], name: "index_knowledge_runs_on_project_id"
+    t.index ["proxy_token"], name: "index_knowledge_runs_on_proxy_token", unique: true
   end
 
   create_table "linear_tokens", force: :cascade do |t|
@@ -991,10 +992,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
   end
 
   create_table "token_usages", force: :cascade do |t|
-    t.bigint "agent_run_id", null: false
+    t.bigint "agent_run_id"
     t.integer "cost_cents", default: 0, null: false
     t.datetime "created_at", null: false
     t.integer "input_tokens", default: 0, null: false
+    t.bigint "knowledge_run_id"
     t.string "llm_model", limit: 100
     t.jsonb "metadata", default: {}, null: false
     t.integer "output_tokens", default: 0, null: false
@@ -1002,8 +1004,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
     t.datetime "updated_at", null: false
     t.index ["agent_run_id", "request_type"], name: "index_token_usages_on_agent_run_id_and_request_type"
     t.index ["created_at"], name: "index_token_usages_on_created_at"
+    t.index ["knowledge_run_id"], name: "index_token_usages_on_knowledge_run_id"
     t.index ["llm_model"], name: "index_token_usages_on_llm_model"
     t.index ["request_type"], name: "index_token_usages_on_request_type"
+    t.check_constraint "(agent_run_id IS NOT NULL) <> (knowledge_run_id IS NOT NULL)", name: "token_usages_exactly_one_run"
   end
 
   create_table "user_settings", force: :cascade do |t|
@@ -1100,6 +1104,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
     t.index ["status"], name: "index_worktrees_on_status"
   end
 
+  add_foreign_key "ab_test_assignments", "ab_test_variants", on_delete: :cascade
+  add_foreign_key "ab_test_assignments", "ab_tests", on_delete: :cascade
+  add_foreign_key "ab_test_assignments", "agent_runs", on_delete: :cascade
+  add_foreign_key "ab_test_variants", "ab_tests", on_delete: :cascade
+  add_foreign_key "ab_test_variants", "prompt_versions", on_delete: :restrict
+  add_foreign_key "ab_tests", "ab_test_variants", column: "winner_variant_id", on_delete: :nullify
+  add_foreign_key "ab_tests", "prompt_versions", column: "control_version_id", on_delete: :restrict
+  add_foreign_key "ab_tests", "prompts", on_delete: :cascade
+  add_foreign_key "account_memberships", "accounts"
+  add_foreign_key "account_memberships", "users"
+  add_foreign_key "agent_run_anomalies", "agent_runs"
+  add_foreign_key "agent_run_anomalies", "projects"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
@@ -1114,7 +1130,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
   add_foreign_key "decision_records", "decision_records", column: "superseded_by_id", on_delete: :nullify
   add_foreign_key "decision_records", "issues", on_delete: :nullify
   add_foreign_key "decision_records", "projects", on_delete: :cascade
+  add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
+  add_foreign_key "integration_credentials", "accounts"
   add_foreign_key "integration_credentials", "users", column: "created_by_id"
   add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade
   add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
@@ -1127,10 +1145,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
   add_foreign_key "knowledge_chunks", "projects"
   add_foreign_key "knowledge_links", "knowledge_chunks", column: "source_chunk_id", on_delete: :cascade
   add_foreign_key "knowledge_links", "knowledge_chunks", column: "target_chunk_id", on_delete: :cascade
+  add_foreign_key "knowledge_runs", "projects", on_delete: :cascade
+  add_foreign_key "linear_tokens", "accounts"
   add_foreign_key "linear_tokens", "users", column: "created_by_id"
+  add_foreign_key "mcp_server_definitions", "accounts"
   add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
   add_foreign_key "model_selections", "llm_models"
+  add_foreign_key "notifications", "accounts"
   add_foreign_key "notifications", "users"
+  add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
   add_foreign_key "project_baselines", "projects"
@@ -1141,11 +1164,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
   add_foreign_key "project_service_containers", "projects", on_delete: :cascade
   add_foreign_key "project_service_containers", "service_containers", on_delete: :cascade
   add_foreign_key "project_versions", "projects"
+  add_foreign_key "projects", "accounts"
   add_foreign_key "projects", "github_tokens"
   add_foreign_key "projects", "users", column: "created_by_id"
   add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify
   add_foreign_key "prompt_versions", "prompts", on_delete: :cascade
   add_foreign_key "prompt_versions", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "prompts", "accounts", on_delete: :cascade
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "provider_api_keys", "users", on_delete: :cascade
@@ -1155,9 +1180,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
   add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
+  add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
   add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
+  add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "user_settings", "users"
+  add_foreign_key "users", "accounts"
   add_foreign_key "workflow_states", "projects"
   add_foreign_key "worktrees", "agent_runs", on_delete: :nullify
   add_foreign_key "worktrees", "projects", on_delete: :cascade
