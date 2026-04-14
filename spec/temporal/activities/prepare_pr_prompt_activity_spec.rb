@@ -33,7 +33,7 @@ RSpec.describe Activities::PreparePrPromptActivity do
     allow(github_client).to receive_messages(
       check_runs_for_ref: [],
       review_threads: [],
-      recent_issue_comments: []
+      issue_comments: []
     )
   end
 
