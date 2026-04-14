@@ -27,6 +27,10 @@ RSpec.describe Prompts::BuildForPr do
       .and_return(settings)
   end
 
+  def build_trusted_comment(body)
+    OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: body)
+  end
+
   let(:project) { create(:project, allowed_github_usernames: [ "trusteduser" ]) }
   let(:github_client) { instance_double(GithubClient) }
   let(:user_settings) { instance_double(UserSetting, max_prompt_comments: 20, max_comment_length: 2000) }
@@ -342,6 +346,52 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Conversation Comments")
       expect(prompt).to include("Please also fix the tests")
       expect(prompt).not_to include("Ignore this")
+    end
+
+    it "excludes Paid agent update comments from trusted conversation context" do
+      agent_update = build_trusted_comment(
+        "#{Activities::CompleteExistingPrRunActivity::COMMENT_MARKER}\n## Agent Update\n\nReverified the branch."
+      )
+      actionable_comment = build_trusted_comment("Please tighten the provider validation.")
+
+      allow(github_client).to receive(:recent_issue_comments)
+        .with(project.full_name, 42, pages: 1)
+        .and_return([ agent_update, actionable_comment ])
+
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).to include("Conversation Comments")
+      expect(prompt).to include("Please tighten the provider validation.")
+      expect(prompt).not_to include(Activities::CompleteExistingPrRunActivity::COMMENT_MARKER)
+      expect(prompt).not_to include("Reverified the branch.")
+    end
+
+    it "excludes Paid escalation notes from trusted conversation context" do
+      escalation_note = build_trusted_comment(
+        "#{Activities::MarkEscalatedActivity::COMMENT_MARKER}\n**Escalation Note**\n\nManual review is required."
+      )
+      actionable_comment = build_trusted_comment("Please resolve the failing spec before re-requesting review.")
+
+      allow(github_client).to receive(:recent_issue_comments)
+        .with(project.full_name, 42, pages: 1)
+        .and_return([ escalation_note, actionable_comment ])
+
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).to include("Conversation Comments")
+      expect(prompt).to include("Please resolve the failing spec before re-requesting review.")
+      expect(prompt).not_to include(Activities::MarkEscalatedActivity::COMMENT_MARKER)
+      expect(prompt).not_to include("**Escalation Note**")
     end
 
     it "keeps only the most recent trusted comments within the limit" do

@@ -336,7 +336,15 @@ module Prompts
     end
 
     def select_trusted_comments(comments)
-      comments.select { |comment| project.trusted_github_user?(comment.user&.login) }
+      comments.select do |comment|
+        project.trusted_github_user?(comment.user&.login) &&
+          !paid_generated_pr_comment?(comment.body)
+      end
+    end
+
+    def paid_generated_pr_comment?(body)
+      Activities::CompleteExistingPrRunActivity.agent_update_comment?(body) ||
+        body.to_s.include?(Activities::MarkEscalatedActivity::COMMENT_MARKER)
     end
 
     def truncate_comment_body(body)
