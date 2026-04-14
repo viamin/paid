@@ -103,6 +103,7 @@ module Activities
     DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
     CHANGE_DETECTION_MAX_ATTEMPTS = 3
     CHANGE_DETECTION_RETRY_BACKOFF = 0.25
+    POST_RUN_BOOKKEEPING_ERROR_TYPE = "PostRunBookkeepingFailed"
 
     def self.provider_order(agent_type:, fallback_enabled:, fallback_providers:)
       return [ agent_type ].select { |p| AGENT_COMMANDS.key?(p) } unless fallback_enabled
@@ -1136,7 +1137,11 @@ module Activities
           error_class: e.class.name,
           error: e.message
         )
-        raise
+        raise Temporalio::Error::ApplicationError.new(
+          "Post-run #{operation} failed after #{attempt} attempts: #{e.class}: #{e.message}",
+          type: POST_RUN_BOOKKEEPING_ERROR_TYPE,
+          non_retryable: true
+        )
       end
     end
 

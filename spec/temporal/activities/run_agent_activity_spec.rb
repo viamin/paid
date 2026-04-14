@@ -431,6 +431,13 @@ RSpec.describe Activities::RunAgentActivity do
     ))
   end
 
+  def expect_non_retryable_post_run_error(error, operation:)
+    expect(error).to be_a(Temporalio::Error::ApplicationError)
+    expect(error.type).to eq(Activities::RunAgentActivity::POST_RUN_BOOKKEEPING_ERROR_TYPE)
+    expect(error.non_retryable).to be(true)
+    expect(error.message).to include("Post-run #{operation} failed after 3 attempts")
+  end
+
   describe "#execute" do
     context "when agent succeeds in container" do
       before do
@@ -604,7 +611,7 @@ RSpec.describe Activities::RunAgentActivity do
         expect(activity).to have_received(:sleep).with(0.25)
       end
 
-      it "raises when change detection keeps failing after transient retries" do
+      it "raises a non-retryable ApplicationError when change detection keeps failing after transient retries" do
         logger = instance_double(ActiveSupport::Logger, warn: nil, error: nil, info: nil)
         change_attempts = 0
 
@@ -617,10 +624,35 @@ RSpec.describe Activities::RunAgentActivity do
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Docker::Error::DockerError, "docker unavailable")
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect_non_retryable_post_run_error(error, operation: "check_for_changes")
+          expect(error.message).to include("Docker::Error::DockerError: docker unavailable")
+        }
 
         expect(change_attempts).to eq(3)
         expect_change_detection_retry_logs(logger, operation: "check_for_changes")
+      end
+
+      it "raises a non-retryable ApplicationError when auto-commit keeps failing after transient retries" do
+        logger = instance_double(ActiveSupport::Logger, warn: nil, error: nil, info: nil)
+        commit_attempts = 0
+
+        allow(activity).to receive(:logger).and_return(logger)
+        allow(activity).to receive(:sleep)
+        allow(git_ops).to receive(:commit_uncommitted_changes) do
+          commit_attempts += 1
+          raise Errno::ECONNREFUSED, "Connection refused"
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect_non_retryable_post_run_error(error, operation: "commit_uncommitted_changes")
+          expect(error.message).to include("Errno::ECONNREFUSED")
+        }
+
+        expect(commit_attempts).to eq(3)
+        expect_change_detection_retry_logs(logger, operation: "commit_uncommitted_changes")
       end
 
       it "records the final_provider on success" do
