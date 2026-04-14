@@ -441,6 +441,19 @@ RSpec.describe Activities::RunAgentActivity do
     )
   end
 
+  def create_claude_rate_limit_fallback_provider(api_key: "sk-fallback-secret")
+    create(
+      :provider,
+      :rate_limit_fallback,
+      user: user,
+      provider_key: "claude",
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic", api_key: api_key),
+      enabled_for_agent_runs: true,
+      enabled_for_fallback: true,
+      name: "Claude API Key"
+    )
+  end
+
   def create_opencode_provider_entry(user:, api_key:, name:, model:)
     create(
       :provider,
@@ -1310,19 +1323,33 @@ RSpec.describe Activities::RunAgentActivity do
       end
 
       it "executes a rate-limit fallback entry for the same provider key" do
-        api_key = create(:provider_api_key, user: user, api_service_type: "anthropic", api_key: "sk-fallback-secret")
-        fallback_provider = create(
-          :provider,
-          :rate_limit_fallback,
-          user: user,
-          provider_key: "claude",
-          provider_api_key: api_key,
-          enabled_for_agent_runs: true,
-          enabled_for_fallback: true,
-          name: "Claude API Key"
-        )
+        fallback_provider = create_claude_rate_limit_fallback_provider
 
         expect_same_provider_rate_limit_fallback_execution(fallback_provider)
+      end
+
+      it "skips a rate-limit fallback entry whose ProviderState is already rate limited" do
+        fallback_provider = create_claude_rate_limit_fallback_provider
+        fallback_provider.user.provider_states.find_or_create_by!(provider_name: fallback_provider.routing_key).update!(
+          rate_limited_until: 2.hours.from_now
+        )
+        user.settings.update!(fallback_enabled: true, fallback_providers: [ "claude" ])
+        execute_calls = []
+
+        allow(container_service).to receive(:execute) do |command, **opts|
+          execute_calls << [ command, opts ]
+          execute_calls.one? ? rate_limit_failure : exec_success
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        agent_run.reload
+        expect(result[:success]).to be true
+        expect(agent_run.providers_attempted).to include(
+          include("provider" => "claude_code", "error_type" => "rate_limited"),
+          include("provider" => fallback_provider.routing_key, "error_type" => "rate_limited")
+        )
+        expect(execute_calls.any? { |command, opts| command.first == "sh" && opts[:env] == { "PAID_PROVIDER_API_KEY" => "sk-fallback-secret" } }).to be(false)
       end
 
       it "uses provider display names in exhausted-provider labels" do

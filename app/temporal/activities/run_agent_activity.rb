@@ -446,7 +446,9 @@ module Activities
     #
     # @return [Boolean] true if provider should be skipped
     def provider_unavailable?(user_settings, provider_state_name, provider_states)
-      state = provider_states[provider_state_name]
+      state = provider_states.fetch(provider_state_name) do
+        provider_states[provider_state_name] = user_settings.user.provider_states.find_by(provider_name: provider_state_name)
+      end
       return false unless state
 
       # Check for circuit recovery before deciding
