@@ -106,6 +106,8 @@ module Activities
     def scan_pr(project, client, issue)
       return :skipped if active_run_exists?(project, issue)
 
+      backfill_review_goal_retry_reset_at!(issue)
+
       retry_needed = review_goal_retry_needed?(project, issue)
       retry_limit_reached = retry_needed && review_goal_retry_limit_reached?(project, issue)
       retry_limit_reason = "Review-goal retry limit reached " \
@@ -190,6 +192,13 @@ module Activities
       return result unless queue_paid_agent_review?(project, issue, result[:triggers] || [])
 
       result.merge(queue_paid_agent_review: true)
+    end
+
+    def backfill_review_goal_retry_reset_at!(issue)
+      return unless issue.pr_review_phase == "restarted"
+      return if issue.review_goal_retry_reset_at.present?
+
+      issue.update_column(:review_goal_retry_reset_at, Time.current)
     end
 
     MAX_CONSECUTIVE_DRAFT_FAILURES = 3

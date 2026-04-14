@@ -169,9 +169,11 @@ module Workflows
       )
     end
 
+    # TODO(#1080): Remove patch guard after all pre-v1080 workflows have continued-as-new
     def start_agent_workflow(project_id, issue_id, source_pull_request_number: nil)
       queue_input = { project_id: project_id, issue_id: issue_id }
       queue_input[:source_pull_request_number] = source_pull_request_number if source_pull_request_number
+      queue_input[:goal] = "create_pr" if source_pull_request_number && Temporalio::Workflow.patched("queue-agent-run-goal-v1")
       run_activity(Activities::QueueAgentRunActivity, queue_input, timeout: 30)
     end
 
@@ -186,6 +188,7 @@ module Workflows
 
     def maybe_queue_paid_agent_review(project_id, pr_data)
       return unless pr_data[:queue_paid_agent_review]
+      return unless Temporalio::Workflow.patched("queue-paid-agent-review-sidecar-v1")
 
       run_activity(Activities::QueueAgentRunActivity,
         { project_id: project_id, issue_id: pr_data[:issue_id],
@@ -468,9 +471,10 @@ module Workflows
       # have continued-as-new past this point (i.e. no workflow history contains
       # the legacy queue-then-record command sequence).
       unless Temporalio::Workflow.patched("draft-followup-direct-start-v1")
-        run_activity(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: issue_id,
-            source_pull_request_number: pr_number }, timeout: 30)
+        legacy_input = { project_id: project_id, issue_id: issue_id,
+          source_pull_request_number: pr_number }
+        legacy_input[:goal] = "create_pr" if Temporalio::Workflow.patched("queue-agent-run-goal-v1")
+        run_activity(Activities::QueueAgentRunActivity, legacy_input, timeout: 30)
         run_activity(Activities::RecordDraftReviewActivity,
           {
             issue_id: issue_id,
@@ -479,13 +483,15 @@ module Workflows
         return
       end
 
-      run_activity(Activities::QueueAgentRunActivity, {
+      draft_input = {
         project_id: project_id,
         issue_id: issue_id,
         source_pull_request_number: pr_number,
         count_toward_draft_review_round: true,
         expected_draft_review_count: pr_data[:current_draft_review_count]
-      }, timeout: 30)
+      }
+      draft_input[:goal] = "create_pr" if Temporalio::Workflow.patched("queue-agent-run-goal-v1")
+      run_activity(Activities::QueueAgentRunActivity, draft_input, timeout: 30)
     end
 
     def start_pr_followup_workflow(project_id, pr_data)
@@ -499,9 +505,10 @@ module Workflows
         expected_followup_count: pr_data[:current_followup_count]
       }
 
-      run_activity(Activities::QueueAgentRunActivity,
-        { project_id: project_id, issue_id: issue_id,
-          source_pull_request_number: pr_number }, timeout: 30)
+      followup_queue_input = { project_id: project_id, issue_id: issue_id,
+        source_pull_request_number: pr_number }
+      followup_queue_input[:goal] = "create_pr" if Temporalio::Workflow.patched("queue-agent-run-goal-v1")
+      run_activity(Activities::QueueAgentRunActivity, followup_queue_input, timeout: 30)
       run_activity(Activities::RecordPrFollowupActivity, followup_input, timeout: 30)
     end
   end
