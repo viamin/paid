@@ -6,7 +6,7 @@
 # for labeled issues.
 class ProjectWorkflowManager
   class << self
-    def start_polling(project, restart_reason: nil)
+    def start_polling(project, restart_reason: nil, raise_on_conflict: false)
       Paid.temporal_client.start_workflow(
         Workflows::GitHubPollWorkflow,
         { project_id: project.id },
@@ -25,11 +25,15 @@ class ProjectWorkflowManager
         project_id: project.id,
         workflow_id: workflow_id_for(project)
       )
+      true
     rescue Temporalio::Error::WorkflowAlreadyStartedError
+      raise if raise_on_conflict
+
       Rails.logger.warn(
         message: "github_sync.polling_already_running",
         project_id: project.id
       )
+      false
     end
 
     def stop_polling(project)
@@ -71,7 +75,11 @@ class ProjectWorkflowManager
         raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
       end
 
-      start_polling(project, restart_reason: reason || "self-healing restart")
+      start_polling(
+        project,
+        restart_reason: reason || "self-healing restart",
+        raise_on_conflict: true
+      )
     end
 
     def signal_sync(project)

@@ -14,7 +14,7 @@ RSpec.describe ProjectWorkflowManager do
 
   describe ".start_polling" do
     it "starts a GitHubPollWorkflow" do
-      described_class.start_polling(project)
+      result = described_class.start_polling(project)
 
       expect(temporal_client).to have_received(:start_workflow).with(
         Workflows::GitHubPollWorkflow,
@@ -22,6 +22,7 @@ RSpec.describe ProjectWorkflowManager do
         id: "github-poll-#{project.id}",
         task_queue: "paid-tasks"
       ).at_least(:once)
+      expect(result).to be(true)
     end
 
     it "handles already-started workflow gracefully" do
@@ -33,7 +34,21 @@ RSpec.describe ProjectWorkflowManager do
         )
       )
 
-      expect { described_class.start_polling(project) }.not_to raise_error
+      expect(described_class.start_polling(project)).to be(false)
+    end
+
+    it "re-raises already-started workflow conflicts when requested" do
+      allow(temporal_client).to receive(:start_workflow).and_raise(
+        Temporalio::Error::WorkflowAlreadyStartedError.new(
+          workflow_id: "github-poll-#{project.id}",
+          workflow_type: "GitHubPollWorkflow",
+          run_id: "test-run-id"
+        )
+      )
+
+      expect do
+        described_class.start_polling(project, raise_on_conflict: true)
+      end.to raise_error(Temporalio::Error::WorkflowAlreadyStartedError)
     end
   end
 
@@ -151,10 +166,11 @@ RSpec.describe ProjectWorkflowManager do
       allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
       allow(workflow_handle).to receive(:terminate)
 
-      described_class.restart_polling(project, reason: "test restart")
+      result = described_class.restart_polling(project, reason: "test restart")
 
       expect(workflow_handle).to have_received(:terminate).with("test restart")
       expect(temporal_client).to have_received(:start_workflow).at_least(:once)
+      expect(result).to be(true)
     end
 
     it "starts a new workflow even if terminate fails with not found" do
@@ -166,9 +182,25 @@ RSpec.describe ProjectWorkflowManager do
         )
       )
 
-      described_class.restart_polling(project)
+      result = described_class.restart_polling(project)
 
       expect(temporal_client).to have_received(:start_workflow).at_least(:once)
+      expect(result).to be(true)
+    end
+
+    it "re-raises workflow conflicts after terminate during restart" do
+      allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+      allow(workflow_handle).to receive(:terminate)
+      allow(temporal_client).to receive(:start_workflow).and_raise(
+        Temporalio::Error::WorkflowAlreadyStartedError.new(
+          workflow_id: "github-poll-#{project.id}",
+          workflow_type: "GitHubPollWorkflow",
+          run_id: "test-run-id"
+        )
+      )
+
+      expect { described_class.restart_polling(project) }
+        .to raise_error(Temporalio::Error::WorkflowAlreadyStartedError)
     end
 
     it "re-raises non-NOT_FOUND RPC errors" do
