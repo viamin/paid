@@ -36,6 +36,7 @@ module Activities
         client, project, feature_branch, parent_issue, results, merged_branches, failed_merges
       )
 
+      sync_pull_request_record(client, project, pr.number)
       add_pr_labels(client, project, pr.number, parent_issue: parent_issue)
 
       logger.info(
@@ -163,12 +164,34 @@ module Activities
       return if labels.empty?
 
       client.add_labels_to_issue(project.full_name, pr_number, labels)
+      merge_local_pr_labels(project, pr_number, labels)
     rescue GithubClient::Error => e
       logger.warn(
         message: "aggregated_pr.add_labels_failed",
         pr_number: pr_number,
         error: e.message
       )
+    end
+
+    def sync_pull_request_record(client, project, pr_number)
+      github_issue = client.issue(project.full_name, pr_number)
+      Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
+    rescue => e
+      logger.warn(
+        message: "aggregated_pr.sync_failed",
+        project_id: project.id,
+        pr_number: pr_number,
+        error: e.message
+      )
+    end
+
+    def merge_local_pr_labels(project, pr_number, labels)
+      pull_request = project.issues.find_by(github_number: pr_number, is_pull_request: true)
+      return unless pull_request
+
+      pull_request.with_lock do
+        pull_request.update!(labels: (pull_request.labels + labels).uniq)
+      end
     end
   end
 end

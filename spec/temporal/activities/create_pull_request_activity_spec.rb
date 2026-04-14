@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe Activities::CreatePullRequestActivity do
   let(:activity) { described_class.new }
@@ -9,10 +10,24 @@ RSpec.describe Activities::CreatePullRequestActivity do
   let(:agent_run) { create(:agent_run, :with_git_context, :with_metrics, project: project, issue: issue) }
   let(:github_client) { instance_double(GithubClient) }
   let(:pr_response) { Struct.new(:html_url, :number).new("https://github.com/owner/repo/pull/42", 42) }
+  let(:issue_response) do
+    OpenStruct.new(
+      id: 4242,
+      number: 42,
+      title: "PR title",
+      body: "PR body",
+      state: "open",
+      labels: [],
+      pull_request: OpenStruct.new(html_url: "https://github.com/owner/repo/pull/42"),
+      user: OpenStruct.new(login: "viamin"),
+      created_at: Time.zone.parse("2026-04-14 00:00:00 UTC"),
+      updated_at: Time.zone.parse("2026-04-14 00:01:00 UTC")
+    )
+  end
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive_messages(pull_requests: [], create_pull_request: pr_response)
+    allow(github_client).to receive_messages(pull_requests: [], create_pull_request: pr_response, issue: issue_response)
     allow(github_client).to receive(:add_labels_to_issue)
     allow(github_client).to receive(:compare_changed_files).and_return([])
     # Stub external agent harness so Llm::GeneratePrDescription runs without real external calls.
@@ -55,6 +70,16 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(agent_run.status).to eq("completed")
       expect(agent_run.pull_request_url).to eq("https://github.com/owner/repo/pull/42")
       expect(agent_run.pull_request_number).to eq(42)
+    end
+
+    it "syncs a local pull request row immediately after PR creation" do
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to change { project.issues.pull_requests_only.where(github_number: 42).count }.by(1)
+
+      pull_request = project.issues.pull_requests_only.find_by!(github_number: 42)
+      expect(pull_request.github_issue_id).to eq(4242)
+      expect(pull_request.labels).to include("paid-generated", "paid-automation")
     end
 
     it "adds the generated and automation labels to the PR" do
@@ -146,13 +171,15 @@ RSpec.describe Activities::CreatePullRequestActivity do
       end
 
       it "adds both custom labels to the PR" do
-        activity.execute(agent_run_id: agent_run.id)
+      activity.execute(agent_run_id: agent_run.id)
 
-        expect(github_client).to have_received(:add_labels_to_issue).with(
-          project.full_name, 42, [ "custom-generated", "custom-automation" ]
-        )
-      end
+      expect(github_client).to have_received(:add_labels_to_issue).with(
+        project.full_name, 42, [ "custom-generated", "custom-automation" ]
+      )
+      expect(project.issues.pull_requests_only.find_by!(github_number: 42).labels)
+        .to include("custom-generated", "custom-automation")
     end
+  end
 
     context "with priority label inheritance" do
       let(:project) do
