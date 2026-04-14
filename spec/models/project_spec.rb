@@ -1334,6 +1334,27 @@ RSpec.describe Project do
       end
     end
 
+    describe "#broadcast_workflow_status_update" do
+      it "broadcasts replace with restart controls enabled" do
+        health = {
+          status: :unhealthy,
+          label: "Not running",
+          description: "The issue monitor is not running."
+        }
+
+        allow(WorkflowState).to receive(:compute_health_for).with(project).and_return(health)
+
+        project.broadcast_workflow_status_update
+
+        expect(project).to have_received(:broadcast_replace_to).with(
+          project, :project_updates,
+          target: "workflow-status",
+          partial: "workflow_statuses/status",
+          locals: { project: project, health: health, show_restart: true }
+        )
+      end
+    end
+
     describe "#broadcast_agent_runs_list_update" do
       it "broadcasts replace to the agent_runs_list stream with agent_runs/table partial" do
         project.broadcast_agent_runs_list_update
