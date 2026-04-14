@@ -16,24 +16,41 @@ module Activities
       track_phase(agent_run_id: agent_run_id, phase_key: "prepare_pr_prompt", phase_group: "prompt", agent_run: agent_run) do
         project = agent_run.project
         client = project.github_token.client
+        prompt_version = Prompts::Resolve.call(
+          slug: Prompts::BuildForPr::PROMPT_SLUG,
+          project: project
+        )
 
-        prompt = Prompts::BuildForPr.call(
+        prompt_builder = Prompts::BuildForPr.new(
           project: project,
           pr_number: agent_run.source_pull_request_number,
           github_client: client,
           rebase_succeeded: rebase_succeeded,
-          issue: agent_run.issue
+          issue: agent_run.issue,
+          prompt_version: prompt_version
         )
+        prompt = prompt_builder.build
+        includes_review_threads = prompt_builder.includes_review_threads?
+        review_thread_ids = prompt_builder.unresolved_review_thread_ids
 
-        agent_run.update!(custom_prompt: prompt)
+        agent_run.update!(custom_prompt: prompt, prompt_version: prompt_version)
 
         logger.info(
           message: "agent_execution.prepare_pr_prompt",
           agent_run_id: agent_run_id,
-          prompt_length: prompt.length
+          prompt_length: prompt.length,
+          includes_review_threads: includes_review_threads,
+          review_thread_count: review_thread_ids.size,
+          prompt_version_id: prompt_version&.id
         )
 
-        { agent_run_id: agent_run_id, prompt_length: prompt.length }
+        {
+          agent_run_id: agent_run_id,
+          prompt_length: prompt.length,
+          includes_review_threads: includes_review_threads,
+          review_thread_ids: review_thread_ids,
+          prompt_version_id: prompt_version&.id
+        }
       end
     end
   end

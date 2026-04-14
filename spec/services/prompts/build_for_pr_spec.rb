@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require "ostruct"
+require "securerandom"
 
 RSpec.describe Prompts::BuildForPr do
   let(:project) { create(:project, allowed_github_usernames: [ "trusteduser" ]) }
@@ -36,6 +37,31 @@ RSpec.describe Prompts::BuildForPr do
       )
     end
 
+    it "renders the instructions shell from an explicit prompt version when provided" do
+      prompt = create(:prompt, :global, slug: "test.#{SecureRandom.hex(8)}")
+      stale_version = prompt.create_version!(
+        template: "Pinned instructions {{lint_command}}",
+        variables: [
+          { "name" => "lint_command", "required" => true, "description" => "Lint command" }
+        ]
+      )
+      prompt.create_version!(
+        template: "Current instructions should not render",
+        variables: []
+      )
+
+      rendered = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        prompt_version: stale_version
+      )
+
+      expect(rendered).to include("Pinned instructions bundle exec rubocop")
+      expect(rendered).not_to include("Current instructions should not render")
+    end
+
     it "includes the PR title and number" do
       expect(prompt).to include("Fix authentication flow")
       expect(prompt).to include("#42")
@@ -53,6 +79,11 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Install dependencies")
       expect(prompt).to include("commit all your changes")
       expect(prompt).to include("Do not push")
+    end
+
+    it "omits the already-addressed marker instruction when no unresolved review threads are present" do
+      expect(prompt).not_to include(Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER)
+      expect(prompt).not_to include("do not make a no-op commit")
     end
 
     it "includes proactive scan step" do
@@ -96,6 +127,57 @@ RSpec.describe Prompts::BuildForPr do
 
     it "omits issue requirements section when no issue" do
       expect(prompt).not_to include("Issue Requirements")
+    end
+  end
+
+  describe "#includes_review_threads?" do
+    it "returns false when there are no unresolved review threads" do
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(builder.includes_review_threads?).to be(false)
+    end
+
+    it "returns true when unresolved review threads are present" do
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", author: "reviewer" } ] }
+        ])
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(builder.includes_review_threads?).to be(true)
+    end
+  end
+
+  describe "#unresolved_review_thread_ids" do
+    it "returns only unresolved review thread ids" do
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", author: "reviewer" } ] },
+          { id: "thread_2", is_resolved: true, comments: [ { body: "Already fixed", author: "reviewer" } ] },
+          { id: nil, is_resolved: false, comments: [ { body: "Missing id", author: "reviewer" } ] }
+        ])
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(builder.unresolved_review_thread_ids).to eq([ "thread_1" ])
     end
   end
 
@@ -185,6 +267,18 @@ RSpec.describe Prompts::BuildForPr do
 
       expect(prompt).to include("same classes of issues the reviewers")
       expect(prompt).to include("Proactive scan")
+    end
+
+    it "includes the already-addressed marker instruction when unresolved review threads are present" do
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).to include(Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER)
+      expect(prompt).to include("do not make a no-op commit")
     end
 
     it "excludes resolved threads" do
