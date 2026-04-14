@@ -4,12 +4,6 @@ require "rails_helper"
 require Rails.root.join("db/migrate/20260414154102_backfill_legacy_review_max_rounds_defaults")
 
 RSpec.describe BackfillLegacyReviewMaxRoundsDefaults, :aggregate_failures do
-  before do
-    # This migration exercises persisted legacy review settings that predate the
-    # paid_agent credential validation added later in app code.
-    allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
-  end
-
   let(:migration) { described_class.new }
   let(:legacy_defaults_project) do
     create(:project, review_settings: {
@@ -30,6 +24,10 @@ RSpec.describe BackfillLegacyReviewMaxRoundsDefaults, :aggregate_failures do
         "codex" => { "enabled" => true, "termination" => { "max_review_rounds" => 20 } }
       }
     })
+  end
+
+  before do
+    allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
   end
 
   it "backfills persisted legacy default max review rounds without touching custom values" do
