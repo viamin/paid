@@ -794,6 +794,7 @@ RSpec.describe Containers::Provision do
 
       before do
         File.write(File.join(codex_config_dir, "auth.json"), "{}")
+        File.write(File.join(codex_config_dir, "config.toml"), "model = \"gpt-5\"")
 
         allow(ENV).to receive(:fetch).and_call_original
         allow(ENV).to receive(:[]).and_call_original
@@ -809,14 +810,15 @@ RSpec.describe Containers::Provision do
         FileUtils.rm_rf(codex_config_dir)
       end
 
-      it "mounts Codex config at a staging path and sets the subscription marker" do
+      it "bind-mounts only Codex auth/config files and sets the subscription marker" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
-          expect(binds).to include("#{codex_config_dir}:/home/agent/.codex:rw")
+          expect(binds).to include("#{File.join(codex_config_dir, 'auth.json')}:/home/agent/.codex/auth.json:rw")
+          expect(binds).to include("#{File.join(codex_config_dir, 'config.toml')}:/home/agent/.codex/config.toml:ro")
           env = config["Env"]
           expect(env).to include("PAID_CODEX_SUBSCRIPTION_AUTH=1")
           expect(env).to include("ANTHROPIC_BASE_URL=http://web:3000/api/proxy/anthropic")
-          expect(config["HostConfig"]["Tmpfs"]).not_to have_key("/home/agent/.codex")
+          expect(config["HostConfig"]["Tmpfs"]).to have_key("/home/agent/.codex")
           mock_container
         end
 
@@ -839,9 +841,13 @@ RSpec.describe Containers::Provision do
         )
       end
 
-      it "does not chown the shared bind mount" do
+      it "only chowns the tmpfs directory entry" do
         service.provision
 
+        expect(mock_container).to have_received(:exec).with(
+          [ "chown", "agent:agent", "/home/agent/.codex" ],
+          user: "root"
+        )
         expect(mock_container).not_to have_received(:exec).with(
           [ "chown", "-R", "agent:agent", "/home/agent/.codex" ],
           user: "root"
@@ -893,7 +899,7 @@ RSpec.describe Containers::Provision do
         service.provision
 
         expect(mock_container).to have_received(:exec).with(
-          [ "chown", "-R", "agent:agent", "/home/agent/.codex" ],
+          [ "chown", "agent:agent", "/home/agent/.codex" ],
           user: "root"
         )
         expect(mock_container).to have_received(:exec).with(
@@ -1215,19 +1221,32 @@ RSpec.describe Containers::Provision do
         FileUtils.rm_rf(codex_config_dir)
       end
 
-      it "acquires a file lock around execution" do
-        service.execute("echo 'hello'")
+      it "acquires a per-config file lock around Codex execution" do
+        lockfile = service.send(:codex_auth_lockfile_path)
+        FileUtils.rm_f(lockfile)
 
-        expect(File.exist?(described_class::CODEX_AUTH_LOCKFILE)).to be true
+        service.execute([ "codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--", "prompt" ])
+
+        expect(File.exist?(lockfile)).to be true
       end
 
-      it "logs lock acquisition" do
+      it "logs lock acquisition for Codex execution" do
+        allow(agent_run).to receive(:log!)
+
+        service.execute([ "codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--", "prompt" ])
+
+        expect(agent_run).to have_received(:log!).with(
+          "system", "container.codex_auth_lock.acquired", metadata: hash_including(:lockfile)
+        )
+      end
+
+      it "does not lock non-Codex container commands" do
         allow(agent_run).to receive(:log!)
 
         service.execute("echo 'hello'")
 
-        expect(agent_run).to have_received(:log!).with(
-          "system", "container.codex_auth_lock.acquired", metadata: {}
+        expect(agent_run).not_to have_received(:log!).with(
+          "system", "container.codex_auth_lock.acquired", anything
         )
       end
     end
