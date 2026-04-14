@@ -106,10 +106,10 @@ group :development do
   gem "web-console"
 end
 
-gem "good_job", "~> 4.14"
+gem "good_job", "~> 4.15"
 
 # Pagination [https://github.com/ddnexus/pagy]
-gem "pagy", "~> 43.4"
+gem "pagy", "~> 43.5"
 
 # Search and filtering [https://github.com/activerecord-hackery/ransack]
 gem "ransack"
