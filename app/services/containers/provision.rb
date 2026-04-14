@@ -449,7 +449,7 @@ module Containers
     def cleanup_execution_preparation(cleanup_steps, env:)
       Array(cleanup_steps).reverse_each do |cleanup|
         run_preparation_script(cleanup_script, env: env, script_env: cleanup)
-      rescue Docker::Error::DockerError => e
+      rescue Docker::Error::DockerError, ExecutionError => e
         log_system("container.execute.preparation_cleanup_failed", error: e.message)
       end
     end

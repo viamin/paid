@@ -15,6 +15,37 @@ RSpec.describe Containers::Provision do
     ""
   end
 
+  def build_preparation(path: "/workspace/tmp/prepared.txt", content: "prepared")
+    preparation_write = Struct.new(:path, :content, :mode).new(path, content, nil)
+    preparation_class = Struct.new(:file_writes) do
+      def empty?
+        false
+      end
+    end
+    preparation_class.new([ preparation_write ])
+  end
+
+  def stub_exec_with_cleanup_failure(mock_container)
+    allow(mock_container).to receive(:exec) do |cmd, **opts, &block|
+      if cmd == [ "sh", "-c", "echo 'hello'" ]
+        block.call(:stdout, "command output\n") if block
+        next [ [ "command output\n" ], [], 0 ]
+      end
+
+      raise "Unexpected exec command: #{cmd.inspect} opts=#{opts.inspect}" unless cmd.is_a?(Array) && cmd.first(2) == [ "sh", "-lc" ]
+
+      script = cmd.last
+
+      if script.include?("printf '%s' \"$PAID_PREPARATION_B64\" | base64 -d > \"$PAID_PREPARATION_TARGET\"")
+        [ [ "prepared\n" ], [], 0 ]
+      elsif script.include?("mv \"$PAID_PREPARATION_BACKUP\" \"$PAID_PREPARATION_TARGET\"")
+        [ [], [ "mv: cannot stat backup\n" ], 1 ]
+      else
+        raise "Unexpected shell exec command: #{cmd.inspect} opts=#{opts.inspect}"
+      end
+    end
+  end
+
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, project: project) }
   let(:worktree_path) { Dir.mktmpdir("worktree") }
@@ -1040,6 +1071,23 @@ RSpec.describe Containers::Provision do
           "system",
           "container.execute.start",
           metadata: hash_including(command: satisfy { |command| !command.include?("super-secret") })
+        )
+      end
+
+      it "does not fail the command when preparation cleanup exits non-zero" do
+        preparation = build_preparation
+        allow(agent_run).to receive(:log!)
+        stub_exec_with_cleanup_failure(mock_container)
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
+
+        result = service.execute("echo 'hello'", preparation: preparation)
+
+        expect(result).to be_success
+        expect(result[:stdout]).to eq("command output\n")
+        expect(agent_run).to have_received(:log!).with(
+          "system",
+          "container.execute.preparation_cleanup_failed",
+          metadata: hash_including(error: "mv: cannot stat backup\n")
         )
       end
     end
