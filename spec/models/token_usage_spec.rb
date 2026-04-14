@@ -4,7 +4,8 @@ require "rails_helper"
 
 RSpec.describe TokenUsage do
   describe "associations" do
-    it { is_expected.to belong_to(:agent_run) }
+    it { is_expected.to belong_to(:agent_run).optional }
+    it { is_expected.to belong_to(:knowledge_run).optional }
   end
 
   describe "validations" do
@@ -16,6 +17,17 @@ RSpec.describe TokenUsage do
     it { is_expected.to validate_numericality_of(:output_tokens).is_greater_than_or_equal_to(0) }
     it { is_expected.to validate_numericality_of(:cost_cents).is_greater_than_or_equal_to(0) }
     it { is_expected.to validate_length_of(:llm_model).is_at_most(100) }
+
+    it "requires exactly one run association" do
+      usage = build(:token_usage, agent_run: nil, knowledge_run: nil)
+      expect(usage).not_to be_valid
+
+      usage = build(:token_usage, agent_run: nil, knowledge_run: create(:knowledge_run, :running))
+      expect(usage).to be_valid
+
+      usage.agent_run = create(:agent_run, :running)
+      expect(usage).not_to be_valid
+    end
   end
 
   describe "#total_tokens" do
@@ -31,12 +43,14 @@ RSpec.describe TokenUsage do
         project = create(:project)
         agent_run = create(:agent_run, :running, project: project)
         usage = create(:token_usage, agent_run: agent_run)
+        knowledge_run = create(:knowledge_run, :running, project: project)
+        knowledge_usage = create(:token_usage, :knowledge, knowledge_run: knowledge_run)
 
         other_project = create(:project)
         other_run = create(:agent_run, :running, project: other_project)
         create(:token_usage, agent_run: other_run)
 
-        expect(described_class.by_project(project.id)).to contain_exactly(usage)
+        expect(described_class.by_project(project.id)).to contain_exactly(usage, knowledge_usage)
       end
     end
 

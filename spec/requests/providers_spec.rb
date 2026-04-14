@@ -32,6 +32,36 @@ RSpec.describe "Providers" do
         expect(response.body).to include("Code Review Agent")
       end
 
+      it "renders collapsed auth instructions for every supported provider" do
+        get providers_path
+
+        expect(response.body).to include("Provider Auth Setup")
+        expect(response.body.scan(/<details[^>]*data-provider-instruction-key="/).size).to eq(Provider.supported_provider_keys.size)
+        expect(response.body).not_to match(/<details[^>]*data-provider-instruction-key="[^"]+"[^>]*\sopen(?:\s|>)/)
+        Provider.supported_provider_keys.each do |provider_key|
+          expect(response.body).to include(%(data-provider-instruction-key="#{provider_key}"))
+          expect(response.body).to include(Provider.display_name(provider_key))
+        end
+      end
+
+      it "includes a KiloCode instructions block" do
+        get providers_path
+
+        expect(response.body).to include(%(data-provider-instruction-key="kilocode"))
+        expect(response.body).to include(Provider.display_name("kilocode"))
+        expect(response.body).to include("Set a KiloCode model ID on the provider record")
+      end
+
+      it "renders a generic checklist when provider-specific copy is missing" do
+        allow(ProviderSupport).to receive(:supported_provider_keys).and_return(%w[claude mystery_provider])
+
+        get providers_path
+
+        expect(response.body).to include(%(data-provider-instruction-key="mystery_provider"))
+        expect(response.body).to include("Provider-specific setup notes are not available yet")
+        expect(response.body).to include("Generic Checklist")
+      end
+
       it "shows empty state when no addable providers remain" do
         allow(ProviderSupport).to receive(:addable_provider_keys).and_return([ "claude" ])
 

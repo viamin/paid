@@ -3,6 +3,7 @@
 FactoryBot.define do
   factory :token_usage do
     agent_run
+    knowledge_run { nil }
     request_type { "agent" }
     input_tokens { 1000 }
     output_tokens { 500 }
@@ -16,6 +17,12 @@ FactoryBot.define do
 
     trait :evaluation do
       request_type { "evaluation" }
+    end
+
+    trait :knowledge do
+      agent_run { nil }
+      knowledge_run
+      request_type { "knowledge" }
     end
 
     trait :large do
