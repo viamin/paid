@@ -50,14 +50,16 @@ module Workflows
     private
 
     def feature_flag_enabled?(flag_name, project_id:)
-      feature_flags_for(project_id).fetch(flag_name.to_sym)
+      snapshot = feature_flag_snapshot_for(project_id)
+      return false if snapshot[:project_missing]
+
+      snapshot.fetch(:flags).fetch(flag_name.to_sym)
     end
 
-    def feature_flags_for(project_id)
+    def feature_flag_snapshot_for(project_id)
       @feature_flags_by_project ||= {}
       @feature_flags_by_project[project_id] ||= begin
-        result = run_activity(Activities::LoadFeatureFlagsActivity, { project_id: project_id }, timeout: 10)
-        result.fetch(:flags, {})
+        run_activity(Activities::LoadFeatureFlagsActivity, { project_id: project_id }, timeout: 10)
       end
     end
 

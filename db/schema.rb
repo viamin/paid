@@ -577,6 +577,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
     t.index ["target_chunk_id"], name: "index_knowledge_links_on_target_chunk_id"
   end
 
+  create_table "knowledge_runs", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "final_provider", limit: 50
+    t.integer "max_tokens"
+    t.string "operation_type", limit: 50, null: false
+    t.bigint "project_id", null: false
+    t.jsonb "provider_attempts", default: [], null: false
+    t.string "proxy_token", limit: 64
+    t.string "status", limit: 50, default: "pending", null: false
+    t.string "token_limit_status", limit: 50
+    t.integer "total_tokens", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "status"], name: "index_knowledge_runs_on_project_id_and_status"
+    t.index ["project_id"], name: "index_knowledge_runs_on_project_id"
+    t.index ["proxy_token"], name: "index_knowledge_runs_on_proxy_token", unique: true
+  end
+
   create_table "linear_tokens", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.datetime "created_at", null: false
@@ -991,10 +1008,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
   end
 
   create_table "token_usages", force: :cascade do |t|
-    t.bigint "agent_run_id", null: false
+    t.bigint "agent_run_id"
     t.integer "cost_cents", default: 0, null: false
     t.datetime "created_at", null: false
     t.integer "input_tokens", default: 0, null: false
+    t.bigint "knowledge_run_id"
     t.string "llm_model", limit: 100
     t.jsonb "metadata", default: {}, null: false
     t.integer "output_tokens", default: 0, null: false
@@ -1002,8 +1020,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
     t.datetime "updated_at", null: false
     t.index ["agent_run_id", "request_type"], name: "index_token_usages_on_agent_run_id_and_request_type"
     t.index ["created_at"], name: "index_token_usages_on_created_at"
+    t.index ["knowledge_run_id"], name: "index_token_usages_on_knowledge_run_id"
     t.index ["llm_model"], name: "index_token_usages_on_llm_model"
     t.index ["request_type"], name: "index_token_usages_on_request_type"
+    t.check_constraint "(agent_run_id IS NOT NULL) <> (knowledge_run_id IS NOT NULL)", name: "token_usages_exactly_one_run"
   end
 
   create_table "user_settings", force: :cascade do |t|
@@ -1027,6 +1047,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
     t.integer "github_token_cache_ttl_minutes", default: 60, null: false
     t.integer "issue_goal_idle_timeout_seconds", default: 120, null: false
     t.integer "issue_goal_timeout_seconds", default: 600, null: false
+    t.jsonb "kb_chat_fallback_providers", default: [], null: false
+    t.string "kb_chat_provider", default: "claude", null: false
+    t.jsonb "kb_embedding_fallback_providers", default: [], null: false
+    t.string "kb_embedding_provider", default: "openai", null: false
     t.integer "max_comment_length", default: 2000, null: false
     t.integer "max_concurrent_runs", default: 2, null: false
     t.integer "max_issues_per_page", default: 50, null: false
@@ -1141,6 +1165,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
   add_foreign_key "knowledge_chunks", "projects"
   add_foreign_key "knowledge_links", "knowledge_chunks", column: "source_chunk_id", on_delete: :cascade
   add_foreign_key "knowledge_links", "knowledge_chunks", column: "target_chunk_id", on_delete: :cascade
+  add_foreign_key "knowledge_runs", "projects", on_delete: :cascade
   add_foreign_key "linear_tokens", "accounts"
   add_foreign_key "linear_tokens", "users", column: "created_by_id"
   add_foreign_key "mcp_server_definitions", "accounts"
@@ -1178,6 +1203,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_13_193745) do
   add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
   add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
+  add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "user_settings", "users"
   add_foreign_key "users", "accounts"
   add_foreign_key "workflow_states", "projects"

@@ -77,7 +77,9 @@ module Activities
       plan_label = project.label_for_stage(:plan)
       return { action: "start_planning", label: plan_label } if plan_label && issue.has_label?(plan_label)
 
-      if project.automation_on_label_enabled? && issue.has_label?(project.automation_label_name)
+      if project.automation_on_label_enabled? &&
+          !issue.is_pull_request? &&
+          issue.has_label?(project.automation_label_name)
         return { action: "execute_agent", label: project.automation_label_name }
       end
 

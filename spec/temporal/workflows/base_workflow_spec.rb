@@ -20,9 +20,18 @@ RSpec.describe Workflows::BaseWorkflow do
     it "loads the workflow flag snapshot through an activity and memoizes it per project" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::LoadFeatureFlagsActivity, { project_id: 123 }, timeout: 10)
-        .and_return(flags: { explicit_pr_automation_decisions: true })
+        .and_return(flags: { explicit_pr_automation_decisions: true }, project_missing: false)
 
       expect(workflow.execute(project_id: 123)).to eq([ true, true ])
+      expect(workflow).to have_received(:run_activity).once
+    end
+
+    it "returns false when the project disappears mid-workflow" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::LoadFeatureFlagsActivity, { project_id: 123 }, timeout: 10)
+        .and_return(flags: {}, project_missing: true)
+
+      expect(workflow.execute(project_id: 123)).to eq([ false, false ])
       expect(workflow).to have_received(:run_activity).once
     end
   end
