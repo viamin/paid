@@ -34,6 +34,15 @@ RSpec.describe TokenUsages::Aggregate do
       result = described_class.for_project(project.id)
       expect(result[:total_cost_cents]).to eq(30)
     end
+
+    it "includes knowledge-run token usage" do
+      knowledge_run = create(:knowledge_run, :running, project: project)
+      create(:token_usage, :knowledge, knowledge_run: knowledge_run, cost_cents: 40, input_tokens: 400, output_tokens: 0)
+
+      result = described_class.for_project(project.id)
+      expect(result[:total_cost_cents]).to eq(70)
+      expect(result[:total_input_tokens]).to eq(3400)
+    end
   end
 
   describe "#project_cost_projection" do

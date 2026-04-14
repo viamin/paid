@@ -12,29 +12,52 @@ module Api
   #   end
   module ContainerAuthentication
     extend ActiveSupport::Concern
-    PROXY_CREDENTIAL_PREFIX = "paid-run".freeze
+    AGENT_RUN_PROXY_CREDENTIAL_PREFIX = "paid-run".freeze
+    KNOWLEDGE_RUN_PROXY_CREDENTIAL_PREFIX = "paid-knowledge-run".freeze
 
     included do
+      class_attribute :knowledge_run_authentication_enabled, instance_accessor: false, default: false
+
       before_action :validate_container_request
-      before_action :set_agent_run
+      before_action :set_authenticated_run
       before_action :verify_proxy_token
+    end
+
+    class_methods do
+      def allow_knowledge_run_authentication!
+        self.knowledge_run_authentication_enabled = true
+      end
     end
 
     private
 
     def validate_container_request
-      @agent_run_id, @embedded_proxy_token = extract_embedded_proxy_credentials
-      @agent_run_id ||= request.headers["X-Agent-Run-Id"]
+      embedded_run_type, embedded_run_id, @embedded_proxy_token = extract_embedded_proxy_credentials
+      header_run_type, header_run_id = extract_header_run_identity
 
-      render json: { error: "Missing agent run ID" }, status: :unauthorized unless @agent_run_id.present?
+      @authenticated_run_type = embedded_run_type || header_run_type
+      @authenticated_run_id = embedded_run_id || header_run_id
+
+      return if @authenticated_run_id.present?
+
+      render json: { error: missing_run_id_error }, status: :unauthorized
     end
 
-    def set_agent_run
+    def set_authenticated_run
       return if performed?
 
-      @agent_run = AgentRun.find_by(id: @agent_run_id)
+      case @authenticated_run_type
+      when :knowledge_run
+        @knowledge_run = KnowledgeRun.find_by(id: @authenticated_run_id)
+        @authenticated_run = @knowledge_run
+        error_message = "Invalid or inactive knowledge run"
+      else
+        @agent_run = AgentRun.find_by(id: @authenticated_run_id)
+        @authenticated_run = @agent_run
+        error_message = "Invalid or inactive agent run"
+      end
 
-      render json: { error: "Invalid or inactive agent run" }, status: :forbidden unless @agent_run&.active?
+      render json: { error: error_message }, status: :forbidden unless @authenticated_run&.active?
     end
 
     def verify_proxy_token
@@ -46,7 +69,7 @@ module Api
         render(json: { error: "Invalid proxy token" }, status: :forbidden) and return
       end
 
-      stored_token = @agent_run.ensure_proxy_token!
+      stored_token = @authenticated_run.ensure_proxy_token!
 
       unless ActiveSupport::SecurityUtils.secure_compare(provided_token, stored_token)
         render json: { error: "Invalid proxy token" }, status: :forbidden
@@ -58,11 +81,36 @@ module Api
         parse_proxy_credential(request.headers["X-Goog-Api-Key"])
     end
 
-    def parse_proxy_credential(value)
-      match = value.to_s.match(/\A#{PROXY_CREDENTIAL_PREFIX}:(\d+):([0-9a-f]+)\z/i)
-      return unless match
+    def extract_header_run_identity
+      agent_run_id = request.headers["X-Agent-Run-Id"] || params[:agent_run_id]
+      return [ :agent_run, agent_run_id ] if agent_run_id.present?
 
-      [ match[1], match[2] ]
+      knowledge_run_id = request.headers["X-Knowledge-Run-Id"] || params[:knowledge_run_id]
+      return [ :knowledge_run, knowledge_run_id ] if knowledge_run_authentication_enabled? && knowledge_run_id.present?
+
+      [ nil, nil ]
+    end
+
+    def parse_proxy_credential(value)
+      agent_run_match = value.to_s.match(/\A#{AGENT_RUN_PROXY_CREDENTIAL_PREFIX}:(\d+):([0-9a-f]+)\z/i)
+      return [ :agent_run, agent_run_match[1], agent_run_match[2] ] if agent_run_match
+
+      knowledge_run_match = value.to_s.match(/\A#{KNOWLEDGE_RUN_PROXY_CREDENTIAL_PREFIX}:(\d+):([0-9a-f]+)\z/i)
+      return [ :knowledge_run, knowledge_run_match[1], knowledge_run_match[2] ] if knowledge_run_authentication_enabled? && knowledge_run_match
+
+      nil
+    end
+
+    def knowledge_run_authentication_enabled?
+      self.class.knowledge_run_authentication_enabled
+    end
+
+    def missing_run_id_error
+      if knowledge_run_authentication_enabled?
+        "Missing agent run ID or knowledge run ID"
+      else
+        "Missing agent run ID"
+      end
     end
   end
 end
