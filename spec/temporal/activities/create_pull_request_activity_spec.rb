@@ -171,15 +171,15 @@ RSpec.describe Activities::CreatePullRequestActivity do
       end
 
       it "adds both custom labels to the PR" do
-      activity.execute(agent_run_id: agent_run.id)
+        activity.execute(agent_run_id: agent_run.id)
 
-      expect(github_client).to have_received(:add_labels_to_issue).with(
-        project.full_name, 42, [ "custom-generated", "custom-automation" ]
-      )
-      expect(project.issues.pull_requests_only.find_by!(github_number: 42).labels)
-        .to include("custom-generated", "custom-automation")
+        expect(github_client).to have_received(:add_labels_to_issue).with(
+          project.full_name, 42, [ "custom-generated", "custom-automation" ]
+        )
+        expect(project.issues.pull_requests_only.find_by!(github_number: 42).labels)
+          .to include("custom-generated", "custom-automation")
+      end
     end
-  end
 
     context "with priority label inheritance" do
       let(:project) do

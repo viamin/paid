@@ -26,6 +26,10 @@ RSpec.describe BackfillLegacyReviewMaxRoundsDefaults, :aggregate_failures do
     })
   end
 
+  before do
+    allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+  end
+
   it "backfills persisted legacy default max review rounds without touching custom values" do
     legacy_defaults_project
     custom_project
