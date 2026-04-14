@@ -41,6 +41,7 @@ jobs:
           echo "head_repo_fork=$(jq -r '.head.repo.fork' <<<\"${pr_json}\")" >> "$GITHUB_OUTPUT"
 
       - name: Start PR head check run
+        if: steps.pr.outputs.head_repo_fork != 'true'
         id: check-run
         env:
           GH_TOKEN: ${{ github.token }}
@@ -97,7 +98,7 @@ jobs:
           allowed_bots: 'dependabot[bot]'
 
       - name: Complete PR head check run
-        if: always()
+        if: always() && steps.pr.outputs.head_repo_fork != 'true'
         env:
           CHECK_RUN_ID: ${{ steps.check-run.outputs.id }}
           GH_TOKEN: ${{ github.token }}

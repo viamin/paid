@@ -26,15 +26,16 @@ RSpec.describe ClaudeCodeReviewWorkflowFile do
     expect(permissions.fetch("checks")).to eq("write")
   end
 
-  it "creates and completes a Claude Code Review check run on the PR head sha" do
+  it "creates and completes a Claude Code Review check run on the PR head sha for same-repo PRs" do
     expect(steps).to include(
       a_hash_including(
         "name" => "Start PR head check run",
+        "if" => "steps.pr.outputs.head_repo_fork != 'true'",
         "env" => a_hash_including("HEAD_SHA" => "${{ steps.pr.outputs.head_sha }}")
       ),
       a_hash_including(
         "name" => "Complete PR head check run",
-        "if" => "always()",
+        "if" => "always() && steps.pr.outputs.head_repo_fork != 'true'",
         "env" => a_hash_including("CHECK_RUN_ID" => "${{ steps.check-run.outputs.id }}")
       )
     )
