@@ -11,6 +11,8 @@ RSpec.describe PollWorkflowHealthCheckJob do
   end
 
   describe "#perform" do
+    let(:job) { described_class.new }
+
     it "restarts workflows that are not running" do
       project = create(:project)
       workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
@@ -237,6 +239,18 @@ RSpec.describe PollWorkflowHealthCheckJob do
         id: "github-poll-#{project2.id}",
         task_queue: "paid-tasks"
       ).at_least(:once)
+    end
+
+    it "does not count a failed restart as restarted" do
+      project = create(:project)
+      allow(ProjectWorkflowManager).to receive_messages(
+        workflow_status: { status: Temporalio::Client::WorkflowExecutionStatus::FAILED, running: false },
+        restart_polling: false
+      )
+
+      expect(job.send(:check_and_heal, project)).to be(false)
+      expect(ProjectWorkflowManager).to have_received(:restart_polling)
+        .with(project, reason: "health check: was #{Temporalio::Client::WorkflowExecutionStatus::FAILED}")
     end
   end
 

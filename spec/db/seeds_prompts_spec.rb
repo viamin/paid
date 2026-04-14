@@ -110,4 +110,21 @@ RSpec.describe Prompt, type: :model do
         .to include('Case B: body starts with EXACTLY "Generated no new comments." and "comments" is []')
     end
   end
+
+  describe "coding.pr_review_rebase already-addressed marker" do
+    it "seeded template includes the no-change review resolution variable slot" do
+      template = described_class.global.find_by(slug: "coding.pr_review_rebase").current_version.template
+      expect(template).to include("{{already_addressed_instruction}}")
+    end
+
+    it "fallback prompt includes the no-change review resolution variable slot" do
+      expect(Prompts::BuildForPr::FALLBACK_PROMPT).to include("{{already_addressed_instruction}}")
+    end
+
+    it "seeded template declares the no-change review resolution variable" do
+      variables = described_class.global.find_by(slug: "coding.pr_review_rebase").current_version.variables
+      names = variables.map { |variable| variable["name"] || variable[:name] }
+      expect(names).to include("already_addressed_instruction")
+    end
+  end
 end

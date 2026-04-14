@@ -262,7 +262,7 @@ module Activities
       blocking_triggers = (review_bot_triggers || []).reject { |t|
         t[:type] == "review_bot_review_pending" || t[:type] == "paid_agent_review_pending"
       }
-      paid_agent_rounds_exhausted = reviews && paid_agent_review_rounds_exhausted?(project, reviews)
+      paid_agent_rounds_exhausted = reviews && paid_agent_review_rounds_exhausted?(project, reviews, issue)
 
       # A clean final paid_agent review should still allow the PR to advance.
       # Only escalate when the latest blocking review is from paid_agent and the
@@ -852,7 +852,7 @@ module Activities
       allowed = project&.review_enabled? ? (project.enabled_review_bot_logins.presence || Set.new) : nil
       latest = latest_allowed_bot_review(reviews, allowed)
       paid_agent_limit_reached_for_latest_review =
-        paid_agent_review_limit_reached_for_review?(project, reviews, latest)
+        paid_agent_review_limit_reached_for_review?(project, reviews, latest, issue)
 
       # Body-only bots (Codex, paid_agent) can post their CLEAN signal as an issue
       # comment — e.g. "Codex Review: Didn't find any major issues. Bravo." —
@@ -949,7 +949,12 @@ module Activities
             # touches at least one reviewed file. Treat as effectively clean
             # to avoid re-requesting reviews that would produce no new
             # comments.
-            []
+            if ProviderSupport.provider_bot_username_for?("paid_agent", latest&.dig(:user_login))
+              pending_review = check_paid_agent_review_status(project, issue)
+              pending_review.presence || []
+            else
+              []
+            end
           end
         end
       when :unknown
@@ -1749,11 +1754,11 @@ module Activities
       body.include?(PAID_REVIEW_CLEAN_MARKER)
     end
 
-    def paid_agent_review_limit_reached_for_review?(project, reviews, review)
+    def paid_agent_review_limit_reached_for_review?(project, reviews, review, issue = nil)
       return false unless review.is_a?(Hash)
       return false unless ProviderSupport.provider_bot_username_for?("paid_agent", review[:user_login])
 
-      paid_agent_review_rounds_exhausted?(project, reviews)
+      paid_agent_review_rounds_exhausted?(project, reviews, issue)
     end
 
     # --- Paid-agent review round limit enforcement ---
@@ -1772,9 +1777,10 @@ module Activities
     # Counts the number of reviews submitted by the paid_agent bot account
     # on this PR. Each review submission counts as one round regardless of
     # state (APPROVED, COMMENTED, CHANGES_REQUESTED).
-    def paid_agent_review_count(reviews)
+    def paid_agent_review_count(reviews, issue = nil)
       return 0 if reviews.nil?
 
+      reviews = paid_agent_reviews_for_current_cycle(reviews, issue)
       paid_agent_logins = ProviderSupport::PROVIDER_BOT_USERNAMES.fetch("paid_agent", []).map(&:downcase).to_set
       reviews.count { |r| paid_agent_logins.include?(r[:user_login]&.downcase) }
     end
@@ -1782,11 +1788,23 @@ module Activities
     # Returns true when the paid_agent review method is enabled and the
     # number of reviews from the bot account on this PR has reached or
     # exceeded the configured max_review_rounds limit.
-    def paid_agent_review_rounds_exhausted?(project, reviews)
+    def paid_agent_review_rounds_exhausted?(project, reviews, issue = nil)
       max_rounds = paid_agent_max_review_rounds(project)
       return false if max_rounds.nil? || max_rounds <= 0
 
-      paid_agent_review_count(reviews) >= max_rounds
+      paid_agent_review_count(reviews, issue) >= max_rounds
+    end
+
+    def paid_agent_reviews_for_current_cycle(reviews, issue)
+      return reviews if reviews.nil?
+
+      reset_at = issue&.review_goal_retry_reset_at
+      return reviews unless issue&.pr_review_phase == "restarted" && reset_at.present?
+
+      reviews.select do |review|
+        submitted_at = review[:submitted_at]
+        submitted_at.nil? || submitted_at > reset_at
+      end
     end
 
     def paid_agent_limit_reason(project)
