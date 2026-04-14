@@ -1647,8 +1647,6 @@ module Activities
     def allowed_review_bot_logins(project)
       return nil unless project&.review_enabled?
 
-      return ProviderSupport.all_bot_usernames if project.address_all_bot_reviews?
-
       project.enabled_review_bot_logins.presence || Set.new
     end
 
