@@ -889,6 +889,54 @@ RSpec.describe GithubClient do
 
         expect(result.multi_page?).to be true
       end
+
+      context "when callers request multiple trailing pages" do
+        before do
+          stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
+            .with(query: hash_including("per_page" => "100", "page" => "5"))
+            .to_return(
+              status: 200,
+              body: [
+                { id: 401, body: "Newer comment", user: { login: "maintainer" } },
+                { id: 402, body: "Newest comment", user: { login: "maintainer" } }
+              ].to_json,
+              headers: { "Content-Type" => "application/json", "Link" => page_five_link_header }
+            )
+
+          stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
+            .with(query: hash_including("per_page" => "100", "page" => "4"))
+            .to_return(
+              status: 200,
+              body: [
+                { id: 301, body: "Older recent comment", user: { login: "maintainer" } },
+                { id: 302, body: "Less old recent comment", user: { login: "maintainer" } }
+              ].to_json,
+              headers: { "Content-Type" => "application/json", "Link" => page_four_link_header }
+            )
+        end
+
+        let(:page_five_link_header) do
+          %(<#{api_base}/repos/#{repo}/issues/42/comments?page=4&per_page=100>; rel="prev")
+        end
+
+        let(:page_four_link_header) do
+          %(<#{api_base}/repos/#{repo}/issues/42/comments?page=3&per_page=100>; rel="prev", ) +
+            %(<#{api_base}/repos/#{repo}/issues/42/comments?page=5&per_page=100>; rel="next")
+        end
+
+        it "returns the bounded trailing window in ascending order" do
+          result = client.recent_issue_comments(repo, 42, pages: 2)
+
+          expect(result.map(&:id)).to eq([ 301, 302, 401, 402 ])
+        end
+
+        it "stops after the requested number of pages" do
+          client.recent_issue_comments(repo, 42, pages: 2)
+
+          expect(a_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
+            .with(query: hash_including("page" => "4"))).to have_been_made.once
+        end
+      end
     end
   end
 
