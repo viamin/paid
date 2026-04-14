@@ -380,9 +380,9 @@ class GithubClient
     end
   end
 
-  # Fetches a bounded trailing window of conversation comments. Use this for
-  # idempotency checks or prompt building where auto-paginating all comments
-  # is unnecessary and wastes API rate limit on long-lived PRs.
+  # Fetches the most recent page of conversation comments. Use this for
+  # idempotency checks where auto-paginating all comments is unnecessary
+  # and wastes API rate limit on long-lived PRs.
   #
   # IMPORTANT: GitHub's REST `/repos/{owner}/{repo}/issues/{number}/comments`
   # endpoint always returns comments in ascending order by ID and does NOT
@@ -394,31 +394,58 @@ class GithubClient
   #
   # @param repo [String] Repository in "owner/name" format
   # @param number [Integer] Issue or PR number
-  # @param pages [Integer] Number of trailing pages to return (minimum 1)
-  # @return [Array<Sawyer::Resource>] Up to pages * 100 most-recent comments,
-  #   each with .user.login, .body, .created_at. Returned in ascending ID
-  #   order so callers can safely take the tail.
+  # @param pages [Integer] Number of most-recent pages to fetch (default: 1)
+  # @return [Array<Sawyer::Resource>] Up to +pages * 100+ most-recent comments,
+  #   each with .user.login, .body, .created_at. Order is ascending by ID
+  #   across the returned slice so callers can safely take the tail.
   def recent_issue_comments(repo, number, pages: 1)
     handle_errors do
-      page_window = [ pages.to_i, 1 ].max
       first_page = client.issue_comments(repo, number, per_page: 100, page: 1)
       last_rel = client.last_response&.rels&.dig(:last)
 
       unless last_rel
-        return tag_multi_page(first_page, false)
+        return tag_recent_issue_comments_metadata(first_page, multi_page: false, older_pages_available: false)
       end
 
-      trailing_pages = [ client.get(last_rel.href) ]
+      page_count = [ pages.to_i, 1 ].max
+      recent_pages = []
+      page_response = client.get(last_rel.href)
+      recent_pages << Array(page_response)
+      remaining_pages = page_count - 1
 
-      while trailing_pages.size < page_window
+      while remaining_pages.positive?
         prev_rel = client.last_response&.rels&.dig(:prev)
         break unless prev_rel
 
-        trailing_pages << client.get(prev_rel.href)
+        page_response = client.get(prev_rel.href)
+        recent_pages << Array(page_response)
+        remaining_pages -= 1
       end
 
-      ordered_comments = trailing_pages.reverse.flat_map(&:to_a).sort_by(&:id)
-      tag_multi_page(ordered_comments, true)
+      prev_rel = client.last_response&.rels&.dig(:prev)
+      tag_recent_issue_comments_metadata(
+        recent_pages.reverse.flatten,
+        multi_page: true,
+        older_pages_available: prev_rel.present?,
+        next_older_page_url: prev_rel&.href
+      )
+    end
+  end
+
+  # Fetches a single older page of issue comments by URL.
+  #
+  # @param page_url [String] Full GitHub API URL for the page
+  # @return [Array<Sawyer::Resource>] Comments with older_pages_available? and next_older_page_url metadata
+  def fetch_issue_comment_page(page_url)
+    handle_errors do
+      page_response = client.get(page_url)
+      prev_rel = client.last_response&.rels&.dig(:prev)
+      tag_recent_issue_comments_metadata(
+        Array(page_response),
+        multi_page: true,
+        older_pages_available: prev_rel.present?,
+        next_older_page_url: prev_rel&.href
+      )
     end
   end
 
@@ -956,9 +983,13 @@ class GithubClient
 
   private
 
-  def tag_multi_page(page, multi)
-    page.instance_variable_set(:@multi_page, multi)
+  def tag_recent_issue_comments_metadata(page, multi_page:, older_pages_available:, next_older_page_url: nil)
+    page.instance_variable_set(:@multi_page, multi_page)
+    page.instance_variable_set(:@older_pages_available, older_pages_available)
+    page.instance_variable_set(:@next_older_page_url, next_older_page_url)
     page.define_singleton_method(:multi_page?) { @multi_page }
+    page.define_singleton_method(:older_pages_available?) { @older_pages_available }
+    page.define_singleton_method(:next_older_page_url) { @next_older_page_url }
     page
   end
 

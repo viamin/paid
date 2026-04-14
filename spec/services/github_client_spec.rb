@@ -844,16 +844,11 @@ RSpec.describe GithubClient do
         result = client.recent_issue_comments(repo, 42)
 
         expect(result.multi_page?).to be false
+        expect(result.older_pages_available?).to be false
       end
     end
 
     context "when the comment list spans multiple pages" do
-      let(:page4_link_header) do
-        %(<#{api_base}/repos/#{repo}/issues/42/comments?page=3&per_page=100>; rel="prev", ) +
-          %(<#{api_base}/repos/#{repo}/issues/42/comments?page=5&per_page=100>; rel="next", ) +
-          %(<#{api_base}/repos/#{repo}/issues/42/comments?page=5&per_page=100>; rel="last")
-      end
-
       # The /issues/:number/comments endpoint returns comments in ascending
       # order and ignores sort/direction params, so the first page is the
       # OLDEST comments. To get the most recent comments in a bounded
@@ -861,8 +856,6 @@ RSpec.describe GithubClient do
       before do
         link_header = %(<#{api_base}/repos/#{repo}/issues/42/comments?page=2&per_page=100>; rel="next", ) +
           %(<#{api_base}/repos/#{repo}/issues/42/comments?page=5&per_page=100>; rel="last")
-        last_page_link_header =
-          %(<#{api_base}/repos/#{repo}/issues/42/comments?page=4&per_page=100>; rel="prev")
 
         stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
           .with(query: hash_including("per_page" => "100", "page" => "1"))
@@ -882,21 +875,7 @@ RSpec.describe GithubClient do
             ].to_json,
             headers: {
               "Content-Type" => "application/json",
-              "Link" => last_page_link_header
-            }
-          )
-
-        stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
-          .with(query: hash_including("per_page" => "100", "page" => "4"))
-          .to_return(
-            status: 200,
-            body: [
-              { id: 301, body: "Older recent comment", user: { login: "reviewer" } },
-              { id: 302, body: "Oldest on last two pages", user: { login: "reviewer" } }
-            ].to_json,
-            headers: {
-              "Content-Type" => "application/json",
-              "Link" => page4_link_header
+              "Link" => %(<#{api_base}/repos/#{repo}/issues/42/comments?page=4&per_page=100>; rel="prev")
             }
           )
       end
@@ -909,24 +888,101 @@ RSpec.describe GithubClient do
         expect(result.map(&:body)).not_to include("Very old comment")
       end
 
-      it "marks the result as multi-page" do
+      it "marks the result as multi-page with next_older_page_url" do
         result = client.recent_issue_comments(repo, 42)
 
         expect(result.multi_page?).to be true
+        expect(result.older_pages_available?).to be true
+        expect(result.next_older_page_url).to eq("#{api_base}/repos/#{repo}/issues/42/comments?page=4&per_page=100")
       end
 
-      it "can fetch multiple trailing pages in ascending ID order" do
+      it "can include a bounded trailing window of recent pages" do
+        stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments?page=4&per_page=100")
+          .to_return(
+            status: 200,
+            body: [
+              { id: 301, body: "Older recent comment", user: { login: "maintainer" } }
+            ].to_json,
+            headers: {
+              "Content-Type" => "application/json",
+              "Link" => %(<#{api_base}/repos/#{repo}/issues/42/comments?page=3&per_page=100>; rel="prev", ) +
+                %(<#{api_base}/repos/#{repo}/issues/42/comments?page=5&per_page=100>; rel="next")
+            }
+          )
+
         result = client.recent_issue_comments(repo, 42, pages: 2)
 
-        expect(result.map(&:id)).to eq([ 301, 302, 401, 402 ])
-        expect(result.map(&:body)).to eq([
-          "Older recent comment",
-          "Oldest on last two pages",
-          "Newer comment",
-          "Newest comment"
-        ])
+        expect(result.map(&:body)).to eq([ "Older recent comment", "Newer comment", "Newest comment" ])
         expect(result.multi_page?).to be true
+        expect(result.older_pages_available?).to be true
       end
+
+      it "marks the result when the fetched window already includes the oldest page" do
+        stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments?page=4&per_page=100")
+          .to_return(
+            status: 200,
+            body: [
+              { id: 301, body: "Older recent comment", user: { login: "maintainer" } }
+            ].to_json,
+            headers: {
+              "Content-Type" => "application/json",
+              "Link" => %(<#{api_base}/repos/#{repo}/issues/42/comments?page=5&per_page=100>; rel="next")
+            }
+          )
+
+        result = client.recent_issue_comments(repo, 42, pages: 5)
+
+        expect(result.map(&:body)).to eq([ "Older recent comment", "Newer comment", "Newest comment" ])
+        expect(result.multi_page?).to be true
+        expect(result.older_pages_available?).to be false
+        expect(result.next_older_page_url).to be_nil
+      end
+    end
+  end
+
+  describe "#fetch_issue_comment_page" do
+    let(:repo) { "owner/repo" }
+
+    it "fetches a single page by URL and exposes pagination metadata" do
+      page_url = "#{api_base}/repos/#{repo}/issues/42/comments?page=3&per_page=100"
+      prev_url = "#{api_base}/repos/#{repo}/issues/42/comments?page=2&per_page=100"
+
+      stub_request(:get, page_url)
+        .to_return(
+          status: 200,
+          body: [
+            { id: 301, body: "Page 3 comment", user: { login: "dev" } }
+          ].to_json,
+          headers: {
+            "Content-Type" => "application/json",
+            "Link" => %(<#{prev_url}>; rel="prev")
+          }
+        )
+
+      result = client.fetch_issue_comment_page(page_url)
+
+      expect(result.size).to eq(1)
+      expect(result.first.body).to eq("Page 3 comment")
+      expect(result.older_pages_available?).to be true
+      expect(result.next_older_page_url).to eq(prev_url)
+    end
+
+    it "returns nil next_older_page_url when no prev link exists" do
+      page_url = "#{api_base}/repos/#{repo}/issues/42/comments?page=1&per_page=100"
+
+      stub_request(:get, page_url)
+        .to_return(
+          status: 200,
+          body: [
+            { id: 1, body: "First page comment", user: { login: "dev" } }
+          ].to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      result = client.fetch_issue_comment_page(page_url)
+
+      expect(result.older_pages_available?).to be false
+      expect(result.next_older_page_url).to be_nil
     end
   end
 
