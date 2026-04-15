@@ -114,6 +114,7 @@ Rails.application.routes.draw do
       controller: "projects/pre_commit_requirements"
     resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"
     post :detect_services, on: :member
+    post :ensure_labels, on: :member
   end
 
   # API endpoints for agent containers
