@@ -22,6 +22,10 @@ module Api
         handle_pull_request
       when "issue_comment"
         handle_issue_comment
+      when "check_suite"
+        handle_check_suite
+      when "check_run"
+        handle_check_run
       else
         head :ok
       end
@@ -52,6 +56,12 @@ module Api
     def handle_pull_request
       action = payload["action"]
       pr = payload["pull_request"] || {}
+
+      # Trigger auto-release evaluation when a release-please PR is opened,
+      # updated, or labeled — these events may make it eligible for auto-merge.
+      if %w[opened synchronize labeled].include?(action) && @project&.auto_release_enabled?
+        enqueue_auto_release_evaluation(pr["number"])
+      end
 
       # Only act on merge events — other PR actions (opened, synchronize, etc.)
       # are not relevant to human feedback quality signals.
@@ -109,6 +119,36 @@ module Api
       )
 
       head :ok
+    end
+
+    def handle_check_suite
+      return head(:ok) unless payload["action"] == "completed"
+      return head(:ok) unless @project&.auto_release_enabled?
+
+      enqueue_auto_release_evaluation
+      head :ok
+    end
+
+    def handle_check_run
+      return head(:ok) unless payload["action"] == "completed"
+      return head(:ok) unless @project&.auto_release_enabled?
+
+      enqueue_auto_release_evaluation
+      head :ok
+    end
+
+    def enqueue_auto_release_evaluation(pr_number = nil)
+      if pr_number
+        AutoReleaseEvaluationJob.perform_later(@project.id, pr_number: pr_number)
+      else
+        AutoReleaseEvaluationJob.perform_later(@project.id)
+      end
+    rescue => e
+      Rails.logger.warn(
+        message: "auto_release.enqueue_failed",
+        project_id: @project.id,
+        error: e.message
+      )
     end
 
     # Shared lookup used by all three event handlers (pull_request_review,
