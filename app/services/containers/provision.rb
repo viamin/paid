@@ -343,9 +343,16 @@ module Containers
       ensure
         watchdog_mutex.synchronize { exec_completed = true }
         stop_watchdog(watchdog)
-        # Guard: if the main command raised ($!), skip cleanup to avoid
-        # a cleanup exception replacing the original error in the ensure block.
-        cleanup_execution_preparation(cleanup_steps, env: env) unless $!
+        if cleanup_steps&.any?
+          if $!
+            # An exception is already propagating; attempt cleanup but swallow
+            # failures so the original exception is not replaced.
+            # cleanup_execution_preparation already logs and invalidates.
+            safe_cleanup_execution_preparation(cleanup_steps, env: env)
+          else
+            cleanup_execution_preparation(cleanup_steps, env: env)
+          end
+        end
       end
     end
 
@@ -451,17 +458,34 @@ module Containers
     def cleanup_execution_preparation(cleanup_steps, env:)
       cleanup_error = nil
 
-      Array(cleanup_steps).reverse_each do |cleanup|
-        run_preparation_script(cleanup_script, env: env, script_env: cleanup)
-      rescue Docker::Error::DockerError, ExecutionError => e
-        cleanup_error ||= e
-        log_system("container.execute.preparation_cleanup_failed", error: e.message)
+      Array(cleanup_steps).reverse_each do |step_env|
+        # Intentionally keeps only the first error (cleanup_error ||= e) so the
+        # caller sees the root-cause failure rather than a cascading one.
+        cleanup_error ||= run_preparation_cleanup_step(step_env, env: env)
       end
 
       return unless cleanup_error
 
       invalidate_container_after_preparation_cleanup_failure!
       raise cleanup_execution_error(cleanup_error)
+    end
+
+    # Best-effort cleanup that never raises, for use in ensure blocks when
+    # an exception is already propagating.
+    def safe_cleanup_execution_preparation(cleanup_steps, env:)
+      cleanup_execution_preparation(cleanup_steps, env: env)
+    rescue ExecutionError
+      log_system("container.execute.preparation_cleanup_swallowed", note: "swallowed to preserve original exception")
+    end
+
+    # Runs a single preparation cleanup step, returning the error on failure
+    # or nil on success.
+    def run_preparation_cleanup_step(step_env, env:)
+      run_preparation_script(cleanup_script, env: env, script_env: step_env)
+      nil
+    rescue Docker::Error::DockerError, ExecutionError => e
+      log_system("container.execute.preparation_cleanup_failed", error: e.message)
+      e
     end
 
     def materialize_preparation_file(write, env:)
