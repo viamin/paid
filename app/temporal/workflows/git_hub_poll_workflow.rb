@@ -396,8 +396,9 @@ module Workflows
 
     def handle_non_bot_review_pending(project_id, pr_data, trigger_types)
       # For manual_review_pending, request a review from the configured reviewer.
-      # For ci_action_pending, there is nothing to dispatch — the PR stays
-      # in its current phase until the configured action posts a result.
+      # For ci_action_pending, dispatch the Claude review workflow only when
+      # the trigger explicitly asks for it; otherwise the PR simply waits for
+      # the existing check run to finish.
       manual_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "manual_review_pending" }
       if manual_trigger
         login = manual_trigger[:reviewer_login]
@@ -406,6 +407,12 @@ module Workflows
             [ login ],
             log_key: "pr_review.request_manual_review_failed")
         end
+      end
+
+      ci_action_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "ci_action_pending" }
+      if ci_action_trigger&.dig(:dispatch_required)
+        run_activity(Activities::DispatchClaudeReviewActivity,
+          { project_id: project_id, pr_number: pr_data[:pr_number] }, timeout: 60)
       end
 
       # If there are other actionable triggers beyond the non-bot gates,

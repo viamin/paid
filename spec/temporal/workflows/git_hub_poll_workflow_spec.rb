@@ -764,6 +764,41 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
+    it "dispatches Claude review when ci_action_pending requests it" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [ { type: "ci_action_pending", action_name: "Claude Code Review", dispatch_required: true } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::DispatchClaudeReviewActivity,
+          { project_id: project_id, pr_number: 42 }, timeout: 60)
+      expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+    end
+
+    it "dispatches Claude review and still starts followup when other triggers are present" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [
+          { type: "ci_action_pending", action_name: "Claude Code Review", dispatch_required: true },
+          { type: "ci_failure", details: [ "rspec" ] }
+        ],
+        current_draft_review_count: 0
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::DispatchClaudeReviewActivity,
+          { project_id: project_id, pr_number: 42 }, timeout: 60)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(count_toward_draft_review_round: true, expected_draft_review_count: 0),
+          timeout: anything)
+    end
+
     it "starts followup when manual_review_pending is combined with other triggers" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
