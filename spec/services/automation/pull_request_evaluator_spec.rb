@@ -51,5 +51,40 @@ RSpec.describe Automation::PullRequestEvaluator do
         ]
       )
     end
+
+    it "suppresses create_pr followup when paid_agent_review_pending coexists with other triggers (#1135)" do
+      result = described_class.new(record: pull_request, explicit_pr_decisions: true).call(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [
+          { type: "paid_agent_review_pending" },
+          { type: "ci_failure", details: [ "test-suite" ] }
+        ]
+      })
+
+      decision_types = result.to_h[:decisions].map { |d| d[:type] }
+      expect(decision_types).to include("queue_review_run")
+      expect(decision_types).not_to include("queue_create_pr_run")
+    end
+
+    it "suppresses create_pr followup even with active_run and multiple triggers (#1135)" do
+      result = described_class.new(record: pull_request, explicit_pr_decisions: true).call(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        current_followup_count: 0,
+        triggers: [
+          { type: "paid_agent_review_pending", active_run: true },
+          { type: "merge_conflicts", details: "PR has merge conflicts" },
+          { type: "conversation_comments", details: "3 new comment(s)" }
+        ]
+      })
+
+      decision_types = result.to_h[:decisions].map { |d| d[:type] }
+      expect(decision_types).not_to include("queue_create_pr_run")
+      expect(decision_types).not_to include("record_pr_followup")
+    end
   end
 end
