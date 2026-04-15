@@ -7,6 +7,7 @@ RSpec.describe ApplicationJob do
     {
       default: %w[
         AnomalyDetectionJob
+        AutoReleaseEvaluationJob
         DiagnoseErrorJob
         EnqueueKnowledgeCollectionJob
         GithubTokenValidationJob
