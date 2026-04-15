@@ -137,7 +137,7 @@ module Knowledge
           error_class: e.class.name,
           error: e.message
         )
-        nil
+        send_to_llm_in_process(prompt)
       ensure
         finalize_knowledge_run!(knowledge_run)
       end
@@ -240,7 +240,7 @@ module Knowledge
       def finalize_knowledge_run!(knowledge_run)
         return unless knowledge_run&.persisted?
 
-        knowledge_run.update!(status: knowledge_run.active? ? "completed" : knowledge_run.status)
+        knowledge_run.update!(status: "completed") if knowledge_run.active?
       rescue ActiveRecord::RecordInvalid => e
         Rails.logger.warn(
           message: "knowledge.decisions.draft_knowledge_run_finalize_failed",

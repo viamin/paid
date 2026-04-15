@@ -275,9 +275,8 @@ RSpec.describe Knowledge::Decisions::Draft do
 
       record = described_class.call(agent_run: agent_run)
 
-      # Should return nil because containerized failed and in-process is not attempted
-      # (fallback to in-process only when Docker unavailable)
-      expect(record).to be_nil
+      expect(record).to be_a(DecisionRecord)
+      expect(AgentHarness).to have_received(:send_message)
     end
 
     it "finalizes knowledge run even when container fails" do

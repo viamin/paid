@@ -130,7 +130,7 @@ module Knowledge
       exec_completed = false
       timed_out = false
 
-      watchdog = start_watchdog(timeout, mutex) do
+      watchdog = start_watchdog(timeout) do
         mutex.synchronize do
           unless exec_completed
             timed_out = true
@@ -308,7 +308,7 @@ module Knowledge
       "http://paid-proxy:#{proxy_port}"
     end
 
-    def start_watchdog(timeout, _mutex)
+    def start_watchdog(timeout)
       Thread.new do
         sleep(timeout)
         should_stop = yield
