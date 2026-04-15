@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.21.0](https://github.com/viamin/paid/compare/v0.20.2...v0.21.0) (2026-04-14)
+
+
+### Features
+
+* **token-tracking:** verify aider token ingestion ([#1105](https://github.com/viamin/paid/issues/1105)) ([55e1ea1](https://github.com/viamin/paid/commit/55e1ea1c18e0c993a4260dfb7b8acdfa5be56654))
+
+
+### Bug Fixes
+
+* 1028: providers page: collapse configuration instructions by default and add instruction blocks for all supported providers ([#1101](https://github.com/viamin/paid/issues/1101)) ([fb88d8a](https://github.com/viamin/paid/commit/fb88d8a8cfde9728791c446c8b7aac5602ac46e3))
+* 1031: feat(token-tracking): ingest Kilo (kilocode) token usage data from agent-harness ([#1106](https://github.com/viamin/paid/issues/1106)) ([9207328](https://github.com/viamin/paid/commit/9207328f04c11a8afe9e095e7c45043a696263c1))
+* 1036: codex: classify refresh_token_reused as auth_expired instead of generic provider error ([#1090](https://github.com/viamin/paid/issues/1090)) ([6bf9c3f](https://github.com/viamin/paid/commit/6bf9c3fb682a02ddb1d9a00c33a9b08e70035354))
+* 1040: feat(knowledge): extend secrets proxy to authenticate knowledge-run operations ([#1088](https://github.com/viamin/paid/issues/1088)) ([6c3226e](https://github.com/viamin/paid/commit/6c3226ea68d4906a2bea91ba50d555369ec100bd))
+* 1051: fix(agent-runs): has_changes? fallback misses committed changes when base_commit_sha is nil ([#1109](https://github.com/viamin/paid/issues/1109)) ([e849f0f](https://github.com/viamin/paid/commit/e849f0f86efdbfaf0b0c099cc72488855a91df6b))
+* 1056: fix(workflow): silent restart failure when WorkflowAlreadyStartedError is raised ([#1096](https://github.com/viamin/paid/issues/1096)) ([97807ea](https://github.com/viamin/paid/commit/97807eaaf455ebcb6b9805ee3a6c71446f6b6947))
+* 1057: fix(workflow): health check doesn't record stale state before restart ([#1099](https://github.com/viamin/paid/issues/1099)) ([c55d020](https://github.com/viamin/paid/commit/c55d020902fa94e8082088710459fa3dc7015a1a))
+* 1072: fix(scanner): backfill review_goal_retry_reset_at for existing issues ([#1092](https://github.com/viamin/paid/issues/1092)) ([fd7ec48](https://github.com/viamin/paid/commit/fd7ec48e4bacb085b863eaca3f6fad2e333b6a1c))
+* 1078: Automate enqueuing of paid‑code‑review agent runs for PRs without active runs ([#1112](https://github.com/viamin/paid/issues/1112)) ([58c6594](https://github.com/viamin/paid/commit/58c65948b869aee4046f8adf806f9de2c894e413))
+* 1080: fix(automation): initial sync can start create_pr runs for existing PRs with only review-pending signals ([#1084](https://github.com/viamin/paid/issues/1084)) ([5c488e2](https://github.com/viamin/paid/commit/5c488e2528e0ed74cd23776929b2fe5d775773e5))
+* 1085: feat(infrastructure): add Flipper-based feature flags for staged automation rollouts ([#1091](https://github.com/viamin/paid/issues/1091)) ([5cd374d](https://github.com/viamin/paid/commit/5cd374d0bc0a9d7800a08d961a6d0e42f280ff7c))
+* **agent-runs:** fail invalid create-issue fallback runs ([#1068](https://github.com/viamin/paid/issues/1068)) ([33ff648](https://github.com/viamin/paid/commit/33ff6485af623cff73fed13a58a50a336b923cbb))
+* **agent-runs:** resolve addressed review threads on no-change PR runs ([#1077](https://github.com/viamin/paid/issues/1077)) ([f1a6140](https://github.com/viamin/paid/commit/f1a6140999abfedb506d1fdf5e7d05b0fc846bba))
+* **agent-runs:** sync created pull requests into local cache ([#1132](https://github.com/viamin/paid/issues/1132)) ([1ed0a4a](https://github.com/viamin/paid/commit/1ed0a4af9d919a7c90dd7449e53fdb90490f2bf4))
+* **pr-review:** requeue paid-agent reviews and raise default review rounds ([#1133](https://github.com/viamin/paid/issues/1133)) ([03e2022](https://github.com/viamin/paid/commit/03e202209ba6738e395e81cac88c9337b27e5038))
+* **projects:** colorize synced issue priority labels ([#1110](https://github.com/viamin/paid/issues/1110)) ([374de7e](https://github.com/viamin/paid/commit/374de7e92def7f6e94a3f29eb37cd49b40597572))
+* **prompts:** exclude paid-generated PR comments from followup prompts ([#1134](https://github.com/viamin/paid/issues/1134)) ([bbfd852](https://github.com/viamin/paid/commit/bbfd852d695c505c08e1194b7ecad20dc2cf1f95))
+* **prompts:** limit PR conversation context ([#1097](https://github.com/viamin/paid/issues/1097)) ([d5cfb61](https://github.com/viamin/paid/commit/d5cfb61f7f381c744e5a149ce38e3994f8719d19))
+* **providers:** wrap fallback order around active primary ([#1093](https://github.com/viamin/paid/issues/1093)) ([ffceaea](https://github.com/viamin/paid/commit/ffceaea32a7688dd204909d13893d14365432cfe))
+* **workflow:** allow restarting stale monitors ([#1094](https://github.com/viamin/paid/issues/1094)) ([8cff03d](https://github.com/viamin/paid/commit/8cff03df258459d9b38388b64154b339f1022c3a))
+* **workflow:** keep restart button in status broadcasts ([#1095](https://github.com/viamin/paid/issues/1095)) ([0dc678d](https://github.com/viamin/paid/commit/0dc678daa40c4d53e3a9e4462c2919f91ee9e0ee))
+
 ## [0.20.2](https://github.com/viamin/paid/compare/v0.20.1...v0.20.2) (2026-04-13)
 
 
