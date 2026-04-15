@@ -1113,6 +1113,39 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when Codex and Copilot are both enabled and only Codex signals clean via comment" do
+      before do
+        enable_copilot_and_codex_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+          body: "Codex Review: Didn't find any major issues. Bravo.",
+          created_at: 5.minutes.ago
+        )
+        # Codex left a non-clean review, then posted a clean comment.
+        # Copilot has NOT reviewed at all. The pending trigger for Copilot
+        # must still fire — Codex's clean comment cannot speak for Copilot.
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
+                       body: "Found 2 issues.", submitted_at: 10.minutes.ago } ],
+          review_threads: [],
+          recent_issue_comments: [ clean_comment ]
+        )
+      end
+
+      it "still emits review_bot_review_pending for the missing Copilot review" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).to include("review_bot_review_pending")
+      end
+    end
+
     context "when an older codex clean comment is followed by a newer non-clean codex review" do
       before do
         enable_codex_review!
@@ -1857,6 +1890,35 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when address_all_bot_reviews is enabled and the configured bot has stale feedback but a newer non-configured bot is clean" do
+      before do
+        enable_paid_agent_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Please tighten the error handling.", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Codex reviewed 3 files and generated no new comments.", submitted_at: 30.minutes.ago }
+          ],
+          review_threads: [],
+          checks: [ { name: "ci", conclusion: "success" } ]
+        )
+      end
+
+      it "keeps the configured bot feedback actionable" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(trigger_types).to include("review_bot_comments")
+      end
+    end
+
     context "when address_all_bot_reviews is enabled and a non-enabled body-only bot posts a clean comment superseding an older review" do
       before do
         enable_copilot_review!
@@ -2118,6 +2180,29 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger = result[:prs_to_trigger].first
         expect(trigger[:phase]).to eq("draft")
         expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
+      end
+    end
+
+    context "when address_all_bot_reviews is enabled and no bot reviews exist" do
+      before do
+        enable_copilot_review!
+        project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(reviews: [])
+      end
+
+      it "still requests review from the configured bot only" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first[:triggers].sole
+        expect(trigger[:type]).to eq("review_bot_review_pending")
+        expect(trigger[:request_login]).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
       end
     end
 
@@ -2607,6 +2692,42 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "does not enforce paid_agent round limits or escalate" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("escalate_to_owner")
+      end
+    end
+
+    context "when review is enabled with paid_agent but enabled_review_bot_logins returns empty" do
+      before do
+        enable_paid_agent_review!(max_review_rounds: 1)
+        project.update!(owner_reviewer_login: "viamin")
+        # Simulate an edge case where enabled_review_bot_logins resolves to
+        # an empty set (e.g. provider support mapping is missing). The
+        # allowed_review_bot_logins helper returns Set.new instead of nil,
+        # so latest_allowed_bot_review matches nothing and
+        # paid_agent_is_latest_blocker? correctly returns false — no
+        # escalation occurs.
+        allow(Project).to receive(:find_by).and_call_original
+        allow(Project).to receive(:find_by).with(id: project.id).and_wrap_original do |_m, **_kw|
+          project.tap { |p| allow(p).to receive(:enabled_review_bot_logins).and_return(Set.new) }
+        end
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 3)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Found issues.", submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "does not escalate because no bot matches the empty allowed set" do
         result = activity.execute(project_id: project.id)
 
         trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }

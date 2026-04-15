@@ -872,7 +872,7 @@ module Activities
     BODY_ONLY_REVIEW_PROVIDER_KEYS = %w[codex paid_agent].freeze
 
     def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
-      allowed = project&.review_enabled? ? (project.enabled_review_bot_logins.presence || Set.new) : nil
+      allowed = allowed_review_bot_logins(project)
       latest = latest_allowed_bot_review(reviews, allowed)
       paid_agent_limit_reached_for_latest_review =
         paid_agent_review_limit_reached_for_review?(project, reviews, latest, issue)
@@ -1251,21 +1251,15 @@ module Activities
     # configuration AND is at least as recent as that bot's latest review on
     # this PR.
     #
-    # The override is restricted to projects whose enabled review bots are
-    # ALL body-only — i.e. no thread-based bot like Copilot is also enabled.
-    # A clean codex comment cannot speak for an outstanding Copilot review
-    # whose unresolved threads are tracked separately, so in mixed
-    # configurations we defer to the existing classification path.
-    #
     # The comment-vs-review timestamp comparison prevents an older "Bravo"
     # comment from masking a newer non-clean review on a subsequent commit.
     # We intentionally do not require the bot's absolute latest issue comment
     # to be clean, because body-only bots can emit later informational
     # comments (for example setup guidance) that do not request PR changes and
     # should not suppress an earlier clean completion signal. The bypass is
-    # also restricted to projects whose enabled body-only bot methods all map
-    # to the same provider family as the clean comment; a Codex clean comment
-    # cannot speak for an outstanding paid_agent review.
+    # restricted to projects whose enabled review bots are ALL body-only; in
+    # mixed-bot projects (e.g. Codex + Copilot), a clean Codex comment cannot
+    # suppress the pending trigger for Copilot.
     def body_only_bot_clean_comment_present?(client, project, issue, latest_review, allowed_bot_logins)
       return false if allowed_bot_logins.nil? || allowed_bot_logins.empty?
       return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
@@ -1676,6 +1670,19 @@ module Activities
       ProviderSupport.provider_bot_username?(login)
     end
 
+    # Returns the set of bot logins allowed to trigger review runs, or nil
+    # when review is disabled (nil means "no filtering" in
+    # latest_allowed_bot_review). An empty Set means "no bots enabled" —
+    # intentionally different from nil — so latest_allowed_bot_review
+    # matches nothing and callers like paid_agent_is_latest_blocker?
+    # correctly return false when review is enabled but no bots are
+    # configured.
+    def allowed_review_bot_logins(project)
+      return nil unless project&.review_enabled?
+
+      project.enabled_review_bot_logins.presence || Set.new
+    end
+
     def check_non_enabled_bot_reviews(reviews, unresolved_threads, project:, last_run:, client: nil, issue: nil)
       return [] unless project&.address_all_bot_reviews?
 
@@ -1865,7 +1872,7 @@ module Activities
 
       return false if other_enabled_body_only_bots?(project)
 
-      allowed = project.enabled_review_bot_logins.presence
+      allowed = allowed_review_bot_logins(project)
       latest = latest_allowed_bot_review(reviews, allowed)
       return false unless latest
 
