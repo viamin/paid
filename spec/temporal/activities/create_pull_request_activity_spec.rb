@@ -27,9 +27,14 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive_messages(pull_requests: [], create_pull_request: pr_response, issue: issue_response)
+    allow(github_client).to receive_messages(
+      pull_requests: [],
+      create_pull_request: pr_response,
+      issue: issue_response,
+      ref: instance_double(Sawyer::Resource),
+      compare_changed_files: []
+    )
     allow(github_client).to receive(:add_labels_to_issue)
-    allow(github_client).to receive(:compare_changed_files).and_return([])
     # Stub external agent harness so Llm::GeneratePrDescription runs without real external calls.
     # By default, return a failed response so the activity falls back to raw summary.
     allow(AgentHarness).to receive(:send_message)
@@ -603,6 +608,80 @@ RSpec.describe Activities::CreatePullRequestActivity do
         mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
           .find { |l| l.content.include?("summary may describe a different issue") }
         expect(mismatch_log).to be_nil
+      end
+    end
+
+    context "with pre-run branch existence guard" do
+      it "checks branch existence before creating a PR" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(github_client).to have_received(:ref).with(
+          project.full_name,
+          "heads/#{agent_run.branch_name}"
+        )
+      end
+
+      it "creates a PR when branch exists but no PR is found" do
+        allow(github_client).to receive_messages(ref: instance_double(Sawyer::Resource), pull_requests: [])
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(github_client).to have_received(:create_pull_request)
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+      end
+
+      it "falls back to normal create flow when branch is not found" do
+        allow(github_client).to receive(:ref)
+          .and_raise(GithubClient::NotFoundError.new("Not Found"))
+        allow(github_client).to receive(:pull_requests).and_return([])
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(github_client).to have_received(:create_pull_request)
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+      end
+
+      it "falls back to normal create flow when branch check raises a transient error" do
+        allow(github_client).to receive(:ref)
+          .and_raise(GithubClient::RateLimitError.new)
+        allow(github_client).to receive(:pull_requests).and_return([])
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(github_client).to have_received(:create_pull_request)
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+      end
+
+      it "logs branch not found at info level" do
+        allow(github_client).to receive(:ref)
+          .and_raise(GithubClient::NotFoundError.new("Not Found"))
+        mock_logger = instance_double(ActiveSupport::Logger, warn: nil)
+        allow(activity).to receive(:logger).and_return(mock_logger)
+        allow(mock_logger).to receive(:info)
+
+        expect(mock_logger).to receive(:info).with(hash_including(
+          message: "agent_execution.branch_not_found",
+          agent_run_id: agent_run.id,
+          branch: agent_run.branch_name
+        ))
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "logs branch check failure at warn level" do
+        allow(github_client).to receive(:ref)
+          .and_raise(Faraday::TimeoutError.new("timeout"))
+        mock_logger = instance_double(ActiveSupport::Logger, info: nil)
+        allow(activity).to receive(:logger).and_return(mock_logger)
+        allow(mock_logger).to receive(:warn)
+
+        expect(mock_logger).to receive(:warn).with(hash_including(
+          message: "agent_execution.branch_check_failed",
+          agent_run_id: agent_run.id,
+          branch: agent_run.branch_name
+        ))
+
+        activity.execute(agent_run_id: agent_run.id)
       end
     end
 

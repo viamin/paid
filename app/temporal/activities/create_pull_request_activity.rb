@@ -13,19 +13,42 @@ module Activities
 
         client = project.github_token.client
 
-        # Idempotency: reuse an existing PR for this branch if one was
-        # already created (e.g. by a prior attempt that failed after the
-        # GitHub API call but before the activity returned).
+        # Pre-run guard: verify the branch exists on GitHub and check for
+        # an existing open PR. This eliminates orphan branches (#1125) by
+        # ensuring a PR is always created when the branch is present.
+        branch_exists = branch_exists?(client, project, agent_run.branch_name, agent_run_id: agent_run_id)
         existing_pr = find_existing_pr(client, project, agent_run.branch_name, agent_run_id: agent_run_id)
-        pr = existing_pr || client.create_pull_request(
-          project.full_name,
-          base: project.default_branch,
-          head: agent_run.branch_name,
-          title: pr_title(issue),
-          body: pr_body(issue, agent_run, client: client),
-          draft: true
-        )
-        pr_action = existing_pr ? "reused" : "created"
+
+        if existing_pr
+          pr = existing_pr
+          pr_action = "reused"
+        elsif branch_exists
+          # Branch exists but no PR — create one to prevent orphan branch.
+          pr = client.create_pull_request(
+            project.full_name,
+            base: project.default_branch,
+            head: agent_run.branch_name,
+            title: pr_title(issue),
+            body: pr_body(issue, agent_run, client: client),
+            draft: true
+          )
+          pr_action = "created"
+        else
+          # Branch missing — fall back to normal create flow. This handles
+          # the race where the branch was deleted before the guard ran or
+          # the ref lookup failed transiently; create_pull_request will
+          # either succeed (if the branch exists despite the lookup miss)
+          # or raise, letting Temporal retry after the branch is pushed.
+          pr = client.create_pull_request(
+            project.full_name,
+            base: project.default_branch,
+            head: agent_run.branch_name,
+            title: pr_title(issue),
+            body: pr_body(issue, agent_run, client: client),
+            draft: true
+          )
+          pr_action = "created"
+        end
 
         # Persist completion as the very first step after obtaining the PR,
         # before any best-effort post-processing. This ensures a retry
@@ -55,6 +78,29 @@ module Activities
     end
 
     private
+
+    # Checks whether the branch exists on GitHub via the refs API.
+    # Returns true/false; network or rate-limit errors return false so
+    # the caller falls through to the normal create flow.
+    def branch_exists?(client, project, branch_name, agent_run_id:)
+      client.ref(project.full_name, "heads/#{branch_name}")
+      true
+    rescue GithubClient::NotFoundError
+      logger.info(
+        message: "agent_execution.branch_not_found",
+        agent_run_id: agent_run_id,
+        branch: branch_name
+      )
+      false
+    rescue StandardError => e
+      logger.warn(
+        message: "agent_execution.branch_check_failed",
+        agent_run_id: agent_run_id,
+        branch: branch_name,
+        error: e.message
+      )
+      false
+    end
 
     def find_existing_pr(client, project, branch_name, agent_run_id:)
       existing = client.pull_requests(
