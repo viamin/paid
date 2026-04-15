@@ -16,6 +16,7 @@ module Projects
       @q.sorts = "created_at desc" if @q.sorts.empty?
       @pagy, @agent_runs = pagy(@q.result)
       AgentRun.preload_source_pull_requests(@agent_runs)
+      @provider_options = base_scope.distinct_effective_providers
     end
 
     def show
@@ -83,6 +84,20 @@ module Projects
           on_error_path: new_project_agent_run_path(@project, goal: goal),
           custom_prompt: custom_prompt,
           goal: goal
+        )
+      elsif goal == "enhance_issue"
+        unless issue
+          redirect_to new_project_agent_run_path(@project, goal: goal),
+            alert: "Please select an issue to enhance."
+          return
+        end
+
+        create_run_and_redirect(
+          on_error_path: new_project_agent_run_path(@project, goal: goal),
+          issue: issue,
+          custom_prompt: custom_prompt,
+          goal: goal,
+          priority_tier: priority_tier
         )
       else
         source_pr_number = resolve_pull_request

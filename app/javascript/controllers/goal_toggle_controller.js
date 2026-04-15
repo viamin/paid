@@ -30,7 +30,7 @@ export default class extends Controller {
     const selected = this.element.querySelector("input[name='goal']:checked")
     const goal = selected ? selected.value : "create_pr"
 
-    const showIssue = goal === "create_pr"
+    const showIssue = goal === "create_pr" || goal === "enhance_issue"
     const showPr = goal === "create_pr" || goal === "review"
     const isReview = goal === "review"
     const showPriority = !isReview

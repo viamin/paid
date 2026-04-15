@@ -351,6 +351,11 @@ module Workflows
       other_triggers = trigger_types - [ "paid_agent_review_pending" ]
 
       if other_triggers.empty?
+        # paid_agent_review_pending as sole trigger means no code changes are
+        # needed — the review queue above is the only action. When the scanner
+        # detects unaddressed review findings it emits review_bot_comments
+        # alongside, which routes through handle_review_bot_review_pending
+        # with a create_pr follow-up instead (#1152).
         nil
       elsif pr_data[:phase].in?(%w[draft restarted])
         start_draft_followup_workflow(project_id, pr_data)

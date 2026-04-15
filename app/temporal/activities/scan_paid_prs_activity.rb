@@ -1085,9 +1085,18 @@ module Activities
         issue
       ).order(completed_at: :desc).first
 
-      if last_review_run && last_create_pr_run
+      if last_review_run
         review_timestamp = last_review_run.completed_at || last_review_run.updated_at
-        return [] if review_timestamp >= last_create_pr_run.completed_at
+        if last_create_pr_run
+          return [] if review_timestamp >= last_create_pr_run.completed_at
+        else
+          # No create_pr has run in the current cycle. A completed review
+          # with no subsequent code changes means findings are unaddressed —
+          # suppress re-triggering to avoid back-to-back review runs on
+          # identical code (#1152). The workflow routes this state to a
+          # create_pr follow-up instead.
+          return []
+        end
       end
 
       [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]
@@ -1371,7 +1380,8 @@ module Activities
       # keeps this safe in either case.
       pr_data = client.pull_request(project.full_name, issue.github_number)
       head_sha = pr_data&.head&.sha
-      return true if head_sha.nil? || head_sha == reviewed_commit
+      return true if head_sha.nil?
+      return false if head_sha == reviewed_commit
 
       changed_files = client.compare_changed_files(
         project.full_name, reviewed_commit, head_sha
