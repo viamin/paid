@@ -154,6 +154,18 @@ RSpec.describe ProcessRunQueueJob do
       expect(good_run.reload.status).to eq("pending")
     end
 
+    it "enqueues finished-run followups when workflow start fails" do
+      failing_run = create(:agent_run, :queued)
+
+      allow(temporal_client).to receive(:start_workflow).and_raise(StandardError, "Connection refused")
+
+      described_class.new.perform
+
+      expect(QualityMetricsCollectionJob).to have_been_enqueued.with(failing_run.id)
+      expect(AnomalyDetectionJob).to have_been_enqueued.with(failing_run.id)
+      expect(DashboardBroadcastJob).to have_been_enqueued.with(failing_run.project.account_id)
+    end
+
     it "fails run when project owner cannot be resolved" do
       project = create(:project)
       queued_run = create(:agent_run, :queued, project: project)

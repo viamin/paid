@@ -7,18 +7,18 @@ module Knowledge
 
       attr_reader :batch_size, :generator
 
-      def initialize(batch_size: nil, generator: nil, api_key: nil)
+      def initialize(batch_size: nil, generator: nil, api_key: nil, api_base_url: nil)
         raw = batch_size || ENV.fetch("EMBEDDING_BATCH_SIZE", DEFAULT_BATCH_SIZE)
         @batch_size = raw.to_i
         if @batch_size <= 0
           raise ArgumentError,
             "batch_size must be a positive integer; got #{raw.inspect}. Check EMBEDDING_BATCH_SIZE env var."
         end
-        @generator = generator || Generate.new(api_key: api_key)
+        @generator = generator || Generate.new(api_key: api_key, api_base_url: api_base_url)
       end
 
-      def self.call(project: nil, batch_size: nil, generator: nil, api_key: nil)
-        new(batch_size: batch_size, generator: generator, api_key: api_key).call(project: project)
+      def self.call(project: nil, batch_size: nil, generator: nil, api_key: nil, api_base_url: nil)
+        new(batch_size: batch_size, generator: generator, api_key: api_key, api_base_url: api_base_url).call(project: project)
       end
 
       def call(project: nil)

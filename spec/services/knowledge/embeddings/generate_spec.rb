@@ -140,6 +140,17 @@ RSpec.describe Knowledge::Embeddings::Generate do
       end
     end
 
+    it "uses an injected api_base_url for OpenAI-compatible providers" do
+      stub_request(:post, "https://openrouter.ai/api/v1/embeddings")
+        .with(headers: { "Authorization" => "Bearer #{api_key}" })
+        .to_return(status: 200, body: success_response_body, headers: { "Content-Type" => "application/json" })
+
+      results = described_class.call(texts: texts, api_base_url: "https://openrouter.ai/api/v1")
+
+      expect(results.size).to eq(2)
+      expect(results.first.vector).to eq(vector)
+    end
+
     it "raises EmbeddingError when OPENAI_API_KEY is not set" do
       allow(ENV).to receive(:fetch).with("OPENAI_API_KEY").and_call_original
       original = ENV["OPENAI_API_KEY"]

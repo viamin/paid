@@ -29,6 +29,9 @@ class Provider < ApplicationRecord
   }.freeze
 
   DIRECT_OUTBOUND_SERVICE_TYPES = DIRECT_OUTBOUND_API_PROVIDERS.values.map { |c| c[:service_type] }.to_set.freeze
+  OPENAI_COMPATIBLE_DIRECT_OUTBOUND_API_PROVIDER_KEYS = DIRECT_OUTBOUND_API_PROVIDERS.filter_map do |provider_key, config|
+    provider_key if (config[:opencode_npm] || "@ai-sdk/openai-compatible") == "@ai-sdk/openai-compatible"
+  end.freeze
 
   OPENCODE_API_PROVIDER_KEYS = DIRECT_OUTBOUND_API_PROVIDERS.keys.freeze
   OPENCODE_DEFAULT_API_PROVIDER = "openrouter"
