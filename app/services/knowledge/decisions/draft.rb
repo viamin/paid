@@ -13,6 +13,7 @@ module Knowledge
     class Draft
       TIMEOUT = 30
       DEFAULT_MODEL = "claude-sonnet-4-6"
+      DEFAULT_PROVIDER = "claude"
 
       PROMPT_SLUG = "knowledge.draft_decision"
 
@@ -53,16 +54,11 @@ module Knowledge
         return nil if changes_summary.blank?
 
         prompt = build_prompt(changes_summary)
-        response = send_to_llm(prompt)
-        parsed = parse_response(response)
+        parsed = draft_decision_record(prompt)
         return nil unless parsed
 
-        # Guard against malformed LLM output missing required fields.
-        required_keys = %i[title summary decision]
-        return nil unless required_keys.all? { |key| parsed[key].present? }
-
         create_decision_record(parsed)
-      rescue AgentHarness::Error, ActiveRecord::RecordInvalid => e
+      rescue ActiveRecord::RecordInvalid => e
         Rails.logger.error(
           message: "knowledge.decisions.draft_failed",
           agent_run_id: agent_run.id,
@@ -89,13 +85,53 @@ module Knowledge
       end
 
       def send_to_llm(prompt)
-        AgentHarness.send_message(
-          prompt,
-          provider: :claude,
-          model: DEFAULT_MODEL,
+        chat_providers.each do |provider|
+          response = AgentHarness.send_message(
+            prompt,
+            **llm_request_options(provider)
+          )
+
+          parsed = parse_response(response)
+          return parsed if parsed
+        rescue AgentHarness::Error => e
+          Rails.logger.warn(
+            message: "knowledge.decisions.draft_provider_failed",
+            agent_run_id: agent_run.id,
+            provider: provider,
+            error_class: e.class.name,
+            error: e.message
+          )
+        end
+
+        nil
+      end
+
+      def draft_decision_record(prompt)
+        parsed = send_to_llm(prompt)
+        return nil unless parsed
+
+        required_keys = %i[title summary decision]
+        return nil unless required_keys.all? { |key| parsed[key].present? }
+
+        parsed
+      end
+
+      def chat_providers
+        owner = agent_run.project&.effective_owner
+        setting = owner&.settings
+        providers = setting ? Knowledge::ProviderSelector.for_chat(user_setting: setting) : []
+
+        providers.presence || [ DEFAULT_PROVIDER ]
+      end
+
+      def llm_request_options(provider)
+        options = {
+          provider: ProviderSupport.harness_provider_key_for(provider).to_sym,
           timeout: TIMEOUT,
           dangerous_mode: false
-        )
+        }
+        options[:model] = DEFAULT_MODEL if provider == DEFAULT_PROVIDER
+        options
       end
 
       def parse_response(response)

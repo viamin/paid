@@ -21,6 +21,10 @@ FactoryBot.define do
     retry_max_attempts { 3 }
     retry_base_delay { 1.0 }
     retry_max_delay { 60.0 }
+    kb_embedding_provider { UserSetting::KB_EMBEDDING_PROVIDER_DEFAULT }
+    kb_embedding_fallback_providers { [] }
+    kb_chat_provider { UserSetting::KB_CHAT_PROVIDER_DEFAULT }
+    kb_chat_fallback_providers { [] }
     allowed_service_images { [ "postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest" ] }
   end
 end

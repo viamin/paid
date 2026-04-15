@@ -8,7 +8,21 @@ class EmbedChunksJob < ApplicationJob
 
   def perform(project_id = nil)
     project = project_id ? Project.find(project_id) : nil
+    provider_config = project&.knowledge_embedding_provider_configuration
 
-    Knowledge::Embeddings::Pipeline.call(project: project, api_key: project&.openai_api_key)
+    if project && provider_config.nil?
+      Rails.logger.info(
+        message: "knowledge.embed_chunks.skipped",
+        project_id: project.id,
+        reason: "no_embedding_provider"
+      )
+      return
+    end
+
+    Knowledge::Embeddings::Pipeline.call(
+      project: project,
+      api_key: provider_config&.api_key,
+      api_base_url: provider_config&.api_base_url
+    )
   end
 end

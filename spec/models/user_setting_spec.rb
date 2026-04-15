@@ -338,6 +338,13 @@ RSpec.describe UserSetting do
     it "sets default allowed github usernames" do
       expect(setting.default_allowed_github_usernames).to eq([])
     end
+
+    it "sets default knowledge provider values" do
+      expect(setting.kb_embedding_provider).to eq("openai")
+      expect(setting.kb_embedding_fallback_providers).to eq([])
+      expect(setting.kb_chat_provider).to eq("claude")
+      expect(setting.kb_chat_fallback_providers).to eq([])
+    end
   end
 
   describe "#provider_priority" do
@@ -510,6 +517,55 @@ RSpec.describe UserSetting do
       setting.fallback_providers = "not_an_array"
       expect(setting).not_to be_valid
       expect(setting.errors[:fallback_providers]).to include("must be an array")
+    end
+  end
+
+  describe "knowledge base provider settings" do
+    let(:setting) { build(:user_setting) }
+
+    it "normalizes blank primary providers to defaults" do
+      setting.kb_embedding_provider = " "
+      setting.kb_chat_provider = nil
+
+      expect(setting).to be_valid
+      expect(setting.kb_embedding_provider).to eq("openai")
+      expect(setting.kb_chat_provider).to eq("claude")
+    end
+
+    it "normalizes and deduplicates knowledge fallback providers" do
+      setting.kb_embedding_fallback_providers = [ " OpenAI ", "", "openai", "DeepSeek" ]
+      setting.kb_chat_fallback_providers = [ " Claude ", "cursor", "cursor" ]
+
+      expect(setting).to be_valid
+      expect(setting.kb_embedding_fallback_providers).to eq(%w[openai deepseek])
+      expect(setting.kb_chat_fallback_providers).to eq(%w[claude cursor])
+    end
+
+    it "rejects unsupported knowledge embedding providers" do
+      setting.kb_embedding_provider = "anthropic"
+      setting.kb_embedding_fallback_providers = [ "openai", "also-not-a-provider" ]
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:kb_embedding_provider]).to include("is not a supported knowledge embedding provider")
+      expect(setting.errors[:kb_embedding_fallback_providers]).to include("contains unsupported providers: also-not-a-provider")
+    end
+
+    it "rejects unsupported knowledge chat providers" do
+      setting.kb_chat_provider = "not-a-provider"
+      setting.kb_chat_fallback_providers = [ "claude", "also-invalid" ]
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:kb_chat_provider]).to include("is not a supported knowledge chat provider")
+      expect(setting.errors[:kb_chat_fallback_providers]).to include("contains unsupported providers: also-invalid")
+    end
+
+    it "rejects non-array knowledge fallback provider values" do
+      setting.kb_embedding_fallback_providers = "not_an_array"
+      setting.kb_chat_fallback_providers = {}
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:kb_embedding_fallback_providers]).to include("must be an array")
+      expect(setting.errors[:kb_chat_fallback_providers]).to include("must be an array")
     end
   end
 

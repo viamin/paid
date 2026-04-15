@@ -90,7 +90,10 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
 
       described_class.call(api_key: "sk-user-key")
 
-      expect(Knowledge::Embeddings::Generate).to have_received(:new).with(api_key: "sk-user-key")
+      expect(Knowledge::Embeddings::Generate).to have_received(:new).with(
+        api_key: "sk-user-key",
+        api_base_url: nil
+      )
     end
 
     it "respects configurable batch size" do

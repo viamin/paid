@@ -278,12 +278,14 @@ class Project < ApplicationRecord
       &.exists? || false
   end
 
-  # Returns true when an OpenAI API key is available from any source
-  # (user-configured or platform-level ENV). Use this to determine whether
-  # embedding/semantic search capabilities are available without leaking
-  # which source provides the key.
+  def knowledge_embedding_provider_configuration
+    Knowledge::ProviderConfiguration.for_embedding(project: self)
+  end
+
+  # Returns true when a configured knowledge embedding provider can be
+  # resolved from either a user API key or the platform OpenAI env fallback.
   def semantic_search_available?
-    openai_api_key_configured? || ENV["OPENAI_API_KEY"].present?
+    knowledge_embedding_provider_configuration.present?
   end
 
   def trusted_github_user?(login)

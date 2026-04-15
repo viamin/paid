@@ -33,12 +33,15 @@ module Knowledge
       end
 
       mode = @search_mode
+      provider_config = mode == "exact" ? nil : @project.knowledge_embedding_provider_configuration
 
-      unless @project.semantic_search_available?
+      if provider_config.nil?
         @search_mode = mode = "exact"
         api_key = nil
+        api_base_url = nil
       else
-        api_key = @project.openai_api_key unless mode == "exact"
+        api_key = provider_config.api_key
+        api_base_url = provider_config.api_base_url
       end
 
       result = ::Knowledge::Search.call(
@@ -47,7 +50,8 @@ module Knowledge
         mode: mode,
         artifact_type: params[:type].presence,
         limit: 20,
-        api_key: api_key
+        api_key: api_key,
+        api_base_url: api_base_url
       )
 
       @results = result[:results]
@@ -63,21 +67,22 @@ module Knowledge
 
       if @project.nil?
         @semantic_search_source = :unknown
-        @openai_key_record = nil
+        @semantic_search_provider_config = nil
+        @semantic_search_api_key_record = nil
         @search_mode = normalized_mode || Knowledge::Search::DEFAULT_MODE
         return
       end
 
-      record = @project.openai_provider_api_key_record
-      if record
+      config = @project.knowledge_embedding_provider_configuration
+      @semantic_search_provider_config = config
+      @semantic_search_api_key_record = config&.api_key_record
+
+      if config&.source == :user_key
         @semantic_search_source = :user_key
-        @openai_key_record = record
-      elsif ENV["OPENAI_API_KEY"].present?
+      elsif config&.source == :platform_env
         @semantic_search_source = :platform_env
-        @openai_key_record = nil
       else
         @semantic_search_source = :none
-        @openai_key_record = nil
       end
 
       if @semantic_search_source == :none

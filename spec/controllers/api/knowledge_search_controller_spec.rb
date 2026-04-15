@@ -53,6 +53,7 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
 
     it "supports mode parameter" do
       owner = project.effective_owner
+      owner.settings.update!(kb_embedding_provider: "openai", kb_embedding_fallback_providers: [])
       create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-mode")
 
       get "/api/knowledge/search", params: { project_id: project.id, q: "users", mode: "semantic" }
@@ -94,16 +95,17 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
       expect(response.parsed_body["error"]).to eq("Forbidden")
     end
 
-    it "passes the project's OpenAI API key to Knowledge::Search for non-exact modes" do
+    it "passes the configured knowledge provider credentials to Knowledge::Search for non-exact modes" do
       owner = project.effective_owner
-      api_key = create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-api")
+      owner.settings.update!(kb_embedding_provider: "openrouter", kb_embedding_fallback_providers: [ "openai" ])
+      api_key = create(:provider_api_key, user: owner, api_service_type: "openrouter", api_key: "sk-test-api")
 
       allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "hybrid", total: 0, took_ms: 0, exact_count: 0, semantic_count: 0 } })
 
       get "/api/knowledge/search", params: { project_id: project.id, q: "test", mode: "hybrid" }
 
       expect(Knowledge::Search).to have_received(:call).with(
-        hash_including(api_key: api_key.api_key)
+        hash_including(api_key: api_key.api_key, api_base_url: "https://openrouter.ai/api/v1")
       )
     end
 
@@ -116,7 +118,7 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
       get "/api/knowledge/search", params: { project_id: project.id, q: "test", mode: "exact" }
 
       expect(Knowledge::Search).to have_received(:call).with(
-        hash_including(api_key: nil)
+        hash_including(api_key: nil, api_base_url: nil)
       )
     end
 

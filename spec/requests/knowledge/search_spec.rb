@@ -30,18 +30,18 @@ RSpec.describe "Knowledge::Search" do
         expect(response.body).to include(project.name)
       end
 
-      it "shows a warning when no OpenAI API key is configured" do
+      it "shows a warning when no knowledge embedding provider is available" do
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
         get knowledge_search_path, params: { project_id: project.id }
-        expect(response.body).to include("No OpenAI API key configured")
+        expect(response.body).to include("No configured knowledge embedding provider is available")
       end
 
       it "shows the user key name and manage link when the current user owns the API key" do
         create(:provider_api_key, user: user, name: "My OpenAI Key", api_service_type: "openai", api_key: "sk-test-key")
         project.update!(created_by: user)
         get knowledge_search_path, params: { project_id: project.id }
-        expect(response.body).not_to include("No OpenAI API key configured")
+        expect(response.body).not_to include("No configured knowledge embedding provider is available")
         expect(response.body).to include("My OpenAI Key")
         expect(response.body).to include("Manage your API keys")
       end
@@ -60,7 +60,7 @@ RSpec.describe "Knowledge::Search" do
         allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return("sk-platform-key")
         allow(ENV).to receive(:fetch).with("OPENAI_API_KEY", anything).and_return("sk-platform-key")
         get knowledge_search_path, params: { project_id: project.id }
-        expect(response.body).not_to include("No OpenAI API key configured")
+        expect(response.body).not_to include("No configured knowledge embedding provider is available")
         expect(response.body).to include("platform-provided")
         expect(response.body).not_to include("Manage your API keys")
         expect(response.body).not_to include("View your API keys")

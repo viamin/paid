@@ -26,7 +26,8 @@ class UserSettingsController < ApplicationController
   end
 
   def user_setting_params
-    permitted = params.require(:user_setting).permit(
+    raw_params = params.require(:user_setting)
+    permitted = raw_params.permit(
       :default_poll_interval_seconds,
       :github_token_cache_ttl_minutes,
       :token_validation_stale_minutes,
@@ -58,11 +59,19 @@ class UserSettingsController < ApplicationController
       :max_issues_per_page,
       :max_prs_per_page,
       :fallback_enabled,
-      :fallback_providers
+      :fallback_providers,
+      :kb_embedding_provider,
+      :kb_chat_provider
     )
 
-    if permitted.key?(:fallback_providers)
-      permitted[:fallback_providers] = UserSetting.normalize_fallback_providers_param(permitted[:fallback_providers])
+    %i[
+      fallback_providers
+      kb_embedding_fallback_providers
+      kb_chat_fallback_providers
+    ].each do |key|
+      next unless raw_params.key?(key)
+
+      permitted[key] = UserSetting.parse_provider_array_param(raw_params[key])
     end
 
     permitted

@@ -12,14 +12,15 @@ module Knowledge
 
       attr_reader :model, :dimensions
 
-      def initialize(model: MODEL, dimensions: DIMENSIONS, api_key: nil)
+      def initialize(model: MODEL, dimensions: DIMENSIONS, api_key: nil, api_base_url: nil)
         @model = model
         @dimensions = dimensions
         @explicit_api_key = api_key
+        @explicit_api_base_url = api_base_url
       end
 
-      def self.call(texts:, model: MODEL, dimensions: DIMENSIONS, api_key: nil)
-        new(model: model, dimensions: dimensions, api_key: api_key).call(texts: texts)
+      def self.call(texts:, model: MODEL, dimensions: DIMENSIONS, api_key: nil, api_base_url: nil)
+        new(model: model, dimensions: dimensions, api_key: api_key, api_base_url: api_base_url).call(texts: texts)
       end
 
       # Returns an array of Result structs with :vector and :token_count
@@ -48,7 +49,7 @@ module Knowledge
         retries = 0
 
         begin
-          response = connection.post("/v1/embeddings") do |req|
+          response = connection.post(embeddings_path) do |req|
             req.body = {
               input: texts,
               model: model,
@@ -114,7 +115,17 @@ module Knowledge
       end
 
       def api_base_url
+        return @explicit_api_base_url if @explicit_api_base_url.present?
+
         ENV.fetch("OPENAI_API_BASE_URL", "https://api.openai.com")
+      end
+
+      def embeddings_path
+        path = URI.parse(api_base_url).path.to_s.sub(%r{/\z}, "")
+        path = "/v1" if path.blank?
+        "#{path}/embeddings"
+      rescue URI::InvalidURIError
+        "/v1/embeddings"
       end
 
       def api_key
