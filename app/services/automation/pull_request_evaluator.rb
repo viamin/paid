@@ -69,9 +69,9 @@ module Automation
     def paid_agent_review_pending_decisions(scan, trigger_types)
       decisions = []
       decisions << queue_review_run_decision(scan) unless paid_agent_active?(scan)
-
-      other_triggers = trigger_types - [ "paid_agent_review_pending" ]
-      decisions.concat(followup_decisions(scan)) if other_triggers.any?
+      # paid_agent_review_pending is a hard gate: suppress create_pr follow-up
+      # runs while the review is outstanding. Other triggers will be re-detected
+      # after the review completes and feedback is addressed. (#1135)
       decisions
     end
 

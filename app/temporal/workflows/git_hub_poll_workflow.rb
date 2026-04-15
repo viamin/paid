@@ -337,14 +337,20 @@ module Workflows
     end
 
     def handle_paid_agent_review_pending(project_id, pr_data, trigger_types)
-      other_triggers = trigger_types - [ "paid_agent_review_pending" ]
-
       queue_paid_agent_review_run(project_id, pr_data)
 
+      if Temporalio::Workflow.patched("pause-followup-during-review-v1")
+        # paid_agent_review_pending is a hard gate: suppress all create_pr
+        # follow-up runs while the review for the current head is outstanding.
+        # Other triggers (CI failures, merge conflicts, conversation comments)
+        # will be re-detected on the next scan cycle after the review completes
+        # and any resulting code changes are made. (#1135)
+        return nil
+      end
+
+      other_triggers = trigger_types - [ "paid_agent_review_pending" ]
+
       if other_triggers.empty?
-        # No other work to do — the paid-agent review queue above is the only
-        # action needed unless the trigger merely reflects an already-active
-        # review-goal run.
         nil
       elsif pr_data[:phase].in?(%w[draft restarted])
         start_draft_followup_workflow(project_id, pr_data)
