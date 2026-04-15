@@ -27,6 +27,11 @@ class ApplicationController < ActionController::Base
   end
   helper_method :current_account
 
+  def feature_enabled?(flag_name, project: nil)
+    FeatureFlags.enabled?(flag_name, project:)
+  end
+  helper_method :feature_enabled?
+
   def user_not_authorized
     flash[:alert] = "You are not authorized to perform this action."
     redirect_back(fallback_location: root_path)

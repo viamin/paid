@@ -30,6 +30,8 @@ RSpec.describe "Providers" do
         expect(response.body).to include("Per-Run-Type Defaults")
         expect(response.body).to include("PR Agent")
         expect(response.body).to include("Code Review Agent")
+        expect(response.body).to include("fallback starts after it and wraps around")
+        expect(response.body).to include("The active primary provider is excluded automatically for each run")
       end
 
       it "renders collapsed auth instructions for every supported provider" do
