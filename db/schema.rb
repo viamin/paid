@@ -470,6 +470,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_14_154102) do
   create_table "issues", force: :cascade do |t|
     t.boolean "auto_continue_paused", default: false, null: false
     t.text "body"
+    t.datetime "ci_action_dispatched_at"
     t.datetime "created_at", null: false
     t.integer "draft_review_count", default: 0, null: false
     t.datetime "github_created_at", null: false

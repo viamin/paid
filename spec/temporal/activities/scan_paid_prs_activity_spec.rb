@@ -3147,6 +3147,104 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(types).not_to include("ready_for_owner")
         pending_trigger = trigger[:triggers].find { |t| t[:type] == "ci_action_pending" }
         expect(pending_trigger[:action_name]).to eq("e2e-suite")
+        expect(pending_trigger[:dispatch_required]).to be(false)
+      end
+    end
+
+    context "when draft PR has Claude ci_action review and the check is still missing on the first scan" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "ci_action" => { "enabled" => true, "action_name" => "Claude Code Review" } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+      end
+
+      it "marks the missing Claude check as dispatch_required without stamping state" do
+        result = activity.execute(project_id: project.id)
+
+        pending_trigger = result[:prs_to_trigger].first[:triggers].find { |t| t[:type] == "ci_action_pending" }
+        expect(pending_trigger[:dispatch_required]).to be(true)
+
+        issue = Issue.find_by(github_number: 42)
+        expect(issue.ci_action_dispatched_at).to be_nil
+      end
+    end
+
+    context "when draft PR has Claude ci_action review and a recent scan already requested dispatch" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0,
+          ci_action_dispatched_at: 1.minute.ago)
+      end
+
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "ci_action" => { "enabled" => true, "action_name" => "Claude Code Review" } }
+          }
+        )
+        pr_issue
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+      end
+
+      it "suppresses redispatch until the grace window expires" do
+        result = activity.execute(project_id: project.id)
+
+        pending_trigger = result[:prs_to_trigger].first[:triggers].find { |t| t[:type] == "ci_action_pending" }
+        expect(pending_trigger[:dispatch_required]).to be(false)
+      end
+    end
+
+    context "when draft PR is fork-backed and Claude ci_action review is enabled" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "ci_action" => { "enabled" => true, "action_name" => "Claude Code Review" } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          head_repo_fork: true,
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+      end
+
+      it "does not emit a blocking ci_action_pending trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
       end
     end
 
@@ -3175,6 +3273,39 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "advances to ready_for_owner" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+    end
+
+    context "when draft PR has ci_action-only review and the configured action has surrounding whitespace" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "ci_action" => { "enabled" => true, "action_name" => " e2e-suite " } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [
+            { name: "ci", conclusion: "success" },
+            { name: "e2e-suite", conclusion: "success" }
+          ],
+          reviews: [],
+          review_threads: []
+        )
+      end
+
+      it "treats the matching check as complete" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
@@ -3220,6 +3351,38 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         types = trigger[:triggers].map { |t| t[:type] }
         expect(types).to include("manual_review_pending")
         expect(types).not_to include("owner_approved")
+      end
+    end
+
+    context "when ready PR is fork-backed and Claude ci_action review is enabled" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_enabled: true,
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "ci_action" => { "enabled" => true, "action_name" => "Claude Code Review" } }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+        stub_github_for_pr(
+          head_repo_fork: true,
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [ { user_login: "viamin", state: "APPROVED", submitted_at: Time.current } ],
+          review_threads: []
+        )
+      end
+
+      it "allows owner approval to complete without a Claude check run" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("owner_approved")
       end
     end
 
@@ -6976,6 +7139,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     mergeable: true,
     draft: false,
     author_login: "someone-else",
+    head_repo_fork: false,
     checks: [ { name: "ci", conclusion: "success" } ],
     review_threads: [],
     issue_comments: [],
@@ -6985,7 +7149,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     head_committed_at: 2.hours.ago
   )
     pr_data = OpenStruct.new(
-      head: OpenStruct.new(sha: "abc123"),
+      head: OpenStruct.new(sha: "abc123", repo: OpenStruct.new(fork: head_repo_fork)),
       mergeable: mergeable,
       draft: draft,
       number: 42,
