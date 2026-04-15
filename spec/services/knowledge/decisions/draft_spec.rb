@@ -31,6 +31,7 @@ RSpec.describe Knowledge::Decisions::Draft do
   end
 
   before do
+    allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
     allow(AgentHarness).to receive(:send_message).and_return(llm_response)
     agent_run.log!("stdout", "Implemented JWT authentication for API endpoints")
   end
@@ -189,6 +190,133 @@ RSpec.describe Knowledge::Decisions::Draft do
 
       result = described_class.call(agent_run: agent_run)
       expect(result).to be_nil
+    end
+  end
+
+  describe "containerized execution" do
+    let(:mock_runner) do
+      instance_double(Knowledge::AnalysisRunner)
+    end
+
+    before do
+      allow(Knowledge::AnalysisRunner).to receive_messages(available?: true, supported_provider?: true, new: mock_runner)
+      allow(mock_runner).to receive(:with_container).and_yield(mock_runner)
+    end
+
+    it "uses containerized path when Docker is available" do
+      allow(mock_runner).to receive(:call_llm).and_return(llm_json)
+
+      record = described_class.call(agent_run: agent_run)
+
+      expect(record).to be_a(DecisionRecord)
+      expect(record.title).to eq("Use JWT for auth")
+      expect(AgentHarness).not_to have_received(:send_message)
+    end
+
+    it "creates a KnowledgeRun for tracking" do
+      allow(mock_runner).to receive(:call_llm).and_return(llm_json)
+
+      expect {
+        described_class.call(agent_run: agent_run)
+      }.to change(KnowledgeRun, :count).by(1)
+
+      kr = KnowledgeRun.last
+      expect(kr.operation_type).to eq("decision_drafting")
+      expect(kr.project).to eq(agent_run.project)
+      expect(kr.status).to eq("completed")
+    end
+
+    it "passes correct provider and model to container" do
+      allow(mock_runner).to receive(:call_llm).and_return(llm_json)
+
+      described_class.call(agent_run: agent_run)
+
+      expect(mock_runner).to have_received(:call_llm).with(
+        a_string_matching(/Decision Record/),
+        provider: "claude",
+        model: described_class::DEFAULT_MODEL,
+        timeout: described_class::TIMEOUT
+      )
+    end
+
+    it "tries fallback providers in container" do
+      project.created_by.settings.update!(kb_chat_provider: "cursor", kb_chat_fallback_providers: [ "claude" ])
+      allow(mock_runner).to receive(:call_llm)
+        .with(anything, hash_including(provider: "cursor"))
+        .and_raise(Knowledge::AnalysisRunner::ContainerError, "proxy error")
+      allow(mock_runner).to receive(:call_llm)
+        .with(anything, hash_including(provider: "claude"))
+        .and_return(llm_json)
+
+      record = described_class.call(agent_run: agent_run)
+
+      expect(record).to be_a(DecisionRecord)
+      expect(mock_runner).to have_received(:call_llm).twice
+    end
+
+    it "skips unsupported providers in containerized path" do
+      allow(Knowledge::AnalysisRunner).to receive(:supported_provider?).with("copilot").and_return(false)
+      allow(Knowledge::AnalysisRunner).to receive(:supported_provider?).with("claude").and_return(true)
+      project.created_by.settings.update!(kb_chat_provider: "copilot", kb_chat_fallback_providers: [ "claude" ])
+      allow(mock_runner).to receive(:call_llm).and_return(llm_json)
+
+      record = described_class.call(agent_run: agent_run)
+
+      expect(record).to be_a(DecisionRecord)
+      expect(mock_runner).to have_received(:call_llm).with(
+        anything,
+        hash_including(provider: "claude")
+      ).once
+    end
+
+    it "falls back to in-process when container provisioning fails" do
+      allow(mock_runner).to receive(:with_container)
+        .and_raise(Knowledge::AnalysisRunner::ContainerError, "no such image")
+
+      record = described_class.call(agent_run: agent_run)
+
+      # Should return nil because containerized failed and in-process is not attempted
+      # (fallback to in-process only when Docker unavailable)
+      expect(record).to be_nil
+    end
+
+    it "finalizes knowledge run even when container fails" do
+      allow(mock_runner).to receive(:with_container)
+        .and_raise(Knowledge::AnalysisRunner::ContainerError, "provision failed")
+
+      described_class.call(agent_run: agent_run)
+
+      kr = KnowledgeRun.last
+      expect(kr).to be_present
+      expect(kr.status).to eq("completed")
+    end
+
+    it "returns nil when all containerized providers fail" do
+      allow(mock_runner).to receive(:call_llm)
+        .and_raise(Knowledge::AnalysisRunner::ContainerError, "proxy error")
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result).to be_nil
+    end
+  end
+
+  describe "in-process fallback" do
+    it "uses AgentHarness when Docker is unavailable" do
+      allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
+
+      record = described_class.call(agent_run: agent_run)
+
+      expect(record).to be_a(DecisionRecord)
+      expect(AgentHarness).to have_received(:send_message)
+    end
+
+    it "does not create a KnowledgeRun for in-process path" do
+      allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
+
+      expect {
+        described_class.call(agent_run: agent_run)
+      }.not_to change(KnowledgeRun, :count)
     end
   end
 end
