@@ -1233,13 +1233,13 @@ module Activities
     # We intentionally do not require the bot's absolute latest issue comment
     # to be clean, because body-only bots can emit later informational
     # comments (for example setup guidance) that do not request PR changes and
-    # should not suppress an earlier clean completion signal. In mixed-bot
-    # projects, a clean body-only comment can supersede only when the latest
-    # review already came from the same body-only provider family; this lets a
-    # codex clean comment clear a stale codex review without satisfying the
-    # separate "configured bot review still pending" state for Copilot.
+    # should not suppress an earlier clean completion signal. The bypass is
+    # restricted to projects whose enabled review bots are ALL body-only; in
+    # mixed-bot projects (e.g. Codex + Copilot), a clean Codex comment cannot
+    # suppress the pending trigger for Copilot.
     def body_only_bot_clean_comment_present?(client, project, issue, latest_review, allowed_bot_logins)
       return false if allowed_bot_logins.nil? || allowed_bot_logins.empty?
+      return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
 
       comments = client.recent_issue_comments(project.full_name, issue.github_number)
       bot_comments = comments.select do |c|
@@ -1256,15 +1256,8 @@ module Activities
       provider_key = body_only_review_provider_key_for(latest_clean_comment.user&.login)
       return false if provider_key.nil?
 
-      # Only allow the body-only clean-comment bypass when every enabled
-      # review bot is body-only. In mixed configurations (e.g. Codex + Copilot),
-      # a clean Codex comment must not suppress the pending trigger for Copilot.
-      return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
-
       latest_review_provider_key = body_only_review_provider_key_for(latest_review&.dig(:user_login))
-      if latest_review_provider_key
-        return false if latest_review_provider_key != provider_key
-      end
+      return false if latest_review_provider_key && latest_review_provider_key != provider_key
 
       review_time = latest_review&.dig(:submitted_at)
       comment_time = latest_clean_comment.created_at
