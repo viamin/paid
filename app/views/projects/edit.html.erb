@@ -402,7 +402,10 @@
           </fieldset>
 
           <fieldset class="space-y-4">
-            <legend class="text-sm font-semibold leading-6 text-gray-900">Labels</legend>
+            <div class="flex items-center justify-between">
+              <legend class="text-sm font-semibold leading-6 text-gray-900">Labels</legend>
+              <%= link_to "Sync Labels to GitHub", ensure_labels_project_path(@project), data: { turbo_method: :post }, class: "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
+            </div>
 
             <div>
               <%= form.label :generated_label_name, "Generated Label", class: "block text-sm font-medium leading-6 text-gray-900" %>
