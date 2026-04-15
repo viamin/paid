@@ -22,23 +22,10 @@ module Activities
         if existing_pr
           pr = existing_pr
           pr_action = "reused"
-        elsif branch_exists
-          # Branch exists but no PR — create one to prevent orphan branch.
-          pr = client.create_pull_request(
-            project.full_name,
-            base: project.default_branch,
-            head: agent_run.branch_name,
-            title: pr_title(issue),
-            body: pr_body(issue, agent_run, client: client),
-            draft: true
-          )
-          pr_action = "created"
         else
-          # Branch missing — fall back to normal create flow. This handles
-          # the race where the branch was deleted before the guard ran or
-          # the ref lookup failed transiently; create_pull_request will
-          # either succeed (if the branch exists despite the lookup miss)
-          # or raise, letting Temporal retry after the branch is pushed.
+          # Create the PR whether the branch was confirmed to exist or the
+          # ref lookup failed transiently. If the branch is truly missing,
+          # create_pull_request will raise and Temporal will retry.
           pr = client.create_pull_request(
             project.full_name,
             base: project.default_branch,
