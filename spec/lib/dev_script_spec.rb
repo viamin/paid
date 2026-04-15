@@ -178,7 +178,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
 
   it "warns and exits when the overmind socket never appears after --detach" do
     Dir.mktmpdir("dev", exec_tmpdir) do |dir|
-      script_path = prepare_script_fixture(dir, overmind: { create_socket_on_start: false })
+      script_path = prepare_script_fixture(dir, overmind: { create_socket_on_start: false, start_sleep: 10 })
 
       env = {
         "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
@@ -224,6 +224,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     tmux_pane_dead = tmux.fetch(:pane_dead, false)
     start_exit_status = overmind.fetch(:start_exit_status, 0)
     create_socket_on_start = overmind.fetch(:create_socket_on_start, false)
+    start_sleep = overmind.fetch(:start_sleep, 0)
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
     FileUtils.mkdir_p(File.join(dir, "config"))
@@ -266,6 +267,9 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
             touch "#{dir}/overmind-running"
             if [ "#{create_socket_on_start ? 1 : 0}" = "1" ] && [ -n "${OVERMIND_SOCKET:-}" ]; then
               ruby -rsocket -e 'path = ENV.fetch("OVERMIND_SOCKET"); File.unlink(path) if File.exist?(path); UNIXServer.open(path) { |s| s.close }'
+            fi
+            if [ "#{start_sleep}" -gt 0 ]; then
+              sleep #{start_sleep}
             fi
             exit #{start_exit_status}
             ;;
