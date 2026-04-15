@@ -445,7 +445,7 @@ module Containers
       # Check for new commits since the given SHA
       log_result = execute_git("log", "--oneline", "#{commit_sha}..HEAD")
       raise Error, "Failed to check git log: #{error_with_stderr(log_result)}" if log_result.failure?
-      return true if log_result.success? && log_result[:stdout].present?
+      return true if log_result[:stdout].present?
 
       # Check for any uncommitted changes (staged or unstaged)
       status_result = execute_git("status", "--porcelain")
@@ -473,7 +473,7 @@ module Containers
 
       log_result = execute_git("log", "--oneline", "HEAD", "--not", "--remotes")
       raise Error, "Failed to check git log: #{error_with_stderr(log_result)}" if log_result.failure?
-      return true if log_result.success? && log_result[:stdout].present?
+      return true if log_result[:stdout].present?
 
       status_result = execute_git("status", "--porcelain")
       raise Error, "Failed to check git status: #{error_with_stderr(status_result)}" if status_result.failure?
