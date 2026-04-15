@@ -27,6 +27,7 @@ RSpec.describe Activities::DraftDecisionRecordActivity do
   end
 
   before do
+    allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
     allow(AgentHarness).to receive(:send_message).and_return(llm_response)
   end
 
