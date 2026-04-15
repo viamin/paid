@@ -3587,6 +3587,82 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(result[:prs_to_trigger]).to eq([])
       end
+
+      it "does not advance last_pr_scan_at when checks are pending" do
+        issue = Issue.find_by(github_number: 42)
+        issue.update_columns(last_pr_scan_at: nil, github_updated_at: Time.current)
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.not_to change { issue.reload.last_pr_scan_at }
+      end
+    end
+
+    context "when draft PR CI races post-review scan" do
+      let!(:draft_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0,
+          github_updated_at: 1.hour.ago,
+          last_pr_scan_at: nil)
+      end
+
+      before do
+        project.update!(owner_reviewer_login: "viamin")
+      end
+
+      it "does not advance last_pr_scan_at when CI is still in-progress" do
+        stub_github_for_pr(
+          checks: [
+            { name: "lint", conclusion: "success" },
+            { name: "rspec", conclusion: nil }
+          ],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+        expect(result[:prs_to_trigger]).to eq([])
+        expect(draft_issue.reload.last_pr_scan_at).to be_nil
+      end
+
+      it "emits ready_for_owner on second scan after CI finishes green" do
+        stub_github_for_pr(
+          checks: [
+            { name: "lint", conclusion: "success" },
+            { name: "rspec", conclusion: nil }
+          ],
+          review_threads: []
+        )
+        activity.execute(project_id: project.id)
+
+        stub_github_for_pr(
+          checks: [
+            { name: "lint", conclusion: "success" },
+            { name: "rspec", conclusion: "success" }
+          ],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
+        expect(draft_issue.reload.last_pr_scan_at).to be_present
+      end
+
+      it "returns :skipped when check fetch fails (checks nil)" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:check_runs_for_ref)
+          .and_raise(GithubClient::Error.new("API error"))
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.not_to change { draft_issue.reload.last_pr_scan_at }
+      end
     end
 
     context "when draft review limit is reached" do
