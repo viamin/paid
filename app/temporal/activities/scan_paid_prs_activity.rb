@@ -1670,6 +1670,13 @@ module Activities
       ProviderSupport.provider_bot_username?(login)
     end
 
+    # Returns the set of bot logins allowed to trigger review runs, or nil
+    # when review is disabled (nil means "no filtering" in
+    # latest_allowed_bot_review). An empty Set means "no bots enabled" —
+    # intentionally different from nil — so latest_allowed_bot_review
+    # matches nothing and callers like paid_agent_is_latest_blocker?
+    # correctly return false when review is enabled but no bots are
+    # configured.
     def allowed_review_bot_logins(project)
       return nil unless project&.review_enabled?
 

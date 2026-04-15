@@ -2699,6 +2699,42 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when review is enabled with paid_agent but enabled_review_bot_logins returns empty" do
+      before do
+        enable_paid_agent_review!(max_review_rounds: 1)
+        project.update!(owner_reviewer_login: "viamin")
+        # Simulate an edge case where enabled_review_bot_logins resolves to
+        # an empty set (e.g. provider support mapping is missing). The
+        # allowed_review_bot_logins helper returns Set.new instead of nil,
+        # so latest_allowed_bot_review matches nothing and
+        # paid_agent_is_latest_blocker? correctly returns false — no
+        # escalation occurs.
+        allow(Project).to receive(:find_by).and_call_original
+        allow(Project).to receive(:find_by).with(id: project.id).and_wrap_original do |_m, **_kw|
+          project.tap { |p| allow(p).to receive(:enabled_review_bot_logins).and_return(Set.new) }
+        end
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 3)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Found issues.", submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "does not escalate because no bot matches the empty allowed set" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("escalate_to_owner")
+      end
+    end
+
     context "when paid_agent review round limit is reached and no review exists yet (ready phase)" do
       before do
         project.update!(
