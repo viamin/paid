@@ -20,6 +20,7 @@ RSpec.describe Activities::DetectLabelsActivity do
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
         expect(result[:action]).to eq("execute_agent")
+        expect(result[:decisions]).to eq([ { type: "queue_create_pr_run", issue_id: issue.id } ])
         expect(result[:issue_id]).to eq(issue.id)
         expect(result[:project_id]).to eq(project.id)
       end
@@ -38,6 +39,7 @@ RSpec.describe Activities::DetectLabelsActivity do
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
         expect(result[:action]).to eq("start_planning")
+        expect(result[:decisions]).to eq([ { type: "start_planning", issue_id: issue.id } ])
       end
 
       it "updates paid_state to planning" do
@@ -299,6 +301,30 @@ RSpec.describe Activities::DetectLabelsActivity do
 
         expect(result[:action]).to eq("execute_agent")
         expect(result[:source_pull_request_number]).to eq(99)
+      end
+    end
+
+    context "when explicit PR decisions are enabled for a build-labeled pull request" do
+      let(:pull_request) do
+        create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new",
+               is_pull_request: true, github_number: 99)
+      end
+
+      before do
+        FeatureFlags.enable!(:explicit_pr_automation_decisions, project:)
+      end
+
+      it "returns noop instead of generic execute_agent" do
+        result = activity.execute(project_id: project.id, issue_id: pull_request.id)
+
+        expect(result[:action]).to eq("none")
+        expect(result[:decisions]).to eq([ { type: "noop" } ])
+      end
+
+      it "does not update paid_state" do
+        activity.execute(project_id: project.id, issue_id: pull_request.id)
+
+        expect(pull_request.reload.paid_state).to eq("new")
       end
     end
 

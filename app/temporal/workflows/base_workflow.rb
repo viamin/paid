@@ -53,7 +53,7 @@ module Workflows
       snapshot = feature_flag_snapshot_for(project_id)
       return false if snapshot[:project_missing]
 
-      snapshot.fetch(:flags).fetch(flag_name.to_sym)
+      snapshot.fetch(:flags, {}).fetch(flag_name.to_sym, false)
     end
 
     def feature_flag_snapshot_for(project_id)

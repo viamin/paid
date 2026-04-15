@@ -38,15 +38,17 @@ module Activities
     def execute(input)
       project_id = input[:project_id]
       project = Project.find_by(id: project_id)
-      return { prs_to_trigger: [], project_missing: true } unless project
-      return { prs_to_trigger: [] } unless project.auto_scan_prs
+      return { prs_to_trigger: [], automation_results: [], project_missing: true } unless project
+      return { prs_to_trigger: [], automation_results: [] } unless project.auto_scan_prs
 
       client = project.github_token.client
       paid_prs = find_paid_prs(project)
+      explicit_pr_decisions = FeatureFlags.explicit_pr_automation_decisions?(project:)
 
       scanned_count = 0
       unchanged_count = 0
       prs_to_trigger = []
+      automation_results = []
       paid_prs.each do |issue|
         if skip_unchanged_pr?(project, issue)
           if merge_conflict_rescan_needed?(project, issue)
@@ -54,7 +56,8 @@ module Activities
             if result && result != :skipped
               scanned_count += 1
               issue.update_column(:last_pr_scan_at, Time.current)
-              prs_to_trigger << result
+              collect_scan_result(issue, result, prs_to_trigger, automation_results,
+                explicit_pr_decisions:)
               next
             end
           end
@@ -69,14 +72,15 @@ module Activities
         next if result == :skipped
         scanned_count += 1
         issue.update_column(:last_pr_scan_at, Time.current)
-        prs_to_trigger << result if result
+        collect_scan_result(issue, result, prs_to_trigger, automation_results,
+          explicit_pr_decisions:) if result
       rescue Temporalio::Error::ApplicationError => e
         raise unless e.type == "RateLimit"
 
         logger.warn(
           message: "pr_scanner.rate_budget_exhausted_mid_scan",
           project_id: project_id,
-          prs_collected: prs_to_trigger.size,
+          prs_collected: explicit_pr_decisions ? automation_results.size : prs_to_trigger.size,
           prs_remaining: paid_prs.size - paid_prs.index(issue) - 1
         )
         break
@@ -88,13 +92,21 @@ module Activities
         prs_found: paid_prs.size,
         prs_scanned: scanned_count,
         prs_skipped_unchanged: unchanged_count,
-        prs_triggered: prs_to_trigger.size
+        prs_triggered: explicit_pr_decisions ? automation_results.size : prs_to_trigger.size
       )
 
-      { prs_to_trigger: prs_to_trigger }
+      { prs_to_trigger: prs_to_trigger, automation_results: automation_results }
     end
 
     private
+
+    def collect_scan_result(issue, result, prs_to_trigger, automation_results, explicit_pr_decisions:)
+      if explicit_pr_decisions
+        automation_results << Automation::Evaluator.for(issue, explicit_pr_decisions: true).call(scan: result).to_h
+      else
+        prs_to_trigger << result
+      end
+    end
 
     def find_paid_prs(project)
       project.issues
