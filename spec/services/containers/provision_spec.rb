@@ -840,6 +840,7 @@ RSpec.describe Containers::Provision do
 
       before do
         File.write(File.join(codex_config_dir, "auth.json"), "{}")
+        File.write(File.join(codex_config_dir, "config.toml"), "model = \"gpt-5\"")
 
         allow(ENV).to receive(:fetch).and_call_original
         allow(ENV).to receive(:[]).and_call_original
@@ -855,28 +856,104 @@ RSpec.describe Containers::Provision do
         FileUtils.rm_rf(codex_config_dir)
       end
 
-      it "mounts Codex config at a staging path and sets the subscription marker" do
+      it "bind-mounts only Codex auth/config files and sets the subscription marker" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
-          expect(binds).to include("#{codex_config_dir}:/home/agent/.codex-host:ro")
+          expect(binds).to include("#{File.join(codex_config_dir, 'auth.json')}:/home/agent/.codex/auth.json:rw")
+          expect(binds).to include("#{File.join(codex_config_dir, 'config.toml')}:/home/agent/.codex/config.toml:ro")
           env = config["Env"]
           expect(env).to include("PAID_CODEX_SUBSCRIPTION_AUTH=1")
           expect(env).to include("ANTHROPIC_BASE_URL=http://web:3000/api/proxy/anthropic")
+          expect(config["HostConfig"]["Tmpfs"]).to have_key("/home/agent/.codex")
           mock_container
         end
 
         service.provision
       end
 
-      it "seeds cached Codex auth instead of the proxy config file" do
+      it "uses a shared writable Codex auth mount instead of copying credentials" do
+        allow(agent_run).to receive(:log!).and_call_original
+
+        service.provision
+
+        expect(mock_container).not_to have_received(:exec).with(
+          [ "sh", "-lc", include("/home/agent/.codex/config.toml").and(include('model_provider = "paid"')) ],
+          user: "agent"
+        )
+        expect(agent_run).to have_received(:log!).with(
+          "system",
+          "container.codex_credentials_shared",
+          metadata: hash_including(source_path: codex_config_dir)
+        )
+      end
+
+      it "only chowns the tmpfs directory entry" do
         service.provision
 
         expect(mock_container).to have_received(:exec).with(
-          [ "sh", "-c", include("/home/agent/.codex-host/auth.json").and(include("/home/agent/.codex/auth.json")) ],
-          user: "agent"
+          [ "chown", "agent:agent", "/home/agent/.codex" ],
+          user: "root"
         )
         expect(mock_container).not_to have_received(:exec).with(
-          [ "sh", "-lc", include("/home/agent/.codex/config.toml").and(include('model_provider = "paid"')) ],
+          [ "chown", "-R", "agent:agent", "/home/agent/.codex" ],
+          user: "root"
+        )
+      end
+    end
+
+    context "with Codex subscription auth from the devcontainer filesystem" do
+      let(:codex_local_dir) { Dir.mktmpdir("codex-local") }
+
+      before do
+        File.write(File.join(codex_local_dir, "auth.json"), '{"refresh_token":"test-token"}')
+        File.write(File.join(codex_local_dir, "config.toml"), "model = \"gpt-5\"")
+
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+        allow(service).to receive_messages(
+          claude_local_config_path: nil,
+          codex_local_config_path: codex_local_dir,
+          gemini_local_config_path: nil,
+          copilot_local_config_path: nil
+        )
+      end
+
+      after do
+        FileUtils.rm_rf(codex_local_dir)
+      end
+
+      it "sets the subscription marker without bind-mounting the local path" do
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expect(binds.none? { |bind| bind.include?(":/home/agent/.codex:rw") }).to be true
+          expect(config["Env"]).to include("PAID_CODEX_SUBSCRIPTION_AUTH=1")
+
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs).to have_key("/home/agent/.codex")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "copies local Codex auth files into the writable tmpfs" do
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [ "chown", "agent:agent", "/home/agent/.codex" ],
+          user: "root"
+        )
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-lc", satisfy { |cmd| cmd.include?("/home/agent/.codex/auth.json") && decoded_base64_content(cmd).include?("refresh_token") } ],
+          user: "agent"
+        )
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-lc", satisfy { |cmd| cmd.include?("/home/agent/.codex/config.toml") && decoded_base64_content(cmd).include?('model = "gpt-5"') } ],
           user: "agent"
         )
       end
@@ -1190,6 +1267,58 @@ RSpec.describe Containers::Provision do
         expect(agent_run).not_to receive(:log!).with("stdout", anything)
 
         service.execute("echo 'hello'", stream: false)
+      end
+    end
+
+    context "when codex subscription auth host mount is active" do
+      let(:codex_config_dir) { Dir.mktmpdir("codex-config") }
+
+      before do
+        File.write(File.join(codex_config_dir, "auth.json"), "{}")
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(codex_config_dir)
+        # Clear memoized values so they pick up the new ENV stubs
+        service.remove_instance_variable(:@codex_subscription_auth_host_mount_path) if service.instance_variable_defined?(:@codex_subscription_auth_host_mount_path)
+        service.remove_instance_variable(:@codex_config_host_path) if service.instance_variable_defined?(:@codex_config_host_path)
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "output\n") if block
+          [ [ "output\n" ], [], 0 ]
+        end
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
+      end
+
+      after do
+        FileUtils.rm_rf(codex_config_dir)
+      end
+
+      it "acquires a per-config file lock around Codex execution" do
+        lockfile = service.send(:codex_auth_lockfile_path)
+        FileUtils.rm_f(lockfile)
+
+        service.execute([ "codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--", "prompt" ])
+
+        expect(File.exist?(lockfile)).to be true
+      end
+
+      it "logs lock acquisition for Codex execution" do
+        allow(agent_run).to receive(:log!)
+
+        service.execute([ "codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--", "prompt" ])
+
+        expect(agent_run).to have_received(:log!).with(
+          "system", "container.codex_auth_lock.acquired", metadata: hash_including(:lockfile)
+        )
+      end
+
+      it "does not lock non-Codex container commands" do
+        allow(agent_run).to receive(:log!)
+
+        service.execute("echo 'hello'")
+
+        expect(agent_run).not_to have_received(:log!).with(
+          "system", "container.codex_auth_lock.acquired", anything
+        )
       end
     end
   end
