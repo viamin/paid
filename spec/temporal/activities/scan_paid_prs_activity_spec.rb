@@ -1495,6 +1495,81 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when paid_agent review has inline comments and HEAD equals reviewed commit" do
+      before do
+        enable_paid_agent_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+                       body: "Here are some review suggestions.",
+                       submitted_at: 2.hours.ago, commit_id: "abc123" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: 10, user_login: "paid-code-reviewer[bot]", body: "Fix this",
+              created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
+              pull_request_review_id: 1 }
+          ])
+      end
+
+      it "treats the review as unaddressed because HEAD has not advanced (#1152)" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending")
+      end
+    end
+
+    context "when restarted phase with review completed on current HEAD and no create_pr in cycle" do
+      before do
+        enable_paid_agent_review!
+        issue = create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "restarted",
+          review_goal_retry_reset_at: 1.hour.ago)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          goal: "review",
+          trigger_type: "automatic",
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+                       body: "Here are some review suggestions.",
+                       submitted_at: 30.minutes.ago, commit_id: "abc123" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: 10, user_login: "paid-code-reviewer[bot]", body: "Fix this",
+              created_at: 30.minutes.ago, path: "lib/agent_harness/providers/github_copilot.rb",
+              pull_request_review_id: 1 }
+          ])
+      end
+
+      it "does not emit paid_agent_review_pending to avoid review loop (#1152)" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("paid_agent_review_pending")
+      end
+    end
+
     context "when paid_agent posted a body-only review with no last agent run" do
       before do
         create(:issue, :pull_request,
