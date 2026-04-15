@@ -8,6 +8,11 @@ module Knowledge
     # a structured decision record, then stores it as a DecisionRecord with
     # links to the agent run, issue, and a KnowledgeArtifact for search.
     #
+    # When Docker is available, the LLM call runs inside an isolated container
+    # that authenticates to the secrets proxy via a KnowledgeRun proxy token
+    # (no API keys in container). Falls back to in-process AgentHarness when
+    # Docker is unavailable.
+    #
     # @example
     #   Knowledge::Decisions::Draft.call(agent_run: agent_run)
     class Draft
@@ -85,6 +90,59 @@ module Knowledge
       end
 
       def send_to_llm(prompt)
+        if Knowledge::AnalysisRunner.available?
+          send_to_llm_containerized(prompt)
+        else
+          send_to_llm_in_process(prompt)
+        end
+      end
+
+      def send_to_llm_containerized(prompt)
+        knowledge_run = create_knowledge_run!
+
+        runner = Knowledge::AnalysisRunner.new(
+          project: agent_run.project,
+          knowledge_run: knowledge_run
+        )
+
+        runner.with_container do |r|
+          chat_providers.each do |provider|
+            next unless Knowledge::AnalysisRunner.supported_provider?(provider)
+
+            output = r.call_llm(
+              prompt,
+              provider: provider,
+              model: model_for(provider),
+              timeout: TIMEOUT
+            )
+
+            parsed = parse_text_output(output)
+            return parsed if parsed
+          rescue Knowledge::AnalysisRunner::Error => e
+            Rails.logger.warn(
+              message: "knowledge.decisions.draft_container_provider_failed",
+              agent_run_id: agent_run.id,
+              provider: provider,
+              error_class: e.class.name,
+              error: e.message
+            )
+          end
+        end
+
+        nil
+      rescue Knowledge::AnalysisRunner::Error => e
+        Rails.logger.warn(
+          message: "knowledge.decisions.draft_container_failed",
+          agent_run_id: agent_run.id,
+          error_class: e.class.name,
+          error: e.message
+        )
+        send_to_llm_in_process(prompt)
+      ensure
+        finalize_knowledge_run!(knowledge_run)
+      end
+
+      def send_to_llm_in_process(prompt)
         chat_providers.each do |provider|
           response = AgentHarness.send_message(
             prompt,
@@ -124,6 +182,10 @@ module Knowledge
         providers.presence || [ DEFAULT_PROVIDER ]
       end
 
+      def model_for(provider)
+        DEFAULT_MODEL if provider == DEFAULT_PROVIDER
+      end
+
       def llm_request_options(provider)
         options = {
           provider: ProviderSupport.harness_provider_key_for(provider).to_sym,
@@ -132,6 +194,21 @@ module Knowledge
         }
         options[:model] = DEFAULT_MODEL if provider == DEFAULT_PROVIDER
         options
+      end
+
+      def parse_text_output(output)
+        return nil if output.blank?
+
+        cleaned = output.gsub(/\A```(?:json)?\s*/, "").gsub(/\s*```\z/, "").strip
+        JSON.parse(cleaned, symbolize_names: true)
+      rescue JSON::ParserError => e
+        Rails.logger.warn(
+          message: "knowledge.decisions.draft_parse_failed",
+          agent_run_id: agent_run.id,
+          error: e.message,
+          error_class: e.class.name
+        )
+        nil
       end
 
       def parse_response(response)
@@ -149,19 +226,27 @@ module Knowledge
         end
 
         output = response.respond_to?(:output) ? response.output : response.to_s
-        return nil if output.blank?
+        parse_text_output(output)
+      end
 
-        # Strip markdown fences if present
-        cleaned = output.gsub(/\A```(?:json)?\s*/, "").gsub(/\s*```\z/, "").strip
-        JSON.parse(cleaned, symbolize_names: true)
-      rescue JSON::ParserError => e
-        Rails.logger.warn(
-          message: "knowledge.decisions.draft_parse_failed",
-          agent_run_id: agent_run.id,
-          error: e.message,
-          error_class: e.class.name
+      def create_knowledge_run!
+        KnowledgeRun.create!(
+          project: agent_run.project,
+          operation_type: "decision_drafting",
+          status: "running"
         )
-        nil
+      end
+
+      def finalize_knowledge_run!(knowledge_run)
+        return unless knowledge_run&.persisted?
+
+        knowledge_run.update!(status: "completed") if knowledge_run.active?
+      rescue ActiveRecord::RecordInvalid => e
+        Rails.logger.warn(
+          message: "knowledge.decisions.draft_knowledge_run_finalize_failed",
+          knowledge_run_id: knowledge_run.id,
+          error: e.message
+        )
       end
 
       def create_decision_record(parsed)
