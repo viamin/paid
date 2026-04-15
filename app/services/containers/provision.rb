@@ -191,13 +191,14 @@ module Containers
     # @raise [StartupTimeoutError] when no output is received within +startup_timeout+ seconds
     # @raise [IdleTimeoutError] when output stops for more than +idle_timeout+ seconds
     # @raise [TimeoutError] when total wall-clock +timeout+ is exceeded
-    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {})
+    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil)
       raise ProvisionError, "Container not provisioned" unless container
 
       timeout ||= options[:timeout_seconds]
       cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
       exec_options = { wait: timeout }
       exec_options[:Env] = env.map { |key, value| "#{key}=#{value}" } if env.present?
+      cleanup_steps = apply_execution_preparation(preparation, env: env)
 
       log_system("container.execute.start", command: command.to_s.encode("UTF-8", invalid: :replace).truncate(200))
 
@@ -342,6 +343,16 @@ module Containers
       ensure
         watchdog_mutex.synchronize { exec_completed = true }
         stop_watchdog(watchdog)
+        if cleanup_steps&.any?
+          if $!
+            # An exception is already propagating; attempt cleanup but swallow
+            # failures so the original exception is not replaced.
+            # cleanup_execution_preparation already logs and invalidates.
+            safe_cleanup_execution_preparation(cleanup_steps, env: env)
+          else
+            cleanup_execution_preparation(cleanup_steps, env: env)
+          end
+        end
       end
     end
 
@@ -430,6 +441,169 @@ module Containers
     end
 
     private
+
+    def apply_execution_preparation(preparation, env:)
+      return [] if preparation.nil? || preparation.empty?
+
+      cleanup_steps = []
+      preparation.file_writes.each do |write|
+        cleanup_steps << materialize_preparation_file(write, env: env)
+      end
+      cleanup_steps
+    rescue StandardError
+      cleanup_execution_preparation(cleanup_steps, env: env)
+      raise
+    end
+
+    def cleanup_execution_preparation(cleanup_steps, env:)
+      cleanup_error = nil
+
+      Array(cleanup_steps).reverse_each do |step_env|
+        # Intentionally keeps only the first error (cleanup_error ||= e) so the
+        # caller sees the root-cause failure rather than a cascading one.
+        cleanup_error ||= run_preparation_cleanup_step(step_env, env: env)
+      end
+
+      return unless cleanup_error
+
+      invalidate_container_after_preparation_cleanup_failure!
+      raise cleanup_execution_error(cleanup_error)
+    end
+
+    # Best-effort cleanup that never raises, for use in ensure blocks when
+    # an exception is already propagating.
+    def safe_cleanup_execution_preparation(cleanup_steps, env:)
+      cleanup_execution_preparation(cleanup_steps, env: env)
+    rescue ExecutionError
+      log_system("container.execute.preparation_cleanup_swallowed", note: "swallowed to preserve original exception")
+    end
+
+    # Runs a single preparation cleanup step, returning the error on failure
+    # or nil on success.
+    def run_preparation_cleanup_step(step_env, env:)
+      run_preparation_script(cleanup_script, env: env, script_env: step_env)
+      nil
+    rescue Docker::Error::DockerError, ExecutionError => e
+      log_system("container.execute.preparation_cleanup_failed", error: e.message)
+      e
+    end
+
+    def materialize_preparation_file(write, env:)
+      target_path = expand_preparation_path(write.path)
+      state_dir = "#{target_path}.paid-state-#{SecureRandom.hex(8)}"
+
+      run_preparation_script(
+        materialize_script(write.mode),
+        env: env,
+        script_env: {
+          "PAID_PREPARATION_TARGET" => target_path,
+          "PAID_PREPARATION_STATE_DIR" => state_dir,
+          "PAID_PREPARATION_B64" => Base64.strict_encode64(write.content)
+        }
+      )
+
+      {
+        "PAID_PREPARATION_TARGET" => target_path,
+        "PAID_PREPARATION_STATE_DIR" => state_dir
+      }
+    end
+
+    def run_preparation_script(script, env:, script_env:)
+      preparation_env = env.merge(script_env)
+      exec_options = { wait: options[:timeout_seconds] }
+      exec_options[:Env] = preparation_env.map { |key, value| "#{key}=#{value}" }
+      stdout, stderr, exit_code = container.exec([ "sh", "-lc", script ], exec_options)
+
+      return if exit_code.to_i.zero?
+
+      raise ExecutionError.new(
+        [ stdout, stderr ].join.presence || "Preparation script exited with code #{exit_code}",
+        exit_code: exit_code,
+        stdout: stdout,
+        stderr: stderr
+      )
+    end
+
+    def expand_preparation_path(path)
+      path.to_s.sub(/\A~(?=\/|$)/, "/home/agent")
+    end
+
+    # Matches agent-harness lstat-based snapshot semantics: stores the state type
+    # (symlink, file, or missing), preserves symlink targets via readlink, backs
+    # up regular files with cp -p, and rejects directories.
+    def materialize_script(mode)
+      chmod_line = mode ? "chmod #{format('%#o', mode)} \"$PAID_PREPARATION_TARGET\"" : ":"
+
+      <<~SH.squish
+        set -e &&
+        mkdir -p "$(dirname "$PAID_PREPARATION_TARGET")" &&
+        mkdir -p "$PAID_PREPARATION_STATE_DIR" &&
+        if [ -L "$PAID_PREPARATION_TARGET" ]; then
+          readlink "$PAID_PREPARATION_TARGET" > "$PAID_PREPARATION_STATE_DIR/symlink_target" &&
+          printf symlink > "$PAID_PREPARATION_STATE_DIR/state" &&
+          rm -f "$PAID_PREPARATION_TARGET";
+        elif [ -d "$PAID_PREPARATION_TARGET" ]; then
+          printf 'preparation target must be a regular file or symlink: %s\n' "$PAID_PREPARATION_TARGET" >&2 && exit 1;
+        elif [ -e "$PAID_PREPARATION_TARGET" ]; then
+          cp -p "$PAID_PREPARATION_TARGET" "$PAID_PREPARATION_STATE_DIR/backup" &&
+          printf file > "$PAID_PREPARATION_STATE_DIR/state" &&
+          rm -f "$PAID_PREPARATION_TARGET";
+        else
+          printf missing > "$PAID_PREPARATION_STATE_DIR/state";
+        fi &&
+        printf '%s' "$PAID_PREPARATION_B64" | base64 -d > "$PAID_PREPARATION_TARGET" &&
+        #{chmod_line}
+      SH
+    end
+
+    def cleanup_script
+      <<~SH.squish
+        set -e && cleanup_status=0 &&
+        state_value=$(cat "$PAID_PREPARATION_STATE_DIR/state" 2>/dev/null || echo unknown) &&
+        dir=$(dirname "$PAID_PREPARATION_TARGET") &&
+        if [ -d "$PAID_PREPARATION_TARGET" ] && [ ! -L "$PAID_PREPARATION_TARGET" ]; then
+          printf 'preparation target changed into a directory during execution: %s\n' "$PAID_PREPARATION_TARGET" >&2 && cleanup_status=1;
+        elif [ "$state_value" = symlink ]; then
+          mkdir -p "$dir" && rm -f "$PAID_PREPARATION_TARGET" &&
+          ln -s -- "$(cat "$PAID_PREPARATION_STATE_DIR/symlink_target")" "$PAID_PREPARATION_TARGET" || cleanup_status=$?;
+        elif [ "$state_value" = file ]; then
+          if [ -f "$PAID_PREPARATION_STATE_DIR/backup" ]; then
+            mkdir -p "$dir" && rm -f "$PAID_PREPARATION_TARGET" &&
+            cp -p "$PAID_PREPARATION_STATE_DIR/backup" "$PAID_PREPARATION_TARGET" || cleanup_status=$?;
+          else
+            printf 'missing runtime preparation backup\n' >&2 && cleanup_status=1;
+          fi;
+        elif [ "$state_value" = missing ]; then
+          rm -f "$PAID_PREPARATION_TARGET" || cleanup_status=$?;
+        else
+          cleanup_status=1;
+        fi &&
+        rm -rf "$PAID_PREPARATION_STATE_DIR" &&
+        exit "$cleanup_status"
+      SH
+    end
+
+    def invalidate_container_after_preparation_cleanup_failure!
+      old_container_id = container&.id
+
+      cleanup(force: true)
+      return if old_container_id.blank?
+
+      AgentRun.where(id: agent_run.id, container_id: old_container_id).update_all(container_id: nil)
+      agent_run.container_id = nil if agent_run.container_id == old_container_id
+      log_system("container.execute.invalidated_after_preparation_cleanup_failure", container_id: old_container_id)
+    end
+
+    def cleanup_execution_error(error)
+      return error if error.is_a?(ExecutionError) && error.message.include?("Failed to restore prepared runtime state")
+
+      ExecutionError.new(
+        "Failed to restore prepared runtime state: #{error.message}",
+        exit_code: error.respond_to?(:exit_code) ? error.exit_code : nil,
+        stdout: error.respond_to?(:stdout) ? error.stdout : nil,
+        stderr: error.respond_to?(:stderr) ? error.stderr : nil
+      )
+    end
 
     # Resolves user-configurable container settings from the project's UserSetting.
     # Returns a hash of overrides that sit between DEFAULTS and caller-supplied options.

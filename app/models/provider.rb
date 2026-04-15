@@ -166,37 +166,6 @@ class Provider < ApplicationRecord
     DIRECT_OUTBOUND_API_PROVIDERS.dig(opencode_api_provider, :service_type)
   end
 
-  def opencode_config_json
-    provider_id = "paid-provider-#{id || provider_key}"
-    model_id = opencode_model_id
-    raise ArgumentError, "Missing OpenCode model id for provider #{id || provider_key}" if model_id.blank?
-
-    api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
-
-    npm_adapter = api_config[:opencode_npm] || "@ai-sdk/openai-compatible"
-    provider_options = { "apiKey" => provider_api_key&.api_key.to_s }
-    provider_options["baseURL"] = api_config[:base_url] if npm_adapter == "@ai-sdk/openai-compatible"
-
-    JSON.pretty_generate(
-      {
-        "$schema" => "https://opencode.ai/config.json",
-        "provider" => {
-          provider_id => {
-            "npm" => npm_adapter,
-            "name" => display_name,
-            "options" => provider_options,
-            "models" => {
-              model_id => {
-                "name" => model_id
-              }
-            }
-          }
-        },
-        "model" => "#{provider_id}/#{model_id}"
-      }
-    )
-  end
-
   def kilocode_config_json
     provider_id = "paid-provider-#{id || provider_key}"
     model_id = kilocode_model_id
@@ -227,9 +196,7 @@ class Provider < ApplicationRecord
   end
 
   def direct_outbound_exec_env
-    if opencode_direct_outbound?
-      { "PAID_OPENCODE_CONFIG_B64" => Base64.strict_encode64(opencode_config_json) }
-    elsif kilocode_direct_outbound?
+    if kilocode_direct_outbound?
       { "PAID_KILOCODE_CONFIG_B64" => Base64.strict_encode64(kilocode_config_json) }
     else
       {}
@@ -237,25 +204,27 @@ class Provider < ApplicationRecord
   end
 
   def direct_outbound_exec_command(command_prefix:, prompt:)
-    return command_prefix + [ prompt ] unless requires_direct_outbound?
+    return command_prefix + [ prompt ] unless kilocode_direct_outbound?
 
     command = "#{command_prefix.shelljoin} \"$1\""
 
-    if opencode_direct_outbound?
-      script = <<~SH.squish
-        mkdir -p /home/agent/.config/opencode &&
-        printf '%s' "$PAID_OPENCODE_CONFIG_B64" | base64 -d > /home/agent/.config/opencode/opencode.json &&
-        #{command}
-      SH
-    elsif kilocode_direct_outbound?
-      script = <<~SH.squish
-        mkdir -p /home/agent/.config/kilo &&
-        printf '%s' "$PAID_KILOCODE_CONFIG_B64" | base64 -d > /home/agent/.config/kilo/config.json &&
-        #{command}
-      SH
-    end
+    script = <<~SH.squish
+      mkdir -p /home/agent/.config/kilo &&
+      printf '%s' "$PAID_KILOCODE_CONFIG_B64" | base64 -d > /home/agent/.config/kilo/config.json &&
+      #{command}
+    SH
 
     [ "sh", "-lc", script, "--", prompt ]
+  end
+
+  def agent_harness_provider_runtime
+    return opencode_provider_runtime if opencode_direct_outbound?
+
+    nil
+  end
+
+  def opencode_agent_harness_runtime?
+    provider_key == "opencode" && requires_direct_outbound?
   end
 
   # Returns the provider key that must always exist and remain enabled for
@@ -545,5 +514,20 @@ class Provider < ApplicationRecord
       api_key? &&
       KILOCODE_API_PROVIDER_KEYS.include?(kilocode_api_provider) &&
       kilocode_model_id.present?
+  end
+
+  def opencode_provider_runtime
+    model_id = opencode_model_id
+    raise ArgumentError, "Missing OpenCode model id for provider #{id || provider_key}" if model_id.blank?
+
+    api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
+
+    AgentHarness::ProviderRuntime.new(
+      model: model_id,
+      base_url: api_config[:base_url],
+      api_provider: opencode_api_provider,
+      env: { "OPENAI_API_KEY" => provider_api_key&.api_key.to_s },
+      unset_env: %w[OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN]
+    )
   end
 end

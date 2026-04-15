@@ -335,7 +335,7 @@ RSpec.describe Provider do
     end
   end
 
-  describe "direct outbound OpenCode helpers" do
+  describe "OpenCode agent-harness runtime helpers" do
     let(:user) { create(:user) }
     let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret") }
     let(:provider) do
@@ -349,13 +349,14 @@ RSpec.describe Provider do
       )
     end
 
-    it "builds a shared exec wrapper and env for direct-outbound runs" do
-      command = provider.direct_outbound_exec_command(command_prefix: %w[opencode run], prompt: "ping")
-      env = provider.direct_outbound_exec_env
+    it "builds provider runtime inputs instead of a local bootstrap wrapper" do
+      runtime = provider.agent_harness_provider_runtime
 
-      expect(command[2]).to include('printf \'%s\' "$PAID_OPENCODE_CONFIG_B64" | base64 -d')
-      expect(command[2]).to include('opencode run "$1"')
-      expect(Base64.strict_decode64(env.fetch("PAID_OPENCODE_CONFIG_B64"))).to include("sk-openrouter-secret")
+      expect(runtime.model).to eq("moonshotai/kimi-k2-0905")
+      expect(runtime.api_provider).to eq("openrouter")
+      expect(runtime.base_url).to eq("https://openrouter.ai/api/v1")
+      expect(runtime.env).to include("OPENAI_API_KEY" => "sk-openrouter-secret")
+      expect(runtime.unset_env).to include("OPENAI_HEADER_X_AGENT_RUN_ID", "OPENAI_HEADER_X_PROXY_TOKEN")
     end
 
     it "does not enable direct outbound when the OpenCode model id is missing" do
@@ -371,7 +372,7 @@ RSpec.describe Provider do
       expect(provider.requires_direct_outbound?).to be(false)
       expect(provider.direct_outbound_exec_env).to eq({})
       expect(provider.direct_outbound_exec_command(command_prefix: %w[opencode run], prompt: "ping")).to eq(%w[opencode run ping])
-      expect { provider.opencode_config_json }.to raise_error(ArgumentError, /Missing OpenCode model id/)
+      expect(provider.agent_harness_provider_runtime).to be_nil
     end
   end
 

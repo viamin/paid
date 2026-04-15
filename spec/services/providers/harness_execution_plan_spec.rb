@@ -1,0 +1,30 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Providers::HarnessExecutionPlan do
+  describe ".call" do
+    it "builds the OpenCode execution contract through agent-harness" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
+      provider = create(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+
+      plan = described_class.call(provider: provider, prompt: "ping")
+
+      expect(plan.command).to eq(%w[opencode run ping])
+      expect(plan.env).to include(
+        "OPENAI_API_KEY" => "sk-openrouter-secret",
+        "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
+      )
+      expect(plan.preparation.file_writes.first.path).to eq("~/.config/opencode/opencode.json")
+      expect(plan.preparation.file_writes.first.content).to include("\"provider\": \"openrouter\"")
+    end
+  end
+end
