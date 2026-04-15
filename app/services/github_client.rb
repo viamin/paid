@@ -562,6 +562,20 @@ class GithubClient
     handle_errors { client.request_pull_request_review(repo, number, reviewers: reviewers) }
   end
 
+  # Dispatches a repository event for workflows triggered by repository_dispatch.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param event_type [String] Custom event name consumed by the workflow
+  # @param client_payload [Hash] Arbitrary JSON payload delivered to the workflow
+  # @return [Sawyer::Resource, nil] API response
+  def dispatch_repository_event(repo, event_type:, client_payload: {})
+    handle_errors do
+      client.post("/repos/#{repo}/dispatches",
+        event_type: event_type,
+        client_payload: client_payload)
+    end
+  end
+
   # Requests review from bots on a pull request via GraphQL.
   #
   # The REST API for requesting reviews silently fails for bot re-requests

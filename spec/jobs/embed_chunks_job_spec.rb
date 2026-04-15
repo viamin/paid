@@ -11,36 +11,52 @@ RSpec.describe EmbedChunksJob do
 
       described_class.perform_now
 
-      expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(project: nil, api_key: nil)
+      expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(
+        project: nil,
+        api_key: nil,
+        api_base_url: nil
+      )
     end
 
-    it "calls the embedding pipeline with a project" do
+    it "skips the embedding pipeline when no provider is configured for the project" do
       allow(Knowledge::Embeddings::Pipeline).to receive(:call)
+      allow(project).to receive(:knowledge_embedding_provider_configuration).and_return(nil)
+      allow(Project).to receive(:find).with(project.id).and_return(project)
 
       described_class.perform_now(project.id)
 
-      expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(project: project, api_key: nil)
+      expect(Knowledge::Embeddings::Pipeline).not_to have_received(:call)
     end
 
-    it "resolves the API key from the project owner's provider API keys" do
-      allow(Knowledge::Embeddings::Pipeline).to receive(:call)
-      owner = project.effective_owner
-      key = create(:provider_api_key, user: owner, api_service_type: "openai")
-
-      described_class.perform_now(project.id)
-
-      expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(project: project, api_key: key.api_key)
-    end
-
-    it "prefers the most recently created API key when multiple exist" do
+    it "resolves the API key and base URL from the configured knowledge embedding provider" do
       allow(Knowledge::Embeddings::Pipeline).to receive(:call)
       owner = project.effective_owner
-      create(:provider_api_key, user: owner, api_service_type: "openai")
-      newer_key = create(:provider_api_key, user: owner, api_service_type: "openai")
+      owner.settings.update!(kb_embedding_provider: "openrouter", kb_embedding_fallback_providers: [ "openai" ])
+      key = create(:provider_api_key, user: owner, api_service_type: "openrouter", api_key: "sk-openrouter")
 
       described_class.perform_now(project.id)
 
-      expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(project: project, api_key: newer_key.api_key)
+      expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(
+        project: project,
+        api_key: key.api_key,
+        api_base_url: "https://openrouter.ai/api/v1"
+      )
+    end
+
+    it "uses a fallback provider when the primary knowledge provider is unavailable" do
+      allow(Knowledge::Embeddings::Pipeline).to receive(:call)
+      owner = project.effective_owner
+      owner.settings.update!(kb_embedding_provider: "openai", kb_embedding_fallback_providers: [ "openrouter" ])
+      create(:provider_state, user: owner, provider_name: "openai", rate_limited_until: 5.minutes.from_now)
+      fallback_key = create(:provider_api_key, user: owner, api_service_type: "openrouter", api_key: "sk-openrouter")
+
+      described_class.perform_now(project.id)
+
+      expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(
+        project: project,
+        api_key: fallback_key.api_key,
+        api_base_url: "https://openrouter.ai/api/v1"
+      )
     end
 
     it "is enqueued to the knowledge queue" do

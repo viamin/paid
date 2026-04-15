@@ -205,6 +205,26 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#dispatch_repository_event" do
+    let(:repo) { "owner/repo" }
+    let(:dispatch_url) { "#{api_base}/repos/#{repo}/dispatches" }
+
+    it "posts the repository_dispatch event and payload" do
+      stub = stub_request(:post, dispatch_url)
+        .with(body: {
+          event_type: "claude-review",
+          client_payload: { pr_number: 42 }
+        })
+        .to_return(status: 204, body: "", headers: {})
+
+      client.dispatch_repository_event(repo,
+        event_type: "claude-review",
+        client_payload: { pr_number: 42 })
+
+      expect(stub).to have_been_requested.once
+    end
+  end
+
   describe "#repositories" do
     let(:repo_with_push) do
       { id: 1, full_name: "owner/repo1", name: "repo1", private: false,

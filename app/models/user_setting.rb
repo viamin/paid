@@ -7,6 +7,10 @@ class UserSetting < ApplicationRecord
   MAX_CONTAINER_MEMORY_BYTES = 64 * 1024 * 1024 * 1024
   # Reasonable upper bound for delay settings (24 hours in seconds)
   MAX_DELAY_SECONDS = 86_400
+  KB_EMBEDDING_PROVIDERS = Provider::OPENAI_COMPATIBLE_DIRECT_OUTBOUND_API_PROVIDER_KEYS.freeze
+  KB_EMBEDDING_PROVIDER_DEFAULT = "openai"
+  KB_CHAT_PROVIDERS = ProviderSupport::APP_TO_HARNESS_PROVIDER_KEYS.keys.freeze
+  KB_CHAT_PROVIDER_DEFAULT = "claude"
 
   belongs_to :user
   has_many :provider_states, through: :user
@@ -91,8 +95,12 @@ class UserSetting < ApplicationRecord
 
   # Provider Fallback
   validate :validate_fallback_providers
+  validate :validate_kb_embedding_provider
+  validate :validate_kb_embedding_fallback_providers
+  validate :validate_kb_chat_provider
+  validate :validate_kb_chat_fallback_providers
 
-  def self.normalize_fallback_providers_param(value)
+  def self.normalize_provider_array_param(value)
     return value unless value.is_a?(String)
 
     parsed = JSON.parse(value)
@@ -101,6 +109,21 @@ class UserSetting < ApplicationRecord
     parsed.select { |provider| provider.is_a?(String) }
   rescue JSON::ParserError
     []
+  end
+
+  def self.parse_provider_array_param(value)
+    return value unless value.is_a?(String)
+
+    parsed = JSON.parse(value)
+    return value unless parsed.is_a?(Array)
+
+    parsed.select { |provider| provider.is_a?(String) }
+  rescue JSON::ParserError
+    value
+  end
+
+  def self.normalize_fallback_providers_param(value)
+    normalize_provider_array_param(value)
   end
 
   # Returns providers enabled for agent runs for a user.
@@ -314,6 +337,36 @@ class UserSetting < ApplicationRecord
     self.fallback_providers = sanitize_provider_tokens(fallback_providers, candidates: allowed_provider_identifiers_for_fallback)
   end
 
+  def validate_kb_embedding_provider
+    self.kb_embedding_provider = normalize_kb_provider(kb_embedding_provider, default: KB_EMBEDDING_PROVIDER_DEFAULT)
+    return if KB_EMBEDDING_PROVIDERS.include?(kb_embedding_provider)
+
+    errors.add(:kb_embedding_provider, "is not a supported knowledge embedding provider")
+  end
+
+  def validate_kb_embedding_fallback_providers
+    self.kb_embedding_fallback_providers = normalize_kb_provider_list(
+      kb_embedding_fallback_providers,
+      attribute: :kb_embedding_fallback_providers,
+      supported_providers: KB_EMBEDDING_PROVIDERS
+    )
+  end
+
+  def validate_kb_chat_provider
+    self.kb_chat_provider = normalize_kb_provider(kb_chat_provider, default: KB_CHAT_PROVIDER_DEFAULT)
+    return if KB_CHAT_PROVIDERS.include?(kb_chat_provider)
+
+    errors.add(:kb_chat_provider, "is not a supported knowledge chat provider")
+  end
+
+  def validate_kb_chat_fallback_providers
+    self.kb_chat_fallback_providers = normalize_kb_provider_list(
+      kb_chat_fallback_providers,
+      attribute: :kb_chat_fallback_providers,
+      supported_providers: KB_CHAT_PROVIDERS
+    )
+  end
+
   def validate_default_agent_providers_by_goal
     return if default_agent_providers_by_goal.blank?
 
@@ -435,6 +488,32 @@ class UserSetting < ApplicationRecord
 
   def provider_key_for_identifier(identifier)
     Provider.for_identifier(user, identifier)&.provider_key || identifier
+  end
+
+  def normalize_kb_provider(value, default:)
+    value.to_s.strip.downcase.presence || default
+  end
+
+  def normalize_kb_provider_list(value, attribute:, supported_providers: nil)
+    return [] if value.nil?
+
+    unless value.is_a?(Array)
+      errors.add(attribute, "must be an array")
+      return value
+    end
+
+    normalized = value.filter_map do |provider|
+      provider.to_s.strip.downcase.presence
+    end.uniq
+
+    return normalized unless supported_providers
+
+    unsupported = normalized - supported_providers
+    if unsupported.any?
+      errors.add(attribute, "contains unsupported providers: #{unsupported.join(', ')}")
+    end
+
+    normalized
   end
 
   def self.provider_identifiers_for(providers, identifiers:)

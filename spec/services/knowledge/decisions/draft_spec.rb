@@ -107,6 +107,63 @@ RSpec.describe Knowledge::Decisions::Draft do
       )
     end
 
+    it "uses the configured knowledge chat provider" do
+      project.created_by.settings.update!(kb_chat_provider: "cursor", kb_chat_fallback_providers: [ "claude" ])
+
+      described_class.call(agent_run: agent_run)
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_matching(/Decision Record/),
+        provider: :cursor,
+        timeout: described_class::TIMEOUT,
+        dangerous_mode: false
+      )
+    end
+
+    it "falls back to later configured knowledge chat providers" do
+      project.created_by.settings.update!(kb_chat_provider: "cursor", kb_chat_fallback_providers: [ "claude" ])
+      failed_response = instance_double(AgentHarness::Response, success?: false, error: "cursor unavailable")
+
+      allow(AgentHarness).to receive(:send_message).and_return(failed_response, llm_response)
+
+      described_class.call(agent_run: agent_run)
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_matching(/Decision Record/),
+        provider: :cursor,
+        timeout: described_class::TIMEOUT,
+        dangerous_mode: false
+      ).ordered
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_matching(/Decision Record/),
+        provider: :claude,
+        model: described_class::DEFAULT_MODEL,
+        timeout: described_class::TIMEOUT,
+        dangerous_mode: false
+      ).ordered
+    end
+
+    it "skips legacy unsupported configured chat providers" do
+      project.created_by.settings.update_columns(
+        kb_chat_provider: "not-a-provider",
+        kb_chat_fallback_providers: [ "claude" ]
+      )
+
+      described_class.call(agent_run: agent_run)
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_matching(/Decision Record/),
+        provider: :claude,
+        model: described_class::DEFAULT_MODEL,
+        timeout: described_class::TIMEOUT,
+        dangerous_mode: false
+      )
+      expect(AgentHarness).not_to have_received(:send_message).with(
+        anything,
+        hash_including(provider: :"not-a-provider")
+      )
+    end
+
     it "returns nil when LLM response is missing required fields" do
       incomplete = { title: "Missing fields", tags: %w[test] }.to_json
       allow(llm_response).to receive(:output).and_return(incomplete)

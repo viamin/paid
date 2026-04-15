@@ -3,14 +3,15 @@
 module Knowledge
   class Search
     class Semantic
-      attr_reader :project, :query, :artifact_type, :limit, :api_key
+      attr_reader :project, :query, :artifact_type, :limit, :api_key, :api_base_url
 
-      def initialize(project:, query:, artifact_type: nil, limit: 20, api_key: nil)
+      def initialize(project:, query:, artifact_type: nil, limit: 20, api_key: nil, api_base_url: nil)
         @project = project
         @query = query
         @artifact_type = artifact_type
         @limit = limit
         @api_key = api_key
+        @api_base_url = api_base_url
       end
 
       def self.call(...)
@@ -152,7 +153,7 @@ module Knowledge
       end
 
       def generate_query_embedding
-        results = Knowledge::Embeddings::Generate.call(texts: [ query ], api_key: api_key)
+        results = Knowledge::Embeddings::Generate.call(texts: [ query ], api_key: api_key, api_base_url: api_base_url)
         results.first&.vector
       rescue StandardError => e
         Rails.logger.warn(

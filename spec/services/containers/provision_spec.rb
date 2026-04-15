@@ -15,6 +15,37 @@ RSpec.describe Containers::Provision do
     ""
   end
 
+  def build_preparation(path: "/workspace/tmp/prepared.txt", content: "prepared")
+    preparation_write = Struct.new(:path, :content, :mode).new(path, content, nil)
+    preparation_class = Struct.new(:file_writes) do
+      def empty?
+        false
+      end
+    end
+    preparation_class.new([ preparation_write ])
+  end
+
+  def stub_exec_with_cleanup_failure(mock_container)
+    allow(mock_container).to receive(:exec) do |cmd, **opts, &block|
+      if cmd == [ "sh", "-c", "echo 'hello'" ]
+        block.call(:stdout, "command output\n") if block
+        next [ [ "command output\n" ], [], 0 ]
+      end
+
+      raise "Unexpected exec command: #{cmd.inspect} opts=#{opts.inspect}" unless cmd.is_a?(Array) && cmd.first(2) == [ "sh", "-lc" ]
+
+      script = cmd.last
+
+      if script.include?("printf '%s' \"$PAID_PREPARATION_B64\" | base64 -d > \"$PAID_PREPARATION_TARGET\"")
+        [ [ "prepared\n" ], [], 0 ]
+      elsif script.include?("cat \"$PAID_PREPARATION_STATE_DIR/state\"")
+        [ [], [ "missing runtime preparation backup\n" ], 1 ]
+      else
+        raise "Unexpected shell exec command: #{cmd.inspect} opts=#{opts.inspect}"
+      end
+    end
+  end
+
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, project: project) }
   let(:worktree_path) { Dir.mktmpdir("worktree") }
@@ -1057,6 +1088,31 @@ RSpec.describe Containers::Provision do
           metadata: hash_including(command: satisfy { |command| !command.include?("super-secret") })
         )
       end
+
+      it "fails the command and invalidates the container when preparation cleanup exits non-zero" do
+        preparation = build_preparation
+        allow(agent_run).to receive(:log!)
+        agent_run.update!(container_id: mock_container.id)
+        stub_exec_with_cleanup_failure(mock_container)
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
+
+        expect {
+          service.execute("echo 'hello'", preparation: preparation)
+        }.to raise_error(described_class::ExecutionError, /Failed to restore prepared runtime state: missing runtime preparation backup/)
+
+        expect(agent_run.reload.container_id).to be_nil
+        expect(service.container).to be_nil
+        expect(agent_run).to have_received(:log!).with(
+          "system",
+          "container.execute.preparation_cleanup_failed",
+          metadata: hash_including(error: "missing runtime preparation backup\n")
+        )
+        expect(agent_run).to have_received(:log!).with(
+          "system",
+          "container.execute.invalidated_after_preparation_cleanup_failure",
+          metadata: hash_including(container_id: "abc123container")
+        )
+      end
     end
 
     context "when command fails" do
@@ -1266,6 +1322,46 @@ RSpec.describe Containers::Provision do
           raise "Something went wrong"
         end
       }.to raise_error("Something went wrong")
+    end
+  end
+
+  describe "preparation scripts" do
+    before do
+      service.instance_variable_set(:@container, mock_container)
+    end
+
+    it "snapshots symlinks via readlink and regular files via cp -p, rejecting directories" do
+      script = service.send(:materialize_script, nil)
+
+      expect(script).to include('if [ -L "$PAID_PREPARATION_TARGET" ]; then')
+      expect(script).to include('readlink "$PAID_PREPARATION_TARGET" > "$PAID_PREPARATION_STATE_DIR/symlink_target"')
+      expect(script).to include('cp -p "$PAID_PREPARATION_TARGET" "$PAID_PREPARATION_STATE_DIR/backup"')
+      expect(script).to include('elif [ -d "$PAID_PREPARATION_TARGET" ]; then')
+      expect(script).to include("exit 1")
+    end
+
+    it "restores symlinks via ln -s, regular files via cp -p, and rejects directory mutations" do
+      script = service.send(:cleanup_script)
+
+      expect(script).to include('if [ -d "$PAID_PREPARATION_TARGET" ] && [ ! -L "$PAID_PREPARATION_TARGET" ]; then')
+      expect(script).to include('ln -s -- "$(cat "$PAID_PREPARATION_STATE_DIR/symlink_target")" "$PAID_PREPARATION_TARGET"')
+      expect(script).to include('cp -p "$PAID_PREPARATION_STATE_DIR/backup" "$PAID_PREPARATION_TARGET"')
+    end
+
+    it "does not raise when the preparation script exits successfully" do
+      allow(mock_container).to receive(:exec).and_return([ "ok", "", 0 ])
+
+      expect do
+        service.send(:run_preparation_script, "echo ok", env: { "BASE" => "1" }, script_env: { "EXTRA" => "2" })
+      end.not_to raise_error
+    end
+
+    it "raises ExecutionError when the preparation script exits non-zero" do
+      allow(mock_container).to receive(:exec).and_return([ "", "base64: invalid input", 1 ])
+
+      expect do
+        service.send(:run_preparation_script, "echo bad", env: {}, script_env: {})
+      end.to raise_error(described_class::ExecutionError, /base64: invalid input/)
     end
   end
 

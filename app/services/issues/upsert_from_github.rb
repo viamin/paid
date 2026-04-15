@@ -11,7 +11,7 @@ module Issues
         github_creator_login: github_issue.user&.login || "unknown",
         github_state: github_issue.state,
         labels: extract_labels(github_issue),
-        is_pull_request: github_issue.pull_request.present?,
+        is_pull_request: pull_request_payload(github_issue).present?,
         github_created_at: github_issue.created_at,
         github_updated_at: github_issue.updated_at
       )
@@ -22,5 +22,10 @@ module Issues
       Array(github_issue.labels).map { |label| label.respond_to?(:name) ? label.name : label.to_s }
     end
     private_class_method :extract_labels
+
+    def self.pull_request_payload(github_issue)
+      github_issue.respond_to?(:pull_request) ? github_issue.pull_request : nil
+    end
+    private_class_method :pull_request_payload
   end
 end
