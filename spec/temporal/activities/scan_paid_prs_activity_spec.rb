@@ -1113,6 +1113,39 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when Codex and Copilot are both enabled and only Codex signals clean via comment" do
+      before do
+        enable_copilot_and_codex_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+          body: "Codex Review: Didn't find any major issues. Bravo.",
+          created_at: 5.minutes.ago
+        )
+        # Codex left a non-clean review, then posted a clean comment.
+        # Copilot has NOT reviewed at all. The pending trigger for Copilot
+        # must still fire — Codex's clean comment cannot speak for Copilot.
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
+                       body: "Found 2 issues.", submitted_at: 10.minutes.ago } ],
+          review_threads: [],
+          recent_issue_comments: [ clean_comment ]
+        )
+      end
+
+      it "still emits review_bot_review_pending for the missing Copilot review" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).to include("review_bot_review_pending")
+      end
+    end
+
     context "when an older codex clean comment is followed by a newer non-clean codex review" do
       before do
         enable_codex_review!

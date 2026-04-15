@@ -1256,11 +1256,14 @@ module Activities
       provider_key = body_only_review_provider_key_for(latest_clean_comment.user&.login)
       return false if provider_key.nil?
 
+      # Only allow the body-only clean-comment bypass when every enabled
+      # review bot is body-only. In mixed configurations (e.g. Codex + Copilot),
+      # a clean Codex comment must not suppress the pending trigger for Copilot.
+      return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
+
       latest_review_provider_key = body_only_review_provider_key_for(latest_review&.dig(:user_login))
       if latest_review_provider_key
         return false if latest_review_provider_key != provider_key
-      else
-        return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
       end
 
       review_time = latest_review&.dig(:submitted_at)
