@@ -944,9 +944,11 @@ module Containers
       return true if agent_run.provider&.requires_direct_outbound?
 
       settings = resolved_user_settings
-      return false unless settings&.fallback_enabled?
+      return false unless settings
 
-      fallback_providers_require_direct_outbound?(settings)
+      return true if settings.fallback_enabled? && fallback_providers_require_direct_outbound?(settings)
+
+      rate_limit_fallback_providers_require_direct_outbound?(settings)
     end
 
     def fallback_providers_require_direct_outbound?(settings)
@@ -964,6 +966,11 @@ module Containers
 
         provider&.requires_direct_outbound?
       end
+    end
+
+    def rate_limit_fallback_providers_require_direct_outbound?(settings)
+      rate_limit_fallback_providers = settings.user.providers.api_key.rate_limit_fallback.for_fallback
+      rate_limit_fallback_providers.any?(&:requires_direct_outbound?)
     end
 
     def resolved_user_settings

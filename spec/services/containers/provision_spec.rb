@@ -687,6 +687,21 @@ RSpec.describe Containers::Provision do
 
         service.provision
       end
+
+      it "uses the infrastructure network when a rate-limit fallback requires direct outbound" do
+        settings.update!(fallback_enabled: false, fallback_providers: [])
+        direct_outbound_provider.update!(
+          enabled_for_agent_runs: false,
+          fallback_role: "rate_limit_fallback"
+        )
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
+          mock_container
+        end
+
+        service.provision
+      end
     end
 
     context "with Gemini subscription auth (GEMINI_CONFIG_DIR)" do
