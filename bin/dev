@@ -25,12 +25,16 @@ fi
 # terminal being hung up — important in devcontainers where the host laptop
 # sleeping or the editor reconnecting sends SIGHUP to the foreground process
 # group and kills overmind+tmux. See log/dev-update/diagnostics for the
-# previous crash pattern that motivated this.
+# previous crash pattern that motivated this. --restart-if-running (or -R, or
+# DEV_RESTART_IF_RUNNING=1) tells bin/dev to restart a healthy existing
+# Overmind session instead of exiting early.
 DEV_DETACH_FLAG="${DEV_DETACH:-0}"
+DEV_RESTART_IF_RUNNING_FLAG="${DEV_RESTART_IF_RUNNING:-0}"
 DEV_PASSTHRU_ARGS=()
 for arg in "$@"; do
   case "$arg" in
     --detach|-D) DEV_DETACH_FLAG=1 ;;
+    --restart-if-running|-R) DEV_RESTART_IF_RUNNING_FLAG=1 ;;
     *) DEV_PASSTHRU_ARGS+=("$arg") ;;
   esac
 done
@@ -110,6 +114,19 @@ if [ -S "$OVERMIND_SOCKET" ]; then
       rm -f "$OVERMIND_SOCKET"
     fi
   else
+    if [ "$DEV_RESTART_IF_RUNNING_FLAG" = "1" ]; then
+      echo "Overmind is already running and healthy. Restarting processes..."
+      if restart_output="$(dev_supervisor_run_overmind overmind restart 2>&1)"; then
+        printf '%s\n' "$restart_output"
+        exit 0
+      else
+        echo "Failed to restart healthy Overmind session. Capturing diagnostics..." >&2
+        dev_supervisor_snapshot_state "bin-dev-healthy-overmind-restart-failed"
+        printf '%s\n' "$restart_output" >&2
+        exit 1
+      fi
+    fi
+
     echo "Overmind is already running and healthy."
     echo "Use 'overmind connect web' to attach, or 'overmind restart' to restart processes."
     printf '%s\n' "$status_output"
