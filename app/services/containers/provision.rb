@@ -1112,7 +1112,9 @@ module Containers
       return @codex_subscription_auth_host_mount_path if defined?(@codex_subscription_auth_host_mount_path)
 
       base = codex_config_host_path
-      @codex_subscription_auth_host_mount_path = base if base.present? && File.directory?(base) && File.file?(File.join(base, "auth.json"))
+      @codex_subscription_auth_host_mount_path = if base.present? && File.directory?(base) && File.file?(File.join(base, "auth.json"))
+        base
+      end
     end
 
     def codex_subscription_auth_file_binds
