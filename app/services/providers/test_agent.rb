@@ -183,7 +183,14 @@ module Providers
 
       begin
         test_run.with_container do |run|
-          run.execute_in_container(context.fetch(:command), timeout: TIMEOUT, stream: false, env: context.fetch(:env))
+          exec_options = {
+            timeout: TIMEOUT,
+            stream: false,
+            env: context.fetch(:env)
+          }
+          exec_options[:preparation] = context[:preparation] if context[:preparation]
+
+          run.execute_in_container(context.fetch(:command), **exec_options)
         end
       ensure
         test_run.destroy! if test_run&.persisted?
@@ -357,7 +364,8 @@ module Providers
     def container_test_context
       {
         command: test_command,
-        env: test_command_env
+        env: test_command_env,
+        preparation: test_command_preparation
       }
     end
 
@@ -371,6 +379,7 @@ module Providers
       # than applying any harness-specific invocation shape.
       return codex_test_command if provider.provider_key == "codex"
       return gemini_test_command if provider.provider_key == "gemini"
+      return harness_runtime_command if provider.opencode_agent_harness_runtime?
       return provider.direct_outbound_exec_command(command_prefix: command, prompt: PROMPT) if provider.requires_direct_outbound?
       return kilocode_test_command if provider.provider_key == "kilocode"
 
@@ -378,7 +387,30 @@ module Providers
     end
 
     def test_command_env
+      return direct_outbound_execution_plan.env if provider.opencode_agent_harness_runtime?
+
       provider.direct_outbound_exec_env
+    end
+
+    def test_command_preparation
+      return nil unless provider.opencode_agent_harness_runtime?
+
+      direct_outbound_execution_plan.preparation
+    end
+
+    def direct_outbound_execution_plan
+      @direct_outbound_execution_plan ||= Providers::HarnessExecutionPlan.call(
+        provider: provider,
+        prompt: PROMPT
+      )
+    end
+
+    # Wraps the harness execution plan command with `env -u` to strip
+    # proxy-specific headers inherited from container startup.
+    def harness_runtime_command
+      plan = direct_outbound_execution_plan
+      unset_vars = ProviderSupport.harness_runtime_unset_vars_for(provider.provider_key)
+      ProviderSupport.command_with_unset_env(plan.command, unset_vars)
     end
 
     def classify_failed_response(error_message)

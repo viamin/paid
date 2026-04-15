@@ -281,4 +281,20 @@ RSpec.describe ProviderSupport do
       expect(described_class.all_bot_usernames.map(&:downcase)).to eq(described_class.all_bot_usernames.to_a)
     end
   end
+
+  describe ".command_with_unset_env" do
+    it "returns command unchanged when unset_vars is empty" do
+      expect(described_class.command_with_unset_env("my_cmd", [])).to eq("my_cmd")
+    end
+
+    it "wraps an array command with env -u flags" do
+      result = described_class.command_with_unset_env(%w[my_cmd --flag], %w[VAR1 VAR2])
+      expect(result).to eq(%w[env -u VAR1 -u VAR2 my_cmd --flag])
+    end
+
+    it "wraps a string command with sh -c and env -u flags" do
+      result = described_class.command_with_unset_env("my_cmd --flag", %w[VAR1 VAR2])
+      expect(result).to eq([ "sh", "-c", "env -u VAR1 -u VAR2 my_cmd --flag" ])
+    end
+  end
 end
