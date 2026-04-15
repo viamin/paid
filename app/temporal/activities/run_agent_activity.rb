@@ -101,6 +101,9 @@ module Activities
     DEFAULT_ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
     DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
     DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
+    CHANGE_DETECTION_MAX_ATTEMPTS = 3
+    CHANGE_DETECTION_RETRY_BACKOFF = 0.25
+    POST_RUN_BOOKKEEPING_ERROR_TYPE = "PostRunBookkeepingFailed"
 
     def self.provider_order(agent_type:, fallback_enabled:, fallback_providers:)
       return [ agent_type ].select { |p| AGENT_COMMANDS.key?(p) } unless fallback_enabled
@@ -1089,21 +1092,17 @@ module Activities
     def commit_uncommitted_changes(agent_run)
       return unless agent_run.container_id.present?
 
-      container_service = reconnect_container(agent_run)
-      git_ops = Containers::GitOperations.new(
-        container_service: container_service,
-        agent_run: agent_run
-      )
+      committed = with_change_detection_retry(agent_run, operation: "commit_uncommitted_changes") do
+        container_service = reconnect_container(agent_run)
+        git_ops = Containers::GitOperations.new(
+          container_service: container_service,
+          agent_run: agent_run
+        )
 
-      if git_ops.commit_uncommitted_changes
-        agent_run.log!("system", "Auto-committed uncommitted agent changes")
+        git_ops.commit_uncommitted_changes
       end
-    rescue => e
-      logger.warn(
-        message: "agent_execution.commit_uncommitted_failed",
-        agent_run_id: agent_run.id,
-        error: e.message
-      )
+
+      agent_run.log!("system", "Auto-committed uncommitted agent changes") if committed
     end
 
     # Evaluates pre-commit requirements for the agent run.
@@ -1128,24 +1127,107 @@ module Activities
     def check_for_changes(agent_run, pre_agent_sha)
       return false unless agent_run.container_id.present?
 
-      container_service = reconnect_container(agent_run)
+      with_change_detection_retry(agent_run, operation: "check_for_changes") do
+        container_service = reconnect_container(agent_run)
 
-      git_ops = Containers::GitOperations.new(
-        container_service: container_service,
-        agent_run: agent_run
-      )
+        git_ops = Containers::GitOperations.new(
+          container_service: container_service,
+          agent_run: agent_run
+        )
 
-      if pre_agent_sha.present?
-        git_ops.has_changes_since?(pre_agent_sha)
-      else
-        git_ops.has_changes?
+        if pre_agent_sha.present?
+          git_ops.has_changes_since?(pre_agent_sha)
+        else
+          git_ops.has_changes?
+        end
       end
-    rescue => e
-      logger.warn(
-        message: "agent_execution.check_changes_failed",
-        agent_run_id: agent_run.id,
-        error: e.message
-      )
+    end
+
+    def with_change_detection_retry(agent_run, operation:)
+      attempt = 0
+
+      begin
+        attempt += 1
+        yield(attempt)
+      rescue StandardError => e
+        transient = transient_container_error?(e)
+
+        if transient && attempt < CHANGE_DETECTION_MAX_ATTEMPTS
+          logger.warn(
+            message: "agent_execution.change_detection_retry",
+            agent_run_id: agent_run.id,
+            operation: operation,
+            attempt: attempt,
+            max_attempts: CHANGE_DETECTION_MAX_ATTEMPTS,
+            error_class: e.class.name,
+            error: e.message
+          )
+          sleep(CHANGE_DETECTION_RETRY_BACKOFF * attempt)
+          retry
+        end
+
+        logger.error(
+          message: "agent_execution.change_detection_failed",
+          agent_run_id: agent_run.id,
+          operation: operation,
+          attempt: attempt,
+          max_attempts: CHANGE_DETECTION_MAX_ATTEMPTS,
+          transient: transient,
+          error_class: e.class.name,
+          error: e.message
+        )
+        raise Temporalio::Error::ApplicationError.new(
+          "Post-run #{operation} failed after #{attempt} attempts: #{e.class}: #{e.message}",
+          type: POST_RUN_BOOKKEEPING_ERROR_TYPE,
+          non_retryable: true
+        )
+      end
+    end
+
+    def transient_container_error?(error)
+      return true if error_or_cause_matches?(error, Containers::Provision::ExecutionError)
+      return true if reconnect_failure?(error)
+
+      current = error
+
+      while current
+        return true if [
+          Docker::Error::DockerError,
+          Timeout::Error,
+          EOFError,
+          Errno::ECONNREFUSED,
+          Errno::EHOSTUNREACH,
+          Errno::ECONNRESET,
+          Errno::EPIPE,
+          Errno::ETIMEDOUT,
+          SocketError
+        ].any? { |klass| current.is_a?(klass) }
+        return true if current.class.ancestors.any? { |ancestor| ancestor.name == "Excon::Error" }
+        return true if %w[Net::OpenTimeout Net::ReadTimeout].include?(current.class.name)
+
+        break unless current.respond_to?(:cause)
+        current = current.cause
+      end
+
+      false
+    end
+
+    def reconnect_failure?(error)
+      error_or_cause_matches?(error, Containers::Provision::ProvisionError) do |candidate|
+        candidate.message.start_with?("Failed to reconnect to container:")
+      end
+    end
+
+    def error_or_cause_matches?(error, klass, &block)
+      current = error
+
+      while current
+        return true if current.is_a?(klass) && (!block || block.call(current))
+
+        break unless current.respond_to?(:cause)
+        current = current.cause
+      end
+
       false
     end
 

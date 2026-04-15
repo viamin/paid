@@ -90,6 +90,51 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "restarts a healthy overmind session when requested" do
+    Dir.mktmpdir("dev", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, overmind: { running: true }, tmux: { pane_dead: false })
+
+      env = {
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "SKIP_DEV_CLEANUP" => "1",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      }
+      stdout, stderr, status = Open3.capture3(env, script_path, "--restart-if-running", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("Overmind is already running and healthy. Restarting processes...")
+      expect(stdout).to include("restarted web")
+      expect(File.exist?(File.join(dir, "overmind-restart-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "overmind-start-ran"))).to be(false)
+      expect(File.exist?(File.join(dir, "overmind-quit-ran"))).to be(false)
+    end
+  end
+
+  it "captures diagnostics when restarting a healthy overmind session fails" do
+    Dir.mktmpdir("dev", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(
+        dir,
+        overmind: { running: true, restart_exit_status: 1 },
+        tmux: { pane_dead: false }
+      )
+
+      env = {
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "SKIP_DEV_CLEANUP" => "1",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      }
+      stdout, stderr, status = Open3.capture3(env, script_path, "--restart-if-running", chdir: dir)
+
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("Overmind is already running and healthy. Restarting processes...")
+      expect(stderr).to include("Failed to restart healthy Overmind session. Capturing diagnostics...")
+      expect(stderr).to include("restart failed")
+      expect(Dir.glob(File.join(dir, "log", "dev-update", "diagnostics", "*bin-dev-healthy-overmind-restart-failed.log"))).not_to be_empty
+    end
+  end
+
   it "restarts an unhealthy overmind session with dead processes from overmind status" do
     Dir.mktmpdir("dev", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, overmind: { running: true, process_dead: true }, tmux: { pane_dead: false })
@@ -135,6 +180,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
   def prepare_script_fixture(dir, overmind: {}, tmux: {})
     overmind_running = overmind.fetch(:running, false)
     overmind_process_dead = overmind.fetch(:process_dead, false)
+    overmind_restart_exit_status = overmind.fetch(:restart_exit_status, 0)
     tmux_pane_dead = tmux.fetch(:pane_dead, false)
     start_exit_status = overmind.fetch(:start_exit_status, 0)
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
@@ -183,6 +229,15 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
             touch "#{dir}/overmind-quit-ran"
             rm -f "#{dir}/overmind-running" "#{dir}/.overmind.sock"
             exit 0
+            ;;
+          restart)
+            touch "#{dir}/overmind-restart-ran"
+            if [ "#{overmind_restart_exit_status}" = "0" ]; then
+              echo "restarted web"
+            else
+              echo "restart failed" >&2
+            fi
+            exit #{overmind_restart_exit_status}
             ;;
           *)
             echo "unexpected overmind command: $*" >&2
