@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.22.0](https://github.com/viamin/paid/compare/v0.21.0...v0.22.0) (2026-04-15)
+
+
+### Features
+
+* **dev:** add --restart-if-running flag to restart healthy Overmind sessions ([2104015](https://github.com/viamin/paid/commit/2104015cb21a4fa5270941bbdba3e1a99fe21e73))
+* **dev:** add --restart-if-running flag to restart healthy Overmind sessions ([#1138](https://github.com/viamin/paid/issues/1138)) ([f363525](https://github.com/viamin/paid/commit/f363525921390f3fb53e735b8d004804a0d05821))
+* **setup:** update bin/setup to use --restart-if-running when starting dev server ([f363525](https://github.com/viamin/paid/commit/f363525921390f3fb53e735b8d004804a0d05821))
+* **setup:** update bin/setup to use --restart-if-running when starting dev server ([2104015](https://github.com/viamin/paid/commit/2104015cb21a4fa5270941bbdba3e1a99fe21e73))
+
+
+### Bug Fixes
+
+* 1012: feat(settings): address all bot reviews regardless of configured review method ([#1103](https://github.com/viamin/paid/issues/1103)) ([b70f5b0](https://github.com/viamin/paid/commit/b70f5b01210b2f365829e2434e0759fcf5eb4dd5))
+* 1032: feat(token-tracking): ingest GitHub Copilot CLI token usage data from agent-harness ([#1104](https://github.com/viamin/paid/issues/1104)) ([97ec311](https://github.com/viamin/paid/commit/97ec311fe63d08bb9df50f78662c6bd25f5abf40))
+* 1041: feat(knowledge): add provider fallback configuration for knowledge base LLM operations ([#1087](https://github.com/viamin/paid/issues/1087)) ([475da3e](https://github.com/viamin/paid/commit/475da3e9d12ddc5e5d602dcba2cabd0008129bb0))
+* 1049: fix(agent-runs): transient container errors silently mark runs as no_output ([#1107](https://github.com/viamin/paid/issues/1107)) ([fed76c7](https://github.com/viamin/paid/commit/fed76c7b6d87ebf457bcdaec2463bffc32f49314))
+* 1058: feat(ci): gate Claude code review workflow on project review settings via repository_dispatch ([#1111](https://github.com/viamin/paid/issues/1111)) ([811d6af](https://github.com/viamin/paid/commit/811d6afa26ab29a34a533f20f3613acd3483c845))
+* 1082: refactor(automation): unify issue and PR automation behind an explicit decision layer ([#1136](https://github.com/viamin/paid/issues/1136)) ([cdb7591](https://github.com/viamin/paid/commit/cdb7591fafbf485f855b91193c9c179c60bb7ca9))
+* 797: refactor(providers): move OpenCode runtime bootstrap out of Paid and into agent-harness ([#1102](https://github.com/viamin/paid/issues/1102)) ([5e17a2c](https://github.com/viamin/paid/commit/5e17a2c4db3c2589dcdeaf79a1c79b0057db2eb1))
+
 ## [0.21.0](https://github.com/viamin/paid/compare/v0.20.2...v0.21.0) (2026-04-14)
 
 
