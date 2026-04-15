@@ -200,10 +200,10 @@ module Containers
     def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil)
       raise ProvisionError, "Container not provisioned" unless container
 
-      with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:) }
+      with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:, preparation:) }
     end
 
-    private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {})
+    private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil)
       timeout ||= options[:timeout_seconds]
       cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
       exec_options = { wait: timeout }
@@ -1316,7 +1316,7 @@ module Containers
       base = File.realpath(codex_subscription_auth_host_mount_path || codex_config_host_path)
       digest = Digest::SHA256.hexdigest(base)[0, 16]
       "#{CODEX_AUTH_LOCKFILE_PREFIX}-#{digest}.lock"
-    rescue Errno::ENOENT
+    rescue Errno::ENOENT, TypeError
       "#{CODEX_AUTH_LOCKFILE_PREFIX}-missing.lock"
     end
 
