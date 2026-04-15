@@ -2,6 +2,7 @@
 
 class Project < ApplicationRecord
   MERGE_METHODS = %w[squash merge rebase].freeze
+  AUTO_RELEASE_GRANULARITIES = %w[off patch_only minor_only major_only all].freeze
   KNOWLEDGE_STATUSES = %w[pending collecting ready failed stale].freeze
   # "none" is not a method — it is represented by enabled: false at the top level
   REVIEW_METHODS = %w[copilot paid_agent codex ci_action manual].freeze
@@ -82,6 +83,14 @@ class Project < ApplicationRecord
      description: "When Paid creates a PR for an issue, copy any user-defined priority labels (P1/P2/P3) from the issue onto the new PR." }.freeze
   ].freeze
 
+  AUTO_RELEASE_GRANULARITY_OPTIONS = [
+    [ "Off", "off" ],
+    [ "Patch only", "patch_only" ],
+    [ "Minor and below", "minor_only" ],
+    [ "Major and below", "major_only" ],
+    [ "All", "all" ]
+  ].freeze
+
   belongs_to :account
   belongs_to :github_token, counter_cache: true
   belongs_to :created_by, class_name: "User", optional: true
@@ -122,6 +131,7 @@ class Project < ApplicationRecord
   validates :poll_interval_seconds, numericality: { greater_than_or_equal_to: 60 }
   validates :max_pr_followup_runs, numericality: { greater_than_or_equal_to: 0 }
   validates :merge_method, inclusion: { in: MERGE_METHODS }
+  validates :auto_release_granularity, inclusion: { in: AUTO_RELEASE_GRANULARITIES }
   validates :max_draft_review_rounds, numericality: { greater_than_or_equal_to: 0 }
   validates :generated_label_name, presence: true
   validates :automation_label_name, presence: true
@@ -444,6 +454,21 @@ class Project < ApplicationRecord
         pr_numbers_with_active_runs: pr_numbers_with_active_runs
       }
     )
+  end
+
+  def auto_release_enabled?
+    auto_release_granularity != "off"
+  end
+
+  def auto_release_allows_bump?(bump_type)
+    case auto_release_granularity
+    when "off" then false
+    when "all" then true
+    when "major_only" then %w[major minor patch].include?(bump_type.to_s)
+    when "minor_only" then %w[minor patch].include?(bump_type.to_s)
+    when "patch_only" then bump_type.to_s == "patch"
+    else false
+    end
   end
 
   def review_settings=(value)

@@ -1459,4 +1459,75 @@ RSpec.describe Project do
       expect(project.semantic_search_available?).to be false
     end
   end
+
+  describe "auto_release_granularity" do
+    it "defaults to off" do
+      project = build(:project)
+      expect(project.auto_release_granularity).to eq("off")
+    end
+
+    it "validates inclusion in AUTO_RELEASE_GRANULARITIES" do
+      project = build(:project, auto_release_granularity: "invalid")
+      expect(project).not_to be_valid
+      expect(project.errors[:auto_release_granularity]).to be_present
+    end
+
+    it "accepts all valid granularities" do
+      Project::AUTO_RELEASE_GRANULARITIES.each do |granularity|
+        project = build(:project, auto_release_granularity: granularity)
+        expect(project).to be_valid
+      end
+    end
+  end
+
+  describe "#auto_release_enabled?" do
+    it "returns false when granularity is off" do
+      project = build(:project, auto_release_granularity: "off")
+      expect(project.auto_release_enabled?).to be false
+    end
+
+    it "returns true when granularity is not off" do
+      %w[patch_only minor_only major_only all].each do |granularity|
+        project = build(:project, auto_release_granularity: granularity)
+        expect(project.auto_release_enabled?).to be true
+      end
+    end
+  end
+
+  describe "#auto_release_allows_bump?" do
+    it "returns false for all bumps when off" do
+      project = build(:project, auto_release_granularity: "off")
+      %w[major minor patch].each do |bump|
+        expect(project.auto_release_allows_bump?(bump)).to be false
+      end
+    end
+
+    it "allows only patch when patch_only" do
+      project = build(:project, auto_release_granularity: "patch_only")
+      expect(project.auto_release_allows_bump?("patch")).to be true
+      expect(project.auto_release_allows_bump?("minor")).to be false
+      expect(project.auto_release_allows_bump?("major")).to be false
+    end
+
+    it "allows minor and patch when minor_only" do
+      project = build(:project, auto_release_granularity: "minor_only")
+      expect(project.auto_release_allows_bump?("patch")).to be true
+      expect(project.auto_release_allows_bump?("minor")).to be true
+      expect(project.auto_release_allows_bump?("major")).to be false
+    end
+
+    it "allows all bumps when major_only" do
+      project = build(:project, auto_release_granularity: "major_only")
+      expect(project.auto_release_allows_bump?("patch")).to be true
+      expect(project.auto_release_allows_bump?("minor")).to be true
+      expect(project.auto_release_allows_bump?("major")).to be true
+    end
+
+    it "allows all bumps when all" do
+      project = build(:project, auto_release_granularity: "all")
+      %w[major minor patch].each do |bump|
+        expect(project.auto_release_allows_bump?(bump)).to be true
+      end
+    end
+  end
 end
