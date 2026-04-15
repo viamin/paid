@@ -666,6 +666,18 @@ module Containers
       raise Error, "Failed to unshallow repository: #{error_with_stderr(result)}"
     end
 
+    # Transient network/DNS error patterns that warrant a retry.
+    TRANSIENT_CLONE_PATTERNS = [
+      "Could not resolve host",
+      "Connection reset by peer",
+      "Connection timed out",
+      "Temporary failure in name resolution",
+      "Connection refused"
+    ].freeze
+
+    CLONE_MAX_ATTEMPTS = 3
+    CLONE_BASE_BACKOFF = 1 # seconds
+
     def clone_repo
       # Idempotent: skip clone if a previous attempt already populated /workspace.
       # This prevents failures on Temporal retries when the clone succeeded but a
@@ -683,8 +695,28 @@ module Containers
       project = agent_run.project
       url = "https://github.com/#{project.full_name}.git"
 
-      result = execute_git("clone", "--depth", "1", url, ".", timeout: clone_timeout)
-      raise CloneError, "Clone failed: #{error_with_stderr(result)}" if result.failure?
+      attempt = 0
+      loop do
+        attempt += 1
+        result = execute_git("clone", "--depth", "1", url, ".", timeout: clone_timeout)
+        return if result.success?
+
+        stderr = result[:stderr].to_s
+        if attempt < CLONE_MAX_ATTEMPTS && transient_clone_error?(stderr)
+          backoff = CLONE_BASE_BACKOFF * (2**(attempt - 1))
+          Rails.logger.warn(
+            message: "container_git.clone_transient_retry",
+            agent_run_id: agent_run.id,
+            attempt: attempt,
+            backoff_seconds: backoff,
+            stderr: stderr.truncate(500)
+          )
+          sleep(backoff)
+          cleanup_partial_clone! if workspace_contains_files?
+        else
+          raise CloneError, "Clone failed: #{error_with_stderr(result)}"
+        end
+      end
     end
 
     def workspace_contains_files?
@@ -707,6 +739,10 @@ module Containers
       return if result.success?
 
       raise CloneError, "Failed to clean partial clone: #{error_with_stderr(result)}"
+    end
+
+    def transient_clone_error?(stderr)
+      TRANSIENT_CLONE_PATTERNS.any? { |pattern| stderr.include?(pattern) }
     end
 
     def checkout_remote_branch(branch_name, pull_request_number: nil)
