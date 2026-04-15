@@ -322,16 +322,25 @@ RSpec.describe Activities::RunAgentActivity do
     end
 
     context "with a direct-outbound OpenCode provider" do
-      it "passes config via exec env instead of embedding it in the command" do
+      it "builds the command through agent-harness runtime preparation" do
         opencode_context = build_opencode_context(user)
         command = activity.send(:build_command, opencode_context, "ping")
-        env = activity.send(:command_env_for, opencode_context)
+        env = activity.send(:command_env_for, opencode_context, "ping")
+        preparation = activity.send(:command_preparation_for, opencode_context, "ping")
 
-        expect(command[2]).to include('printf \'%s\' "$PAID_OPENCODE_CONFIG_B64" | base64 -d')
-        expect(command[2]).to include('opencode run "$1"')
-        expect(command[2]).not_to include('\$1')
-        expect(command[2]).not_to include("sk-openrouter-secret")
-        expect(Base64.strict_decode64(env.fetch("PAID_OPENCODE_CONFIG_B64"))).to include("sk-openrouter-secret")
+        expect(command).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", "ping" ])
+        expect(env).to include("OPENAI_API_KEY" => "sk-openrouter-secret", "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
+        expect(preparation.file_writes.first.path).to eq("~/.config/opencode/opencode.json")
+        expect(preparation.file_writes.first.content).to include("\"model\": \"moonshotai/kimi-k2-0905\"")
+      end
+
+      it "preserves multi-line prompts when wrapping the harness runtime command" do
+        opencode_context = build_opencode_context(user)
+        prompt = "line 1\nline 2"
+
+        command = activity.send(:build_command, opencode_context, prompt)
+
+        expect(command).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", prompt ])
       end
     end
   end
@@ -398,10 +407,10 @@ RSpec.describe Activities::RunAgentActivity do
       if call_count == 1
         rate_limit_failure
       else
-        expect(command[0..1]).to eq(%w[sh -lc])
-        expect(command[2]).to include('printf \'%s\' "$PAID_OPENCODE_CONFIG_B64" | base64 -d')
-        expect(command[2]).to include('opencode run "$1"')
-        expect(opts[:env]).to include("PAID_OPENCODE_CONFIG_B64")
+        expect(command[0..5]).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode" ])
+        expect(command[6]).to eq("run")
+        expect(opts[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
+        expect(opts[:preparation].file_writes.first.path).to eq("~/.config/opencode/opencode.json")
         exec_success
       end
     end
@@ -424,6 +433,42 @@ RSpec.describe Activities::RunAgentActivity do
       enabled_for_agent_runs: true,
       config: { "opencode" => { "api_provider" => "openrouter", "model" => model } }
     )
+  end
+
+  def expect_change_detection_retry_logs(logger, operation:)
+    expect(logger).to have_received(:warn).with(hash_including(
+      message: "agent_execution.change_detection_retry",
+      operation: operation,
+      attempt: 1
+    ))
+    expect(logger).to have_received(:warn).with(hash_including(
+      message: "agent_execution.change_detection_retry",
+      operation: operation,
+      attempt: 2
+    ))
+    expect(logger).to have_received(:error).with(hash_including(
+      message: "agent_execution.change_detection_failed",
+      operation: operation,
+      attempt: 3,
+      transient: true
+    ))
+  end
+
+  def expect_non_retryable_post_run_error(error, operation:)
+    expect(error).to be_a(Temporalio::Error::ApplicationError)
+    expect(error.type).to eq(Activities::RunAgentActivity::POST_RUN_BOOKKEEPING_ERROR_TYPE)
+    expect(error.non_retryable).to be(true)
+    expect(error.message).to include("Post-run #{operation} failed after 3 attempts")
+  end
+
+  def wrap_error(inner_error, message = "wrapped failure")
+    begin
+      raise inner_error
+    rescue => e
+      raise StandardError, "#{message}: #{e.class}: #{e.message}"
+    end
+  rescue => wrapped
+    wrapped
   end
 
   describe "#execute" do
@@ -525,12 +570,44 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.providers_attempted.map { |attempt| attempt["provider"] }).to eq([ "claude_code" ])
       end
 
-      it "returns has_changes: false when container check fails" do
-        allow(git_ops).to receive(:has_changes_since?).and_raise(StandardError, "container gone")
+      it "retries transient commit failures before checking for changes" do
+        commit_attempts = 0
+
+        allow(activity).to receive(:sleep)
+        allow(git_ops).to receive(:commit_uncommitted_changes) do
+          commit_attempts += 1
+          raise Docker::Error::DockerError, "docker unavailable" if commit_attempts == 1
+
+          true
+        end
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(true)
 
         result = activity.execute(agent_run_id: agent_run.id)
 
-        expect(result[:has_changes]).to be false
+        expect(result[:has_changes]).to be true
+        expect(git_ops).to have_received(:commit_uncommitted_changes).twice
+        expect(activity).to have_received(:sleep).with(0.25)
+      end
+
+      it "retries wrapped container exec failures before checking for changes" do
+        commit_attempts = 0
+
+        allow(activity).to receive(:sleep)
+        allow(git_ops).to receive(:commit_uncommitted_changes) do
+          commit_attempts += 1
+          raise wrap_error(
+            Containers::Provision::ExecutionError.new("Docker exec error: Connection reset")
+          ) if commit_attempts == 1
+
+          true
+        end
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(true)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be true
+        expect(git_ops).to have_received(:commit_uncommitted_changes).twice
+        expect(activity).to have_received(:sleep).with(0.25)
       end
 
       it "auto-commits uncommitted changes after agent runs" do
@@ -550,6 +627,173 @@ RSpec.describe Activities::RunAgentActivity do
 
         expect(result[:has_changes]).to be true
         expect(git_ops).not_to have_received(:has_changes_since?)
+      end
+
+      it "retries transient change-detection failures before succeeding" do
+        change_attempts = 0
+
+        allow(activity).to receive(:sleep)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123") do
+          change_attempts += 1
+          raise Docker::Error::DockerError, "docker unavailable" if change_attempts == 1
+
+          true
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be true
+        expect(git_ops).to have_received(:has_changes_since?).twice
+        expect(activity).to have_received(:sleep).with(0.25)
+      end
+
+      it "retries socket-level container reconnect failures before succeeding" do
+        change_attempts = 0
+
+        allow(activity).to receive(:sleep)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123") do
+          change_attempts += 1
+          raise Errno::ECONNREFUSED, "Connection refused" if change_attempts == 1
+
+          true
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be true
+        expect(git_ops).to have_received(:has_changes_since?).twice
+        expect(activity).to have_received(:sleep).with(0.25)
+      end
+
+      it "retries wrapped socket-level container reconnect failures before succeeding" do
+        change_attempts = 0
+
+        allow(activity).to receive(:sleep)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123") do
+          change_attempts += 1
+          raise wrap_error(Errno::ECONNREFUSED.new("Connection refused")) if change_attempts == 1
+
+          true
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be true
+        expect(git_ops).to have_received(:has_changes_since?).twice
+        expect(activity).to have_received(:sleep).with(0.25)
+      end
+
+      it "retries transient fallback change-detection failures before succeeding" do
+        change_attempts = 0
+
+        allow(activity).to receive(:sleep)
+        allow(git_ops).to receive(:head_sha).and_raise(StandardError, "container not ready")
+        allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
+        allow(git_ops).to receive(:has_changes?) do
+          change_attempts += 1
+          raise Docker::Error::DockerError, "docker unavailable" if change_attempts == 1
+
+          true
+        end
+        allow(git_ops).to receive(:has_changes_since?)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be true
+        expect(git_ops).to have_received(:has_changes?).twice
+        expect(git_ops).not_to have_received(:has_changes_since?)
+        expect(activity).to have_received(:sleep).with(0.25)
+      end
+
+      it "retries wrapped container reconnect failures before succeeding" do
+        attempts = 0
+
+        allow(activity).to receive(:sleep)
+        allow(Containers::Provision).to receive(:reconnect) do
+          attempts += 1
+          raise wrap_error(
+            Containers::Provision::ProvisionError.new("Failed to reconnect to container: connection reset")
+          ) if attempts == 2
+
+          container_service
+        end
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(true)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be true
+        expect(Containers::Provision).to have_received(:reconnect).at_least(:twice)
+        expect(activity).to have_received(:sleep).with(0.25)
+      end
+
+      it "does not retry permanent container-not-found reconnect failures" do
+        allow(activity).to receive(:sleep)
+        attempts = 0
+        allow(Containers::Provision).to receive(:reconnect) do
+          attempts += 1
+          raise wrap_error(
+            Containers::Provision::ProvisionError.new("Container #{agent_run.container_id} not found")
+          ) if attempts == 2
+
+          container_service
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.type).to eq("PostRunBookkeepingFailed")
+          expect(error.non_retryable).to be(true)
+          expect(error.message).to include("Post-run commit_uncommitted_changes failed after 1 attempts")
+          expect(error.message).to include("Containers::Provision::ProvisionError")
+          expect(error.message).to include("not found")
+        }
+
+        expect(activity).not_to have_received(:sleep)
+        expect(Containers::Provision).to have_received(:reconnect).twice
+      end
+
+      it "raises a non-retryable ApplicationError when change detection keeps failing after transient retries" do
+        logger = instance_double(ActiveSupport::Logger, warn: nil, error: nil, info: nil)
+        change_attempts = 0
+
+        allow(activity).to receive(:logger).and_return(logger)
+        allow(activity).to receive(:sleep)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123") do
+          change_attempts += 1
+          raise Docker::Error::DockerError, "docker unavailable"
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect_non_retryable_post_run_error(error, operation: "check_for_changes")
+          expect(error.message).to include("Docker::Error::DockerError: docker unavailable")
+        }
+
+        expect(change_attempts).to eq(3)
+        expect_change_detection_retry_logs(logger, operation: "check_for_changes")
+      end
+
+      it "raises a non-retryable ApplicationError when auto-commit keeps failing after transient retries" do
+        logger = instance_double(ActiveSupport::Logger, warn: nil, error: nil, info: nil)
+        commit_attempts = 0
+
+        allow(activity).to receive(:logger).and_return(logger)
+        allow(activity).to receive(:sleep)
+        allow(git_ops).to receive(:commit_uncommitted_changes) do
+          commit_attempts += 1
+          raise Errno::ECONNREFUSED, "Connection refused"
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect_non_retryable_post_run_error(error, operation: "commit_uncommitted_changes")
+          expect(error.message).to include("Errno::ECONNREFUSED")
+        }
+
+        expect(commit_attempts).to eq(3)
+        expect_change_detection_retry_logs(logger, operation: "commit_uncommitted_changes")
       end
 
       it "records the final_provider on success" do

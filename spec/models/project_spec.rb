@@ -1442,6 +1442,15 @@ RSpec.describe Project do
       expect(project.semantic_search_available?).to be true
     end
 
+    it "returns true when the configured knowledge embedding provider has a compatible key" do
+      project = create(:project)
+      owner = project.effective_owner
+      owner.settings.update!(kb_embedding_provider: "openrouter", kb_embedding_fallback_providers: [])
+      create(:provider_api_key, user: owner, api_service_type: "openrouter")
+
+      expect(project.semantic_search_available?).to be true
+    end
+
     it "returns false when no OpenAI key exists from any source" do
       project = create(:project)
       allow(ENV).to receive(:[]).and_call_original

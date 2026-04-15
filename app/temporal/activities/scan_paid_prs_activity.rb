@@ -19,6 +19,7 @@ module Activities
     activity_name "ScanPaidPrs"
 
     MIN_COMMENT_LENGTH = 20
+    CI_ACTION_DISPATCH_GRACE_PERIOD = 2.minutes
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
     # Body-only review bots (currently Codex) signal "no findings" by posting
@@ -37,15 +38,17 @@ module Activities
     def execute(input)
       project_id = input[:project_id]
       project = Project.find_by(id: project_id)
-      return { prs_to_trigger: [], project_missing: true } unless project
-      return { prs_to_trigger: [] } unless project.auto_scan_prs
+      return { prs_to_trigger: [], automation_results: [], project_missing: true } unless project
+      return { prs_to_trigger: [], automation_results: [] } unless project.auto_scan_prs
 
       client = project.github_token.client
       paid_prs = find_paid_prs(project)
+      explicit_pr_decisions = FeatureFlags.explicit_pr_automation_decisions?(project:)
 
       scanned_count = 0
       unchanged_count = 0
       prs_to_trigger = []
+      automation_results = []
       paid_prs.each do |issue|
         if skip_unchanged_pr?(project, issue)
           if merge_conflict_rescan_needed?(project, issue)
@@ -53,7 +56,8 @@ module Activities
             if result && result != :skipped
               scanned_count += 1
               issue.update_column(:last_pr_scan_at, Time.current)
-              prs_to_trigger << result
+              collect_scan_result(issue, result, prs_to_trigger, automation_results,
+                explicit_pr_decisions:)
               next
             end
           end
@@ -68,14 +72,15 @@ module Activities
         next if result == :skipped
         scanned_count += 1
         issue.update_column(:last_pr_scan_at, Time.current)
-        prs_to_trigger << result if result
+        collect_scan_result(issue, result, prs_to_trigger, automation_results,
+          explicit_pr_decisions:) if result
       rescue Temporalio::Error::ApplicationError => e
         raise unless e.type == "RateLimit"
 
         logger.warn(
           message: "pr_scanner.rate_budget_exhausted_mid_scan",
           project_id: project_id,
-          prs_collected: prs_to_trigger.size,
+          prs_collected: explicit_pr_decisions ? automation_results.size : prs_to_trigger.size,
           prs_remaining: paid_prs.size - paid_prs.index(issue) - 1
         )
         break
@@ -87,13 +92,21 @@ module Activities
         prs_found: paid_prs.size,
         prs_scanned: scanned_count,
         prs_skipped_unchanged: unchanged_count,
-        prs_triggered: prs_to_trigger.size
+        prs_triggered: explicit_pr_decisions ? automation_results.size : prs_to_trigger.size
       )
 
-      { prs_to_trigger: prs_to_trigger }
+      { prs_to_trigger: prs_to_trigger, automation_results: automation_results }
     end
 
     private
+
+    def collect_scan_result(issue, result, prs_to_trigger, automation_results, explicit_pr_decisions:)
+      if explicit_pr_decisions
+        automation_results << Automation::Evaluator.for(issue, explicit_pr_decisions: true).call(scan: result).to_h
+      else
+        prs_to_trigger << result
+      end
+    end
 
     def find_paid_prs(project)
       project.issues
@@ -320,7 +333,7 @@ module Activities
         if !checks.nil? && all_checks_green?(checks)
           # Check non-bot review gates (manual reviewer, ci_action) before advancing.
           reviews ||= fetch_reviews(client, project, issue) # safety: reviews already fetched above
-          gate_triggers = non_bot_review_gate_triggers(project, reviews, checks)
+          gate_triggers = non_bot_review_gate_triggers(project, issue, pr_data, reviews, checks)
           if gate_triggers.any?
             all_pending = pending_triggers + sidecar_triggers + gate_triggers
             log_triggers(project, issue, all_pending)
@@ -357,8 +370,8 @@ module Activities
           !checks.nil? &&
           all_checks_green?(checks) &&
           mergeable == true &&
-          no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks) &&
-          all_blocking_review_methods_complete?(project, reviews, checks) &&
+          no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks, pr_data: pr_data) &&
+          all_blocking_review_methods_complete?(project, reviews, checks, pr_data: pr_data) &&
           !review_stale_for_head?(client, project, issue, pr_data, reviews)
         return owner_approved_trigger(issue)
       end
@@ -410,8 +423,8 @@ module Activities
             !checks.nil? &&
             all_checks_green?(checks) &&
             mergeable == true &&
-            no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks) &&
-            all_blocking_review_methods_complete?(project, reviews, checks) &&
+            no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks, pr_data: pr_data) &&
+            all_blocking_review_methods_complete?(project, reviews, checks, pr_data: pr_data) &&
             !review_stale_for_head?(client, project, issue, pr_data, reviews)
           return owner_approved_trigger(issue)
         end
@@ -530,7 +543,7 @@ module Activities
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
       triggers.concat(check_merge_conflicts(project, pr_data))
-      triggers.concat(non_bot_review_gate_triggers(project, reviews, checks))
+      triggers.concat(non_bot_review_gate_triggers(project, issue, pr_data, reviews, checks))
 
       # When a critical signal source failed but we found actionable
       # triggers from other sources, return them so downstream actions
@@ -731,7 +744,7 @@ module Activities
     # (manual or ci_action) has not yet been satisfied. These gates prevent
     # the scanner from advancing a PR when a human reviewer or a specific
     # CI action has not approved/completed.
-    def non_bot_review_gate_triggers(project, reviews, checks)
+    def non_bot_review_gate_triggers(project, issue, pr_data, reviews, checks)
       return [] unless project.review_enabled?
 
       triggers = []
@@ -746,8 +759,10 @@ module Activities
 
       if project.review_method_enabled?("ci_action") && !checks.nil?
         action_name = project.review_method_config("ci_action")["action_name"]
-        if action_name.present? && !ci_action_succeeded?(checks, action_name)
+        if action_name.present? && !ci_action_review_complete?(project, checks, pr_data)
+          dispatch_needed = ci_action_dispatch_required?(issue, checks, action_name)
           triggers << { type: "ci_action_pending", action_name: action_name,
+                        dispatch_required: dispatch_needed,
                         details: "Awaiting successful #{action_name} check" }
         end
       end
@@ -773,6 +788,26 @@ module Activities
 
       matching = checks.find { |c| c[:name] == action_name.strip }
       matching&.dig(:conclusion) == "success"
+    end
+
+    def ci_action_dispatch_required?(issue, checks, action_name)
+      return false unless claude_review_action?(action_name)
+      return false if ci_action_dispatch_suppressed?(issue)
+      return true if checks.nil? || checks.empty?
+
+      checks.none? { |c| c[:name] == action_name.strip }
+    end
+
+    def claude_review_action?(action_name)
+      action_name.strip == DispatchClaudeReviewActivity::ACTION_NAME
+    end
+
+    def ci_action_dispatch_suppressed?(issue)
+      issue.ci_action_dispatched_at.present? && issue.ci_action_dispatched_at >= CI_ACTION_DISPATCH_GRACE_PERIOD.ago
+    end
+
+    def ci_action_check_skipped_for_fork?(action_name, pr_data)
+      claude_review_action?(action_name) && pr_data&.head&.repo&.fork == true
     end
 
     # --- Review checks ---
@@ -849,7 +884,7 @@ module Activities
     BODY_ONLY_REVIEW_PROVIDER_KEYS = %w[codex paid_agent].freeze
 
     def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
-      allowed = project&.review_enabled? ? (project.enabled_review_bot_logins.presence || Set.new) : nil
+      allowed = allowed_review_bot_logins(project)
       latest = latest_allowed_bot_review(reviews, allowed)
       paid_agent_limit_reached_for_latest_review =
         paid_agent_review_limit_reached_for_review?(project, reviews, latest, issue)
@@ -1228,21 +1263,15 @@ module Activities
     # configuration AND is at least as recent as that bot's latest review on
     # this PR.
     #
-    # The override is restricted to projects whose enabled review bots are
-    # ALL body-only — i.e. no thread-based bot like Copilot is also enabled.
-    # A clean codex comment cannot speak for an outstanding Copilot review
-    # whose unresolved threads are tracked separately, so in mixed
-    # configurations we defer to the existing classification path.
-    #
     # The comment-vs-review timestamp comparison prevents an older "Bravo"
     # comment from masking a newer non-clean review on a subsequent commit.
     # We intentionally do not require the bot's absolute latest issue comment
     # to be clean, because body-only bots can emit later informational
     # comments (for example setup guidance) that do not request PR changes and
     # should not suppress an earlier clean completion signal. The bypass is
-    # also restricted to projects whose enabled body-only bot methods all map
-    # to the same provider family as the clean comment; a Codex clean comment
-    # cannot speak for an outstanding paid_agent review.
+    # restricted to projects whose enabled review bots are ALL body-only; in
+    # mixed-bot projects (e.g. Codex + Copilot), a clean Codex comment cannot
+    # suppress the pending trigger for Copilot.
     def body_only_bot_clean_comment_present?(client, project, issue, latest_review, allowed_bot_logins)
       return false if allowed_bot_logins.nil? || allowed_bot_logins.empty?
       return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
@@ -1495,7 +1524,7 @@ module Activities
     # non_bot_review_gate_triggers, causing ci_action_succeeded? to return
     # false — conservatively blocking auto-merge if ci_action is enabled.
     # Callers that have check data available should always pass it.
-    def no_outstanding_review_feedback?(project, client, issue, reviews, checks: nil)
+    def no_outstanding_review_feedback?(project, client, issue, reviews, checks: nil, pr_data: nil)
       last_run = last_completed_run(project, issue)
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
@@ -1512,7 +1541,7 @@ module Activities
           pr_number: issue.github_number
         )
       end
-      return false if non_bot_review_gate_triggers(project, reviews, effective_checks).any?
+      return false if non_bot_review_gate_triggers(project, issue, pr_data, reviews, effective_checks).any?
       return false if check_non_enabled_bot_reviews(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue).any?
 
@@ -1531,11 +1560,11 @@ module Activities
     #   manual — at least one trusted non-bot user must have submitted
     #     an APPROVED review (distinct from owner approval, which gates
     #     the merge trigger itself).
-    def all_blocking_review_methods_complete?(project, reviews, checks)
+    def all_blocking_review_methods_complete?(project, reviews, checks, pr_data: nil)
       return true unless project.review_enabled? && project.wait_for_reviews?
 
       if project.review_method_enabled?("ci_action")
-        return false unless ci_action_review_complete?(project, checks)
+        return false unless ci_action_review_complete?(project, checks, pr_data)
       end
 
       if project.review_method_enabled?("manual")
@@ -1547,14 +1576,16 @@ module Activities
 
     # ci_action is complete when the configured action_name appears in
     # the check-run list with a "success" conclusion.
-    def ci_action_review_complete?(project, checks)
+    def ci_action_review_complete?(project, checks, pr_data)
       action_name = project.review_method_config("ci_action").to_h["action_name"]
       if action_name.blank?
         Rails.logger.warn(message: "reviews.ci_action_missing_action_name", project_id: project.id)
         return false
       end
 
-      checks.any? { |c| c[:name] == action_name && c[:conclusion] == "success" }
+      return true if ci_action_check_skipped_for_fork?(action_name, pr_data)
+
+      checks.any? { |c| c[:name] == action_name.strip && c[:conclusion] == "success" }
     end
 
     # Manual review is complete when the configured reviewer_login has
@@ -1649,6 +1680,19 @@ module Activities
 
     def review_bot?(login)
       ProviderSupport.provider_bot_username?(login)
+    end
+
+    # Returns the set of bot logins allowed to trigger review runs, or nil
+    # when review is disabled (nil means "no filtering" in
+    # latest_allowed_bot_review). An empty Set means "no bots enabled" —
+    # intentionally different from nil — so latest_allowed_bot_review
+    # matches nothing and callers like paid_agent_is_latest_blocker?
+    # correctly return false when review is enabled but no bots are
+    # configured.
+    def allowed_review_bot_logins(project)
+      return nil unless project&.review_enabled?
+
+      project.enabled_review_bot_logins.presence || Set.new
     end
 
     def check_non_enabled_bot_reviews(reviews, unresolved_threads, project:, last_run:, client: nil, issue: nil)
@@ -1840,7 +1884,7 @@ module Activities
 
       return false if other_enabled_body_only_bots?(project)
 
-      allowed = project.enabled_review_bot_logins.presence
+      allowed = allowed_review_bot_logins(project)
       latest = latest_allowed_bot_review(reviews, allowed)
       return false unless latest
 

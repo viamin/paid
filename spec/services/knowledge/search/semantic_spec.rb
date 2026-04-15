@@ -84,25 +84,25 @@ RSpec.describe Knowledge::Search::Semantic do
     end
 
     context "with api_key parameter" do
-      it "passes api_key to Generate.call for query embedding" do
+      it "passes api_key and api_base_url to Generate.call for query embedding" do
         allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: double(healthy?: true))
         allow(Knowledge::Embeddings::Generate).to receive(:call).and_return([])
 
-        described_class.call(project: project, query: "test", api_key: "sk-user-key")
+        described_class.call(project: project, query: "test", api_key: "sk-user-key", api_base_url: "https://openrouter.ai/api/v1")
 
         expect(Knowledge::Embeddings::Generate).to have_received(:call).with(
-          texts: [ "test" ], api_key: "sk-user-key"
+          texts: [ "test" ], api_key: "sk-user-key", api_base_url: "https://openrouter.ai/api/v1"
         )
       end
 
-      it "passes nil api_key when none provided" do
+      it "passes nil api_key and api_base_url when none provided" do
         allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: double(healthy?: true))
         allow(Knowledge::Embeddings::Generate).to receive(:call).and_return([])
 
         described_class.call(project: project, query: "test")
 
         expect(Knowledge::Embeddings::Generate).to have_received(:call).with(
-          texts: [ "test" ], api_key: nil
+          texts: [ "test" ], api_key: nil, api_base_url: nil
         )
       end
     end

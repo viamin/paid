@@ -159,7 +159,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
   end
 
-  describe "#handle_detection" do
+  describe "#handle_automation_result" do
     let(:workflow) { described_class.new }
     let(:project_id) { 1 }
 
@@ -173,20 +173,20 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .and_return(true)
     end
 
-    it "queues execute_agent runs instead of starting them directly" do
-      detection = { action: "execute_agent", issue_id: 10 }
+    it "queues explicit create_pr decisions instead of starting runs directly" do
+      evaluation = { decisions: [ { type: "queue_create_pr_run", issue_id: 10 } ] }
 
-      workflow.send(:handle_detection, detection, project_id)
+      workflow.send(:handle_automation_result, evaluation, project_id)
 
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::QueueAgentRunActivity, { project_id: project_id, issue_id: 10 }, timeout: 30)
+        .with(Activities::QueueAgentRunActivity, { project_id: project_id, issue_id: 10, goal: "create_pr" }, timeout: 30)
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
-    it "queues create_pr explicitly for PR detections" do
-      detection = { action: "execute_agent", issue_id: 10, source_pull_request_number: 42 }
+    it "queues create_pr explicitly for PR decisions" do
+      evaluation = { decisions: [ { type: "queue_create_pr_run", issue_id: 10, source_pull_request_number: 42 } ] }
 
-      workflow.send(:handle_detection, detection, project_id)
+      workflow.send(:handle_automation_result, evaluation, project_id)
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
@@ -194,30 +194,15 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           timeout: 30)
     end
 
-    it "omits goal from queue input before the goal patch" do
-      allow(Temporalio::Workflow).to receive(:patched)
-        .with("queue-agent-run-goal-v1")
-        .and_return(false)
-
-      detection = { action: "execute_agent", issue_id: 10, source_pull_request_number: 42 }
-
-      workflow.send(:handle_detection, detection, project_id)
-
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: 10, source_pull_request_number: 42 },
-          timeout: 30)
-    end
-
-    it "starts PlanningWorkflow for start_planning action" do
-      detection = { action: "start_planning", issue_id: 20 }
+    it "starts PlanningWorkflow for start_planning decisions" do
+      evaluation = { decisions: [ { type: "start_planning", issue_id: 20 } ] }
 
       allow(workflow).to receive(:run_activity)
         .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
         .and_return({ has_capacity: true })
       allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
 
-      workflow.send(:handle_detection, detection, project_id)
+      workflow.send(:handle_automation_result, evaluation, project_id)
 
       expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
         Workflows::PlanningWorkflow,
@@ -237,8 +222,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
         .and_return({ has_capacity: false })
 
-      detection = { action: "start_planning", issue_id: 20 }
-      workflow.send(:handle_detection, detection, project_id)
+      evaluation = { decisions: [ { type: "start_planning", issue_id: 20 } ] }
+      workflow.send(:handle_automation_result, evaluation, project_id)
 
       expect(logger).to have_received(:info).with(hash_including(
         message: "planning.deferred_due_to_capacity",
@@ -764,6 +749,41 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
+    it "dispatches Claude review when ci_action_pending requests it" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [ { type: "ci_action_pending", action_name: "Claude Code Review", dispatch_required: true } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::DispatchClaudeReviewActivity,
+          { project_id: project_id, pr_number: 42 }, timeout: 60)
+      expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+    end
+
+    it "dispatches Claude review and still starts followup when other triggers are present" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        triggers: [
+          { type: "ci_action_pending", action_name: "Claude Code Review", dispatch_required: true },
+          { type: "ci_failure", details: [ "rspec" ] }
+        ],
+        current_draft_review_count: 0
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::DispatchClaudeReviewActivity,
+          { project_id: project_id, pr_number: 42 }, timeout: 60)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(count_toward_draft_review_round: true, expected_draft_review_count: 0),
+          timeout: anything)
+    end
+
     it "starts followup when manual_review_pending is combined with other triggers" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
@@ -1129,7 +1149,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         )
       allow(workflow).to receive(:run_activity)
         .with(Activities::DetectLabelsActivity, { project_id: project_id, issue_id: 10 }, timeout: 30)
-        .and_return({ action: "none", issue_id: 10, project_id: project_id })
+        .and_return({ decisions: [ { type: "noop" } ], action: "none", issue_id: 10, project_id: project_id })
       allow(workflow).to receive(:run_activity)
         .with(Activities::ScanPaidPrsActivity, { project_id: project_id }, timeout: 120)
         .and_return(trigger_result)
@@ -1162,6 +1182,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(workflow).to receive(:run_activity)
         .with(Activities::GetPollIntervalActivity, anything, timeout: anything)
         .and_return({ poll_interval_seconds: 60 })
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::LoadFeatureFlagsActivity, { project_id: project_id }, timeout: 10)
+        .and_return(flags: { explicit_pr_automation_decisions: false }, project_missing: false)
     end
 
     it "queues a review run when paid_agent_review_pending is the only initial-sync PR signal" do
@@ -1195,6 +1218,29 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::QueueAgentRunActivity,
           hash_including(project_id: project_id, issue_id: 10,
             source_pull_request_number: 42, goal: "create_pr"),
+          timeout: 30)
+    end
+
+    it "executes flagged explicit PR automation decisions instead of legacy trigger translation" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::LoadFeatureFlagsActivity, { project_id: project_id }, timeout: 10)
+        .and_return(flags: { explicit_pr_automation_decisions: true }, project_missing: false)
+
+      execute_initial_sync(trigger_result: {
+        prs_to_trigger: [],
+        automation_results: [
+          {
+            decisions: [
+              { type: "queue_review_run", issue_id: 10, source_pull_request_number: 42 }
+            ]
+          }
+        ]
+      })
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(project_id: project_id, issue_id: 10,
+            source_pull_request_number: 42, goal: "review"),
           timeout: 30)
     end
   end

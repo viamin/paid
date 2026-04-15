@@ -101,6 +101,9 @@ module Activities
     DEFAULT_ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
     DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
     DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
+    CHANGE_DETECTION_MAX_ATTEMPTS = 3
+    CHANGE_DETECTION_RETRY_BACKOFF = 0.25
+    POST_RUN_BOOKKEEPING_ERROR_TYPE = "PostRunBookkeepingFailed"
 
     def self.provider_order(agent_type:, fallback_enabled:, fallback_providers:)
       return [ agent_type ].select { |p| AGENT_COMMANDS.key?(p) } unless fallback_enabled
@@ -536,7 +539,8 @@ module Activities
         user: user_settings.user
       )
       command = build_command(command_context, prompt)
-      command_env = command_env_for(command_context)
+      command_env = command_env_for(command_context, prompt)
+      command_preparation = command_preparation_for(command_context, prompt)
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 
@@ -576,7 +580,13 @@ module Activities
       # Provider calls can run for many minutes, so without periodic
       # heartbeats the 120s heartbeat_timeout would fire mid-execution.
       result = with_periodic_heartbeat("executing", provider, agent_run: agent_run) do
-        container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout, env: command_env)
+        container_service.execute(
+          command,
+          timeout: effective_timeout,
+          idle_timeout: effective_idle_timeout,
+          env: command_env,
+          preparation: command_preparation
+        )
       end
       stdout = normalize_output_text(result[:stdout])
       stderr = normalize_output_text(result[:stderr])
@@ -915,7 +925,9 @@ module Activities
     def build_command(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
 
-      if provider_entry&.requires_direct_outbound?
+      if provider_entry&.opencode_agent_harness_runtime?
+        harness_runtime_command(provider_entry, prompt)
+      elsif provider_entry&.requires_direct_outbound?
         provider_entry.direct_outbound_exec_command(command_prefix: command_context.command_prefix, prompt: prompt)
       elsif ProviderSupport.subscription_auth_unset_vars_for(command_context.provider).any?
         subscription_auth_command(command_context.provider, command_context.command_prefix, prompt)
@@ -924,11 +936,30 @@ module Activities
       end
     end
 
-    def command_env_for(command_context)
+    def command_env_for(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
+      return direct_outbound_execution_plan(provider_entry, prompt).env if provider_entry&.opencode_agent_harness_runtime?
       return {} unless provider_entry&.requires_direct_outbound?
 
       provider_entry.direct_outbound_exec_env
+    end
+
+    def command_preparation_for(command_context, prompt)
+      provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
+      return nil unless provider_entry&.opencode_agent_harness_runtime?
+
+      direct_outbound_execution_plan(provider_entry, prompt).preparation
+    end
+
+    def direct_outbound_execution_plan(provider_entry, prompt)
+      @direct_outbound_execution_plan_cache ||= {}
+      cache_key = [ provider_entry.id, prompt ]
+      return @direct_outbound_execution_plan_cache[cache_key] if @direct_outbound_execution_plan_cache.key?(cache_key)
+
+      @direct_outbound_execution_plan_cache[cache_key] = Providers::HarnessExecutionPlan.call(
+        provider: provider_entry,
+        prompt: prompt
+      )
     end
 
     def provider_command_key(provider_candidate, agent_run, user = nil)
@@ -1031,6 +1062,15 @@ module Activities
       ProviderSupport.subscription_auth_unset_vars_for(provider)
     end
 
+    # Wraps the harness execution plan command with `env -u` to strip
+    # proxy-specific headers inherited from container startup so they
+    # are not forwarded to the real provider API.
+    def harness_runtime_command(provider_entry, prompt)
+      plan = direct_outbound_execution_plan(provider_entry, prompt)
+      unset_vars = ProviderSupport.harness_runtime_unset_vars_for(provider_entry.provider_key)
+      ProviderSupport.command_with_unset_env(plan.command, unset_vars)
+    end
+
     def capture_head_sha(container_service, agent_run)
       git_ops = Containers::GitOperations.new(
         container_service: container_service,
@@ -1052,21 +1092,17 @@ module Activities
     def commit_uncommitted_changes(agent_run)
       return unless agent_run.container_id.present?
 
-      container_service = reconnect_container(agent_run)
-      git_ops = Containers::GitOperations.new(
-        container_service: container_service,
-        agent_run: agent_run
-      )
+      committed = with_change_detection_retry(agent_run, operation: "commit_uncommitted_changes") do
+        container_service = reconnect_container(agent_run)
+        git_ops = Containers::GitOperations.new(
+          container_service: container_service,
+          agent_run: agent_run
+        )
 
-      if git_ops.commit_uncommitted_changes
-        agent_run.log!("system", "Auto-committed uncommitted agent changes")
+        git_ops.commit_uncommitted_changes
       end
-    rescue => e
-      logger.warn(
-        message: "agent_execution.commit_uncommitted_failed",
-        agent_run_id: agent_run.id,
-        error: e.message
-      )
+
+      agent_run.log!("system", "Auto-committed uncommitted agent changes") if committed
     end
 
     # Evaluates pre-commit requirements for the agent run.
@@ -1091,24 +1127,107 @@ module Activities
     def check_for_changes(agent_run, pre_agent_sha)
       return false unless agent_run.container_id.present?
 
-      container_service = reconnect_container(agent_run)
+      with_change_detection_retry(agent_run, operation: "check_for_changes") do
+        container_service = reconnect_container(agent_run)
 
-      git_ops = Containers::GitOperations.new(
-        container_service: container_service,
-        agent_run: agent_run
-      )
+        git_ops = Containers::GitOperations.new(
+          container_service: container_service,
+          agent_run: agent_run
+        )
 
-      if pre_agent_sha.present?
-        git_ops.has_changes_since?(pre_agent_sha)
-      else
-        git_ops.has_changes?
+        if pre_agent_sha.present?
+          git_ops.has_changes_since?(pre_agent_sha)
+        else
+          git_ops.has_changes?
+        end
       end
-    rescue => e
-      logger.warn(
-        message: "agent_execution.check_changes_failed",
-        agent_run_id: agent_run.id,
-        error: e.message
-      )
+    end
+
+    def with_change_detection_retry(agent_run, operation:)
+      attempt = 0
+
+      begin
+        attempt += 1
+        yield(attempt)
+      rescue StandardError => e
+        transient = transient_container_error?(e)
+
+        if transient && attempt < CHANGE_DETECTION_MAX_ATTEMPTS
+          logger.warn(
+            message: "agent_execution.change_detection_retry",
+            agent_run_id: agent_run.id,
+            operation: operation,
+            attempt: attempt,
+            max_attempts: CHANGE_DETECTION_MAX_ATTEMPTS,
+            error_class: e.class.name,
+            error: e.message
+          )
+          sleep(CHANGE_DETECTION_RETRY_BACKOFF * attempt)
+          retry
+        end
+
+        logger.error(
+          message: "agent_execution.change_detection_failed",
+          agent_run_id: agent_run.id,
+          operation: operation,
+          attempt: attempt,
+          max_attempts: CHANGE_DETECTION_MAX_ATTEMPTS,
+          transient: transient,
+          error_class: e.class.name,
+          error: e.message
+        )
+        raise Temporalio::Error::ApplicationError.new(
+          "Post-run #{operation} failed after #{attempt} attempts: #{e.class}: #{e.message}",
+          type: POST_RUN_BOOKKEEPING_ERROR_TYPE,
+          non_retryable: true
+        )
+      end
+    end
+
+    def transient_container_error?(error)
+      return true if error_or_cause_matches?(error, Containers::Provision::ExecutionError)
+      return true if reconnect_failure?(error)
+
+      current = error
+
+      while current
+        return true if [
+          Docker::Error::DockerError,
+          Timeout::Error,
+          EOFError,
+          Errno::ECONNREFUSED,
+          Errno::EHOSTUNREACH,
+          Errno::ECONNRESET,
+          Errno::EPIPE,
+          Errno::ETIMEDOUT,
+          SocketError
+        ].any? { |klass| current.is_a?(klass) }
+        return true if current.class.ancestors.any? { |ancestor| ancestor.name == "Excon::Error" }
+        return true if %w[Net::OpenTimeout Net::ReadTimeout].include?(current.class.name)
+
+        break unless current.respond_to?(:cause)
+        current = current.cause
+      end
+
+      false
+    end
+
+    def reconnect_failure?(error)
+      error_or_cause_matches?(error, Containers::Provision::ProvisionError) do |candidate|
+        candidate.message.start_with?("Failed to reconnect to container:")
+      end
+    end
+
+    def error_or_cause_matches?(error, klass, &block)
+      current = error
+
+      while current
+        return true if current.is_a?(klass) && (!block || block.call(current))
+
+        break unless current.respond_to?(:cause)
+        current = current.cause
+      end
+
       false
     end
 

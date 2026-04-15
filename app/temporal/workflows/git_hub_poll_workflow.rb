@@ -32,10 +32,10 @@ module Workflows
         break if result[:project_missing]
 
         result[:issues].each do |issue_data|
-          detection = run_activity(Activities::DetectLabelsActivity,
+          evaluation = run_activity(Activities::DetectLabelsActivity,
             { project_id: project_id, issue_id: issue_data[:id] }, timeout: 30)
 
-          handle_detection(detection, project_id)
+          handle_automation_result(evaluation, project_id)
         end
 
         maybe_run_non_critical_activities(project_id)
@@ -133,14 +133,69 @@ module Workflows
       )
     end
 
-    def handle_detection(detection, project_id)
-      case detection[:action]
-      when "execute_agent"
-        start_agent_workflow(project_id, detection[:issue_id],
-          source_pull_request_number: detection[:source_pull_request_number])
-      when "start_planning"
-        start_planning_workflow(project_id, detection[:issue_id])
+    def handle_automation_result(result, project_id)
+      (result[:decisions] || []).each do |decision|
+        execute_automation_decision(project_id, decision)
       end
+    end
+
+    def execute_automation_decision(project_id, decision)
+      case decision[:type]
+      when "noop"
+        nil
+      when "queue_create_pr_run"
+        queue_create_pr_run(project_id, decision)
+      when "queue_review_run"
+        queue_review_run(project_id, decision)
+      when "start_planning"
+        start_planning_workflow(project_id, decision[:issue_id])
+      when "request_review"
+        request_review(project_id, decision[:pr_number], decision[:reviewers],
+          log_key: "pr_review.request_review_failed")
+      when "mark_ready"
+        handle_mark_ready(project_id, decision)
+      when "escalate"
+        handle_escalate_decision(project_id, decision)
+      when "dismiss_escalation"
+        handle_dismiss_escalation(project_id, decision)
+      when "merge"
+        handle_owner_approved(project_id, issue_id: decision[:issue_id], pr_number: decision[:pr_number])
+      when "record_pr_followup"
+        run_activity(Activities::RecordPrFollowupActivity, {
+          project_id: project_id,
+          issue_id: decision[:issue_id],
+          labels_to_remove: decision[:labels_to_remove] || [],
+          expected_followup_count: decision[:expected_followup_count]
+        }, timeout: 30)
+      when "record_review_goal_retry"
+        run_activity(Activities::RecordReviewGoalRetryActivity, {
+          issue_id: decision[:issue_id],
+          expected_review_goal_retry_count: decision[:expected_review_goal_retry_count]
+        }, timeout: 30)
+      end
+    end
+
+    def queue_create_pr_run(project_id, decision)
+      queue_input = {
+        project_id: project_id,
+        issue_id: decision[:issue_id],
+        source_pull_request_number: decision[:source_pull_request_number],
+        goal: "create_pr",
+        count_toward_draft_review_round: decision.fetch(:count_toward_draft_review_round, false),
+        expected_draft_review_count: decision[:expected_draft_review_count]
+      }.compact
+      queue_input.delete(:count_toward_draft_review_round) unless queue_input[:count_toward_draft_review_round]
+
+      run_activity(Activities::QueueAgentRunActivity, queue_input, timeout: 30)
+    end
+
+    def queue_review_run(project_id, decision)
+      run_activity(Activities::QueueAgentRunActivity, {
+        project_id: project_id,
+        issue_id: decision[:issue_id],
+        source_pull_request_number: decision[:source_pull_request_number],
+        goal: "review"
+      }, timeout: 30)
     end
 
     # Unlike agent workflows, planning workflows cannot be queued via QueueAgentRunActivity
@@ -169,15 +224,14 @@ module Workflows
       )
     end
 
-    # TODO(#1080): Remove patch guard after all pre-v1080 workflows have continued-as-new
-    def start_agent_workflow(project_id, issue_id, source_pull_request_number: nil)
-      queue_input = { project_id: project_id, issue_id: issue_id }
-      queue_input[:source_pull_request_number] = source_pull_request_number if source_pull_request_number
-      queue_input[:goal] = "create_pr" if source_pull_request_number && Temporalio::Workflow.patched("queue-agent-run-goal-v1")
-      run_activity(Activities::QueueAgentRunActivity, queue_input, timeout: 30)
-    end
-
     def handle_pr_scan_results(scan_result, project_id)
+      if feature_flag_enabled?(:explicit_pr_automation_decisions, project_id:)
+        (scan_result[:automation_results] || []).each do |result|
+          handle_automation_result(result, project_id)
+        end
+        return
+      end
+
       return if scan_result[:prs_to_trigger].blank?
 
       scan_result[:prs_to_trigger].each do |pr_data|
@@ -215,6 +269,36 @@ module Workflows
       end
     end
 
+    def handle_mark_ready(project_id, decision)
+      result = run_activity(Activities::MarkPrReadyActivity,
+        { project_id: project_id, pr_number: decision[:pr_number],
+          issue_id: decision[:issue_id] }, timeout: 60)
+
+      return unless result[:marked_ready]
+
+      reviewer = decision[:owner_reviewer_login]
+      return if reviewer.blank?
+
+      request_review(project_id, decision[:pr_number], [ reviewer ],
+        log_key: "pr_review.request_owner_review_failed")
+    end
+
+    def handle_escalate_decision(project_id, decision)
+      activity_input = if Temporalio::Workflow.patched("escalation-reason-payload-v1")
+        { issue_id: decision[:issue_id], reason: decision[:reason] }.compact
+      else
+        { issue_id: decision[:issue_id] }
+      end
+
+      run_activity(Activities::MarkEscalatedActivity, activity_input, timeout: 30)
+
+      reviewer = decision[:owner_reviewer_login]
+      return if reviewer.blank?
+
+      request_review(project_id, decision[:pr_number], [ reviewer ],
+        log_key: "pr_review.request_owner_review_failed")
+    end
+
     def handle_ready_for_owner(project_id, pr_data)
       trigger_types = (pr_data[:triggers] || []).map { |t| t[:type] }
 
@@ -231,19 +315,11 @@ module Workflows
     end
 
     def handle_escalate_to_owner(project_id, pr_data)
-      escalate_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "escalate_to_owner" }
-      reason = escalate_trigger&.dig(:details)
-
-      # TODO(#944): Remove patch guard after all pre-v944 workflows have continued-as-new
-      if Temporalio::Workflow.patched("escalation-reason-payload-v1")
-        activity_input = { issue_id: pr_data[:issue_id], reason: reason }.compact
-      else
-        activity_input = { issue_id: pr_data[:issue_id] }
-      end
-
-      run_activity(Activities::MarkEscalatedActivity, activity_input, timeout: 30)
-
-      request_owner_review(project_id, pr_data)
+      handle_escalate_decision(project_id,
+        issue_id: pr_data[:issue_id],
+        pr_number: pr_data[:pr_number],
+        owner_reviewer_login: pr_data[:owner_reviewer_login],
+        reason: (pr_data[:triggers] || []).find { |t| t[:type] == "escalate_to_owner" }&.dig(:details))
     end
 
     def handle_dismiss_escalation(project_id, pr_data)
@@ -396,8 +472,9 @@ module Workflows
 
     def handle_non_bot_review_pending(project_id, pr_data, trigger_types)
       # For manual_review_pending, request a review from the configured reviewer.
-      # For ci_action_pending, there is nothing to dispatch — the PR stays
-      # in its current phase until the configured action posts a result.
+      # For ci_action_pending, dispatch the Claude review workflow only when
+      # the trigger explicitly asks for it; otherwise the PR simply waits for
+      # the existing check run to finish.
       manual_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "manual_review_pending" }
       if manual_trigger
         login = manual_trigger[:reviewer_login]
@@ -406,6 +483,12 @@ module Workflows
             [ login ],
             log_key: "pr_review.request_manual_review_failed")
         end
+      end
+
+      ci_action_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "ci_action_pending" }
+      if ci_action_trigger&.dig(:dispatch_required)
+        run_activity(Activities::DispatchClaudeReviewActivity,
+          { project_id: project_id, pr_number: pr_data[:pr_number] }, timeout: 60)
       end
 
       # If there are other actionable triggers beyond the non-bot gates,
