@@ -155,6 +155,46 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "waits for the overmind socket to appear before returning from --detach" do
+    Dir.mktmpdir("dev", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, overmind: { create_socket_on_start: true })
+
+      env = {
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "SKIP_DEV_CLEANUP" => "1",
+        "OVERMIND_SOCKET" => File.join(dir, ".overmind.sock"),
+        "DEV_DETACH_READY_TIMEOUT" => "10"
+      }
+      stdout, stderr, status = Open3.capture3(env, script_path, "--detach", chdir: dir)
+      wait_for_detached_child(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("Detaching bin/dev")
+      expect(stdout).to match(/bin\/dev detached \(setsid pid=\d+\)\. Use 'overmind connect' to attach\./)
+      expect(stderr).not_to include("overmind socket did not appear")
+      expect(File.socket?(File.join(dir, ".overmind.sock"))).to be(true)
+    end
+  end
+
+  it "warns and exits when the overmind socket never appears after --detach" do
+    Dir.mktmpdir("dev", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, overmind: { create_socket_on_start: false })
+
+      env = {
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "SKIP_DEV_CLEANUP" => "1",
+        "OVERMIND_SOCKET" => File.join(dir, ".overmind.sock"),
+        "DEV_DETACH_READY_TIMEOUT" => "2"
+      }
+      stdout, stderr, status = Open3.capture3(env, script_path, "--detach", chdir: dir)
+      wait_for_detached_child(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("Detaching bin/dev")
+      expect(stderr).to include("overmind socket did not appear within 2s")
+    end
+  end
+
   it "captures an exit snapshot when overmind start fails" do
     Dir.mktmpdir("dev", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, overmind: { start_exit_status: 1 })
@@ -183,6 +223,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     overmind_restart_exit_status = overmind.fetch(:restart_exit_status, 0)
     tmux_pane_dead = tmux.fetch(:pane_dead, false)
     start_exit_status = overmind.fetch(:start_exit_status, 0)
+    create_socket_on_start = overmind.fetch(:create_socket_on_start, false)
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
     FileUtils.mkdir_p(File.join(dir, "config"))
@@ -223,6 +264,9 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
           start)
             touch "#{dir}/overmind-start-ran"
             touch "#{dir}/overmind-running"
+            if [ "#{create_socket_on_start ? 1 : 0}" = "1" ] && [ -n "${OVERMIND_SOCKET:-}" ]; then
+              ruby -rsocket -e 'path = ENV.fetch("OVERMIND_SOCKET"); File.unlink(path) if File.exist?(path); UNIXServer.open(path) { |s| s.close }'
+            fi
             exit #{start_exit_status}
             ;;
           quit)
@@ -283,6 +327,17 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     UNIXServer.open(path) { |server| server.close }
     expect(File.socket?(path)).to be(true)
     path
+  end
+
+  # Polls the overmind log for the "bin/dev exiting" marker written by the
+  # EXIT trap in the detached child, so the tmpdir can be cleaned up safely.
+  def wait_for_detached_child(dir, timeout: 15)
+    log_path = File.join(dir, "log", "dev-update", "overmind.log")
+    deadline = Time.now + timeout
+    until Time.now > deadline
+      return if File.exist?(log_path) && File.read(log_path).include?("bin/dev exiting")
+      sleep 0.1
+    end
   end
 
   def assert_before_start_snapshot(dir)
