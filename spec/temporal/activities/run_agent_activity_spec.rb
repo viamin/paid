@@ -656,6 +656,24 @@ RSpec.describe Activities::RunAgentActivity do
         expect(activity).to have_received(:sleep).with(0.25)
       end
 
+      it "retries wrapped socket-level container reconnect failures before succeeding" do
+        change_attempts = 0
+
+        allow(activity).to receive(:sleep)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123") do
+          change_attempts += 1
+          raise wrap_error(Errno::ECONNREFUSED.new("Connection refused")) if change_attempts == 1
+
+          true
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be true
+        expect(git_ops).to have_received(:has_changes_since?).twice
+        expect(activity).to have_received(:sleep).with(0.25)
+      end
+
       it "retries transient fallback change-detection failures before succeeding" do
         change_attempts = 0
 

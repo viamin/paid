@@ -1151,19 +1151,28 @@ module Activities
       return true if error_or_cause_matches?(error, Containers::Provision::ExecutionError)
       return true if reconnect_failure?(error)
 
-      [
-        Docker::Error::DockerError,
-        Timeout::Error,
-        EOFError,
-        Errno::ECONNREFUSED,
-        Errno::EHOSTUNREACH,
-        Errno::ECONNRESET,
-        Errno::EPIPE,
-        Errno::ETIMEDOUT,
-        SocketError
-      ].any? { |klass| error.is_a?(klass) } ||
-        error.class.ancestors.any? { |ancestor| ancestor.name == "Excon::Error" } ||
-        %w[Net::OpenTimeout Net::ReadTimeout].include?(error.class.name)
+      current = error
+
+      while current
+        return true if [
+          Docker::Error::DockerError,
+          Timeout::Error,
+          EOFError,
+          Errno::ECONNREFUSED,
+          Errno::EHOSTUNREACH,
+          Errno::ECONNRESET,
+          Errno::EPIPE,
+          Errno::ETIMEDOUT,
+          SocketError
+        ].any? { |klass| current.is_a?(klass) }
+        return true if current.class.ancestors.any? { |ancestor| ancestor.name == "Excon::Error" }
+        return true if %w[Net::OpenTimeout Net::ReadTimeout].include?(current.class.name)
+
+        break unless current.respond_to?(:cause)
+        current = current.cause
+      end
+
+      false
     end
 
     def reconnect_failure?(error)
