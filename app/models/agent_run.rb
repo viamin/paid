@@ -174,12 +174,22 @@ class AgentRun < ApplicationRecord
     Arel.sql("COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)")
   end
 
+  ransacker :effective_provider do
+    Arel.sql(effective_provider_sql)
+  end
+
   def self.ransackable_attributes(auth_object = nil)
-    %w[status agent_type branch_name trigger_type goal duration_seconds tokens_input tokens_output tokens_total cost_cents created_at started_at]
+    %w[status agent_type branch_name trigger_type goal duration_seconds tokens_input tokens_output tokens_total cost_cents created_at started_at effective_provider]
   end
 
   def self.ransackable_associations(auth_object = nil)
     %w[project]
+  end
+
+  def self.distinct_effective_providers
+    pluck(Arel.sql("DISTINCT #{effective_provider_sql}"))
+      .compact
+      .sort
   end
 
   def duration
