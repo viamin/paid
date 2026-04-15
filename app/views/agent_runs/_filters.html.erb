@@ -29,6 +29,16 @@
         class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
     </div>
 
+    <% if local_assigns[:provider_options]&.any? %>
+      <div>
+        <%= f.label :effective_provider_eq, "Provider", class: "block text-sm font-medium text-gray-700" %>
+        <%= f.select :effective_provider_eq,
+          options_for_select(provider_options.map { |p| [Provider.display_name_for(p), p] }, params.dig(:q, :effective_provider_eq)),
+          { include_blank: "All Providers" },
+          class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+      </div>
+    <% end %>
+
     <div class="flex items-end gap-2">
       <%= f.submit "Filter",
         class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>

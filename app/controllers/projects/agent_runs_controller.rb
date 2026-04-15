@@ -16,6 +16,7 @@ module Projects
       @q.sorts = "created_at desc" if @q.sorts.empty?
       @pagy, @agent_runs = pagy(@q.result)
       AgentRun.preload_source_pull_requests(@agent_runs)
+      @provider_options = base_scope.distinct_effective_providers
     end
 
     def show
