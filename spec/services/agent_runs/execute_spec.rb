@@ -466,6 +466,96 @@ RSpec.describe AgentRuns::Execute do
       end
     end
 
+    context "when a codex run returns token usage" do
+      let(:agent_run) { create(:agent_run, :codex, project: project) }
+      let(:codex_model) { "o3" }
+      let(:delta) { agent_run.token_usages.find_by!(request_type: "run_delta") }
+      let(:aggregate) { TokenUsages::Aggregate.call }
+      let(:response) do
+        AgentHarness::Response.new(
+          output: "Applied the fix",
+          exit_code: 0,
+          duration: 18.3,
+          provider: :codex,
+          model: codex_model,
+          tokens: { input: 4500, output: 1800, total: 6300 }
+        )
+      end
+
+      before do
+        allow(AgentHarness).to receive(:send_message).and_return(response)
+      end
+
+      it "depends on agent-harness versions that parse codex token totals" do
+        expect(Gem.loaded_specs.fetch("agent-harness").version).to be >= Gem::Version.new("0.7.1")
+      end
+
+      it "persists run_summary and run_delta records for the codex model" do
+        described_class.call(agent_run: agent_run, prompt: prompt)
+
+        summary = agent_run.token_usages.find_by!(request_type: "run_summary")
+        delta = agent_run.token_usages.find_by!(request_type: "run_delta")
+
+        aggregate_failures do
+          expect(summary.input_tokens).to eq(4500)
+          expect(summary.output_tokens).to eq(1800)
+          expect(summary.llm_model).to eq(codex_model)
+          expect(delta.input_tokens).to eq(4500)
+          expect(delta.output_tokens).to eq(1800)
+          expect(delta.llm_model).to eq(codex_model)
+        end
+      end
+
+      it "tracks only the missing billable delta when proxy coverage is partial" do
+        TokenUsageTracker.track(
+          agent_run: agent_run,
+          usage: {
+            tokens_input: 2000,
+            tokens_output: 500,
+            llm_model: codex_model,
+            request_type: "agent"
+          }
+        )
+        described_class.call(agent_run: agent_run, prompt: prompt)
+
+        aggregate_failures do
+          expect(delta.input_tokens).to eq(2500)
+          expect(delta.output_tokens).to eq(1300)
+          expect(agent_run.reload.tokens_input).to eq(4500)
+          expect(agent_run.tokens_output).to eq(1800)
+          expect(aggregate[:total_input_tokens]).to eq(4500)
+          expect(aggregate[:total_output_tokens]).to eq(1800)
+          expect(aggregate[:cost_by_request_type]).to include("agent", "run_delta")
+          expect(aggregate[:cost_by_request_type]).not_to include("run_summary")
+        end
+      end
+
+      it "skips delta when proxy records fully cover the run" do
+        create(:token_usage, agent_run: agent_run, request_type: "agent",
+               input_tokens: 4500, output_tokens: 1800)
+
+        expect(TokenUsageTracker).to receive(:track).with(
+          agent_run: agent_run,
+          usage: hash_including(request_type: "run_summary"),
+          update_aggregates: false
+        )
+        expect(TokenUsageTracker).not_to receive(:track).with(
+          agent_run: anything,
+          usage: hash_including(request_type: "run_delta")
+        )
+
+        described_class.call(agent_run: agent_run, prompt: prompt)
+      end
+
+      it "uses the actual backend model name, not the provider name" do
+        described_class.call(agent_run: agent_run, prompt: prompt)
+
+        models = agent_run.token_usages.pluck(:llm_model).uniq
+        expect(models).to eq([ codex_model ])
+        expect(models).not_to include("codex")
+      end
+    end
+
     context "when a copilot run returns token usage" do
       let(:agent_run) { create(:agent_run, :copilot, project: project) }
       let(:response) do
