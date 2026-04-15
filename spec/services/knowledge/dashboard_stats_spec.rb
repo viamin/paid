@@ -54,6 +54,41 @@ RSpec.describe Knowledge::DashboardStats do
       end
     end
 
+    context "with knowledge runs for token usage" do
+      before do
+        create(:knowledge_run, project: project, operation_type: "embedding", total_tokens: 500, status: "completed")
+        create(:knowledge_run, project: project, operation_type: "embedding", total_tokens: 300, status: "completed")
+        create(:knowledge_run, project: project, operation_type: "decision_drafting", total_tokens: 1200, status: "completed")
+      end
+
+      it "returns token usage grouped by operation type" do
+        summary = stats[:token_usage_summary]
+        embedding = summary.find { |s| s[:operation_type] == "embedding" }
+        drafting = summary.find { |s| s[:operation_type] == "decision_drafting" }
+
+        expect(embedding[:total_tokens]).to eq(800)
+        expect(embedding[:run_count]).to eq(2)
+        expect(drafting[:total_tokens]).to eq(1200)
+        expect(drafting[:run_count]).to eq(1)
+      end
+
+      it "excludes runs from other accounts" do
+        other_account = create(:account)
+        other_project = create(:project, account: other_account)
+        create(:knowledge_run, project: other_project, operation_type: "embedding", total_tokens: 9999)
+
+        summary = stats[:token_usage_summary]
+        total = summary.sum { |s| s[:total_tokens] }
+        expect(total).to eq(2000)
+      end
+    end
+
+    context "with no knowledge runs" do
+      it "returns empty token usage summary" do
+        expect(stats[:token_usage_summary]).to be_empty
+      end
+    end
+
     context "with multiple projects" do
       let(:project2) { create(:project, account: account) }
       let(:other_account) { create(:account) }
