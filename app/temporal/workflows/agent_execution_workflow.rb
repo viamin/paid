@@ -519,8 +519,14 @@ module Workflows
     #   2. The workflow failed (there's something to diagnose)
     #   3. The failure is not a known/expected outcome
     def should_retain_container?(agent_step_succeeded, workflow_error)
-      return false unless agent_step_succeeded
       return false unless workflow_error
+
+      # PostRunBookkeepingFailed means the agent completed its work but
+      # post-run git operations (commit/change-detection) failed. The container
+      # likely holds useful artifacts even though agent_step_succeeded is false.
+      unless agent_step_succeeded
+        return post_run_bookkeeping_failure?(workflow_error)
+      end
 
       # Walk the error cause chain looking for cancellations, known
       # ApplicationError types, and known exception classes.
@@ -546,6 +552,20 @@ module Workflows
       end
 
       true
+    end
+
+    # Checks whether the error (or its cause chain) is a PostRunBookkeepingFailed
+    # error, indicating the agent completed work but post-run git operations failed.
+    def post_run_bookkeeping_failure?(error)
+      current = error
+      while current
+        if current.is_a?(Temporalio::Error::ApplicationError)
+          return true if current.type == Activities::RunAgentActivity::POST_RUN_BOOKKEEPING_ERROR_TYPE
+        end
+        break unless current.respond_to?(:cause)
+        current = current.cause
+      end
+      false
     end
 
     # Design: The activity performs a single health check per invocation and

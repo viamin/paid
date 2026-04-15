@@ -408,7 +408,8 @@ module Containers
     # @return [Boolean] true if a commit was created, false if working tree was clean
     def commit_uncommitted_changes
       status_result = execute_git("status", "--porcelain")
-      return false unless status_result.success? && status_result[:stdout].present?
+      raise Error, "Failed to check git status: #{error_with_stderr(status_result)}" if status_result.failure?
+      return false unless status_result[:stdout].present?
 
       add_result = execute_git("add", "-A")
       raise Error, "Failed to stage changes: #{error_with_stderr(add_result)}" if add_result.failure?
@@ -443,19 +444,14 @@ module Containers
     def has_changes_since?(commit_sha)
       # Check for new commits since the given SHA
       log_result = execute_git("log", "--oneline", "#{commit_sha}..HEAD")
-      return true if log_result.success? && log_result[:stdout].present?
+      raise Error, "Failed to check git log: #{error_with_stderr(log_result)}" if log_result.failure?
+      return true if log_result[:stdout].present?
 
       # Check for any uncommitted changes (staged or unstaged)
       status_result = execute_git("status", "--porcelain")
-      status_result.success? && status_result[:stdout].present?
-    rescue => e
-      Rails.logger.warn(
-        message: "container_git.has_changes_since_failed",
-        agent_run_id: agent_run.id,
-        commit_sha: commit_sha,
-        error: e.message
-      )
-      false
+      raise Error, "Failed to check git status: #{error_with_stderr(status_result)}" if status_result.failure?
+
+      status_result[:stdout].present?
     end
 
     # Checks whether the agent made any changes.
@@ -470,21 +466,19 @@ module Containers
       base = agent_run.base_commit_sha
       if base.present?
         result = execute_git("diff", "--stat", base, "HEAD")
-        return result.success? && result[:stdout].present?
+        raise Error, "Failed to check git diff: #{error_with_stderr(result)}" if result.failure?
+
+        return result[:stdout].present?
       end
 
       log_result = execute_git("log", "--oneline", "HEAD", "--not", "--remotes")
-      return true if log_result.success? && log_result[:stdout].present?
+      raise Error, "Failed to check git log: #{error_with_stderr(log_result)}" if log_result.failure?
+      return true if log_result[:stdout].present?
 
       status_result = execute_git("status", "--porcelain")
-      status_result.success? && status_result[:stdout].present?
-    rescue => e
-      Rails.logger.warn(
-        message: "container_git.check_changes_failed",
-        agent_run_id: agent_run.id,
-        error: e.message
-      )
-      false
+      raise Error, "Failed to check git status: #{error_with_stderr(status_result)}" if status_result.failure?
+
+      status_result[:stdout].present?
     end
 
     # Fetches a remote branch inside the container.
