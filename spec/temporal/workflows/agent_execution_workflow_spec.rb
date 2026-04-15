@@ -1138,10 +1138,21 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       expect(workflow.send(:should_retain_container?, true, error)).to be true
     end
 
-    it "returns false when agent did not succeed" do
+    it "returns false when agent did not succeed and error is not post-run bookkeeping" do
       error = RuntimeError.new("something")
 
       expect(workflow.send(:should_retain_container?, false, error)).to be false
+    end
+
+    it "returns true when agent did not succeed but error is PostRunBookkeepingFailed" do
+      cause = Temporalio::Error::ApplicationError.new(
+        "Post-run check_for_changes failed",
+        type: Activities::RunAgentActivity::POST_RUN_BOOKKEEPING_ERROR_TYPE,
+        non_retryable: true
+      )
+      error = activity_error_with_cause(cause)
+
+      expect(workflow.send(:should_retain_container?, false, error)).to be true
     end
 
     it "returns false when there is no workflow error" do
