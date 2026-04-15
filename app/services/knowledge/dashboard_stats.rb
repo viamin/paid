@@ -20,7 +20,8 @@ module Knowledge
         stale_artifacts: stale_artifacts,
         stale_percent: stale_percent,
         artifacts_by_type: artifacts_by_type,
-        last_collection_at: last_collection_at
+        last_collection_at: last_collection_at,
+        token_usage_summary: token_usage_summary
       }
     end
 
@@ -67,6 +68,22 @@ module Knowledge
         .where(projects: { account_id: account.id })
         .where(status: "completed")
         .maximum(:completed_at)
+    end
+
+    def token_usage_summary
+      @token_usage_summary ||= knowledge_runs
+        .group(:operation_type)
+        .pluck(
+          Arel.sql("operation_type"),
+          Arel.sql("SUM(total_tokens)"),
+          Arel.sql("COUNT(*)")
+        )
+        .map { |op, tokens, count| { operation_type: op, total_tokens: tokens.to_i, run_count: count.to_i } }
+    end
+
+    def knowledge_runs
+      KnowledgeRun.joins(:project)
+        .where(projects: { account_id: account.id })
     end
   end
 end
