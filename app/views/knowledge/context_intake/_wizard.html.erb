@@ -1,3 +1,7 @@
+<%
+  # Helper to determine which section is currently active based on progress
+  current_section_index = @sections.index { |s| s[:questions].any? { |q| !@responses[q[:key]]&.answered? } } || 0
+%>
 <div class="mt-6" data-controller="context-intake">
   <%# Progress bar %>
   <div class="overflow-hidden rounded-lg bg-white shadow">
@@ -91,10 +95,3 @@
           data: { turbo_confirm: "Are you sure you want to complete the questionnaire? You can start a new one later to update." } %>
   </div>
 </div>
-
-<%
-  # Helper to determine which section is currently active based on progress
-  def current_section_index
-    @sections.index { |s| s[:questions].any? { |q| !@responses[q[:key]]&.answered? } } || 0
-  end
-%>

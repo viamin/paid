@@ -20,9 +20,7 @@ module Knowledge
         scope = scope.for_project(project) if project
 
         stale_count = 0
-        scope.find_each do |session|
-          next unless session.stale?
-
+        scope.where("completed_at < ?", ContextIntakeSession::STALENESS_THRESHOLD.ago).find_each do |session|
           session.mark_stale!
           stale_count += 1
         end

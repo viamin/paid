@@ -5,6 +5,7 @@ module Knowledge
     before_action :authenticate_user!
     before_action :set_project
     before_action :set_session, only: [ :show, :update, :complete ]
+    before_action :require_session!, only: [ :update, :complete ]
 
     def show
       authorize @project, :show?
@@ -59,6 +60,12 @@ module Knowledge
                          .where(status: "in_progress")
                          .latest_first
                          .first
+    end
+
+    def require_session!
+      return if @session
+
+      redirect_to project_context_intake_path(@project), alert: "No active questionnaire session."
     end
 
     def latest_session
