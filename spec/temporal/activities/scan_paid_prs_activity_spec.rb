@@ -69,6 +69,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: -1)
 
         expect(result[:prs_to_trigger]).to eq([])
+        expect(result[:automation_results]).to eq([])
         expect(result[:project_missing]).to be true
       end
     end
@@ -80,6 +81,38 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+        expect(result[:automation_results]).to eq([])
+      end
+    end
+
+    context "when explicit PR decisions are enabled" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          paid_state: "completed")
+      end
+
+      before do
+        FeatureFlags.enable!(:explicit_pr_automation_decisions, project:)
+        pr_issue
+      end
+
+      it "returns automation results instead of legacy trigger payloads" do
+        stub_github_for_pr(checks: [ { name: "rspec", conclusion: "failure" } ])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+        expect(result[:automation_results]).to contain_exactly(
+          {
+            decisions: [
+              { type: "queue_create_pr_run", issue_id: pr_issue.id, source_pull_request_number: 42 },
+              { type: "record_pr_followup", issue_id: pr_issue.id, labels_to_remove: [], expected_followup_count: 0 }
+            ]
+          }
+        )
       end
     end
 
