@@ -125,6 +125,127 @@ RSpec.describe Containers::GitOperations do
 
       expect { git_ops.clone_and_setup_branch }.to raise_error(described_class::CloneError)
     end
+
+    context "when clone fails with a transient DNS/network error" do
+      let(:dns_failure_result) do
+        Containers::Provision::Result.failure(
+          error: "git failed",
+          stdout: "",
+          stderr: "Cloning into '.'...\nfatal: unable to access 'https://github.com/test/repo.git/': Could not resolve host: github.com",
+          exit_code: 128
+        )
+      end
+
+      before do
+        allow(git_ops).to receive(:sleep)
+      end
+
+      it "retries and succeeds on the second attempt" do
+        allow(container_service).to receive(:execute)
+          .with(array_including("clone"), anything)
+          .and_return(dns_failure_result, success_result)
+
+        git_ops.clone_and_setup_branch
+
+        expect(container_service).to have_received(:execute)
+          .with(array_including("clone"), anything).twice
+      end
+
+      it "retries up to CLONE_MAX_ATTEMPTS times then raises" do
+        allow(container_service).to receive(:execute)
+          .with(array_including("clone"), anything)
+          .and_return(dns_failure_result)
+
+        expect { git_ops.clone_and_setup_branch }.to raise_error(described_class::CloneError)
+        expect(container_service).to have_received(:execute)
+          .with(array_including("clone"), anything).exactly(described_class::CLONE_MAX_ATTEMPTS).times
+      end
+
+      it "uses exponential backoff between retries" do
+        allow(container_service).to receive(:execute)
+          .with(array_including("clone"), anything)
+          .and_return(dns_failure_result)
+
+        expect { git_ops.clone_and_setup_branch }.to raise_error(described_class::CloneError)
+        expect(git_ops).to have_received(:sleep).with(1).ordered
+        expect(git_ops).to have_received(:sleep).with(2).ordered
+      end
+
+      it "cleans partial clone between retries" do
+        allow(container_service).to receive(:execute)
+          .with("find . -mindepth 1 -maxdepth 1 -print -quit", timeout: nil, stream: false)
+          .and_return(Containers::Provision::Result.success(stdout: ".git\n", stderr: "", exit_code: 0))
+
+        allow(container_service).to receive(:execute)
+          .with("find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +", timeout: nil, stream: false)
+          .and_return(success_result)
+
+        allow(container_service).to receive(:execute)
+          .with(array_including("clone"), anything)
+          .and_return(dns_failure_result, success_result)
+
+        git_ops.clone_and_setup_branch
+
+        # Called once before initial clone (from before block setup) and once between retries
+        expect(container_service).to have_received(:execute)
+          .with("find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +", timeout: nil, stream: false)
+          .at_least(:once)
+      end
+
+      described_class::TRANSIENT_CLONE_PATTERNS.each do |pattern|
+        it "retries on '#{pattern}'" do
+          transient_result = Containers::Provision::Result.failure(
+            error: "git failed", stdout: "", stderr: "fatal: #{pattern}", exit_code: 128
+          )
+          allow(container_service).to receive(:execute)
+            .with(array_including("clone"), anything)
+            .and_return(transient_result, success_result)
+
+          git_ops.clone_and_setup_branch
+
+          expect(container_service).to have_received(:execute)
+            .with(array_including("clone"), anything).twice
+        end
+      end
+    end
+
+    context "when clone fails with a permanent error" do
+      before do
+        allow(git_ops).to receive(:sleep)
+      end
+
+      it "does not retry on authentication failure" do
+        auth_failure = Containers::Provision::Result.failure(
+          error: "git failed", stdout: "",
+          stderr: "fatal: Authentication failed for 'https://github.com/test/repo.git/'",
+          exit_code: 128
+        )
+        allow(container_service).to receive(:execute)
+          .with(array_including("clone"), anything)
+          .and_return(auth_failure)
+
+        expect { git_ops.clone_and_setup_branch }.to raise_error(described_class::CloneError)
+        expect(container_service).to have_received(:execute)
+          .with(array_including("clone"), anything).once
+        expect(git_ops).not_to have_received(:sleep)
+      end
+
+      it "does not retry on repository not found" do
+        not_found = Containers::Provision::Result.failure(
+          error: "git failed", stdout: "",
+          stderr: "fatal: repository 'https://github.com/test/nonexistent.git/' not found",
+          exit_code: 128
+        )
+        allow(container_service).to receive(:execute)
+          .with(array_including("clone"), anything)
+          .and_return(not_found)
+
+        expect { git_ops.clone_and_setup_branch }.to raise_error(described_class::CloneError)
+        expect(container_service).to have_received(:execute)
+          .with(array_including("clone"), anything).once
+        expect(git_ops).not_to have_received(:sleep)
+      end
+    end
   end
 
   describe "#clone_and_checkout_branch" do
