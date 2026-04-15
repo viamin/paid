@@ -343,7 +343,9 @@ module Containers
       ensure
         watchdog_mutex.synchronize { exec_completed = true }
         stop_watchdog(watchdog)
-        cleanup_execution_preparation(cleanup_steps, env: env)
+        # Guard: if the main command raised ($!), skip cleanup to avoid
+        # a cleanup exception replacing the original error in the ensure block.
+        cleanup_execution_preparation(cleanup_steps, env: env) unless $!
       end
     end
 

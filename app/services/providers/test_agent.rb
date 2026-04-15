@@ -188,7 +188,7 @@ module Providers
             stream: false,
             env: context.fetch(:env)
           }
-          exec_options[:preparation] = context.fetch(:preparation) if context.fetch(:preparation)
+          exec_options[:preparation] = context[:preparation] if context[:preparation]
 
           run.execute_in_container(context.fetch(:command), **exec_options)
         end
@@ -410,12 +410,7 @@ module Providers
     def harness_runtime_command
       plan = direct_outbound_execution_plan
       unset_vars = ProviderSupport.harness_runtime_unset_vars_for(provider.provider_key)
-      return plan.command if unset_vars.empty?
-
-      return [ "env", *unset_vars.flat_map { |var| [ "-u", var ] }, *plan.command ] if plan.command.is_a?(Array)
-
-      unset_flags = unset_vars.map { |var| "-u #{var}" }.join(" ")
-      [ "sh", "-c", "env #{unset_flags} #{plan.command}" ]
+      ProviderSupport.command_with_unset_env(plan.command, unset_vars)
     end
 
     def classify_failed_response(error_message)

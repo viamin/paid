@@ -1065,12 +1065,7 @@ module Activities
     def harness_runtime_command(provider_entry, prompt)
       plan = direct_outbound_execution_plan(provider_entry, prompt)
       unset_vars = ProviderSupport.harness_runtime_unset_vars_for(provider_entry.provider_key)
-      return plan.command if unset_vars.empty?
-
-      return [ "env", *unset_vars.flat_map { |var| [ "-u", var ] }, *plan.command ] if plan.command.is_a?(Array)
-
-      unset_flags = unset_vars.map { |var| "-u #{var}" }.join(" ")
-      [ "sh", "-c", "env #{unset_flags} #{plan.command}" ]
+      ProviderSupport.command_with_unset_env(plan.command, unset_vars)
     end
 
     def capture_head_sha(container_service, agent_run)
