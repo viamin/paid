@@ -404,7 +404,7 @@
           <fieldset class="space-y-4">
             <div class="flex items-center justify-between">
               <legend class="text-sm font-semibold leading-6 text-gray-900">Labels</legend>
-              <%= button_to "Sync Labels to GitHub", ensure_labels_project_path(@project), method: :post, class: "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
+              <%= link_to "Sync Labels to GitHub", ensure_labels_project_path(@project), data: { turbo_method: :post }, class: "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
             </div>
 
             <div>
