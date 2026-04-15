@@ -124,7 +124,7 @@ module Workflows
         # Rails app is down (e.g. PendingMigration), the proxy is unreachable
         # and git operations fail. This check polls until the proxy recovers,
         # effectively pausing the workflow until credentials are available.
-        skip_clone = goal == "create_issue" && source_pull_request_number.blank?
+        skip_clone = (goal == "create_issue" || goal == "enhance_issue") && source_pull_request_number.blank?
         unless skip_clone
           if Temporalio::Workflow.patched("check_proxy_health_before_clone")
             ensure_proxy_healthy(agent_run_id)
@@ -159,7 +159,7 @@ module Workflows
         # (from CreateAgentRunActivity), plus a small Temporal buffer.
         # Issue goals use a shorter timeout since they only need to create
         # a GitHub issue via curl, not write code.
-        per_provider_timeout = if goal == "create_issue"
+        per_provider_timeout = if goal.in?(%w[create_issue enhance_issue])
           issue_goal_timeout_seconds
         else
           agent_timeout_seconds
@@ -205,6 +205,10 @@ module Workflows
             run_activity(Activities::CreateGithubIssueActivity,
               { agent_run_id: agent_run_id }, timeout: 120, retry_policy: NO_RETRY)
           end
+        elsif goal == "enhance_issue"
+          # Enhance-issue goal: the agent reads the issue and posts a comment
+          # via the GitHub API proxy during execution. No post-processing needed;
+          # label management and re-evaluation will be added in a follow-up.
         elsif goal == "review"
           # Review goal: complete the run — all output is PR comments posted
           # by the agent via the GitHub API proxy during execution.
