@@ -51,6 +51,10 @@ gem "agent-harness", "~> 0.7.0"
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
 gem "ruby-maat"
 
+# Runtime feature flags for staged rollouts
+gem "flipper"
+gem "flipper-active_record"
+
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem "tzinfo-data", platforms: %i[windows jruby]
 

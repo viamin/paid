@@ -372,6 +372,20 @@ RSpec.describe Activities::RunAgentActivity do
 
       expect(providers).to eq([ "claude_code", opencode_provider.routing_key ])
     end
+
+    it "wraps saved fallback order after the active primary provider entry" do
+      claude = user.providers.find_by!(provider_key: "claude")
+      cursor = create(:provider, user: user, provider_key: "cursor")
+      aider = create(:provider, user: user, provider_key: "aider")
+      provider_run = create(:agent_run, :with_git_context, project: project,
+        issue: create(:issue, project: project), provider: cursor, agent_type: "cursor", container_id: "abc123")
+      user.settings.update!(fallback_enabled: true,
+        fallback_providers: [ claude.routing_key, cursor.routing_key, aider.routing_key ])
+
+      providers = activity.send(:build_provider_order, provider_run, user.settings)
+
+      expect(providers).to eq([ cursor.routing_key, aider.routing_key, claude.routing_key ])
+    end
   end
 
   def build_opencode_context(user)
