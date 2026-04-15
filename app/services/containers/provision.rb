@@ -447,11 +447,19 @@ module Containers
     end
 
     def cleanup_execution_preparation(cleanup_steps, env:)
+      cleanup_error = nil
+
       Array(cleanup_steps).reverse_each do |cleanup|
         run_preparation_script(cleanup_script, env: env, script_env: cleanup)
       rescue Docker::Error::DockerError, ExecutionError => e
+        cleanup_error ||= e
         log_system("container.execute.preparation_cleanup_failed", error: e.message)
       end
+
+      return unless cleanup_error
+
+      invalidate_container_after_preparation_cleanup_failure!
+      raise cleanup_execution_error(cleanup_error)
     end
 
     def materialize_preparation_file(write, env:)
@@ -547,6 +555,28 @@ module Containers
         rm -rf "$PAID_PREPARATION_STATE_DIR" &&
         exit "$cleanup_status"
       SH
+    end
+
+    def invalidate_container_after_preparation_cleanup_failure!
+      old_container_id = container&.id
+
+      cleanup(force: true)
+      return if old_container_id.blank?
+
+      AgentRun.where(id: agent_run.id, container_id: old_container_id).update_all(container_id: nil)
+      agent_run.container_id = nil if agent_run.container_id == old_container_id
+      log_system("container.execute.invalidated_after_preparation_cleanup_failure", container_id: old_container_id)
+    end
+
+    def cleanup_execution_error(error)
+      return error if error.is_a?(ExecutionError) && error.message.include?("Failed to restore prepared runtime state")
+
+      ExecutionError.new(
+        "Failed to restore prepared runtime state: #{error.message}",
+        exit_code: error.respond_to?(:exit_code) ? error.exit_code : nil,
+        stdout: error.respond_to?(:stdout) ? error.stdout : nil,
+        stderr: error.respond_to?(:stderr) ? error.stderr : nil
+      )
     end
 
     # Resolves user-configurable container settings from the project's UserSetting.

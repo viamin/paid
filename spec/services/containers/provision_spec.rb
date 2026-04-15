@@ -1074,20 +1074,28 @@ RSpec.describe Containers::Provision do
         )
       end
 
-      it "does not fail the command when preparation cleanup exits non-zero" do
+      it "fails the command and invalidates the container when preparation cleanup exits non-zero" do
         preparation = build_preparation
         allow(agent_run).to receive(:log!)
+        agent_run.update!(container_id: mock_container.id)
         stub_exec_with_cleanup_failure(mock_container)
         allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
 
-        result = service.execute("echo 'hello'", preparation: preparation)
+        expect {
+          service.execute("echo 'hello'", preparation: preparation)
+        }.to raise_error(described_class::ExecutionError, /Failed to restore prepared runtime state: missing runtime preparation backup/)
 
-        expect(result).to be_success
-        expect(result[:stdout]).to eq("command output\n")
+        expect(agent_run.reload.container_id).to be_nil
+        expect(service.container).to be_nil
         expect(agent_run).to have_received(:log!).with(
           "system",
           "container.execute.preparation_cleanup_failed",
           metadata: hash_including(error: "missing runtime preparation backup\n")
+        )
+        expect(agent_run).to have_received(:log!).with(
+          "system",
+          "container.execute.invalidated_after_preparation_cleanup_failure",
+          metadata: hash_including(container_id: "abc123container")
         )
       end
     end
