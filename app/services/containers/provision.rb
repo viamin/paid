@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "base64"
+require "digest"
 require "docker-api"
 require "shellwords"
 
@@ -86,6 +87,11 @@ module Containers
       :timeout, :started_at,
       keyword_init: true
     )
+
+    # File locks to serialize Codex OAuth refreshes when multiple runs share
+    # the same host-backed auth.json. The lock key is derived from the
+    # credential directory so unrelated Codex homes do not block each other.
+    CODEX_AUTH_LOCKFILE_PREFIX = "/tmp/paid-codex-auth".freeze
 
     # Default resource limits (per issue #23 requirements)
     DEFAULTS = {
@@ -194,6 +200,10 @@ module Containers
     def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil)
       raise ProvisionError, "Container not provisioned" unless container
 
+      with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:, preparation:) }
+    end
+
+    private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil)
       timeout ||= options[:timeout_seconds]
       cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
       exec_options = { wait: timeout }
@@ -677,32 +687,40 @@ module Containers
     end
 
     def seed_codex_credentials!
-      source_files = %w[auth.json config.toml]
-
       unless codex_subscription_auth?
         seed_codex_config!
         return
       end
 
-      # Prefer the source that actually contains auth.json so we don't set
-      # PAID_CODEX_SUBSCRIPTION_AUTH=1 without seeding creds.
-      host = codex_config_host_path
-      if host.present? && File.file?(File.join(host, "auth.json"))
-        seed_host_credentials!(
-          staging_path: "/home/agent/.codex-host",
-          target_path: "/home/agent/.codex",
-          files: source_files,
-          success_log_key: "container.codex_credentials_seeded",
-          failure_log_key: "container.codex_credentials_seed_failed"
-        )
-      elsif codex_local_config_path.present?
+      host = codex_subscription_auth_host_mount_path
+      if host.present?
+        log_system("container.codex_credentials_shared", source_path: host)
+      else
         seed_local_credentials!(
           source_path: codex_local_config_path,
           target_path: "/home/agent/.codex",
-          files: source_files,
+          files: %w[auth.json config.toml],
           success_log_key: "container.codex_credentials_seeded",
           failure_log_key: "container.codex_credentials_seed_failed"
         )
+      end
+    end
+
+    # Serializes only Codex CLI executions that share a host-backed auth.json.
+    # Other container commands keep full parallelism, and different credential
+    # directories map to different lockfiles.
+    def with_codex_auth_lock(command)
+      return yield unless codex_auth_lock_required?(command)
+
+      lockfile = codex_auth_lockfile_path
+      log_system("container.codex_auth_lock.waiting")
+      File.open(lockfile, File::WRONLY | File::CREAT, 0o600) do |f|
+        f.flock(File::LOCK_EX)
+        log_system("container.codex_auth_lock.acquired", lockfile: lockfile)
+        yield
+      ensure
+        f.flock(File::LOCK_UN)
+        log_system("container.codex_auth_lock.released", lockfile: lockfile)
       end
     end
 
@@ -818,10 +836,16 @@ module Containers
     end
 
     # Fixes ownership of the ~/.codex tmpfs so the non-root agent user can
-    # write to it. Tmpfs mounts are created as root-owned; this mirrors the
-    # pattern used by seed_claude_credentials! for ~/.claude.
+    # write to it. Tmpfs mounts are created as root-owned.
+    # Only chown the directory entry itself so host-backed auth/config file
+    # binds keep their original ownership.
     def fix_codex_tmpfs_ownership!
-      fix_tmpfs_ownership!(".codex")
+      container.exec(
+        [ "chown", "agent:agent", "/home/agent/.codex" ],
+        user: "root"
+      )
+    rescue Docker::Error::DockerError => e
+      log_system("container.codex_chown_failed", error: e.message)
     end
 
     # Fixes ownership of the ~/.gemini tmpfs so the non-root agent user can
@@ -1010,11 +1034,8 @@ module Containers
         binds << "#{claude_config_host_path}:/home/agent/.claude-host:ro"
       end
 
-      if codex_config_host_path.present? &&
-         File.directory?(codex_config_host_path) &&
-         File.file?(File.join(codex_config_host_path, "auth.json")) &&
-         codex_subscription_auth?
-        binds << "#{codex_config_host_path}:/home/agent/.codex-host:ro"
+      if codex_subscription_auth_host_mount_path.present?
+        binds.concat(codex_subscription_auth_file_binds)
       end
 
       if gemini_config_host_path.present? &&
@@ -1043,7 +1064,8 @@ module Containers
       tmpfs["/home/agent/.claude"] = "size=#{256 * 1024 * 1024},mode=0700"
 
       # Codex CLI stores config and session data under ~/.codex.
-      # Ownership is fixed by fix_codex_tmpfs_ownership! after container start.
+      # Host-backed auth/config files are mounted into this tmpfs so session
+      # state stays ephemeral while OAuth refreshes can still persist.
       tmpfs["/home/agent/.codex"] = "size=#{64 * 1024 * 1024},mode=0700"
 
       # Gemini CLI stores config and session data under ~/.gemini.
@@ -1263,6 +1285,44 @@ module Containers
     def codex_subscription_auth?
       paths = [ codex_config_host_path, codex_local_config_path ].compact
       paths.any? { |base| File.file?(File.join(base, "auth.json")) }
+    end
+
+    def codex_subscription_auth_host_mount_path
+      return @codex_subscription_auth_host_mount_path if defined?(@codex_subscription_auth_host_mount_path)
+
+      base = codex_config_host_path
+      @codex_subscription_auth_host_mount_path = if base.present? && File.directory?(base) && File.file?(File.join(base, "auth.json"))
+        base
+      end
+    end
+
+    def codex_subscription_auth_file_binds
+      base = codex_subscription_auth_host_mount_path
+      return [] unless base.present?
+
+      binds = [ "#{File.join(base, 'auth.json')}:/home/agent/.codex/auth.json:rw" ]
+      config_path = File.join(base, "config.toml")
+      binds << "#{config_path}:/home/agent/.codex/config.toml:ro" if File.file?(config_path)
+      binds
+    end
+
+    def codex_auth_lock_required?(command)
+      codex_subscription_auth_host_mount_path.present? && codex_exec_command?(command)
+    end
+
+    def codex_exec_command?(command)
+      parts = command.is_a?(Array) ? command : Shellwords.split(command.to_s)
+      parts.first(2) == %w[codex exec]
+    rescue ArgumentError
+      false
+    end
+
+    def codex_auth_lockfile_path
+      base = File.realpath(codex_subscription_auth_host_mount_path || codex_config_host_path)
+      digest = Digest::SHA256.hexdigest(base)[0, 16]
+      "#{CODEX_AUTH_LOCKFILE_PREFIX}-#{digest}.lock"
+    rescue Errno::ENOENT, TypeError
+      "#{CODEX_AUTH_LOCKFILE_PREFIX}-missing.lock"
     end
 
     def copilot_config_host_path
