@@ -155,7 +155,9 @@ module Activities
 
         max_execution_seconds = agent_run.project.max_execution_seconds
 
-        providers.each_with_index do |provider_candidate, index|
+        index = 0
+        while index < providers.length
+          provider_candidate = providers[index]
           # Check if the project's execution time limit has been exceeded
           if max_execution_seconds && agent_run.started_at && (Time.current - agent_run.started_at).to_i >= max_execution_seconds
             violation_result = Guardrails::ViolationHandler.call(
@@ -175,6 +177,7 @@ module Activities
           # identifiers in user-visible error messages.
           if Provider.routing_key?(provider_candidate) && provider_entry_for(provider_candidate, user_settings.user).nil?
             agent_run.record_provider_attempt("Deleted provider entry", success: false, error_type: "unavailable")
+            index += 1
             next
           end
 
@@ -189,6 +192,7 @@ module Activities
             error_type = state&.rate_limited? ? "rate_limited" : "unavailable"
             skipped_rate_limited_count += 1 if error_type == "rate_limited"
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: error_type)
+            index += 1
             next
           end
 
@@ -250,22 +254,13 @@ module Activities
             persist_rate_limit(user_settings, provider_state_name, provider_states, e.reset_at)
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "rate_limited")
             logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id)
-
-            # Rate-limit fallback execution is not yet implemented. #546
-            # added the UI for configuring API-key-backed fallback entries;
-            # actual execution requires injecting the selected API key into
-            # the container environment and adding api_key variants to the
-            # provider order. Tracked separately — only logging availability
-            # for now; no switch counters or AgentRun mutation until the
-            # fallback is actually executed.
-            canonical_provider_key = canonical_provider(provider)
-            if @rate_limit_fallback_keys&.include?(canonical_provider_key)
-              logger.info(
-                message: "agent_execution.rate_limit_fallback_available",
-                provider: canonical_provider_key,
-                agent_run_id: agent_run.id
-              )
-            end
+            insert_rate_limit_fallbacks!(
+              providers: providers,
+              index: index,
+              provider_candidate: provider_candidate,
+              provider: provider,
+              agent_run: agent_run
+            )
           rescue InfiniteLoopError => e
             last_error = "infinite_loop"
             if cancelled_by_cleanup?(agent_run)
@@ -319,6 +314,8 @@ module Activities
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "error")
             logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message)
           end
+
+          index += 1
         end
 
         # When all providers were skipped due to cached rate-limit state (no
@@ -416,7 +413,7 @@ module Activities
     # Builds the ordered list of providers to attempt.
     # Uses fallback providers if enabled, otherwise just the agent's type.
     # Rate-limit fallback providers are tracked separately (via
-    # @rate_limit_fallback_keys) and handled during execution; they do not
+    # @rate_limit_fallbacks) and handled during execution; they do not
     # modify the provider order returned by this method.
     #
     # @return [Array<String>] Provider names in priority order
@@ -443,7 +440,8 @@ module Activities
           end
       end
 
-      @rate_limit_fallback_keys = UserSetting.rate_limit_fallback_providers(user_settings.user).to_set
+      @rate_limit_fallbacks = load_rate_limit_fallbacks(user_settings.user)
+      @inserted_rate_limit_fallbacks = Set.new
 
       providers
     end
@@ -452,7 +450,9 @@ module Activities
     #
     # @return [Boolean] true if provider should be skipped
     def provider_unavailable?(user_settings, provider_state_name, provider_states)
-      state = provider_states[provider_state_name]
+      state = provider_states.fetch(provider_state_name) do
+        provider_states[provider_state_name] = user_settings.user.provider_states.find_by(provider_name: provider_state_name)
+      end
       return false unless state
 
       # Check for circuit recovery before deciding
@@ -929,6 +929,8 @@ module Activities
         harness_runtime_command(provider_entry, prompt)
       elsif provider_entry&.requires_direct_outbound?
         provider_entry.direct_outbound_exec_command(command_prefix: command_context.command_prefix, prompt: prompt)
+      elsif provider_entry&.api_key?
+        api_key_auth_command(provider_entry, command_context.command_prefix, prompt)
       elsif ProviderSupport.subscription_auth_unset_vars_for(command_context.provider).any?
         subscription_auth_command(command_context.provider, command_context.command_prefix, prompt)
       else
@@ -939,9 +941,10 @@ module Activities
     def command_env_for(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
       return direct_outbound_execution_plan(provider_entry, prompt).env if provider_entry&.opencode_agent_harness_runtime?
-      return {} unless provider_entry&.requires_direct_outbound?
+      return {} unless provider_entry
+      return api_key_command_env(provider_entry) if provider_entry.api_key?
 
-      provider_entry.direct_outbound_exec_env
+      {}
     end
 
     def command_preparation_for(command_context, prompt)
@@ -1014,6 +1017,69 @@ module Activities
       canonical_provider(provider_candidate)
     end
 
+    def load_rate_limit_fallbacks(user)
+      return {} unless user
+      return {} if user.new_record?
+
+      executable_keys = ProviderSupport.container_executable_provider_keys
+
+      user.providers.api_key.rate_limit_fallback.for_fallback
+        .where(provider_key: executable_keys)
+        .ordered
+        .group_by(&:provider_key)
+        .transform_values { |entries| entries.map(&:routing_key) }
+    end
+
+    def insert_rate_limit_fallbacks!(providers:, index:, provider_candidate:, provider:, agent_run:)
+      fallback_candidates = rate_limit_fallback_candidates_for(provider_candidate, provider, providers)
+      return if fallback_candidates.empty?
+
+      logger.info(
+        message: "agent_execution.rate_limit_fallback_available",
+        provider: canonical_provider(provider),
+        agent_run_id: agent_run.id,
+        fallback_providers: fallback_candidates
+      )
+
+      providers.insert(index + 1, *fallback_candidates)
+    end
+
+    def rate_limit_fallback_candidates_for(provider_candidate, provider, providers)
+      @inserted_rate_limit_fallbacks ||= Set.new
+
+      canonical_key = canonical_provider(provider)
+      configured = Array(@rate_limit_fallbacks&.fetch(canonical_key, []))
+      return [] if configured.empty?
+
+      already_scheduled = providers.to_set
+      current_provider = provider_candidate.to_s
+
+      configured.reject do |candidate|
+        candidate == current_provider ||
+          @inserted_rate_limit_fallbacks.include?(candidate) ||
+          already_scheduled.include?(candidate)
+      end.tap do |new_candidates|
+        @inserted_rate_limit_fallbacks.merge(new_candidates)
+      end
+    end
+
+    def simulated_provider_attempt_count(agent_run, providers, user)
+      @rate_limit_fallbacks = load_rate_limit_fallbacks(user)
+      @inserted_rate_limit_fallbacks = Set.new
+      simulated_providers = providers.dup
+
+      index = 0
+      while index < simulated_providers.length
+        provider_candidate = simulated_providers[index]
+        provider = provider_command_key(provider_candidate, agent_run, user)
+        fallback_candidates = rate_limit_fallback_candidates_for(provider_candidate, provider, simulated_providers)
+        simulated_providers.insert(index + 1, *fallback_candidates) if fallback_candidates.any?
+        index += 1
+      end
+
+      simulated_providers.size
+    end
+
     # Returns a per-entry identifier suitable for persisting in
     # providers_attempted and final_provider. Uses the routing key for
     # API-key-backed entries so that multiple entries sharing the same
@@ -1041,6 +1107,18 @@ module Activities
       end
     end
 
+    class << self
+      def provider_attempt_count_for_run(agent_run:, user_settings:)
+        return 1 unless user_settings
+
+        activity = new
+        providers = activity.send(:build_provider_order, agent_run, user_settings)
+        count = activity.send(:simulated_provider_attempt_count, agent_run, providers, user_settings.user)
+
+        [ count, 1 ].max
+      end
+    end
+
     # Wraps a provider command so that, when subscription auth is active,
     # proxy-related env vars are unset and the CLI talks directly to the
     # provider. The prompt is passed as a positional parameter ($1) to
@@ -1056,6 +1134,53 @@ module Activities
 
       script = "if [ \"$#{env_flag}\" = \"1\" ]; then env #{unset_flags} #{base} \"$1\"; else #{base} \"$1\"; fi"
       [ "sh", "-c", script, "--", prompt ]
+    end
+
+    def api_key_auth_command(provider_entry, command_prefix, prompt)
+      base = command_prefix.shelljoin
+      unset_flags = api_key_unset_vars_for(provider_entry)
+        .map { |var| "-u #{var}" }
+        .join(" ")
+      env_assignments = api_key_env_var_names_for(provider_entry)
+        .map { |var| %(#{var}="$PAID_PROVIDER_API_KEY") }
+        .join(" ")
+
+      script = "env #{unset_flags} #{env_assignments} #{base} \"$1\""
+      [ "sh", "-c", script, "--", prompt ]
+    end
+
+    def api_key_command_env(provider_entry)
+      { "PAID_PROVIDER_API_KEY" => provider_entry.provider_api_key&.api_key.to_s }
+    end
+
+    def api_key_env_var_names_for(provider_entry)
+      case provider_entry.provider_key
+      when "gemini"
+        %w[GEMINI_API_KEY GOOGLE_API_KEY]
+      when "codex"
+        %w[OPENAI_API_KEY]
+      when "claude", "cursor", "aider"
+        %w[ANTHROPIC_API_KEY]
+      else
+        []
+      end
+    end
+
+    def api_key_unset_vars_for(provider_entry)
+      case provider_entry.provider_key
+      when "gemini"
+        ProviderSupport.subscription_auth_unset_vars_for("gemini")
+      when "codex"
+        ProviderSupport.subscription_auth_unset_vars_for("codex")
+      when "claude", "cursor", "aider"
+        %w[
+          ANTHROPIC_BASE_URL
+          ANTHROPIC_HEADER_X_AGENT_RUN_ID
+          ANTHROPIC_HEADER_X_PROXY_TOKEN
+        ]
+      else
+        []
+      end
     end
 
     def subscription_auth_unset_vars_for(provider)
