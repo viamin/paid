@@ -308,8 +308,15 @@ module Knowledge
         "CpuPeriod" => 100_000,
         "CpuQuota" => options[:cpu_quota],
         "PidsLimit" => options[:pids_limit],
+        # /tmp must be `exec` because `bundle install` builds native gem
+        # extensions there. mkmf's try_link verifies the produced binary
+        # with File.executable?, which returns false on a noexec mount —
+        # producing a misleading "compiler failed to generate an executable
+        # file" error (see e.g. bigdecimal-4.1.1 extconf.rb). Docker's
+        # default tmpfs flags include noexec, so it must be overridden.
+        # /home/agent/.cache only stores cache data and stays noexec.
         "Tmpfs" => {
-          "/tmp" => "size=#{256 * 1024 * 1024},mode=1777",
+          "/tmp" => "exec,size=#{256 * 1024 * 1024},mode=1777",
           "/home/agent/.cache" => "size=#{128 * 1024 * 1024},mode=0755"
         },
         "Binds" => [

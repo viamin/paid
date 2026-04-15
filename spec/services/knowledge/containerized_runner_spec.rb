@@ -312,6 +312,19 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       binds = config.dig("HostConfig", "Binds")
       expect(binds.first).to match(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:rw\z})
     end
+
+    # Regression: Docker's default tmpfs flags include noexec, which makes
+    # mkmf's File.executable? check fail when bundle install builds native
+    # gem extensions in /tmp — surfacing as a misleading "compiler failed
+    # to generate an executable file" error during routes collection.
+    it "mounts /tmp tmpfs with exec so bundle install can build native gems" do
+      config = nil
+      allow(Docker::Container).to receive(:create) { |cfg| config = cfg; mock_container }
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      tmp_options = config.dig("HostConfig", "Tmpfs", "/tmp")
+      expect(tmp_options.split(",")).to include("exec")
+    end
   end
 
   describe "network_mode validation" do
