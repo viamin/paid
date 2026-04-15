@@ -710,9 +710,7 @@ module Containers
     # Other container commands keep full parallelism, and different credential
     # directories map to different lockfiles.
     def with_codex_auth_lock(command)
-      unless codex_auth_lock_required?(command)
-        return yield
-      end
+      return yield unless codex_auth_lock_required?(command)
 
       lockfile = codex_auth_lockfile_path
       log_system("container.codex_auth_lock.waiting")
