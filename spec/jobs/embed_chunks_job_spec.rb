@@ -18,20 +18,14 @@ RSpec.describe EmbedChunksJob do
       )
     end
 
-    it "calls the embedding pipeline with a project" do
+    it "skips the embedding pipeline when no provider is configured for the project" do
       allow(Knowledge::Embeddings::Pipeline).to receive(:call)
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
-      allow(ENV).to receive(:fetch).and_call_original
-      allow(ENV).to receive(:fetch).with("OPENAI_API_BASE_URL", anything).and_call_original
+      allow(project).to receive(:knowledge_embedding_provider_configuration).and_return(nil)
+      allow(Project).to receive(:find).with(project.id).and_return(project)
 
       described_class.perform_now(project.id)
 
-      expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(
-        project: project,
-        api_key: nil,
-        api_base_url: nil
-      )
+      expect(Knowledge::Embeddings::Pipeline).not_to have_received(:call)
     end
 
     it "resolves the API key and base URL from the configured knowledge embedding provider" do
