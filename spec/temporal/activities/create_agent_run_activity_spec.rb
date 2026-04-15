@@ -194,6 +194,25 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(result[:provider_attempt_count]).to eq(2)
     end
 
+    it "includes rate-limit fallback entries in provider_attempt_count" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor])
+      api_key = create(:provider_api_key, user: project.created_by, api_service_type: "anthropic")
+      project.created_by.providers.create!(
+        provider_key: "claude",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        fallback_role: "rate_limit_fallback",
+        enabled_for_agent_runs: false,
+        enabled_for_fallback: true
+      )
+      project.created_by.providers.find_or_create_by!(provider_key: "cursor")
+      project.created_by.settings.update!(fallback_enabled: true, fallback_providers: [ "cursor" ])
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "claude_code")
+
+      expect(result[:provider_attempt_count]).to eq(3)
+    end
+
     it "updates the issue paid_state to in_progress" do
       activity.execute(project_id: project.id, issue_id: issue.id)
 

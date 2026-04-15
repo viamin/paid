@@ -279,6 +279,22 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
       workflow.execute(input)
     end
+
+    it "sizes the timeout using rate-limit fallback attempts from CreateAgentRunActivity" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity"
+          { agent_run_id: 42, provider_attempt_count: 2 }
+        when "Activities::RunAgentActivity"
+          expect(opts[:start_to_close_timeout]).to eq(7500) # (3600 * 2 attempts) + 300
+          { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+    end
   end
 
   describe "max_execution_seconds timeout capping" do
