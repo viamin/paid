@@ -343,7 +343,11 @@ module Activities
           return ready_for_owner_trigger(issue, sidecar_triggers: sidecar_triggers)
         end
 
-        return nil # CI still pending or checks unavailable
+        # CI still pending or checks unavailable — treat as incomplete so
+        # last_pr_scan_at is not advanced. GitHub does not bump PR
+        # updated_at on check-run state changes, so advancing here would
+        # permanently wedge the PR if CI finishes after this scan tick.
+        return :skipped
       end
 
       # Re-add pending triggers so the workflow can request the review.
