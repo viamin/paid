@@ -630,15 +630,16 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
       end
 
-      it "falls back to normal create flow when branch is not found" do
+      it "raises when branch is confirmed missing (404)" do
         allow(github_client).to receive(:ref)
           .and_raise(GithubClient::NotFoundError.new("Not Found"))
         allow(github_client).to receive(:pull_requests).and_return([])
 
-        result = activity.execute(agent_run_id: agent_run.id)
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(RuntimeError, /does not exist on GitHub/)
 
-        expect(github_client).to have_received(:create_pull_request)
-        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+        expect(github_client).not_to have_received(:create_pull_request)
       end
 
       it "falls back to normal create flow when branch check raises a transient error" do
@@ -655,6 +656,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
       it "logs branch not found at info level" do
         allow(github_client).to receive(:ref)
           .and_raise(GithubClient::NotFoundError.new("Not Found"))
+        allow(github_client).to receive(:pull_requests).and_return([])
         mock_logger = instance_double(ActiveSupport::Logger, warn: nil)
         allow(activity).to receive(:logger).and_return(mock_logger)
         allow(mock_logger).to receive(:info)
@@ -665,7 +667,9 @@ RSpec.describe Activities::CreatePullRequestActivity do
           branch: agent_run.branch_name
         ))
 
-        activity.execute(agent_run_id: agent_run.id)
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(RuntimeError, /does not exist on GitHub/)
       end
 
       it "logs branch check failure at warn level" do

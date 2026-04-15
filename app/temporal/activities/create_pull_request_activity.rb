@@ -22,10 +22,7 @@ module Activities
         if existing_pr
           pr = existing_pr
           pr_action = "reused"
-        else
-          # Create the PR whether the branch was confirmed to exist or the
-          # ref lookup failed transiently. If the branch is truly missing,
-          # create_pull_request will raise and Temporal will retry.
+        elsif branch_exists
           pr = client.create_pull_request(
             project.full_name,
             base: project.default_branch,
@@ -35,6 +32,10 @@ module Activities
             draft: true
           )
           pr_action = "created"
+        else
+          # Branch confirmed missing (404). Raise so Temporal retries —
+          # the branch may appear after a push that is still in flight.
+          raise "Branch #{agent_run.branch_name} does not exist on GitHub"
         end
 
         # Persist completion as the very first step after obtaining the PR,
@@ -67,8 +68,9 @@ module Activities
     private
 
     # Checks whether the branch exists on GitHub via the refs API.
-    # Returns true/false; network or rate-limit errors return false so
-    # the caller falls through to the normal create flow.
+    # Returns true when confirmed or when the check fails transiently
+    # (optimistic — lets the caller attempt PR creation so GitHub is
+    # the source of truth). Returns false only on a confirmed 404.
     def branch_exists?(client, project, branch_name, agent_run_id:)
       client.ref(project.full_name, "heads/#{branch_name}")
       true
@@ -86,7 +88,7 @@ module Activities
         branch: branch_name,
         error: e.message
       )
-      false
+      true
     end
 
     def find_existing_pr(client, project, branch_name, agent_run_id:)
