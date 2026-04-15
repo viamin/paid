@@ -283,6 +283,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:patched)
         .with("queue-paid-agent-review-run-v1")
         .and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("pause-followup-during-review-v1")
+        .and_return(true)
     end
 
     it "routes ready_for_owner to MarkPrReadyActivity and RequestReviewActivity" do
@@ -1076,7 +1079,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           timeout: anything)
     end
 
-    it "routes paid_agent_review_pending with other triggers to followup workflow" do
+    it "suppresses create_pr followup when paid_agent_review_pending coexists with other triggers (#1135)" do
       allow(workflow).to receive(:run_activity).with(Activities::QueueAgentRunActivity, anything, timeout: anything)
         .and_return({ queued: true })
 
@@ -1095,6 +1098,74 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         expected_review_queue_input,
         timeout: anything
       )
+      expect(workflow).not_to have_received(:run_activity).with(
+        Activities::QueueAgentRunActivity,
+        hash_including(goal: "create_pr"),
+        timeout: anything
+      )
+    end
+
+    it "suppresses create_pr followup for ready-phase PRs when paid_agent review is pending (#1135)" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything).and_return({ queued: true })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready", current_followup_count: 0,
+        triggers: [
+          { type: "paid_agent_review_pending" },
+          { type: "merge_conflicts", details: "PR has merge conflicts" }
+        ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, expected_review_queue_input, timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "create_pr"), timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RecordPrFollowupActivity, anything, timeout: anything)
+    end
+
+    it "suppresses create_pr followup when paid_agent review has active_run and other triggers present (#1135)" do
+      allow(workflow).to receive(:run_activity).with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
+
+      pr_data = draft_pr_data(
+        current_draft_review_count: 1,
+        triggers: [
+          { type: "paid_agent_review_pending", active_run: true },
+          { type: "conversation_comments", details: "2 new comment(s)" }
+        ]
+      )
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).not_to have_received(:run_activity).with(
+        Activities::QueueAgentRunActivity, hash_including(goal: "review"), timeout: anything
+      )
+      expect(workflow).not_to have_received(:run_activity).with(
+        Activities::QueueAgentRunActivity, hash_including(goal: "create_pr"), timeout: anything
+      )
+    end
+
+    it "falls back to old behavior before pause-followup-during-review-v1 patch" do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("pause-followup-during-review-v1")
+        .and_return(false)
+      allow(workflow).to receive(:run_activity).with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
+
+      pr_data = draft_pr_data(
+        current_draft_review_count: 0,
+        triggers: [
+          { type: "paid_agent_review_pending" },
+          { type: "ci_failure", details: "CI failed" }
+        ]
+      )
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
       expect(workflow).to have_received(:run_activity).with(
         Activities::QueueAgentRunActivity,
         hash_including(count_toward_draft_review_round: true, expected_draft_review_count: 0),
@@ -1123,6 +1194,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:patched)
         .with("queue-paid-agent-review-run-v1")
         .and_return(false)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("pause-followup-during-review-v1")
+        .and_return(true)
 
       pr_data = {
         issue_id: 10, pr_number: 42,
@@ -1178,6 +1252,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with("queue-agent-run-goal-v1").and_return(true)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("queue-paid-agent-review-run-v1").and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("pause-followup-during-review-v1").and_return(true)
       allow(workflow).to receive(:interruptible_sleep)
       allow(workflow).to receive(:run_activity)
         .with(Activities::GetPollIntervalActivity, anything, timeout: anything)
