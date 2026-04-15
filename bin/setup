@@ -59,8 +59,10 @@ FileUtils.chdir APP_ROOT do
     STDOUT.flush # flush the output before exec(2) so that it displays
     # --detach forks bin/dev into a new session and returns immediately, so
     # bin/setup exits back to the prompt instead of staying attached to the
-    # dev server output. Use `overmind connect` to re-attach.
-    exec "bin/dev", "--detach"
+    # dev server output. --restart-if-running lets bin/dev refresh an already
+    # healthy Overmind session after setup instead of exiting early. Use
+    # `overmind connect` to re-attach.
+    exec "bin/dev", "--detach", "--restart-if-running"
   end
 
   puts "\n== Setup complete! =="

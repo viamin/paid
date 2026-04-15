@@ -569,6 +569,7 @@ RSpec.describe Containers::GitOperations do
 
   describe "#commit_uncommitted_changes" do
     let(:empty_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
+    let(:status_failure) { Containers::Provision::Result.failure(error: "fatal: container unavailable", stderr: "container unavailable", exit_code: 1) }
 
     it "returns false when working tree is clean" do
       allow(container_service).to receive(:execute)
@@ -576,6 +577,15 @@ RSpec.describe Containers::GitOperations do
         .and_return(empty_result)
 
       expect(git_ops.commit_uncommitted_changes).to be false
+    end
+
+    it "raises Error when status check fails" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_failure)
+
+      expect { git_ops.commit_uncommitted_changes }
+        .to raise_error(described_class::Error, /Failed to check git status/)
     end
 
     it "stages and commits with --no-verify when there are uncommitted changes" do
@@ -904,6 +914,7 @@ RSpec.describe Containers::GitOperations do
   describe "#has_changes_since?" do
     let(:pre_sha) { "abc123def456" }
     let(:empty_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
+    let(:failure_result) { Containers::Provision::Result.failure(error: "fatal: container unavailable", stderr: "container unavailable", exit_code: 1) }
 
     it "returns true when there are new commits since the given SHA" do
       log_result = Containers::Provision::Result.success(stdout: "def789 Add feature\n", stderr: "", exit_code: 0)
@@ -939,15 +950,38 @@ RSpec.describe Containers::GitOperations do
       expect(git_ops.has_changes_since?(pre_sha)).to be false
     end
 
-    it "returns false on error" do
-      allow(container_service).to receive(:execute).and_raise(StandardError, "container gone")
+    it "raises Error when git log returns a failed result" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "#{pre_sha}..HEAD" ], timeout: nil, stream: false)
+        .and_return(failure_result)
 
-      expect(git_ops.has_changes_since?(pre_sha)).to be false
+      expect { git_ops.has_changes_since?(pre_sha) }
+        .to raise_error(described_class::Error, /Failed to check git log/)
+    end
+
+    it "raises Error when git status returns a failed result" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "#{pre_sha}..HEAD" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.has_changes_since?(pre_sha) }
+        .to raise_error(described_class::Error, /Failed to check git status/)
+    end
+
+    it "propagates container errors" do
+      allow(container_service).to receive(:execute).and_raise(Docker::Error::DockerError, "container gone")
+
+      expect { git_ops.has_changes_since?(pre_sha) }
+        .to raise_error(Docker::Error::DockerError, "container gone")
     end
   end
 
   describe "#has_changes?" do
     let(:base_sha) { "abc123def456" }
+    let(:failure_result) { Containers::Provision::Result.failure(error: "fatal: container unavailable", stderr: "container unavailable", exit_code: 1) }
 
     it "returns true when there are committed changes vs base" do
       agent_run.update!(base_commit_sha: base_sha)
@@ -967,6 +1001,16 @@ RSpec.describe Containers::GitOperations do
         .and_return(diff_result)
 
       expect(git_ops.has_changes?).to be false
+    end
+
+    it "raises Error when git diff returns a failed result" do
+      agent_run.update!(base_commit_sha: base_sha)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--stat", base_sha, "HEAD" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.has_changes? }
+        .to raise_error(described_class::Error, /Failed to check git diff/)
     end
 
     it "falls back to local-only commits when base_commit_sha is blank" do
@@ -1006,10 +1050,35 @@ RSpec.describe Containers::GitOperations do
       expect(git_ops.has_changes?).to be false
     end
 
-    it "returns false on error" do
-      allow(container_service).to receive(:execute).and_raise(StandardError, "container gone")
+    it "raises Error when fallback git log returns a failed result" do
+      agent_run.update_column(:base_commit_sha, nil)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "HEAD", "--not", "--remotes" ], timeout: nil, stream: false)
+        .and_return(failure_result)
 
-      expect(git_ops.has_changes?).to be false
+      expect { git_ops.has_changes? }
+        .to raise_error(described_class::Error, /Failed to check git log/)
+    end
+
+    it "raises Error when fallback git status returns a failed result" do
+      agent_run.update_column(:base_commit_sha, nil)
+      empty_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "HEAD", "--not", "--remotes" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.has_changes? }
+        .to raise_error(described_class::Error, /Failed to check git status/)
+    end
+
+    it "propagates container errors" do
+      allow(container_service).to receive(:execute).and_raise(Docker::Error::DockerError, "container gone")
+
+      expect { git_ops.has_changes? }
+        .to raise_error(Docker::Error::DockerError, "container gone")
     end
   end
 
