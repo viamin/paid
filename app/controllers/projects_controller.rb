@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ProjectsController < ApplicationController
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :detect_services, :cleanup_stale_runs ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :detect_services, :ensure_labels, :cleanup_stale_runs ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -141,6 +141,22 @@ class ProjectsController < ApplicationController
     redirect_to edit_project_path(@project), alert: "Could not detect services: #{e.message}"
   end
 
+  def ensure_labels
+    authorize @project, :update?
+
+    result = Projects::EnsureStandardLabels.call(project: @project)
+
+    if result.any_errors?
+      redirect_to edit_project_path(@project), alert: result.notice_message
+    else
+      redirect_to edit_project_path(@project), notice: result.notice_message
+    end
+  rescue GithubClient::ApiError => e
+    redirect_to edit_project_path(@project), alert: "Could not sync labels: #{e.message}"
+  rescue GithubClient::AuthenticationError => e
+    redirect_to edit_project_path(@project), alert: "GitHub authentication failed: #{e.message}"
+  end
+
   def cleanup_stale_runs
     authorize @project, :update?
 
@@ -264,6 +280,12 @@ class ProjectsController < ApplicationController
     settings
   end
 
+  def ensure_labels_best_effort(project)
+    Projects::EnsureStandardLabels.call(project: project)
+  rescue => e
+    Rails.logger.warn(message: "github_sync.ensure_labels_on_create_failed", project_id: project.id, error: e.message)
+  end
+
   def parse_usernames_csv
     params.dig(:project, :allowed_github_usernames_csv).to_s.split(",").map(&:strip).reject(&:blank?).uniq
   end
@@ -272,6 +294,7 @@ class ProjectsController < ApplicationController
     @project.name = @project.name.presence || @project.repo
 
     if @project.save
+      ensure_labels_best_effort(@project)
       redirect_to @project, notice: "Project was successfully added."
     else
       render :new, status: :unprocessable_content
@@ -287,6 +310,7 @@ class ProjectsController < ApplicationController
     @project.default_branch = repo_data.default_branch
 
     if @project.save
+      ensure_labels_best_effort(@project)
       redirect_to @project, notice: "Project was successfully added."
     else
       render :new, status: :unprocessable_content
