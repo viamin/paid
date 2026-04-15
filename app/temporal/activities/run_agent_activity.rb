@@ -554,7 +554,7 @@ module Activities
       log_container_context(agent_run, provider)
       execution_started_at = Time.current
 
-      effective_timeout = if agent_run.create_issue_goal?
+      effective_timeout = if agent_run.create_issue_goal? || agent_run.enhance_issue_goal?
         user_settings&.issue_goal_timeout_seconds || DEFAULT_ISSUE_GOAL_TIMEOUT
       else
         user_settings&.agent_timeout_seconds || agent_timeout
@@ -569,7 +569,7 @@ module Activities
         effective_timeout = [ effective_timeout, remaining ].min
       end
 
-      effective_idle_timeout = if agent_run.create_issue_goal?
+      effective_idle_timeout = if agent_run.create_issue_goal? || agent_run.enhance_issue_goal?
         user_settings&.issue_goal_idle_timeout_seconds || DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT
       elsif agent_run.review_goal?
         user_settings&.review_goal_idle_timeout_seconds || DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT
@@ -1359,6 +1359,8 @@ module Activities
     def augment_prompt_for_goal(agent_run, prompt)
       if agent_run.create_issue_goal?
         augment_prompt_for_issue_goal(agent_run, prompt)
+      elsif agent_run.enhance_issue_goal?
+        augment_prompt_for_enhance_issue_goal(agent_run, prompt)
       elsif agent_run.review_goal?
         augment_prompt_for_review_goal(agent_run, prompt)
       else
@@ -1549,6 +1551,48 @@ module Activities
       Do NOT push code, create issues, or create new pull requests. Only post the review on PR #{{pr_number}}.
     AUGMENTED
 
+    ENHANCE_ISSUE_GOAL_PROMPT_SLUG = "goal.enhance_issue"
+
+    FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT = <<~'AUGMENTED'
+      {{base_prompt}}
+
+      ---
+      IMPORTANT: Your goal is to ENHANCE AN EXISTING ISSUE by adding context or asking clarifying questions.
+      Do NOT write code, create PRs, or create new issues.
+
+      Read issue #{{issue_number}} in {{repo}} — its description and all comments — then add a SINGLE comment that either:
+
+      1. **Provides implementation context** — relevant files, architecture notes, suggested approach,
+         related patterns — if the issue has enough information to be implemented.
+      2. **Asks specific clarifying questions** — if the issue is ambiguous, missing acceptance criteria,
+         or has unstated constraints that need answers before implementation can begin.
+
+      Use curl to interact with the GitHub API via the proxy. Write JSON payloads to a temp file to avoid
+      shell quoting issues:
+
+      ```bash
+      tmpfile=$(mktemp)
+      cat > "$tmpfile" <<'COMMENT_JSON'
+      {
+        "body": "Your comment in markdown"
+      }
+      COMMENT_JSON
+      curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}/comments" \
+        -H "Content-Type: application/json" \
+        -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+        -H "X-Proxy-Token: $PROXY_TOKEN" \
+        --data-binary @"$tmpfile"
+      rm -f "$tmpfile"
+      ```
+
+      Available endpoints:
+      - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}} — get issue details
+      - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}/comments — list comments
+      - POST $GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}/comments — add comment
+
+      Do NOT push code, create issues, or create pull requests. Only add a comment to issue #{{issue_number}}.
+    AUGMENTED
+
     def augment_prompt_for_issue_goal(agent_run, prompt)
       vars = { base_prompt: prompt, repo: validated_repo_name(agent_run) }
       Prompts::Render.call(
@@ -1577,6 +1621,27 @@ module Activities
         project: agent_run.project,
         variables: vars,
         fallback: -> { Prompts::Render.interpolate(FALLBACK_REVIEW_GOAL_PROMPT, vars) }
+      )
+    end
+
+    def augment_prompt_for_enhance_issue_goal(agent_run, prompt)
+      issue = agent_run.issue
+      raise Temporalio::Error::ApplicationError.new(
+        "Enhance-issue goal requires an associated issue",
+        type: "MissingIssue",
+        non_retryable: true
+      ) unless issue
+
+      vars = {
+        base_prompt: prompt,
+        repo: validated_repo_name(agent_run),
+        issue_number: issue.github_number.to_s
+      }
+      Prompts::Render.call(
+        slug: ENHANCE_ISSUE_GOAL_PROMPT_SLUG,
+        project: agent_run.project,
+        variables: vars,
+        fallback: -> { Prompts::Render.interpolate(FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT, vars) }
       )
     end
 

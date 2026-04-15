@@ -32,6 +32,7 @@ RSpec.describe ApplicationHelper do
         "create_pr_goal?": false,
         "create_issue_goal?": false,
         "review_goal?": false,
+        "enhance_issue_goal?": false,
         issue: nil,
         source_pull_request_number: nil,
         pull_request_number: nil,

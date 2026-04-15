@@ -3,7 +3,7 @@
 class AgentRun < ApplicationRecord
   STATUSES = %w[queued pending running paused completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
-  GOALS = %w[create_pr create_issue review].freeze
+  GOALS = %w[create_pr create_issue review enhance_issue].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
   ACTIVE_STATUSES = %w[pending running].freeze
   FINISHED_STATUSES = %w[completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
@@ -58,6 +58,7 @@ class AgentRun < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :goal, presence: true, inclusion: { in: GOALS }
   validate :review_goal_requires_pull_request
+  validate :enhance_issue_goal_requires_issue
   validates :trigger_type, presence: true, inclusion: { in: TRIGGER_TYPES }
   validates :created_issue_url, length: { maximum: 500 }
   validates :worktree_path, length: { maximum: 500 }
@@ -416,7 +417,7 @@ class AgentRun < ApplicationRecord
   SQL
   GOAL_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
     CASE
-      WHEN goal = 'create_issue' THEN 0
+      WHEN goal IN ('create_issue', 'enhance_issue') THEN 0
       ELSE 1
     END
   SQL
@@ -484,6 +485,10 @@ class AgentRun < ApplicationRecord
 
   def review_goal?
     goal == "review"
+  end
+
+  def enhance_issue_goal?
+    goal == "enhance_issue"
   end
 
   def manual?
@@ -1014,12 +1019,29 @@ class AgentRun < ApplicationRecord
     end
   end
 
+  def enhance_issue_goal_requires_issue
+    if goal == "enhance_issue" && issue_id.blank?
+      errors.add(:issue, "is required for enhance_issue goals")
+    end
+  end
+
   def prompt_for_goal
     if review_goal?
       prompt_for_review
+    elsif enhance_issue_goal?
+      prompt_for_enhance_issue
     else
       prompt_for_issue
     end
+  end
+
+  def prompt_for_enhance_issue
+    return nil unless issue
+
+    "Enhance issue ##{issue.github_number} in #{project.full_name}. " \
+      "Read the issue description and all comments, then add a comment that either " \
+      "provides implementation context (relevant files, architecture notes, suggested approach) " \
+      "or asks specific clarifying questions the user needs to answer."
   end
 
   def empty_phase_summary

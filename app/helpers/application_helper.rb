@@ -152,6 +152,8 @@ module ApplicationHelper
       create_issue_context(run)
     elsif run.review_goal?
       review_context(run)
+    elsif run.enhance_issue_goal?
+      enhance_issue_context(run)
     else
       { type: :placeholder }
     end
@@ -318,6 +320,15 @@ module ApplicationHelper
       url = source_pull_request_url(run)
       label = "PR ##{run.source_pull_request_number}"
       github_link_or_text(label, label, url)
+    else
+      { type: :placeholder }
+    end
+  end
+
+  def enhance_issue_context(run)
+    if run.issue.present?
+      label = "Issue ##{run.issue.github_number}"
+      github_link_or_text(label, label, run.issue.github_url, tooltip: run.issue.title)
     else
       { type: :placeholder }
     end
