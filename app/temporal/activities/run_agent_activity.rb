@@ -217,24 +217,30 @@ module Activities
             # different models) remain distinguishable in UI and retry logic.
             agent_run.update!(final_provider: attempt_label)
 
+            # Skip git post-processing for goals that don't clone a repo.
+            # These runs only interact via the GitHub API proxy — no git repo exists.
+
             # Evaluate pre-commit requirements against the working directory
             # before committing, so blocking failures prevent commits.
-            pre_commit_result = evaluate_pre_commit_requirements(agent_run)
-            if pre_commit_result[:blocking]
-              agent_run.log!("system", "Blocked by failing pre-commit requirements",
-                metadata: { pre_commit_results: pre_commit_result[:results] })
-              return {
-                agent_run_id: agent_run_id,
-                success: false,
-                has_changes: check_for_changes(agent_run, pre_agent_sha),
-                output_present: provider_result.fetch(:output_present),
-                final_provider: attempt_label,
-                error: "pre_commit_requirements_failed"
-              }
+            if agent_run.repo_cloned?
+              pre_commit_result = evaluate_pre_commit_requirements(agent_run)
+              if pre_commit_result[:blocking]
+                agent_run.log!("system", "Blocked by failing pre-commit requirements",
+                  metadata: { pre_commit_results: pre_commit_result[:results] })
+                return {
+                  agent_run_id: agent_run_id,
+                  success: false,
+                  has_changes: check_for_changes(agent_run, pre_agent_sha),
+                  output_present: provider_result.fetch(:output_present),
+                  final_provider: attempt_label,
+                  error: "pre_commit_requirements_failed"
+                }
+              end
+
+              commit_uncommitted_changes(agent_run)
             end
 
-            commit_uncommitted_changes(agent_run)
-            has_changes = check_for_changes(agent_run, pre_agent_sha)
+            has_changes = agent_run.repo_cloned? ? check_for_changes(agent_run, pre_agent_sha) : false
 
             if !has_changes && !provider_result.fetch(:output_present)
               agent_run.log!("system", "Provider completed with no output and no changes")
