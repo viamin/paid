@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_16_050235) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_16_170203) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -496,6 +496,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_050235) do
     t.string "depends_on_owner"
     t.string "depends_on_repo"
     t.bigint "issue_id", null: false
+    t.boolean "requires_deployment", default: false, null: false
     t.datetime "updated_at", null: false
     t.index ["depends_on_issue_id"], name: "index_issue_dependencies_on_depends_on_issue_id"
     t.index ["issue_id", "depends_on_issue_id"], name: "idx_issue_dependencies_unique", unique: true
@@ -509,6 +510,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_050235) do
     t.text "body"
     t.datetime "ci_action_dispatched_at"
     t.datetime "created_at", null: false
+    t.datetime "deployed_at"
     t.integer "draft_review_count", default: 0, null: false
     t.datetime "github_created_at", null: false
     t.string "github_creator_login"
@@ -530,6 +532,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_050235) do
     t.string "source", default: "github", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
+    t.index ["deployed_at"], name: "idx_issues_deployed_at_on_prs", where: "(is_pull_request = true)"
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
     t.index ["labels"], name: "index_issues_on_labels_gin_open_issues", where: "((is_pull_request = false) AND ((github_state)::text = 'open'::text))", using: :gin
     t.index ["labels"], name: "index_issues_on_labels_gin_open_prs", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))", using: :gin
