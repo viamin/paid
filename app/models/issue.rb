@@ -14,6 +14,13 @@ class Issue < ApplicationRecord
   VALID_SOURCES = [ GITHUB_SOURCE, SYNTHETIC_CODE_SCANNING_SOURCE, DEPENDABOT_ALERT_SOURCE ].freeze
   SEVERITY_ORDER = %w[critical high medium low].freeze
   TRACKER_PATTERN = /\b(?:tracker|remaining\s+work|completion\s+criteria|phase\s+tracker|meta\s+issue)\b/i
+  # Body match requires the tracker vocabulary to appear inside a markdown
+  # heading (e.g. "## Tracker", "## Remaining Work"). Matching anywhere in
+  # the body produced false positives for feature issues that incidentally
+  # mention "tracker" in prose (e.g. "support custom issue trackers",
+  # "deploy tracker"), which then got permanently excluded from auto-pick
+  # by the "tracker with no body refs" safety net in Issues::AutoPick.
+  TRACKER_BODY_HEADING_PATTERN = /^[#]{1,6}\s+.*\b(?:tracker|remaining\s+work|completion\s+criteria|phase\s+tracker|meta\s+issue)\b/i
   # Large offset so synthetic github_issue_id values never collide with real
   # GitHub issue IDs (which currently range in the low billions).
   SYNTHETIC_CODE_SCANNING_ID_OFFSET = 800_000_000_000
@@ -119,7 +126,7 @@ class Issue < ApplicationRecord
   end
 
   def tracker_issue?
-    TRACKER_PATTERN.match?(title.to_s) || TRACKER_PATTERN.match?(body.to_s)
+    TRACKER_PATTERN.match?(title.to_s) || TRACKER_BODY_HEADING_PATTERN.match?(body.to_s)
   end
 
   def body_referenced_issue_numbers

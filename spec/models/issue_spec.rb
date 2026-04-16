@@ -915,8 +915,8 @@ RSpec.describe Issue do
       expect(issue.tracker_issue?).to be true
     end
 
-    it "returns true for 'meta issue' in body" do
-      issue = build(:issue, body: "This is a meta issue tracking all items")
+    it "returns true for 'meta issue' in a body heading" do
+      issue = build(:issue, title: "Phase 2 umbrella", body: "## Meta issue\nTracks all items")
       expect(issue.tracker_issue?).to be true
     end
 
@@ -928,6 +928,29 @@ RSpec.describe Issue do
     it "is case-insensitive" do
       issue = build(:issue, title: "PHASE TRACKER for Q2")
       expect(issue.tracker_issue?).to be true
+    end
+
+    # Regression: feature issues that incidentally mention tracker vocabulary in
+    # prose were being permanently excluded from auto-pick by the "tracker with
+    # no body refs" safety net. Body matches now require a markdown heading.
+    context "when tracker vocabulary appears only in prose body" do
+      it "returns false for 'issue tracker' mentioned in a feature description" do
+        issue = build(:issue, title: "Support custom issue trackers",
+          body: "In enterprise codebases, the issue tracker is rarely GitHub Issues.")
+        expect(issue.tracker_issue?).to be false
+      end
+
+      it "returns false for 'deploy tracker' mentioned in prose" do
+        issue = build(:issue, title: "Support multi-step PRs",
+          body: "- An external service (deploy tracker, CI/CD system, etc.)")
+        expect(issue.tracker_issue?).to be false
+      end
+
+      it "returns false for 'custom tracker integration' in a bulleted list" do
+        issue = build(:issue, title: "Support PR templates",
+          body: "- Linked issues/tickets (with custom tracker integration)")
+        expect(issue.tracker_issue?).to be false
+      end
     end
   end
 
