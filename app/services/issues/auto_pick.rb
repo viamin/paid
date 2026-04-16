@@ -232,7 +232,7 @@ module Issues
     end
 
     # Returns true if the number of PRs needing attention meets or
-    # exceeds the user's configured limit. When the limit is 0 (default),
+    # exceeds the user's configured limit. When the limit is 0,
     # there is no cap and auto-pick is never blocked by open PRs.
     def prs_needing_attention_exceed_limit?
       limit = max_auto_pick_open_prs
