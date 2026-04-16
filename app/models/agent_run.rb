@@ -447,9 +447,14 @@ class AgentRun < ApplicationRecord
 
   # Returns the next queued run without claiming it.
   # Used to check per-user capacity before acquiring the lock.
+  #
+  # Runs whose project belongs to an account with a paused scheduler are
+  # excluded so a "pause all" toggle can hold new starts while still
+  # accepting new queue entries from the project trigger button.
   def self.peek_next_queued_run(exclude_ids: [])
     scope = queued_with_priority.order(QUEUE_ORDER)
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
+    scope = scope.joins(project: :account).where(accounts: { scheduler_paused_at: nil })
     scope.first
   end
 
