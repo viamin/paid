@@ -18,6 +18,17 @@ class PromptVersion < ApplicationRecord
 
   validate :immutable_content_after_creation, on: :update
 
+  scope :active, -> { where(retired_at: nil) }
+  scope :retired, -> { where.not(retired_at: nil) }
+
+  def retired?
+    retired_at.present?
+  end
+
+  def active?
+    !retired?
+  end
+
   # Renders the template by interpolating variables in a single pass.
   # Values that themselves contain `{{other_var}}` substrings are NOT
   # re-substituted (no gsub-ordering bug).

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_16_185458) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_16_221630) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -896,6 +896,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_185458) do
     t.bigint "created_by_user_id"
     t.bigint "parent_version_id"
     t.bigint "prompt_id", null: false
+    t.datetime "retired_at"
     t.text "system_prompt"
     t.text "template", null: false
     t.integer "usage_count", default: 0, null: false
@@ -905,6 +906,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_185458) do
     t.index ["parent_version_id"], name: "index_prompt_versions_on_parent_version_id"
     t.index ["prompt_id", "version"], name: "index_prompt_versions_on_prompt_id_and_version", unique: true
     t.index ["prompt_id"], name: "index_prompt_versions_on_prompt_id"
+    t.index ["retired_at"], name: "index_prompt_versions_on_retired_at"
   end
 
   create_table "prompts", force: :cascade do |t|

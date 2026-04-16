@@ -56,6 +56,34 @@ RSpec.describe PromptVersion do
     end
   end
 
+  describe "retirement" do
+    let(:prompt) { create(:prompt, :global) }
+
+    it "#active? is true when retired_at is nil" do
+      version = create(:prompt_version, prompt: prompt, version: 1)
+
+      expect(version.active?).to be(true)
+      expect(version.retired?).to be(false)
+    end
+
+    it "#retired? is true when retired_at is set" do
+      version = create(:prompt_version, prompt: prompt, version: 1, retired_at: Time.current)
+
+      expect(version.retired?).to be(true)
+      expect(version.active?).to be(false)
+    end
+
+    it "active/retired scopes partition versions by retired_at" do
+      active = create(:prompt_version, prompt: prompt, version: 1)
+      retired = create(:prompt_version, prompt: prompt, version: 2, retired_at: Time.current)
+
+      expect(described_class.active).to include(active)
+      expect(described_class.active).not_to include(retired)
+      expect(described_class.retired).to include(retired)
+      expect(described_class.retired).not_to include(active)
+    end
+  end
+
   describe "#render" do
     it "interpolates variables into the template" do
       version = build(:prompt_version, template: "Fix **{{title}}** (\#{{number}})\n\n{{body}}")
