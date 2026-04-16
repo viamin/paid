@@ -83,6 +83,29 @@ RSpec.describe Automation::Providers::Github::RepositoryProvider do
       expect(result.merged).to be true
       expect(result.merged_at).to eq(Time.utc(2026, 2, 1))
     end
+
+    # Regression guard: Hash-backed mocks with +mergeable: false+ must not
+    # silently become +mergeable: nil+. A naive +source[key] || source[key.to_s]+
+    # in +read_field+ would collapse the +false+ to +nil+ and lose the
+    # distinction between "not mergeable" and "mergeability unknown".
+    it "preserves literal false on hash-keyed fields" do
+      hash_pr = {
+        number: 42, title: "t", body: "b", state: "open",
+        draft: false, merged: false, mergeable: false,
+        created_at: nil, updated_at: nil, merged_at: nil,
+        html_url: nil,
+        head: { ref: "feature", sha: "abc" },
+        base: { ref: "main" },
+        user: { login: "alice" },
+        labels: []
+      }
+      allow(client).to receive(:pull_request).and_return(hash_pr)
+
+      result = adapter.fetch_pull_request(repo: "acme/widgets", number: 42)
+
+      expect(result.mergeable).to be false
+      expect(result.draft).to be false
+    end
   end
 
   describe "#list_pull_requests" do
@@ -193,6 +216,28 @@ RSpec.describe Automation::Providers::Github::RepositoryProvider do
       run = adapter.fetch_check_runs(repo: "acme/widgets", ref: "abc123").first
 
       expect(run.status).to eq(:queued)
+    end
+
+    # Defense against future GitHub conclusion values: an unknown conclusion
+    # must NOT collapse to nil, since Data::CheckRun documents nil as "check
+    # is still running". Mapping to :action_required keeps auto-merge
+    # conservative until the CHECK_CONCLUSION_MAP is updated.
+    it "maps unknown conclusions to :action_required and logs the gap" do
+      future_run = { name: "future-verdict", status: "completed",
+                     conclusion: "new_verdict", html_url: nil, details_url: nil }
+      allow(client).to receive(:check_runs_for_ref)
+        .with("acme/widgets", "abc123")
+        .and_return([ future_run ])
+      expect(Rails.logger).to receive(:warn).with(
+        hash_including(
+          message: "automation.github.unknown_check_conclusion",
+          raw_conclusion: "new_verdict"
+        )
+      )
+
+      run = adapter.fetch_check_runs(repo: "acme/widgets", ref: "abc123").first
+
+      expect(run).to have_attributes(status: :completed, conclusion: :action_required)
     end
   end
 

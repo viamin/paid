@@ -91,13 +91,21 @@ module Automation
         # Accept either a Sawyer::Resource (Octokit's default) or a plain Hash
         # with symbol/string keys so adapters stay usable in unit tests that
         # stub the client with hashes.
+        #
+        # For Hash sources, we branch on +key?+ rather than relying on
+        # +source[key] || source[key.to_s]+: the +||+ form would convert
+        # legitimate +false+ values to +nil+ (e.g. +{mergeable: false}+
+        # silently becoming +mergeable: nil+ in the normalized data), losing
+        # the distinction between "not mergeable" and "unknown".
         def read_field(source, key)
           return nil if source.nil?
 
           if source.respond_to?(key)
             source.public_send(key)
+          elsif source.respond_to?(:key?) && source.key?(key)
+            source[key]
           elsif source.respond_to?(:[])
-            source[key] || source[key.to_s]
+            source[key.to_s]
           end
         end
 

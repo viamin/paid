@@ -150,9 +150,32 @@ module Automation
             # over time (e.g. "waiting", "pending"); a :completed fallback
             # would let auto-merge / auto-review races slip through.
             status: CHECK_STATUS_MAP[raw_status] || :queued,
-            conclusion: raw_conclusion ? CHECK_CONCLUSION_MAP[raw_conclusion.to_s] : nil,
+            conclusion: normalize_conclusion(raw_conclusion),
             url: read_field(run, :html_url) || read_field(run, :details_url)
           )
+        end
+
+        # Map GitHub's +conclusion+ string to the normalized symbol.
+        #
+        # +nil+ is preserved because {Data::CheckRun#conclusion} documents it
+        # as "Nil while the check is still running". An unknown non-nil
+        # conclusion (e.g. a forward-compat value GitHub adds later) must NOT
+        # collapse to +nil+, since that would be indistinguishable from
+        # "still running" — instead we conservatively report
+        # +:action_required+ and log the gap so the mapping can be updated.
+        def normalize_conclusion(raw_conclusion)
+          return nil if raw_conclusion.nil?
+
+          key = raw_conclusion.to_s
+          mapped = CHECK_CONCLUSION_MAP[key]
+          return mapped if mapped
+
+          Rails.logger.warn(
+            message: "automation.github.unknown_check_conclusion",
+            component: "automation_provider",
+            raw_conclusion: key
+          )
+          :action_required
         end
 
         def build_comment(comment)
