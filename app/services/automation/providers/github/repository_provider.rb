@@ -162,9 +162,12 @@ module Automation
         end
 
         def build_merge_result(response)
-          merged = bool_field(response, :merged)
+          # GitHub's merge API returns +merged: true+ on 2xx and raises on
+          # non-2xx, so defaulting to +false+ when the field is missing
+          # prevents a malformed response (or a test mock that forgets the
+          # field) from being reported as a successful merge.
           Data::MergeResult.new(
-            merged: merged.nil? ? true : merged,
+            merged: response_field(response, :merged) == true,
             sha: response_field(response, :sha),
             message: response_field(response, :message)
           )
@@ -197,13 +200,6 @@ module Automation
 
         def response_field(response, key)
           read_field(response, key)
-        end
-
-        def bool_field(source, key)
-          value = read_field(source, key)
-          return value if value == true || value == false
-
-          nil
         end
 
         def read_field(source, key)

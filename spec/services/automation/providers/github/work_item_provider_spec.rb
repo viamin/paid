@@ -82,12 +82,30 @@ RSpec.describe Automation::Providers::Github::WorkItemProvider do
       expect(result.first.number).to eq(42)
     end
 
-    it "passes the first assignee to the client when provided" do
+    it "passes the single assignee to the client when provided" do
       expect(client).to receive(:issues)
         .with("acme/widgets", labels: nil, state: "open", assignee: "bob")
         .and_return([])
 
       adapter.list_issues(repo: "acme/widgets", assignees: [ "bob" ])
+    end
+
+    it "raises ProviderError when more than one assignee is supplied" do
+      expect(client).not_to receive(:issues)
+
+      expect {
+        adapter.list_issues(repo: "acme/widgets", assignees: [ "alice", "bob" ])
+      }.to raise_error(
+        Automation::Providers::WorkItemProvider::ProviderError, /single assignee/
+      )
+    end
+
+    it "ignores blank assignee entries before counting" do
+      expect(client).to receive(:issues)
+        .with("acme/widgets", labels: nil, state: "open", assignee: "bob")
+        .and_return([])
+
+      adapter.list_issues(repo: "acme/widgets", assignees: [ "", nil, "bob" ])
     end
   end
 

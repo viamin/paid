@@ -33,10 +33,22 @@ module Automation
           build_issue(issue)
         end
 
+        # GitHub's REST `/issues` endpoint only accepts a single +assignee+
+        # query parameter, so this adapter cannot silently combine multiple
+        # assignee logins into an intersection filter. Per the
+        # {Automation::Providers::WorkItemProvider} contract, callers
+        # passing more than one assignee get a {ProviderError} rather than a
+        # narrowed result set that would look like an intersection.
         def list_issues(repo:, state: :open, labels: nil, assignees: nil)
+          filter_logins = Array(assignees).compact.reject { |a| a.to_s.strip.empty? }
+          if filter_logins.length > 1
+            raise PROVIDER_ERROR,
+                  "GitHub Issues API supports a single assignee filter; got #{filter_logins.length}"
+          end
+
           options = {}
           options[:state] = state.to_s if state
-          options[:assignee] = Array(assignees).first if assignees.present?
+          options[:assignee] = filter_logins.first if filter_logins.any?
 
           issues = with_errors { client.issues(repo, labels: labels, **options) }
           Array(issues).map { |issue| build_issue(issue) }

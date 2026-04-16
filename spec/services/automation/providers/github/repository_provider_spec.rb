@@ -246,6 +246,17 @@ RSpec.describe Automation::Providers::Github::RepositoryProvider do
         adapter.merge_pull_request(repo: "acme/widgets", number: 42, method: :fast_forward)
       }.to raise_error(Automation::Providers::RepositoryProvider::ProviderError, /Unsupported/)
     end
+
+    it "defaults merged to false when the response omits the field" do
+      # Guard against a malformed response (or an incomplete test mock)
+      # reporting a successful merge by accident. Only a literal
+      # +merged: true+ should produce +merged: true+ in the result.
+      expect(client).to receive(:merge_pull_request).and_return(OpenStruct.new(sha: "abc"))
+
+      result = adapter.merge_pull_request(repo: "acme/widgets", number: 42, method: :squash)
+
+      expect(result.merged).to be false
+    end
   end
 
   describe "client resolution" do
