@@ -241,6 +241,18 @@ class GithubClient
     handle_errors { client.issue(repo, number) }
   end
 
+  # Updates an issue. Accepts the same keys the GitHub REST API does
+  # (+state+, +state_reason+, +title+, +body+, ...); policy code only
+  # uses it for lifecycle transitions today.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue number
+  # @param options [Hash] Attributes to update on the issue
+  # @return [Sawyer::Resource] The updated issue
+  def update_issue(repo, number, **options)
+    handle_errors { client.update_issue(repo, number, options) }
+  end
+
   # Lists labels for a repository.
   #
   # @param repo [String] Repository in "owner/name" format
@@ -318,7 +330,10 @@ class GithubClient
   #
   # @param repo [String] Repository in "owner/name" format
   # @param ref [String] Git ref (branch name, tag, or SHA)
-  # @return [Array<Hash>] Check runs with :name and :conclusion keys
+  # @return [Array<Hash>] Check runs with :name, :status, :conclusion,
+  #   :html_url, and :details_url keys. +:status+ reflects execution
+  #   progress ("queued", "in_progress", "completed") and is required
+  #   by callers that gate on whether a check has finished.
   def check_runs_for_ref(repo, ref)
     handle_errors do
       all_check_runs = []
@@ -346,7 +361,15 @@ class GithubClient
         )
       end
 
-      all_check_runs.map { |cr| { name: cr.name, conclusion: cr.conclusion } }
+      all_check_runs.map do |cr|
+        {
+          name: cr.name,
+          status: cr.status,
+          conclusion: cr.conclusion,
+          html_url: cr.html_url,
+          details_url: cr.details_url
+        }
+      end
     end
   end
 
@@ -560,6 +583,19 @@ class GithubClient
   # @return [Sawyer::Resource] The review request response
   def request_pull_request_review(repo, number, reviewers:)
     handle_errors { client.request_pull_request_review(repo, number, reviewers: reviewers) }
+  end
+
+  # Creates a pull request review.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @param event [String] One of "APPROVE", "REQUEST_CHANGES", "COMMENT"
+  # @param body [String] Review body (Markdown supported)
+  # @return [Sawyer::Resource] The created review
+  def create_pull_request_review(repo, number, event:, body: "")
+    handle_errors do
+      client.create_pull_request_review(repo, number, event: event, body: body.to_s)
+    end
   end
 
   # Dispatches a repository event for workflows triggered by repository_dispatch.
