@@ -114,6 +114,10 @@ Rails.application.routes.draw do
       controller: "projects/pre_commit_requirements"
     resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"
     post :detect_services, on: :member
+    resource :context_intake, only: [ :show, :create, :update ],
+      controller: "knowledge/context_intake" do
+      post :complete
+    end
     post :ensure_labels, on: :member
   end
 
