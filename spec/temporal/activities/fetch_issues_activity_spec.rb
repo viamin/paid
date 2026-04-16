@@ -1085,6 +1085,14 @@ RSpec.describe Activities::FetchIssuesActivity do
 
       context "when incremental fetch is truncated" do
         before do
+          # Shrink the page/size constants locally so we materialize a handful
+          # of issues instead of DEFAULT_MAX_PAGES * DEFAULT_PER_PAGE (1000+
+          # rows). This keeps the test exercising the truncation branch while
+          # avoiding the 25+ seconds needed to sync a thousand fake issues to
+          # Postgres.
+          stub_const("#{described_class}::DEFAULT_PER_PAGE", 2)
+          stub_const("#{described_class}::DEFAULT_MAX_PAGES", 2)
+
           allow(github_client).to receive(:issues) do |_repo, **opts|
             page = opts[:page] || 1
             if page <= described_class::DEFAULT_MAX_PAGES

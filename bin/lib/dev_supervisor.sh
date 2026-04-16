@@ -86,8 +86,17 @@ dev_supervisor_append_shell_context() {
 
   dev_supervisor_append_command "$file" "process self" \
     sh -c "ps -o pid=,ppid=,pgid=,sid=,tpgid=,tty=,stat=,etime=,command= -p $$ ${PPID:+-p $PPID} 2>&1"
-  dev_supervisor_append_command "$file" "process tree" \
-    sh -c "pstree -aps $$ 2>&1 || ps -ef 2>&1"
+  # pstree -aps loads the full process table in this container (~1.5s even
+  # with a pid argument), which dominates diagnostic runtime. In fast-mode
+  # (set by the bin/dev spec suite) skip straight to the cheaper ps -ef path
+  # so tests do not accumulate seconds per snapshot.
+  if [ "${DEV_SUPERVISOR_FAST_DIAGNOSTICS:-0}" = "1" ]; then
+    dev_supervisor_append_command "$file" "process tree" \
+      sh -c "ps -ef 2>&1"
+  else
+    dev_supervisor_append_command "$file" "process tree" \
+      sh -c "pstree -aps $$ 2>&1 || ps -ef 2>&1"
+  fi
   dev_supervisor_append_command "$file" "selected env" \
     sh -c "env | sort | grep -E '^(TERM|TMUX|OVERMIND_SOCKET|PATH|SHELL|STARTUP_CLEANUP_GRACE_PERIOD|SKIP_DEV_CLEANUP)=' 2>&1 || true"
   dev_supervisor_append_command "$file" "tty settings" \

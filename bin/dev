@@ -134,7 +134,7 @@ if [ -S "$OVERMIND_SOCKET" ]; then
     if ! dev_supervisor_run_overmind overmind quit >> "$(dev_supervisor_overmind_log)" 2>&1; then
       echo "Warning: overmind quit returned a non-zero exit status. Continuing recovery..."
     fi
-    sleep 1
+    sleep "${DEV_SUPERVISOR_QUIT_GRACE_SECONDS:-1}"
     if [ -S "$OVERMIND_SOCKET" ] && ! dev_supervisor_run_overmind overmind status &>/dev/null; then
       rm -f "$OVERMIND_SOCKET"
     fi

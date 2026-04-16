@@ -7,6 +7,11 @@ RSpec.describe Notifications::Resolve do
   let(:project) { create(:project, account: account) }
 
   before do
+    # Force creation before stubbing so unrelated broadcasts from
+    # after_create_commit callbacks (e.g. Project#start_github_polling) don't
+    # register as calls on the spy.
+    account
+    project
     allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
   end
 

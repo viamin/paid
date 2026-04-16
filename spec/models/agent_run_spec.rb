@@ -1341,7 +1341,7 @@ RSpec.describe AgentRun do
     it "prioritizes P1-labeled issues above manual runs" do
       project = create(:project)
       p1_issue = create(:issue, project: project, labels: [ "P1" ])
-      manual_run = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)
+      _manual_run = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)
       p1_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
         issue: p1_issue, created_at: 1.minute.ago)
 
@@ -1351,7 +1351,7 @@ RSpec.describe AgentRun do
     it "prioritizes P2-labeled issues above auto-continue runs" do
       project = create(:project)
       p2_issue = create(:issue, project: project, labels: [ "P2" ])
-      auto_continue = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+      _auto_continue = create(:agent_run, :queued, trigger_type: "automatic", project: project,
         source_pull_request_number: 42, created_at: 2.minutes.ago)
       p2_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
         issue: p2_issue, created_at: 1.minute.ago)
@@ -1363,7 +1363,7 @@ RSpec.describe AgentRun do
       project = create(:project)
       p3_issue = create(:issue, project: project, labels: [ "P3" ])
       plain_issue = create(:issue, project: project, labels: [])
-      auto_pick = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+      _auto_pick = create(:agent_run, :queued, trigger_type: "automatic", project: project,
         issue: plain_issue, created_at: 2.minutes.ago)
       p3_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
         issue: p3_issue, created_at: 1.minute.ago)
@@ -1374,7 +1374,7 @@ RSpec.describe AgentRun do
     it "respects custom priority label names from project settings" do
       project = create(:project, priority_labels: { "P1" => "critical", "P2" => "important" })
       critical_issue = create(:issue, project: project, labels: [ "critical" ])
-      manual_run = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)
+      _manual_run = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)
       critical_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
         issue: critical_issue, created_at: 1.minute.ago)
 
@@ -1383,9 +1383,9 @@ RSpec.describe AgentRun do
 
     it "resolves labels from PR issue via source_pull_request_number" do
       project = create(:project)
-      pr_issue = create(:issue, project: project, labels: [ "P1" ],
+      _pr_issue = create(:issue, project: project, labels: [ "P1" ],
         is_pull_request: true, github_number: 99)
-      plain_run = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)
+      _plain_run = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)
       pr_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
         issue: nil, custom_prompt: "Fix PR", source_pull_request_number: 99, created_at: 1.minute.ago)
 

@@ -131,6 +131,11 @@ RSpec.describe WorkflowState do
   end
 
   describe ".record_polling_status" do
+    # Prevent Project#after_create_commit :start_github_polling from creating a
+    # WorkflowState (via a real Temporal server reachable in dev) that would
+    # collide with the one built explicitly by this spec.
+    before { allow(ProjectWorkflowManager).to receive(:start_polling) }
+
     it "broadcasts when restart_reason changes on a running workflow" do
       project = create(:project)
       create(

@@ -80,7 +80,7 @@ RSpec.describe Knowledge::CollectorRunner do
 
     context "when run twice on the same commit (idempotency)" do
       it "produces identical artifact counts" do
-        result1 = described_class.call(project: project, commit_sha: commit_sha)
+        _result1 = described_class.call(project: project, commit_sha: commit_sha)
         result2 = described_class.call(project: project, commit_sha: commit_sha)
 
         expect(result2[:results].first[:status]).to eq("completed")

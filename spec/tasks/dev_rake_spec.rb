@@ -27,6 +27,12 @@ RSpec.describe "dev:cleanup" do
     allow(DevCleanup).to receive(:cleanup_stale_service_containers)
   end
 
+  # The dev:cleanup rake task prints progress lines to stdout ("Resolved N
+  # stale agent run(s)", etc.) and warnings to stderr ("WARNING: Invalid
+  # STARTUP_CLEANUP_GRACE_PERIOD=..."). Swallow both so rspec output stays
+  # signal.
+  around { |example| SilenceStreams.call(:stdout, :stderr) { example.run } }
+
   it "times out runs stuck in running" do
     running_run = create(:agent_run, :running)
 
