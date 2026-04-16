@@ -74,13 +74,15 @@ RSpec.describe Issues::ParseDependencies do
       expect(issue.dependencies).to be_empty
     end
 
-    it "ignores references to pull requests" do
-      create(:issue, :pull_request, project: project, github_number: 9007)
+    it "records a local dep when a bare #N refers to a PR in the same project" do
+      pr = create(:issue, :pull_request, project: project, github_number: 9007)
       issue = create(:issue, project: project, body: "Depends on #9007")
 
       described_class.call(issue: issue)
 
-      expect(issue.dependencies).to be_empty
+      # The dep points at the PR row. ready_for_work evaluates the PR's
+      # github_state, so an open PR blocks while a closed/merged PR does not.
+      expect(issue.dependencies).to contain_exactly(pr)
     end
 
     it "does nothing when body is blank and no existing dependencies" do
@@ -311,6 +313,40 @@ RSpec.describe Issues::ParseDependencies do
         described_class.call(issue: local_issue)
 
         expect(local_issue.dependencies.reload).to be_empty
+      end
+
+      it "resolves fully-qualified self-references to PRs as local deps" do
+        # Regression: "Depends on owner/repo#N" where owner/repo matches the
+        # project's own repo and #N is a PR was falling through to the
+        # external-dep branch, which blocks unconditionally regardless of
+        # the PR's state.
+        pr = create(:issue, :pull_request, project: project, github_number: 9099, github_state: "closed")
+        issue = create(:issue, project: project,
+                       body: "## Depends on\n#{project.owner}/#{project.repo}#9099")
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to contain_exactly(pr)
+        expect(issue.issue_dependencies.where.not(depends_on_owner: nil)).to be_empty
+      end
+
+      it "cleans up a stale external dep when re-parsed after the target PR is synced" do
+        # Simulates the fleet of existing rows created before this fix:
+        # the external dep record exists but the target is actually a local PR.
+        pr = create(:issue, :pull_request, project: project, github_number: 9099)
+        issue = create(:issue, project: project,
+                       body: "## Depends on\n#{project.owner}/#{project.repo}#9099")
+        issue.issue_dependencies.create!(
+          depends_on_owner: project.owner.downcase,
+          depends_on_repo: project.repo.downcase,
+          depends_on_number: 9099
+        )
+
+        described_class.call(issue: issue)
+
+        # External record gone, replaced by a local dep pointing at the PR row.
+        expect(issue.issue_dependencies.where.not(depends_on_owner: nil)).to be_empty
+        expect(issue.dependencies.reload).to contain_exactly(pr)
       end
     end
   end

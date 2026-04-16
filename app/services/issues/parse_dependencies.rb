@@ -188,8 +188,12 @@ module Issues
       new_local_ids = Set.new
       return new_local_ids if referenced_numbers.empty?
 
+      # Include pull requests so "Depends on #N" resolves when #N is a PR
+      # in the same project. Blocking on an open PR is what the user
+      # declared; blocking on a closed/merged PR is a satisfied dep and
+      # ready_for_work will correctly not treat it as blocking.
       project_issues = issue.project.issues
-        .where(github_number: referenced_numbers, is_pull_request: false)
+        .where(github_number: referenced_numbers)
         .index_by(&:github_number)
 
       adj = adjacency || IssueDependency.account_adjacency(issue.project.account)
@@ -284,9 +288,14 @@ module Issues
         refs_by_project_id[project.id] << number if project
       end
 
+      # Include pull requests so a fully-qualified self-reference like
+      # "Depends on owner/repo#N" resolves to the local row when #N is a PR
+      # rather than falling through to the external-dep branch (which
+      # would block unconditionally). ready_for_work evaluates the target's
+      # github_state, so closed/merged PRs correctly do not block.
       result = {}
       refs_by_project_id.each do |project_id, numbers|
-        issues = Issue.where(project_id: project_id, github_number: numbers.to_a, is_pull_request: false)
+        issues = Issue.where(project_id: project_id, github_number: numbers.to_a)
         result[project_id] = issues.index_by(&:github_number)
       end
       result
