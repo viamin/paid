@@ -32,9 +32,12 @@ module Activities
   #     entry is the bot that actually received the request; earlier
   #     entries are the ones that 422'd on the way there. When the chain
   #     was exhausted entirely by 422s, the list is every non-primary bot
-  #     that was tried. Callers that need to distinguish "failed fallback
-  #     attempts" from "the fallback that actually ran" should cross-
-  #     reference :bot_errors (keyed by bot login, only contains 422s).
+  #     that was tried. When a fallback terminated without a post (an
+  #     outstanding request already existed, or the trigger was skipped by
+  #     a transient error), the last entry is that terminal bot. Callers
+  #     that need to distinguish "failed fallback attempts" from "the
+  #     fallback that actually ran" should cross-reference :bot_errors
+  #     (keyed by bot login, only contains 422s) and :requested.
   #   - :bot_errors — per-bot 422 messages collected while walking the
   #     chain.
   class RequestReviewActivity < BaseActivity
@@ -170,11 +173,14 @@ module Activities
 
       bot_chain.each_with_index do |bot, index|
         status, error_message = attempt_bot_reviewer(client, project, pr_number, bot)
+        # Track every non-primary attempt up-front so the docstring contract
+        # holds across all terminal statuses (posted, already_requested,
+        # transient_skip, and full-chain exhaustion by 422s).
+        result[:fallback_bots] << bot if index.positive?
         case status
         when :posted
           result[:requested] << bot
           result[:fallback_used] = index.positive?
-          result[:fallback_bots] = bot_chain[1..index] if index.positive?
           break
         when :already_requested, :transient_skip
           break
