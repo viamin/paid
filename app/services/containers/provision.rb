@@ -77,6 +77,7 @@ module Containers
       :container, :mutex, :output_received_ref, :last_activity_ref,
       :exec_completed_ref, :timeout_reason_setter,
       :startup_timeout, :idle_timeout, :wall_clock_timeout, :started_at_ref,
+      :heartbeat_path,
       keyword_init: true
     )
 
@@ -84,7 +85,7 @@ module Containers
     # and check_deadline_exceeded! to keep their parameter lists under 4.
     TimeoutCheckState = Struct.new(
       :mutex, :timeout_reason_ref, :startup_timeout, :idle_timeout,
-      :timeout, :started_at,
+      :timeout, :started_at, :heartbeat_path,
       keyword_init: true
     )
 
@@ -193,17 +194,23 @@ module Containers
     #   stops flowing for longer than this duration.
     # @param stream [Boolean] Whether to stream output to agent logs
     # @param env [Hash] Environment variables for the exec invocation
+    # @param heartbeat_path [String, nil] Optional host-visible path to a
+    #   heartbeat file. When provided, the watchdog treats a recent mtime on
+    #   this file as activity equivalent to stdout output. Agents that wait
+    #   for LLM responses without producing output can touch this file (e.g.
+    #   via Claude Code +PostToolUse+ or Codex +notify+ hooks) to signal
+    #   "still working" and avoid startup/idle timeouts.
     # @return [Result] Result with stdout, stderr, and exit_code
     # @raise [StartupTimeoutError] when no output is received within +startup_timeout+ seconds
     # @raise [IdleTimeoutError] when output stops for more than +idle_timeout+ seconds
     # @raise [TimeoutError] when total wall-clock +timeout+ is exceeded
-    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil)
+    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil)
       raise ProvisionError, "Container not provisioned" unless container
 
-      with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:, preparation:) }
+      with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:, preparation:, heartbeat_path:) }
     end
 
-    private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil)
+    private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil)
       timeout ||= options[:timeout_seconds]
       cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
       exec_options = { wait: timeout }
@@ -238,7 +245,8 @@ module Containers
         startup_timeout: startup_timeout,
         idle_timeout: idle_timeout,
         timeout: timeout,
-        started_at: started_at
+        started_at: started_at,
+        heartbeat_path: heartbeat_path
       )
 
       watchdog_ctx = WatchdogContext.new(
@@ -251,7 +259,8 @@ module Containers
         startup_timeout: startup_timeout,
         idle_timeout: idle_timeout,
         wall_clock_timeout: timeout,
-        started_at_ref: -> { started_at }
+        started_at_ref: -> { started_at },
+        heartbeat_path: heartbeat_path
       )
 
       begin
@@ -1482,9 +1491,19 @@ module Containers
       tc = timeout_check
       return unless tc.startup_timeout || tc.idle_timeout || tc.timeout
 
+      heartbeat_age = heartbeat_age_seconds(tc.heartbeat_path)
+
       elapsed_since_activity, elapsed_since_start = tc.mutex.synchronize do
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         [ now - last_activity_at, now - tc.started_at ]
+      end
+
+      # Fold in heartbeat activity using the same rules as the watchdog:
+      # a file touched during the current exec counts as output, and the
+      # startup/idle elapsed window shrinks to the heartbeat's age.
+      if heartbeat_age && heartbeat_age <= elapsed_since_start
+        output_received = true
+        elapsed_since_activity = heartbeat_age if heartbeat_age < elapsed_since_activity
       end
 
       # Check startup/idle before wall-clock to match the watchdog's precedence —
@@ -1519,6 +1538,11 @@ module Containers
         loop do
           sleep watchdog_poll_interval
 
+          # Read heartbeat mtime outside the mutex to avoid holding the lock
+          # across slow filesystem operations. The value is a wall-clock age
+          # in seconds, comparable with elapsed durations inside the mutex.
+          heartbeat_age = heartbeat_age_seconds(ctx.heartbeat_path)
+
           should_fire = ctx.mutex.synchronize do
             if ctx.exec_completed_ref.call
               false
@@ -1526,10 +1550,20 @@ module Containers
               now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
               elapsed = now - ctx.last_activity_ref.call
               total_elapsed = now - ctx.started_at_ref.call
+              output_received = ctx.output_received_ref.call
 
-              reason = if !ctx.output_received_ref.call && ctx.startup_timeout && elapsed >= ctx.startup_timeout
+              # A heartbeat file touched during the current exec counts as
+              # activity equivalent to stdout output, so a working-but-silent
+              # agent does not trip startup/idle timeouts. Wall-clock is still
+              # enforced regardless of heartbeats.
+              if heartbeat_age && heartbeat_age <= total_elapsed
+                output_received = true
+                elapsed = heartbeat_age if heartbeat_age < elapsed
+              end
+
+              reason = if !output_received && ctx.startup_timeout && elapsed >= ctx.startup_timeout
                 :startup
-              elsif ctx.output_received_ref.call && ctx.idle_timeout && elapsed >= ctx.idle_timeout
+              elsif output_received && ctx.idle_timeout && elapsed >= ctx.idle_timeout
                 :idle
               elsif ctx.wall_clock_timeout && total_elapsed >= ctx.wall_clock_timeout
                 :wall_clock
@@ -1566,6 +1600,19 @@ module Containers
     # Extracted as a method so tests can override with a shorter interval.
     def watchdog_poll_interval
       1
+    end
+
+    # Returns the wall-clock age in seconds of the heartbeat file at
+    # +heartbeat_path+, or +nil+ when no path is configured or the file is
+    # unreadable. Callers compare this against elapsed durations from the
+    # monotonic clock; the two are close enough over a watchdog window that
+    # any NTP-induced drift is negligible.
+    def heartbeat_age_seconds(heartbeat_path)
+      return nil if heartbeat_path.blank?
+
+      Time.now - File.mtime(heartbeat_path)
+    rescue Errno::ENOENT, Errno::EACCES, Errno::ENOTDIR
+      nil
     end
 
     # Stops the watchdog thread and waits for it to exit cleanly.
