@@ -38,7 +38,7 @@ module Activities
     private
 
     def claude_review_action?(project)
-      project.review_method_config("ci_action").to_h["action_name"].to_s.strip == ACTION_NAME
+      project.review_method(:ci_action).action_name.to_s.strip == ACTION_NAME
     end
   end
 end

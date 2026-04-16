@@ -474,6 +474,7 @@ class Project < ApplicationRecord
 
   def review_settings=(value)
     @effective_review_settings = nil
+    @automation_configuration = nil
     super
   end
 
@@ -487,24 +488,50 @@ class Project < ApplicationRecord
     @effective_review_settings = DEFAULT_REVIEW_SETTINGS.deep_merge(rs)
   end
 
+  # Returns the {Automation::Configuration::Project} value object describing
+  # this project's normalized automation/review configuration. Strategy
+  # code and activities should read through this rather than calling the
+  # individual +review_*+ / +auto_*+ helpers so new providers and toggles
+  # can be added in one place. Memoized per-instance; invalidated by
+  # {#review_settings=} and by {#reload_automation_configuration}.
+  def automation_configuration
+    @automation_configuration ||= Automation::Configuration::Project.from(self)
+  end
+
+  # Forces a rebuild of the memoized {#automation_configuration}. Used by
+  # callers that mutate +auto_*+ columns (e.g. toggle actions) without
+  # going through {#review_settings=}.
+  def reload_automation_configuration
+    @automation_configuration = nil
+    automation_configuration
+  end
+
   def review_enabled?
-    effective_review_settings["enabled"] == true
+    automation_configuration.auto_review.enabled?
   end
 
   def wait_for_reviews?
-    effective_review_settings["wait_for_reviews"] != false
+    automation_configuration.auto_review.wait_for_reviews?
   end
 
   def address_all_bot_reviews?
-    effective_review_settings["address_all_bot_reviews"] == true
+    automation_configuration.auto_review.address_all_bot_reviews?
   end
 
   def review_method_enabled?(method)
-    effective_review_settings.dig("methods", method.to_s, "enabled") == true
+    automation_configuration.auto_review.method_enabled?(method)
   end
 
   def enabled_review_methods
-    REVIEW_METHODS.select { |m| review_method_enabled?(m) }
+    automation_configuration.auto_review.ordered_enabled_methods.map { |m| m.name.to_s }
+  end
+
+  # Returns the {Automation::Configuration::ReviewMethod} value object for
+  # +method+, or nil when the name is not a known review method. Prefer
+  # this over {#review_method_config} when you need typed accessors
+  # (termination limits, action_name, reviewer_login).
+  def review_method(method)
+    automation_configuration.auto_review.method_for(method)
   end
 
   # Returns the set of bot GitHub logins (downcased) for all enabled review
@@ -531,11 +558,7 @@ class Project < ApplicationRecord
   # fallback (driven by AgentExecutionWorkflow after every agent run)
   # would request bot reviews on projects that have opted out of review.
   def review_bot_request_login
-    return nil unless review_enabled?
-    return Activities::RequestReviewActivity::COPILOT_LOGIN if review_method_enabled?("copilot")
-    return Activities::RequestReviewActivity::CODEX_LOGIN if review_method_enabled?("codex")
-
-    nil
+    automation_configuration.auto_review.bot_request_login
   end
 
   private
