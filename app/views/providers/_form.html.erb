@@ -250,6 +250,14 @@
     </div>
   </div>
 
+  <div>
+    <%= form.label :agent_co_author_trailer, "Co-Authored-By Trailer", class: "block text-sm font-medium text-gray-900" %>
+    <div class="mt-2">
+      <%= form.text_field :agent_co_author_trailer, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: "Co-Authored-By: Claude <noreply@anthropic.com>" %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">When set, this trailer is appended to all commits made during agent runs that use this provider. The trailer follows the provider that actually generated the commit, so attribution remains accurate after fallback. Must be a single line; newlines are not allowed.</p>
+  </div>
+
   <div class="flex justify-end gap-3 border-t border-gray-200 pt-4">
     <%= link_to "Cancel", providers_path, class: "text-sm font-semibold text-gray-700 hover:text-gray-900" %>
     <%= form.submit disabled: !selectable_provider,

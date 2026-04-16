@@ -457,6 +457,16 @@ RSpec.describe "Providers" do
       expect(provider.reload.enabled_for_agent_runs).to be(false)
     end
 
+    it "persists the agent_co_author_trailer on update" do
+      provider = user.providers.create!(provider_key: "cursor")
+      trailer = "Co-Authored-By: Cursor <noreply@cursor.sh>"
+
+      patch provider_path(provider), params: { provider: { agent_co_author_trailer: trailer } }
+
+      expect(response).to redirect_to(providers_path)
+      expect(provider.reload.agent_co_author_trailer).to eq(trailer)
+    end
+
     it "persists tier_model_ids on update" do
       provider = user.providers.create!(provider_key: "cursor")
       create(:llm_model, model_id: "haiku-x", provider: "anthropic", tier: "low")

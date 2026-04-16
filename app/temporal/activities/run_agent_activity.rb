@@ -537,6 +537,15 @@ module Activities
         raise ProviderExecutionError, "Unsupported provider: #{provider}"
       end
 
+      # Refresh the co-author trailer file before the agent runs so any
+      # intermediate commits it creates via the commit-msg hook carry the
+      # trailer for the provider actually producing them. Without this,
+      # rate-limit fallback would leave the hook bound to the initial
+      # provider's trailer for every subsequent commit in the run.
+      if agent_run.repo_cloned?
+        refresh_co_author_trailer(container_service, agent_run, provider_candidate, user_settings.user)
+      end
+
       prompt = augment_prompt_for_goal(agent_run, prompt)
       command_context = CommandContext.new(
         provider_candidate: provider_candidate,
@@ -1661,6 +1670,29 @@ module Activities
         )
       end
       repo
+    end
+
+    # Writes the given provider candidate's co-author trailer into the
+    # container so the commit-msg hook uses it for subsequent intermediate
+    # commits. When no provider record can be resolved from the candidate
+    # (e.g. non-routing-key agent_type), the file is cleared so the hook
+    # falls back to a no-op rather than silently using a stale trailer.
+    def refresh_co_author_trailer(container_service, agent_run, provider_candidate, user)
+      provider_record = resolve_provider_record_for_candidate(provider_candidate, user)
+      Containers::GitOperations
+        .new(container_service: container_service, agent_run: agent_run)
+        .write_co_author_trailer(provider_record)
+    end
+
+    def resolve_provider_record_for_candidate(provider_candidate, user)
+      provider_entry = provider_entry_for(provider_candidate, user)
+      return provider_entry if provider_entry
+      return nil unless user
+      return nil if provider_candidate.blank?
+
+      identifier = provider_candidate.to_s
+      Provider.for_identifier(user, identifier) ||
+        Provider.for_identifier(user, ProviderSupport.provider_key_for_agent_type(identifier))
     end
 
     def reconnect_container(agent_run)

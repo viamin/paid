@@ -29,6 +29,7 @@ RSpec.describe Activities::RunAgentActivity do
     allow(Containers::GitOperations).to receive(:new)
       .with(container_service: container_service, agent_run: agent_run)
       .and_return(git_ops)
+    allow(git_ops).to receive(:write_co_author_trailer)
   end
 
   describe "#with_periodic_heartbeat" do
@@ -1406,6 +1407,54 @@ RSpec.describe Activities::RunAgentActivity do
         activity.execute(agent_run_id: agent_run.id)
 
         expect(agent_run.reload.provider_switches).to eq(1)
+      end
+
+      # Regression test for the hook-staleness-on-fallback bug
+      # (#1163 comment thread): the commit-msg hook is seeded at clone time
+      # with the initial provider's trailer. If the agent's first provider
+      # hits a rate limit and falls back, intermediate commits made by the
+      # fallback provider's agent must carry the *fallback* provider's
+      # trailer — not the initial one. Refreshing the trailer file on each
+      # provider attempt is how that guarantee is kept.
+      it "refreshes the co-author trailer file for each provider attempt so fallback commits get the new trailer" do
+        claude = user.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+        cursor = user.providers.find_by!(provider_key: "cursor")
+        claude.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+        cursor.update!(agent_co_author_trailer: "Co-Authored-By: Cursor <ai@cursor.com>")
+
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          call_count += 1
+          if call_count == 1
+            rate_limit_failure
+          else
+            exec_success
+          end
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        # Two provider attempts → two trailer refreshes, in order.
+        expect(git_ops).to have_received(:write_co_author_trailer).with(claude).ordered
+        expect(git_ops).to have_received(:write_co_author_trailer).with(cursor).ordered
+      end
+
+      it "does not refresh the co-author trailer file when the run has no git repo" do
+        create_issue_run = create(:agent_run, :create_issue_goal, :with_git_context,
+          project: project, issue: issue, container_id: "abc123")
+        allow(AgentRun).to receive(:find).with(create_issue_run.id).and_return(create_issue_run)
+        allow(Containers::Provision).to receive(:reconnect)
+          .with(agent_run: create_issue_run, container_id: "abc123")
+          .and_return(container_service)
+        allow(Containers::GitOperations).to receive(:new)
+          .with(container_service: container_service, agent_run: create_issue_run)
+          .and_return(git_ops)
+
+        allow(container_service).to receive(:execute).and_return(exec_success)
+
+        activity.execute(agent_run_id: create_issue_run.id)
+
+        expect(git_ops).not_to have_received(:write_co_author_trailer)
       end
 
       it "does not continue to the next provider when the first provider times out" do

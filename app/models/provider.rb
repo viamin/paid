@@ -49,6 +49,8 @@ class Provider < ApplicationRecord
   scope :api_key, -> { where(auth_type: "api_key") }
   scope :rate_limit_fallback, -> { where(fallback_role: "rate_limit_fallback") }
 
+  before_validation :normalize_agent_co_author_trailer
+
   validates :provider_key, presence: true, length: { maximum: 50 }
   validates :provider_key, inclusion: { in: ->(_) { supported_provider_keys }, message: "is not supported" },
     allow_blank: true, if: -> { new_record? || will_save_change_to_provider_key? }
@@ -70,6 +72,7 @@ class Provider < ApplicationRecord
   validate :opencode_api_key_config_must_be_valid
   validate :kilocode_api_key_config_must_be_valid
   validate :tier_model_ids_must_be_valid
+  validate :agent_co_author_trailer_is_single_line
 
   before_destroy :prevent_destroying_last_agent_run_provider
   before_destroy :prevent_destroying_default_provider
@@ -341,6 +344,18 @@ class Provider < ApplicationRecord
   end
 
   private
+
+  def normalize_agent_co_author_trailer
+    stripped = agent_co_author_trailer.to_s.strip
+    self.agent_co_author_trailer = stripped.present? ? stripped : nil
+  end
+
+  def agent_co_author_trailer_is_single_line
+    return if agent_co_author_trailer.blank?
+    return unless agent_co_author_trailer.match?(/[\r\n]/)
+
+    errors.add(:agent_co_author_trailer, "must be a single line (no newlines)")
+  end
 
   def must_keep_at_least_one_agent_run_provider
     return unless user

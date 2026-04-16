@@ -863,6 +863,15 @@ class AgentRun < ApplicationRecord
     owner.providers.find_by(id: provider_id) if provider_id
   end
 
+  # Returns the Provider record that reflects which provider actually ran the
+  # agent. Prefers the final provider (post-fallback) when resolvable, falling
+  # back to the initially-assigned provider. Handles both routing-key and
+  # provider-key forms of final_provider via Provider.for_identifier. Returns
+  # nil if neither can be resolved.
+  def effective_provider_record
+    Provider.for_identifier(project&.effective_owner, final_provider) || provider
+  end
+
   def attempted_providers_by_routing_key
     owner = project&.effective_owner
     return {} unless owner
