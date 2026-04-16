@@ -4,8 +4,8 @@
 # Stored as JSONB so dimension weights and reference values can be tuned
 # without schema changes; defaults to {} so existing projects fall back
 # to PromptEvolution::FitnessFunction defaults.
-class AddFitnessWeightsToProjects < ActiveRecord::Migration[8.1]
+class AddFitnessSettingsToProjects < ActiveRecord::Migration[8.1]
   def change
-    add_column :projects, :fitness_weights, :jsonb, default: {}, null: false
+    add_column :projects, :fitness_settings, :jsonb, default: {}, null: false
   end
 end

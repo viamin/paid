@@ -200,8 +200,8 @@ RSpec.describe PromptEvolution::FitnessFunction do
     let(:account) { create(:account) }
     let(:project) { create(:project, account: account) }
 
-    it "reads weights from project.fitness_weights when no override is given" do
-      project.update!(fitness_weights: { "weights" => { "quality" => 0.8, "cost" => 0.1, "speed" => 0.1 } })
+    it "reads weights from project.fitness_settings when no override is given" do
+      project.update!(fitness_settings: { "weights" => { "quality" => 0.8, "cost" => 0.1, "speed" => 0.1 } })
 
       result = described_class.call(samples: [ sample ], project: project)
 
@@ -211,7 +211,7 @@ RSpec.describe PromptEvolution::FitnessFunction do
     end
 
     it "lets explicit weights override project settings" do
-      project.update!(fitness_weights: { "weights" => { "quality" => 0.8, "cost" => 0.1, "speed" => 0.1 } })
+      project.update!(fitness_settings: { "weights" => { "quality" => 0.8, "cost" => 0.1, "speed" => 0.1 } })
 
       result = described_class.call(
         samples: [ sample ],
@@ -223,7 +223,7 @@ RSpec.describe PromptEvolution::FitnessFunction do
     end
 
     it "reads reference_cost_cents and reference_duration_seconds from project" do
-      project.update!(fitness_weights: {
+      project.update!(fitness_settings: {
         "reference_cost_cents" => 200,
         "reference_duration_seconds" => 1200
       })
@@ -242,7 +242,7 @@ RSpec.describe PromptEvolution::FitnessFunction do
     end
 
     it "ignores non-positive reference values from project settings" do
-      project.update!(fitness_weights: {
+      project.update!(fitness_settings: {
         "reference_cost_cents" => 0,
         "reference_duration_seconds" => -10
       })

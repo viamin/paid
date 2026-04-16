@@ -166,9 +166,9 @@ module PromptEvolution
     end
 
     def project_setting(key)
-      return nil unless @project.respond_to?(:fitness_weights)
+      return nil unless @project.respond_to?(:fitness_settings)
 
-      settings = @project.fitness_weights
+      settings = @project.fitness_settings
       return nil unless settings.is_a?(Hash)
 
       settings[key] || settings[key.to_sym]
