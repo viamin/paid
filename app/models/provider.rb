@@ -115,7 +115,7 @@ class Provider < ApplicationRecord
   def effective_complexity_thresholds
     stored = complexity_thresholds.is_a?(Hash) ? complexity_thresholds : {}
     DEFAULT_COMPLEXITY_THRESHOLDS.merge(stored.slice(*COMPLEXITY_THRESHOLD_KEYS))
-      .transform_values { |v| Integer(v) rescue v }
+      .transform_values { |v| Integer(v, exception: false) || v }
   end
 
   def routing_key

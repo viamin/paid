@@ -109,6 +109,51 @@ RSpec.describe Prompt, type: :model do
       expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
         .to include('Case B: body starts with EXACTLY "Generated no new comments." and "comments" is []')
     end
+
+    # Regression for #839: review JSON posted with inline `-d '...'` breaks
+    # when the body contains multiline markdown or apostrophes, producing an
+    # invalid JSON payload that Rails rejects before the request reaches
+    # GitHub. Reviews must be submitted via a temp file + `--data-binary @file`.
+    describe "review payload submission pattern (issue #839)" do
+      let(:seed_template) do
+        described_class.global.find_by(slug: "goal.review_pull_request").current_version.template
+      end
+      let(:fallback_template) { Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT }
+
+      # Match any curl invocation whose target URL is the /pulls/<n>/reviews
+      # endpoint, regardless of what flags come between `curl` and the URL.
+      # This catches new shapes (e.g. `curl -sS -X POST`) that a future edit
+      # might introduce.
+      let(:inline_review_curl_pattern) do
+        /curl[^\n]*\/pulls\/[^\n]*\/reviews[^\n]*(?:\\\n[^\n]*)*-d\s+'/m
+      end
+
+      it "seeded template posts the review via a temp file and --data-binary" do
+        expect(seed_template).to include('--data-binary @"$tmpfile"')
+        expect(seed_template).to include("tmpfile=$(mktemp)")
+      end
+
+      it "FALLBACK_REVIEW_GOAL_PROMPT posts the review via a temp file and --data-binary" do
+        expect(fallback_template).to include('--data-binary @"$tmpfile"')
+        expect(fallback_template).to include("tmpfile=$(mktemp)")
+      end
+
+      it "seeded template does not model inline `-d '{...}'` for the reviews endpoint" do
+        expect(seed_template).not_to match(inline_review_curl_pattern)
+      end
+
+      it "FALLBACK_REVIEW_GOAL_PROMPT does not model inline `-d '{...}'` for the reviews endpoint" do
+        expect(fallback_template).not_to match(inline_review_curl_pattern)
+      end
+
+      it "seeded template warns against inline JSON payloads" do
+        expect(seed_template).to match(/Do NOT pass .*inline/i)
+      end
+
+      it "FALLBACK_REVIEW_GOAL_PROMPT warns against inline JSON payloads" do
+        expect(fallback_template).to match(/Do NOT pass .*inline/i)
+      end
+    end
   end
 
   describe "coding.pr_review_rebase already-addressed marker" do

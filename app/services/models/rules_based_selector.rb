@@ -72,9 +72,16 @@ module Models
       scope.by_tier(tier).order(ordering).limit(5)
     end
 
+    # Capability floor preserves the pre-tier behavior for any DB whose models
+    # have not been backfilled with `tier`. Without it, currently-complex tasks
+    # could pick up low-capability models that the previous logic filtered out.
     def fallback_candidates(scope, complexity)
       if complexity < 4.0
-        scope.order(cost_asc_ordering).limit(5).to_a
+        scope.where("capability_score >= 5 OR capability_score IS NULL")
+          .order(cost_asc_ordering).limit(5).to_a
+      elsif complexity >= 7.0
+        scope.where("capability_score >= 8 OR capability_score IS NULL")
+          .order(capability_desc_ordering).limit(5).to_a
       else
         scope.order(capability_desc_ordering).limit(5).to_a
       end

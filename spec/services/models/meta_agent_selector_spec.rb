@@ -33,11 +33,17 @@ RSpec.describe Models::MetaAgentSelector do
       expect(result[:complexity_score]).to eq(7.5)
     end
 
-    it "records a tier derived from the meta-agent's complexity score" do
+    it "records the tier the candidate pool was drawn from (not the LLM's reported complexity)" do
       result = described_class.call(agent_run: agent_run)
 
-      # complexity_score 7.5 with default thresholds (mid_max=7) => "high"
-      expect(result[:tier]).to eq("high")
+      # Default factory issue body is short, so the rules-based estimator
+      # returns complexity ~4.0 which maps to "mid" with default thresholds
+      # (low_max=3, mid_max=7). The LLM's reported complexity_score (7.5) is
+      # recorded separately but does NOT change the tier — keeping the tier
+      # in sync with the candidate pool the LLM was actually given to choose
+      # from is essential for consistent model_selection.tier analytics.
+      expect(result[:tier]).to eq("mid")
+      expect(result[:complexity_score]).to eq(7.5)
     end
 
     context "when candidates are tier-filtered" do

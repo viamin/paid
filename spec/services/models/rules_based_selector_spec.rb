@@ -121,6 +121,10 @@ RSpec.describe Models::RulesBasedSelector do
       end
 
       it "falls back to the broader pool when the tier has no active models" do
+        # The fallback path keeps the legacy capability floor (>= 8 for complex
+        # tasks) so we provide an untiered high-capability model that survives
+        # the floor when high-tier candidates are exhausted.
+        untiered_high = create(:llm_model, model_id: "untiered-high", capability_score: 9.0)
         high_model.update!(active: false)
         agent_run.issue.update!(body: "A" * 5000)
         agent_run.update!(source_pull_request_number: 99)
@@ -129,7 +133,7 @@ RSpec.describe Models::RulesBasedSelector do
 
         expect(result).to be_present
         expect(result[:tier]).to eq("high")
-        expect(result[:model]).not_to eq(high_model)
+        expect(result[:model]).to eq(untiered_high)
       end
     end
   end

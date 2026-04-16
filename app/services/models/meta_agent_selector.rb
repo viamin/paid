@@ -27,13 +27,14 @@ module Models
       selected = candidates.find { |m| m.model_id == response[:model_id] }
       return nil unless selected
 
-      final_complexity = response[:complexity_score] || initial_complexity
-      final_tier = TierForComplexity.call(complexity: final_complexity, agent_run: agent_run) || initial_tier
-
       {
         model: selected,
         selector_type: "meta_agent",
-        tier: final_tier,
+        # Record the tier the candidate pool was drawn from so analytics on
+        # `model_selection.tier` stay consistent with the model that was
+        # actually selectable. The LLM's complexity_score is preserved
+        # separately on the selection record.
+        tier: initial_tier,
         reasoning: response[:reasoning],
         candidates: candidates.map { |m| { model_id: m.model_id, score: m.capability_score.to_f } },
         complexity_score: response[:complexity_score]
@@ -59,10 +60,10 @@ module Models
       scope = scope.where.not(model_id: excluded) if excluded.present?
 
       if tier
-        tier_scope = scope.by_tier(tier)
+        tier_candidates = scope.by_tier(tier).order(Arel.sql("capability_score DESC NULLS LAST")).to_a
         # Fall back to the full pool when the tier is empty so the meta-agent
         # still has something to choose from (e.g. before tiers are seeded).
-        return tier_scope.order(Arel.sql("capability_score DESC NULLS LAST")).to_a if tier_scope.exists?
+        return tier_candidates if tier_candidates.any?
       end
 
       scope.order(Arel.sql("capability_score DESC NULLS LAST")).to_a
