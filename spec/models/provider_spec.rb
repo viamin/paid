@@ -21,6 +21,48 @@ RSpec.describe Provider do
       expect(provider).not_to allow_value("unknown_provider").for(:provider_key)
     end
 
+    describe "complexity_thresholds" do
+      let(:provider) { build(:provider, provider_key: "cursor") }
+
+      it "is valid with the default thresholds" do
+        expect(provider).to be_valid
+      end
+
+      it "accepts custom integer thresholds" do
+        provider.complexity_thresholds = { "low_max" => 2, "mid_max" => 8 }
+        expect(provider).to be_valid
+      end
+
+      it "rejects unknown threshold keys" do
+        provider.complexity_thresholds = { "ultra_max" => 5 }
+        expect(provider).not_to be_valid
+        expect(provider.errors[:complexity_thresholds].join).to include("unknown key")
+      end
+
+      it "rejects non-integer values" do
+        provider.complexity_thresholds = { "low_max" => "nope", "mid_max" => 7 }
+        expect(provider).not_to be_valid
+        expect(provider.errors[:complexity_thresholds].join).to include("integer")
+      end
+
+      it "rejects out-of-range values" do
+        provider.complexity_thresholds = { "low_max" => 0, "mid_max" => 7 }
+        expect(provider).not_to be_valid
+        expect(provider.errors[:complexity_thresholds].join).to include("between 1 and 10")
+      end
+
+      it "rejects low_max >= mid_max" do
+        provider.complexity_thresholds = { "low_max" => 7, "mid_max" => 5 }
+        expect(provider).not_to be_valid
+        expect(provider.errors[:complexity_thresholds].join).to include("less than mid_max")
+      end
+
+      it "exposes a merged-with-defaults hash via effective_complexity_thresholds" do
+        provider.complexity_thresholds = { "low_max" => 4 }
+        expect(provider.effective_complexity_thresholds).to eq("low_max" => 4, "mid_max" => 7)
+      end
+    end
+
     describe "tier_model_ids" do
       let(:provider) { build(:provider, provider_key: "cursor") }
 

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_16_173627) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_16_185458) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -707,10 +707,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_173627) do
     t.text "reasoning"
     t.integer "selection_duration_ms"
     t.string "selector_type", limit: 50, null: false
+    t.string "tier", limit: 10
     t.datetime "updated_at", null: false
     t.index ["agent_run_id"], name: "index_model_selections_on_agent_run_id", unique: true
     t.index ["llm_model_id"], name: "index_model_selections_on_llm_model_id"
     t.index ["selector_type"], name: "index_model_selections_on_selector_type"
+    t.index ["tier"], name: "index_model_selections_on_tier"
+    t.check_constraint "tier IS NULL OR (tier::text = ANY (ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying]::text[]))", name: "model_selections_tier_check"
   end
 
   create_table "notifications", force: :cascade do |t|
@@ -952,6 +955,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_173627) do
   create_table "providers", force: :cascade do |t|
     t.text "agent_co_author_trailer"
     t.string "auth_type", limit: 20, default: "subscription", null: false
+    t.jsonb "complexity_thresholds", default: {"low_max" => 3, "mid_max" => 7}, null: false
     t.jsonb "config", default: {}, null: false
     t.datetime "created_at", null: false
     t.boolean "enabled_for_agent_runs", default: true, null: false

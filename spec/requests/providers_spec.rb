@@ -481,6 +481,28 @@ RSpec.describe "Providers" do
       expect(provider.reload.tier_model_ids).to eq("low" => "haiku-x", "mid" => "sonnet-x", "high" => "opus-x")
     end
 
+    it "persists complexity_thresholds on update" do
+      provider = user.providers.create!(provider_key: "cursor")
+
+      patch provider_path(provider), params: {
+        provider: { complexity_thresholds: { low_max: "2", mid_max: "8" } }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      expect(provider.reload.complexity_thresholds).to eq("low_max" => 2, "mid_max" => 8)
+    end
+
+    it "rejects invalid complexity_thresholds" do
+      provider = user.providers.create!(provider_key: "cursor")
+
+      patch provider_path(provider), params: {
+        provider: { complexity_thresholds: { low_max: "8", mid_max: "3" } }
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("less than mid_max")
+    end
+
     it "rejects enabling agent runs on a provider that has become unsupported" do
       provider = user.providers.create!(provider_key: "cursor")
 

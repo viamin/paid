@@ -15,7 +15,10 @@ module Models
     end
 
     def call
-      candidates = available_candidates
+      initial_complexity = RulesBasedSelector.new(agent_run: agent_run).estimate_complexity
+      initial_tier = TierForComplexity.call(complexity: initial_complexity, agent_run: agent_run)
+
+      candidates = available_candidates(tier: initial_tier)
       return nil if candidates.empty?
 
       response = request_selection(candidates)
@@ -24,9 +27,13 @@ module Models
       selected = candidates.find { |m| m.model_id == response[:model_id] }
       return nil unless selected
 
+      final_complexity = response[:complexity_score] || initial_complexity
+      final_tier = TierForComplexity.call(complexity: final_complexity, agent_run: agent_run) || initial_tier
+
       {
         model: selected,
         selector_type: "meta_agent",
+        tier: final_tier,
         reasoning: response[:reasoning],
         candidates: candidates.map { |m| { model_id: m.model_id, score: m.capability_score.to_f } },
         complexity_score: response[:complexity_score]
@@ -45,11 +52,18 @@ module Models
 
     attr_reader :agent_run
 
-    def available_candidates
+    def available_candidates(tier: nil)
       scope = LlmModel.active
 
       excluded = agent_run.project.model_preferences["excluded_model_ids"]
       scope = scope.where.not(model_id: excluded) if excluded.present?
+
+      if tier
+        tier_scope = scope.by_tier(tier)
+        # Fall back to the full pool when the tier is empty so the meta-agent
+        # still has something to choose from (e.g. before tiers are seeded).
+        return tier_scope.order(Arel.sql("capability_score DESC NULLS LAST")).to_a if tier_scope.exists?
+      end
 
       scope.order(Arel.sql("capability_score DESC NULLS LAST")).to_a
     end
