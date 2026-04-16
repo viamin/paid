@@ -38,10 +38,24 @@ class QdrantClient
   # @param api_key [String, nil] Optional API key for authentication
   # @param timeout [Integer] Read timeout in seconds (default: 5)
   # @param open_timeout [Integer] Connection open timeout in seconds (default: 3)
-  def initialize(url:, api_key: nil, timeout: DEFAULT_TIMEOUT, open_timeout: DEFAULT_OPEN_TIMEOUT)
-    @client = Qdrant::Client.new(url: url, api_key: api_key)
+  def initialize(url:, api_key: nil, timeout: DEFAULT_TIMEOUT, open_timeout: DEFAULT_OPEN_TIMEOUT,
+                 logger: self.class.default_logger)
+    @client = Qdrant::Client.new(url: url, api_key: api_key, logger: logger)
     @client.connection.options.timeout = timeout
     @client.connection.options.open_timeout = open_timeout
+  end
+
+  # The upstream Qdrant gem defaults to `Logger.new($stdout)` and wires it into
+  # Faraday's `response :logger` middleware with `bodies: true, headers: true`.
+  # That floods every rspec/console/log output with the full HTTP exchange for
+  # every Qdrant call. Route logging through Rails.logger (or a silent logger
+  # when Rails isn't initialized) so log level settings actually take effect.
+  def self.default_logger
+    if defined?(Rails) && Rails.respond_to?(:logger) && Rails.logger
+      Rails.logger
+    else
+      Logger.new(IO::NULL)
+    end
   end
 
   # Returns a proxy around {Qdrant::Client#collections} that wraps connection

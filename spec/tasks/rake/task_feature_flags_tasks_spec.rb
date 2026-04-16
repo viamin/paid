@@ -18,6 +18,10 @@ RSpec.describe Rake::Task do
     ENV["PROJECT_ID"] = original_project_id
   end
 
+  # feature_flags:{enable,disable,list} each print a status line; silence
+  # those so rspec output stays free of task side-chatter.
+  around { |example| SilenceStreams.call(:stdout) { example.run } }
+
   before do
     Rails.application.load_tasks unless described_class.task_defined?("feature_flags:list")
     enable_task.reenable

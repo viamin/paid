@@ -13,6 +13,24 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
   include OvermindEnvHelpers
   let(:script_source) { File.expand_path("../../bin/dev", __dir__) }
 
+  # The diagnostic snapshot in dev_supervisor.sh normally calls
+  # `pstree -aps $$`, which takes ~1.5s per invocation in this container and
+  # dominates each bin/dev spec. These tests only care that snapshot files are
+  # written with the expected labels, so opt into the lightweight `ps -ef` path.
+  # The unhealthy-restart branch of bin/dev also waits 1s for overmind to
+  # release its socket; shrink that grace period for tests. Open3.capture3
+  # inherits the parent process env by default, so exporting here propagates
+  # into each child bin/dev process.
+  around do |example|
+    prior = ENV.to_h.slice("DEV_SUPERVISOR_FAST_DIAGNOSTICS", "DEV_SUPERVISOR_QUIT_GRACE_SECONDS")
+    ENV["DEV_SUPERVISOR_FAST_DIAGNOSTICS"] = "1"
+    ENV["DEV_SUPERVISOR_QUIT_GRACE_SECONDS"] = "0"
+    example.run
+  ensure
+    ENV["DEV_SUPERVISOR_FAST_DIAGNOSTICS"] = prior["DEV_SUPERVISOR_FAST_DIAGNOSTICS"]
+    ENV["DEV_SUPERVISOR_QUIT_GRACE_SECONDS"] = prior["DEV_SUPERVISOR_QUIT_GRACE_SECONDS"]
+  end
+
   it "removes a stale Overmind socket before starting overmind" do
     Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
