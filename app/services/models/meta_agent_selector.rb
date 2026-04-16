@@ -60,7 +60,8 @@ module Models
         provider: :claude,
         model: MODEL,
         timeout: TIMEOUT,
-        tools: :none
+        tools: :none,
+        **Llm::TextMode.options
       )
       return nil unless response.success?
 

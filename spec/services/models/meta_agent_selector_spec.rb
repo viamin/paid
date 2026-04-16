@@ -18,6 +18,9 @@ RSpec.describe Models::MetaAgentSelector do
 
     before do
       allow(AgentHarness).to receive(:send_message).and_return(successful_response)
+      # Default: preserve CLI transport so existing exact-match expectations
+      # pass. Individual specs flip this on to prove text-mode routing.
+      allow(Llm::TextMode).to receive(:options).and_return({})
     end
 
     it "selects a model via LLM meta-agent" do
@@ -49,6 +52,15 @@ RSpec.describe Models::MetaAgentSelector do
         timeout: 15,
         tools: :none
       )
+    end
+
+    it "routes through agent-harness text mode when an API key is configured" do
+      allow(Llm::TextMode).to receive(:options).and_return(mode: :text)
+
+      described_class.call(agent_run: agent_run)
+
+      expect(AgentHarness).to have_received(:send_message)
+        .with(anything, hash_including(mode: :text))
     end
 
     context "when meta-agent selects a cheap model for simple task" do
