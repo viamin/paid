@@ -888,6 +888,58 @@ RSpec.describe Project do
       end
     end
 
+    describe "#review_method" do
+      it "returns the ReviewMethod value object with merged termination defaults" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "paid_agent" => {
+              "enabled" => true,
+              "termination" => { "timeout_minutes" => 60 }
+            }
+          }
+        })
+        method = project.review_method(:paid_agent)
+
+        expect(method).to be_a(Automation::Configuration::ReviewMethod)
+        expect(method.enabled?).to be true
+        expect(method.timeout_minutes).to eq(60)
+        expect(method.max_review_rounds).to eq(15)
+      end
+
+      it "returns a disabled method when the review settings are empty" do
+        project = build(:project, review_settings: {})
+        expect(project.review_method(:paid_agent).enabled?).to be false
+      end
+    end
+
+    describe "#automation_configuration" do
+      it "exposes the aggregate Automation::Configuration::Project value object" do
+        project = build(:project, auto_pick_enabled: true, auto_merge_enabled: true)
+
+        config = project.automation_configuration
+
+        expect(config).to be_a(Automation::Configuration::Project)
+        expect(config.auto_pick.enabled?).to be true
+        expect(config.auto_merge.enabled?).to be true
+      end
+
+      it "memoizes the configuration across calls" do
+        project = build(:project)
+        expect(project.automation_configuration).to equal(project.automation_configuration)
+      end
+
+      it "invalidates the memoized configuration when review_settings= is assigned" do
+        project = build(:project, review_settings: { "enabled" => false })
+        original = project.automation_configuration
+
+        project.review_settings = { "enabled" => true,
+                                    "methods" => { "paid_agent" => { "enabled" => true } } }
+
+        expect(project.automation_configuration).not_to equal(original)
+        expect(project.automation_configuration.auto_review.enabled?).to be true
+      end
+    end
+
     describe "validation" do
       it "accepts empty review_settings" do
         project = build(:project, review_settings: {})

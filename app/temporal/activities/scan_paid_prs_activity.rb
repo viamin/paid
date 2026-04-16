@@ -754,7 +754,7 @@ module Activities
       triggers = []
 
       if project.review_method_enabled?("manual")
-        reviewer = project.review_method_config("manual")["reviewer_login"]
+        reviewer = project.review_method(:manual).reviewer_login
         if reviewer.present? && !manual_reviewer_approved?(reviews, reviewer)
           triggers << { type: "manual_review_pending", reviewer_login: reviewer,
                         details: "Awaiting approval from #{reviewer}" }
@@ -762,7 +762,7 @@ module Activities
       end
 
       if project.review_method_enabled?("ci_action") && !checks.nil?
-        action_name = project.review_method_config("ci_action")["action_name"]
+        action_name = project.review_method(:ci_action).action_name
         if action_name.present? && !ci_action_review_complete?(project, checks, pr_data)
           dispatch_needed = ci_action_dispatch_required?(issue, checks, action_name)
           triggers << { type: "ci_action_pending", action_name: action_name,
@@ -1054,8 +1054,7 @@ module Activities
       # bookkeeping marks the superseded run as retried before enqueuing its
       # replacement. Counting both would burn two rounds for one logical retry.
       finished_count = current_cycle_review_runs.finished.count
-      max_rounds = project.review_method_config("paid_agent")
-        .dig("termination", "max_review_rounds")
+      max_rounds = project.review_method(:paid_agent).max_review_rounds
 
       if max_rounds.present? && finished_count >= max_rounds.to_i
         return []
@@ -1228,16 +1227,11 @@ module Activities
     end
 
     def review_goal_max_retries(project)
-      termination = project.review_method_config("paid_agent")
-        .dig("termination") || {}
-      retries = termination["max_review_goal_retries"]
-      max_rounds = termination["max_review_rounds"]
+      method_config = project.review_method(:paid_agent)
+      retries = method_config.max_review_goal_retries
+      max_rounds = method_config.max_review_rounds
 
-      effective = if retries.present?
-        retries.to_i
-      else
-        MAX_REVIEW_GOAL_RETRIES
-      end
+      effective = retries.present? ? retries.to_i : MAX_REVIEW_GOAL_RETRIES
 
       if max_rounds.present?
         [ effective, max_rounds.to_i ].min
@@ -1591,7 +1585,7 @@ module Activities
     # ci_action is complete when the configured action_name appears in
     # the check-run list with a "success" conclusion.
     def ci_action_review_complete?(project, checks, pr_data)
-      action_name = project.review_method_config("ci_action").to_h["action_name"]
+      action_name = project.review_method(:ci_action).action_name
       if action_name.blank?
         Rails.logger.warn(message: "reviews.ci_action_missing_action_name", project_id: project.id)
         return false
@@ -1608,7 +1602,7 @@ module Activities
     def manual_review_complete?(project, reviews)
       return false if reviews.nil?
 
-      reviewer = project.review_method_config("manual").to_h["reviewer_login"]
+      reviewer = project.review_method(:manual).reviewer_login
       return false if reviewer.blank?
 
       reviews.any? do |r|
@@ -1663,7 +1657,7 @@ module Activities
       timestamps << owner_ts if owner_ts
 
       if project.review_method_enabled?("manual")
-        reviewer = project.review_method_config("manual").to_h["reviewer_login"]
+        reviewer = project.review_method(:manual).reviewer_login
         if reviewer.present?
           manual_ts = latest_approval_timestamp_for(project, reviews) do |r|
             r[:user_login]&.downcase == reviewer.strip.downcase
@@ -1828,7 +1822,7 @@ module Activities
       return nil unless project.review_enabled?
       return nil unless project.review_method_enabled?("paid_agent")
 
-      raw = project.review_method_config("paid_agent").dig("termination", "max_review_rounds")
+      raw = project.review_method(:paid_agent).max_review_rounds
       raw.present? ? raw.to_i : nil
     end
 
