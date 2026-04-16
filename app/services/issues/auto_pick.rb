@@ -153,7 +153,7 @@ module Issues
 
     def call
       return nil unless @project.auto_pick_enabled?
-      return nil if project_has_prs_needing_attention?
+      return nil if prs_needing_attention_exceed_limit?
 
       issue = find_next_eligible_issue
       return nil unless issue
@@ -208,15 +208,14 @@ module Issues
 
     private
 
-    # Returns true if the project has open pull requests that still need
-    # Paid's attention. Performs up to two lightweight EXISTS-style queries
-    # (leveraging the GIN labels index) instead of loading PR records into Ruby:
+    # Returns the count of open PRs that still need Paid's attention.
+    # A PR "needs attention" if it is failed, or in_progress but not
+    # yet handed off (missing paid-generated/paid-ready labels, or
+    # still in draft/restarted phase).
     #
-    # Blocking rules:
-    # - failed PRs always block (need investigation)
-    # - in_progress PRs block unless fully handed off (paid-generated +
-    #   paid-ready labels and out of draft/restarted phase)
-    def project_has_prs_needing_attention?
+    # Uses a single COUNT query. The handed_off subquery only matches
+    # in_progress rows, so failed PRs are never excluded by it.
+    def prs_needing_attention_count
       base = Issue.where(
         project: @project,
         is_pull_request: true,
@@ -224,19 +223,29 @@ module Issues
         paid_state: %w[in_progress failed]
       )
 
-      # Failed PRs always block — check first for a fast short-circuit.
-      return true if base.where(paid_state: "failed").exists?
-
-      # In-progress PRs block unless handed off: both labels present and
-      # not in a draft/restarted review phase.
       handed_off = base
         .where(paid_state: "in_progress")
         .where("labels @> ?::jsonb", [ @project.generated_label_name, PAID_READY_LABEL ].to_json)
         .where.not(pr_review_phase: %w[draft restarted])
 
-      base.where(paid_state: "in_progress")
-        .where.not(id: handed_off)
-        .exists?
+      base.where.not(id: handed_off).count
+    end
+
+    # Returns true if the number of PRs needing attention meets or
+    # exceeds the user's configured limit. When the limit is 0 (default),
+    # there is no cap and auto-pick is never blocked by open PRs.
+    def prs_needing_attention_exceed_limit?
+      limit = max_auto_pick_open_prs
+      return false if limit.zero?
+
+      prs_needing_attention_count >= limit
+    end
+
+    def max_auto_pick_open_prs
+      owner = @project.effective_owner
+      return 0 unless owner
+
+      owner.settings.max_auto_pick_open_prs
     end
 
     def eligible_issue_scope

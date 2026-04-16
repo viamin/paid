@@ -583,6 +583,10 @@ RSpec.describe Issues::AutoPick do
     end
 
     context "when project has PRs needing attention" do
+      before do
+        project.effective_owner.settings.update!(max_auto_pick_open_prs: 1)
+      end
+
       it "returns nil when project has an open PR in in_progress state" do
         create(:issue, :pull_request, :in_progress, project: project)
         create(:issue, project: project)
@@ -694,6 +698,66 @@ RSpec.describe Issues::AutoPick do
 
       it "picks an issue when PRs are in new state" do
         create(:issue, :pull_request, project: project, paid_state: "new")
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+    end
+
+    context "with PR WIP limit" do
+      it "does not block auto-pick when limit is 0 (no limit)" do
+        project.effective_owner.settings.update!(max_auto_pick_open_prs: 0)
+        create(:issue, :pull_request, :in_progress, project: project)
+        create(:issue, :pull_request, :failed, project: project)
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+
+      it "blocks auto-pick with default limit of 1 when any PR needs attention" do
+        create(:issue, :pull_request, :in_progress, project: project)
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
+      it "allows auto-pick when PRs needing attention are below the limit" do
+        project.effective_owner.settings.update!(max_auto_pick_open_prs: 3)
+        create(:issue, :pull_request, :in_progress, project: project)
+        create(:issue, :pull_request, :failed, project: project)
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+
+      it "blocks auto-pick when PRs needing attention reach the limit" do
+        project.effective_owner.settings.update!(max_auto_pick_open_prs: 2)
+        create(:issue, :pull_request, :in_progress, project: project)
+        create(:issue, :pull_request, :failed, project: project)
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
+      it "does not count handed-off PRs toward the limit" do
+        project.effective_owner.settings.update!(max_auto_pick_open_prs: 1)
+        create(:issue, :pull_request, :in_progress,
+          project: project,
+          labels: [ "paid-generated", "paid-ready" ],
+          pr_review_phase: "ready")
         issue = create(:issue, project: project)
 
         result = described_class.new(project).call

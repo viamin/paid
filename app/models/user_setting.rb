@@ -41,6 +41,8 @@ class UserSetting < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
   validates :max_parallel_agents_per_project,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 20 }
+  validates :max_auto_pick_open_prs,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
 
   # Token & rate limits
   validates :max_tokens_per_run,
