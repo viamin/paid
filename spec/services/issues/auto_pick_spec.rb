@@ -752,6 +752,16 @@ RSpec.describe Issues::AutoPick do
         expect(result).to be_nil
       end
 
+      it "defaults to limit of 1 when project has no effective owner" do
+        allow(project).to receive(:effective_owner).and_return(nil)
+        create(:issue, :pull_request, :in_progress, project: project)
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
       it "does not count handed-off PRs toward the limit" do
         project.effective_owner.settings.update!(max_auto_pick_open_prs: 1)
         create(:issue, :pull_request, :in_progress,

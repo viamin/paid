@@ -243,7 +243,7 @@ module Issues
 
     def max_auto_pick_open_prs
       owner = @project.effective_owner
-      return 0 unless owner
+      return 1 unless owner
 
       owner.settings.max_auto_pick_open_prs
     end
