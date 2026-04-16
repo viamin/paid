@@ -590,8 +590,8 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Quick run on PR ##{pr.github_number}")
       end
 
-      it "keeps Quick Run enabled when the PR was not paid-generated" do
-        project = create(:project, account: account, github_token: github_token)
+      it "keeps Quick Run enabled and still shows a PR-link icon when the PR was not paid-generated" do
+        project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
         issue = create(:issue, project: project, github_number: 5, title: "Test issue", github_state: "open")
         create(:issue, :pull_request, project: project, github_number: 78,
           github_state: "open", parent_issue: issue)
@@ -599,6 +599,8 @@ RSpec.describe "Projects" do
         get project_path(project)
 
         expect(response.body).to include(quick_create_project_agent_runs_path(project, issue_id: issue.id))
+        expect(response.body).to include("https://github.com/octocat/hello/pull/78")
+        expect(response.body).to include("PR #78")
       end
 
       it "re-enables Quick Run after the paid-generated PR is closed" do
