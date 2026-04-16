@@ -33,6 +33,9 @@ RSpec.describe Knowledge::Decisions::Draft do
   before do
     allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
     allow(AgentHarness).to receive(:send_message).and_return(llm_response)
+    # Default: preserve CLI transport so existing exact-match expectations
+    # pass. Individual specs flip this on to prove text-mode routing.
+    allow(Llm::TextMode).to receive(:options).and_return({})
     agent_run.log!("stdout", "Implemented JWT authentication for API endpoints")
   end
 
@@ -107,6 +110,27 @@ RSpec.describe Knowledge::Decisions::Draft do
         dangerous_mode: false,
         tools: :none
       )
+    end
+
+    it "routes the Claude provider through agent-harness text mode when an API key is configured" do
+      allow(Llm::TextMode).to receive(:options).and_return(mode: :text)
+
+      described_class.call(agent_run: agent_run)
+
+      expect(AgentHarness).to have_received(:send_message)
+        .with(anything, hash_including(provider: :claude, mode: :text))
+    end
+
+    it "does not route non-claude providers through text mode (text transport is Anthropic-only)" do
+      allow(Llm::TextMode).to receive(:options).and_return(mode: :text)
+      project.created_by.settings.update!(kb_chat_provider: "cursor", kb_chat_fallback_providers: [])
+
+      described_class.call(agent_run: agent_run)
+
+      expect(AgentHarness).to have_received(:send_message) do |_prompt, **opts|
+        expect(opts[:provider]).to eq(:cursor)
+        expect(opts).not_to have_key(:mode)
+      end
     end
 
     it "uses the configured knowledge chat provider" do

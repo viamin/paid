@@ -42,7 +42,8 @@ module Activities
         provider: :claude,
         model: DEFAULT_MODEL,
         timeout: TIMEOUT,
-        tools: :none
+        tools: :none,
+        **Llm::TextMode.options
       )
 
       unless response.success?

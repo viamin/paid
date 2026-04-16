@@ -48,7 +48,8 @@ module Llm
         provider: :claude,
         model: DEFAULT_MODEL,
         timeout: TIMEOUT,
-        tools: :none
+        tools: :none,
+        **TextMode.options
       )
       return nil unless response.success?
 

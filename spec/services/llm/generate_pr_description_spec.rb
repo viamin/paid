@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe Llm::GeneratePrDescription do
+  before { allow(Llm::TextMode).to receive(:options).and_return(mode: :text) }
+
   let(:agent_summary) { "Added OAuth middleware and user session management." }
   let(:issue_title) { "Add OAuth support" }
   let(:issue_body) { "We need OAuth2 support for third-party integrations." }
@@ -36,8 +38,49 @@ RSpec.describe Llm::GeneratePrDescription do
         provider: :claude,
         model: described_class::DEFAULT_MODEL,
         timeout: described_class::TIMEOUT,
-        tools: :none
+        tools: :none,
+        mode: :text
       )
+    end
+
+    it "routes through agent-harness text mode when an API key is configured" do
+      response = instance_double(AgentHarness::Response, success?: true, output: generated_description)
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      described_class.call(agent_summary: agent_summary)
+
+      expect(AgentHarness).to have_received(:send_message)
+        .with(anything, hash_including(mode: :text))
+    end
+
+    it "falls back to the CLI transport when text mode is ineligible (preserves subscription billing)" do
+      allow(Llm::TextMode).to receive(:options).and_return({})
+      response = instance_double(AgentHarness::Response, success?: true, output: generated_description)
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      described_class.call(agent_summary: agent_summary)
+
+      expect(AgentHarness).to have_received(:send_message) do |_prompt, **opts|
+        expect(opts).not_to have_key(:mode)
+      end
+    end
+
+    it "produces an identical request regardless of host-process cwd (#1140 regression)" do
+      response = instance_double(AgentHarness::Response, success?: true, output: generated_description)
+      captured = []
+      allow(AgentHarness).to receive(:send_message) do |prompt, **opts|
+        captured << [ prompt, opts ]
+        response
+      end
+
+      [ "/tmp", Rails.root.to_s ].each do |dir|
+        Dir.chdir(dir) do
+          described_class.call(agent_summary: agent_summary, issue_title: issue_title, issue_body: issue_body)
+        end
+      end
+
+      expect(captured.map(&:first).uniq.size).to eq(1)
+      expect(captured.map(&:last).uniq.size).to eq(1)
     end
 
     it "passes tools: :none to disable CLI tool access during text-only generation" do

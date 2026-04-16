@@ -13,6 +13,13 @@ module Knowledge
     # (no API keys in container). Falls back to in-process AgentHarness when
     # Docker is unavailable.
     #
+    # Text-mode routing (#1147): the in-process Claude path opts into
+    # +Llm::TextMode.options+ so host-side drafting uses the HTTP text
+    # transport when +ANTHROPIC_API_KEY+ is configured. Non-Claude providers
+    # and the containerized path continue to use their existing CLI transport
+    # unchanged, because +TextTransport+ is Anthropic-only and the container
+    # already isolates +cwd+/memory concerns.
+    #
     # @example
     #   Knowledge::Decisions::Draft.call(agent_run: agent_run)
     class Draft
@@ -194,6 +201,9 @@ module Knowledge
           tools: :none
         }
         options[:model] = DEFAULT_MODEL if provider == DEFAULT_PROVIDER
+        # Only route through text mode for Claude; other providers are not
+        # required to expose HTTP text transport and fall back to CLI.
+        options.merge!(Llm::TextMode.options) if provider == DEFAULT_PROVIDER
         options
       end
 

@@ -31,6 +31,9 @@ RSpec.describe StyleGuides::Extract do
   before do
     allow(StyleGuides::CollectCodeSamples).to receive(:call).and_return(collected_samples)
     allow(AgentHarness).to receive(:send_message).and_return(llm_response)
+    # Default: preserve CLI transport so existing exact-match expectations
+    # pass. Individual specs flip this on to prove text-mode routing.
+    allow(Llm::TextMode).to receive(:options).and_return({})
   end
 
   describe ".call" do
@@ -86,6 +89,17 @@ RSpec.describe StyleGuides::Extract do
         dangerous_mode: false,
         tools: :none
       )
+    end
+
+    it "routes through agent-harness text mode when an API key is configured" do
+      allow(Llm::TextMode).to receive(:options).and_return(mode: :text)
+
+      described_class.call(project: project)
+
+      # Extract issues one LLM call per language, so the route assertion
+      # holds for every invocation.
+      expect(AgentHarness).to have_received(:send_message)
+        .with(anything, hash_including(mode: :text)).at_least(:once)
     end
 
     it "returns empty result when no samples are collected" do

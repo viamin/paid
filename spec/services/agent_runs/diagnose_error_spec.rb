@@ -26,6 +26,9 @@ RSpec.describe AgentRuns::DiagnoseError do
     allow(github_token).to receive(:client).and_return(github_client)
     allow(AgentHarness).to receive(:send_message).and_return(llm_response)
     allow(github_client).to receive(:create_issue).and_return(gh_issue)
+    # Default: preserve CLI transport so existing exact-match expectations
+    # pass. Individual specs flip this on to prove text-mode routing.
+    allow(Llm::TextMode).to receive(:options).and_return({})
   end
 
   describe ".call" do
@@ -46,6 +49,15 @@ RSpec.describe AgentRuns::DiagnoseError do
         timeout: 60,
         tools: :none
       )
+    end
+
+    it "routes through agent-harness text mode when an API key is configured" do
+      allow(Llm::TextMode).to receive(:options).and_return(mode: :text)
+
+      described_class.call(agent_run: agent_run)
+
+      expect(AgentHarness).to have_received(:send_message)
+        .with(anything, hash_including(mode: :text))
     end
 
     it "creates a GitHub issue with the diagnosis" do

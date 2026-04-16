@@ -33,6 +33,9 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
     before do
       allow(AgentHarness).to receive(:send_message).and_return(llm_response)
+      # Default: preserve CLI transport so existing exact-match expectations
+      # pass. Individual specs flip this on to prove text-mode routing.
+      allow(Llm::TextMode).to receive(:options).and_return({})
     end
 
     it "returns parsed tasks from LLM output" do
@@ -65,6 +68,19 @@ RSpec.describe Activities::DecomposeFeatureActivity do
         timeout: described_class::TIMEOUT,
         tools: :none
       )
+    end
+
+    it "routes through agent-harness text mode when an API key is configured" do
+      allow(Llm::TextMode).to receive(:options).and_return(mode: :text)
+
+      activity.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        knowledge_context: knowledge_context
+      )
+
+      expect(AgentHarness).to have_received(:send_message)
+        .with(anything, hash_including(mode: :text))
     end
 
     it "includes knowledge context in the prompt when available" do
