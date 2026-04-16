@@ -8,6 +8,14 @@ RSpec.describe "WorkflowStatuses" do
   let(:github_token) { create(:github_token, account: account) }
   let(:project) { create(:project, account: account, github_token: github_token) }
 
+  # Prevent Project#after_create_commit :start_github_polling from hitting a
+  # real Temporal server (and persisting a "running" WorkflowState) when a
+  # local/dev Temporal happens to be reachable. The tests below stub
+  # ProjectWorkflowManager.workflow_status; without this stub the controller's
+  # WorkflowState-backed primary health path would override the workflow_status
+  # fallback and tests would fail locally but pass in CI.
+  before { allow(ProjectWorkflowManager).to receive(:start_polling) }
+
   describe "GET /projects/:project_id/workflow_status" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
