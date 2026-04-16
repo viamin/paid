@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_16_221630) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -497,6 +497,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221630) do
     t.string "depends_on_owner"
     t.string "depends_on_repo"
     t.bigint "issue_id", null: false
+    t.boolean "requires_deployment", default: false, null: false
     t.datetime "updated_at", null: false
     t.index ["depends_on_issue_id"], name: "index_issue_dependencies_on_depends_on_issue_id"
     t.index ["issue_id", "depends_on_issue_id"], name: "idx_issue_dependencies_unique", unique: true
@@ -510,6 +511,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221630) do
     t.text "body"
     t.datetime "ci_action_dispatched_at"
     t.datetime "created_at", null: false
+    t.datetime "deployed_at"
     t.integer "draft_review_count", default: 0, null: false
     t.datetime "github_created_at", null: false
     t.string "github_creator_login"
@@ -531,6 +533,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221630) do
     t.string "source", default: "github", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
+    t.index ["deployed_at"], name: "idx_issues_deployed_at_on_prs", where: "(is_pull_request = true)"
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
     t.index ["labels"], name: "index_issues_on_labels_gin_open_issues", where: "((is_pull_request = false) AND ((github_state)::text = 'open'::text))", using: :gin
     t.index ["labels"], name: "index_issues_on_labels_gin_open_prs", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))", using: :gin
@@ -714,7 +717,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221630) do
     t.index ["llm_model_id"], name: "index_model_selections_on_llm_model_id"
     t.index ["selector_type"], name: "index_model_selections_on_selector_type"
     t.index ["tier"], name: "index_model_selections_on_tier"
-    t.check_constraint "tier IS NULL OR (tier::text = ANY (ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying]::text[]))", name: "model_selections_tier_check"
+    t.check_constraint "tier IS NULL OR (tier::text = ANY (ARRAY['low'::character varying::text, 'mid'::character varying::text, 'high'::character varying::text]))", name: "model_selections_tier_check"
   end
 
   create_table "notifications", force: :cascade do |t|
@@ -844,6 +847,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221630) do
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
+    t.jsonb "fitness_settings", default: {}, null: false
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
     t.bigint "github_token_id", null: false
@@ -897,6 +901,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221630) do
     t.bigint "parent_version_id"
     t.bigint "prompt_id", null: false
     t.datetime "retired_at"
+    t.text "review_notes"
+    t.string "review_status", limit: 20
+    t.datetime "reviewed_at"
+    t.bigint "reviewed_by_user_id"
     t.text "system_prompt"
     t.text "template", null: false
     t.integer "usage_count", default: 0, null: false
@@ -904,9 +912,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221630) do
     t.integer "version", null: false
     t.index ["created_by_user_id"], name: "index_prompt_versions_on_created_by_user_id"
     t.index ["parent_version_id"], name: "index_prompt_versions_on_parent_version_id"
+    t.index ["prompt_id", "review_status"], name: "index_prompt_versions_on_prompt_and_review_status", where: "(review_status IS NOT NULL)"
     t.index ["prompt_id", "version"], name: "index_prompt_versions_on_prompt_id_and_version", unique: true
     t.index ["prompt_id"], name: "index_prompt_versions_on_prompt_id"
     t.index ["retired_at"], name: "index_prompt_versions_on_retired_at"
+    t.index ["reviewed_by_user_id"], name: "index_prompt_versions_on_reviewed_by_user_id"
   end
 
   create_table "prompts", force: :cascade do |t|
@@ -918,6 +928,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221630) do
     t.text "description"
     t.string "name", limit: 255, null: false
     t.bigint "project_id"
+    t.boolean "requires_review", default: false, null: false
     t.string "slug", limit: 100, null: false
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_prompts_on_account_id"
@@ -970,6 +981,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221630) do
     t.jsonb "tier_model_ids", default: {}, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
+    t.integer "weight", default: 1, null: false
     t.index ["auth_type"], name: "index_providers_on_auth_type"
     t.index ["provider_api_key_id"], name: "index_providers_on_provider_api_key_id"
     t.index ["tier_model_ids"], name: "index_providers_on_tier_model_ids", using: :gin
@@ -978,6 +990,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221630) do
     t.index ["user_id"], name: "index_providers_on_user_id"
     t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL", name: "providers_api_key_requires_key"
     t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "providers_subscription_invariants"
+    t.check_constraint "weight >= 1", name: "providers_weight_positive"
   end
 
   create_table "quality_metrics", force: :cascade do |t|
@@ -1106,6 +1119,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221630) do
     t.integer "max_prompt_comments", default: 20, null: false
     t.integer "max_prs_per_page", default: 50, null: false
     t.integer "max_tokens_per_run", default: 10000000, null: false
+    t.jsonb "provider_round_robin_state", default: {}, null: false
+    t.string "provider_selection_mode", limit: 20, default: "single", null: false
     t.float "retry_base_delay", default: 1.0, null: false
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false
@@ -1119,6 +1134,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221630) do
     t.index ["user_id"], name: "index_user_settings_on_user_id", unique: true
     t.check_constraint "max_issues_per_page >= 5 AND max_issues_per_page <= 200", name: "chk_max_issues_per_page_bounds"
     t.check_constraint "max_prs_per_page >= 5 AND max_prs_per_page <= 200", name: "chk_max_prs_per_page_bounds"
+    t.check_constraint "provider_selection_mode::text = ANY (ARRAY['single'::character varying::text, 'round_robin'::character varying::text, 'random'::character varying::text])", name: "chk_provider_selection_mode"
   end
 
   create_table "users", force: :cascade do |t|
@@ -1242,6 +1258,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221630) do
   add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify
   add_foreign_key "prompt_versions", "prompts", on_delete: :cascade
   add_foreign_key "prompt_versions", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "prompt_versions", "users", column: "reviewed_by_user_id", on_delete: :nullify
   add_foreign_key "prompts", "accounts", on_delete: :cascade
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
