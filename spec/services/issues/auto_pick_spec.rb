@@ -399,6 +399,99 @@ RSpec.describe Issues::AutoPick do
       expect(result.issue).to eq(issue_c)
     end
 
+    context "with priority labels" do
+      it "picks a P1 issue before a P2 issue" do
+        p2_issue = create(:issue, project: project, github_number: 1, labels: [ "P2" ])
+        p1_issue = create(:issue, project: project, github_number: 2, labels: [ "P1" ])
+
+        result = described_class.new(project).call
+
+        expect(result.issue).to eq(p1_issue)
+        expect(result.issue).not_to eq(p2_issue)
+      end
+
+      it "picks a P1 issue before P2, P3, and unlabeled issues" do
+        create(:issue, project: project, github_number: 1, labels: [])
+        create(:issue, project: project, github_number: 2, labels: [ "P3" ])
+        create(:issue, project: project, github_number: 3, labels: [ "P2" ])
+        p1_issue = create(:issue, project: project, github_number: 4, labels: [ "P1" ])
+
+        result = described_class.new(project).call
+
+        expect(result.issue).to eq(p1_issue)
+      end
+
+      it "picks a P2 issue before P3 and unlabeled issues" do
+        create(:issue, project: project, github_number: 1, labels: [])
+        create(:issue, project: project, github_number: 2, labels: [ "P3" ])
+        p2_issue = create(:issue, project: project, github_number: 3, labels: [ "P2" ])
+
+        result = described_class.new(project).call
+
+        expect(result.issue).to eq(p2_issue)
+      end
+
+      it "picks a P3 issue before an unlabeled issue" do
+        create(:issue, project: project, github_number: 1, labels: [])
+        p3_issue = create(:issue, project: project, github_number: 2, labels: [ "P3" ])
+
+        result = described_class.new(project).call
+
+        expect(result.issue).to eq(p3_issue)
+      end
+
+      it "picks a P1 issue even when an unlabeled issue has a lower github_number (FIFO)" do
+        create(:issue, project: project, github_number: 1)
+        p1_issue = create(:issue, project: project, github_number: 100, labels: [ "P1" ])
+
+        result = described_class.new(project).call
+
+        expect(result.issue).to eq(p1_issue)
+      end
+
+      it "falls back to github_number (FIFO) within the same priority tier" do
+        earlier = create(:issue, project: project, github_number: 5, labels: [ "P1" ])
+        _later = create(:issue, project: project, github_number: 10, labels: [ "P1" ])
+
+        result = described_class.new(project).call
+
+        expect(result.issue).to eq(earlier)
+      end
+
+      it "still skips blocked P1 issues in favor of unblocked lower-priority issues" do
+        blocking = create(:issue, project: project, github_number: 1, labels: [ "P3" ])
+        blocked_p1 = create(:issue, project: project, github_number: 2, labels: [ "P1" ])
+        create(:issue_dependency, issue: blocked_p1, depends_on_issue: blocking)
+        unblocked_p2 = create(:issue, project: project, github_number: 3, labels: [ "P2" ])
+
+        result = described_class.new(project).call
+
+        # Blocked P1 is ineligible, and P2 beats P3 among remaining issues.
+        expect(result.issue).to eq(unblocked_p2)
+      end
+
+      it "respects custom priority label names configured on the project" do
+        project.update!(priority_labels: { "P1" => "critical", "P2" => "high", "P3" => "medium" })
+        create(:issue, project: project, github_number: 1, labels: [ "medium" ])
+        critical_issue = create(:issue, project: project, github_number: 2, labels: [ "critical" ])
+
+        result = described_class.new(project).call
+
+        expect(result.issue).to eq(critical_issue)
+      end
+
+      it "treats the highest priority label as winning when multiple are present" do
+        lower = create(:issue, project: project, github_number: 1, labels: [ "P2" ])
+        mixed = create(:issue, project: project, github_number: 2, labels: [ "P2", "P1" ])
+
+        result = described_class.new(project).call
+
+        # `mixed` carries P1 — it should beat the pure P2 issue despite a higher number.
+        expect(result.issue).to eq(mixed)
+        expect(result.issue).not_to eq(lower)
+      end
+    end
+
     it "returns nil when no eligible issues exist" do
       result = described_class.new(project).call
 
