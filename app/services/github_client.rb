@@ -330,7 +330,10 @@ class GithubClient
   #
   # @param repo [String] Repository in "owner/name" format
   # @param ref [String] Git ref (branch name, tag, or SHA)
-  # @return [Array<Hash>] Check runs with :name and :conclusion keys
+  # @return [Array<Hash>] Check runs with :name, :status, :conclusion,
+  #   :html_url, and :details_url keys. +:status+ reflects execution
+  #   progress ("queued", "in_progress", "completed") and is required
+  #   by callers that gate on whether a check has finished.
   def check_runs_for_ref(repo, ref)
     handle_errors do
       all_check_runs = []
@@ -358,7 +361,15 @@ class GithubClient
         )
       end
 
-      all_check_runs.map { |cr| { name: cr.name, conclusion: cr.conclusion } }
+      all_check_runs.map do |cr|
+        {
+          name: cr.name,
+          status: cr.status,
+          conclusion: cr.conclusion,
+          html_url: cr.html_url,
+          details_url: cr.details_url
+        }
+      end
     end
   end
 

@@ -120,20 +120,63 @@ RSpec.describe Automation::Providers::Github::RepositoryProvider do
   end
 
   describe "#fetch_check_runs" do
-    it "normalizes check runs and conclusions" do
-      expect(client).to receive(:check_runs_for_ref)
+    let(:completed_run) do
+      {
+        name: "test",
+        status: "completed",
+        conclusion: "success",
+        html_url: "https://github.com/acme/widgets/runs/1",
+        details_url: "https://ci.example.com/jobs/1"
+      }
+    end
+    let(:in_progress_run) do
+      {
+        name: "integration",
+        status: "in_progress",
+        conclusion: nil,
+        html_url: nil,
+        details_url: "https://ci.example.com/jobs/2"
+      }
+    end
+    let(:queued_run) do
+      { name: "lint", status: "queued", conclusion: nil, html_url: nil, details_url: nil }
+    end
+
+    before do
+      allow(client).to receive(:check_runs_for_ref)
         .with("acme/widgets", "abc123")
-        .and_return([
-          { name: "test", conclusion: "success" },
-          { name: "lint", conclusion: nil }
-        ])
+        .and_return([ completed_run, in_progress_run, queued_run ])
+    end
 
-      result = adapter.fetch_check_runs(repo: "acme/widgets", ref: "abc123")
+    it "normalizes completed runs with their conclusion and URL" do
+      run = adapter.fetch_check_runs(repo: "acme/widgets", ref: "abc123").first
 
-      expect(result.first).to be_a(Automation::Providers::Data::CheckRun)
-      expect(result.first.name).to eq("test")
-      expect(result.first.conclusion).to eq(:success)
-      expect(result.last.conclusion).to be_nil
+      expect(run).to be_a(Automation::Providers::Data::CheckRun)
+      expect(run).to have_attributes(
+        name: "test",
+        status: :completed,
+        conclusion: :success,
+        url: "https://github.com/acme/widgets/runs/1"
+      )
+    end
+
+    # Critical regression guard: an in-progress check must not be reported
+    # as :completed. That would let consumers gating on execution progress
+    # (e.g. "all checks finished?") advance while work is still running.
+    it "reports in-progress runs as :in_progress, not :completed" do
+      run = adapter.fetch_check_runs(repo: "acme/widgets", ref: "abc123")[1]
+
+      expect(run).to have_attributes(
+        status: :in_progress,
+        conclusion: nil,
+        url: "https://ci.example.com/jobs/2"
+      )
+    end
+
+    it "reports queued runs as :queued with no URL when neither html_url nor details_url is present" do
+      run = adapter.fetch_check_runs(repo: "acme/widgets", ref: "abc123").last
+
+      expect(run).to have_attributes(status: :queued, conclusion: nil, url: nil)
     end
   end
 
