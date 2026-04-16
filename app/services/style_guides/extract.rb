@@ -108,7 +108,8 @@ module StyleGuides
         provider: :claude,
         model: DEFAULT_MODEL,
         timeout: TIMEOUT,
-        dangerous_mode: false
+        dangerous_mode: false,
+        tools: :none
       )
     end
 

@@ -62,7 +62,8 @@ RSpec.describe Activities::DecomposeFeatureActivity do
         a_string_including("Add OAuth"),
         provider: :claude,
         model: described_class::DEFAULT_MODEL,
-        timeout: described_class::TIMEOUT
+        timeout: described_class::TIMEOUT,
+        tools: :none
       )
     end
 
@@ -81,7 +82,8 @@ RSpec.describe Activities::DecomposeFeatureActivity do
         a_string_including("Auth docs"),
         provider: :claude,
         model: described_class::DEFAULT_MODEL,
-        timeout: described_class::TIMEOUT
+        timeout: described_class::TIMEOUT,
+        tools: :none
       )
     end
 

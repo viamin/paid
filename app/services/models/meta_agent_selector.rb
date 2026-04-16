@@ -59,7 +59,8 @@ module Models
         build_prompt(candidates),
         provider: :claude,
         model: MODEL,
-        timeout: TIMEOUT
+        timeout: TIMEOUT,
+        tools: :none
       )
       return nil unless response.success?
 

@@ -70,7 +70,8 @@ RSpec.describe PromptEvolution::Mutate do
         a_string_including(current_version.template),
         provider: :claude,
         model: "claude-sonnet-4-6",
-        timeout: 60
+        timeout: 60,
+        tools: :none
       )
     end
 
