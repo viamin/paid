@@ -1600,6 +1600,15 @@ RSpec.describe Containers::GitOperations do
     let(:marker_missing_result) { Containers::Provision::Result.failure(error: "not found", stdout: "", stderr: "", exit_code: 1) }
     let(:marker_exists_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
 
+    # Non-memoized helpers (not `let`) to stay under RSpec/MultipleMemoizedHelpers.
+    def trailer_file
+      described_class::CO_AUTHOR_TRAILER_FILE
+    end
+
+    def trailer_file_write_pattern
+      /printf '%s' .* > #{Regexp.escape(trailer_file)}/
+    end
+
     context "when project has a trailer configured" do
       before do
         provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
@@ -1619,9 +1628,12 @@ RSpec.describe Containers::GitOperations do
         allow(container_service).to receive(:execute)
           .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(trailer_file_write_pattern), timeout: nil, stream: false)
+          .and_return(success_result)
       end
 
-      it "installs a commit-msg hook that appends the trailer" do
+      it "installs a commit-msg hook that reads the trailer from the shared file" do
         hook_script = nil
         allow(container_service).to receive(:execute)
           .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false) { |script, **|
@@ -1631,9 +1643,30 @@ RSpec.describe Containers::GitOperations do
 
         git_ops.install_co_author_hook
 
-        escaped_trailer = Shellwords.shellescape("Co-Authored-By: Claude <noreply@anthropic.com>")
-        expect(hook_script).to include(escaped_trailer)
+        expect(hook_script).to include(trailer_file)
         expect(hook_script).to include("grep -qF --")
+        # Baking the literal trailer into the hook is what causes the
+        # fallback-staleness bug — make sure it stays out of the script.
+        expect(hook_script).not_to include("Co-Authored-By: Claude")
+      end
+
+      it "seeds the trailer file with the initial provider's trailer at install time" do
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false)
+          .and_return(success_result)
+
+        write_script = nil
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(trailer_file_write_pattern), timeout: nil, stream: false) { |cmd, **|
+            write_script = cmd
+            success_result
+          }
+
+        git_ops.install_co_author_hook
+
+        expect(write_script).to include(
+          Shellwords.shellescape("Co-Authored-By: Claude <noreply@anthropic.com>")
+        )
       end
     end
 
@@ -1656,30 +1689,83 @@ RSpec.describe Containers::GitOperations do
         allow(container_service).to receive(:execute)
           .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(trailer_file_write_pattern), timeout: nil, stream: false)
+          .and_return(success_result)
       end
 
-      it "correctly escapes the trailer using Shellwords" do
-        hook_script = nil
+      it "escapes the trailer for the shared file write using Shellwords" do
+        write_script = nil
         allow(container_service).to receive(:execute)
-          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false) { |script, **|
-            hook_script = script
+          .with(a_string_matching(trailer_file_write_pattern), timeout: nil, stream: false) { |cmd, **|
+            write_script = cmd
+            success_result
+          }
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false)
+          .and_return(success_result)
+
+        git_ops.install_co_author_hook
+
+        expect(write_script).to include(Shellwords.shellescape("Co-Authored-By: O'Brien <ob@example.com>"))
+        expect(write_script).not_to include("''")
+      end
+    end
+
+    context "when no provider owned by the project owner has a trailer configured" do
+      before { agent_run.project.effective_owner.providers.update_all(agent_co_author_trailer: nil) }
+
+      it "does not install a hook or touch the trailer file" do
+        expect(container_service).not_to receive(:execute)
+
+        git_ops.install_co_author_hook
+      end
+    end
+
+    context "when the effective provider has no trailer but another owned provider does" do
+      before do
+        # The initial provider has no trailer, but a fallback provider owned
+        # by the same user does — the hook must still be installed so the
+        # trailer file can be refreshed mid-run when fallback occurs.
+        provider.update!(agent_co_author_trailer: nil)
+        agent_run.project.effective_owner.providers.create!(
+          provider_key: "codex",
+          auth_type: "subscription",
+          enabled_for_agent_runs: false,
+          agent_co_author_trailer: "Co-Authored-By: Codex <noreply@openai.com>"
+        )
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "still installs the hook and clears the trailer file so the hook is a no-op" do
+        clear_cmd = nil
+        allow(container_service).to receive(:execute)
+          .with([ "rm", "-f", trailer_file ], timeout: nil, stream: false) { |cmd, **|
+            clear_cmd = cmd
             success_result
           }
 
         git_ops.install_co_author_hook
 
-        expect(hook_script).to include(Shellwords.shellescape("Co-Authored-By: O'Brien <ob@example.com>"))
-        expect(hook_script).not_to include("''")
-      end
-    end
-
-    context "when project has no trailer configured" do
-      before { provider.update!(agent_co_author_trailer: nil) }
-
-      it "does not install a hook" do
-        expect(container_service).not_to receive(:execute)
-
-        git_ops.install_co_author_hook
+        expect(clear_cmd).to eq([ "rm", "-f", trailer_file ])
       end
     end
 
@@ -1705,9 +1791,12 @@ RSpec.describe Containers::GitOperations do
         allow(container_service).to receive(:execute)
           .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(trailer_file_write_pattern), timeout: nil, stream: false)
+          .and_return(success_result)
       end
 
-      it "renames the existing hook and installs a wrapper" do
+      it "renames the existing hook and installs a wrapper that reads from the shared file" do
         captured_script = nil
         allow(container_service).to receive(:execute)
           .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false) { |script, **|
@@ -1717,10 +1806,10 @@ RSpec.describe Containers::GitOperations do
 
         git_ops.install_co_author_hook
 
-        escaped_trailer = Shellwords.shellescape("Co-Authored-By: Claude <noreply@anthropic.com>")
         expect(captured_script).to include(".git/hooks/commit-msg.original")
-        expect(captured_script).to include(escaped_trailer)
+        expect(captured_script).to include(trailer_file)
         expect(captured_script).to include("#!/bin/sh")
+        expect(captured_script).not_to include("Co-Authored-By: Claude")
       end
     end
 
@@ -1754,9 +1843,12 @@ RSpec.describe Containers::GitOperations do
         allow(container_service).to receive(:execute)
           .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(trailer_file_write_pattern), timeout: nil, stream: false)
+          .and_return(success_result)
       end
 
-      it "restores the original hook and then installs the wrapper with the trailer" do
+      it "restores the original hook and then installs the wrapper" do
         allow(container_service).to receive(:execute)
           .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false)
           .and_return(success_result)
@@ -1766,14 +1858,14 @@ RSpec.describe Containers::GitOperations do
         # Verify the restore step happened
         expect(container_service).to have_received(:execute)
           .with("mv .git/hooks/commit-msg.original .git/hooks/commit-msg", timeout: nil, stream: false)
-        # Verify the hook script was actually written with the marker and trailer
-        escaped_trailer = Regexp.escape(Shellwords.shellescape("Co-Authored-By: Claude <noreply@anthropic.com>"))
+        # Verify the hook script was written with the marker and reads
+        # the trailer from the shared file (not a baked-in value).
         expect(container_service).to have_received(:execute)
           .with(
             a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/).and(
               a_string_matching(/Installed by Paid/)
             ).and(
-              a_string_matching(/#{escaped_trailer}/)
+              a_string_matching(/#{Regexp.escape(trailer_file)}/)
             ),
             timeout: nil, stream: false
           )
@@ -1868,6 +1960,93 @@ RSpec.describe Containers::GitOperations do
       allow(container_service).to receive(:execute).and_raise(StandardError, "container error")
 
       expect { git_ops.install_co_author_hook }.not_to raise_error
+    end
+  end
+
+  describe "#write_co_author_trailer" do
+    let(:trailer_file) { described_class::CO_AUTHOR_TRAILER_FILE }
+
+    it "writes the provider's trailer to the shared file" do
+      provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+      write_script = nil
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/printf '%s' .* > #{Regexp.escape(trailer_file)}/), timeout: nil, stream: false) { |cmd, **|
+          write_script = cmd
+          success_result
+        }
+
+      git_ops.write_co_author_trailer(provider)
+
+      expect(write_script).to include(Shellwords.shellescape("Co-Authored-By: Claude <noreply@anthropic.com>"))
+    end
+
+    it "escapes shell metacharacters in the trailer" do
+      provider.update!(agent_co_author_trailer: "Co-Authored-By: O'Brien <ob@example.com>")
+
+      write_script = nil
+      allow(container_service).to receive(:execute) { |cmd, **|
+        write_script = cmd
+        success_result
+      }
+
+      git_ops.write_co_author_trailer(provider)
+
+      expect(write_script).to include(Shellwords.shellescape("Co-Authored-By: O'Brien <ob@example.com>"))
+      expect(write_script).not_to include("''")
+    end
+
+    it "removes the file when the provider has a blank trailer" do
+      provider.update!(agent_co_author_trailer: nil)
+
+      expect(container_service).to receive(:execute)
+        .with([ "rm", "-f", trailer_file ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.write_co_author_trailer(provider)
+    end
+
+    it "removes the file when given nil" do
+      expect(container_service).to receive(:execute)
+        .with([ "rm", "-f", trailer_file ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.write_co_author_trailer(nil)
+    end
+
+    it "removes the file when the trailer is whitespace-only" do
+      provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      # Bypass the single-line validation to emulate legacy/corrupt data
+      provider.update_column(:agent_co_author_trailer, "   ")
+
+      expect(container_service).to receive(:execute)
+        .with([ "rm", "-f", trailer_file ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.write_co_author_trailer(provider)
+    end
+
+    it "logs a warning when the write returns a failure result but does not raise" do
+      provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      allow(container_service).to receive(:execute).and_return(failure_result)
+      allow(Rails.logger).to receive(:warn)
+
+      expect { git_ops.write_co_author_trailer(provider) }.not_to raise_error
+
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(message: "container_git.write_co_author_trailer_failed")
+      )
+    end
+
+    it "does not raise when the container call raises" do
+      provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      allow(container_service).to receive(:execute).and_raise(StandardError, "container gone")
+      allow(Rails.logger).to receive(:error)
+
+      expect { git_ops.write_co_author_trailer(provider) }.not_to raise_error
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(message: "container_git.write_co_author_trailer_unexpected_error")
+      )
     end
   end
 end

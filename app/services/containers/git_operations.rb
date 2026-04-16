@@ -30,6 +30,14 @@ module Containers
     # grep guard so Temporal retries don't install duplicate hooks.
     HOOK_INSTALLED_MARKER = "Installed by Paid"
 
+    # Path (relative to the worktree root) where the active co-author trailer
+    # is stored. The commit-msg hook reads this file at commit time so
+    # intermediate commits created by the agent reflect the provider that
+    # actually produced them, even after a rate-limit fallback updated the
+    # effective provider mid-run. The file lives under .git/ so it is never
+    # committed and is cleaned up with the worktree.
+    CO_AUTHOR_TRAILER_FILE = ".git/paid_co_author_trailer"
+
     # Marker comment used as a grep guard so Temporal retries don't
     # duplicate the exclude block.  Defined once and referenced both
     # in CONTAINER_ARTIFACT_EXCLUDES and in install_artifact_excludes.
@@ -326,25 +334,34 @@ module Containers
       )
     end
 
-    # Installs a commit-msg hook that appends the provider's co-author trailer
+    # Installs a commit-msg hook that appends the active co-author trailer
     # to agent-created commits. The auto-commit from commit_uncommitted_changes
     # uses --no-verify (skipping hooks), so its trailer is appended directly
     # by the commit_message method instead.
     #
-    # Skipped when the effective provider has no trailer configured.
+    # Skipped when none of the project owner's providers have a trailer
+    # configured (so existing hooks aren't wrapped unnecessarily).
     # When an existing commit-msg hook is present (e.g. from Husky or Lefthook),
     # the original hook is renamed and a shell wrapper is installed that
     # delegates to the original hook first, then appends the trailer. This
     # preserves non-shell hooks (node, python, ruby) that would break if
     # shell code were appended directly.
+    #
+    # The hook reads the trailer from CO_AUTHOR_TRAILER_FILE at commit time
+    # (not from a baked-in value) so provider fallback mid-run updates the
+    # trailer applied to subsequent intermediate commits. The initial
+    # effective provider's trailer is seeded at install time; callers must
+    # call #write_co_author_trailer before each provider attempt to keep
+    # the file in sync with the provider actually producing commits.
+    #
     # The HOOK_INSTALLED_MARKER prevents duplicate installs on retries.
     #
     # @return [void]
     def install_co_author_hook
-      trailer = agent_run.effective_provider_record&.agent_co_author_trailer
-      return if trailer.blank?
+      return unless owner_has_any_co_author_trailer?
 
-      install_or_chain_co_author_hook(trailer)
+      install_or_chain_co_author_hook
+      write_co_author_trailer(agent_run.effective_provider_record)
     rescue Error => e
       Rails.logger.warn(
         message: "container_git.install_co_author_hook_failed",
@@ -354,6 +371,56 @@ module Containers
     rescue StandardError => e
       Rails.logger.error(
         message: "container_git.install_co_author_hook_unexpected_error",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
+    # Writes the given provider's co-author trailer to CO_AUTHOR_TRAILER_FILE
+    # inside the container so the commit-msg hook uses it for subsequent
+    # agent commits. Removing the file when the trailer is blank makes the
+    # hook a no-op for that window.
+    #
+    # Called at hook install time and before each provider attempt so the
+    # trailer reflects the provider that will produce the next commits,
+    # including after a rate-limit fallback mid-run.
+    #
+    # Best-effort: logs on failure instead of raising so a transient
+    # container/filesystem error does not abort an agent run for what is
+    # a metadata-only concern.
+    #
+    # @param provider_record [Provider, nil] the provider whose trailer to
+    #   use; pass nil to clear the file.
+    # @return [void]
+    def write_co_author_trailer(provider_record)
+      trailer = provider_record&.agent_co_author_trailer.to_s.strip
+
+      if trailer.empty?
+        result = container_service.execute(
+          [ "rm", "-f", CO_AUTHOR_TRAILER_FILE ],
+          timeout: nil, stream: false
+        )
+      else
+        # Shellwords.shellescape neutralises any shell metacharacters in the
+        # trailer so printf writes exactly the configured value (no newline).
+        escaped = Shellwords.shellescape(trailer)
+        result = container_service.execute(
+          "mkdir -p .git && printf '%s' #{escaped} > #{CO_AUTHOR_TRAILER_FILE}",
+          timeout: nil, stream: false
+        )
+      end
+
+      if result.failure?
+        Rails.logger.warn(
+          message: "container_git.write_co_author_trailer_failed",
+          agent_run_id: agent_run.id,
+          error: error_with_stderr(result)
+        )
+      end
+    rescue StandardError => e
+      Rails.logger.error(
+        message: "container_git.write_co_author_trailer_unexpected_error",
         agent_run_id: agent_run.id,
         error_class: e.class.name,
         error: e.message
@@ -917,6 +984,20 @@ module Containers
       raise Error, "Failed to chmod #{hook_name} hook: #{chmod_result.error}" if chmod_result.failure?
     end
 
+    # Returns true when any provider owned by the project owner has a
+    # non-blank co-author trailer. Used to decide whether installing the
+    # commit-msg hook is worth the risk of wrapping an existing hook —
+    # if no provider has a trailer, the hook would be a pure no-op.
+    def owner_has_any_co_author_trailer?
+      owner = agent_run.project&.effective_owner
+      return false unless owner
+
+      owner.providers
+        .where.not(agent_co_author_trailer: nil)
+        .where.not(agent_co_author_trailer: "")
+        .exists?
+    end
+
     # Installs the co-author trailer hook, safely wrapping any existing
     # commit-msg hook. Uses HOOK_INSTALLED_MARKER for idempotency.
     #
@@ -925,7 +1006,12 @@ module Containers
     # new shell wrapper is installed that executes the original hook first
     # (preserving its interpreter via its shebang) and then appends the
     # trailer. This avoids breaking non-shell hooks by appending shell code.
-    def install_or_chain_co_author_hook(trailer)
+    #
+    # The hook reads the trailer from CO_AUTHOR_TRAILER_FILE at commit time
+    # rather than baking it in, so #write_co_author_trailer can refresh the
+    # active trailer mid-run (e.g. after provider fallback) without having
+    # to rewrite the hook itself.
+    def install_or_chain_co_author_hook
       hook_path = ".git/hooks/commit-msg"
       original_path = "#{hook_path}.original"
       tmp_path = "#{hook_path}.tmp"
@@ -978,9 +1064,9 @@ module Containers
         raise Error, "Failed to rename existing hook: #{mv_result.error}" if mv_result.failure?
 
         renamed_original = true
-        script = commit_msg_wrapper_script(trailer, original_path)
+        script = commit_msg_wrapper_script(original_path)
       else
-        script = commit_msg_hook_script(trailer)
+        script = commit_msg_hook_script
       end
 
       # Write to a temp file first, then atomically move into place.
@@ -1071,14 +1157,21 @@ module Containers
 
     # Generates a commit-msg hook script that appends the co-author trailer
     # to commit messages that don't already contain it.
-    def commit_msg_hook_script(trailer)
-      escaped = Shellwords.shellescape(trailer)
-
+    #
+    # Reads the trailer from CO_AUTHOR_TRAILER_FILE at commit time so the
+    # Ruby side can refresh the active trailer mid-run via
+    # #write_co_author_trailer (e.g. after provider fallback). The hook is
+    # a no-op when the trailer file is missing or empty.
+    def commit_msg_hook_script
       <<~SHELL
         #!/bin/sh
         # #{HOOK_INSTALLED_MARKER} — append co-author trailer to commits
-        if ! grep -qF -- #{escaped} "$1"; then
-          printf '\\n\\n%s' #{escaped} >> "$1"
+        trailer_file=#{Shellwords.shellescape(CO_AUTHOR_TRAILER_FILE)}
+        if [ -s "$trailer_file" ]; then
+          trailer=$(cat "$trailer_file")
+          if [ -n "$trailer" ] && ! grep -qF -- "$trailer" "$1"; then
+            printf '\\n\\n%s' "$trailer" >> "$1"
+          fi
         fi
       SHELL
     end
@@ -1087,17 +1180,23 @@ module Containers
     # may use any interpreter — node, python, ruby, etc.) and then appends
     # the co-author trailer. The original hook is executed via its own
     # shebang, so non-shell hooks are preserved correctly.
-    def commit_msg_wrapper_script(trailer, original_path)
-      escaped = Shellwords.shellescape(trailer)
-
+    #
+    # Reads the trailer from CO_AUTHOR_TRAILER_FILE at commit time so the
+    # Ruby side can refresh the active trailer mid-run via
+    # #write_co_author_trailer (e.g. after provider fallback).
+    def commit_msg_wrapper_script(original_path)
       <<~SHELL
         #!/bin/sh
         # #{HOOK_INSTALLED_MARKER} — wrapper that chains original hook + co-author trailer
         if [ -x "#{original_path}" ]; then
           "#{original_path}" "$@" || exit $?
         fi
-        if ! grep -qF -- #{escaped} "$1"; then
-          printf '\\n\\n%s' #{escaped} >> "$1"
+        trailer_file=#{Shellwords.shellescape(CO_AUTHOR_TRAILER_FILE)}
+        if [ -s "$trailer_file" ]; then
+          trailer=$(cat "$trailer_file")
+          if [ -n "$trailer" ] && ! grep -qF -- "$trailer" "$1"; then
+            printf '\\n\\n%s' "$trailer" >> "$1"
+          fi
         fi
       SHELL
     end
