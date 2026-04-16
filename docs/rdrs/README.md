@@ -82,6 +82,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-013](RDR-013-code-quality-backpressure.md) | Code Quality and Backpressure System | Draft | High |
 | [RDR-022](RDR-022-auto-merge-pr-strategy.md) | Auto-Merge PR Merge Strategy | Final | Medium |
+| [RDR-023](RDR-023-automation-modularization-architecture.md) | Automation Modularization Architecture | Draft | High |
 
 ### Semantic Understanding
 
