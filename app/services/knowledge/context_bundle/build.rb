@@ -96,9 +96,9 @@ module Knowledge
           chunks = a.active_ordered_chunks.to_a
           if chunks.any?
             chunk_lines = chunks.map { |c| "- #{c.content.gsub("\n", " ").truncate(200)}" }
-            "### #{section_title}\n#{chunk_lines.join("\n")}"
+            "#### #{section_title}\n#{chunk_lines.join("\n")}"
           else
-            "### #{section_title}\n- #{a.content.to_s.truncate(300)}"
+            "#### #{section_title}\n- #{a.content.to_s.truncate(300)}"
           end
         end
 
@@ -186,7 +186,13 @@ module Knowledge
           .active
           .by_type(type)
 
-        if type == "churn_hotspot"
+        if type == "business_context"
+          scope
+            .includes(:knowledge_chunks)
+            .order(:identifier)
+            .limit(20)
+            .to_a
+        elsif type == "churn_hotspot"
           # Order by hotspot rank (lower = hotter), with nulls last, then by
           # revision count descending for ties. Limit in SQL to avoid loading
           # unbounded rows on large repos — build_hotspots_section takes the

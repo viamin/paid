@@ -276,6 +276,8 @@ RSpec.describe "Projects" do
           github_client = instance_double(GithubClient)
           allow(GithubClient).to receive(:new).and_return(github_client)
           allow(github_client).to receive(:repository).with("octocat/hello-world").and_return(repo_response)
+          allow(github_client).to receive(:labels).with("octocat/hello-world").and_return([])
+          allow(github_client).to receive(:create_label)
         end
 
         it "creates a new project" do

@@ -118,6 +118,7 @@ Rails.application.routes.draw do
       controller: "knowledge/context_intake" do
       post :complete
     end
+    post :ensure_labels, on: :member
   end
 
   # API endpoints for agent containers
