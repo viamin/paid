@@ -1160,4 +1160,27 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
   end
+
+  describe "external dependency resolution" do
+    # Private helper, but the execute-flow setup to exercise it end-to-end
+    # requires extensive GitHub API mocking. The behavior under test is a
+    # focused, pure DB promotion — test it directly.
+    it "promotes a stale external dep pointing at a local PR to a local dep" do
+      pr = create(:issue, :pull_request, project: project, github_number: 9099)
+      issue = create(:issue, project: project)
+      stale = issue.issue_dependencies.create!(
+        depends_on_owner: project.owner.downcase,
+        depends_on_repo: project.repo.downcase,
+        depends_on_number: 9099
+      )
+
+      activity.send(:resolve_external_dependencies, project, [ 9099 ])
+
+      stale.reload
+      expect(stale.depends_on_issue_id).to eq(pr.id)
+      expect(stale.depends_on_owner).to be_nil
+      expect(stale.depends_on_repo).to be_nil
+      expect(stale.depends_on_number).to be_nil
+    end
+  end
 end

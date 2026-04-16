@@ -297,8 +297,12 @@ module Activities
       # Only check external deps whose depends_on_number was synced in this run
       scope = scope.where(depends_on_number: synced_numbers) if synced_numbers.any?
 
+      # Include pull requests so stale external deps that point at a PR in
+      # this project (e.g. "Depends on owner/repo#<PR number>") get promoted
+      # to local deps on sync instead of staying blocked. ready_for_work
+      # then evaluates the PR's github_state correctly.
       issues_by_number = project.issues
-        .where(is_pull_request: false, github_number: scope.select(:depends_on_number))
+        .where(github_number: scope.select(:depends_on_number))
         .index_by(&:github_number)
 
       scope.find_each do |dep|
