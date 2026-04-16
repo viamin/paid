@@ -47,6 +47,18 @@ module Projects
         .issues_only
         .where(github_state: "open")
         .order(github_number: :desc)
+        .to_a
+      issue_ids = @issues.map(&:id)
+      @issues_with_active_runs = @project.agent_runs
+        .where(issue_id: issue_ids, goal: "enhance_issue", status: AgentRun::UNFINISHED_STATUSES)
+        .distinct
+        .pluck(:issue_id)
+        .to_set
+      @issue_enhancement_rounds = @project.agent_runs
+        .where(issue_id: issue_ids, goal: "enhance_issue")
+        .where.not(status: AgentRun::UNFINISHED_STATUSES)
+        .group(:issue_id)
+        .count
       @pull_requests = @project.issues
         .pull_requests_only
         .where(github_state: "open")
@@ -86,15 +98,16 @@ module Projects
           goal: goal
         )
       elsif goal == "enhance_issue"
-        unless issue
+        issue_ids = Array(params[:issue_ids]).filter_map { |id| Integer(id, exception: false) }.select(&:positive?)
+        if issue_ids.empty?
           redirect_to new_project_agent_run_path(@project, goal: goal),
-            alert: "Please select an issue to enhance."
+            alert: "Please select at least one issue to enhance."
           return
         end
 
-        create_run_and_redirect(
+        create_enhance_issue_runs_and_redirect(
+          issue_ids: issue_ids,
           on_error_path: new_project_agent_run_path(@project, goal: goal),
-          issue: issue,
           custom_prompt: custom_prompt,
           goal: goal,
           priority_tier: priority_tier
@@ -864,6 +877,61 @@ module Projects
     rescue ActiveRecord::RecordNotUnique
       # Only proxy_token has a unique index; duplicate PR runs are caught
       # server-side above (active_pr_numbers filter) rather than by a DB constraint.
+      redirect_to on_error_path, alert: "An unexpected error occurred. Please try again."
+    end
+
+    def create_enhance_issue_runs_and_redirect(issue_ids:, on_error_path:, custom_prompt:, goal:, priority_tier:)
+      budget_result = CostBudgets::Check.call(@project)
+      unless budget_result[:allowed]
+        redirect_to on_error_path, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
+        return
+      end
+
+      issues = @project.issues.issues_only.where(id: issue_ids)
+      if issues.empty?
+        redirect_to on_error_path, alert: "None of the selected issues could be found."
+        return
+      end
+
+      # Filter out issues that already have active (unfinished) enhance_issue runs
+      active_issue_ids = @project.agent_runs
+        .where(issue_id: issues.map(&:id), goal: "enhance_issue", status: AgentRun::UNFINISHED_STATUSES)
+        .pluck(:issue_id)
+      issues = issues.where.not(id: active_issue_ids) if active_issue_ids.any?
+      if issues.empty?
+        redirect_to on_error_path, alert: "All selected issues already have active enhancement runs."
+        return
+      end
+
+      github_sync_args_list = []
+      ActiveRecord::Base.transaction do
+        issues.each do |issue|
+          create_agent_run(
+            issue: issue,
+            custom_prompt: custom_prompt,
+            goal: goal,
+            priority_tier: priority_tier
+          )
+          sync_args = apply_priority_label(issue, priority_tier) if priority_tier
+          github_sync_args_list << [ issue, sync_args ] if sync_args
+        end
+      end
+
+      github_sync_args_list.each do |issue, (label_name, stale_labels)|
+        sync_priority_label_to_github(issue, label_name, stale_labels)
+      end
+
+      ProcessRunQueueJob.perform_later
+
+      notice = if issues.size == 1
+        "Agent run queued for issue enhancement."
+      else
+        "#{issues.size} agent runs queued for issue enhancement."
+      end
+      redirect_to project_path(@project), notice: notice
+    rescue NoRunnableProviderError => e
+      redirect_to on_error_path, alert: e.message
+    rescue ActiveRecord::RecordNotUnique
       redirect_to on_error_path, alert: "An unexpected error occurred. Please try again."
     end
 
