@@ -264,48 +264,52 @@ class Issue < ApplicationRecord
     scope.select(:parent_issue_id)
   end
 
-  # Returns the set of issue IDs that have at least one open paid-generated
-  # pull request. A PR is "paid-generated" when an AgentRun in the same
-  # project produced it (AgentRun#pull_request_number matches the PR issue's
-  # github_number). Used to disable quick-run actions on issues that already
-  # have an open paid PR so the user is steered to iterate on the PR instead.
-  def self.ids_with_open_paid_generated_pr(project:, issue_ids:)
+  # Returns a Hash mapping issue_id => the most recently updated open
+  # paid-generated pull request (an Issue row with is_pull_request: true).
+  # A PR is "paid-generated" when an AgentRun in the same project produced
+  # it (AgentRun#pull_request_number matches the PR issue's github_number).
+  # Views and controllers precompute this hash once per request so per-issue
+  # renders can look up the PR without re-querying (fixes the partial N+1
+  # that would otherwise fire for each rendered issue with an open paid PR).
+  def self.open_paid_generated_prs_by_issue_id(project:, issue_ids:)
     issue_ids = Array(issue_ids).compact
-    return Set.new if issue_ids.empty?
+    return {} if issue_ids.empty?
 
-    open_pr_numbers = project.issues
-      .pull_requests_only
-      .where(github_state: "open")
-      .pluck(:github_number)
-    return Set.new if open_pr_numbers.empty?
-
-    project.agent_runs
-      .where(issue_id: issue_ids, pull_request_number: open_pr_numbers)
+    issue_pr_pairs = project.agent_runs
+      .where(issue_id: issue_ids)
+      .where.not(pull_request_number: nil)
       .distinct
-      .pluck(:issue_id)
-      .to_set
+      .pluck(:issue_id, :pull_request_number)
+    return {} if issue_pr_pairs.empty?
+
+    pr_numbers = issue_pr_pairs.map(&:last).uniq
+    open_prs_by_number = project.issues
+      .pull_requests_only
+      .where(github_state: "open", github_number: pr_numbers)
+      .index_by(&:github_number)
+    return {} if open_prs_by_number.empty?
+
+    recency = ->(pr) { [ pr.github_updated_at || Time.at(0), pr.updated_at || Time.at(0) ] }
+
+    issue_pr_pairs.each_with_object({}) do |(issue_id, pr_number), result|
+      pr = open_prs_by_number[pr_number]
+      next unless pr
+
+      existing = result[issue_id]
+      result[issue_id] = pr if existing.nil? || (recency.call(pr) <=> recency.call(existing)) == 1
+    end
   end
 
   # Returns the open paid-generated pull request (an Issue with
   # is_pull_request: true) associated with this issue, if any. Prefers the
-  # most recently updated one when multiple exist. Used by views to both
-  # hint users toward the PR and disable the quick-run action on the issue.
+  # most recently updated one when multiple exist. Intended for single-issue
+  # controller checks; for rendering collections, use
+  # .open_paid_generated_prs_by_issue_id to avoid per-row queries.
   def associated_paid_pull_request
     return nil if is_pull_request?
     return nil unless project_id && id
 
-    paid_pr_numbers = project.agent_runs
-      .where(issue_id: id)
-      .where.not(pull_request_number: nil)
-      .distinct
-      .pluck(:pull_request_number)
-    return nil if paid_pr_numbers.empty?
-
-    project.issues
-      .pull_requests_only
-      .where(github_state: "open", github_number: paid_pr_numbers)
-      .order(github_updated_at: :desc, updated_at: :desc)
-      .first
+    self.class.open_paid_generated_prs_by_issue_id(project: project, issue_ids: [ id ])[id]
   end
 
   private

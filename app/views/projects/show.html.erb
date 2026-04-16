@@ -165,7 +165,7 @@
 
     <%= render "projects/issues", project: @project, issues: @issues,
                issue_lifecycle_statuses: @issue_lifecycle_statuses,
-               issue_ids_with_open_paid_pr: @issue_ids_with_open_paid_pr %>
+               paid_prs_by_issue_id: @paid_prs_by_issue_id %>
 
     <%= render "projects/pull_requests", project: @project, pull_requests: @pull_requests,
                pr_numbers_with_queued_auto_continue: @pr_numbers_with_queued_auto_continue,

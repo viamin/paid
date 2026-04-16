@@ -421,7 +421,7 @@ class Project < ApplicationRecord
     open_items = issues.where(github_state: "open").order(github_number: :desc)
     displayed = open_items.issues_only.includes(:sub_issues).limit(25)
     lifecycle_statuses = Issue.lifecycle_statuses(displayed)
-    issue_ids_with_open_paid_pr = Issue.ids_with_open_paid_generated_pr(
+    paid_prs_by_issue_id = Issue.open_paid_generated_prs_by_issue_id(
       project: self, issue_ids: displayed.map(&:id)
     )
     broadcast_replace_to(
@@ -430,7 +430,7 @@ class Project < ApplicationRecord
       partial: "projects/issues",
       locals: { project: self, issues: displayed,
                 issue_lifecycle_statuses: lifecycle_statuses,
-                issue_ids_with_open_paid_pr: issue_ids_with_open_paid_pr }
+                paid_prs_by_issue_id: paid_prs_by_issue_id }
     )
   end
 

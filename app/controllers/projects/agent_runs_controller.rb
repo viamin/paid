@@ -54,7 +54,7 @@ module Projects
         .distinct
         .pluck(:issue_id)
         .to_set
-      @issues_with_open_paid_pr = Issue.ids_with_open_paid_generated_pr(
+      @paid_prs_by_issue_id = Issue.open_paid_generated_prs_by_issue_id(
         project: @project, issue_ids: issue_ids
       )
       @issue_enhancement_rounds = @project.agent_runs

@@ -18,8 +18,7 @@
   </div>
   <div class="ml-4 flex flex-shrink-0 items-center space-x-2">
     <%= issue_lifecycle_badge(local_assigns.fetch(:lifecycle_status, :eligible)) %>
-    <% has_open_paid_pr = local_assigns.fetch(:has_open_paid_pr, false) %>
-    <% paid_pr = has_open_paid_pr ? issue.associated_paid_pull_request : nil %>
+    <% paid_pr = local_assigns.fetch(:paid_pr, nil) %>
     <% if paid_pr %>
       <%# Paid already produced an open PR for this issue — steer the user to
           iterate on that PR rather than starting a duplicate run. %>
