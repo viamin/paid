@@ -33,6 +33,46 @@ RSpec.describe Models::MetaAgentSelector do
       expect(result[:complexity_score]).to eq(7.5)
     end
 
+    it "records the tier the candidate pool was drawn from (not the LLM's reported complexity)" do
+      result = described_class.call(agent_run: agent_run)
+
+      # Default factory issue body is short, so the rules-based estimator
+      # returns complexity ~4.0 which maps to "mid" with default thresholds
+      # (low_max=3, mid_max=7). The LLM's reported complexity_score (7.5) is
+      # recorded separately but does NOT change the tier — keeping the tier
+      # in sync with the candidate pool the LLM was actually given to choose
+      # from is essential for consistent model_selection.tier analytics.
+      expect(result[:tier]).to eq("mid")
+      expect(result[:complexity_score]).to eq(7.5)
+    end
+
+    context "when candidates are tier-filtered" do
+      let!(:low_model) { create(:llm_model, :cheap, model_id: "tier-low-agent", tier: "low", capability_score: 4.0) }
+      let!(:mid_model) { create(:llm_model, model_id: "tier-mid-agent", tier: "mid", capability_score: 7.0) }
+
+      let(:successful_response) do
+        instance_double(
+          AgentHarness::Response,
+          success?: true,
+          output: '{"model": "tier-low-agent", "reasoning": "Simple task", "complexity_score": 2.0}'
+        )
+      end
+
+      before do
+        LlmModel.where.not(id: [ low_model.id, mid_model.id ]).destroy_all
+        # Widen the low tier so the rules-based estimator puts this run there.
+        agent_run.project.update!(
+          model_preferences: { "complexity_thresholds" => { "low_max" => 6, "mid_max" => 8 } }
+        )
+      end
+
+      it "restricts candidates to the complexity-derived tier" do
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result[:candidates].map { |c| c[:model_id] }).to contain_exactly("tier-low-agent")
+      end
+    end
+
     it "includes all candidates in the result" do
       result = described_class.call(agent_run: agent_run)
 

@@ -154,7 +154,8 @@ class ProvidersController < ApplicationController
     attrs = params.require(:provider).permit(
       *permitted,
       config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model ] },
-      tier_model_ids: LlmModel::TIERS
+      tier_model_ids: LlmModel::TIERS,
+      complexity_thresholds: Provider::COMPLEXITY_THRESHOLD_KEYS
     )
 
     # Convert config to a plain Hash and slice to only the relevant provider_key,
@@ -170,7 +171,25 @@ class ProvidersController < ApplicationController
     if result.key?("tier_model_ids")
       result["tier_model_ids"] = result["tier_model_ids"].to_h.compact_blank
     end
+    if result.key?("complexity_thresholds")
+      result["complexity_thresholds"] = normalize_complexity_thresholds(result["complexity_thresholds"])
+    end
     result
+  end
+
+  # Coerces blank-string form inputs to nil and integer-like strings to Ints,
+  # dropping missing keys so they fall back to the model's default thresholds
+  # rather than persisting blank values that fail the model-level validation.
+  def normalize_complexity_thresholds(raw)
+    return {} unless raw.is_a?(Hash)
+
+    raw.each_with_object({}) do |(key, value), result|
+      next unless Provider::COMPLEXITY_THRESHOLD_KEYS.include?(key.to_s)
+      next if value.nil? || value.to_s.strip.empty?
+
+      coerced = Integer(value, exception: false)
+      result[key.to_s] = coerced || value
+    end
   end
 
   def load_provider_options
