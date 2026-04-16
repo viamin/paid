@@ -20,13 +20,15 @@ module Knowledge
       def call
         response = session.context_intake_responses.find_by!(question_key: question_key)
 
-        response.update!(
-          answer_text: skipped ? nil : answer_text,
-          skipped: skipped,
-          provenance: "human"
-        )
+        ActiveRecord::Base.transaction do
+          response.update!(
+            answer_text: skipped ? nil : answer_text,
+            skipped: skipped,
+            provenance: "human"
+          )
 
-        update_session_step!
+          update_session_step!
+        end
 
         response
       end

@@ -17,19 +17,21 @@ module Knowledge
       end
 
       def call
-        archive_prior_sessions!
+        ActiveRecord::Base.transaction do
+          archive_prior_sessions!
 
-        session = project.context_intake_sessions.create!(
-          started_by: user,
-          status: "in_progress",
-          schema_version: "1.0",
-          current_step: 0,
-          metadata: {}
-        )
+          session = project.context_intake_sessions.create!(
+            started_by: user,
+            status: "in_progress",
+            schema_version: "1.0",
+            current_step: 0,
+            metadata: {}
+          )
 
-        create_predefined_responses!(session)
+          create_predefined_responses!(session)
 
-        session
+          session
+        end
       end
 
       private

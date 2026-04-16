@@ -16,9 +16,11 @@ module Knowledge
       end
 
       def call
-        validate_required_questions!
-        session.complete!
-        synthesize_knowledge!
+        ActiveRecord::Base.transaction do
+          validate_required_questions!
+          session.complete!
+          synthesize_knowledge!
+        end
         session
       end
 

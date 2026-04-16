@@ -20,16 +20,18 @@ module Knowledge
       end
 
       def call
-        project = session.project
-        project_version = find_or_create_project_version!(project)
-        collector_run = find_or_create_collector_run!(project_version)
+        ActiveRecord::Base.transaction do
+          project = session.project
+          project_version = find_or_create_project_version!(project)
+          collector_run = find_or_create_collector_run!(project_version)
 
-        stale_prior_artifacts!(project, collector_run)
-        artifacts = create_artifacts!(project, collector_run)
+          stale_prior_artifacts!(project, collector_run)
+          artifacts = create_artifacts!(project, collector_run)
 
-        collector_run.mark_completed!(count: artifacts.size)
+          collector_run.mark_completed!(count: artifacts.size)
 
-        { collector_run: collector_run, artifacts_count: artifacts.size }
+          { collector_run: collector_run, artifacts_count: artifacts.size }
+        end
       end
 
       private
