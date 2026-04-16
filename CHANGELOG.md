@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.24.0](https://github.com/viamin/paid/compare/v0.23.0...v0.24.0) (2026-04-16)
+
+
+### Features
+
+* **auto-pick:** configurable PR WIP limit ([#1168](https://github.com/viamin/paid/issues/1168)) ([9a41a0f](https://github.com/viamin/paid/commit/9a41a0f77d615119f9fb90a3e6e9afb1de8097dd))
+* **automation:** introduce shared automation abstractions ([#1115](https://github.com/viamin/paid/issues/1115)) ([#1172](https://github.com/viamin/paid/issues/1172)) ([92eed64](https://github.com/viamin/paid/commit/92eed6476736d1f53b5b0e4646c961af1fdfa5d5))
+
+
+### Bug Fixes
+
+* 1165: Replace enhance issue dropdown with multi-select table (matching PR code review table) ([#1166](https://github.com/viamin/paid/issues/1166)) ([242f2f8](https://github.com/viamin/paid/commit/242f2f89a8e78ed25bc9e129ea0dac9a1a706622))
+* 801: Add advanced business context intake to the knowledge base ([#1162](https://github.com/viamin/paid/issues/1162)) ([d802baa](https://github.com/viamin/paid/commit/d802baaff0f943d7113db70ffb84f23f46aaed28))
+* **agent-runs:** skip git post-processing for enhance_issue and create_issue goals ([#1169](https://github.com/viamin/paid/issues/1169)) ([b65bfd3](https://github.com/viamin/paid/commit/b65bfd3fc025c8f585ef4524d3b139970a2072c8))
+* **pr-description:** disable tool access for text-only LLM calls ([#1171](https://github.com/viamin/paid/issues/1171)) ([2142df0](https://github.com/viamin/paid/commit/2142df057527fda60505ff9d28b6b85a70db4414)), closes [#1146](https://github.com/viamin/paid/issues/1146)
+
 ## [0.23.0](https://github.com/viamin/paid/compare/v0.22.0...v0.23.0) (2026-04-16)
 
 
