@@ -37,7 +37,13 @@ module Activities
 
     def decompose(issue, context)
       prompt = build_prompt(issue, context)
-      response = AgentHarness.send_message(prompt, provider: :claude, model: DEFAULT_MODEL, timeout: TIMEOUT)
+      response = AgentHarness.send_message(
+        prompt,
+        provider: :claude,
+        model: DEFAULT_MODEL,
+        timeout: TIMEOUT,
+        tools: :none
+      )
 
       unless response.success?
         raise Temporalio::Error::ApplicationError.new(

@@ -17,8 +17,19 @@ RSpec.describe Llm::GenerateIssueTitle do
         a_string_matching(/Generate a concise GitHub issue title/),
         provider: :claude,
         model: described_class::DEFAULT_MODEL,
-        timeout: described_class::TIMEOUT
+        timeout: described_class::TIMEOUT,
+        tools: :none
       )
+    end
+
+    it "passes tools: :none to disable CLI tool access during text-only generation" do
+      response = instance_double(AgentHarness::Response, success?: true, output: "JWT authentication system review")
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      described_class.call(summary: summary)
+
+      expect(AgentHarness).to have_received(:send_message)
+        .with(anything, hash_including(tools: :none))
     end
 
     it "strips double quotes from the generated title" do

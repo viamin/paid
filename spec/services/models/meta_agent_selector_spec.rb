@@ -46,7 +46,8 @@ RSpec.describe Models::MetaAgentSelector do
         a_string_matching(/Select the best LLM model/),
         provider: :claude,
         model: "claude-haiku-4-5-20251001",
-        timeout: 15
+        timeout: 15,
+        tools: :none
       )
     end
 

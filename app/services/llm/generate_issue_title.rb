@@ -43,7 +43,13 @@ module Llm
     private
 
     def request_title
-      response = AgentHarness.send_message(prompt, provider: :claude, model: DEFAULT_MODEL, timeout: TIMEOUT)
+      response = AgentHarness.send_message(
+        prompt,
+        provider: :claude,
+        model: DEFAULT_MODEL,
+        timeout: TIMEOUT,
+        tools: :none
+      )
       return nil unless response.success?
 
       clean_title(response.output)

@@ -104,7 +104,8 @@ RSpec.describe Knowledge::Decisions::Draft do
         provider: :claude,
         model: described_class::DEFAULT_MODEL,
         timeout: described_class::TIMEOUT,
-        dangerous_mode: false
+        dangerous_mode: false,
+        tools: :none
       )
     end
 
@@ -117,7 +118,8 @@ RSpec.describe Knowledge::Decisions::Draft do
         a_string_matching(/Decision Record/),
         provider: :cursor,
         timeout: described_class::TIMEOUT,
-        dangerous_mode: false
+        dangerous_mode: false,
+        tools: :none
       )
     end
 
@@ -133,14 +135,16 @@ RSpec.describe Knowledge::Decisions::Draft do
         a_string_matching(/Decision Record/),
         provider: :cursor,
         timeout: described_class::TIMEOUT,
-        dangerous_mode: false
+        dangerous_mode: false,
+        tools: :none
       ).ordered
       expect(AgentHarness).to have_received(:send_message).with(
         a_string_matching(/Decision Record/),
         provider: :claude,
         model: described_class::DEFAULT_MODEL,
         timeout: described_class::TIMEOUT,
-        dangerous_mode: false
+        dangerous_mode: false,
+        tools: :none
       ).ordered
     end
 
@@ -157,7 +161,8 @@ RSpec.describe Knowledge::Decisions::Draft do
         provider: :claude,
         model: described_class::DEFAULT_MODEL,
         timeout: described_class::TIMEOUT,
-        dangerous_mode: false
+        dangerous_mode: false,
+        tools: :none
       )
       expect(AgentHarness).not_to have_received(:send_message).with(
         anything,

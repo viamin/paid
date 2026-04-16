@@ -71,7 +71,8 @@ module AgentRuns
         diagnosis_prompt,
         provider: :claude,
         model: DEFAULT_MODEL,
-        timeout: TIMEOUT
+        timeout: TIMEOUT,
+        tools: :none
       )
       return nil unless response.success?
 

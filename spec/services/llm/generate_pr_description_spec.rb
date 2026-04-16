@@ -35,8 +35,23 @@ RSpec.describe Llm::GeneratePrDescription do
         a_string_including("Lead with", "Agent Output", agent_summary),
         provider: :claude,
         model: described_class::DEFAULT_MODEL,
-        timeout: described_class::TIMEOUT
+        timeout: described_class::TIMEOUT,
+        tools: :none
       )
+    end
+
+    it "passes tools: :none to disable CLI tool access during text-only generation" do
+      response = instance_double(AgentHarness::Response, success?: true, output: generated_description)
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      described_class.call(
+        agent_summary: agent_summary,
+        issue_title: issue_title,
+        issue_body: issue_body
+      )
+
+      expect(AgentHarness).to have_received(:send_message)
+        .with(anything, hash_including(tools: :none))
     end
 
     it "includes issue context in the prompt" do

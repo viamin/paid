@@ -190,7 +190,8 @@ module Knowledge
         options = {
           provider: ProviderSupport.harness_provider_key_for(provider).to_sym,
           timeout: TIMEOUT,
-          dangerous_mode: false
+          dangerous_mode: false,
+          tools: :none
         }
         options[:model] = DEFAULT_MODEL if provider == DEFAULT_PROVIDER
         options

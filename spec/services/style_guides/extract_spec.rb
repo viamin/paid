@@ -83,7 +83,8 @@ RSpec.describe StyleGuides::Extract do
         provider: :claude,
         model: "claude-sonnet-4-6",
         timeout: 120,
-        dangerous_mode: false
+        dangerous_mode: false,
+        tools: :none
       )
     end
 

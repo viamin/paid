@@ -43,7 +43,8 @@ RSpec.describe AgentRuns::DiagnoseError do
         a_string_including("diagnosing a failed agent run"),
         provider: :claude,
         model: "claude-sonnet-4-6",
-        timeout: 60
+        timeout: 60,
+        tools: :none
       )
     end
 
@@ -127,7 +128,8 @@ RSpec.describe AgentRuns::DiagnoseError do
           a_string_including("API_KEY=[REDACTED]").and(satisfy { |s| !s.include?("sk_live_abcdef1234567890") }),
           provider: :claude,
           model: "claude-sonnet-4-6",
-          timeout: 60
+          timeout: 60,
+          tools: :none
         )
       end
 
@@ -153,7 +155,8 @@ RSpec.describe AgentRuns::DiagnoseError do
           a_string_including("API_KEY=[REDACTED]").and(satisfy { |s| !s.include?("sk_live_secret123") }),
           provider: :claude,
           model: "claude-sonnet-4-6",
-          timeout: 60
+          timeout: 60,
+          tools: :none
         )
       end
 
@@ -181,7 +184,8 @@ RSpec.describe AgentRuns::DiagnoseError do
           a_string_including("TOKEN=[REDACTED]").and(satisfy { |s| !s.include?("ghp_abc123secret") }),
           provider: :claude,
           model: "claude-sonnet-4-6",
-          timeout: 60
+          timeout: 60,
+          tools: :none
         )
       end
     end
@@ -222,7 +226,8 @@ RSpec.describe AgentRuns::DiagnoseError do
           satisfy { |s| !s.include?("ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789") },
           provider: :claude,
           model: "claude-sonnet-4-6",
-          timeout: 60
+          timeout: 60,
+          tools: :none
         )
       end
 
