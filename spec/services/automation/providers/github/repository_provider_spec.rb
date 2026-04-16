@@ -178,6 +178,22 @@ RSpec.describe Automation::Providers::Github::RepositoryProvider do
 
       expect(run).to have_attributes(status: :queued, conclusion: nil, url: nil)
     end
+
+    # Defense against future GitHub status values (e.g. "waiting", "pending"):
+    # an unknown status must NOT be classified as :completed, otherwise
+    # consumers gating on execution progress could advance while the check
+    # is still running.
+    it "defaults unknown statuses to :queued, never :completed" do
+      unknown_run = { name: "future-state", status: "waiting", conclusion: nil,
+                      html_url: nil, details_url: nil }
+      allow(client).to receive(:check_runs_for_ref)
+        .with("acme/widgets", "abc123")
+        .and_return([ unknown_run ])
+
+      run = adapter.fetch_check_runs(repo: "acme/widgets", ref: "abc123").first
+
+      expect(run.status).to eq(:queued)
+    end
   end
 
   describe "#add_labels" do

@@ -144,7 +144,12 @@ module Automation
 
           Data::CheckRun.new(
             name: run_field(run, :name).to_s,
-            status: CHECK_STATUS_MAP[raw_status] || :completed,
+            # Default to :queued for unknown statuses so consumers gating on
+            # "all checks finished?" keep waiting instead of advancing while
+            # the check is still running. GitHub has added new status values
+            # over time (e.g. "waiting", "pending"); a :completed fallback
+            # would let auto-merge / auto-review races slip through.
+            status: CHECK_STATUS_MAP[raw_status] || :queued,
             conclusion: raw_conclusion ? CHECK_CONCLUSION_MAP[raw_conclusion.to_s] : nil,
             url: run_field(run, :html_url) || run_field(run, :details_url)
           )
