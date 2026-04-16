@@ -241,6 +241,18 @@ class GithubClient
     handle_errors { client.issue(repo, number) }
   end
 
+  # Updates an issue. Accepts the same keys the GitHub REST API does
+  # (+state+, +state_reason+, +title+, +body+, ...); policy code only
+  # uses it for lifecycle transitions today.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue number
+  # @param options [Hash] Attributes to update on the issue
+  # @return [Sawyer::Resource] The updated issue
+  def update_issue(repo, number, **options)
+    handle_errors { client.update_issue(repo, number, options) }
+  end
+
   # Lists labels for a repository.
   #
   # @param repo [String] Repository in "owner/name" format
@@ -560,6 +572,19 @@ class GithubClient
   # @return [Sawyer::Resource] The review request response
   def request_pull_request_review(repo, number, reviewers:)
     handle_errors { client.request_pull_request_review(repo, number, reviewers: reviewers) }
+  end
+
+  # Creates a pull request review.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @param event [String] One of "APPROVE", "REQUEST_CHANGES", "COMMENT"
+  # @param body [String] Review body (Markdown supported)
+  # @return [Sawyer::Resource] The created review
+  def create_pull_request_review(repo, number, event:, body: "")
+    handle_errors do
+      client.create_pull_request_review(repo, number, event: event, body: body.to_s)
+    end
   end
 
   # Dispatches a repository event for workflows triggered by repository_dispatch.
