@@ -1320,4 +1320,142 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           timeout: 30)
     end
   end
+
+  # Regression coverage for PR #1077: the full poll cycle must never implicitly
+  # queue a default create_pr run for an existing automation-labeled PR. These
+  # end-to-end workflow tests lock the decision boundary between initial sync
+  # (DetectLabelsActivity) and PR follow-up (ScanPaidPrsActivity) and assert
+  # that every PR-targeting QueueAgentRunActivity call carries an explicit goal.
+  describe "#1077 regression: PR-originated queue paths require explicit goals" do
+    let(:workflow) { described_class.new }
+    let(:project_id) { 1 }
+
+    before do
+      allow(Temporalio::Workflow).to receive(:start_child_workflow)
+      allow(Temporalio::Workflow).to receive(:patched).and_call_original
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("draft-followup-direct-start-v1").and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("queue-agent-run-goal-v1").and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("queue-paid-agent-review-run-v1").and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("pause-followup-during-review-v1").and_return(true)
+      allow(workflow).to receive(:run_activity).and_return({})
+    end
+
+    it "routes draft-phase paid_agent_review_pending to a review run with no create_pr side effect" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [ { type: "paid_agent_review_pending" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(goal: "review", source_pull_request_number: 42), timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "create_pr"), timeout: anything)
+    end
+
+    it "queues no runs when an initial PR scan returns no actionable triggers" do
+      allow(workflow).to receive(:run_activity).and_return({ prs_to_trigger: [] })
+
+      workflow.send(:handle_pr_scan_results, { prs_to_trigger: [] }, project_id)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+    end
+
+    it "queues draft create_pr with explicit goal when a follow-up scan reports CI failure" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [ { type: "ci_failure", details: [ "rspec" ] } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(
+            project_id: project_id,
+            issue_id: 10,
+            source_pull_request_number: 42,
+            goal: "create_pr",
+            count_toward_draft_review_round: true,
+            expected_draft_review_count: 0
+          ), timeout: 30)
+    end
+
+    it "queues ready-phase create_pr with explicit goal on merge_conflicts + conversation_comments" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready", current_followup_count: 0,
+        triggers: [
+          { type: "merge_conflicts", details: "PR has merge conflicts" },
+          { type: "conversation_comments", details: "2 new comment(s)" }
+        ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(project_id: project_id, issue_id: 10,
+            source_pull_request_number: 42, goal: "create_pr"), timeout: 30)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordPrFollowupActivity, anything, timeout: anything)
+    end
+
+    def record_queue_invocations(workflow)
+      collected = []
+      allow(workflow).to receive(:run_activity) do |activity_class, input, **_opts|
+        collected << input if activity_class == Activities::QueueAgentRunActivity
+        case activity_class
+        when Activities::MarkPrReadyActivity then { marked_ready: true }
+        when Activities::QueueAgentRunActivity then { queued: true }
+        else {}
+        end
+      end
+      collected
+    end
+
+    def pr_scenarios_requiring_explicit_goal
+      # Each scenario must exercise a code path that ends up calling
+      # QueueAgentRunActivity with a source_pull_request_number, so the
+      # guardrail below can assert an explicit :goal is always set.
+      [
+        { phase: "draft", current_draft_review_count: 0, triggers: [ { type: "ci_failure" } ] },
+        { phase: "draft", current_draft_review_count: 0, triggers: [ { type: "paid_agent_review_pending" } ] },
+        { phase: "ready", current_followup_count: 0, triggers: [ { type: "merge_conflicts" } ] },
+        { phase: "ready", current_review_goal_retry_count: 0,
+          triggers: [ { type: "review_goal_retry", details: "retry" } ] }
+      ]
+    end
+
+    it "never calls QueueAgentRunActivity with a PR number and no goal across PR trigger types" do
+      queue_invocations = record_queue_invocations(workflow)
+
+      pr_scenarios_requiring_explicit_goal.each do |scenario|
+        workflow.send(:handle_pr_trigger, project_id, scenario.merge(issue_id: 10, pr_number: 42))
+      end
+
+      pr_targeting_calls = queue_invocations.select do |input|
+        input.is_a?(Hash) && input[:source_pull_request_number].present?
+      end
+      offending = pr_targeting_calls.select { |input| input[:goal].blank? }
+
+      expect(offending).to be_empty, "expected every PR-targeting QueueAgentRunActivity call to carry an explicit :goal"
+      expect(pr_targeting_calls).not_to be_empty, "scenarios must actually exercise PR queueing paths"
+    end
+  end
 end

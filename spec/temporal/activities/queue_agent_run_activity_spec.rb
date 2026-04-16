@@ -265,5 +265,53 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.goal).to eq("review")
       expect(agent_run.source_pull_request_number).to eq(42)
     end
+
+    # Regression coverage for PR #1077. When a caller targets a PR the goal
+    # must be explicit in the call site so initial-sync paths cannot silently
+    # queue a default create_pr run for an existing PR. These tests pin the
+    # outputs of each explicit goal alongside a source_pull_request_number so
+    # that a future refactor relying on the activity-level default is caught.
+    describe "#1077 regression: PR-originated runs carry the caller's explicit goal" do
+      it "records goal=review on the created run when the caller passes goal: 'review'" do
+        result = activity.execute(
+          project_id: project.id,
+          source_pull_request_number: 42,
+          goal: "review"
+        )
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.goal).to eq("review")
+        expect(agent_run.source_pull_request_number).to eq(42)
+      end
+
+      it "records goal=create_pr on the created run when the caller passes goal: 'create_pr'" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          source_pull_request_number: 42,
+          goal: "create_pr"
+        )
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.goal).to eq("create_pr")
+        expect(agent_run.source_pull_request_number).to eq(42)
+      end
+
+      it "deduplicates review-goal PR runs without colliding with create_pr runs for the same PR" do
+        create(:agent_run, :running, project: project,
+          source_pull_request_number: 42, goal: "create_pr")
+
+        result = activity.execute(
+          project_id: project.id,
+          source_pull_request_number: 42,
+          goal: "review"
+        )
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.goal).to eq("review")
+        expect(result[:queued]).to be true
+        expect(result[:duplicate]).to be_nil
+      end
+    end
   end
 end
