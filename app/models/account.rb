@@ -41,6 +41,10 @@ class Account < ApplicationRecord
     regenerate_slug_and_retry!
   end
 
+  def scheduler_paused?
+    scheduler_paused_at.present?
+  end
+
   # Returns the fallback owner for this account — the first owner by ID,
   # or the first user by ID if no owner membership exists. Used for
   # orphaned-project ownership resolution.
