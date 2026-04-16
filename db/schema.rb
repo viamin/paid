@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_15_224710) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_16_020545) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -732,6 +732,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_15_224710) do
     t.bigint "user_id"
     t.index ["account_id", "nav_section", "read_at"], name: "index_notifications_on_badge"
     t.index ["account_id", "read_at", "dismissed_at"], name: "index_notifications_on_unread"
+    t.index ["account_id", "source", "subject_type", "subject_id"], name: "index_notifications_on_dedup_account_wide", unique: true, where: "(user_id IS NULL)"
     t.index ["account_id", "user_id", "source", "subject_type", "subject_id"], name: "index_notifications_on_dedup", unique: true
     t.index ["subject_type", "subject_id"], name: "index_notifications_on_subject"
     t.index ["user_id"], name: "index_notifications_on_user_id"
@@ -1090,6 +1091,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_15_224710) do
     t.string "kb_chat_provider", default: "claude", null: false
     t.jsonb "kb_embedding_fallback_providers", default: [], null: false
     t.string "kb_embedding_provider", default: "openai", null: false
+    t.integer "max_auto_pick_open_prs", default: 1, null: false
     t.integer "max_comment_length", default: 2000, null: false
     t.integer "max_concurrent_runs", default: 2, null: false
     t.integer "max_issues_per_page", default: 50, null: false
@@ -1215,7 +1217,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_15_224710) do
   add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
   add_foreign_key "model_selections", "llm_models"
   add_foreign_key "notifications", "accounts"
-  add_foreign_key "notifications", "users"
+  add_foreign_key "notifications", "users", on_delete: :nullify
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
