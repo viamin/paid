@@ -158,6 +158,95 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       )
     end
 
+    # Regression: without writable log/ and tmp/, `bin/rails routes` fails
+    # during logger initialization with "Unable to access log file. Please
+    # ensure that /workspace/log/development.log exists and is writable".
+    # This surfaced after #1167 raised the memory limit past the point where
+    # Rails could finish booting and hit the logger.
+    it "pre-creates log/ and tmp/ before locking the workspace read-only" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(mock_container).to have_received(:exec).with(
+        [ "mkdir", "-p", "/workspace/log", "/workspace/tmp" ],
+        user: "root"
+      )
+    end
+
+    # Ordering invariant: mkdir MUST precede chmod -R a=rX. After that
+    # chmod, /workspace is read-only even for root (CapDrop: ALL strips
+    # CAP_DAC_OVERRIDE), so a reorder would break directory creation in
+    # production while leaving mock-based tests green.
+    it "creates Rails writable dirs before applying the read-only chmod" do
+      call_order = []
+      allow(mock_container).to receive(:exec) do |cmd, **|
+        call_order << cmd
+        [ [ "" ], [ "" ], 0 ]
+      end
+
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      mkdir_index = call_order.index do |cmd|
+        cmd.is_a?(Array) && cmd.first == "mkdir" && cmd.include?("/workspace/log")
+      end
+      lockdown_index = call_order.index { |cmd| cmd == [ "chmod", "-R", "a=rX", "/workspace" ] }
+
+      expect(mkdir_index).not_to be_nil
+      expect(lockdown_index).not_to be_nil
+      expect(mkdir_index).to be < lockdown_index
+    end
+
+    it "grants the agent user write access to log/ and tmp/ only" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(mock_container).to have_received(:exec).with(
+        [ "chown", "-R", "agent:agent", "/workspace/log", "/workspace/tmp" ],
+        user: "root"
+      )
+      expect(mock_container).to have_received(:exec).with(
+        [ "chmod", "-R", "u+rwX", "/workspace/log", "/workspace/tmp" ],
+        user: "root"
+      )
+    end
+
+    it "raises ContainerError when mkdir of Rails writable dirs fails" do
+      allow(mock_container).to receive(:exec)
+        .with([ "mkdir", "-p", "/workspace/log", "/workspace/tmp" ], user: "root")
+        .and_return([ [ "" ], [ "Permission denied" ], 1 ])
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to create Rails writable directories/
+      )
+    end
+
+    it "raises ContainerError when chown of Rails writable dirs fails" do
+      allow(mock_container).to receive(:exec)
+        .with([ "chown", "-R", "agent:agent", "/workspace/log", "/workspace/tmp" ], user: "root")
+        .and_return([ [ "" ], [ "Operation not permitted" ], 1 ])
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to set Rails writable directory ownership/
+      )
+    end
+
+    it "raises ContainerError when chmod of Rails writable dirs fails" do
+      allow(mock_container).to receive(:exec)
+        .with([ "chmod", "-R", "u+rwX", "/workspace/log", "/workspace/tmp" ], user: "root")
+        .and_return([ [ "" ], [ "Operation not permitted" ], 1 ])
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to grant Rails writable directory permissions/
+      )
+    end
+
     it "raises ContainerError when chown fails during seeding" do
       allow(mock_container).to receive(:exec)
         .with([ "chown", "-R", "root:root", "/workspace" ], user: "root")

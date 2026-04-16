@@ -246,28 +246,56 @@ module Knowledge
     # the entire archive in memory.
     def seed_workspace!
       stream_repo_tar_to_container!
+
+      workspace = options[:workspace_mount]
+      writable_paths = [ "#{workspace}/log", "#{workspace}/tmp" ]
+
       # Force root ownership so the agent user cannot restore write
       # permissions (they don't own the files). Tar preserves uid/gid
       # from the host clone, which may be a non-root user, so an
-      # explicit chown is required. Then set read + execute (for
-      # directories) for all users so the agent can read the codebase
-      # for analysis. Collectors should write only to the size-limited
-      # tmpfs locations (/tmp, /home/agent/.cache).
-      _stdout, _stderr, chown_status = @container.exec(
-        [ "chown", "-R", "root:root", options[:workspace_mount] ],
-        user: "root"
-      )
-      raise ContainerError, "Failed to set workspace ownership (exit #{chown_status})" unless chown_status.to_i.zero?
+      # explicit chown is required.
+      exec_setup!([ "chown", "-R", "root:root", workspace ], "set workspace ownership")
 
-      _stdout, _stderr, status = @container.exec(
-        [ "chmod", "-R", "a=rX", options[:workspace_mount] ],
-        user: "root"
-      )
-      raise ContainerError, "Failed to set workspace permissions (exit #{status})" unless status.to_i.zero?
+      # Pre-create Rails writable directories BEFORE locking the workspace
+      # down. The routes collector boots the target Rails app via
+      # `bin/rails routes`, and Rails initializes its logger by writing to
+      # log/<env>.log during boot. Without writable log/, Rails aborts with
+      # "Unable to access log file. Please ensure that
+      # /workspace/log/development.log exists and is writable". tmp/ is
+      # similarly expected by bootsnap and other boot-time writers. The
+      # mkdir MUST precede the chmod below: after `chmod -R a=rX`,
+      # /workspace has no write bit, and CapDrop: ALL strips
+      # CAP_DAC_OVERRIDE so even root cannot create new entries there.
+      exec_setup!([ "mkdir", "-p", *writable_paths ], "create Rails writable directories")
+
+      # Set read + execute (for directories) for all users so the agent can
+      # read the codebase for analysis. Collectors should write only to
+      # the size-limited tmpfs locations (/tmp, /home/agent/.cache) and
+      # the Rails writable dirs granted below.
+      exec_setup!([ "chmod", "-R", "a=rX", workspace ], "set workspace permissions")
+
+      # Grant the agent user ownership + write access to log/ and tmp/ only.
+      # The rest of /workspace remains read-only so the agent cannot mutate
+      # source code it analyzes. These two dirs are the minimal set required
+      # for Rails to boot cleanly during collection; any pre-existing
+      # contents (unusual for log/tmp, which are typically gitignored) are
+      # also re-owned to agent so Rails can rotate/truncate them.
+      exec_setup!([ "chown", "-R", "agent:agent", *writable_paths ], "set Rails writable directory ownership")
+      exec_setup!([ "chmod", "-R", "u+rwX", *writable_paths ], "grant Rails writable directory permissions")
     rescue ContainerError
       raise
     rescue Docker::Error::DockerError, Errno::ENOENT => e
       raise ContainerError, "Failed to seed workspace: #{e.message}"
+    end
+
+    # Runs a workspace setup command as root and raises ContainerError on
+    # non-zero exit. Centralizes the exec+check pattern so the order and
+    # error shape of seed_workspace! is easy to read at a glance.
+    def exec_setup!(command, failing_action)
+      _stdout, _stderr, status = @container.exec(command, user: "root")
+      return if status.to_i.zero?
+
+      raise ContainerError, "Failed to #{failing_action} (exit #{status})"
     end
 
     def stream_repo_tar_to_container!
