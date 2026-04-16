@@ -54,6 +54,9 @@ module Projects
         .distinct
         .pluck(:issue_id)
         .to_set
+      @paid_prs_by_issue_id = Issue.open_paid_generated_prs_by_issue_id(
+        project: @project, issue_ids: issue_ids
+      )
       @issue_enhancement_rounds = @project.agent_runs
         .where(issue_id: issue_ids, goal: "enhance_issue")
         .where.not(status: AgentRun::UNFINISHED_STATUSES)
@@ -120,6 +123,14 @@ module Projects
           return
         end
 
+        if goal == "create_pr" && issue && source_pr_number.blank?
+          if (paid_pr = issue.associated_paid_pull_request)
+            redirect_to new_project_agent_run_path(@project, goal: goal),
+              alert: "Paid already opened PR ##{paid_pr.github_number} for this issue. Start a run on the PR instead."
+            return
+          end
+        end
+
         create_run_and_redirect(
           on_error_path: new_project_agent_run_path(@project, goal: goal),
           issue: issue,
@@ -143,9 +154,9 @@ module Projects
         return
       end
 
-      if issue&.associated_pull_request
+      if (paid_pr = issue&.associated_paid_pull_request)
         redirect_to project_path(@project),
-          alert: "This issue already has an associated pull request."
+          alert: "Paid already opened PR ##{paid_pr.github_number} for this issue. Quick run on the PR instead."
         return
       end
 
