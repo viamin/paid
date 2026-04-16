@@ -64,8 +64,8 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
   end
 
   describe "CONTAINER_DEFAULTS" do
-    it "uses 512MB memory limit" do
-      expect(described_class::CONTAINER_DEFAULTS[:memory_bytes]).to eq(512 * 1024 * 1024)
+    it "uses 4GB memory limit" do
+      expect(described_class::CONTAINER_DEFAULTS[:memory_bytes]).to eq(4 * 1024 * 1024 * 1024)
     end
 
     it "uses 1 CPU" do
@@ -126,7 +126,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
           "Image" => "paid-agent:latest",
           "HostConfig" => hash_including(
             "NetworkMode" => "bridge",
-            "Memory" => 512 * 1024 * 1024,
+            "Memory" => 4 * 1024 * 1024 * 1024,
             "Binds" => [ a_string_matching(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:rw\z}) ]
           )
         )
@@ -324,6 +324,21 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
 
       tmp_options = config.dig("HostConfig", "Tmpfs", "/tmp")
       expect(tmp_options.split(",")).to include("exec")
+    end
+
+    # Regression: BUNDLE_PATH=/tmp/bundle means the routes collector unpacks
+    # the target repo's full gem set into /tmp. Rails 8 apps commonly ship
+    # 300–600MB of gems; an undersized /tmp surfaces as ENOSPC during
+    # bundle install and leaves routes collection broken even after the
+    # OOM fix. 2GB fits large gem sets with room for transient build files.
+    it "sizes /tmp tmpfs large enough for a target Rails app's gem set" do
+      config = nil
+      allow(Docker::Container).to receive(:create) { |cfg| config = cfg; mock_container }
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      tmp_options = config.dig("HostConfig", "Tmpfs", "/tmp").split(",")
+      size_option = tmp_options.find { |opt| opt.start_with?("size=") }
+      expect(size_option).to eq("size=#{2 * 1024 * 1024 * 1024}")
     end
   end
 
