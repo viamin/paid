@@ -114,36 +114,36 @@ module Automation
         private
 
         def build_pull_request(pr)
-          raw_state = pr_field(pr, :state)
-          merged_at = parse_time(pr_field(pr, :merged_at))
+          raw_state = read_field(pr, :state)
+          merged_at = parse_time(read_field(pr, :merged_at))
 
           Data::PullRequest.new(
-            number: pr_field(pr, :number),
-            title: pr_field(pr, :title).to_s,
-            body: pr_field(pr, :body),
+            number: read_field(pr, :number),
+            title: read_field(pr, :title).to_s,
+            body: read_field(pr, :body),
             state: PR_STATE_MAP.fetch(raw_state.to_s, :closed),
-            draft: pr_field(pr, :draft) == true,
-            merged: pr_field(pr, :merged) == true || merged_at.present?,
-            mergeable: pr_field(pr, :mergeable),
-            head_sha: pr_sub_field(pr, :head, :sha).to_s,
-            head_ref: pr_sub_field(pr, :head, :ref).to_s,
-            base_ref: pr_sub_field(pr, :base, :ref).to_s,
-            author_login: normalize_login(pr_sub_field(pr, :user, :login)),
-            labels: extract_labels(pr_field(pr, :labels)),
-            created_at: parse_time(pr_field(pr, :created_at)),
-            updated_at: parse_time(pr_field(pr, :updated_at)),
+            draft: read_field(pr, :draft) == true,
+            merged: read_field(pr, :merged) == true || merged_at.present?,
+            mergeable: read_field(pr, :mergeable),
+            head_sha: read_sub_field(pr, :head, :sha).to_s,
+            head_ref: read_sub_field(pr, :head, :ref).to_s,
+            base_ref: read_sub_field(pr, :base, :ref).to_s,
+            author_login: normalize_login(read_sub_field(pr, :user, :login)),
+            labels: extract_labels(read_field(pr, :labels)),
+            created_at: parse_time(read_field(pr, :created_at)),
+            updated_at: parse_time(read_field(pr, :updated_at)),
             merged_at: merged_at,
-            url: pr_field(pr, :html_url),
+            url: read_field(pr, :html_url),
             raw_state: raw_state&.to_s
           )
         end
 
         def build_check_run(run)
-          raw_status = run_field(run, :status).to_s
-          raw_conclusion = run_field(run, :conclusion)
+          raw_status = read_field(run, :status).to_s
+          raw_conclusion = read_field(run, :conclusion)
 
           Data::CheckRun.new(
-            name: run_field(run, :name).to_s,
+            name: read_field(run, :name).to_s,
             # Default to :queued for unknown statuses so consumers gating on
             # "all checks finished?" keep waiting instead of advancing while
             # the check is still running. GitHub has added new status values
@@ -151,18 +151,18 @@ module Automation
             # would let auto-merge / auto-review races slip through.
             status: CHECK_STATUS_MAP[raw_status] || :queued,
             conclusion: raw_conclusion ? CHECK_CONCLUSION_MAP[raw_conclusion.to_s] : nil,
-            url: run_field(run, :html_url) || run_field(run, :details_url)
+            url: read_field(run, :html_url) || read_field(run, :details_url)
           )
         end
 
         def build_comment(comment)
           Data::Comment.new(
-            id: comment_field(comment, :id),
-            author_login: normalize_login(comment_sub_field(comment, :user, :login)),
-            body: comment_field(comment, :body).to_s,
-            created_at: parse_time(comment_field(comment, :created_at)),
-            updated_at: parse_time(comment_field(comment, :updated_at)),
-            url: comment_field(comment, :html_url)
+            id: read_field(comment, :id),
+            author_login: normalize_login(read_sub_field(comment, :user, :login)),
+            body: read_field(comment, :body).to_s,
+            created_at: parse_time(read_field(comment, :created_at)),
+            updated_at: parse_time(read_field(comment, :updated_at)),
+            url: read_field(comment, :html_url)
           )
         end
 
@@ -172,49 +172,10 @@ module Automation
           # prevents a malformed response (or a test mock that forgets the
           # field) from being reported as a successful merge.
           Data::MergeResult.new(
-            merged: response_field(response, :merged) == true,
-            sha: response_field(response, :sha),
-            message: response_field(response, :message)
+            merged: read_field(response, :merged) == true,
+            sha: read_field(response, :sha),
+            message: read_field(response, :message)
           )
-        end
-
-        # --- field accessors --------------------------------------------------
-        # Accept either a Sawyer::Resource (Octokit's default) or a plain Hash
-        # with symbol/string keys so adapters stay usable in unit tests that
-        # stub the client with hashes.
-
-        def pr_field(pr, key)
-          read_field(pr, key)
-        end
-
-        def pr_sub_field(pr, *keys)
-          keys.reduce(pr) { |acc, key| acc && read_field(acc, key) }
-        end
-
-        def run_field(run, key)
-          read_field(run, key)
-        end
-
-        def comment_field(comment, key)
-          read_field(comment, key)
-        end
-
-        def comment_sub_field(comment, *keys)
-          keys.reduce(comment) { |acc, key| acc && read_field(acc, key) }
-        end
-
-        def response_field(response, key)
-          read_field(response, key)
-        end
-
-        def read_field(source, key)
-          return nil if source.nil?
-
-          if source.respond_to?(key)
-            source.public_send(key)
-          elsif source.respond_to?(:[])
-            source[key] || source[key.to_s]
-          end
         end
       end
     end

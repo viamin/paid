@@ -87,6 +87,23 @@ module Automation
         def extract_labels(source)
           Array(source).map { |label| label.respond_to?(:name) ? label.name : label.to_s }
         end
+
+        # Accept either a Sawyer::Resource (Octokit's default) or a plain Hash
+        # with symbol/string keys so adapters stay usable in unit tests that
+        # stub the client with hashes.
+        def read_field(source, key)
+          return nil if source.nil?
+
+          if source.respond_to?(key)
+            source.public_send(key)
+          elsif source.respond_to?(:[])
+            source[key] || source[key.to_s]
+          end
+        end
+
+        def read_sub_field(source, *keys)
+          keys.reduce(source) { |acc, key| acc && read_field(acc, key) }
+        end
       end
     end
   end

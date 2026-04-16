@@ -134,20 +134,6 @@ module Automation
 
           nil
         end
-
-        def read_sub_field(source, *keys)
-          keys.reduce(source) { |acc, key| acc && read_field(acc, key) }
-        end
-
-        def read_field(source, key)
-          return nil if source.nil?
-
-          if source.respond_to?(key)
-            source.public_send(key)
-          elsif source.respond_to?(:[])
-            source[key] || source[key.to_s]
-          end
-        end
       end
     end
   end
