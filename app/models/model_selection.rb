@@ -9,4 +9,5 @@ class ModelSelection < ApplicationRecord
   validates :selector_type, presence: true, inclusion: { in: SELECTOR_TYPES }
   validates :agent_run_id, uniqueness: true
   validates :complexity_score, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 10 }, allow_nil: true
+  validates :tier, inclusion: { in: LlmModel::TIERS }, allow_nil: true
 end

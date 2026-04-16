@@ -12,7 +12,8 @@ module Models
 
     def call
       complexity = estimate_complexity
-      candidates = build_candidates(complexity)
+      tier = TierForComplexity.call(complexity: complexity, agent_run: agent_run)
+      candidates = build_candidates(complexity: complexity, tier: tier)
 
       return nil if candidates.empty?
 
@@ -21,17 +22,16 @@ module Models
       {
         model: selected,
         selector_type: "rules",
-        reasoning: "Rules-based selection: complexity=#{complexity.round(1)}, " \
+        tier: tier,
+        reasoning: "Rules-based selection: complexity=#{complexity.round(1)}, tier=#{tier || 'unknown'}, " \
                    "selected #{selected.display_name} (capability=#{selected.capability_score})",
         candidates: candidates.map { |m| { model_id: m.model_id, score: m.capability_score.to_f } },
         complexity_score: complexity
       }
     end
 
-    private
-
-    attr_reader :agent_run
-
+    # Public so collaborators (e.g. MetaAgentSelector) can reuse the same
+    # heuristic to establish an initial tier before the LLM meta-agent runs.
     def estimate_complexity
       score = 5.0
 
@@ -48,27 +48,51 @@ module Models
       score.clamp(1.0, 10.0)
     end
 
-    def build_candidates(complexity)
+    private
+
+    attr_reader :agent_run
+
+    def build_candidates(complexity:, tier:)
       scope = LlmModel.active
 
       # Exclude models the project has excluded
       excluded = agent_run.project.model_preferences["excluded_model_ids"]
       scope = scope.where.not(model_id: excluded) if excluded.present?
 
-      # Filter by minimum capability, then order by cost-effectiveness
+      tier_candidates = tier ? tier_scope(scope, tier).to_a : []
+      # Fall back to the broader pool when the tier has no active models, so a
+      # missing tier mapping never leaves the system with zero candidates.
+      return tier_candidates if tier_candidates.any?
+
+      fallback_candidates(scope, complexity)
+    end
+
+    def tier_scope(scope, tier)
+      ordering = tier == "low" ? cost_asc_ordering : capability_desc_ordering
+      scope.by_tier(tier).order(ordering).limit(5)
+    end
+
+    # Capability floor preserves the pre-tier behavior for any DB whose models
+    # have not been backfilled with `tier`. Without it, currently-complex tasks
+    # could pick up low-capability models that the previous logic filtered out.
+    def fallback_candidates(scope, complexity)
       if complexity < 4.0
-        scope = scope.where("capability_score >= 5 OR capability_score IS NULL")
-        # For simple tasks, prefer cheaper models among those that meet the threshold
-        scope.order(Arel.sql("input_cost_per_million ASC NULLS LAST")).limit(5).to_a
+        scope.where("capability_score >= 5 OR capability_score IS NULL")
+          .order(cost_asc_ordering).limit(5).to_a
       elsif complexity >= 7.0
-        scope = scope.where("capability_score >= 8 OR capability_score IS NULL")
-        # For complex tasks, prefer the most capable models
-        scope.order(Arel.sql("capability_score DESC NULLS LAST")).limit(5).to_a
+        scope.where("capability_score >= 8 OR capability_score IS NULL")
+          .order(capability_desc_ordering).limit(5).to_a
       else
-        # For medium complexity, prefer higher capability (same as complex tasks
-        # but with a wider pool since no minimum capability filter is applied)
-        scope.order(Arel.sql("capability_score DESC NULLS LAST")).limit(5).to_a
+        scope.order(capability_desc_ordering).limit(5).to_a
       end
+    end
+
+    def capability_desc_ordering
+      Arel.sql("capability_score DESC NULLS LAST")
+    end
+
+    def cost_asc_ordering
+      Arel.sql("input_cost_per_million ASC NULLS LAST")
     end
   end
 end

@@ -195,6 +195,39 @@ RSpec.describe ProcessRunQueueJob do
       expect(queued_run.reload.status).to eq("queued")
     end
 
+    it "does not start queued runs when the account's scheduler is paused" do
+      paused_account = create(:account, scheduler_paused_at: Time.current)
+      paused_project = create(:project, account: paused_account, created_by: create(:user, account: paused_account))
+      paused_run = create(:agent_run, :queued, project: paused_project)
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      described_class.new.perform
+
+      expect(paused_run.reload.status).to eq("queued")
+    end
+
+    it "still starts queued runs for accounts whose scheduler is not paused" do
+      paused_account = create(:account, scheduler_paused_at: Time.current)
+      paused_project = create(:project, account: paused_account, created_by: create(:user, account: paused_account))
+      paused_run = create(:agent_run, :queued, project: paused_project, created_at: 2.minutes.ago)
+
+      active_project = create(:project)
+      active_run = create(:agent_run, :queued, project: active_project, created_at: 1.minute.ago)
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      expect(started_ids).to eq([ active_run.id ])
+      expect(active_run.reload.status).to eq("pending")
+      expect(paused_run.reload.status).to eq("queued")
+    end
+
     it "skips blocked user and starts runs for other users" do
       blocked_project = create(:project)
       blocked_user = blocked_project.created_by
@@ -263,6 +296,16 @@ RSpec.describe ProcessRunQueueJob do
 
       it "skips projects with auto_pick_enabled disabled" do
         create(:project, auto_pick_enabled: false)
+
+        expect(Issues::AutoPick).not_to receive(:new)
+
+        described_class.new.perform
+      end
+
+      it "skips auto-pick seeding for projects whose account is paused" do
+        paused_account = create(:account, scheduler_paused_at: Time.current)
+        paused_user = create(:user, account: paused_account)
+        create_auto_pick_project(account: paused_account, user: paused_user)
 
         expect(Issues::AutoPick).not_to receive(:new)
 

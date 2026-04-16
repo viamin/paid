@@ -13,7 +13,7 @@ RSpec.describe Models::Select do
     end
 
     context "with project model override (required_model_id)" do
-      let!(:llm_model) { create(:llm_model, model_id: "claude-sonnet-4-6") }
+      let!(:llm_model) { create(:llm_model, model_id: "claude-sonnet-4-6", tier: "high") }
 
       before do
         project.update!(model_preferences: { "required_model_id" => "claude-sonnet-4-6" })
@@ -25,6 +25,12 @@ RSpec.describe Models::Select do
         expect(selection).to be_a(ModelSelection)
         expect(selection.llm_model).to eq(llm_model)
         expect(selection.selector_type).to eq("override")
+      end
+
+      it "records the tier from the selected model" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection.tier).to eq("high")
       end
 
       it "persists a ModelSelection record" do
@@ -102,6 +108,7 @@ RSpec.describe Models::Select do
         allow(Models::MetaAgentSelector).to receive(:call).and_return({
           model: llm_model,
           selector_type: "meta_agent",
+          tier: "high",
           reasoning: "Complex task needs high capability",
           candidates: [ { model_id: "claude-sonnet-4-6", score: 9.0 } ],
           complexity_score: 7.5
@@ -115,6 +122,12 @@ RSpec.describe Models::Select do
         expect(selection.selector_type).to eq("meta_agent")
         expect(selection.reasoning).to eq("Complex task needs high capability")
         expect(selection.complexity_score).to eq(7.5)
+      end
+
+      it "persists the meta-agent tier" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection.tier).to eq("high")
       end
     end
 
