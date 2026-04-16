@@ -426,6 +426,156 @@ RSpec.describe Issue do
         end
       end
     end
+
+    describe "#associated_paid_pull_request" do
+      let(:project) { create(:project) }
+
+      it "returns the open PR when a completed agent run produced it" do
+        issue = create(:issue, project: project)
+        pr = create(:issue, :pull_request, project: project, github_number: 99, github_state: "open")
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+
+        expect(issue.associated_paid_pull_request).to eq(pr)
+      end
+
+      it "returns nil when the only linked PR was not paid-generated" do
+        issue = create(:issue, project: project)
+        create(:issue, :pull_request, project: project, parent_issue: issue, github_state: "open")
+
+        expect(issue.associated_paid_pull_request).to be_nil
+      end
+
+      it "returns nil when the paid-generated PR has been closed" do
+        issue = create(:issue, project: project)
+        pr = create(:issue, :pull_request, :closed, project: project, github_number: 99)
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+
+        expect(issue.associated_paid_pull_request).to be_nil
+      end
+
+      it "returns nil when called on a pull request record" do
+        issue = create(:issue, project: project)
+        pr = create(:issue, :pull_request, project: project, github_number: 99, github_state: "open")
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+
+        expect(pr.associated_paid_pull_request).to be_nil
+      end
+
+      it "ignores PRs from other projects with matching numbers" do
+        other_project = create(:project)
+        issue = create(:issue, project: project)
+        create(:issue, :pull_request, project: other_project, github_number: 99, github_state: "open")
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: 99,
+          pull_request_url: "https://github.com/example/repo/pull/99")
+
+        expect(issue.associated_paid_pull_request).to be_nil
+      end
+    end
+
+    describe ".open_paid_generated_prs_by_issue_id" do
+      let(:project) { create(:project) }
+
+      it "maps issue_id to the open paid-generated PR" do
+        issue_with_paid_pr = create(:issue, project: project)
+        paid_pr = create(:issue, :pull_request, project: project, github_number: 99, github_state: "open")
+        create(:agent_run, :completed, project: project, issue: issue_with_paid_pr,
+          pull_request_number: paid_pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{paid_pr.github_number}")
+
+        issue_without_paid_pr = create(:issue, project: project)
+        create(:issue, :pull_request, project: project, parent_issue: issue_without_paid_pr,
+          github_state: "open")
+
+        result = described_class.open_paid_generated_prs_by_issue_id(
+          project: project,
+          issue_ids: [ issue_with_paid_pr.id, issue_without_paid_pr.id ]
+        )
+
+        expect(result).to eq(issue_with_paid_pr.id => paid_pr)
+      end
+
+      it "excludes issues whose paid PR has been closed" do
+        issue = create(:issue, project: project)
+        paid_pr = create(:issue, :pull_request, :closed, project: project, github_number: 99)
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: paid_pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{paid_pr.github_number}")
+
+        result = described_class.open_paid_generated_prs_by_issue_id(
+          project: project, issue_ids: [ issue.id ]
+        )
+
+        expect(result).to be_empty
+      end
+
+      it "returns an empty hash when no issue IDs are supplied" do
+        expect(described_class.open_paid_generated_prs_by_issue_id(project: project, issue_ids: []))
+          .to eq({})
+      end
+
+      it "prefers the most recently updated PR when multiple are linked to one issue" do
+        issue = create(:issue, project: project)
+        older_pr = create(:issue, :pull_request, project: project, github_number: 98,
+          github_state: "open", github_updated_at: 2.hours.ago)
+        newer_pr = create(:issue, :pull_request, project: project, github_number: 99,
+          github_state: "open", github_updated_at: 1.minute.ago)
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: older_pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{older_pr.github_number}")
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: newer_pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{newer_pr.github_number}")
+
+        result = described_class.open_paid_generated_prs_by_issue_id(
+          project: project, issue_ids: [ issue.id ]
+        )
+
+        expect(result).to eq(issue.id => newer_pr)
+      end
+
+      it "ignores PRs from other projects with matching numbers" do
+        other_project = create(:project)
+        issue = create(:issue, project: project)
+        create(:issue, :pull_request, project: other_project, github_number: 99, github_state: "open")
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: 99,
+          pull_request_url: "https://github.com/example/repo/pull/99")
+
+        result = described_class.open_paid_generated_prs_by_issue_id(
+          project: project, issue_ids: [ issue.id ]
+        )
+
+        expect(result).to be_empty
+      end
+
+      it "issues a bounded number of queries regardless of issue count" do
+        issues = Array.new(5) { create(:issue, project: project) }
+        issues.each_with_index do |issue, idx|
+          pr = create(:issue, :pull_request, project: project, github_number: 100 + idx, github_state: "open")
+          create(:agent_run, :completed, project: project, issue: issue,
+            pull_request_number: pr.github_number,
+            pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+        end
+
+        # Two queries: agent_runs pairs, then open PRs by number.
+        query_count = 0
+        counter = ->(*, payload) { query_count += 1 unless payload[:name] == "SCHEMA" }
+        ActiveSupport::Notifications.subscribed(counter, "sql.active_record") do
+          described_class.open_paid_generated_prs_by_issue_id(
+            project: project, issue_ids: issues.map(&:id)
+          )
+        end
+
+        expect(query_count).to eq(2)
+      end
+    end
   end
 
   describe "#ready_to_work?" do
