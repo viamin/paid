@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_16_173627) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_16_183113) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -83,6 +83,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_173627) do
     t.datetime "created_at", null: false
     t.integer "default_max_tokens_per_run", default: 10000000, null: false
     t.string "name", null: false
+    t.datetime "scheduler_paused_at"
     t.string "slug", null: false
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_accounts_on_slug", unique: true

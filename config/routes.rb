@@ -62,7 +62,12 @@ Rails.application.routes.draw do
   resources :service_containers
 
   # All agent runs across projects
-  resources :agent_runs, only: [ :index ]
+  resources :agent_runs, only: [ :index ] do
+    collection do
+      post :pause_scheduler
+      post :resume_scheduler
+    end
+  end
 
   # Prompt management
   resources :prompts do

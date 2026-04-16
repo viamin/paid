@@ -65,4 +65,14 @@ RSpec.describe Account do
       expect(account.slug).to eq("my-company-2")
     end
   end
+
+  describe "#scheduler_paused?" do
+    it "is false by default" do
+      expect(create(:account).scheduler_paused?).to be false
+    end
+
+    it "is true when scheduler_paused_at is set" do
+      expect(create(:account, scheduler_paused_at: Time.current).scheduler_paused?).to be true
+    end
+  end
 end
