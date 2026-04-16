@@ -54,7 +54,12 @@ module Issues
       return nil if decision.nil? || decision.type == "noop"
 
       issue_id = decision.payload.fetch(:issue_id)
-      issue = Issue.find(issue_id)
+      issue = Issue.find_by(id: issue_id)
+      # Race: another process may have deleted the issue between the
+      # strategy's candidate lookup and this find. Treat it like the
+      # duplicate_skipped path rather than letting RecordNotFound escape
+      # the rescues below and abort the queue-seed tick.
+      return nil unless issue
 
       agent_run = create_agent_run(issue)
 

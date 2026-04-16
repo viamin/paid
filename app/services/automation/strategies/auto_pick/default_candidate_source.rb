@@ -34,11 +34,14 @@ module Automation
         EXCLUDED_LABELS = %w[planning research waiting tracking epic needs-manual-setup].freeze
 
         # SQL ILIKE patterns used to pre-filter potential tracker issues
-        # before applying the full Ruby-level +Issue::TRACKER_PATTERN+
-        # check. Each pattern must be a *superset* of its
-        # +TRACKER_PATTERN+ counterpart so that no tracker escapes the
-        # prefilter (e.g. +remaining%work+ covers any whitespace variant
-        # that +remaining\s+work+ would match).
+        # before applying the full Ruby-level +Issue#tracker_issue?+
+        # check. The Ruby check matches tracker vocabulary in the title
+        # OR inside a markdown heading in the body; each SQL pattern here
+        # must be a *superset* of both branches so that no tracker
+        # escapes the prefilter (e.g. +%remaining%work%+ covers any
+        # whitespace variant that +remaining\s+work+ would match, and
+        # +%tracker%+ covers both "## Tracker" headings and bare-word
+        # title matches).
         TRACKER_SQL_PATTERNS = [
           "%tracker%",
           "%remaining%work%",
@@ -99,10 +102,10 @@ module Automation
 
           # Identifies tracker issues whose body references other issues
           # that are still open. Uses a SQL pre-filter (ILIKE) to narrow
-          # candidates, then applies the full Ruby-side +TRACKER_PATTERN+
-          # and reference parsing. Only queries open/closed state for
-          # issue numbers actually referenced by tracker candidates (not
-          # all project issues).
+          # candidates, then applies the full Ruby-side
+          # +Issue#tracker_issue?+ check and reference parsing. Only
+          # queries open/closed state for issue numbers actually
+          # referenced by tracker candidates (not all project issues).
           #
           # +candidate_scope+ is the already-filtered eligible-issue scope
           # so the ILIKE scan runs only against issues that passed earlier
