@@ -54,9 +54,9 @@ jobs:
         # dumps are byte-identical across dev, devcontainer, and CI. Drift
         # across minor versions causes cosmetic pg_get_expr() churn in schema.rb.
         run: |
-          dev=$(grep -oE 'postgres:[0-9][^[:space:]]*' .devcontainer/compose.yaml | head -1)
-          compose=$(grep -oE 'postgres:[0-9][^[:space:]]*' docker-compose.yml | head -1)
-          ci=$(grep -oE 'postgres:[0-9][^[:space:]]*' .github/workflows/ci.yml | head -1)
+          dev=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .devcontainer/compose.yaml | head -1 | awk '{print $NF}')
+          compose=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' docker-compose.yml | head -1 | awk '{print $NF}')
+          ci=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/ci.yml | head -1 | awk '{print $NF}')
           echo "devcontainer/compose.yaml: ${dev:-<none>}"
           echo "docker-compose.yml:        ${compose:-<none>}"
           echo ".github/workflows/ci.yml:  ${ci:-<none>}"
