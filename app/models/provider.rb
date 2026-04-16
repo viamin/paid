@@ -543,10 +543,13 @@ class Provider < ApplicationRecord
       coerced[key] = value
     end
 
-    low_max = coerced["low_max"]
-    mid_max = coerced["mid_max"]
-    return if low_max.nil? || mid_max.nil?
-    return if low_max < mid_max
+    # Compare against effective values so partial submissions (e.g. only low_max)
+    # cannot persist a configuration that is inconsistent when merged with the
+    # defaults (e.g. low_max=8 with the default mid_max=7 would leave the "mid"
+    # tier unreachable).
+    effective_low_max = coerced["low_max"] || DEFAULT_COMPLEXITY_THRESHOLDS["low_max"]
+    effective_mid_max = coerced["mid_max"] || DEFAULT_COMPLEXITY_THRESHOLDS["mid_max"]
+    return if effective_low_max < effective_mid_max
 
     errors.add(:complexity_thresholds, "low_max must be less than mid_max")
   end

@@ -57,6 +57,18 @@ RSpec.describe Provider do
         expect(provider.errors[:complexity_thresholds].join).to include("less than mid_max")
       end
 
+      it "rejects a partial low_max that is inconsistent with the default mid_max" do
+        provider.complexity_thresholds = { "low_max" => 8 }
+        expect(provider).not_to be_valid
+        expect(provider.errors[:complexity_thresholds].join).to include("less than mid_max")
+      end
+
+      it "rejects a partial mid_max that is inconsistent with the default low_max" do
+        provider.complexity_thresholds = { "mid_max" => 2 }
+        expect(provider).not_to be_valid
+        expect(provider.errors[:complexity_thresholds].join).to include("less than mid_max")
+      end
+
       it "exposes a merged-with-defaults hash via effective_complexity_thresholds" do
         provider.complexity_thresholds = { "low_max" => 4 }
         expect(provider.effective_complexity_thresholds).to eq("low_max" => 4, "mid_max" => 7)
