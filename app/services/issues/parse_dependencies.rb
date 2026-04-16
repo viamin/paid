@@ -135,6 +135,7 @@ module Issues
       new_local_deps = sync_local_deps(local_deps, current_local_by_id)
       new_cross_refs = sync_cross_project_deps(
         cross_deps,
+        local_deps,
         current_local_by_id,
         new_local_deps,
         current_external_by_key
@@ -325,7 +326,7 @@ module Issues
       new_local_deps
     end
 
-    def sync_cross_project_deps(cross_deps, current_local_by_id, new_local_deps, current_external_by_key)
+    def sync_cross_project_deps(cross_deps, local_deps, current_local_by_id, new_local_deps, current_external_by_key)
       resolved_ids = Set.new
       external_keys = Set.new
       return { resolved_ids: resolved_ids, external_keys: external_keys } if cross_deps.empty?
@@ -341,6 +342,13 @@ module Issues
         requires_deployment = cross_deps[[ owner, repo, number ]]
         project_key = [ owner.downcase, repo.downcase ]
         project = project_lookup[project_key]
+        # Preserve the deployment flag from a matching local ref so a plain
+        # self-repo cross-ref (e.g. "Depends on owner/repo#N") cannot silently
+        # downgrade a dep that a local "Awaits deployment of #N" already
+        # promoted. Mirrors the stickiness contract enforced by merge_refs.
+        if project&.id == issue.project_id && local_deps[number]
+          requires_deployment = true
+        end
 
         if project
           dep_issue = issues_by_project.dig(project.id, number)

@@ -708,6 +708,43 @@ RSpec.describe Issues::ParseDependencies do
         expect(dep).to be_present
         expect(dep.requires_deployment).to be true
       end
+
+      it "preserves deployment flag when a local deployment ref is paired with a plain self-repo cross-ref" do
+        # Inverse of the preceding test: body has a local deployment ref AND a
+        # plain self-repo cross-ref to the same issue. The plain cross-ref must
+        # not silently downgrade the deployment flag set by the local ref.
+        pr = create(:issue, :pull_request, project: project, github_number: 9213)
+        body = <<~MD
+          Awaits deployment of #9213
+          Depends on #{project.owner}/#{project.repo}#9213
+        MD
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+
+        dep = issue.issue_dependencies.find_by(depends_on_issue_id: pr.id)
+        expect(dep).to be_present
+        expect(dep.requires_deployment).to be true
+      end
+
+      it "preserves deployment flag on re-parse when plain self-repo cross-ref is present" do
+        # Same scenario on re-parse: the dep already exists with
+        # requires_deployment=true; a plain self-repo cross-ref in the body
+        # must not downgrade it via the current_local_by_id branch.
+        pr = create(:issue, :pull_request, project: project, github_number: 9214)
+        body = <<~MD
+          Awaits deployment of #9214
+          Depends on #{project.owner}/#{project.repo}#9214
+        MD
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+        described_class.call(issue: issue)
+
+        dep = issue.issue_dependencies.find_by(depends_on_issue_id: pr.id)
+        expect(dep).to be_present
+        expect(dep.requires_deployment).to be true
+      end
     end
   end
 end
