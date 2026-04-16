@@ -196,6 +196,47 @@ RSpec.describe Provider do
       expect(provider).not_to be_valid
       expect(provider.errors[:config]).to include("must include an OpenCode model id")
     end
+
+    describe "agent_co_author_trailer" do
+      it "allows a normal single-line trailer" do
+        provider.agent_co_author_trailer = "Co-Authored-By: Claude <noreply@anthropic.com>"
+        expect(provider).to be_valid
+      end
+
+      it "allows blank trailer" do
+        provider.agent_co_author_trailer = ""
+        expect(provider).to be_valid
+      end
+
+      it "allows nil trailer" do
+        provider.agent_co_author_trailer = nil
+        expect(provider).to be_valid
+      end
+
+      it "rejects trailer containing newline" do
+        provider.agent_co_author_trailer = "Co-Authored-By: A\nCo-Authored-By: B"
+        expect(provider).not_to be_valid
+        expect(provider.errors[:agent_co_author_trailer]).to include("must be a single line (no newlines)")
+      end
+
+      it "rejects trailer containing carriage return" do
+        provider.agent_co_author_trailer = "Co-Authored-By: A\rB"
+        expect(provider).not_to be_valid
+        expect(provider.errors[:agent_co_author_trailer]).to include("must be a single line (no newlines)")
+      end
+
+      it "strips leading and trailing whitespace before validation" do
+        provider.agent_co_author_trailer = "  Co-Authored-By: Claude <noreply@anthropic.com>  "
+        provider.valid?
+        expect(provider.agent_co_author_trailer).to eq("Co-Authored-By: Claude <noreply@anthropic.com>")
+      end
+
+      it "normalizes whitespace-only values to nil" do
+        provider.agent_co_author_trailer = "   "
+        provider.valid?
+        expect(provider.agent_co_author_trailer).to be_nil
+      end
+    end
   end
 
   describe "scopes" do
