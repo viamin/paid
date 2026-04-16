@@ -175,10 +175,27 @@ module Automation
     end
 
     def review_bot_request_decision(scan)
-      login = trigger(scan, "review_bot_review_pending")&.dig(:request_login)
-      return if login.blank?
+      reviewers = review_bot_reviewers_from(trigger(scan, "review_bot_review_pending"))
+      return if reviewers.empty?
 
-      Decision.request_review(pr_number: scan[:pr_number], reviewers: [ login ])
+      Decision.request_review(pr_number: scan[:pr_number], reviewers: reviewers)
+    end
+
+    # Reads the ordered reviewer chain from a +review_bot_review_pending+
+    # trigger so the request_review decision carries the full fallback list
+    # (primary first), letting RequestReviewActivity skip past a
+    # rate-limited primary to a configured secondary in one cycle. Falls
+    # back to the legacy single +request_login+ field for scans emitted
+    # before chain support shipped, so neither the workflow nor the
+    # evaluator regresses in mixed-version environments.
+    def review_bot_reviewers_from(trigger)
+      return [] unless trigger
+
+      chain = trigger[:request_logins]
+      return Array(chain).compact if chain.is_a?(Array) && chain.any?
+
+      login = trigger[:request_login]
+      login.present? ? [ login ] : []
     end
 
     def followup_triggers?(scan)
