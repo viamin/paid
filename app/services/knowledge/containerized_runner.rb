@@ -32,13 +32,18 @@ module Knowledge
     class CloneError < Error; end
     class TimeoutError < ContainerError; end
 
-    # Lightweight resource limits — collectors don't need 4GB of memory.
+    # Matches the agent container memory budget (Containers::Provision
+    # defaults to 4GB). The routes collector runs `bundle install` and
+    # boots the target Rails app via `bin/rails routes`, which deterministically
+    # exceeded the previous 512MB cap and was killed by the cgroup OOM
+    # killer (exit 137). Other collectors use far less memory but share
+    # this container, so we size for the heaviest workload.
     CONTAINER_DEFAULTS = {
       image: "paid-agent:latest",
-      memory_bytes: 512 * 1024 * 1024,  # 512MB
-      cpu_quota: 100_000,                # 1 CPU
+      memory_bytes: 4 * 1024 * 1024 * 1024,  # 4GB
+      cpu_quota: 100_000,                     # 1 CPU
       pids_limit: 200,
-      timeout_seconds: 300,              # 5 minutes
+      timeout_seconds: 300,                   # 5 minutes
       workspace_mount: "/workspace",
       network_mode: "bridge"
     }.freeze
@@ -315,8 +320,15 @@ module Knowledge
         # file" error (see e.g. bigdecimal-4.1.1 extconf.rb). Docker's
         # default tmpfs flags include noexec, so it must be overridden.
         # /home/agent/.cache only stores cache data and stays noexec.
+        #
+        # /tmp size must fit the target repo's full gem set because the
+        # routes collector sets BUNDLE_PATH=/tmp/bundle and unpacks every
+        # gem there. Rails 8 apps commonly ship 300–600MB of gems, so the
+        # previous 256MB limit produced ENOSPC during `bundle install`.
+        # 2GB gives headroom for large gem sets and transient build files;
+        # tmpfs is charged against the container memory cgroup (now 4GB).
         "Tmpfs" => {
-          "/tmp" => "exec,size=#{256 * 1024 * 1024},mode=1777",
+          "/tmp" => "exec,size=#{2 * 1024 * 1024 * 1024},mode=1777",
           "/home/agent/.cache" => "size=#{128 * 1024 * 1024},mode=0755"
         },
         "Binds" => [
