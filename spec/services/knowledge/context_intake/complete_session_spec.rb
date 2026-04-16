@@ -33,6 +33,31 @@ RSpec.describe Knowledge::ContextIntake::CompleteSession do
       }.to raise_error(ActiveRecord::RecordInvalid, /Required questions not answered/)
     end
 
+    it "raises when required questions are skipped but not answered" do
+      session = Knowledge::ContextIntake::StartSession.call(project: project, user: user)
+
+      # Answer all required questions except one, which we mark as skipped directly
+      required = Knowledge::ContextIntake::QuestionnaireSchema.required_questions
+      required.each_with_index do |q, i|
+        if i == 0
+          # Simulate a crafted request that bypasses the UI skip guard
+          session.context_intake_responses
+                 .find_by!(question_key: q[:key])
+                 .update_columns(skipped: true, answer_text: nil)
+        else
+          Knowledge::ContextIntake::SaveResponse.call(
+            session: session,
+            question_key: q[:key],
+            answer_text: "Test answer"
+          )
+        end
+      end
+
+      expect {
+        described_class.call(session: session)
+      }.to raise_error(ActiveRecord::RecordInvalid, /Required questions not answered/)
+    end
+
     it "creates knowledge artifacts for answered sections" do
       session = Knowledge::ContextIntake::StartSession.call(project: project, user: user)
 

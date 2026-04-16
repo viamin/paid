@@ -37,6 +37,8 @@ module Knowledge
 
       load_wizard_state
       render :show
+    rescue ArgumentError => e
+      redirect_to project_context_intake_path(@project), alert: e.message
     end
 
     def complete

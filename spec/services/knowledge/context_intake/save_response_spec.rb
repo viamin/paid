@@ -26,15 +26,31 @@ RSpec.describe Knowledge::ContextIntake::SaveResponse do
       expect(result.provenance).to eq("human")
     end
 
-    it "marks a response as skipped" do
+    it "marks an optional response as skipped" do
+      create(:context_intake_response,
+        context_intake_session: session,
+        question_key: "business_model",
+        section: "product_purpose",
+        is_follow_up: false)
+
       result = described_class.call(
         session: session,
-        question_key: "product_description",
+        question_key: "business_model",
         skipped: true
       )
 
       expect(result.skipped).to be(true)
       expect(result.answer_text).to be_nil
+    end
+
+    it "raises when attempting to skip a required question" do
+      expect {
+        described_class.call(
+          session: session,
+          question_key: "product_description",
+          skipped: true
+        )
+      }.to raise_error(ArgumentError, /Cannot skip required question/)
     end
 
     it "updates the session current_step" do

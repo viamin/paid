@@ -30,7 +30,7 @@ module Knowledge
         required_keys = QuestionnaireSchema.required_questions.map { |q| q[:key] }
         unanswered = session.context_intake_responses
                             .where(question_key: required_keys)
-                            .unanswered
+                            .where(answer_text: [ nil, "" ])
 
         return if unanswered.empty?
 
