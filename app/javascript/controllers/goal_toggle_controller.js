@@ -3,6 +3,9 @@ import { Controller } from "@hotwired/stimulus"
 export default class extends Controller {
   static targets = [
     "issueSection",
+    "issueHeading",
+    "issueDropdown",
+    "issueTable",
     "prSection",
     "prHeading",
     "prDescription",
@@ -33,13 +36,16 @@ export default class extends Controller {
     const showIssue = goal === "create_pr" || goal === "enhance_issue"
     const showPr = goal === "create_pr" || goal === "review"
     const isReview = goal === "review"
+    const isEnhanceIssue = goal === "enhance_issue"
     const showPriority = !isReview
 
     this.issueSectionTargets.forEach((el) => {
       el.hidden = !showIssue
       el.querySelectorAll("input, select, textarea, button").forEach(
         (control) => {
-          control.disabled = !showIssue
+          if (!control.hasAttribute("data-permanently-disabled")) {
+            control.disabled = !showIssue
+          }
         }
       )
     })
@@ -82,6 +88,29 @@ export default class extends Controller {
           control.disabled = !isReview
         }
       })
+    })
+
+    // Toggle between dropdown (create_pr) and table (enhance_issue) for issues.
+    this.issueDropdownTargets.forEach((el) => {
+      el.hidden = isEnhanceIssue
+      el.querySelectorAll("select").forEach((control) => {
+        control.disabled = isEnhanceIssue || !showIssue
+      })
+    })
+
+    this.issueTableTargets.forEach((el) => {
+      el.hidden = !isEnhanceIssue
+      el.querySelectorAll("input[type='checkbox']").forEach((control) => {
+        if (!control.hasAttribute("data-permanently-disabled")) {
+          control.disabled = !isEnhanceIssue
+        }
+      })
+    })
+
+    this.issueHeadingTargets.forEach((el) => {
+      el.textContent = isEnhanceIssue
+        ? "Select Issues to Enhance"
+        : "Select Issue"
     })
 
     if (isReview) {

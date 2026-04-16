@@ -48,19 +48,24 @@
         </fieldset>
 
         <div data-goal-toggle-target="issueSection">
-          <h2 class="text-base font-semibold text-gray-900">Select Issue</h2>
+          <h2 class="text-base font-semibold text-gray-900" data-goal-toggle-target="issueHeading">Select Issue</h2>
 
           <div class="mt-4 rounded-lg border border-gray-200 p-4">
-            <label for="issue_id" class="block text-sm font-medium text-gray-700">Choose from synced issues:</label>
             <% if @issues.any? %>
-              <select name="issue_id" id="issue_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                <option value="">-- Select an issue --</option>
-                <% @issues.each do |issue| %>
-                  <option value="<%= issue.id %>" <%= "selected" if params[:issue_id].to_s == issue.id.to_s %>>
-                    #<%= issue.github_number %> - <%= truncate(issue.title, length: 60) %>
-                  </option>
-                <% end %>
-              </select>
+              <%# Single-select dropdown for create_pr goal %>
+              <div data-goal-toggle-target="issueDropdown">
+                <label for="issue_id" class="block text-sm font-medium text-gray-700">Choose from synced issues:</label>
+                <select name="issue_id" id="issue_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                  <option value="">-- Select an issue --</option>
+                  <% @issues.each do |issue| %>
+                    <option value="<%= issue.id %>" <%= "selected" if params[:issue_id].to_s == issue.id.to_s %>>
+                      #<%= issue.github_number %> - <%= truncate(issue.title, length: 60) %>
+                    </option>
+                  <% end %>
+                </select>
+              </div>
+
+              <%= render "shared/issue_enhance_table", issues: @issues, issues_with_active_runs: @issues_with_active_runs, issue_enhancement_rounds: @issue_enhancement_rounds %>
             <% else %>
               <p class="mt-1 text-sm text-gray-500">No actionable open issues found. Sync issues first.</p>
             <% end %>
