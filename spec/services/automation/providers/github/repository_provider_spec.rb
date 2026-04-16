@@ -168,6 +168,18 @@ RSpec.describe Automation::Providers::Github::RepositoryProvider do
       }.not_to raise_error
     end
 
+    it "swallows 404 regardless of the underlying message text" do
+      # Octokit does not guarantee "not found" appears in every 404 body
+      # (e.g. "Label does not exist"). Classification must be by error
+      # class, not message regex.
+      expect(client).to receive(:remove_label_from_issue)
+        .and_raise(GithubClient::NotFoundError, "Label does not exist")
+
+      expect {
+        adapter.remove_label(repo: "acme/widgets", number: 42, label: "stale")
+      }.not_to raise_error
+    end
+
     it "propagates unexpected provider errors" do
       expect(client).to receive(:remove_label_from_issue)
         .and_raise(GithubClient::ApiError.new("boom", status: 500))

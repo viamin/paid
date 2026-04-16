@@ -69,12 +69,14 @@ module Automation
         end
 
         def remove_label(repo:, number:, label:)
-          with_errors { client.remove_label_from_issue(repo, number, label) }
+          client.remove_label_from_issue(repo, number, label)
           nil
-        rescue PROVIDER_ERROR => e
-          raise unless e.message.to_s.match?(/not\s*found/i)
-
+        rescue ::GithubClient::NotFoundError
+          # Removing an absent label returns 404 from GitHub; treat as
+          # idempotent rather than propagating a ProviderError.
           nil
+        rescue ::GithubClient::Error => e
+          raise PROVIDER_ERROR, e.message
         end
 
         def add_comment(repo:, number:, body:)

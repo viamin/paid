@@ -164,6 +164,18 @@ RSpec.describe Automation::Providers::Github::WorkItemProvider do
       }.not_to raise_error
     end
 
+    it "#remove_label swallows 404 regardless of the underlying message text" do
+      # Octokit does not guarantee "not found" appears in every 404 body
+      # (e.g. "Label does not exist"). Classification must be by error
+      # class, not message regex.
+      expect(client).to receive(:remove_label_from_issue)
+        .and_raise(GithubClient::NotFoundError, "Label does not exist")
+
+      expect {
+        adapter.remove_label(repo: "acme/widgets", number: 42, label: "stale")
+      }.not_to raise_error
+    end
+
     it "#add_comment returns a Data::Comment" do
       created = OpenStruct.new(
         id: 3, body: "hey",
