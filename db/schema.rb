@@ -204,8 +204,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_020545) do
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["parent_workflow_id"], name: "index_agent_runs_on_parent_workflow_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])))"
-    t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])))"
+    t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
     t.index ["project_id", "status", "completed_at"], name: "index_agent_runs_on_project_status_completed_at"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
@@ -248,6 +248,43 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_020545) do
     t.index ["agent_run_id", "recorded_at"], name: "index_container_metrics_on_run_and_recorded"
     t.index ["container_id"], name: "index_container_metrics_on_container_id"
     t.index ["recorded_at"], name: "index_container_metrics_on_recorded_at"
+  end
+
+  create_table "context_intake_responses", force: :cascade do |t|
+    t.jsonb "answer_data", default: {}
+    t.text "answer_text"
+    t.bigint "context_intake_session_id", null: false
+    t.datetime "created_at", null: false
+    t.boolean "is_follow_up", default: false
+    t.bigint "parent_response_id"
+    t.string "provenance", limit: 50, default: "human"
+    t.string "question_key", limit: 200, null: false
+    t.text "question_text", null: false
+    t.string "section", limit: 100, null: false
+    t.integer "sequence", default: 0, null: false
+    t.boolean "skipped", default: false
+    t.datetime "updated_at", null: false
+    t.index ["context_intake_session_id", "question_key"], name: "idx_context_intake_responses_session_question", unique: true
+    t.index ["context_intake_session_id", "section", "sequence"], name: "idx_context_intake_responses_session_section_seq"
+    t.index ["context_intake_session_id"], name: "index_context_intake_responses_on_context_intake_session_id"
+    t.index ["parent_response_id"], name: "index_context_intake_responses_on_parent_response_id"
+  end
+
+  create_table "context_intake_sessions", force: :cascade do |t|
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.integer "current_step", default: 0
+    t.jsonb "metadata", default: {}
+    t.bigint "project_id", null: false
+    t.string "schema_version", limit: 20, default: "1.0", null: false
+    t.datetime "stale_at"
+    t.bigint "started_by_id", null: false
+    t.string "status", limit: 50, default: "in_progress", null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "created_at"], name: "index_context_intake_sessions_on_project_id_and_created_at", order: { created_at: :desc }
+    t.index ["project_id", "status"], name: "index_context_intake_sessions_on_project_id_and_status"
+    t.index ["project_id"], name: "index_context_intake_sessions_on_project_id"
+    t.index ["started_by_id"], name: "index_context_intake_sessions_on_started_by_id"
   end
 
   create_table "cost_budgets", force: :cascade do |t|
@@ -638,7 +675,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_020545) do
     t.index ["provider", "active"], name: "index_llm_models_on_provider_and_active"
     t.index ["provider"], name: "index_llm_models_on_provider"
     t.index ["tier"], name: "index_llm_models_on_tier"
-    t.check_constraint "tier IS NULL OR (tier::text = ANY (ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying]::text[]))", name: "llm_models_tier_check"
+    t.check_constraint "tier IS NULL OR (tier::text = ANY (ARRAY['low'::character varying::text, 'mid'::character varying::text, 'high'::character varying::text]))", name: "llm_models_tier_check"
   end
 
   create_table "mcp_server_definitions", force: :cascade do |t|
@@ -1148,6 +1185,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_020545) do
   add_foreign_key "agent_runs", "providers", on_delete: :nullify
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
+  add_foreign_key "context_intake_responses", "context_intake_responses", column: "parent_response_id"
+  add_foreign_key "context_intake_responses", "context_intake_sessions"
+  add_foreign_key "context_intake_sessions", "projects"
+  add_foreign_key "context_intake_sessions", "users", column: "started_by_id"
   add_foreign_key "cost_budgets", "projects", on_delete: :cascade
   add_foreign_key "decision_record_links", "decision_records", on_delete: :cascade
   add_foreign_key "decision_records", "agent_runs", on_delete: :nullify

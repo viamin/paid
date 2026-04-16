@@ -21,7 +21,7 @@ module Knowledge
       # Section builders in priority order.
       # Conventions section is not yet implemented — will be added when
       # a conventions collector lands in the knowledge pipeline.
-      SECTION_ORDER = %i[routes symbols hotspots decisions stats].freeze
+      SECTION_ORDER = %i[business_context routes symbols hotspots decisions stats].freeze
 
       attr_reader :issue, :project, :token_budget
 
@@ -85,6 +85,24 @@ module Knowledge
         end
 
         [ built, queries_made ]
+      end
+
+      def build_business_context_section
+        artifacts = active_artifacts("business_context")
+        return nil if artifacts.empty?
+
+        lines = artifacts.map do |a|
+          section_title = a.metadata&.dig("section_title") || a.identifier
+          chunks = a.active_ordered_chunks.to_a
+          if chunks.any?
+            chunk_lines = chunks.map { |c| "- #{c.content.gsub("\n", " ").truncate(200)}" }
+            "#### #{section_title}\n#{chunk_lines.join("\n")}"
+          else
+            "#### #{section_title}\n- #{a.content.to_s.truncate(300)}"
+          end
+        end
+
+        { name: :business_context, heading: "Business Context (maintainer-provided)", content: lines.join("\n\n") }
       end
 
       def build_routes_section
@@ -168,7 +186,13 @@ module Knowledge
           .active
           .by_type(type)
 
-        if type == "churn_hotspot"
+        if type == "business_context"
+          scope
+            .includes(:knowledge_chunks)
+            .order(:identifier)
+            .limit(20)
+            .to_a
+        elsif type == "churn_hotspot"
           # Order by hotspot rank (lower = hotter), with nulls last, then by
           # revision count descending for ties. Limit in SQL to avoid loading
           # unbounded rows on large repos — build_hotspots_section takes the
