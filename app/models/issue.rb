@@ -151,10 +151,6 @@ class Issue < ApplicationRecord
     draft_review_count + pr_followup_count
   end
 
-  def enhancement_rounds_count
-    agent_runs.where(goal: "enhance_issue").where.not(status: AgentRun::UNFINISHED_STATUSES).count
-  end
-
   def associated_pull_request
     if sub_issues.loaded?
       open_prs = sub_issues.select { |si| si.is_pull_request? && si.github_state == "open" }
