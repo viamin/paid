@@ -93,7 +93,7 @@ module Automation
 
       def exhausted?
         escalate = signals.trigger(ESCALATE_TRIGGER_TYPE)
-        escalate && escalate[:reason].to_s.include?("paid_agent")
+        escalate && escalate[:details].to_s.include?("paid_agent")
       end
     end
   end

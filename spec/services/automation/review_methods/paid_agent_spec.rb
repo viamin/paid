@@ -79,7 +79,7 @@ RSpec.describe Automation::ReviewMethods::PaidAgent do
     it "reports exhausted_retries on escalate_to_owner triggers naming paid_agent" do
       plugin = build_plugin(
         config: build_config(paid_agent: { "enabled" => true }),
-        triggers: [ { type: "escalate_to_owner", reason: "paid_agent retry budget exhausted" } ]
+        triggers: [ { type: "escalate_to_owner", details: "paid_agent retry budget exhausted" } ]
       )
 
       expect(plugin.evaluate).to be_exhausted_retries
