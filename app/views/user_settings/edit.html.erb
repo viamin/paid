@@ -167,6 +167,14 @@
           </div>
 
           <div>
+            <%= form.label :max_auto_pick_open_prs, "Max Auto-Pick Open PRs", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :max_auto_pick_open_prs, min: 0, max: 100, step: 1, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Auto-pick pauses when this many open PRs still need work (failed or not yet handed off). Increase to allow more parallel PRs. Set to 0 for no limit. Default is 1 (original behavior).</p>
+          </div>
+
+          <div>
             <%= form.label :container_timeout_seconds, "Container Timeout (seconds)", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
               <%= form.number_field :container_timeout_seconds, min: 60, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>

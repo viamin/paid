@@ -35,6 +35,7 @@ class UserSettingsController < ApplicationController
       :default_agent_provider,
       :container_memory_gb,
       :max_concurrent_runs,
+      :max_auto_pick_open_prs,
       :container_timeout_seconds,
       :default_branch,
       :default_project_active,
