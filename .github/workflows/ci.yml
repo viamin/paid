@@ -49,12 +49,32 @@ jobs:
       - name: Run lint checks
         run: bin/lint
 
+      - name: Verify Postgres image pins are in sync
+        # All three files must pin the same postgres:<tag> so that schema.rb
+        # dumps are byte-identical across dev, devcontainer, and CI. Drift
+        # across minor versions causes cosmetic pg_get_expr() churn in schema.rb.
+        run: |
+          dev=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .devcontainer/compose.yaml | head -1 | awk '{print $NF}')
+          compose=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' docker-compose.yml | head -1 | awk '{print $NF}')
+          ci=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/ci.yml | head -1 | awk '{print $NF}')
+          echo "devcontainer/compose.yaml: ${dev:-<none>}"
+          echo "docker-compose.yml:        ${compose:-<none>}"
+          echo ".github/workflows/ci.yml:  ${ci:-<none>}"
+          if [ -z "$dev" ] || [ -z "$compose" ] || [ -z "$ci" ]; then
+            echo "::error::Postgres image pin missing in one or more files"
+            exit 1
+          fi
+          if [ "$dev" != "$compose" ] || [ "$compose" != "$ci" ]; then
+            echo "::error::Postgres image pins are out of sync. Update all three together."
+            exit 1
+          fi
+
   test:
     runs-on: ubuntu-latest
 
     services:
       postgres:
-        image: postgres:16
+        image: postgres:16.13
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
