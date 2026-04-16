@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe Llm::GenerateIssueTitle do
+  before { allow(Llm::TextMode).to receive(:options).and_return(mode: :text) }
+
   let(:summary) { "The authentication system uses JWT tokens with a 24-hour expiry." }
 
   describe ".call" do
@@ -18,8 +20,31 @@ RSpec.describe Llm::GenerateIssueTitle do
         provider: :claude,
         model: described_class::DEFAULT_MODEL,
         timeout: described_class::TIMEOUT,
-        tools: :none
+        tools: :none,
+        mode: :text
       )
+    end
+
+    it "routes through agent-harness text mode when an API key is configured" do
+      response = instance_double(AgentHarness::Response, success?: true, output: "JWT authentication system review")
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      described_class.call(summary: summary)
+
+      expect(AgentHarness).to have_received(:send_message)
+        .with(anything, hash_including(mode: :text))
+    end
+
+    it "falls back to the CLI transport when text mode is ineligible (preserves subscription billing)" do
+      allow(Llm::TextMode).to receive(:options).and_return({})
+      response = instance_double(AgentHarness::Response, success?: true, output: "JWT authentication system review")
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      described_class.call(summary: summary)
+
+      expect(AgentHarness).to have_received(:send_message) do |_prompt, **opts|
+        expect(opts).not_to have_key(:mode)
+      end
     end
 
     it "passes tools: :none to disable CLI tool access during text-only generation" do

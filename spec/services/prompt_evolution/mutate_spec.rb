@@ -48,6 +48,9 @@ RSpec.describe PromptEvolution::Mutate do
 
   before do
     allow(AgentHarness).to receive(:send_message).and_return(harness_response)
+    # Default: preserve CLI transport so existing exact-match expectations
+    # pass. Individual specs flip this on to prove text-mode routing.
+    allow(Llm::TextMode).to receive(:options).and_return({})
   end
 
   describe ".call" do
@@ -90,6 +93,15 @@ RSpec.describe PromptEvolution::Mutate do
         a_string_including("Refinement", "Simplification"),
         hash_including(provider: :claude)
       )
+    end
+
+    it "routes through agent-harness text mode when an API key is configured" do
+      allow(Llm::TextMode).to receive(:options).and_return(mode: :text)
+
+      described_class.call(prompt: prompt)
+
+      expect(AgentHarness).to have_received(:send_message)
+        .with(anything, hash_including(mode: :text))
     end
   end
 

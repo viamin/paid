@@ -109,7 +109,8 @@ module StyleGuides
         model: DEFAULT_MODEL,
         timeout: TIMEOUT,
         dangerous_mode: false,
-        tools: :none
+        tools: :none,
+        **Llm::TextMode.options
       )
     end
 
