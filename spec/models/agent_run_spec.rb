@@ -1939,6 +1939,40 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe "#effective_provider_record" do
+    it "returns the final provider record when final_provider is a routing key" do
+      agent_run = create(:agent_run)
+      provider = create(:provider, user: agent_run.project.effective_owner, provider_key: "opencode")
+      agent_run.update!(final_provider: provider.routing_key)
+
+      expect(agent_run.effective_provider_record).to eq(provider)
+    end
+
+    it "resolves a subscription provider_key final_provider to its record" do
+      agent_run = create(:agent_run)
+      owner = agent_run.project.effective_owner
+      claude = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+      agent_run.update!(final_provider: "claude")
+
+      expect(agent_run.effective_provider_record).to eq(claude)
+    end
+
+    it "falls back to the initially-assigned provider when final_provider is blank" do
+      agent_run = create(:agent_run)
+      owner = agent_run.project.effective_owner
+      initial = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+      agent_run.update!(provider: initial, final_provider: nil)
+
+      expect(agent_run.effective_provider_record).to eq(initial)
+    end
+
+    it "returns nil when neither the final nor initial provider can be resolved" do
+      agent_run = create(:agent_run, provider: nil, final_provider: nil)
+
+      expect(agent_run.effective_provider_record).to be_nil
+    end
+  end
+
   describe "#attempted_providers_by_routing_key" do
     it "returns attempted providers indexed by routing key" do
       agent_run = create(:agent_run)

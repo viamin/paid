@@ -326,12 +326,12 @@ module Containers
       )
     end
 
-    # Installs a commit-msg hook that appends the project's co-author trailer
+    # Installs a commit-msg hook that appends the provider's co-author trailer
     # to agent-created commits. The auto-commit from commit_uncommitted_changes
     # uses --no-verify (skipping hooks), so its trailer is appended directly
     # by the commit_message method instead.
     #
-    # Skipped when the project has no trailer configured.
+    # Skipped when the effective provider has no trailer configured.
     # When an existing commit-msg hook is present (e.g. from Husky or Lefthook),
     # the original hook is renamed and a shell wrapper is installed that
     # delegates to the original hook first, then appends the trailer. This
@@ -341,7 +341,7 @@ module Containers
     #
     # @return [void]
     def install_co_author_hook
-      trailer = agent_run.project.agent_co_author_trailer
+      trailer = agent_run.effective_provider_record&.agent_co_author_trailer
       return if trailer.blank?
 
       install_or_chain_co_author_hook(trailer)
@@ -838,7 +838,7 @@ module Containers
     end
 
     def commit_message
-      trailer = agent_run.project.agent_co_author_trailer.presence
+      trailer = agent_run.effective_provider_record&.agent_co_author_trailer.presence
       return "Apply agent changes" unless trailer
 
       "Apply agent changes\n\n#{trailer}"

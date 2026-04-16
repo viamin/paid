@@ -147,7 +147,7 @@ class ProvidersController < ApplicationController
   end
 
   def provider_params
-    permitted = [ :enabled_for_agent_runs, :enabled_for_fallback, :name, :fallback_role ]
+    permitted = [ :enabled_for_agent_runs, :enabled_for_fallback, :name, :fallback_role, :agent_co_author_trailer ]
     if action_name == "create"
       permitted.push(:provider_key, :auth_type, :provider_api_key_id)
     end
