@@ -132,15 +132,16 @@ module Issues
       return if local_deps.empty? && cross_deps.empty? &&
                current_local_by_id.empty? && current_external_by_key.empty?
 
-      new_local_ids = sync_local_deps(local_deps, current_local_by_id)
+      new_local_deps = sync_local_deps(local_deps, current_local_by_id)
       new_cross_refs = sync_cross_project_deps(
         cross_deps,
         current_local_by_id,
-        new_local_ids,
+        new_local_deps,
         current_external_by_key
       )
 
-      remove_stale_local_deps(current_local_by_id.keys.to_set, new_local_ids | new_cross_refs[:resolved_ids])
+      kept_local_ids = new_local_deps.keys.to_set | new_cross_refs[:resolved_ids]
+      remove_stale_local_deps(current_local_by_id.keys.to_set, kept_local_ids)
       remove_stale_external_deps(current_external_by_key.keys.to_set, new_cross_refs[:external_keys])
     end
 
@@ -278,9 +279,14 @@ module Issues
       end
     end
 
+    # Returns a Hash mapping dep_issue_id => IssueDependency record for every
+    # local dep persisted in this run (either reused from current_local_by_id
+    # or freshly created). The record handle is needed by sync_cross_project_deps
+    # so a later cross-repo ref for the same local issue can promote the dep's
+    # requires_deployment flag without losing it.
     def sync_local_deps(local_deps, current_local_by_id)
-      new_local_ids = Set.new
-      return new_local_ids if local_deps.empty?
+      new_local_deps = {}
+      return new_local_deps if local_deps.empty?
 
       referenced_numbers = local_deps.keys
 
@@ -301,25 +307,25 @@ module Issues
         next if dep_issue.id == issue.id
 
         requires_deployment = local_deps[number]
-        new_local_ids << dep_issue.id
 
         if (existing = current_local_by_id[dep_issue.id])
           update_deployment_flag(existing, requires_deployment)
+          new_local_deps[dep_issue.id] = existing
           next
         end
 
         next if would_create_cycle?(dep_issue, adj)
 
-        issue.issue_dependencies.create!(
+        new_local_deps[dep_issue.id] = issue.issue_dependencies.create!(
           depends_on_issue: dep_issue,
           requires_deployment: requires_deployment
         )
       end
 
-      new_local_ids
+      new_local_deps
     end
 
-    def sync_cross_project_deps(cross_deps, current_local_by_id, new_local_ids, current_external_by_key)
+    def sync_cross_project_deps(cross_deps, current_local_by_id, new_local_deps, current_external_by_key)
       resolved_ids = Set.new
       external_keys = Set.new
       return { resolved_ids: resolved_ids, external_keys: external_keys } if cross_deps.empty?
@@ -345,7 +351,14 @@ module Issues
               update_deployment_flag(existing, requires_deployment)
               next
             end
-            next if new_local_ids.include?(dep_issue.id)
+            # A local ref (e.g. "#123") earlier in the body may have already
+            # created this dep without the deployment flag. Promote it here
+            # instead of silently dropping the cross-repo ref's deployment
+            # wording.
+            if (just_created = new_local_deps[dep_issue.id])
+              update_deployment_flag(just_created, requires_deployment)
+              next
+            end
             next if would_create_cycle?(dep_issue, adj)
 
             issue.issue_dependencies.create!(

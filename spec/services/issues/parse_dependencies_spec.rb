@@ -689,6 +689,25 @@ RSpec.describe Issues::ParseDependencies do
         described_class.call(issue: issue, comments: [ "No longer blocked by deployment of #9211" ])
         expect(issue.reload.dependencies).to be_empty
       end
+
+      it "promotes a freshly-created local dep when a self-repo cross-ref flags deployment" do
+        # Body mixes a plain local ref with a self-repo cross-ref that carries
+        # deployment wording. Both resolve to the same local issue; the
+        # deployment flag from the cross-ref must stick.
+        pr = create(:issue, :pull_request, project: project, github_number: 9212)
+        body = <<~MD
+          ## Dependencies
+          - Depends on #9212
+          - Blocked by deployment of #{project.owner}/#{project.repo}#9212
+        MD
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+
+        dep = issue.issue_dependencies.find_by(depends_on_issue_id: pr.id)
+        expect(dep).to be_present
+        expect(dep.requires_deployment).to be true
+      end
     end
   end
 end

@@ -3,7 +3,7 @@
 # Tracks when a pull request was deployed to production. Used by the
 # multi-step PR dependency feature so a dependent PR can wait until its
 # predecessor has actually shipped, not just merged. Null means the PR
-# has not been marked as deployed. Indexed only on open PRs so that
+# has not been marked as deployed. Partial index covers all PRs so
 # deployment-blocked dependency checks stay cheap on the hot path.
 class AddDeployedAtToIssues < ActiveRecord::Migration[8.1]
   def change
