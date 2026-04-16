@@ -26,6 +26,7 @@ module Models
         ms.reasoning = selected[:reasoning]
         ms.candidates = selected[:candidates]
         ms.complexity_score = selected[:complexity_score]
+        ms.tier = selected[:tier] || tier_for(selected)
         ms.selection_duration_ms = duration_ms
       end
     rescue ActiveRecord::RecordNotUnique
@@ -70,8 +71,21 @@ module Models
         selector_type: "override",
         reasoning: reason,
         candidates: [ { model_id: model.model_id, score: model.capability_score.to_f } ],
-        complexity_score: nil
+        complexity_score: nil,
+        # For override paths the tier follows the chosen model directly, since
+        # no complexity-based routing was performed.
+        tier: model.tier
       }
+    end
+
+    # Recorded tier for a selection. Prefers the selector's own tier (derived
+    # from the complexity->tier mapping it used) and falls back to the model's
+    # own tier so ModelSelection.tier is populated for every run, even when the
+    # complexity score is absent (override paths).
+    def tier_for(selected)
+      return nil if selected.blank?
+
+      selected[:tier].presence || selected[:model]&.tier
     end
   end
 end

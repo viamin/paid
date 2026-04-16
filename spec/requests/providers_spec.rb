@@ -481,6 +481,28 @@ RSpec.describe "Providers" do
       expect(provider.reload.tier_model_ids).to eq("low" => "haiku-x", "mid" => "sonnet-x", "high" => "opus-x")
     end
 
+    it "persists complexity_thresholds on update" do
+      provider = user.providers.create!(provider_key: "cursor")
+
+      patch provider_path(provider), params: {
+        provider: { complexity_thresholds: { low_max: "2", mid_max: "8" } }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      expect(provider.reload.complexity_thresholds).to eq("low_max" => 2, "mid_max" => 8)
+    end
+
+    it "rejects invalid complexity_thresholds" do
+      provider = user.providers.create!(provider_key: "cursor")
+
+      patch provider_path(provider), params: {
+        provider: { complexity_thresholds: { low_max: "8", mid_max: "3" } }
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("less than mid_max")
+    end
+
     it "rejects enabling agent runs on a provider that has become unsupported" do
       provider = user.providers.create!(provider_key: "cursor")
 
@@ -539,6 +561,20 @@ RSpec.describe "Providers" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to match(/name="provider\[config\]\[opencode\]\[api_provider\]".*disabled/m)
       expect(response.body).to match(/name="provider\[config\]\[opencode\]\[model\]".*disabled/m)
+    end
+
+    it "renders complexity_thresholds inputs with balanced bracket names so Rack parses them as a nested hash" do
+      provider = user.providers.find_by!(provider_key: "claude")
+
+      get edit_provider_path(provider)
+
+      expect(response).to have_http_status(:ok)
+      # Bracket balance is the load-bearing detail: name="provider[complexity_thresholds[low_max]]"
+      # would parse as {"complexity_thresholds[low_max" => {"]" => ...}} and never reach the model.
+      expect(response.body).to include('name="provider[complexity_thresholds][low_max]"')
+      expect(response.body).to include('name="provider[complexity_thresholds][mid_max]"')
+      expect(response.body).not_to include('name="provider[complexity_thresholds[low_max]]"')
+      expect(response.body).not_to include('name="provider[complexity_thresholds[mid_max]]"')
     end
   end
 
