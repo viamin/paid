@@ -132,20 +132,6 @@ RSpec.describe "AgentRuns" do
         expect(response.body).not_to include(other_project.name)
       end
 
-      it "shows the pause all button when scheduler is running" do
-        get agent_runs_path
-        expect(response.body).to include("Pause All")
-        expect(response.body).to include(pause_scheduler_agent_runs_path)
-      end
-
-      it "shows the resume button and paused banner when scheduler is paused" do
-        account.update!(scheduler_paused_at: Time.current)
-        get agent_runs_path
-        expect(response.body).to include("Resume Scheduler")
-        expect(response.body).to include("Scheduler paused")
-        expect(response.body).to include(resume_scheduler_agent_runs_path)
-      end
-
       it "does not render the navbar pause indicator when the scheduler is running" do
         get agent_runs_path
         expect(response.body).not_to include("navbar-scheduler-paused")
@@ -156,6 +142,42 @@ RSpec.describe "AgentRuns" do
         get agent_runs_path
         expect(response.body).to include("navbar-scheduler-paused")
         expect(response.body).to include("navbar-scheduler-paused-mobile")
+      end
+
+      context "when authorized to manage the account" do
+        before { user.add_role(:admin, account) }
+
+        it "shows the pause all button when scheduler is running" do
+          get agent_runs_path
+          expect(response.body).to include("Pause All")
+          expect(response.body).to include(pause_scheduler_agent_runs_path)
+        end
+
+        it "shows the resume button and paused banner when scheduler is paused" do
+          account.update!(scheduler_paused_at: Time.current)
+          get agent_runs_path
+          expect(response.body).to include("Resume Scheduler")
+          expect(response.body).to include("Scheduler paused")
+          expect(response.body).to include(resume_scheduler_agent_runs_path)
+        end
+      end
+
+      context "without permission to manage the account" do
+        before { user.add_role(:member, account) }
+
+        it "does not render the pause all button when scheduler is running" do
+          get agent_runs_path
+          expect(response.body).not_to include("Pause All")
+          expect(response.body).not_to include(pause_scheduler_agent_runs_path)
+        end
+
+        it "does not render the resume button when scheduler is paused but still shows the banner" do
+          account.update!(scheduler_paused_at: Time.current)
+          get agent_runs_path
+          expect(response.body).not_to include("Resume Scheduler")
+          expect(response.body).not_to include(resume_scheduler_agent_runs_path)
+          expect(response.body).to include("Scheduler paused")
+        end
       end
     end
   end
