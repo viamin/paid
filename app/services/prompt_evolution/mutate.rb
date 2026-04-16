@@ -71,7 +71,8 @@ module PromptEvolution
         build_prompt,
         provider: :claude,
         model: DEFAULT_MODEL,
-        timeout: TIMEOUT
+        timeout: TIMEOUT,
+        tools: :none
       )
       unless response.success?
         Rails.logger.warn(

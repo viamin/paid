@@ -256,7 +256,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
           a_string_including(issue.title).and(including(issue.body)),
           provider: :claude,
           model: Llm::GeneratePrDescription::DEFAULT_MODEL,
-          timeout: Llm::GeneratePrDescription::TIMEOUT
+          timeout: Llm::GeneratePrDescription::TIMEOUT,
+          tools: :none
         )
       end
 
