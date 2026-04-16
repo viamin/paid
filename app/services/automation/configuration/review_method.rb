@@ -54,14 +54,6 @@ module Automation
       def stop_when_no_comments?
         termination.stop_when_no_comments == true
       end
-
-      # Optional per-provider cap (in tokens) for the context handed to this
-      # review method. nil means "use the provider's default budget."
-      # Fallback callers consult this when truncating review context that
-      # exceeds the chosen provider's limit.
-      def token_budget
-        termination.token_budget
-      end
     end
   end
 end

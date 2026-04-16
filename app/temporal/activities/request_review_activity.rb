@@ -23,10 +23,20 @@ module Activities
   # on the repo), the activity automatically falls through to the next bot
   # in the chain. Pass an explicit empty array to request no reviewers.
   #
-  # The result includes a :fallback_used flag (true when the primary bot
-  # was skipped in favor of a later one in the chain) and the per-bot
-  # :primary_bot / :fallback_bots metadata so callers can surface which
-  # provider actually got the review request.
+  # The result includes:
+  #   - :primary_bot — the first bot in the chain (the one we tried first).
+  #   - :fallback_used — true when the primary bot was skipped in favor of
+  #     a later one in the chain.
+  #   - :fallback_bots — every non-primary bot attempted in this cycle, in
+  #     the order they were tried. When a fallback succeeded, the last
+  #     entry is the bot that actually received the request; earlier
+  #     entries are the ones that 422'd on the way there. When the chain
+  #     was exhausted entirely by 422s, the list is every non-primary bot
+  #     that was tried. Callers that need to distinguish "failed fallback
+  #     attempts" from "the fallback that actually ran" should cross-
+  #     reference :bot_errors (keyed by bot login, only contains 422s).
+  #   - :bot_errors — per-bot 422 messages collected while walking the
+  #     chain.
   class RequestReviewActivity < BaseActivity
     activity_name "RequestReview"
 

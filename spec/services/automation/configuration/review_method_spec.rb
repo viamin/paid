@@ -36,20 +36,13 @@ RSpec.describe Automation::Configuration::ReviewMethod do
         "termination" => {
           "max_review_rounds" => 10,
           "max_review_goal_retries" => 2,
-          "stop_when_no_comments" => true,
-          "token_budget" => 75_000
+          "stop_when_no_comments" => true
         }
       )
 
       expect(method.max_review_rounds).to eq(10)
       expect(method.max_review_goal_retries).to eq(2)
       expect(method.stop_when_no_comments?).to be true
-      expect(method.token_budget).to eq(75_000)
-    end
-
-    it "returns nil token_budget when termination omits it" do
-      method = described_class.from_hash(:copilot, "enabled" => true, "termination" => { "max_review_rounds" => 5 })
-      expect(method.token_budget).to be_nil
     end
   end
 

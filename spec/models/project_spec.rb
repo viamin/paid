@@ -981,32 +981,6 @@ RSpec.describe Project do
         expect(project.errors[:review_settings].join).to include("timeout_minutes must be a positive integer")
       end
 
-      it "rejects non-positive token_budget" do
-        project = build(:project, review_settings: {
-          "methods" => {
-            "paid_agent" => {
-              "enabled" => true,
-              "termination" => { "token_budget" => 0 }
-            }
-          }
-        })
-        expect(project).not_to be_valid
-        expect(project.errors[:review_settings].join).to include("token_budget must be a positive integer")
-      end
-
-      it "accepts a positive integer token_budget" do
-        project = build(:project, review_settings: {
-          "methods" => {
-            "paid_agent" => {
-              "enabled" => true,
-              "termination" => { "max_review_rounds" => 10, "token_budget" => 50_000 }
-            }
-          }
-        })
-        expect(project).to be_valid
-        expect(project.review_method(:paid_agent).token_budget).to eq(50_000)
-      end
-
       it "rejects paid_agent when the review bot credentials are not configured" do
         allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(false)
 
