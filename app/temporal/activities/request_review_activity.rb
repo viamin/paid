@@ -17,9 +17,16 @@ module Activities
   #     so re-invocations on the same commit are idempotent.
   #
   # When the :reviewers input key is omitted or nil, the activity resolves the
-  # reviewer from the project's enabled review methods via
-  # Project#review_bot_request_login. Pass an explicit empty array to request
-  # no reviewers.
+  # bot-reviewer chain from the project's enabled review methods via
+  # Project#review_bot_request_chain. The first reviewer in the chain is the
+  # primary; if it returns a 422 (e.g. Copilot rate-limited or not enabled
+  # on the repo), the activity automatically falls through to the next bot
+  # in the chain. Pass an explicit empty array to request no reviewers.
+  #
+  # The result includes a :fallback_used flag (true when the primary bot
+  # was skipped in favor of a later one in the chain) and the per-bot
+  # :primary_bot / :fallback_bots metadata so callers can surface which
+  # provider actually got the review request.
   class RequestReviewActivity < BaseActivity
     activity_name "RequestReview"
 
@@ -61,8 +68,7 @@ module Activities
       needed = reviewers.reject { |r| already_pending.include?(r) }
       return { requested: [], already_pending: already_pending } if needed.empty?
 
-      comment_triggers, remaining = needed.partition { |r| COMMENT_TRIGGER_REVIEWERS.key?(r) }
-      bots, humans = remaining.partition { |r| BOT_REVIEWERS.key?(r) }
+      bot_chain, humans = partition_bot_chain_and_humans(needed)
       requested = []
 
       if humans.any?
@@ -70,22 +76,24 @@ module Activities
         requested.concat(humans)
       end
 
-      if bots.any? && request_bot_reviews(client, project, pr_number, bots)
-        requested.concat(bots)
-      end
-
-      if comment_triggers.any?
-        requested.concat(post_comment_triggers(client, project, pr_number, comment_triggers))
-      end
+      bot_result = request_bots_with_fallback(client, project, pr_number, bot_chain)
+      requested.concat(bot_result[:requested])
 
       logger.info(
         message: "pr_review.review_requested",
         project_id: project.id,
         pr_number: pr_number,
-        reviewers: requested
+        reviewers: requested,
+        primary_bot: bot_result[:primary_bot],
+        fallback_used: bot_result[:fallback_used]
       ) if requested.any?
 
-      { requested: requested }
+      result = { requested: requested }
+      result[:primary_bot] = bot_result[:primary_bot] if bot_result[:primary_bot]
+      result[:fallback_used] = bot_result[:fallback_used] if bot_result[:fallback_used]
+      result[:fallback_bots] = bot_result[:fallback_bots] if bot_result[:fallback_bots].any?
+      result[:bot_errors] = bot_result[:errors] if bot_result[:errors].any?
+      result
     rescue GithubClient::ApiError => e
       if e.status == 422
         logger.warn(
@@ -104,11 +112,13 @@ module Activities
     private
 
     # Explicit reviewers input takes precedence; when the key is omitted or
-    # nil, fall back to the project's enabled review bot so workflows do not
-    # need to hardcode per-project policy.
+    # nil, fall back to the project's enabled review bot chain so workflows
+    # do not need to hardcode per-project policy. Using the full chain
+    # (instead of just the primary bot) lets the activity skip past a
+    # rate-limited primary to a configured secondary in one execution.
     def resolve_reviewers(input, project)
       raw = input[:reviewers]
-      source = raw.nil? ? Array(project.review_bot_request_login) : Array(raw)
+      source = raw.nil? ? Array(project.review_bot_request_chain) : Array(raw)
       source.filter_map { |r| r.to_s.strip.presence&.downcase }.uniq
     end
 
@@ -116,32 +126,120 @@ module Activities
       client.request_pull_request_review(project.full_name, pr_number, reviewers: reviewers)
     end
 
-    def request_bot_reviews(client, project, pr_number, reviewers)
-      bot_node_ids = reviewers.map { |r| bot_node_id_for(BOT_REVIEWERS.fetch(r)) }
+    # Splits the needed reviewer list into an ordered bot chain (preserving
+    # caller order so the first bot is the primary attempt) and a separate
+    # human-reviewer list. Non-recognized logins fall through to the human
+    # branch, matching the legacy behavior.
+    def partition_bot_chain_and_humans(needed)
+      bots, humans = needed.partition { |r| bot_reviewer?(r) }
+      [ bots, humans ]
+    end
+
+    def bot_reviewer?(login)
+      BOT_REVIEWERS.key?(login) || COMMENT_TRIGGER_REVIEWERS.key?(login)
+    end
+
+    # Iterates the bot chain in order, attempting each one until one
+    # resolves the request (a fresh post, an idempotent no-op, or a
+    # transient skip) or the chain is exhausted by 422 failures. Falls
+    # through only on 422 (e.g. the bot is rate-limited or not enabled for
+    # the repo) so a configured secondary bot can pick up the review
+    # request automatically. Idempotent and transient-error outcomes are
+    # treated as terminal for this cycle so the secondary bot is not
+    # spammed when the primary already has an outstanding request or is
+    # temporarily inaccessible.
+    def request_bots_with_fallback(client, project, pr_number, bot_chain)
+      result = {
+        requested: [],
+        primary_bot: bot_chain.first,
+        fallback_used: false,
+        fallback_bots: [],
+        errors: {}
+      }
+      return result if bot_chain.empty?
+
+      bot_chain.each_with_index do |bot, index|
+        status, error_message = attempt_bot_reviewer(client, project, pr_number, bot)
+        case status
+        when :posted
+          result[:requested] << bot
+          result[:fallback_used] = index.positive?
+          result[:fallback_bots] = bot_chain[1..index] if index.positive?
+          break
+        when :already_requested, :transient_skip
+          break
+        when :failed_with_fallback
+          result[:errors][bot] = error_message if error_message
+          logger.info(
+            message: "pr_review.bot_review_falling_back",
+            project_id: project.id,
+            pr_number: pr_number,
+            bot: bot,
+            remaining: bot_chain[(index + 1)..]
+          ) if index < bot_chain.size - 1
+        end
+      end
+
+      result
+    end
+
+    # Dispatches a single bot to the appropriate request mechanism (GraphQL
+    # bot review for Copilot-style bots, @-mention comment trigger for
+    # Codex-style bots). Returns one of:
+    #   - +[:posted, nil]+ — fresh request was issued
+    #   - +[:already_requested, nil]+ — outstanding request already exists
+    #   - +[:transient_skip, nil]+ — temporary error; do not fall through
+    #   - +[:failed_with_fallback, message]+ — 422; try the next bot
+    def attempt_bot_reviewer(client, project, pr_number, bot)
+      if BOT_REVIEWERS.key?(bot)
+        request_single_bot_review(client, project, pr_number, bot)
+      elsif COMMENT_TRIGGER_REVIEWERS.key?(bot)
+        post_single_comment_trigger(client, project, pr_number, bot)
+      else
+        [ :failed_with_fallback, nil ]
+      end
+    end
+
+    def request_single_bot_review(client, project, pr_number, bot)
+      bot_node_ids = [ bot_node_id_for(BOT_REVIEWERS.fetch(bot)) ]
       client.request_bot_review(project.full_name, pr_number, bot_node_ids: bot_node_ids)
-      true
+      [ :posted, nil ]
     rescue GithubClient::ApiError => e
       if e.status == 422
         logger.warn(
           message: "pr_review.bot_review_unprocessable",
           project_id: project.id,
           pr_number: pr_number,
-          reviewers: reviewers,
+          reviewers: [ bot ],
           error: e.message
         )
-        false
+        [ :failed_with_fallback, e.message ]
       else
         raise
       end
     end
 
-    # Posts an @-mention comment (e.g. "@codex review") for each bot that
-    # does not honor programmatic review requests on draft PRs. Idempotent
-    # per HEAD SHA: embeds a marker in the posted comment and skips posting
-    # if a marker for the current HEAD is already present on the PR.
-    def post_comment_triggers(client, project, pr_number, reviewers)
+    # Posts an @-mention comment (e.g. "@codex review") for a bot that does
+    # not honor programmatic review requests on draft PRs. Idempotent per
+    # HEAD SHA: embeds a marker in the posted comment and treats an already
+    # present marker as a successful prior trigger.
+    #
+    # Returns one of:
+    #   - +[:posted, nil]+ — a fresh trigger comment was posted.
+    #   - +[:already_requested, nil]+ — the marker for the current HEAD is
+    #     already present, or +comment_marker_present?+ returned true as
+    #     its safe default after a transient fetch failure. In both cases
+    #     we treat the prior trigger as outstanding and do NOT fall through
+    #     to an alternate provider, matching the legacy behavior of the
+    #     batched +post_comment_triggers+ method.
+    #   - +[:transient_skip, nil]+ — the PR HEAD could not be fetched, so we
+    #     cannot scope a marker to it. Skip without falling through; the
+    #     next poll will retry.
+    #   - +[:failed_with_fallback, message]+ — the bot rejected the request
+    #     with 422; try the next bot in the chain.
+    def post_single_comment_trigger(client, project, pr_number, bot)
       head_sha = fetch_pr_head_sha(client, project, pr_number)
-      return [] unless head_sha
+      return [ :transient_skip, nil ] unless head_sha
 
       marker = "#{COMMENT_TRIGGER_MARKER_PREFIX}: #{head_sha}"
 
@@ -150,33 +248,30 @@ module Activities
           message: "pr_review.comment_trigger_skipped",
           project_id: project.id,
           pr_number: pr_number,
-          reviewers: reviewers,
+          reviewers: [ bot ],
           head_sha: head_sha,
           reason: "already_triggered_for_head"
         )
-        return []
+        return [ :already_requested, nil ]
       end
 
-      posted = []
-      reviewers.each do |reviewer|
-        mention = COMMENT_TRIGGER_REVIEWERS.fetch(reviewer)
-        body = "<!-- #{marker} -->\n#{mention}"
-        client.add_comment(project.full_name, pr_number, body)
-        posted << reviewer
-      rescue GithubClient::ApiError => e
-        if e.status == 422
-          logger.warn(
-            message: "pr_review.comment_trigger_unprocessable",
-            project_id: project.id,
-            pr_number: pr_number,
-            reviewer: reviewer,
-            error: e.message
-          )
-        else
-          raise
-        end
+      mention = COMMENT_TRIGGER_REVIEWERS.fetch(bot)
+      body = "<!-- #{marker} -->\n#{mention}"
+      client.add_comment(project.full_name, pr_number, body)
+      [ :posted, nil ]
+    rescue GithubClient::ApiError => e
+      if e.status == 422
+        logger.warn(
+          message: "pr_review.comment_trigger_unprocessable",
+          project_id: project.id,
+          pr_number: pr_number,
+          reviewer: bot,
+          error: e.message
+        )
+        [ :failed_with_fallback, e.message ]
+      else
+        raise
       end
-      posted
     end
 
     # Returns true when a trigger marker for the current HEAD is already

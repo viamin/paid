@@ -829,6 +829,34 @@ RSpec.describe Project do
       end
     end
 
+    describe "#review_bot_request_chain" do
+      it "returns an empty array when reviews are globally disabled" do
+        project = build(:project, review_settings: {
+          "enabled" => false,
+          "methods" => { "copilot" => { "enabled" => true }, "codex" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_chain).to eq([])
+      end
+
+      it "returns the ordered fallback chain when both bots are enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "copilot" => { "enabled" => true }, "codex" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_chain).to eq(
+          [ Activities::RequestReviewActivity::COPILOT_LOGIN, Activities::RequestReviewActivity::CODEX_LOGIN ]
+        )
+      end
+
+      it "returns only the enabled bot when one of the two is disabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "codex" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_chain).to eq([ Activities::RequestReviewActivity::CODEX_LOGIN ])
+      end
+    end
+
     describe "#review_method_config" do
       it "returns merged config for a method" do
         project = build(:project, review_settings: {
@@ -951,6 +979,32 @@ RSpec.describe Project do
         })
         expect(project).not_to be_valid
         expect(project.errors[:review_settings].join).to include("timeout_minutes must be a positive integer")
+      end
+
+      it "rejects non-positive token_budget" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "paid_agent" => {
+              "enabled" => true,
+              "termination" => { "token_budget" => 0 }
+            }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("token_budget must be a positive integer")
+      end
+
+      it "accepts a positive integer token_budget" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "paid_agent" => {
+              "enabled" => true,
+              "termination" => { "max_review_rounds" => 10, "token_budget" => 50_000 }
+            }
+          }
+        })
+        expect(project).to be_valid
+        expect(project.review_method(:paid_agent).token_budget).to eq(50_000)
       end
 
       it "rejects paid_agent when the review bot credentials are not configured" do

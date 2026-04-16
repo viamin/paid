@@ -18,7 +18,8 @@ RSpec.describe Automation::Configuration::Termination do
         "max_review_goal_retries" => 3,
         "stop_when_no_comments" => true,
         "quality_threshold" => "high",
-        "timeout_minutes" => 60
+        "timeout_minutes" => 60,
+        "token_budget" => 100_000
       )
 
       expect(termination).to have_attributes(
@@ -26,8 +27,17 @@ RSpec.describe Automation::Configuration::Termination do
         max_review_goal_retries: 3,
         stop_when_no_comments: true,
         quality_threshold: "high",
-        timeout_minutes: 60
+        timeout_minutes: 60,
+        token_budget: 100_000
       )
+    end
+
+    it "coerces token_budget numeric strings to integers and rejects garbage" do
+      coerced = described_class.from_hash("token_budget" => "50000")
+      garbage = described_class.from_hash("token_budget" => "not-an-int")
+
+      expect(coerced.token_budget).to eq(50_000)
+      expect(garbage.token_budget).to be_nil
     end
 
     it "coerces numeric strings to integers" do
@@ -62,7 +72,8 @@ RSpec.describe Automation::Configuration::Termination do
       max_review_goal_retries: nil,
       stop_when_no_comments: false,
       quality_threshold: nil,
-      timeout_minutes: nil
+      timeout_minutes: nil,
+      token_budget: nil
     )
   end
 end

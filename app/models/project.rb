@@ -21,7 +21,8 @@ class Project < ApplicationRecord
           "max_review_rounds" => 15,
           "stop_when_no_comments" => true,
           "quality_threshold" => nil,
-          "timeout_minutes" => nil
+          "timeout_minutes" => nil,
+          "token_budget" => nil
         }
       },
       "paid_agent" => {
@@ -31,7 +32,8 @@ class Project < ApplicationRecord
           "max_review_goal_retries" => 3,
           "stop_when_no_comments" => true,
           "quality_threshold" => nil,
-          "timeout_minutes" => 30
+          "timeout_minutes" => 30,
+          "token_budget" => nil
         }
       },
       "codex" => {
@@ -40,7 +42,8 @@ class Project < ApplicationRecord
           "max_review_rounds" => 15,
           "stop_when_no_comments" => true,
           "quality_threshold" => nil,
-          "timeout_minutes" => 60
+          "timeout_minutes" => 60,
+          "token_budget" => nil
         }
       },
       "ci_action" => {
@@ -50,7 +53,8 @@ class Project < ApplicationRecord
           "max_review_rounds" => nil,
           "stop_when_no_comments" => true,
           "quality_threshold" => nil,
-          "timeout_minutes" => nil
+          "timeout_minutes" => nil,
+          "token_budget" => nil
         }
       },
       "manual" => {
@@ -60,7 +64,8 @@ class Project < ApplicationRecord
           "max_review_rounds" => nil,
           "stop_when_no_comments" => false,
           "quality_threshold" => nil,
-          "timeout_minutes" => 1440
+          "timeout_minutes" => 1440,
+          "token_budget" => nil
         }
       }
     }
@@ -563,6 +568,15 @@ class Project < ApplicationRecord
     automation_configuration.auto_review.bot_request_login
   end
 
+  # Returns the ordered list of bot-backed reviewer logins to attempt when
+  # requesting an automated review, with the primary provider first. Used
+  # by RequestReviewActivity to fall back to a secondary bot when the
+  # primary is unavailable (e.g. Copilot rate-limited). Returns +[]+ when
+  # reviews are globally disabled or no bot-backed method is enabled.
+  def review_bot_request_chain
+    automation_configuration.auto_review.bot_request_chain
+  end
+
   private
 
   def auto_pick_just_enabled?
@@ -759,6 +773,11 @@ class Project < ApplicationRecord
     timeout = termination["timeout_minutes"]
     if timeout.present? && (!timeout.is_a?(Integer) || timeout < 1)
       errors.add(:review_settings, "#{method_name} timeout_minutes must be a positive integer")
+    end
+
+    token_budget = termination["token_budget"]
+    if token_budget.present? && (!token_budget.is_a?(Integer) || token_budget < 1)
+      errors.add(:review_settings, "#{method_name} token_budget must be a positive integer")
     end
 
     paid_agent_retry_condition = method_name == "paid_agent" && termination["max_review_goal_retries"].present?
