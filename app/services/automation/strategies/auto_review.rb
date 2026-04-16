@@ -66,7 +66,7 @@ module Automation
         plugins = build_plugins(config, signals)
         outcomes = plugins.map(&:evaluate)
 
-        decisions = compose_decisions(signals, plugins, outcomes, scan)
+        decisions = compose_decisions(signals, plugins, outcomes)
         Automation::Result.new(decisions: decisions.presence || [ Automation::Decision.noop ])
       end
 
@@ -100,7 +100,7 @@ module Automation
         end
       end
 
-      def compose_decisions(signals, plugins, outcomes, scan)
+      def compose_decisions(signals, plugins, outcomes)
         decisions = []
         trigger_types = signals.trigger_types
 
@@ -163,7 +163,10 @@ module Automation
       def non_bot_pending_decisions(plugins, signals, trigger_types)
         decisions = manual_request_decisions(plugins)
 
-        other_triggers = trigger_types - %w[manual_review_pending ci_action_pending]
+        other_triggers = trigger_types - [
+          Automation::ReviewMethods::Manual::TRIGGER_TYPE,
+          Automation::ReviewMethods::CiAction::TRIGGER_TYPE
+        ]
         decisions.concat(followup_decisions(signals)) if other_triggers.any?
         decisions
       end
