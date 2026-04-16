@@ -1756,5 +1756,124 @@ RSpec.describe Containers::Provision do
         expect(result).to be_success
       end
     end
+
+    context "with heartbeat file" do
+      let(:heartbeat_dir) { Dir.mktmpdir("heartbeat") }
+      let(:heartbeat_path) { File.join(heartbeat_dir, "heartbeat") }
+
+      after { FileUtils.remove_entry(heartbeat_dir) if File.directory?(heartbeat_dir) }
+
+      it "suppresses idle timeout while heartbeat file is touched" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "initial output\n") if block
+          10.times do
+            FileUtils.touch(heartbeat_path)
+            sleep 0.05
+          end
+          [ [ "initial output\n" ], [], 0 ]
+        end
+
+        result = service.execute(
+          "working_silently",
+          timeout: 10,
+          idle_timeout: 0.2,
+          heartbeat_path: heartbeat_path
+        )
+        expect(result).to be_success
+        expect(container_stopped.true?).to be false
+      end
+
+      it "suppresses startup timeout while heartbeat file is touched before any output" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          10.times do
+            FileUtils.touch(heartbeat_path)
+            sleep 0.05
+          end
+          block.call(:stdout, "finally output\n") if block
+          [ [ "finally output\n" ], [], 0 ]
+        end
+
+        result = service.execute(
+          "waiting_on_llm",
+          timeout: 10,
+          startup_timeout: 0.2,
+          heartbeat_path: heartbeat_path
+        )
+        expect(result).to be_success
+        expect(container_stopped.true?).to be false
+      end
+
+      it "still fires idle timeout when heartbeat file is not touched" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "initial output\n") if block
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
+          [ [ "initial output\n" ], [], 137 ]
+        end
+
+        expect {
+          service.execute(
+            "stalling_command",
+            timeout: 10,
+            idle_timeout: 0.1,
+            heartbeat_path: heartbeat_path
+          )
+        }.to raise_error(described_class::IdleTimeoutError)
+      end
+
+      it "ignores a stale heartbeat file that was not touched during exec" do
+        FileUtils.touch(heartbeat_path, mtime: Time.now - 3600)
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "initial output\n") if block
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
+          [ [ "initial output\n" ], [], 137 ]
+        end
+
+        expect {
+          service.execute(
+            "stalling_command",
+            timeout: 10,
+            idle_timeout: 0.1,
+            heartbeat_path: heartbeat_path
+          )
+        }.to raise_error(described_class::IdleTimeoutError)
+      end
+
+      it "does not suppress the wall-clock timeout" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          Thread.new do
+            20.times do
+              FileUtils.touch(heartbeat_path)
+              sleep 0.01
+            end
+          end
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
+          [ [], [], 137 ]
+        end
+
+        expect {
+          service.execute(
+            "long_running",
+            timeout: 0.2,
+            heartbeat_path: heartbeat_path
+          )
+        }.to raise_error(described_class::TimeoutError, /timed out after 0.2 seconds/)
+      end
+
+      it "tolerates a missing heartbeat file path and falls back to stdout activity" do
+        missing_path = File.join(heartbeat_dir, "does-not-exist")
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "output\n") if block
+          [ [ "output\n" ], [], 0 ]
+        end
+
+        result = service.execute(
+          "fast_command",
+          timeout: 10,
+          idle_timeout: 2,
+          heartbeat_path: missing_path
+        )
+        expect(result).to be_success
+      end
+    end
   end
 end
