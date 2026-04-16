@@ -166,6 +166,22 @@ RSpec.describe Issue do
 
         expect(described_class.ready_for_work(project)).not_to include(issue)
       end
+
+      it "excludes issues whose dep points at an open PR" do
+        pr = create(:issue, :pull_request, project: project, github_state: "open")
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: pr)
+
+        expect(described_class.ready_for_work(project)).not_to include(issue)
+      end
+
+      it "includes issues whose dep points at a closed/merged PR" do
+        pr = create(:issue, :pull_request, project: project, github_state: "closed")
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: pr)
+
+        expect(described_class.ready_for_work(project)).to include(issue)
+      end
     end
   end
 
