@@ -27,9 +27,11 @@ RSpec.describe "qdrant:check" do
     before { allow(qdrant_client).to receive(:healthy?).and_return(false) }
 
     it "exits with non-zero status" do
+      # Wrap in an output matcher so abort's stderr message is captured instead
+      # of leaking into the rspec output.
       expect {
-        task.invoke
-      }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+        expect { task.invoke }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+      }.to output.to_stderr
     end
 
     it "prints a warning message" do

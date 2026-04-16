@@ -1535,7 +1535,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     context "when restarted phase with review completed on current HEAD and no create_pr in cycle" do
       before do
         enable_paid_agent_review!
-        issue = create(:issue, :pull_request,
+        _issue = create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "restarted",

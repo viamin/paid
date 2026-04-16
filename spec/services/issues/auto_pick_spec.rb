@@ -246,7 +246,7 @@ RSpec.describe Issues::AutoPick do
       end
 
       it "skips a tracker issue when it has no body references" do
-        tracker = create(:issue, project: project, github_number: 1,
+        _tracker = create(:issue, project: project, github_number: 1,
           title: "Completion criteria tracker",
           body: "Just some text with no issue refs")
         normal_issue = create(:issue, project: project, github_number: 2,
@@ -298,7 +298,7 @@ RSpec.describe Issues::AutoPick do
       end
 
       it "detects tracker by body content even without tracker in title" do
-        tracker = create(:issue, project: project, github_number: 1,
+        _tracker = create(:issue, project: project, github_number: 1,
           title: "Phase 2 umbrella",
           body: "## Completion criteria\n- #10 done\n- #11 done")
         next_issue = create(:issue, project: project, github_number: 10, github_state: "open")

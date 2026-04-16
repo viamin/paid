@@ -21,6 +21,16 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     }
   end
 
+  # Skip the slow pstree call inside dev_supervisor.sh's diagnostic snapshots.
+  # See spec/lib/dev_script_spec.rb for rationale.
+  around do |example|
+    previous = ENV["DEV_SUPERVISOR_FAST_DIAGNOSTICS"]
+    ENV["DEV_SUPERVISOR_FAST_DIAGNOSTICS"] = "1"
+    example.run
+  ensure
+    ENV["DEV_SUPERVISOR_FAST_DIAGNOSTICS"] = previous
+  end
+
   it "removes a stale Overmind socket before restarting the dev environment" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
