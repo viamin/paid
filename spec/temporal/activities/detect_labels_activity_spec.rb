@@ -432,6 +432,72 @@ RSpec.describe Activities::DetectLabelsActivity do
       end
     end
 
+    # Regression coverage for PR #1077: initial label-based sync of an open PR
+    # carrying the automation label must NOT queue a default create_pr run.
+    # The original bug queued create_pr on this exact payload; these tests pin
+    # the decision boundary so re-introducing that code path fails loudly.
+    describe "#1077 regression: initial sync of automation-labeled PRs" do
+      let(:automation_project) do
+        create(:project,
+          label_mappings: {},
+          automation_on_label_enabled: true,
+          automation_label_name: "paid-automation")
+      end
+
+      it "returns no action for a paid-generated+paid-automation PR on initial sync (legacy path)" do
+        pull_request = create(:issue, :pull_request,
+          project: automation_project,
+          labels: [ automation_project.generated_label_name, automation_project.automation_label_name ],
+          paid_state: "completed",
+          github_number: 77)
+
+        result = activity.execute(project_id: automation_project.id, issue_id: pull_request.id)
+
+        expect(result[:action]).to eq("none")
+        expect(result[:decisions]).to eq([ { type: "noop" } ])
+      end
+
+      it "does not change paid_state for an existing automation-labeled PR on initial sync" do
+        pull_request = create(:issue, :pull_request,
+          project: automation_project,
+          labels: [ automation_project.generated_label_name, automation_project.automation_label_name ],
+          paid_state: "completed",
+          github_number: 77)
+
+        activity.execute(project_id: automation_project.id, issue_id: pull_request.id)
+
+        expect(pull_request.reload.paid_state).to eq("completed")
+      end
+
+      it "returns noop when the explicit-decision flag is enabled for an automation-labeled PR" do
+        pull_request = create(:issue, :pull_request,
+          project: automation_project,
+          labels: [ automation_project.automation_label_name ],
+          paid_state: "new",
+          github_number: 78)
+        FeatureFlags.enable!(:explicit_pr_automation_decisions, project: automation_project)
+
+        result = activity.execute(project_id: automation_project.id, issue_id: pull_request.id)
+
+        expect(result[:action]).to eq("none")
+        expect(result[:decisions]).to eq([ { type: "noop" } ])
+      end
+
+      it "still queues create_pr for automation-labeled issues (distinguishes from PRs)" do
+        issue = create(:issue,
+          project: automation_project,
+          labels: [ automation_project.automation_label_name ],
+          paid_state: "new",
+          is_pull_request: false)
+
+        result = activity.execute(project_id: automation_project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("execute_agent")
+        expect(result[:decisions]).to eq([ { type: "queue_create_pr_run", issue_id: issue.id } ])
+        expect(result).not_to have_key(:source_pull_request_number)
+      end
+    end
+
     context "when issue is from an untrusted user and an untrusted user added the label" do
       let(:issue) do
         create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new",
