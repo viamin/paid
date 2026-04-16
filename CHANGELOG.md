@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.23.0](https://github.com/viamin/paid/compare/v0.22.0...v0.23.0) (2026-04-16)
+
+
+### Features
+
+* **agent-runs:** add enhance_issue goal for issue enhancement mode ([#389](https://github.com/viamin/paid/issues/389)) ([#1153](https://github.com/viamin/paid/issues/1153)) ([d1927d2](https://github.com/viamin/paid/commit/d1927d26a914dfd440f2479c7f800396959ea7dd))
+* **agent-runs:** add provider filter to agent runs index page ([#1144](https://github.com/viamin/paid/issues/1144)) ([5c25562](https://github.com/viamin/paid/commit/5c25562986976cefafe5e98cae46f94dadf46eab)), closes [#1069](https://github.com/viamin/paid/issues/1069)
+* **knowledge:** add token usage tracking to knowledge dashboard ([#1046](https://github.com/viamin/paid/issues/1046)) ([#1140](https://github.com/viamin/paid/issues/1140)) ([30f6fc9](https://github.com/viamin/paid/commit/30f6fc97477e99898d029a395b3b61f8e8fd9413))
+* **rdrs:** add RDR-023 automation modularization architecture ([#1161](https://github.com/viamin/paid/issues/1161)) ([0b62901](https://github.com/viamin/paid/commit/0b629012e45bdaaf022a2c958298e82d4bc0d5bf)), closes [#1114](https://github.com/viamin/paid/issues/1114)
+* **token-tracking:** ingest Codex token usage data ([#1030](https://github.com/viamin/paid/issues/1030)) ([#1143](https://github.com/viamin/paid/issues/1143)) ([31b33d0](https://github.com/viamin/paid/commit/31b33d0b5aba4e10a921cc6eee052e2932314a81))
+
+
+### Bug Fixes
+
+* 1037: codex: revisit containerized subscription-auth seeding for refresh-rotating OAuth sessions ([#1100](https://github.com/viamin/paid/issues/1100)) ([61d0ff4](https://github.com/viamin/paid/commit/61d0ff4acd32c177a191a5728c167fa2d4b273d4))
+* 1042: feat(knowledge): containerize decision drafting to use secrets proxy ([#1145](https://github.com/viamin/paid/issues/1145)) ([c2f0d70](https://github.com/viamin/paid/commit/c2f0d70cdfe7b53581586001dff1c0b69e30f554))
+* 1050: feat(providers): implement rate-limit fallback execution ([#1108](https://github.com/viamin/paid/issues/1108)) ([a8fa62d](https://github.com/viamin/paid/commit/a8fa62df1bf8943702c8268ac97ec9c2efca017f))
+* 1125: Orphan Branches Without PRs: Implement Pre-Run Branch Existence Check ([#1141](https://github.com/viamin/paid/issues/1141)) ([babcd5f](https://github.com/viamin/paid/commit/babcd5fb608719dd6a34e343fab63c21e44b5008))
+* 1148: feat(release): auto-merge release-please PRs based on per-project semver policy ([#1150](https://github.com/viamin/paid/issues/1150)) ([4ebfe90](https://github.com/viamin/paid/commit/4ebfe900f46a8857ca84c18fe2e648b6c1633a97))
+* 1149: feat(projects): ensure standard labels (P1/P2/P3, etc.) exist on connected GitHub repos ([#1160](https://github.com/viamin/paid/issues/1160)) ([8ad917b](https://github.com/viamin/paid/commit/8ad917b9047ee1d4706dbc8343d3162aaa7c34c5))
+* **containers:** retry git clone on transient DNS/network failures ([#1159](https://github.com/viamin/paid/issues/1159)) ([04cf981](https://github.com/viamin/paid/commit/04cf9819d37037cd632ae11d6b618cc623a4f4fa)), closes [#1151](https://github.com/viamin/paid/issues/1151)
+* **dev:** wait for overmind socket before exiting from --detach ([#1158](https://github.com/viamin/paid/issues/1158)) ([46cb5ff](https://github.com/viamin/paid/commit/46cb5ff1c1e125c612bd0e2ffc4f3ac754dab4c0))
+* **knowledge:** increase collector container memory and tmpfs to fix routes OOM ([#1167](https://github.com/viamin/paid/issues/1167)) ([81fb987](https://github.com/viamin/paid/commit/81fb98717e9f16e7bc52fcdc4b2ece379f7afc00))
+* **knowledge:** mount /tmp tmpfs with exec for collector container ([#1155](https://github.com/viamin/paid/issues/1155)) ([b205ceb](https://github.com/viamin/paid/commit/b205ceb58f10f4b57b827c22cae919525508bef8))
+* **pr-scanner:** return :skipped from scan_draft_pr when CI is pending ([#1157](https://github.com/viamin/paid/issues/1157)) ([cafbbcc](https://github.com/viamin/paid/commit/cafbbcc42a221a4881b1c7cf17f01308cb02d8d1)), closes [#1156](https://github.com/viamin/paid/issues/1156)
+* **scanner:** pause PR follow-up runs while paid_agent review is outstanding ([#1135](https://github.com/viamin/paid/issues/1135)) ([#1142](https://github.com/viamin/paid/issues/1142)) ([bdc5d53](https://github.com/viamin/paid/commit/bdc5d5319f4ad6e2b13470f3f42fcc49cad33736))
+* **scanner:** prevent review loop when HEAD equals reviewed commit ([#1152](https://github.com/viamin/paid/issues/1152)) ([#1154](https://github.com/viamin/paid/issues/1154)) ([1bc0d1d](https://github.com/viamin/paid/commit/1bc0d1d44980d69ddd5012a4bb54e940ac67bc6e))
+
 ## [0.22.0](https://github.com/viamin/paid/compare/v0.21.0...v0.22.0) (2026-04-15)
 
 
