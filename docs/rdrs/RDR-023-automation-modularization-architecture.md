@@ -8,7 +8,7 @@
 - **Status**: Draft
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: #1114
+- **Related Issues**: #1114, #1116
 - **Related Tests**: N/A
 - **Related RDRs**: [RDR-012](RDR-012-github-integration.md) (GitHub Integration), [RDR-022](RDR-022-auto-merge-pr-strategy.md) (Auto-Merge Strategy), [RDR-002](RDR-002-workflow-orchestration.md) (Workflow Orchestration)
 
@@ -597,19 +597,22 @@ end
 
 **Goal**: Extract GitHub API calls from activities into adapter classes behind interfaces.
 
-1. Define adapter interfaces (`RepositoryAdapter`, `WorkItemAdapter`, `ReviewAdapter`).
-2. Define adapter data objects (`PullRequestData`, `ReviewData`, etc.).
-3. Implement `Adapters::GitHub` backed by existing Octokit client usage.
-4. Replace direct Octokit calls in `ScanPaidPrsActivity` and `MergePullRequestActivity` with adapter calls.
+1. Define adapter interfaces (`RepositoryProvider`, `WorkItemProvider`, `ReviewProvider`). — *Shipped as `Automation::Providers::*` in #1116.*
+2. Define adapter data objects (`PullRequest`, `Review`, etc.). — *Shipped under `Automation::Providers::Data` in #1116.*
+3. Implement a GitHub provider set backed by existing Octokit client usage.
+4. Replace direct Octokit calls in `ScanPaidPrsActivity` and `MergePullRequestActivity` with provider calls.
 5. Verify behavior parity via existing integration tests.
+
+The interface code is placed under `app/services/automation/providers/` (rather than `app/adapters/` as originally sketched) so that the capability modules live alongside other automation namespaces (`Automation::Decision`, `Automation::Result`, `Automation::Strategies::*`). The term "provider" tracks the wording used in #1116 and avoids collision with the existing `::Provider` model, which models LLM providers.
 
 **Files to create**:
 
-- `app/adapters/repository_adapter.rb`
-- `app/adapters/work_item_adapter.rb`
-- `app/adapters/review_adapter.rb`
-- `app/adapters/github.rb`
-- `app/adapters/data/*.rb` (data objects)
+- `app/services/automation/providers/repository_provider.rb`
+- `app/services/automation/providers/work_item_provider.rb`
+- `app/services/automation/providers/review_provider.rb`
+- `app/services/automation/providers/resolver.rb`
+- `app/services/automation/providers/data/*.rb` (data objects)
+- `app/services/automation/providers/github/*.rb` (concrete provider implementations — not yet created)
 
 **Files to modify**:
 
