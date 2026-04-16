@@ -29,6 +29,9 @@ class ProjectsController < ApplicationController
     open_items = @project.issues.where(github_state: "open").order(github_number: :desc)
     @issues = open_items.issues_only.includes(:sub_issues).limit(settings.max_issues_per_page)
     @issue_lifecycle_statuses = Issue.lifecycle_statuses(@issues)
+    @issue_ids_with_open_paid_pr = Issue.ids_with_open_paid_generated_pr(
+      project: @project, issue_ids: @issues.map(&:id)
+    )
     @pull_requests = open_items.pull_requests_only.limit(settings.max_prs_per_page)
     @pr_numbers_with_queued_auto_continue = @project.pr_numbers_with_queued_auto_continue
     @pr_numbers_with_active_runs = @project.pr_numbers_with_active_runs

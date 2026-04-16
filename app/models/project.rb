@@ -421,12 +421,16 @@ class Project < ApplicationRecord
     open_items = issues.where(github_state: "open").order(github_number: :desc)
     displayed = open_items.issues_only.includes(:sub_issues).limit(25)
     lifecycle_statuses = Issue.lifecycle_statuses(displayed)
+    issue_ids_with_open_paid_pr = Issue.ids_with_open_paid_generated_pr(
+      project: self, issue_ids: displayed.map(&:id)
+    )
     broadcast_replace_to(
       self, :project_updates,
       target: ActionView::RecordIdentifier.dom_id(self, :issues),
       partial: "projects/issues",
       locals: { project: self, issues: displayed,
-                issue_lifecycle_statuses: lifecycle_statuses }
+                issue_lifecycle_statuses: lifecycle_statuses,
+                issue_ids_with_open_paid_pr: issue_ids_with_open_paid_pr }
     )
   end
 

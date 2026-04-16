@@ -482,6 +482,23 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Preselected issue")
       end
 
+      it "disables issues with an open paid-generated PR in the dropdown" do
+        issue = create(:issue, project: project, github_number: 10, title: "Has paid PR", github_state: "open", paid_state: "new")
+        pr = create(:issue, :pull_request, project: project, github_number: 77,
+          github_state: "open", parent_issue: issue)
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+
+        get new_project_agent_run_path(project)
+
+        doc = Nokogiri::HTML(response.body)
+        option = doc.at_css("select#issue_id option[value='#{issue.id}']")
+        expect(option).to be_present
+        expect(option["disabled"]).to eq("disabled")
+        expect(option.text).to include("open paid PR")
+      end
+
       it "pre-selects PR when pull_request_id param is present" do
         pr = create(:issue, :pull_request, project: project, github_number: 30, title: "Preselected PR")
         get new_project_agent_run_path(project, pull_request_id: pr.id)
@@ -605,6 +622,24 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
         follow_redirect!
         expect(response.body).to include("Please select an issue")
+      end
+
+      it "rejects a create_pr run when the issue already has an open paid-generated PR" do
+        pr_issue = create(:issue, project: project, github_number: 42, title: "Has paid PR")
+        pr = create(:issue, :pull_request, project: project, github_number: 99,
+          github_state: "open", parent_issue: pr_issue)
+        create(:agent_run, :completed, project: project, issue: pr_issue,
+          pull_request_number: pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+
+        expect {
+          post project_agent_runs_path(project),
+            params: { goal: "create_pr", issue_id: pr_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
+        follow_redirect!
+        expect(response.body).to include("Paid already opened PR ##{pr.github_number}")
       end
 
       context "with pull_request_id parameter" do
@@ -932,9 +967,13 @@ RSpec.describe "AgentRuns" do
         end
       end
 
-      it "rejects quick run for an issue with an associated pull request" do
+      it "rejects quick run for an issue with an open paid-generated pull request" do
         pr_issue = create(:issue, project: project, github_number: 42, title: "Fix the bug")
-        create(:issue, :pull_request, project: project, parent_issue: pr_issue)
+        pr = create(:issue, :pull_request, project: project, github_number: 99,
+          github_state: "open", parent_issue: pr_issue)
+        create(:agent_run, :completed, project: project, issue: pr_issue,
+          pull_request_number: pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
 
         expect {
           post quick_create_project_agent_runs_path(project), params: { issue_id: pr_issue.id }
@@ -942,7 +981,30 @@ RSpec.describe "AgentRuns" do
 
         expect(response).to redirect_to(project_path(project))
         follow_redirect!
-        expect(response.body).to include("already has an associated pull request")
+        expect(response.body).to include("Paid already opened PR ##{pr.github_number}")
+      end
+
+      it "allows quick run when the associated pull request was not paid-generated" do
+        pr_issue = create(:issue, project: project, github_number: 42, title: "Fix the bug")
+        create(:issue, :pull_request, project: project, github_number: 100,
+          github_state: "open", parent_issue: pr_issue)
+
+        expect {
+          post quick_create_project_agent_runs_path(project), params: { issue_id: pr_issue.id }
+        }.to change(AgentRun, :count).by(1)
+      end
+
+      it "re-enables quick run once the paid-generated pull request is closed" do
+        pr_issue = create(:issue, project: project, github_number: 42, title: "Fix the bug")
+        pr = create(:issue, :pull_request, :closed, project: project, github_number: 99,
+          parent_issue: pr_issue)
+        create(:agent_run, :completed, project: project, issue: pr_issue,
+          pull_request_number: pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+
+        expect {
+          post quick_create_project_agent_runs_path(project), params: { issue_id: pr_issue.id }
+        }.to change(AgentRun, :count).by(1)
       end
 
       it "ignores goal params and still uses quick-run defaults" do

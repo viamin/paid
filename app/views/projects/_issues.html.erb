@@ -7,8 +7,13 @@
       <div class="max-h-96 overflow-y-auto">
         <ul role="list" class="divide-y divide-gray-200">
           <% statuses = local_assigns.fetch(:issue_lifecycle_statuses, {}) %>
+          <% paid_pr_issue_ids = local_assigns.fetch(:issue_ids_with_open_paid_pr, Set.new) %>
           <% issues.each do |issue| %>
-            <%= render "projects/issue", issue: issue, project: project, lifecycle_status: statuses[issue.id] %>
+            <%= render "projects/issue",
+                      issue: issue,
+                      project: project,
+                      lifecycle_status: statuses[issue.id],
+                      has_open_paid_pr: paid_pr_issue_ids.include?(issue.id) %>
           <% end %>
         </ul>
       </div>

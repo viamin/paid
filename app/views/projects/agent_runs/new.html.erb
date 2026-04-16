@@ -58,8 +58,12 @@
                 <select name="issue_id" id="issue_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                   <option value="">-- Select an issue --</option>
                   <% @issues.each do |issue| %>
-                    <option value="<%= issue.id %>" <%= "selected" if params[:issue_id].to_s == issue.id.to_s %>>
-                      #<%= issue.github_number %> - <%= truncate(issue.title, length: 60) %>
+                    <% has_open_paid_pr = @issues_with_open_paid_pr.include?(issue.id) %>
+                    <option value="<%= issue.id %>"
+                            <%= "selected" if params[:issue_id].to_s == issue.id.to_s && !has_open_paid_pr %>
+                            <%= "disabled" if has_open_paid_pr %>
+                            title="<%= has_open_paid_pr ? "Paid already opened a PR for this issue. Quick run on the PR instead." : "" %>">
+                      #<%= issue.github_number %> - <%= truncate(issue.title, length: 60) %><%= " (open paid PR — quick run on the PR instead)" if has_open_paid_pr %>
                     </option>
                   <% end %>
                 </select>

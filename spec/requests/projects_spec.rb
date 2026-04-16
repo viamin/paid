@@ -574,6 +574,47 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Quick Run")
       end
 
+      it "disables Quick Run when the issue has an open paid-generated PR" do
+        project = create(:project, account: account, github_token: github_token)
+        issue = create(:issue, project: project, github_number: 5, title: "Test issue", github_state: "open")
+        pr = create(:issue, :pull_request, project: project, github_number: 77,
+          github_state: "open", parent_issue: issue)
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+
+        get project_path(project)
+
+        expect(response.body).not_to include(quick_create_project_agent_runs_path(project, issue_id: issue.id))
+        expect(response.body).to include(%(data-issue-quick-run-disabled="true"))
+        expect(response.body).to include("Quick run on PR ##{pr.github_number}")
+      end
+
+      it "keeps Quick Run enabled when the PR was not paid-generated" do
+        project = create(:project, account: account, github_token: github_token)
+        issue = create(:issue, project: project, github_number: 5, title: "Test issue", github_state: "open")
+        create(:issue, :pull_request, project: project, github_number: 78,
+          github_state: "open", parent_issue: issue)
+
+        get project_path(project)
+
+        expect(response.body).to include(quick_create_project_agent_runs_path(project, issue_id: issue.id))
+      end
+
+      it "re-enables Quick Run after the paid-generated PR is closed" do
+        project = create(:project, account: account, github_token: github_token)
+        issue = create(:issue, project: project, github_number: 5, title: "Test issue", github_state: "open")
+        pr = create(:issue, :pull_request, :closed, project: project, github_number: 77,
+          parent_issue: issue)
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+
+        get project_path(project)
+
+        expect(response.body).to include(quick_create_project_agent_runs_path(project, issue_id: issue.id))
+      end
+
       it "color-codes only priority labels in synced issues" do
         project = create(:project, account: account, github_token: github_token,
           priority_labels: { "P1" => "urgent", "P2" => "high-touch", "P3" => "later" })
