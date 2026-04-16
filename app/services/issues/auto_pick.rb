@@ -16,9 +16,11 @@ module Issues
   # - Not labeled with excluded labels (planning, research, waiting,
   #   tracking, epic, needs-manual-setup)
   # - Not a parent/tracking issue (has sub-issues)
-  # - Ordered by priority: issues in partially-complete dependency trees
-  #   first, then by unblock count (how many open issues depend on this
-  #   one), then by github_number ascending as tiebreaker
+  # - Ordered by priority: highest priority label first (P1 > P2 > P3 >
+  #   unlabeled, using each project's configured label names), then
+  #   issues in partially-complete dependency trees, then by unblock
+  #   count (how many open issues depend on this one), then by
+  #   github_number ascending (FIFO — older issues first)
   #
   # Returns the created AgentRun or nil if no eligible issue is found.
   class AutoPick
@@ -256,11 +258,33 @@ module Issues
       eligible_issue_scope
         .joins(priority_joins)
         .order(
+          Arel.sql("#{priority_label_order_sql} ASC"),
           Arel.sql("COALESCE(started_trees.in_started_tree, 0) DESC"),
           Arel.sql("COALESCE(unblock_counts.unblock_count, 0) DESC"),
           Arel.sql("issues.github_number ASC")
         )
         .first
+    end
+
+    # Returns a CASE expression that maps each issue to a numeric priority
+    # rank based on the project's configured priority labels
+    # (Project#effective_priority_labels). Lower rank sorts first, so
+    # P1-labeled issues beat P2/P3/unlabeled, P2 beats P3/unlabeled, and
+    # P3 beats unlabeled. Label names are interpolated via connection.quote
+    # to keep the CASE safe for use with Arel.sql.
+    def priority_label_order_sql
+      effective = @project.effective_priority_labels
+      conn = Issue.connection
+      cases = Project::PRIORITY_TIERS.each_with_index.filter_map do |tier, index|
+        label_name = effective[tier]
+        next if label_name.blank?
+
+        quoted = conn.quote([ label_name ].to_json)
+        "WHEN issues.labels @> #{quoted}::jsonb THEN #{index + 1}"
+      end
+      return (Project::PRIORITY_TIERS.size + 1).to_s if cases.empty?
+
+      "CASE #{cases.join(' ')} ELSE #{Project::PRIORITY_TIERS.size + 1} END"
     end
 
     # Precomputed LEFT JOINs for priority ordering. Uses subqueries
