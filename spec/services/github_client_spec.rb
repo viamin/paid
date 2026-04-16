@@ -720,29 +720,40 @@ RSpec.describe GithubClient do
     let(:ref) { "abc123" }
 
     context "when check runs exist" do
+      let(:check_runs_payload) do
+        [
+          {
+            id: 1, name: "rspec", status: "completed", conclusion: "failure",
+            html_url: "https://github.com/owner/repo/runs/1",
+            details_url: "https://ci.example.com/jobs/1"
+          },
+          {
+            id: 2, name: "rubocop", status: "completed", conclusion: "success",
+            html_url: "https://github.com/owner/repo/runs/2",
+            details_url: "https://ci.example.com/jobs/2"
+          },
+          {
+            id: 3, name: "integration", status: "in_progress", conclusion: nil,
+            html_url: "https://github.com/owner/repo/runs/3",
+            details_url: "https://ci.example.com/jobs/3"
+          }
+        ]
+      end
+
       before do
         stub_request(:get, "#{api_base}/repos/#{repo}/commits/#{ref}/check-runs")
           .with(query: hash_including("per_page" => "100", "page" => "1"))
           .to_return(
             status: 200,
-            body: {
-              total_count: 2,
-              check_runs: [
-                { id: 1, name: "rspec", conclusion: "failure" },
-                { id: 2, name: "rubocop", conclusion: "success" }
-              ]
-            }.to_json,
+            body: { total_count: check_runs_payload.length, check_runs: check_runs_payload }.to_json,
             headers: { "Content-Type" => "application/json" }
           )
       end
 
-      it "returns check run names and conclusions" do
+      it "returns check run names, statuses, conclusions, and URLs" do
         result = client.check_runs_for_ref(repo, ref)
 
-        expect(result).to eq([
-          { name: "rspec", conclusion: "failure" },
-          { name: "rubocop", conclusion: "success" }
-        ])
+        expect(result).to eq(check_runs_payload.map { |cr| cr.except(:id) })
       end
     end
 
