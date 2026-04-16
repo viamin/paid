@@ -6,10 +6,10 @@ module PromptEvolution
   # rolls back to a previous generation if the current version's fitness has
   # regressed.
   #
-  # Fitness is the mean composite_score from recent automated QualityMetrics
-  # associated with each version. Tournament selection randomly samples k
-  # candidates per round and picks the fittest; the overall winner is the
-  # fittest version across all rounds.
+  # Fitness is the mean composite_score across the version's automated
+  # QualityMetrics that have a composite_score recorded. Tournament
+  # selection randomly samples k candidates per round and picks the
+  # fittest; the overall winner is the fittest version across all rounds.
   #
   # Generation depth is derived from the parent_version_id chain on
   # PromptVersion, which is already tracked when mutations are created.
@@ -59,7 +59,7 @@ module PromptEvolution
       @tournament_size = Integer(tournament_size).clamp(2, 10)
       @rounds = Integer(rounds).clamp(1, 50)
       @min_samples = Integer(min_samples).clamp(1, 1_000)
-      @min_diversity = Integer(min_diversity).clamp(1, 100)
+      @min_diversity = Integer(min_diversity).clamp(0, 100)
       @retirement_threshold = Float(retirement_threshold).clamp(0.0, 1.0)
       @rollback_drop = Float(rollback_drop).clamp(0.0, 1.0)
       @random = random
@@ -165,7 +165,6 @@ module PromptEvolution
 
         round_winners = rounds.times.map do
           contenders = scored.sample(tournament_size, random: random)
-          contenders = scored if contenders.empty?
           contenders.max_by { |v| [ fitness_map[v.id], v.version ] }
         end
 
