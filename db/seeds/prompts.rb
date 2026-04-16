@@ -616,7 +616,14 @@ upsert_global_prompt.call(
     incomplete. If you cannot identify specific file paths and line numbers, do not
     include that issue in the review.
 
-    Post your review using the GitHub API proxy:
+    Post your review using the GitHub API proxy.
+
+    IMPORTANT: Do NOT pass the review JSON inline with a single-quoted `-d '...'`.
+    Review bodies and inline comments contain markdown, suggestion blocks, newlines,
+    and apostrophes — inlining that payload breaks shell quoting and produces
+    malformed JSON (invalid control characters inside strings) that Rails rejects
+    before the request ever reaches GitHub. Always write the review JSON to a
+    temporary file and submit it with `--data-binary @file`.
 
     ```bash
     # Get PR details (metadata and links)
@@ -636,22 +643,27 @@ upsert_global_prompt.call(
     # inline comments is incomplete. If you cannot identify a specific file
     # path and line number for an issue, do not include that issue in the review.
     # Note: "side" must be "RIGHT" (new code) or "LEFT" (deleted code).
+    tmpfile=$(mktemp)
+    cat > "$tmpfile" <<'REVIEW_JSON'
+    {
+      "body": "Overall summary of the actionable issues found",
+      "event": "COMMENT",
+      "comments": [
+        {
+          "path": "file.rb",
+          "line": 10,
+          "side": "RIGHT",
+          "body": "Actionable change request on this line"
+        }
+      ]
+    }
+    REVIEW_JSON
     curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/reviews" \
       -H "Content-Type: application/json" \
       -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
       -H "X-Proxy-Token: $PROXY_TOKEN" \
-      -d '{
-        "body": "Overall summary of the actionable issues found",
-        "event": "COMMENT",
-        "comments": [
-          {
-            "path": "file.rb",
-            "line": 10,
-            "side": "RIGHT",
-            "body": "Actionable change request on this line"
-          }
-        ]
-      }'
+      --data-binary @"$tmpfile"
+    rm -f "$tmpfile"
 
     # Case B — clean PR, no actionable issues: post a single review with an EMPTY
     # comments array and a body that begins with the EXACT phrase
@@ -659,16 +671,25 @@ upsert_global_prompt.call(
     # "<!-- paid-review-clean -->" somewhere in the body. These are the
     # signals Paid uses to mark the review as clean and stop the review loop.
     # Do NOT paraphrase either signal.
+    tmpfile=$(mktemp)
+    cat > "$tmpfile" <<'REVIEW_JSON'
+    {
+      "body": "Generated no new comments. The PR looks ready as-is. <!-- paid-review-clean -->",
+      "event": "COMMENT",
+      "comments": []
+    }
+    REVIEW_JSON
     curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/reviews" \
       -H "Content-Type: application/json" \
       -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
       -H "X-Proxy-Token: $PROXY_TOKEN" \
-      -d '{
-        "body": "Generated no new comments. The PR looks ready as-is. <!-- paid-review-clean -->",
-        "event": "COMMENT",
-        "comments": []
-      }'
+      --data-binary @"$tmpfile"
+    rm -f "$tmpfile"
     ```
+
+    If you ever need to send any other JSON payload to the proxy (for example a
+    follow-up issue comment), apply the same pattern: write the body to a temp
+    file and submit with `--data-binary @file`. Never inline JSON with `-d '...'`.
 
     # Pre-submission verification
 
