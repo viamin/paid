@@ -217,81 +217,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_052653) do
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
   end
 
-  create_table "billing_invoices", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.bigint "billing_period_id", null: false
-    t.datetime "created_at", null: false
-    t.datetime "due_at"
-    t.string "external_id", limit: 255
-    t.datetime "issued_at"
-    t.jsonb "metadata", default: {}, null: false
-    t.datetime "paid_at"
-    t.string "status", limit: 20, default: "draft", null: false
-    t.integer "subtotal_cents", default: 0, null: false
-    t.integer "tax_cents", default: 0, null: false
-    t.integer "total_cents", default: 0, null: false
-    t.datetime "updated_at", null: false
-    t.index ["account_id", "status"], name: "index_billing_invoices_on_account_id_and_status"
-    t.index ["account_id"], name: "index_billing_invoices_on_account_id"
-    t.index ["billing_period_id"], name: "index_billing_invoices_on_billing_period_id"
-    t.index ["external_id"], name: "index_billing_invoices_on_external_id", unique: true, where: "(external_id IS NOT NULL)"
-  end
-
-  create_table "billing_line_items", force: :cascade do |t|
-    t.bigint "billing_invoice_id", null: false
-    t.datetime "created_at", null: false
-    t.string "description", null: false
-    t.string "line_item_type", limit: 30, null: false
-    t.jsonb "metadata", default: {}, null: false
-    t.decimal "quantity", precision: 18, scale: 4, default: "0.0", null: false
-    t.integer "total_cents", default: 0, null: false
-    t.integer "unit_price_cents", default: 0, null: false
-    t.datetime "updated_at", null: false
-    t.index ["billing_invoice_id"], name: "index_billing_line_items_on_billing_invoice_id"
-    t.index ["line_item_type"], name: "index_billing_line_items_on_line_item_type"
-  end
-
-  create_table "billing_periods", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.bigint "billing_plan_id", null: false
-    t.datetime "created_at", null: false
-    t.datetime "ends_at", null: false
-    t.jsonb "metadata", default: {}, null: false
-    t.string "period_type", limit: 20, null: false
-    t.datetime "starts_at", null: false
-    t.string "status", limit: 20, default: "open", null: false
-    t.integer "total_compute_seconds", default: 0, null: false
-    t.integer "total_cost_cents", default: 0, null: false
-    t.bigint "total_input_tokens", default: 0, null: false
-    t.bigint "total_output_tokens", default: 0, null: false
-    t.integer "total_runs", default: 0, null: false
-    t.datetime "updated_at", null: false
-    t.index ["account_id", "starts_at", "ends_at"], name: "index_billing_periods_on_account_id_and_starts_at_and_ends_at"
-    t.index ["account_id", "status"], name: "index_billing_periods_on_account_id_and_status"
-    t.index ["account_id"], name: "index_billing_periods_on_account_id"
-    t.index ["billing_plan_id"], name: "index_billing_periods_on_billing_plan_id"
-  end
-
-  create_table "billing_plans", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.boolean "active", default: true, null: false
-    t.integer "base_rate_cents", default: 0, null: false
-    t.string "billing_model", limit: 30, null: false
-    t.datetime "created_at", null: false
-    t.integer "included_projects", default: 0, null: false
-    t.integer "included_runs", default: 0, null: false
-    t.bigint "included_tokens", default: 0, null: false
-    t.jsonb "metadata", default: {}, null: false
-    t.string "name", limit: 100, null: false
-    t.integer "per_project_rate_cents", default: 0, null: false
-    t.integer "per_run_rate_cents", default: 0, null: false
-    t.decimal "per_token_rate_cents", precision: 12, scale: 6, default: "0.0", null: false
-    t.string "period_type", limit: 20, null: false
-    t.datetime "updated_at", null: false
-    t.index ["account_id", "active"], name: "index_billing_plans_on_account_id_and_active"
-    t.index ["account_id"], name: "index_billing_plans_on_account_id"
-  end
-
   create_table "collector_runs", force: :cascade do |t|
     t.integer "artifacts_count", default: 0
     t.string "collector_type", limit: 100, null: false
@@ -1295,12 +1220,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_052653) do
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "agent_runs", "providers", on_delete: :nullify
-  add_foreign_key "billing_invoices", "accounts"
-  add_foreign_key "billing_invoices", "billing_periods"
-  add_foreign_key "billing_line_items", "billing_invoices"
-  add_foreign_key "billing_periods", "accounts"
-  add_foreign_key "billing_periods", "billing_plans"
-  add_foreign_key "billing_plans", "accounts"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "context_intake_responses", "context_intake_responses", column: "parent_response_id"
