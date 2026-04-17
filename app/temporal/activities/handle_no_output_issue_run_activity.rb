@@ -8,15 +8,38 @@ module Activities
   #   already satisfied, obsolete, or not actionable)
   # - `needs_input`: agent produced no output and no changes (issue is likely
   #   underspecified or ambiguous)
+  # - `provider_error`: provider returned an error (e.g. credit/quota exhaustion)
+  #   before the agent actually ran. The run is failed so retry / provider
+  #   fallback handles it instead of parking the issue.
   #
-  # For each outcome, posts a GitHub comment with actionable next steps and
-  # updates the Paid-side issue state so users are not left at a dead end.
+  # For each outcome (other than `provider_error`), posts a GitHub comment with
+  # actionable next steps and updates the Paid-side issue state so users are not
+  # left at a dead end.
   class HandleNoOutputIssueRunActivity < BaseActivity
     activity_name "HandleNoOutputIssueRun"
 
     PAID_NEEDS_INPUT_LABEL = "paid-needs-input"
     NEEDS_INPUT_COMMENT_MARKER = "<!-- paid:needs-input -->"
     RECOMMEND_CLOSE_COMMENT_MARKER = "<!-- paid:recommend-close -->"
+
+    # Patterns indicating the agent "output" is actually a provider-level
+    # credit/quota/billing error rather than legitimate agent output. When
+    # matched, the output is treated as evidence of a provider failure, not
+    # grounds to recommend closing the issue. Mirrors and extends the patterns
+    # in RunAgentActivity so a provider error that slipped past the primary
+    # detector is still caught here.
+    PROVIDER_ERROR_OUTPUT_PATTERNS = [
+      /requires? more credits/i,
+      /add more credits/i,
+      /insufficient credits/i,
+      /not enough credits/i,
+      /purchase (?:more )?credits/i,
+      /buy (?:more )?credits/i,
+      /quota exceeded/i,
+      /rate.?limit/i,
+      /too many requests/i,
+      /\b429\b/
+    ].freeze
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
@@ -33,19 +56,22 @@ module Activities
 
       project = agent_run.project
       client = project.github_token.client
-      outcome = output_present ? "recommend_close" : "needs_input"
+      agent_summary = agent_run.agent_summary_with_stderr_fallback(limit: 100)
+      outcome = classify_outcome(agent_run, output_present, agent_summary)
 
       track_phase(agent_run_id: agent_run_id, phase_key: "handle_no_output_issue_run", phase_group: "post", agent_run: agent_run, metadata: { outcome: outcome }) do
-        agent_summary = agent_run.agent_summary_with_stderr_fallback(limit: 100)
-
-        if outcome == "needs_input"
+        case outcome
+        when "provider_error"
+          handle_provider_error(agent_run, agent_summary)
+        when "needs_input"
           handle_needs_input(client, agent_run, agent_summary)
+          agent_run.complete!
+          agent_run.log!("system", "Completed without PR: #{outcome}")
         else
           handle_recommend_close(client, agent_run, agent_summary)
+          agent_run.complete!
+          agent_run.log!("system", "Completed without PR: #{outcome}")
         end
-
-        agent_run.complete!
-        agent_run.log!("system", "Completed without PR: #{outcome}")
 
         logger.info(
           message: "agent_execution.no_output_issue_run",
@@ -61,6 +87,36 @@ module Activities
     end
 
     private
+
+    # Determines the correct outcome for this run based on output presence
+    # and evidence that the agent actually performed work. Defense in depth:
+    # even if RunAgentActivity failed to detect a provider error, this check
+    # prevents credit/quota errors from being misclassified as recommend_close.
+    def classify_outcome(agent_run, output_present, agent_summary)
+      return "needs_input" unless output_present
+
+      # Guard: if the agent produced output but shows no evidence of having
+      # actually run (zero iterations AND zero cost), the "output" is likely
+      # a provider-level error (e.g. credit exhaustion) rather than a real
+      # agent response. Confirm by checking the output for provider error
+      # patterns.
+      if agent_run.iterations.to_i.zero? && agent_run.cost_cents.to_i.zero?
+        return "provider_error" if provider_error_output?(agent_summary)
+      end
+
+      "recommend_close"
+    end
+
+    def provider_error_output?(text)
+      return false if text.blank?
+
+      PROVIDER_ERROR_OUTPUT_PATTERNS.any? { |pattern| text.match?(pattern) }
+    end
+
+    def handle_provider_error(agent_run, agent_summary)
+      agent_run.fail!(error: "Provider error detected in output: #{agent_summary.to_s.truncate(500)}")
+      agent_run.log!("system", "Failed: provider error detected in output (not a real agent response)")
+    end
 
     def handle_needs_input(client, agent_run, agent_summary)
       project = agent_run.project
@@ -139,11 +195,21 @@ module Activities
       end
     end
 
+    # Redacts lines that match known provider-error patterns so raw
+    # provider error text (e.g. OpenRouter billing URLs, credit balances)
+    # is never posted to public GitHub comments.
+    def sanitize_summary_for_github(text)
+      return text if text.blank?
+
+      text.each_line.reject { |line| provider_error_output?(line) }.join.strip
+    end
+
     def post_needs_input_comment(client, project, issue, agent_summary)
       return if comment_exists?(client, project, issue, NEEDS_INPUT_COMMENT_MARKER)
 
       automation_label = triggering_label_for(project)
       needs_input_label = project.label_for_stage("needs_input") || PAID_NEEDS_INPUT_LABEL
+      sanitized_summary = sanitize_summary_for_github(agent_summary)
 
       lines = [
         NEEDS_INPUT_COMMENT_MARKER,
@@ -153,11 +219,11 @@ module Activities
         ""
       ]
 
-      if agent_summary.present?
+      if sanitized_summary.present?
         lines.concat([
           "**Agent output:**",
           "",
-          agent_summary.truncate(2000),
+          sanitized_summary.truncate(2000),
           ""
         ])
       end
@@ -190,6 +256,7 @@ module Activities
       return if comment_exists?(client, project, issue, RECOMMEND_CLOSE_COMMENT_MARKER)
 
       automation_label = triggering_label_for(project)
+      sanitized_summary = sanitize_summary_for_github(agent_summary)
 
       lines = [
         RECOMMEND_CLOSE_COMMENT_MARKER,
@@ -200,11 +267,11 @@ module Activities
         ""
       ]
 
-      if agent_summary.present?
+      if sanitized_summary.present?
         lines.concat([
           "**Agent output:**",
           "",
-          agent_summary.truncate(2000),
+          sanitized_summary.truncate(2000),
           ""
         ])
       end

@@ -92,6 +92,21 @@ module Activities
       ].freeze
     }.freeze
 
+    # Patterns for provider-level credit/quota exhaustion errors that may be
+    # emitted as agent "output" even when the CLI exits with a zero status
+    # (observed with OpenRouter-backed providers returning a billing error as
+    # the only stdout line). These must be specific enough to avoid matching
+    # ordinary agent prose that mentions credits/billing — they key on phrases
+    # that only appear in provider error responses.
+    INSUFFICIENT_CREDITS_PATTERNS = [
+      /requires? more credits/i,
+      /add more credits/i,
+      /insufficient credits/i,
+      /not enough credits/i,
+      /purchase (?:more )?credits/i,
+      /buy (?:more )?credits/i
+    ].freeze
+
     # Maximum number of log rows to inspect when reclassifying a timeout.
     # Caps memory and DB load on long-running, verbose agent attempts.
     TIMEOUT_RATE_LIMIT_LOG_LIMIT = 200
@@ -607,6 +622,17 @@ module Activities
       stderr = normalize_output_text(result[:stderr])
 
       if result.success?
+        # Detect provider credit/quota errors that slip through as successful
+        # exits. Some providers (e.g. OpenRouter) return a billing error as
+        # the only stdout line with exit code 0. The agent never actually ran,
+        # so treat this as a provider failure to trigger fallback/retry.
+        combined_output = [ stdout, stderr ].compact.join("\n")
+        sanitized_output = strip_prompt_echo(combined_output, prompt)
+        if insufficient_credits_error?(sanitized_output)
+          raise ProviderExecutionError,
+            "Provider credit/quota error from #{provider}: #{sanitized_output.truncate(500)}"
+        end
+
         output_present = stdout.present? || stderr.present?
         agent_run.log!("system", "Agent execution succeeded with #{provider}")
         return {
@@ -687,6 +713,16 @@ module Activities
       return false if output.blank?
 
       AUTH_EXPIRED_PATTERNS.fetch(provider.to_s, []).any? { |pattern| output.match?(pattern) }
+    end
+
+    # Detects provider-level credit/quota exhaustion errors surfaced as
+    # agent output. Used in the successful-exit-code path to catch cases
+    # where a provider (e.g. OpenRouter) returns a billing error as the
+    # only stdout content with exit code 0.
+    def insufficient_credits_error?(output)
+      return false if output.blank?
+
+      INSUFFICIENT_CREDITS_PATTERNS.any? { |pattern| output.match?(pattern) }
     end
 
     def strip_prompt_echo(output, prompt)
