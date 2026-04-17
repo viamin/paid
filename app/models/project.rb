@@ -103,6 +103,7 @@ class Project < ApplicationRecord
   has_many :cost_budgets, dependent: :destroy
   has_many :project_baselines, dependent: :destroy
   has_many :agent_run_anomalies, dependent: :destroy
+  has_many :quality_recovery_actions, dependent: :destroy
   has_many :token_usages, through: :agent_runs
   has_many :workflow_states, dependent: :destroy
   has_many :prompts, dependent: :destroy
