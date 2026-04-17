@@ -12,7 +12,7 @@ RSpec.describe "Api::Metrics" do
       expect(response.content_type).to include("version=0.0.4")
     end
 
-    it "does not require authentication" do
+    it "does not require authentication when METRICS_TOKEN is unset" do
       get "/api/metrics"
 
       expect(response).not_to redirect_to(new_user_session_path)
@@ -30,6 +30,36 @@ RSpec.describe "Api::Metrics" do
       expect(body).to include("paid_containers_active")
       expect(body).to include("paid_service_containers_total")
       expect(body).to include("paid_temporal_workflow_slots_total")
+    end
+
+    context "when METRICS_TOKEN is set" do
+      before { allow(ENV).to receive(:fetch).and_call_original }
+
+      around do |example|
+        original = ENV["METRICS_TOKEN"]
+        ENV["METRICS_TOKEN"] = "test-secret-token"
+        example.run
+      ensure
+        ENV["METRICS_TOKEN"] = original
+      end
+
+      it "returns 401 without a token" do
+        get "/api/metrics"
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+
+      it "returns 401 with an invalid token" do
+        get "/api/metrics", headers: { "Authorization" => "Bearer wrong-token" }
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+
+      it "returns 200 with a valid token" do
+        get "/api/metrics", headers: { "Authorization" => "Bearer test-secret-token" }
+
+        expect(response).to have_http_status(:ok)
+      end
     end
   end
 end

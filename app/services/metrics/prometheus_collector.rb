@@ -5,7 +5,9 @@ module Metrics
   # Used by the /api/metrics endpoint to feed external auto-scaling systems.
   class PrometheusCollector
     def self.call
-      new.call
+      Rails.cache.fetch("prometheus_metrics", expires_in: 15.seconds) do
+        new.call
+      end
     end
 
     def call
@@ -156,6 +158,8 @@ module Metrics
 
     def temporal_env(key, default)
       Integer(ENV.fetch(key, default))
+    rescue ArgumentError
+      Integer(default)
     end
   end
 end
