@@ -110,7 +110,8 @@ Total web threads = `WEB_CONCURRENCY × RAILS_MAX_THREADS`.
 |----------|---------|-------------|
 | `TEMPORAL_ADDRESS` | `localhost:7233` | Temporal server address |
 | `TEMPORAL_NAMESPACE` | `default` | Temporal namespace |
-| `TEMPORAL_TASK_QUEUE` | `paid-tasks` | Task queue name |
+| `TEMPORAL_POLL_TASK_QUEUE` | `paid-poll-tasks` | Poll workflow task queue |
+| `TEMPORAL_AGENT_TASK_QUEUE` | `paid-agent-tasks` | Agent execution task queue |
 | `TEMPORAL_WORKFLOW_SLOTS` | `20` | Max concurrent workflow tasks |
 | `TEMPORAL_ACTIVITY_SLOTS` | `4` | Max concurrent activity executions |
 | `TEMPORAL_LOCAL_ACTIVITY_SLOTS` | `=ACTIVITY_SLOTS` | Max concurrent local activities |
@@ -381,7 +382,7 @@ Temporal workers register on a shared task queue and the Temporal server
 distributes work across all registered workers.
 
 1. Deploy additional Temporal worker processes (`bin/temporal_worker`)
-2. All workers use the same `TEMPORAL_TASK_QUEUE`
+2. All workers use the same `TEMPORAL_POLL_TASK_QUEUE` / `TEMPORAL_AGENT_TASK_QUEUE`
 3. Each worker needs its own `DB_POOL` and Docker Engine access
 4. Total activity slots = sum across all workers
 

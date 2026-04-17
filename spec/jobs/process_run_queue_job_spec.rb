@@ -7,7 +7,7 @@ RSpec.describe ProcessRunQueueJob do
   let(:workflow_handle) { double("WorkflowHandle", id: "queued-workflow-id") } # rubocop:disable RSpec/VerifiedDoubles
 
   before do
-    allow(Paid).to receive_messages(temporal_client: temporal_client, task_queue: "paid-tasks")
+    allow(Paid).to receive_messages(temporal_client: temporal_client, agent_task_queue: "paid-agent-tasks")
     allow(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
   end
 
@@ -27,7 +27,7 @@ RSpec.describe ProcessRunQueueJob do
       expect(temporal_client).to receive(:start_workflow).with(
         Workflows::AgentExecutionWorkflow,
         hash_including(agent_run_id: queued_run.id),
-        hash_including(task_queue: "paid-tasks")
+        hash_including(task_queue: "paid-agent-tasks")
       ).and_return(workflow_handle)
 
       described_class.new.perform
@@ -377,7 +377,7 @@ RSpec.describe ProcessRunQueueJob do
         expect(temporal_client).to receive(:start_workflow).with(
           Workflows::AgentExecutionWorkflow,
           hash_including(agent_run_id: manual_run.id),
-          hash_including(task_queue: "paid-tasks")
+          hash_including(task_queue: "paid-agent-tasks")
         ).and_return(workflow_handle)
 
         described_class.new.perform

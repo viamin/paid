@@ -268,7 +268,7 @@ RSpec.describe Project do
     let(:workflow_handle) { double("workflow_handle") } # rubocop:disable RSpec/VerifiedDoubles
 
     before do
-      allow(Paid).to receive_messages(temporal_client: temporal_client, task_queue: "paid-tasks")
+      allow(Paid).to receive_messages(temporal_client: temporal_client, poll_task_queue: "paid-poll-tasks")
       allow(temporal_client).to receive(:start_workflow)
       allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
       allow(workflow_handle).to receive(:cancel)
@@ -282,7 +282,7 @@ RSpec.describe Project do
           Workflows::GitHubPollWorkflow,
           { project_id: project.id },
           id: "github-poll-#{project.id}",
-          task_queue: "paid-tasks"
+          task_queue: "paid-poll-tasks"
         )
       end
 
@@ -344,7 +344,7 @@ RSpec.describe Project do
           Workflows::GitHubPollWorkflow,
           { project_id: project.id },
           id: "github-poll-#{project.id}",
-          task_queue: "paid-tasks"
+          task_queue: "paid-poll-tasks"
         )
       end
 
@@ -373,7 +373,7 @@ RSpec.describe Project do
     let(:temporal_client) { instance_double(Temporalio::Client) }
 
     before do
-      allow(Paid).to receive_messages(temporal_client: temporal_client, task_queue: "paid-tasks")
+      allow(Paid).to receive_messages(temporal_client: temporal_client, poll_task_queue: "paid-poll-tasks")
       allow(temporal_client).to receive(:start_workflow)
     end
 

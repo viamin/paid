@@ -250,7 +250,7 @@ class ProcessRunQueueJob < ApplicationJob
       Workflows::AgentExecutionWorkflow,
       workflow_input,
       id: workflow_id,
-      task_queue: Paid.task_queue
+      task_queue: Paid.agent_task_queue
     )
 
     Rails.logger.info(

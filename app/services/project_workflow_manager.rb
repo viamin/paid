@@ -11,7 +11,7 @@ class ProjectWorkflowManager
         Workflows::GitHubPollWorkflow,
         { project_id: project.id },
         id: workflow_id_for(project),
-        task_queue: Paid.task_queue
+        task_queue: Paid.poll_task_queue
       )
 
       WorkflowState.record_polling_status(

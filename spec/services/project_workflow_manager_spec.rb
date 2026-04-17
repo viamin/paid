@@ -7,7 +7,7 @@ RSpec.describe ProjectWorkflowManager do
   let(:project) { create(:project) }
 
   before do
-    allow(Paid).to receive_messages(temporal_client: temporal_client, task_queue: "paid-tasks")
+    allow(Paid).to receive_messages(temporal_client: temporal_client, poll_task_queue: "paid-poll-tasks")
     allow(temporal_client).to receive(:start_workflow)
   end
 
@@ -20,7 +20,7 @@ RSpec.describe ProjectWorkflowManager do
         Workflows::GitHubPollWorkflow,
         { project_id: project.id },
         id: "github-poll-#{project.id}",
-        task_queue: "paid-tasks"
+        task_queue: "paid-poll-tasks"
       ).at_least(:once)
       expect(result).to be(true)
     end
@@ -232,7 +232,7 @@ RSpec.describe ProjectWorkflowManager do
         Workflows::GitHubPollWorkflow,
         { project_id: polling_project.id },
         id: "github-poll-#{polling_project.id}",
-        task_queue: "paid-tasks"
+        task_queue: "paid-poll-tasks"
       ).at_least(:once)
     end
 
