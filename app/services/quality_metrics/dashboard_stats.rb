@@ -101,10 +101,11 @@ module QualityMetrics
       }
     end
 
-    def export_data
+    def export_data(limit: 10_000)
       metrics_scope = QualityMetric.by_project(project.id)
         .includes(agent_run: :prompt_version)
         .order(created_at: :desc)
+        .limit(limit)
 
       metrics_scope.map do |m|
         {
@@ -277,10 +278,20 @@ module QualityMetrics
           }
         end
 
-      # Count active breaches: thresholds whose last event is a trigger
-      active_breaches = thresholds.count do |t|
-        t.quality_gate_events.order(created_at: :desc).pick(:event_type) == "trigger"
-      end
+      # Count active breaches: thresholds whose most recent event is a trigger.
+      # Uses DISTINCT ON to fetch the latest event per threshold in a single query.
+      threshold_ids = thresholds.pluck(:id)
+      active_breaches = QualityGateEvent
+        .where(quality_gate_threshold_id: threshold_ids)
+        .where(
+          "id IN (SELECT DISTINCT ON (quality_gate_threshold_id) id " \
+          "FROM quality_gate_events " \
+          "WHERE quality_gate_threshold_id IN (?) " \
+          "ORDER BY quality_gate_threshold_id, created_at DESC)",
+          threshold_ids
+        )
+        .where(event_type: "trigger")
+        .count
 
       {
         thresholds: thresholds.map do |t|
