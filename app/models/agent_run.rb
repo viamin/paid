@@ -41,6 +41,16 @@ class AgentRun < ApplicationRecord
   has_one :model_selection, dependent: :destroy
   has_one :decision_record, dependent: :nullify
   has_many :agent_run_anomalies, dependent: :destroy
+  has_many :sent_coordination_signals,
+    class_name: "AgentCoordinationSignal",
+    foreign_key: :source_agent_run_id,
+    dependent: :destroy,
+    inverse_of: :source_agent_run
+  has_many :received_coordination_signals,
+    class_name: "AgentCoordinationSignal",
+    foreign_key: :target_agent_run_id,
+    dependent: :nullify,
+    inverse_of: :target_agent_run
 
   attr_readonly :mcp_server_snapshot
 

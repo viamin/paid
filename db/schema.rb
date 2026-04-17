@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_17_052710) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -87,6 +87,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
     t.string "slug", null: false
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
+  end
+
+  create_table "agent_coordination_signals", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "parent_workflow_id", limit: 255, null: false
+    t.jsonb "payload", default: {}, null: false
+    t.string "signal_type", limit: 50, null: false
+    t.bigint "source_agent_run_id", null: false
+    t.bigint "target_agent_run_id"
+    t.index ["parent_workflow_id", "signal_type"], name: "idx_coordination_signals_workflow_type"
+    t.index ["parent_workflow_id"], name: "index_agent_coordination_signals_on_parent_workflow_id"
+    t.index ["source_agent_run_id"], name: "index_agent_coordination_signals_on_source_agent_run_id"
+    t.index ["target_agent_run_id", "signal_type"], name: "idx_coordination_signals_target_type"
+    t.index ["target_agent_run_id"], name: "index_agent_coordination_signals_on_target_agent_run_id"
   end
 
   create_table "agent_run_anomalies", force: :cascade do |t|
@@ -1188,6 +1202,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
   add_foreign_key "ab_tests", "prompts", on_delete: :cascade
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
+  add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"
+  add_foreign_key "agent_coordination_signals", "agent_runs", column: "target_agent_run_id"
   add_foreign_key "agent_run_anomalies", "agent_runs"
   add_foreign_key "agent_run_anomalies", "projects"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
