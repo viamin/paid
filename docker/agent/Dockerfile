@@ -172,18 +172,31 @@ RUN npm install -g --ignore-scripts opencode-ai@1.3.2
 # producing an OCI "executable file not found in $PATH" failure at runtime.
 RUN npm install -g --ignore-scripts @githubnext/github-copilot-cli@0.1.36
 
-# Install Cursor agent CLI
-# Pin the install script checksum for reproducible builds and supply-chain security.
-# The installer places the binary under /root/.local/ which is inaccessible to the
-# non-root "agent" user. Copy the resolved binary to a system-wide path instead.
-# To update: curl -fsSL https://cursor.com/install | sha256sum
-ARG CURSOR_AGENT_INSTALL_SHA256=d8d01263fb3d0642e86170e3476f2d6c94582960d33f786802f5090e1e811941
-RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
-    && echo "${CURSOR_AGENT_INSTALL_SHA256}  /tmp/cursor-install.sh" | sha256sum -c - \
+# Install Cursor agent CLI via agent-harness install contract.
+# agent-harness owns the install script URL, checksum pin, and binary metadata.
+# The gem is installed temporarily to extract these values, then removed so it
+# does not bloat the image.  AGENT_HARNESS_VERSION is sourced from Gemfile.lock
+# at build time — see scripts/build-agent-image.sh and .github/workflows/agent-image.yml.
+ARG AGENT_HARNESS_VERSION
+RUN gem install --no-document "agent-harness:${AGENT_HARNESS_VERSION}" \
+    && CURSOR_META=$(ruby -r agent_harness -e ' \
+      c = AgentHarness::Providers::Cursor; \
+      puts c::INSTALL_SCRIPT_URL; \
+      puts c::INSTALL_SCRIPT_SHA256; \
+      puts c.binary_name; \
+      m = c.install_metadata; \
+      puts m[:binary][:suggested_global_path]') \
+    && CURSOR_INSTALL_URL=$(echo "$CURSOR_META" | sed -n 1p) \
+    && CURSOR_INSTALL_SHA256=$(echo "$CURSOR_META" | sed -n 2p) \
+    && CURSOR_BINARY_NAME=$(echo "$CURSOR_META" | sed -n 3p) \
+    && CURSOR_GLOBAL_PATH=$(echo "$CURSOR_META" | sed -n 4p) \
+    && curl -fsSL "$CURSOR_INSTALL_URL" -o /tmp/cursor-install.sh \
+    && echo "${CURSOR_INSTALL_SHA256}  /tmp/cursor-install.sh" | sha256sum -c - \
     && bash /tmp/cursor-install.sh \
-    && cp -L /root/.local/bin/cursor-agent /usr/local/bin/cursor-agent \
-    && chmod +x /usr/local/bin/cursor-agent \
-    && rm /tmp/cursor-install.sh
+    && cp -L "/root/.local/bin/${CURSOR_BINARY_NAME}" "${CURSOR_GLOBAL_PATH}" \
+    && chmod +x "${CURSOR_GLOBAL_PATH}" \
+    && rm /tmp/cursor-install.sh \
+    && gem uninstall --silent -x agent-harness
 
 # Install Aider CLI.
 # Follow the official Aider "Install with uv" flow so the tool lives in its own
