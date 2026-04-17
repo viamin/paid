@@ -66,6 +66,14 @@ class Project < ApplicationRecord
     }
   }.freeze
 
+  DEFAULT_QUALITY_GATE_SETTINGS = {
+    "enabled" => false,
+    "composite_score_threshold" => 0.5,
+    "min_recent_runs" => 3,
+    "lookback_window_hours" => 24,
+    "metric_thresholds" => {}
+  }.freeze
+
   AUTOMATION_SETTINGS = [
     { label: "Auto-Add Labels", attribute: :auto_add_labels_enabled,
      description: "Automatically add the generated label to PRs and issues created by Paid." }.freeze,
@@ -472,6 +480,16 @@ class Project < ApplicationRecord
     when "patch_only" then bump_type.to_s == "patch"
     else false
     end
+  end
+
+  def effective_quality_gate_settings
+    saved = quality_gate_settings
+    saved = saved.is_a?(Hash) ? saved.deep_stringify_keys : {}
+    DEFAULT_QUALITY_GATE_SETTINGS.deep_merge(saved)
+  end
+
+  def quality_gates_enabled?
+    effective_quality_gate_settings["enabled"] == true
   end
 
   def review_settings=(value)

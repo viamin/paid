@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_16_185458) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -714,7 +714,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_185458) do
     t.index ["llm_model_id"], name: "index_model_selections_on_llm_model_id"
     t.index ["selector_type"], name: "index_model_selections_on_selector_type"
     t.index ["tier"], name: "index_model_selections_on_tier"
-    t.check_constraint "tier IS NULL OR (tier::text = ANY (ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying]::text[]))", name: "model_selections_tier_check"
+    t.check_constraint "tier IS NULL OR (tier::text = ANY (ARRAY['low'::character varying::text, 'mid'::character varying::text, 'high'::character varying::text]))", name: "model_selections_tier_check"
   end
 
   create_table "notifications", force: :cascade do |t|
@@ -844,6 +844,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_185458) do
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
+    t.jsonb "fitness_weights", default: {}, null: false
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
     t.bigint "github_token_id", null: false
@@ -868,6 +869,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_185458) do
     t.jsonb "pr_action_labels", default: [], null: false
     t.boolean "pr_aggregation_enabled", default: false, null: false
     t.jsonb "priority_labels", default: {"P1" => "P1", "P2" => "P2", "P3" => "P3"}, null: false
+    t.jsonb "quality_gate_settings", default: {}, null: false
+    t.jsonb "quality_pause_metadata", default: {}, null: false
+    t.datetime "quality_paused_at"
     t.string "repo", null: false
     t.jsonb "review_settings", default: {}, null: false
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false
@@ -896,6 +900,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_185458) do
     t.bigint "created_by_user_id"
     t.bigint "parent_version_id"
     t.bigint "prompt_id", null: false
+    t.text "review_notes"
+    t.string "review_status", limit: 20
+    t.datetime "reviewed_at"
+    t.bigint "reviewed_by_user_id"
     t.text "system_prompt"
     t.text "template", null: false
     t.integer "usage_count", default: 0, null: false
@@ -903,8 +911,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_185458) do
     t.integer "version", null: false
     t.index ["created_by_user_id"], name: "index_prompt_versions_on_created_by_user_id"
     t.index ["parent_version_id"], name: "index_prompt_versions_on_parent_version_id"
+    t.index ["prompt_id", "review_status"], name: "index_prompt_versions_on_prompt_and_review_status", where: "(review_status IS NOT NULL)"
     t.index ["prompt_id", "version"], name: "index_prompt_versions_on_prompt_id_and_version", unique: true
     t.index ["prompt_id"], name: "index_prompt_versions_on_prompt_id"
+    t.index ["reviewed_by_user_id"], name: "index_prompt_versions_on_reviewed_by_user_id"
   end
 
   create_table "prompts", force: :cascade do |t|
@@ -916,6 +926,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_185458) do
     t.text "description"
     t.string "name", limit: 255, null: false
     t.bigint "project_id"
+    t.boolean "requires_review", default: false, null: false
     t.string "slug", limit: 100, null: false
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_prompts_on_account_id"
@@ -995,6 +1006,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_185458) do
     t.index ["metric_type"], name: "index_quality_metrics_on_metric_type"
     t.index ["prompt_version_id", "created_at"], name: "index_quality_metrics_on_prompt_version_and_created_at"
     t.index ["prompt_version_id"], name: "index_quality_metrics_on_prompt_version_id"
+  end
+
+  create_table "quality_pause_events", force: :cascade do |t|
+    t.bigint "agent_run_id"
+    t.decimal "composite_score", precision: 5, scale: 4
+    t.datetime "created_at", null: false
+    t.string "event_type", limit: 20, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.bigint "project_id", null: false
+    t.decimal "threshold", precision: 5, scale: 4
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "index_quality_pause_events_on_agent_run_id"
+    t.index ["project_id", "created_at"], name: "index_quality_pause_events_on_project_id_and_created_at"
+    t.index ["project_id"], name: "index_quality_pause_events_on_project_id"
   end
 
   create_table "service_container_metrics", force: :cascade do |t|
@@ -1104,6 +1129,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_185458) do
     t.integer "max_prompt_comments", default: 20, null: false
     t.integer "max_prs_per_page", default: 50, null: false
     t.integer "max_tokens_per_run", default: 10000000, null: false
+    t.jsonb "notification_preferences", default: {}, null: false
     t.float "retry_base_delay", default: 1.0, null: false
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false
@@ -1240,6 +1266,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_185458) do
   add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify
   add_foreign_key "prompt_versions", "prompts", on_delete: :cascade
   add_foreign_key "prompt_versions", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "prompt_versions", "users", column: "reviewed_by_user_id", on_delete: :nullify
   add_foreign_key "prompts", "accounts", on_delete: :cascade
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
@@ -1249,6 +1276,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_185458) do
   add_foreign_key "providers", "users", on_delete: :cascade
   add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
+  add_foreign_key "quality_pause_events", "agent_runs"
+  add_foreign_key "quality_pause_events", "projects"
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
   add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade

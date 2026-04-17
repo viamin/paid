@@ -27,6 +27,7 @@ module QualityMetrics
 
       update_ab_test_variant_stats(automated_metric)
       update_prompt_version_stats if agent_run.prompt_version.present?
+      check_quality_gates
       automated_metric
     end
 
@@ -38,6 +39,18 @@ module QualityMetrics
     # `ci_passed` and `tests_pass` are intentionally omitted because the agent run
     # does not track CI/test results separately — the weighted_average method
     # renormalizes over present keys so the composite score remains valid.
+    def check_quality_gates
+      return unless agent_run.project.quality_gates_enabled?
+
+      QualityAlerts::CheckGate.call(project: agent_run.project)
+    rescue => e
+      Rails.logger.error(
+        message: "quality_alerts.check_gate_failed",
+        project_id: agent_run.project_id,
+        error: e.message
+      )
+    end
+
     def build_scores
       case agent_run.goal
       when "create_pr" then build_pr_scores

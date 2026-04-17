@@ -171,6 +171,21 @@ class UserSetting < ApplicationRecord
       .pluck(:provider_key)
   end
 
+  NOTIFICATION_CATEGORIES = %w[quality_gate_alerts guardrail_alerts system_alerts].freeze
+  DEFAULT_NOTIFICATION_PREFERENCES = NOTIFICATION_CATEGORIES.index_with { true }.freeze
+
+  # Returns the effective notification preferences with defaults applied.
+  def effective_notification_preferences
+    saved = notification_preferences
+    saved = saved.is_a?(Hash) ? saved.deep_stringify_keys : {}
+    DEFAULT_NOTIFICATION_PREFERENCES.merge(saved)
+  end
+
+  # Returns whether the user wants to receive a specific notification category.
+  def notification_enabled?(category)
+    effective_notification_preferences.fetch(category.to_s, true)
+  end
+
   # Returns default_allowed_github_usernames as a comma-separated string
   def default_allowed_github_usernames_csv
     default_allowed_github_usernames.join(", ")
