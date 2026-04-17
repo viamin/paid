@@ -179,11 +179,24 @@ cat << 'EOF' > "$HOME/.config/kilo/config.json"
 EOF
 
 # ============================================================================
-# OpenCode, GitHub Copilot CLI, Cursor
+# OpenCode
 # ============================================================================
 
-# These tools use environment variables or their own config mechanisms
-# OpenCode: Uses OPENCODE_PERMISSION environment variable (set in containerEnv if needed)
+# Only auth.json is bind-mounted from the host, so writing opencode.json here
+# stays container-local and won't affect the host's OpenCode installation.
+echo "Configuring OpenCode..."
+mkdir -p "$HOME/.config/opencode"
+cat << 'EOF' > "$HOME/.config/opencode/opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": "allow"
+}
+EOF
+
+# ============================================================================
+# GitHub Copilot CLI, Cursor
+# ============================================================================
+
 # GitHub Copilot CLI: Uses ~/.copilot config (bind-mounted from host)
 # Cursor: Uses ~/.cursor config (bind-mounted from host)
 
@@ -200,9 +213,9 @@ echo "  - Gemini CLI: Auto-accept mode (autoAccept=true)"
 echo "  - KiloCode: Auto-approve mode (permission=allow, container-specific config)"
 echo "  - Aider: Path shim (no global auto-approve mode available)"
 echo "  - Cursor: Config mounted from host (~/.cursor)"
-echo "  - OpenCode: Config mounted from host (~/.config)"
+echo "  - OpenCode: Auto-approve mode (permission=allow, container-specific config)"
 echo "  - GitHub Copilot CLI: Config mounted from host (~/.copilot)"
 echo ""
 echo "WARNING: These tools will auto-approve all operations inside this container."
-echo "  Some tool state and configuration may be written back to host-mounted directories (e.g., ~/.claude, ~/.config)."
+echo "  Some tool state and configuration may be written back to host-mounted directories (e.g., ~/.claude)."
 echo "  Use only in isolated/dev environments where this behavior is acceptable."
