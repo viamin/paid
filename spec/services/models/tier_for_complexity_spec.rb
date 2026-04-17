@@ -41,5 +41,44 @@ RSpec.describe Models::TierForComplexity do
 
       expect(described_class.call(complexity: 3, provider: provider, project: project)).to eq("high")
     end
+
+    context "with max_tier project preference" do
+      it "caps high tier to mid when max_tier is mid" do
+        project = build(:project)
+        project.model_preferences = { "max_tier" => "mid" }
+
+        expect(described_class.call(complexity: 9, project: project)).to eq("mid")
+      end
+
+      it "does not affect tiers at or below the cap" do
+        project = build(:project)
+        project.model_preferences = { "max_tier" => "mid" }
+
+        expect(described_class.call(complexity: 2, project: project)).to eq("low")
+        expect(described_class.call(complexity: 5, project: project)).to eq("mid")
+      end
+
+      it "caps to low when max_tier is low" do
+        project = build(:project)
+        project.model_preferences = { "max_tier" => "low" }
+
+        expect(described_class.call(complexity: 9, project: project)).to eq("low")
+        expect(described_class.call(complexity: 5, project: project)).to eq("low")
+      end
+
+      it "ignores invalid max_tier values" do
+        project = build(:project)
+        project.model_preferences = { "max_tier" => "invalid" }
+
+        expect(described_class.call(complexity: 9, project: project)).to eq("high")
+      end
+
+      it "ignores blank max_tier" do
+        project = build(:project)
+        project.model_preferences = { "max_tier" => "" }
+
+        expect(described_class.call(complexity: 9, project: project)).to eq("high")
+      end
+    end
   end
 end

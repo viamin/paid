@@ -26,10 +26,15 @@ module Models
       score = Float(complexity)
       thresholds = effective_thresholds
 
-      return "low" if score <= thresholds["low_max"]
-      return "mid" if score <= thresholds["mid_max"]
+      tier = if score <= thresholds["low_max"]
+        "low"
+      elsif score <= thresholds["mid_max"]
+        "mid"
+      else
+        "high"
+      end
 
-      "high"
+      cap_tier(tier)
     rescue ArgumentError, TypeError
       nil
     end
@@ -41,6 +46,20 @@ module Models
     private
 
     attr_reader :complexity, :agent_run, :project, :provider
+
+    # Caps the derived tier at the project's max_tier preference when set.
+    # For example, max_tier "mid" downgrades "high" → "mid" but leaves
+    # "low" and "mid" unchanged.
+    def cap_tier(tier)
+      max = project&.model_preferences&.dig("max_tier")
+      return tier unless max.present? && LlmModel::TIERS.include?(max)
+
+      max_index = LlmModel::TIERS.index(max)
+      tier_index = LlmModel::TIERS.index(tier)
+      return tier unless tier_index
+
+      tier_index <= max_index ? tier : max
+    end
 
     def project_override
       return nil unless project

@@ -167,5 +167,49 @@ RSpec.describe Models::Select do
         expect(selection.selector_type).to eq("rules")
       end
     end
+
+    context "when required_model_id bypasses tier logic (regression)" do
+      let!(:low_tier_model) { create(:llm_model, model_id: "cheap-model", tier: "low", capability_score: 3.0) }
+
+      before do
+        # Even with max_tier set, required_model_id must always win
+        project.update!(model_preferences: {
+          "required_model_id" => "cheap-model",
+          "max_tier" => "high"
+        })
+      end
+
+      it "selects the required model regardless of tier settings" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection.llm_model).to eq(low_tier_model)
+        expect(selection.selector_type).to eq("override")
+        expect(selection.tier).to eq("low")
+      end
+
+      it "does not invoke tier-based selectors" do
+        allow(Models::RulesBasedSelector).to receive(:call)
+
+        described_class.call(agent_run: agent_run)
+
+        expect(Models::MetaAgentSelector).not_to have_received(:call)
+        expect(Models::RulesBasedSelector).not_to have_received(:call)
+      end
+    end
+
+    context "with max_tier project preference" do
+      before do
+        create(:llm_model, model_id: "powerful-model", tier: "high", capability_score: 9.5)
+        create(:llm_model, model_id: "mid-model", tier: "mid", capability_score: 7.0)
+        project.update!(model_preferences: { "max_tier" => "mid" })
+      end
+
+      it "caps tier selection to the max_tier" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection).to be_a(ModelSelection)
+        expect(selection.tier).to be_in(%w[low mid])
+      end
+    end
   end
 end
