@@ -62,7 +62,7 @@ class HealthController < ActionController::Base
   def migrations_current?
     ActiveRecord::Migration.check_all_pending!
     true
-  rescue ActiveRecord::PendingMigrationError
+  rescue StandardError
     false
   end
 end

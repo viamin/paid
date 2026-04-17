@@ -98,6 +98,7 @@ RSpec.describe "Health" do
         allow(ActiveRecord::Base.connection).to receive(:execute)
           .and_raise(ActiveRecord::ConnectionNotEstablished)
         allow(ActiveRecord::Migration).to receive(:check_all_pending!)
+          .and_raise(ActiveRecord::ConnectionNotEstablished)
       end
 
       it "returns 503 with not_ready status" do
@@ -107,6 +108,7 @@ RSpec.describe "Health" do
         body = response.parsed_body
         expect(body["status"]).to eq("not_ready")
         expect(body["checks"]["database"]).to eq("failing")
+        expect(body["checks"]["migrations"]).to eq("failing")
       end
     end
 
