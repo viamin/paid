@@ -177,7 +177,7 @@ RUN npm install -g --ignore-scripts @githubnext/github-copilot-cli@0.1.36
 # The installer places the binary under /root/.local/ which is inaccessible to the
 # non-root "agent" user. Copy the resolved binary to a system-wide path instead.
 # To update: curl -fsSL https://cursor.com/install | sha256sum
-ARG CURSOR_AGENT_INSTALL_SHA256=e94dda4dbf7f0157e75b52b4d886869987c15ef4ce74a0717dc3cab9ab15b79d
+ARG CURSOR_AGENT_INSTALL_SHA256=d8d01263fb3d0642e86170e3476f2d6c94582960d33f786802f5090e1e811941
 RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
     && echo "${CURSOR_AGENT_INSTALL_SHA256}  /tmp/cursor-install.sh" | sha256sum -c - \
     && bash /tmp/cursor-install.sh \
