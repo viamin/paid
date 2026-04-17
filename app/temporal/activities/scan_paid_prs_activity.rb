@@ -145,7 +145,26 @@ module Activities
         if review_goal_retry_limit_requires_escalation?(project, issue)
           return escalate_trigger(issue, reason: retry_limit_reason)
         end
-        scan_draft_pr(project, client, issue)
+
+        # Check draft-specific escalation conditions before spending rate
+        # budget on a PR data fetch. These mirror the guards at the top of
+        # scan_draft_pr; duplicating them here avoids a wasted API call when
+        # the PR will be immediately escalated anyway.
+        if draft_review_limit_reached?(project, issue)
+          return escalate_trigger(issue)
+        end
+        if consecutive_draft_failures_breaker?(project, issue)
+          return escalate_trigger(issue,
+            reason: "Consecutive draft follow-up failures (#{MAX_CONSECUTIVE_DRAFT_FAILURES} runs with no output)")
+        end
+
+        check_rate_budget!(client)
+        pr_data = fetch_pr_data(client, project, issue)
+        if maybe_advance_to_ready(project, issue, pr_data)
+          scan_ready_pr(project, client, issue, pr_data: pr_data)
+        else
+          scan_draft_pr(project, client, issue, pr_data: pr_data)
+        end
       when "ready"
         check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
@@ -207,9 +226,13 @@ module Activities
 
     # --- Draft phase scanning ---
 
+    def draft_review_limit_reached?(project, issue)
+      project.max_draft_review_rounds.positive? &&
+        issue.draft_review_count >= project.max_draft_review_rounds
+    end
+
     def scan_draft_pr(project, client, issue, pr_data: nil)
-      if project.max_draft_review_rounds.positive? &&
-          issue.draft_review_count >= project.max_draft_review_rounds
+      if draft_review_limit_reached?(project, issue)
         return escalate_trigger(issue)
       end
 
@@ -578,6 +601,30 @@ module Activities
         project_id: project.id,
         pr_number: issue.github_number,
         previous_phase: issue.pr_review_phase_before_last_save
+      )
+
+      true
+    end
+
+    # Detect when a user marks a draft PR as ready on GitHub without going
+    # through Paid's MarkPrReadyActivity. Advances the local phase to "ready"
+    # so that ready-phase automation (merge-conflict handling, auto-merge,
+    # review-goal evaluation) kicks in. Only applies to draft/restarted
+    # phases — escalated and merged are intentional local states that should
+    # not be overwritten by GitHub draft status alone.
+    def maybe_advance_to_ready(project, issue, pr_data)
+      return false if pr_data.nil?
+      return false if pr_data.draft
+      return false unless issue.draft_phase?
+
+      previous_phase = issue.pr_review_phase
+      issue.update!(pr_review_phase: "ready")
+
+      logger.info(
+        message: "pr_scanner.phase_advanced_to_ready",
+        project_id: project.id,
+        pr_number: issue.github_number,
+        previous_phase: previous_phase
       )
 
       true
