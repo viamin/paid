@@ -702,7 +702,7 @@ module Containers
         {}
       end
 
-      merged = existing.merge(hook_config)
+      merged = existing.deep_merge(hook_config)
       write_container_file(settings_path, JSON.pretty_generate(merged))
       log_system("container.claude_heartbeat_hook_seeded")
     rescue Docker::Error::DockerError, JSON::ParserError => e
