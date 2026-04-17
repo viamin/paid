@@ -1,5 +1,178 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ========================================
+   Dark mode global overrides
+   ========================================
+   These rules apply dark theme colors to common UI patterns across all views,
+   so individual templates don't each need dark: utility classes on every element. */
+
+/* Cards and panels */
+.dark .bg-white {
+  background-color: #1f2937; /* gray-800 */
+}
+
+/* Primary text */
+.dark .text-gray-900 {
+  color: #f3f4f6; /* gray-100 */
+}
+
+.dark .text-gray-800 {
+  color: #e5e7eb; /* gray-200 */
+}
+
+.dark .text-gray-700 {
+  color: #d1d5db; /* gray-300 */
+}
+
+.dark .text-gray-600 {
+  color: #9ca3af; /* gray-400 */
+}
+
+.dark .text-gray-500 {
+  color: #9ca3af; /* gray-400 */
+}
+
+/* Backgrounds */
+.dark .bg-gray-50 {
+  background-color: #111827; /* gray-900 */
+}
+
+.dark .bg-gray-100 {
+  background-color: #1f2937; /* gray-800 */
+}
+
+.dark .bg-gray-200 {
+  background-color: #374151; /* gray-700 */
+}
+
+/* Borders */
+.dark .border-gray-200 {
+  border-color: #374151; /* gray-700 */
+}
+
+.dark .border-gray-300 {
+  border-color: #4b5563; /* gray-600 */
+}
+
+.dark .ring-gray-300 {
+  --tw-ring-color: #4b5563; /* gray-600 */
+}
+
+/* Form inputs */
+.dark input:not([type="checkbox"]):not([type="radio"]),
+.dark textarea,
+.dark select {
+  background-color: #374151; /* gray-700 */
+  color: #f3f4f6; /* gray-100 */
+  border-color: #4b5563; /* gray-600 */
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #6b7280; /* gray-500 */
+}
+
+/* Status colors - alert boxes */
+.dark .bg-red-50 {
+  background-color: rgba(127, 29, 29, 0.3);
+}
+
+.dark .text-red-800 {
+  color: #fca5a5; /* red-300 */
+}
+
+.dark .text-red-700 {
+  color: #fca5a5;
+}
+
+.dark .bg-green-50 {
+  background-color: rgba(20, 83, 45, 0.3);
+}
+
+.dark .text-green-800 {
+  color: #86efac; /* green-300 */
+}
+
+.dark .bg-yellow-50 {
+  background-color: rgba(113, 63, 18, 0.3);
+}
+
+.dark .text-yellow-800 {
+  color: #fde047; /* yellow-300 */
+}
+
+.dark .text-yellow-700 {
+  color: #fde047;
+}
+
+.dark .bg-blue-50 {
+  background-color: rgba(30, 58, 138, 0.3);
+}
+
+.dark .text-blue-800 {
+  color: #93c5fd; /* blue-300 */
+}
+
+.dark .text-blue-700 {
+  color: #93c5fd;
+}
+
+/* Shadows */
+.dark .shadow,
+.dark .shadow-sm,
+.dark .shadow-md,
+.dark .shadow-lg {
+  --tw-shadow-color: rgba(0, 0, 0, 0.3);
+}
+
+/* Links */
+.dark .text-indigo-600 {
+  color: #818cf8; /* indigo-400 */
+}
+
+.dark .hover\:text-indigo-500:hover {
+  color: #a5b4fc; /* indigo-300 */
+}
+
+/* Tables */
+.dark .divide-gray-200 > :not(:last-child) {
+  border-color: #374151;
+}
+
+.dark .hover\:bg-gray-50:hover {
+  background-color: #1f2937;
+}
+
+/* Code and pre blocks */
+.dark pre,
+.dark code {
+  background-color: #1f2937;
+  color: #e5e7eb;
+}
+
+/* Gradient backgrounds on landing page */
+.dark .from-indigo-50\/80 {
+  --tw-gradient-from: rgba(30, 27, 75, 0.8);
+}
+
+.dark .to-white {
+  --tw-gradient-to: #111827;
+}
+
+.dark .bg-indigo-50 {
+  background-color: rgba(79, 70, 229, 0.15);
+}
+
+.dark .ring-gray-200 {
+  --tw-ring-color: #374151;
+}
+
+.dark .border-gray-100 {
+  border-color: #1f2937;
+}
+
 /* Hide action buttons in broadcast-replaced content when user lacks permission.
    The ancestor data-show-actions attribute is set during initial page load and
    survives Turbo Stream replacements, preserving correct action visibility. */
@@ -25,8 +198,17 @@
   color: inherit;
 }
 
+.dark .pagy a:not([role="separator"]) {
+  background-color: #374151;
+  color: #d1d5db;
+}
+
 .pagy a[href]:hover {
   background-color: #d1d5db;
+}
+
+.dark .pagy a[href]:hover {
+  background-color: #4b5563;
 }
 
 .pagy a:not([href]) {
