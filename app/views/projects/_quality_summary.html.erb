@@ -16,9 +16,16 @@
             </div>
           </div>
           <div class="text-right">
-            <span class="text-sm text-gray-500">Range</span>
-            <div class="mt-1 text-sm font-medium text-gray-700">
-              <%= format_quality_score(quality_summary[:min_score]) %> - <%= format_quality_score(quality_summary[:max_score]) %>
+            <span class="text-sm text-gray-500">Score Distribution</span>
+            <% distribution = quality_summary[:score_distribution] %>
+            <% max_count = distribution.map { |b| b[:count] }.max %>
+            <div class="mt-1 flex items-end gap-px" style="height: 32px;">
+              <% distribution.each do |band| %>
+                <% bar_height = max_count > 0 ? (band[:count].to_f / max_count * 100).round : 0 %>
+                <div class="w-5 rounded-t <%= band[:count] > 0 ? quality_score_bar_color(band[:label].split("–").first.to_f / 100.0) : 'bg-gray-200' %>"
+                     style="height: <%= [bar_height, 4].max %>%;"
+                     title="<%= band[:label] %>%: <%= pluralize(band[:count], 'score') %>"></div>
+              <% end %>
             </div>
           </div>
         </div>

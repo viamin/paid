@@ -77,6 +77,14 @@ module QualityMetrics
       end
     end
 
+    DISTRIBUTION_BANDS = [
+      { label: "0–20", min: 0.0, max: 0.2 },
+      { label: "20–40", min: 0.2, max: 0.4 },
+      { label: "40–60", min: 0.4, max: 0.6 },
+      { label: "60–80", min: 0.6, max: 0.8 },
+      { label: "80–100", min: 0.8, max: 1.01 }
+    ].freeze
+
     def overview
       row = metrics
         .select(
@@ -95,7 +103,8 @@ module QualityMetrics
         min_score: row.min_score&.to_f,
         max_score: row.max_score&.to_f,
         automated_count: row.automated_count.to_i,
-        human_count: row.human_count.to_i
+        human_count: row.human_count.to_i,
+        score_distribution: score_distribution
       }
     end
 
@@ -103,6 +112,24 @@ module QualityMetrics
 
     def metrics
       @metrics ||= QualityMetric.by_project(project.id).with_composite_score
+    end
+
+    def score_distribution
+      counts = metrics
+        .group(Arel.sql(<<~SQL.squish))
+          CASE
+            WHEN composite_score < 0.2 THEN 0
+            WHEN composite_score < 0.4 THEN 1
+            WHEN composite_score < 0.6 THEN 2
+            WHEN composite_score < 0.8 THEN 3
+            ELSE 4
+          END
+        SQL
+        .count
+
+      DISTRIBUTION_BANDS.each_with_index.map do |band, i|
+        { label: band[:label], count: counts.fetch(i, 0) }
+      end
     end
 
     def trends
