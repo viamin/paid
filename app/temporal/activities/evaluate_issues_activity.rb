@@ -19,11 +19,6 @@ module Activities
       end
 
       { results: results }
-    rescue GithubClient::RateLimitError => e
-      raise Temporalio::Error::ApplicationError.new(
-        e.message,
-        type: "RateLimit"
-      )
     end
 
     private
@@ -45,6 +40,18 @@ module Activities
     rescue ActiveRecord::RecordNotFound => e
       logger.warn(
         message: "evaluate_issues.issue_not_found",
+        project_id: project.id,
+        issue_id: issue_id,
+        error: e.message
+      )
+      nil
+    rescue GithubClient::RateLimitError => e
+      # Catch per-issue so already-processed issues keep their results and
+      # state mutations. Rate-limited issues are skipped (nil) and will be
+      # re-evaluated on the next poll cycle, preserving partial-progress
+      # semantics equivalent to the old per-issue activity fan-out.
+      logger.warn(
+        message: "evaluate_issues.rate_limited",
         project_id: project.id,
         issue_id: issue_id,
         error: e.message

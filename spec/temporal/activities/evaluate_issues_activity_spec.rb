@@ -125,5 +125,41 @@ RSpec.describe Activities::EvaluateIssuesActivity do
         expect(result[:results].first[:action]).to eq("none")
       end
     end
+
+    context "when a rate limit error occurs mid-batch" do
+      let(:first_issue) { create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new") }
+      let(:rate_limited_issue) { create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new") }
+
+      before do
+        call_count = 0
+        allow(Automation::Evaluator).to receive(:for).and_wrap_original do |method, issue, **kwargs|
+          call_count += 1
+          if call_count == 2
+            raise GithubClient::RateLimitError, "API rate limit exceeded"
+          end
+          method.call(issue, **kwargs)
+        end
+      end
+
+      it "returns results for issues processed before the rate limit" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_ids: [ first_issue.id, rate_limited_issue.id ]
+        )
+
+        expect(result[:results].length).to eq(1)
+        expect(result[:results].first[:issue_id]).to eq(first_issue.id)
+      end
+
+      it "preserves state mutations for successfully processed issues" do
+        activity.execute(
+          project_id: project.id,
+          issue_ids: [ first_issue.id, rate_limited_issue.id ]
+        )
+
+        expect(first_issue.reload.paid_state).to eq("in_progress")
+        expect(rate_limited_issue.reload.paid_state).to eq("new")
+      end
+    end
   end
 end
