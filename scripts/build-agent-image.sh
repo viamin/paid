@@ -24,15 +24,25 @@ if [ -z "${RUBY_MAAT_VERSION}" ]; then
     exit 1
 fi
 
+# Extract Codex CLI package from agent-harness installation contract.
+# agent-harness owns the supported Codex CLI version; Paid consumes it at build time.
+CODEX_PACKAGE=$(cd "${PROJECT_ROOT}" && bundle exec ruby -e "require 'agent_harness'; puts AgentHarness::Providers::Codex.installation_contract[:package]")
+if [ -z "${CODEX_PACKAGE}" ]; then
+    echo "ERROR: Could not extract Codex package from agent-harness installation_contract" >&2
+    exit 1
+fi
+
 echo "Building agent container image..."
 echo "  Image: ${FULL_IMAGE}"
 echo "  Context: ${PROJECT_ROOT}/docker/agent"
 echo "  ruby-maat: ${RUBY_MAAT_VERSION}"
+echo "  codex: ${CODEX_PACKAGE}"
 
 docker build \
     -t "${FULL_IMAGE}" \
     -f "${PROJECT_ROOT}/docker/agent/Dockerfile" \
     --build-arg "RUBY_MAAT_VERSION=${RUBY_MAAT_VERSION}" \
+    --build-arg "CODEX_PACKAGE=${CODEX_PACKAGE}" \
     "${PROJECT_ROOT}/docker/agent/"
 
 echo ""
