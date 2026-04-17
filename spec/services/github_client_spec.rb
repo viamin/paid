@@ -1220,6 +1220,101 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#resolve_review_threads_batch" do
+    context "when all threads resolve successfully" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                resolve_0: { thread: { id: "thread_1", isResolved: true } },
+                resolve_1: { thread: { id: "thread_2", isResolved: true } }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns all threads as resolved" do
+        result = client.resolve_review_threads_batch(%w[thread_1 thread_2])
+
+        expect(result[:resolved]).to eq(%w[thread_1 thread_2])
+        expect(result[:failed]).to be_empty
+      end
+    end
+
+    context "when some threads fail" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                resolve_0: { thread: { id: "thread_1", isResolved: true } },
+                resolve_1: nil
+              },
+              errors: [
+                { message: "Thread not found", path: [ "resolve_1" ] }
+              ]
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "reports partial success" do
+        result = client.resolve_review_threads_batch(%w[thread_1 thread_2])
+
+        expect(result[:resolved]).to eq(%w[thread_1])
+        expect(result[:failed].size).to eq(1)
+        expect(result[:failed].first[:id]).to eq("thread_2")
+        expect(result[:failed].first[:error]).to include("Thread not found")
+      end
+    end
+
+    context "when called with empty list" do
+      it "returns empty results without making API calls" do
+        result = client.resolve_review_threads_batch([])
+
+        expect(result).to eq(resolved: [], failed: [])
+      end
+    end
+  end
+
+  describe "#remove_labels_from_issue" do
+    let(:repo) { "owner/repo" }
+    let(:issue_number) { 1 }
+
+    before do
+      stub_request(:delete, "#{api_base}/repos/#{repo}/issues/#{issue_number}/labels/bug")
+        .to_return(status: 200, body: [].to_json, headers: { "Content-Type" => "application/json" })
+      stub_request(:delete, "#{api_base}/repos/#{repo}/issues/#{issue_number}/labels/wontfix")
+        .to_return(status: 200, body: [].to_json, headers: { "Content-Type" => "application/json" })
+    end
+
+    it "removes all specified labels" do
+      result = client.remove_labels_from_issue(repo, issue_number, %w[bug wontfix])
+
+      expect(result[:removed]).to eq(%w[bug wontfix])
+      expect(result[:failed]).to be_empty
+    end
+
+    context "when some labels fail" do
+      before do
+        stub_request(:delete, "#{api_base}/repos/#{repo}/issues/#{issue_number}/labels/missing")
+          .to_return(status: 404, body: { message: "Not Found" }.to_json, headers: { "Content-Type" => "application/json" })
+      end
+
+      it "continues past failures and reports them" do
+        result = client.remove_labels_from_issue(repo, issue_number, %w[bug missing wontfix])
+
+        expect(result[:removed]).to eq(%w[bug wontfix])
+        expect(result[:failed].size).to eq(1)
+        expect(result[:failed].first[:label]).to eq("missing")
+      end
+    end
+  end
+
   describe "#create_pull_request_comment_reply" do
     let(:repo) { "owner/repo" }
 

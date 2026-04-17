@@ -146,21 +146,10 @@ module Containers
       ensure_network!
       @container = create_container
       start_container
-      fix_workspace_ownership!
-      fix_cache_tmpfs_ownership!
-      fix_codex_tmpfs_ownership!
+      fix_all_ownership!
       seed_codex_credentials!
-      fix_gemini_tmpfs_ownership!
       seed_gemini_credentials!
-      fix_cursor_tmpfs_ownership!
-      fix_kilocode_tmpfs_ownership!
-      fix_kilocode_config_tmpfs_ownership!
-      fix_kilocode_data_tmpfs_ownership!
-      fix_opencode_config_tmpfs_ownership!
-      fix_opencode_data_tmpfs_ownership!
-      fix_copilot_tmpfs_ownership!
       seed_copilot_credentials!
-      fix_aider_tmpfs_ownership!
       seed_claude_credentials!
       seed_claude_heartbeat_hook!
       apply_network_restrictions!
@@ -872,18 +861,72 @@ module Containers
     def seed_local_credentials!(source_path:, target_path:, files:, success_log_key:, failure_log_key:)
       container.exec([ "chown", "-R", "agent:agent", target_path ], user: "root")
 
-      copied = 0
+      write_commands = []
       files.each do |filename|
         source_file = File.join(source_path, filename)
         next unless File.file?(source_file)
 
-        write_container_file(File.join(target_path, filename), File.binread(source_file))
-        copied += 1
+        encoded = Base64.strict_encode64(File.binread(source_file))
+        dest = Shellwords.escape(File.join(target_path, filename))
+        write_commands << "echo #{Shellwords.escape(encoded)} | base64 -d > #{dest}"
       end
 
-      log_system(success_log_key, files_copied: copied) if copied > 0
+      if write_commands.any?
+        container.exec([ "sh", "-lc", write_commands.join(" && ") ], user: "agent")
+        log_system(success_log_key, files_copied: write_commands.size)
+      end
     rescue Docker::Error::DockerError, SystemCallError => e
       log_system(failure_log_key, error: e.message)
+    end
+
+    # Batches all ownership fixes into a single container exec call.
+    # Each individual tmpfs mount and the workspace directory need their
+    # ownership set to agent:agent after container start. Running these
+    # as a single shell script reduces Docker API round-trips from 12+
+    # down to 1.
+    def fix_all_ownership!
+      dirs = [
+        options[:workspace_mount],
+        "/home/agent/.cache",
+        "/home/agent/.gemini",
+        "/home/agent/.cursor-agent",
+        "/home/agent/.kilocode",
+        "/home/agent/.config/kilo",
+        "/home/agent/.local/share/kilo",
+        "/home/agent/.config/opencode",
+        "/home/agent/.local/share/opencode",
+        "/home/agent/.config/github-copilot",
+        "/home/agent/.aider"
+      ]
+
+      # ~/.codex gets non-recursive chown to preserve host-backed file ownership
+      recursive_script = dirs.map { |d| "chown -R agent:agent #{Shellwords.escape(d)}" }.join(" && ")
+      script = "#{recursive_script} && chown agent:agent /home/agent/.codex"
+
+      container.exec([ "sh", "-c", script ], user: "root")
+      log_system("container.ownership_batch_fixed", dirs_count: dirs.size + 1)
+    rescue Docker::Error::DockerError => e
+      log_system("container.ownership_batch_failed", error: e.message)
+      # Fall back to individual fixes for resilience
+      fix_ownership_individually!
+    end
+
+    # Fallback that runs ownership fixes one at a time when the batched
+    # approach fails. This preserves the original behavior where individual
+    # failures are logged but do not prevent provisioning from continuing.
+    def fix_ownership_individually!
+      fix_workspace_ownership!
+      fix_cache_tmpfs_ownership!
+      fix_codex_tmpfs_ownership!
+      fix_gemini_tmpfs_ownership!
+      fix_cursor_tmpfs_ownership!
+      fix_kilocode_tmpfs_ownership!
+      fix_kilocode_config_tmpfs_ownership!
+      fix_kilocode_data_tmpfs_ownership!
+      fix_opencode_config_tmpfs_ownership!
+      fix_opencode_data_tmpfs_ownership!
+      fix_copilot_tmpfs_ownership!
+      fix_aider_tmpfs_ownership!
     end
 
     # Ensures the bind-mounted /workspace is writable by the non-root agent user.

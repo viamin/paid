@@ -302,6 +302,28 @@ class GithubClient
     handle_errors { client.remove_label(repo, number, label) }
   end
 
+  # Removes multiple labels from an issue in individual API calls,
+  # continuing past individual failures. This reduces call-site
+  # boilerplate by centralizing the loop-and-rescue pattern.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue or PR number
+  # @param labels [Array<String>] Label names to remove
+  # @return [Hash] Results: { removed: [String], failed: [{ label:, error: }] }
+  def remove_labels_from_issue(repo, number, labels)
+    removed = []
+    failed = []
+
+    labels.each do |label|
+      handle_errors { client.remove_label(repo, number, label) }
+      removed << label
+    rescue Error => e
+      failed << { label: label, error: e.message }
+    end
+
+    { removed: removed, failed: failed }
+  end
+
   # Probes whether the token has write access to a repository by creating
   # an unreferenced git blob. This is the only reliable way to check
   # fine-grained PAT repository scoping, since read endpoints report the
@@ -538,6 +560,54 @@ class GithubClient
     GRAPHQL
 
     graphql_request(query, threadId: thread_node_id)
+  end
+
+  # Resolves multiple review threads in a single GraphQL request using
+  # aliased mutations. Each thread resolution is independent — partial
+  # failures are reported per-thread without failing the entire batch.
+  #
+  # @param thread_node_ids [Array<String>] GraphQL node IDs of threads to resolve
+  # @return [Hash] Per-thread results: { resolved: [String], failed: [{ id:, error: }] }
+  def resolve_review_threads_batch(thread_node_ids)
+    return { resolved: [], failed: [] } if thread_node_ids.empty?
+
+    # Build aliased mutations: resolve_0, resolve_1, etc.
+    mutations = thread_node_ids.each_with_index.map do |_id, i|
+      "resolve_#{i}: resolveReviewThread(input: { threadId: $threadId_#{i} }) { thread { id isResolved } }"
+    end
+
+    variables_decl = thread_node_ids.each_with_index.map { |_, i| "$threadId_#{i}: ID!" }.join(", ")
+
+    query = <<~GRAPHQL
+      mutation(#{variables_decl}) {
+        #{mutations.join("\n    ")}
+      }
+    GRAPHQL
+
+    variables = thread_node_ids.each_with_index.each_with_object({}) do |(id, i), hash|
+      hash[:"threadId_#{i}"] = id
+    end
+
+    data = graphql_request(query, **variables)
+
+    resolved = []
+    failed = []
+
+    thread_node_ids.each_with_index do |thread_id, i|
+      alias_key = "resolve_#{i}"
+      result = data.dig("data", alias_key)
+      errors = (data["errors"] || []).select { |e| e.dig("path")&.first == alias_key }
+
+      if result&.dig("thread", "isResolved")
+        resolved << thread_id
+      elsif errors.any?
+        failed << { id: thread_id, error: errors.map { |e| e["message"] }.join("; ") }
+      else
+        resolved << thread_id
+      end
+    end
+
+    { resolved: resolved, failed: failed }
   end
 
   # Fetches reviews on a pull request.
