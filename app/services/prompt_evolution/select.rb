@@ -194,13 +194,13 @@ module PromptEvolution
 
     def fittest_ancestor(version, fitness_map)
       ancestors = []
-      current = version.parent_version
+      current = versions_by_id[version.parent_version_id]
       visited = Set.new([ version.id ])
 
       while current && !visited.include?(current.id)
         visited << current.id
         ancestors << current if fitness_map.key?(current.id)
-        current = current.parent_version
+        current = versions_by_id[current.parent_version_id]
       end
 
       ancestors.max_by { |v| [ fitness_map[v.id], v.version ] }
@@ -223,8 +223,7 @@ module PromptEvolution
       # Never retire the winner or the current version.
       protected_ids = Set.new([ winner&.id, prompt.current_version_id ].compact)
 
-      all_active = prompt.prompt_versions.active.to_a
-      active_count = all_active.size
+      active_count = prompt.prompt_versions.active.count
 
       below = candidates
               .select { |v| fitness_map.key?(v.id) }
@@ -246,12 +245,15 @@ module PromptEvolution
     # Map of prompt_version_id => generation depth (0 for versions with no
     # parent in this prompt's tree). Depth is capped to avoid runaway
     # recursion on circular data.
+    def versions_by_id
+      @versions_by_id ||= prompt.prompt_versions.to_a.index_by(&:id)
+    end
+
     def build_generation_map
-      versions = prompt.prompt_versions.to_a
-      by_id = versions.index_by(&:id)
+      by_id = versions_by_id
       memo = {}
 
-      versions.each_with_object({}) do |version, map|
+      by_id.values.each_with_object({}) do |version, map|
         map[version.id] = depth_for(version, by_id, memo)
       end
     end
