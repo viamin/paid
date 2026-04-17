@@ -42,6 +42,9 @@ Rails.application.routes.draw do
   # Linear tokens management
   resources :linear_tokens, only: [ :index, :new, :create, :show, :destroy ]
 
+  # Issue tracker configurations (account/user/project-level)
+  resources :tracker_configurations, only: [ :index, :show, :create, :update, :destroy ]
+
   # LLM provider API keys
   resources :provider_api_keys, only: [ :index, :new, :create, :show, :edit, :update, :destroy ]
 

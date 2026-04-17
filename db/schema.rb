@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_17_072332) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -83,8 +83,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
     t.datetime "created_at", null: false
     t.integer "default_max_tokens_per_run", default: 10000000, null: false
     t.string "name", null: false
+    t.datetime "onboarding_completed_at"
+    t.string "plan", default: "trial", null: false
     t.datetime "scheduler_paused_at"
     t.string "slug", null: false
+    t.datetime "trial_ends_at"
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
   end
@@ -742,6 +745,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
     t.index ["user_id"], name: "index_notifications_on_user_id"
   end
 
+  create_table "onboarding_steps", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.jsonb "metadata", default: {}
+    t.integer "position", null: false
+    t.string "status", default: "pending", null: false
+    t.string "step", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "position"], name: "index_onboarding_steps_on_account_id_and_position"
+    t.index ["account_id", "step"], name: "index_onboarding_steps_on_account_id_and_step", unique: true
+    t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
+  end
+
   create_table "pre_commit_requirements", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "check_type", limit: 50, default: "shell_command", null: false
@@ -1079,6 +1096,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
     t.check_constraint "(agent_run_id IS NOT NULL) <> (knowledge_run_id IS NOT NULL)", name: "token_usages_exactly_one_run"
   end
 
+  create_table "tracker_configurations", force: :cascade do |t|
+    t.string "base_url"
+    t.bigint "configurable_id", null: false
+    t.string "configurable_type", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.boolean "enabled", default: true, null: false
+    t.bigint "integration_credential_id"
+    t.jsonb "project_mapping", default: {}
+    t.string "tracker_type", null: false
+    t.datetime "updated_at", null: false
+    t.uuid "uuid", default: -> { "gen_random_uuid()" }, null: false
+    t.index ["configurable_type", "configurable_id"], name: "index_tracker_configurations_on_configurable", unique: true
+    t.index ["created_by_id"], name: "index_tracker_configurations_on_created_by_id"
+    t.index ["integration_credential_id"], name: "index_tracker_configurations_on_integration_credential_id"
+    t.index ["tracker_type"], name: "index_tracker_configurations_on_tracker_type"
+    t.index ["uuid"], name: "index_tracker_configurations_on_uuid", unique: true
+  end
+
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 3600, null: false
     t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"]
@@ -1231,6 +1267,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
   add_foreign_key "model_selections", "llm_models"
   add_foreign_key "notifications", "accounts"
   add_foreign_key "notifications", "users", on_delete: :nullify
+  add_foreign_key "onboarding_steps", "accounts"
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
@@ -1263,6 +1300,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
   add_foreign_key "style_guides", "projects", on_delete: :cascade
   add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
   add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
+  add_foreign_key "tracker_configurations", "integration_credentials"
+  add_foreign_key "tracker_configurations", "users", column: "created_by_id"
   add_foreign_key "user_settings", "users"
   add_foreign_key "users", "accounts"
   add_foreign_key "workflow_states", "projects"
