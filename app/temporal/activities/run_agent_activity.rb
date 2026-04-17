@@ -551,6 +551,15 @@ module Activities
       command_env = command_env_for(command_context, prompt)
       command_preparation = command_preparation_for(command_context, prompt)
 
+      heartbeat = Containers::HeartbeatSetup.new(
+        provider: provider,
+        worktree_path: agent_run.worktree_path
+      )
+      if heartbeat.available?
+        command_env = command_env.merge(heartbeat.env)
+        command_preparation = merge_preparations(command_preparation, heartbeat.preparation)
+      end
+
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 
       raise ProviderExecutionError, "Agent run already finished with status #{agent_run.status}" if agent_run.finished?
@@ -594,7 +603,8 @@ module Activities
           timeout: effective_timeout,
           idle_timeout: effective_idle_timeout,
           env: command_env,
-          preparation: command_preparation
+          preparation: command_preparation,
+          heartbeat_path: heartbeat.heartbeat_path
         )
       end
       stdout = normalize_output_text(result[:stdout])
@@ -1018,6 +1028,17 @@ module Activities
       return nil unless provider_entry&.opencode_agent_harness_runtime?
 
       direct_outbound_execution_plan(provider_entry, prompt).preparation
+    end
+
+    # Combines two ExecutionPreparation instances by concatenating their
+    # file_writes. Returns whichever is non-nil when only one is present.
+    def merge_preparations(base, additional)
+      return additional if base.nil? || base.empty?
+      return base if additional.nil? || additional.empty?
+
+      AgentHarness::ExecutionPreparation.new(
+        file_writes: base.file_writes + additional.file_writes
+      )
     end
 
     def direct_outbound_execution_plan(provider_entry, prompt)
