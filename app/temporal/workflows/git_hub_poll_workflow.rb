@@ -11,6 +11,7 @@ module Workflows
   # Temporal's event limit. The server signals when history is getting
   # large via continue_as_new_suggested; a hard cap provides a safety net.
   class GitHubPollWorkflow < BaseWorkflow
+    include Automation::ReviewBotTrigger
     MAX_ITERATIONS = 100
 
     workflow_signal
@@ -403,7 +404,7 @@ module Workflows
       # can fall through to a configured secondary bot when the primary is
       # rate-limited or unavailable.
       pending_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
-      reviewers = review_bot_reviewers_from_trigger(pending_trigger)
+      reviewers = review_bot_reviewers_from(pending_trigger)
       return if reviewers.empty?
 
       request_review(project_id, pr_data[:pr_number],
@@ -473,27 +474,12 @@ module Workflows
 
     def dispatch_bot_review_request(project_id, pr_data)
       pending_bot = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
-      reviewers = review_bot_reviewers_from_trigger(pending_bot)
+      reviewers = review_bot_reviewers_from(pending_bot)
       return if reviewers.empty?
 
       request_review(project_id, pr_data[:pr_number],
         reviewers,
         log_key: "pr_review.request_review_bot_review_failed")
-    end
-
-    # Resolves the ordered reviewer chain from a +review_bot_review_pending+
-    # trigger. Prefers the new +request_logins+ array (post-fallback-chain
-    # support) and falls back to the legacy single +request_login+ field so
-    # in-flight workflow histories that pre-date the chain encoding still
-    # produce the same single-bot activity invocation on replay.
-    def review_bot_reviewers_from_trigger(trigger)
-      return [] unless trigger
-
-      chain = trigger[:request_logins]
-      return Array(chain).compact if chain.is_a?(Array) && chain.any?
-
-      login = trigger[:request_login]
-      login.present? ? [ login ] : []
     end
 
     def handle_non_bot_review_pending(project_id, pr_data, trigger_types)
