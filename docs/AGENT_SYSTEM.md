@@ -822,44 +822,56 @@ end
 
 ## Worker Configuration
 
-### Fixed Pool (Phase 1)
+### Task Queue Isolation
 
-```yaml
-# config/temporal.yml
-development:
-  workers: 2
-  task_queue: "paid-development"
+`bin/temporal_worker` runs **two Temporal workers** in a single process, each polling
+a dedicated task queue. This isolates time-sensitive poll workflows from long-running
+agent-execution workloads, preventing the noisy-neighbor problem where saturated agent
+activity slots starve poll cycles.
 
-production:
-  workers: 5
-  task_queue: "paid-production"
-```
+| Task queue | Default name | Workflows | Purpose |
+|---|---|---|---|
+| **Poll queue** | `paid-poll-tasks` | `GitHubPollWorkflow` | Short-lived poll activities with a small, fixed activity pool. Ensures `last_polled_at` freshness is independent of agent load. |
+| **Agent queue** | `paid-agent-tasks` | `AgentExecutionWorkflow`, `PlanningWorkflow`, `ParallelAgentExecutionWorkflow` | Long-running agent activities with a larger pool. |
+
+Both workers register **all activities** — the queue assignment determines which worker
+picks up workflow tasks and their associated activity invocations.
+
+Child workflows started from the poll workflow (e.g., `PlanningWorkflow`) are explicitly
+routed to the agent task queue so they don't consume poll worker capacity.
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `TEMPORAL_POLL_TASK_QUEUE` | `paid-poll-tasks` | Poll worker task queue name |
+| `TEMPORAL_AGENT_TASK_QUEUE` | `paid-agent-tasks` | Agent worker task queue name |
+| `TEMPORAL_POLL_ACTIVITY_SLOTS` | `10` | Max concurrent poll activities |
+| `TEMPORAL_POLL_WORKFLOW_SLOTS` | `20` | Max concurrent poll workflow tasks |
+| `TEMPORAL_ACTIVITY_SLOTS` | `4` | Max concurrent agent activities |
+| `TEMPORAL_WORKFLOW_SLOTS` | `20` | Max concurrent agent workflow tasks |
 
 ### Worker Process
 
 ```ruby
-# bin/temporal-worker
-require_relative "../config/environment"
-
-worker = Temporal::Worker.new(
-  client: Paid::TemporalClient.instance,
-  task_queue: Rails.configuration.temporal[:task_queue]
+# bin/temporal_worker (simplified)
+poll_worker = Temporalio::Worker.new(
+  client: Paid.temporal_client,
+  task_queue: Paid.poll_task_queue,   # "paid-poll-tasks"
+  activities: all_activities,
+  workflows: [Workflows::GitHubPollWorkflow],
+  tuner: Temporalio::Worker::Tuner.create_fixed(activity_slots: 10)
 )
 
-# Register workflows
-worker.register_workflow(GitHubPollWorkflow)
-worker.register_workflow(PlanningWorkflow)
-worker.register_workflow(AgentExecutionWorkflow)
-worker.register_workflow(PromptEvolutionWorkflow)
+agent_worker = Temporalio::Worker.new(
+  client: Paid.temporal_client,
+  task_queue: Paid.agent_task_queue,  # "paid-agent-tasks"
+  activities: all_activities,
+  workflows: [Workflows::AgentExecutionWorkflow, ...],
+  tuner: Temporalio::Worker::Tuner.create_fixed(activity_slots: 4)
+)
 
-# Register activities
-worker.register_activity(FetchIssuesActivity)
-worker.register_activity(RunAgentActivity)
-worker.register_activity(CreatePullRequestActivity)
-# ... etc
-
-puts "Starting Temporal worker..."
-worker.run
+Temporalio::Worker.run_all(poll_worker, agent_worker, cancellation: shutdown)
 ```
 
 ### Docker Compose Integration
@@ -871,7 +883,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: bin/temporal-worker
+    command: bin/temporal_worker
     environment:
       - TEMPORAL_ADDRESS=temporal:7233
       - RAILS_ENV=production

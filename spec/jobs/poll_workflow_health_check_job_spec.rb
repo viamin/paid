@@ -6,7 +6,7 @@ RSpec.describe PollWorkflowHealthCheckJob do
   let(:temporal_client) { instance_double(Temporalio::Client) }
 
   before do
-    allow(Paid).to receive_messages(temporal_client: temporal_client, task_queue: "paid-tasks")
+    allow(Paid).to receive_messages(temporal_client: temporal_client, poll_task_queue: "paid-poll-tasks")
     allow(temporal_client).to receive(:start_workflow)
   end
 
@@ -29,7 +29,7 @@ RSpec.describe PollWorkflowHealthCheckJob do
         Workflows::GitHubPollWorkflow,
         { project_id: project.id },
         id: "github-poll-#{project.id}",
-        task_queue: "paid-tasks"
+        task_queue: "paid-poll-tasks"
       ).at_least(:once)
     end
 
@@ -81,7 +81,7 @@ RSpec.describe PollWorkflowHealthCheckJob do
         Workflows::GitHubPollWorkflow,
         { project_id: project.id },
         id: "github-poll-#{project.id}",
-        task_queue: "paid-tasks"
+        task_queue: "paid-poll-tasks"
       ).at_least(:once)
     end
 
@@ -154,7 +154,7 @@ RSpec.describe PollWorkflowHealthCheckJob do
         Workflows::GitHubPollWorkflow,
         { project_id: project.id },
         id: "github-poll-#{project.id}",
-        task_queue: "paid-tasks"
+        task_queue: "paid-poll-tasks"
       ).at_least(:once)
     end
 
@@ -174,7 +174,7 @@ RSpec.describe PollWorkflowHealthCheckJob do
         Workflows::GitHubPollWorkflow,
         { project_id: project.id },
         id: "github-poll-#{project.id}",
-        task_queue: "paid-tasks"
+        task_queue: "paid-poll-tasks"
       ).at_least(:once)
     end
 
@@ -194,7 +194,7 @@ RSpec.describe PollWorkflowHealthCheckJob do
         Workflows::GitHubPollWorkflow,
         { project_id: project.id },
         id: "github-poll-#{project.id}",
-        task_queue: "paid-tasks"
+        task_queue: "paid-poll-tasks"
       ).at_least(:once)
     end
 
@@ -237,7 +237,7 @@ RSpec.describe PollWorkflowHealthCheckJob do
         Workflows::GitHubPollWorkflow,
         { project_id: project2.id },
         id: "github-poll-#{project2.id}",
-        task_queue: "paid-tasks"
+        task_queue: "paid-poll-tasks"
       ).at_least(:once)
     end
 

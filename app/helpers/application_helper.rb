@@ -90,9 +90,20 @@ module ApplicationHelper
   def issue_lifecycle_badge(status)
     display = ISSUE_LIFECYCLE_DISPLAY[status] || ISSUE_LIFECYCLE_DISPLAY[:eligible]
     tag.span(
-      "#{display[:emoji]} #{display[:label]}",
+      display[:emoji],
       title: display[:title] || display[:label],
-      class: "inline-flex items-center text-sm"
+      class: "inline-flex items-center text-sm",
+      aria: { label: display[:label] }
+    )
+  end
+
+  def issue_lifecycle_legend_tooltip
+    legend = ISSUE_LIFECYCLE_DISPLAY.map { |_key, display| "#{display[:emoji]} = #{display[:label]}" }.join("  ·  ")
+    tag.span(
+      "ℹ️",
+      title: legend,
+      class: "ml-1 cursor-help text-sm text-gray-400",
+      aria: { label: "Status legend" }
     )
   end
 

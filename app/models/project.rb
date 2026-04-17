@@ -345,7 +345,7 @@ class Project < ApplicationRecord
 
   # Shared staleness window used by both the health-check job and the
   # automation health UI. A poll workflow is considered stale when it has not
-  # completed a poll cycle within 3× the configured interval plus a buffer.
+  # recorded forward progress within 3× the configured interval plus a buffer.
   STALENESS_BUFFER = 3.minutes
 
   def poll_staleness_window
@@ -585,18 +585,20 @@ class Project < ApplicationRecord
       threshold: threshold
     }.merge(metadata)
 
-    update!(
-      quality_paused_at: now,
-      quality_pause_metadata: pause_meta
-    )
+    transaction do
+      update!(
+        quality_paused_at: now,
+        quality_pause_metadata: pause_meta
+      )
 
-    quality_pause_events.create!(
-      event_type: "paused",
-      agent_run: agent_run,
-      composite_score: score,
-      threshold: threshold,
-      metadata: pause_meta
-    )
+      quality_pause_events.create!(
+        event_type: "paused",
+        agent_run: agent_run,
+        composite_score: score,
+        threshold: threshold,
+        metadata: pause_meta
+      )
+    end
 
     true
   end
@@ -609,15 +611,17 @@ class Project < ApplicationRecord
       was_paused_at: quality_paused_at&.iso8601
     }.merge(metadata)
 
-    update!(
-      quality_paused_at: nil,
-      quality_pause_metadata: {}
-    )
+    transaction do
+      update!(
+        quality_paused_at: nil,
+        quality_pause_metadata: {}
+      )
 
-    quality_pause_events.create!(
-      event_type: "resumed",
-      metadata: resume_meta
-    )
+      quality_pause_events.create!(
+        event_type: "resumed",
+        metadata: resume_meta
+      )
+    end
 
     true
   end
