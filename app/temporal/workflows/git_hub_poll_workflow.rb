@@ -247,6 +247,7 @@ module Workflows
         Workflows::PlanningWorkflow,
         { project_id: project_id, issue_id: issue_id },
         id: workflow_id,
+        task_queue: Paid::AGENT_TASK_QUEUE,
         parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
       )
     end
