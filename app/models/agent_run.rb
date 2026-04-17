@@ -543,6 +543,23 @@ class AgentRun < ApplicationRecord
     status == "completed"
   end
 
+  # Returns true when this run failed due to an operational/infrastructure
+  # issue (provider exhaustion, timeout, auth expiry, rate limiting) rather
+  # than a code-level failure. Used by the PR scanner's operational failure
+  # breaker to detect when a PR is stalled due to infrastructure problems
+  # that the agent cannot fix by retrying.
+  #
+  # A "failed" run is only operational when the error message indicates
+  # provider exhaustion or rate limiting — other "failed" runs are assumed
+  # to be code-level failures where a retry might help.
+  def operational_failure?
+    return false unless FAILURE_STATUSES.include?(status)
+    return true if status.in?(%w[timeout auth_expired rate_limited])
+
+    # "failed" status: only operational when caused by provider exhaustion
+    error_message.to_s.match?(/All providers exhausted/i)
+  end
+
   def total_tokens
     tokens_input.to_i + tokens_output.to_i
   end

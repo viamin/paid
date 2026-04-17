@@ -124,6 +124,15 @@ module Activities
     def scan_pr(project, client, issue)
       return :skipped if active_run_exists?(project, issue)
 
+      # Escalate PRs that are repeatedly failing due to operational issues
+      # (provider exhaustion, timeouts, rate limiting) so they stop blocking
+      # project progress and surface to the owner for attention.
+      if operational_failure_breaker?(project, issue)
+        return escalate_trigger(issue,
+          reason: "Consecutive operational failures " \
+                  "(#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} runs failed due to provider exhaustion/timeout)")
+      end
+
       backfill_review_goal_retry_reset_at!(issue)
 
       retry_needed = review_goal_retry_needed?(project, issue)
@@ -228,6 +237,7 @@ module Activities
     end
 
     MAX_CONSECUTIVE_DRAFT_FAILURES = 3
+    MAX_CONSECUTIVE_OPERATIONAL_FAILURES = 3
 
     # --- Draft phase scanning ---
 
@@ -755,6 +765,38 @@ module Activities
       recent_runs.all? do |run|
         unproductive_statuses.include?(run.status) && (run.status == "no_output" || run.iterations.to_i.zero?)
       end
+    end
+
+    # Circuit breaker: if the last N automatic follow-up runs on this PR
+    # all failed due to operational issues (provider exhaustion, wall-clock
+    # timeout, auth expiry, rate limiting), escalate to the owner. These
+    # are infrastructure failures the agent cannot fix by retrying — they
+    # indicate a systemic problem (all providers down, quota exceeded, etc.)
+    # that requires human intervention.
+    #
+    # Unlike consecutive_draft_failures_breaker? (draft-phase only, checks
+    # for unproductive output), this breaker applies across all phases and
+    # checks for infrastructure-class failures specifically. A run that
+    # failed due to a code error won't trip this breaker because a retry
+    # with different code changes might succeed.
+    #
+    # Skips PRs already in "escalated" phase to avoid re-escalating.
+    # Skips draft/restarted phases because those have their own failure
+    # breaker (consecutive_draft_failures_breaker?) with phase-aware
+    # guards (e.g. draft_review_count resets on restart).
+    def operational_failure_breaker?(project, issue)
+      return false if issue.pr_review_phase.in?(%w[draft restarted escalated])
+
+      recent_runs = project.agent_runs
+        .where(source_pull_request_number: issue.github_number)
+        .where(trigger_type: "automatic", goal: "create_pr")
+        .finished
+        .order(created_at: :desc)
+        .limit(MAX_CONSECUTIVE_OPERATIONAL_FAILURES)
+
+      return false if recent_runs.size < MAX_CONSECUTIVE_OPERATIONAL_FAILURES
+
+      recent_runs.all?(&:operational_failure?)
     end
 
     # Returns true when the latest finished automatic review-goal run in the

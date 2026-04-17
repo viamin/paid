@@ -566,6 +566,58 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#operational_failure?" do
+      it "returns true for timeout status" do
+        agent_run = build(:agent_run, :timeout, error_message: "wall_clock_timeout: exceeded 30 minutes")
+
+        expect(agent_run.operational_failure?).to be true
+      end
+
+      it "returns true for auth_expired status" do
+        agent_run = build(:agent_run, :auth_expired)
+
+        expect(agent_run.operational_failure?).to be true
+      end
+
+      it "returns true for rate_limited status" do
+        agent_run = build(:agent_run, :rate_limited)
+
+        expect(agent_run.operational_failure?).to be true
+      end
+
+      it "returns true for failed status with provider exhaustion error" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "All providers exhausted: claude_code, codex")
+
+        expect(agent_run.operational_failure?).to be true
+      end
+
+      it "returns false for failed status with code-level error" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "An error occurred during execution")
+
+        expect(agent_run.operational_failure?).to be false
+      end
+
+      it "returns false for completed status" do
+        agent_run = build(:agent_run, :completed)
+
+        expect(agent_run.operational_failure?).to be false
+      end
+
+      it "returns false for no_output status" do
+        agent_run = build(:agent_run, :no_output)
+
+        expect(agent_run.operational_failure?).to be false
+      end
+
+      it "returns false for failed status with nil error message" do
+        agent_run = build(:agent_run, :failed, error_message: nil)
+
+        expect(agent_run.operational_failure?).to be false
+      end
+    end
+
     describe "#total_tokens" do
       it "returns sum of input and output tokens" do
         agent_run = build(:agent_run, tokens_input: 1000, tokens_output: 500)
