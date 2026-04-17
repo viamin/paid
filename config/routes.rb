@@ -146,6 +146,14 @@ Rails.application.routes.draw do
 
     # GitHub webhook receiver for PR reviews, merges, and comments
     post "github_webhooks", to: "github_webhooks#create"
+
+    # Billing API for external billing system integration
+    get "billing/usage", to: "billing#usage"
+    get "billing/plan", to: "billing#plan"
+    get "billing/periods", to: "billing#periods"
+    get "billing/periods/:id", to: "billing#show_period", as: :billing_period
+    get "billing/invoices", to: "billing#invoices"
+    get "billing/invoices/:id", to: "billing#show_invoice", as: :billing_invoice
   end
 
   # Defines the root path route ("/")
