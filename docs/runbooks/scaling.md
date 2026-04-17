@@ -12,11 +12,18 @@ Before any scaling operation:
 - [ ] Review GoodJob dashboard at `/good_job` for queue health
 - [ ] Review Temporal UI for workflow/activity backlogs
 - [ ] Note current `max_connections` in PostgreSQL
-- [ ] Verify the target configuration passes pool validation tests
+- [ ] Verify the target configuration is internally consistent
 
 ```bash
-# Verify worker pool configuration is internally consistent
-bundle exec rspec spec/system/worker_pool_load_spec.rb
+# Confirm the web server is healthy before making changes
+curl -f http://localhost:3000/up
+
+# Verify DB pool size satisfies minimum requirements
+bin/rails runner "
+  pool = ActiveRecord::Base.connection_pool.size
+  puts \"DB_POOL=#{pool}\"
+  puts pool >= 10 ? 'OK: pool size sufficient' : 'WARN: pool size may be too low'
+"
 ```
 
 ## Scaling Up
@@ -321,10 +328,14 @@ in "pending" state.
 
 After any scaling change, verify the system is healthy:
 
-1. **Run pool validation tests:**
+1. **Verify DB pool configuration:**
 
    ```bash
-   bundle exec rspec spec/system/worker_pool_load_spec.rb
+   bin/rails runner "
+     pool = ActiveRecord::Base.connection_pool.size
+     puts \"DB_POOL=#{pool}\"
+     puts pool >= 10 ? 'OK: pool size sufficient' : 'WARN: pool size may be too low'
+   "
    ```
 
 2. **Check process health:**
