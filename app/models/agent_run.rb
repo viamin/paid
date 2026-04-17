@@ -8,6 +8,7 @@ class AgentRun < ApplicationRecord
   ACTIVE_STATUSES = %w[pending running].freeze
   FINISHED_STATUSES = %w[completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
+  OPERATIONAL_FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
   TERMINAL_FAILURE_STATUSES = (FAILURE_STATUSES + %w[cancelled]).freeze
   UNFINISHED_STATUSES = %w[queued pending running paused].freeze
   GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly].freeze
@@ -541,6 +542,23 @@ class AgentRun < ApplicationRecord
 
   def successful?
     status == "completed"
+  end
+
+  # Returns true when this run failed due to an operational/infrastructure
+  # issue (provider exhaustion, timeout, auth expiry, rate limiting) rather
+  # than a code-level failure. Used by the PR scanner's operational failure
+  # breaker to detect when a PR is stalled due to infrastructure problems
+  # that the agent cannot fix by retrying.
+  #
+  # A "failed" run is only operational when the error message indicates
+  # provider exhaustion or rate limiting — other "failed" runs are assumed
+  # to be code-level failures where a retry might help.
+  def operational_failure?
+    return false unless OPERATIONAL_FAILURE_STATUSES.include?(status)
+    return true if status.in?(%w[timeout auth_expired rate_limited])
+
+    # "failed" status: only operational when caused by provider exhaustion
+    error_message.to_s.match?(/All providers exhausted/i)
   end
 
   def total_tokens
