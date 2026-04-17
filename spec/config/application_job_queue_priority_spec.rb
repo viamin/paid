@@ -24,6 +24,7 @@ RSpec.describe ApplicationJob do
         KnowledgeAuditRetentionJob
         OrphanBranchReaperJob
         PollWorkflowHealthCheckJob
+        PromptEvolutionJob
         RecoverMissingPullRequestLabelsJob
         ServiceContainerReconciliationJob
         StaleRunDetectorJob
