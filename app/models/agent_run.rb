@@ -8,7 +8,6 @@ class AgentRun < ApplicationRecord
   ACTIVE_STATUSES = %w[pending running].freeze
   FINISHED_STATUSES = %w[completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
-  OPERATIONAL_FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
   TERMINAL_FAILURE_STATUSES = (FAILURE_STATUSES + %w[cancelled]).freeze
   UNFINISHED_STATUSES = %w[queued pending running paused].freeze
   GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly].freeze
@@ -554,7 +553,7 @@ class AgentRun < ApplicationRecord
   # provider exhaustion or rate limiting — other "failed" runs are assumed
   # to be code-level failures where a retry might help.
   def operational_failure?
-    return false unless OPERATIONAL_FAILURE_STATUSES.include?(status)
+    return false unless FAILURE_STATUSES.include?(status)
     return true if status.in?(%w[timeout auth_expired rate_limited])
 
     # "failed" status: only operational when caused by provider exhaustion
