@@ -1210,6 +1210,93 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
   end
 
+  describe "#evaluate_issues_batch" do
+    let(:workflow) { described_class.new }
+    let(:project_id) { 1 }
+
+    before do
+      allow(workflow).to receive(:run_activity).and_return({})
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("queue-agent-run-goal-v1")
+        .and_return(true)
+    end
+
+    it "calls EvaluateIssuesActivity with all issue IDs" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::EvaluateIssuesActivity, anything, timeout: anything)
+        .and_return({ results: [] })
+
+      issues = [ { id: 10 }, { id: 20 }, { id: 30 } ]
+      workflow.send(:evaluate_issues_batch, project_id, issues)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::EvaluateIssuesActivity,
+          { project_id: project_id, issue_ids: [ 10, 20, 30 ] }, timeout: 120)
+    end
+
+    it "dispatches each result through handle_automation_result" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::EvaluateIssuesActivity, anything, timeout: anything)
+        .and_return({
+          results: [
+            { decisions: [ { type: "queue_create_pr_run", issue_id: 10 } ] },
+            { decisions: [ { type: "noop" } ] }
+          ]
+        })
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
+
+      workflow.send(:evaluate_issues_batch, project_id, [ { id: 10 }, { id: 20 } ])
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: 10, goal: "create_pr" }, timeout: 30)
+    end
+
+    it "skips when issues list is empty" do
+      workflow.send(:evaluate_issues_batch, project_id, [])
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::EvaluateIssuesActivity, anything, timeout: anything)
+    end
+
+    it "handles nil results gracefully" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::EvaluateIssuesActivity, anything, timeout: anything)
+        .and_return({ results: nil })
+
+      expect { workflow.send(:evaluate_issues_batch, project_id, [ { id: 10 } ]) }
+        .not_to raise_error
+    end
+  end
+
+  describe "batch-evaluate-issues-v1 patch guard" do
+    let(:workflow) { described_class.new }
+    let(:project_id) { 1 }
+
+    before do
+      allow(workflow).to receive(:run_activity).and_return({})
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("queue-agent-run-goal-v1")
+        .and_return(true)
+    end
+
+    it "uses EvaluateIssuesActivity when patched" do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("batch-evaluate-issues-v1")
+        .and_return(true)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::EvaluateIssuesActivity, anything, timeout: anything)
+        .and_return({ results: [] })
+
+      workflow.send(:evaluate_issues_batch, project_id, [ { id: 10 } ])
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::EvaluateIssuesActivity, anything, timeout: anything)
+    end
+  end
+
   describe "initial sync for existing PRs" do
     let(:workflow) { described_class.new }
     let(:project_id) { 1 }
@@ -1254,6 +1341,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with("queue-paid-agent-review-run-v1").and_return(true)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("pause-followup-during-review-v1").and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("batch-evaluate-issues-v1").and_return(true)
       allow(workflow).to receive(:interruptible_sleep)
       allow(workflow).to receive(:run_activity)
         .with(Activities::GetPollIntervalActivity, anything, timeout: anything)
@@ -1261,6 +1350,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(workflow).to receive(:run_activity)
         .with(Activities::LoadFeatureFlagsActivity, { project_id: project_id }, timeout: 10)
         .and_return(flags: { explicit_pr_automation_decisions: false }, project_missing: false)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::EvaluateIssuesActivity, anything, timeout: anything)
+        .and_return({ results: [ { decisions: [ { type: "noop" } ], action: "none", issue_id: 10, project_id: project_id } ] })
     end
 
     it "queues a review run when paid_agent_review_pending is the only initial-sync PR signal" do
