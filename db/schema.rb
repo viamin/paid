@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_17_023631) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -81,12 +81,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
 
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.datetime "deactivated_at"
     t.integer "default_max_tokens_per_run", default: 10000000, null: false
     t.string "name", null: false
+    t.datetime "onboarding_completed_at"
+    t.string "plan", default: "trial", null: false
     t.datetime "scheduler_paused_at"
     t.string "slug", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "suspended_at"
+    t.datetime "trial_ends_at"
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
+    t.index ["status"], name: "index_accounts_on_status"
   end
 
   create_table "agent_run_anomalies", force: :cascade do |t|
@@ -742,6 +749,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
     t.index ["user_id"], name: "index_notifications_on_user_id"
   end
 
+  create_table "onboarding_steps", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.jsonb "metadata", default: {}
+    t.integer "position", null: false
+    t.string "status", default: "pending", null: false
+    t.string "step", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "position"], name: "index_onboarding_steps_on_account_id_and_position"
+    t.index ["account_id", "step"], name: "index_onboarding_steps_on_account_id_and_step", unique: true
+    t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
+  end
+
   create_table "pre_commit_requirements", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "check_type", limit: 50, default: "shell_command", null: false
@@ -844,7 +865,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
-    t.jsonb "fitness_weights", default: {}, null: false
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
     t.bigint "github_token_id", null: false
@@ -1060,6 +1080,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
     t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_style_guides_scope_consistency"
   end
 
+  create_table "tenant_configurations", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.jsonb "agent_settings", default: {}, null: false
+    t.jsonb "cost_budgets", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.jsonb "feature_flags", default: {}, null: false
+    t.jsonb "provider_preferences", default: {}, null: false
+    t.jsonb "quality_thresholds", default: {}, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_tenant_configurations_on_account_id", unique: true
+  end
+
+  create_table "tenant_settings", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.text "allowed_provider_keys", default: [], array: true
+    t.datetime "created_at", null: false
+    t.jsonb "features", default: {}, null: false
+    t.integer "max_concurrent_runs", default: 10, null: false
+    t.integer "max_monthly_cost_cents"
+    t.integer "max_projects", default: 50, null: false
+    t.integer "max_tokens_per_run", default: 10000000, null: false
+    t.integer "max_users", default: 25, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_tenant_settings_on_account_id", unique: true
+  end
+
   create_table "token_usages", force: :cascade do |t|
     t.bigint "agent_run_id"
     t.integer "cost_cents", default: 0, null: false
@@ -1231,6 +1277,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
   add_foreign_key "model_selections", "llm_models"
   add_foreign_key "notifications", "accounts"
   add_foreign_key "notifications", "users", on_delete: :nullify
+  add_foreign_key "onboarding_steps", "accounts"
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
@@ -1261,6 +1308,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
   add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
+  add_foreign_key "tenant_configurations", "accounts"
+  add_foreign_key "tenant_settings", "accounts"
   add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
   add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "user_settings", "users"

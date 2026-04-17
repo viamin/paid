@@ -2,6 +2,8 @@
 
 class Account < ApplicationRecord
   MAX_SLUG_GENERATION_ATTEMPTS = 10
+  PLANS = %w[trial free professional enterprise].freeze
+  TRIAL_DURATION = 14.days
 
   has_many :users, dependent: :destroy
   has_many :account_memberships, dependent: :destroy
@@ -16,8 +18,10 @@ class Account < ApplicationRecord
   has_many :mcp_server_definitions, dependent: :destroy
   has_many :notifications, dependent: :destroy
   has_many :pre_commit_requirements, dependent: :destroy
+  has_many :onboarding_steps, dependent: :destroy
 
   validates :name, presence: true
+  validates :plan, presence: true, inclusion: { in: PLANS }
   validates :slug, presence: true, uniqueness: true,
     format: { with: /\A[a-z0-9-]+\z/, message: "can only contain lowercase letters, numbers, and hyphens" }
   validates :default_max_tokens_per_run,
@@ -43,6 +47,30 @@ class Account < ApplicationRecord
 
   def scheduler_paused?
     scheduler_paused_at.present?
+  end
+
+  def onboarding_completed?
+    onboarding_completed_at.present?
+  end
+
+  def trial?
+    plan == "trial"
+  end
+
+  def trial_expired?
+    trial? && trial_ends_at.present? && trial_ends_at < Time.current
+  end
+
+  def current_onboarding_step
+    onboarding_steps.ordered.find { |s| !s.completed? && !s.skipped? }
+  end
+
+  def onboarding_progress
+    total = onboarding_steps.count
+    return 0 if total.zero?
+
+    done = onboarding_steps.where(status: %w[completed skipped]).count
+    (done.to_f / total * 100).round
   end
 
   # Returns the fallback owner for this account — the first owner by ID,
