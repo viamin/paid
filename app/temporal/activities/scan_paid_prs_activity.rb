@@ -20,6 +20,11 @@ module Activities
 
     MIN_COMMENT_LENGTH = 20
     CI_ACTION_DISPATCH_GRACE_PERIOD = 2.minutes
+    # Floor for re-scanning a PR even when GitHub's `updated_at` has not
+    # advanced. `updated_at` does not bump for check-run state changes,
+    # unanswered bot review requests, or review-goal retry timers — without
+    # a time ceiling, PRs waiting on those signals are skipped indefinitely.
+    SCAN_STALENESS_MULTIPLIER = 3
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
     # Body-only review bots (currently Codex) signal "no findings" by posting
@@ -587,6 +592,7 @@ module Activities
       return false unless issue.last_pr_scan_at
       return false if issue.github_updated_at >= issue.last_pr_scan_at
       return false if recently_completed_run?(project, issue)
+      return false if scan_age_exceeds_ceiling?(project, issue)
 
       logger.debug(
         message: "pr_scanner.skipped_unchanged",
@@ -597,6 +603,31 @@ module Activities
       )
 
       true
+    end
+
+    # Only draft/restarted PRs need a time-based rescan floor. They're the
+    # phases waiting on signals that do not bump GitHub's `updated_at` (bot
+    # review requests, CI state transitions, review-goal retry timers).
+    # `ready`/`escalated` PRs already have a targeted rescan path via
+    # `merge_conflict_rescan_needed?`; bypassing skip here would regress that
+    # optimization back into full per-PR scans.
+    def scan_age_exceeds_ceiling?(project, issue)
+      return false unless issue.pr_review_phase.in?(%w[draft restarted])
+
+      ceiling = SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
+      stale = issue.last_pr_scan_at < ceiling.seconds.ago
+
+      if stale
+        logger.info(
+          message: "pr_scanner.scan_age_ceiling_exceeded",
+          project_id: project.id,
+          pr_number: issue.github_number,
+          last_pr_scan_at: issue.last_pr_scan_at,
+          ceiling_seconds: ceiling
+        )
+      end
+
+      stale
     end
 
     def merge_conflict_rescan_needed?(project, issue)

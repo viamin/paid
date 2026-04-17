@@ -5378,8 +5378,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
           paid_state: "completed",
-          github_updated_at: 2.hours.ago,
-          last_pr_scan_at: 1.hour.ago)
+          github_updated_at: 5.minutes.ago,
+          last_pr_scan_at: 30.seconds.ago)
       end
 
       it "skips PRs where github_updated_at < last_pr_scan_at" do
@@ -5411,11 +5411,39 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         create(:agent_run, :completed,
           project: project,
           source_pull_request_number: 42,
-          completed_at: 30.minutes.ago)
+          completed_at: 30.seconds.ago)
         stub_github_for_pr
         activity.execute(project_id: project.id)
 
-        expect(unchanged_pr.reload.last_pr_scan_at).to be_present
+        expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
+      end
+
+      it "rescans draft PRs whose last scan exceeds the staleness ceiling" do
+        ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
+        unchanged_pr.update!(pr_review_phase: "draft")
+        unchanged_pr.update_columns(
+          github_updated_at: (ceiling + 60).seconds.ago,
+          last_pr_scan_at: (ceiling + 30).seconds.ago
+        )
+        stub_github_for_pr
+
+        activity.execute(project_id: project.id)
+
+        expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
+      end
+
+      it "does not bypass skip for stale ready PRs (preserves merge-conflict rescan path)" do
+        ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
+        unchanged_pr.update!(pr_review_phase: "ready")
+        unchanged_pr.update_columns(
+          github_updated_at: (ceiling + 60).seconds.ago,
+          last_pr_scan_at: (ceiling + 30).seconds.ago
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+        expect(unchanged_pr.reload.last_pr_scan_at).to be < ceiling.seconds.ago
       end
 
       it "scans ready PRs for merge conflicts when auto-fix is enabled" do
