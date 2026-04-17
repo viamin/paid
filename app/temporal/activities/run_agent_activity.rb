@@ -976,12 +976,15 @@ module Activities
     # app-level key. Delegates command construction to agent-harness so
     # provider CLI flag semantics are owned upstream.
     #
-    # The plan is cached per (provider_key, prompt) pair so that
-    # multiple branches within build_command can share the same
-    # capture without re-running the harness provider.
+    # The plan is cached per (provider_key, prompt, harness_runtime?)
+    # tuple so that multiple branches within build_command can share
+    # the same capture without re-running the harness provider. The
+    # boolean discriminator ensures calls with and without a
+    # provider_entry that has an agent_harness_provider_runtime are
+    # never conflated.
     def harness_execution_plan_for(provider_key, prompt, provider_entry: nil)
       @harness_plan_cache ||= {}
-      cache_key = [ provider_key, prompt ]
+      cache_key = [ provider_key, prompt, provider_entry&.agent_harness_provider_runtime.present? ]
       return @harness_plan_cache[cache_key] if @harness_plan_cache.key?(cache_key)
 
       options = { dangerous_mode: true }
