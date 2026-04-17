@@ -133,13 +133,8 @@ module Issues
                current_local_by_id.empty? && current_external_by_key.empty?
 
       new_local_deps = sync_local_deps(local_deps, current_local_by_id)
-      new_cross_refs = sync_cross_project_deps(
-        cross_deps,
-        local_deps,
-        current_local_by_id,
-        new_local_deps,
-        current_external_by_key
-      )
+      current_state = { local_by_id: current_local_by_id, external_by_key: current_external_by_key }
+      new_cross_refs = sync_cross_project_deps(cross_deps, local_deps, current_state, new_local_deps)
 
       kept_local_ids = new_local_deps.keys.to_set | new_cross_refs[:resolved_ids]
       remove_stale_local_deps(current_local_by_id.keys.to_set, kept_local_ids)
@@ -326,7 +321,9 @@ module Issues
       new_local_deps
     end
 
-    def sync_cross_project_deps(cross_deps, local_deps, current_local_by_id, new_local_deps, current_external_by_key)
+    def sync_cross_project_deps(cross_deps, local_deps, current_state, new_local_deps)
+      current_local_by_id = current_state[:local_by_id]
+      current_external_by_key = current_state[:external_by_key]
       resolved_ids = Set.new
       external_keys = Set.new
       return { resolved_ids: resolved_ids, external_keys: external_keys } if cross_deps.empty?
