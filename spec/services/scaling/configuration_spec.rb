@@ -58,6 +58,26 @@ RSpec.describe Scaling::Configuration do
         .to raise_error(ArgumentError, /scale_up_utilization/)
     end
 
+    it "rejects scale_down_queue_ratio >= scale_up_queue_ratio" do
+      expect { described_class.new(scale_down_queue_ratio: 10.0, scale_up_queue_ratio: 5.0) }
+        .to raise_error(ArgumentError, /scale_down_queue_ratio must be < scale_up_queue_ratio/)
+    end
+
+    it "rejects equal queue ratios" do
+      expect { described_class.new(scale_down_queue_ratio: 5.0, scale_up_queue_ratio: 5.0) }
+        .to raise_error(ArgumentError, /scale_down_queue_ratio must be < scale_up_queue_ratio/)
+    end
+
+    it "rejects scale_down_utilization >= scale_up_utilization" do
+      expect { described_class.new(scale_down_utilization: 0.9, scale_up_utilization: 0.5) }
+        .to raise_error(ArgumentError, /scale_down_utilization must be < scale_up_utilization/)
+    end
+
+    it "rejects equal utilization thresholds" do
+      expect { described_class.new(scale_down_utilization: 0.5, scale_up_utilization: 0.5) }
+        .to raise_error(ArgumentError, /scale_down_utilization must be < scale_up_utilization/)
+    end
+
     it "rejects negative cooldown_period" do
       expect { described_class.new(cooldown_period: -1) }
         .to raise_error(ArgumentError, /cooldown_period/)

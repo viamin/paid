@@ -60,8 +60,10 @@ module Scaling
       raise ArgumentError, "max_workers must be >= min_workers" if max_workers < min_workers
       raise ArgumentError, "scale_up_queue_ratio must be positive" unless scale_up_queue_ratio.positive?
       raise ArgumentError, "scale_down_queue_ratio must be non-negative" if scale_down_queue_ratio.negative?
+      raise ArgumentError, "scale_down_queue_ratio must be < scale_up_queue_ratio" if scale_down_queue_ratio >= scale_up_queue_ratio
       raise ArgumentError, "scale_up_utilization must be in 0.0..1.0" unless (0.0..1.0).cover?(scale_up_utilization)
       raise ArgumentError, "scale_down_utilization must be in 0.0..1.0" unless (0.0..1.0).cover?(scale_down_utilization)
+      raise ArgumentError, "scale_down_utilization must be < scale_up_utilization" if scale_down_utilization >= scale_up_utilization
       raise ArgumentError, "cooldown_period must be non-negative" if cooldown_period.negative?
       raise ArgumentError, "scale_up_step must be positive" unless scale_up_step.positive?
       raise ArgumentError, "scale_down_step must be positive" unless scale_down_step.positive?
