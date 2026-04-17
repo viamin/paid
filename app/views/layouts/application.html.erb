@@ -127,7 +127,7 @@
             <%= link_to "Settings", edit_user_settings_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
             <div class="border-t border-gray-200 dark:border-gray-600 pt-3 mt-2">
               <p class="px-3 text-sm text-gray-700 dark:text-gray-300"><%= current_user.email %></p>
-              <%= button_to "Sign out", destroy_user_session_path, method: :delete, class: "mt-1 block w-full rounded-md px-3 py-2 text-left text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
+              <%= button_to "Sign out", destroy_user_session_path, method: :delete, class: "mt-1 block w-full rounded-md px-3 py-2 text-left text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
             </div>
           <% else %>
             <%= link_to "Sign in", new_user_session_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
