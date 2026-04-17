@@ -28,6 +28,7 @@ class UserSettingsController < ApplicationController
   def user_setting_params
     raw_params = params.require(:user_setting)
     permitted = raw_params.permit(
+      :theme_preference,
       :default_poll_interval_seconds,
       :github_token_cache_ttl_minutes,
       :token_validation_stale_minutes,

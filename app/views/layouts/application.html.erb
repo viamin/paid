@@ -1,6 +1,13 @@
 <!DOCTYPE html>
-<html>
+<html data-controller="theme" data-theme-preference-value="<%= user_signed_in? ? current_user.settings.theme_preference : 'system' %>">
   <head>
+    <script>
+      (function() {
+        var pref = localStorage.getItem("theme_preference") || "system";
+        var dark = pref === "dark" || (pref === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.classList.add("dark");
+      })();
+    </script>
     <title><%= content_for(:title) || "Paid" %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -25,24 +32,24 @@
     <%= safe_javascript_include_tag "application", "data-turbo-track": "reload", type: "module" %>
   </head>
 
-  <body class="min-h-screen bg-gray-50">
+  <body class="min-h-screen bg-gray-50 dark:bg-gray-900 dark:text-gray-100">
     <% if user_signed_in? %>
       <%= turbo_stream_from current_account, :notification_updates %>
       <%= render "notifications/nav_badges", account: current_account %>
     <% end %>
-    <nav class="bg-white shadow-sm" data-controller="mobile-menu">
+    <nav class="bg-white shadow-sm dark:bg-gray-800 dark:shadow-gray-700/30" data-controller="mobile-menu">
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div class="flex h-16 justify-between">
           <div class="flex flex-shrink-0 items-center">
-            <%= link_to "Paid", root_path, class: "text-xl font-bold text-indigo-600" %>
+            <%= link_to "Paid", root_path, class: "text-xl font-bold text-indigo-600 dark:text-indigo-400" %>
           </div>
 
           <%# Desktop navigation %>
           <div class="hidden md:flex md:items-center md:space-x-4">
             <% if user_signed_in? %>
-              <%= link_to "Dashboard", dashboard_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700", data: { nav_section: "dashboard" } %>
-              <%= link_to "Projects", projects_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700", data: { nav_section: "projects" } %>
-              <%= link_to "Agent Runs", agent_runs_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700", data: { nav_section: "agent_runs" } %>
+              <%= link_to "Dashboard", dashboard_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white", data: { nav_section: "dashboard" } %>
+              <%= link_to "Projects", projects_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white", data: { nav_section: "projects" } %>
+              <%= link_to "Agent Runs", agent_runs_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white", data: { nav_section: "agent_runs" } %>
               <% if current_account&.scheduler_paused? %>
                 <%= link_to agent_runs_path,
                   class: "inline-flex items-center gap-x-1 rounded-full bg-yellow-100 px-2.5 py-1 text-xs font-semibold text-yellow-800 ring-1 ring-inset ring-yellow-400 hover:bg-yellow-200",
@@ -54,28 +61,28 @@
                   <span>Paused</span>
                 <% end %>
               <% end %>
-              <%= link_to "Prompts", prompts_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
+              <%= link_to "Prompts", prompts_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
 
-              <%= link_to "Quality", quality_dashboard_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
-              <%= link_to "Knowledge", knowledge_search_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
-              <%= link_to "Integrations", integrations_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
-              <%= link_to "Providers", providers_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700", data: { nav_section: "providers" } %>
+              <%= link_to "Quality", quality_dashboard_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
+              <%= link_to "Knowledge", knowledge_search_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
+              <%= link_to "Integrations", integrations_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
+              <%= link_to "Providers", providers_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white", data: { nav_section: "providers" } %>
               <% if policy(ServiceContainer).index? %>
-                <%= link_to "Services", service_containers_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
+                <%= link_to "Services", service_containers_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
               <% end %>
-              <%= link_to "Settings", edit_user_settings_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
+              <%= link_to "Settings", edit_user_settings_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
               <%= render "notifications/bell", account: current_account %>
-              <span class="text-sm text-gray-700"><%= current_user.email %></span>
-              <%= button_to "Sign out", destroy_user_session_path, method: :delete, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
+              <span class="text-sm text-gray-700 dark:text-gray-300"><%= current_user.email %></span>
+              <%= button_to "Sign out", destroy_user_session_path, method: :delete, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
             <% else %>
-              <%= link_to "Sign in", new_user_session_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
+              <%= link_to "Sign in", new_user_session_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
               <%= link_to "Sign up", new_user_registration_path, class: "ml-4 inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
             <% end %>
           </div>
 
           <%# Mobile hamburger button %>
           <div class="flex items-center md:hidden">
-            <button type="button" data-action="mobile-menu#toggle" data-mobile-menu-target="button" class="inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500" aria-expanded="false" aria-controls="mobile-menu">
+            <button type="button" data-action="mobile-menu#toggle" data-mobile-menu-target="button" class="inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" aria-expanded="false" aria-controls="mobile-menu">
               <span class="sr-only">Main menu</span>
               <%# Hamburger icon %>
               <svg data-mobile-menu-target="openIcon" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -94,9 +101,9 @@
       <div id="mobile-menu" data-mobile-menu-target="menu" class="hidden md:hidden" aria-hidden="true">
         <div class="space-y-1 px-4 pb-3 pt-2">
           <% if user_signed_in? %>
-            <%= link_to "Dashboard", dashboard_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
-            <%= link_to "Projects", projects_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
-            <%= link_to "Agent Runs", agent_runs_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
+            <%= link_to "Dashboard", dashboard_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
+            <%= link_to "Projects", projects_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
+            <%= link_to "Agent Runs", agent_runs_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
             <% if current_account&.scheduler_paused? %>
               <%= link_to agent_runs_path,
                 data: { action: "mobile-menu#close", testid: "navbar-scheduler-paused-mobile" },
@@ -107,23 +114,23 @@
                 <span>Scheduler Paused</span>
               <% end %>
             <% end %>
-            <%= link_to "Prompts", prompts_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
+            <%= link_to "Prompts", prompts_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
 
-            <%= link_to "Quality", quality_dashboard_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
-            <%= link_to "Knowledge", knowledge_search_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
-            <%= link_to "Integrations", integrations_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
-            <%= link_to "Providers", providers_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
+            <%= link_to "Quality", quality_dashboard_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
+            <%= link_to "Knowledge", knowledge_search_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
+            <%= link_to "Integrations", integrations_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
+            <%= link_to "Providers", providers_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
             <% if policy(ServiceContainer).index? %>
-              <%= link_to "Services", service_containers_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
+              <%= link_to "Services", service_containers_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
             <% end %>
-            <%= link_to "Notifications", notifications_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
-            <%= link_to "Settings", edit_user_settings_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
-            <div class="border-t border-gray-200 pt-3 mt-2">
-              <p class="px-3 text-sm text-gray-700"><%= current_user.email %></p>
-              <%= button_to "Sign out", destroy_user_session_path, method: :delete, class: "mt-1 block w-full rounded-md px-3 py-2 text-left text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
+            <%= link_to "Notifications", notifications_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
+            <%= link_to "Settings", edit_user_settings_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
+            <div class="border-t border-gray-200 dark:border-gray-600 pt-3 mt-2">
+              <p class="px-3 text-sm text-gray-700 dark:text-gray-300"><%= current_user.email %></p>
+              <%= button_to "Sign out", destroy_user_session_path, method: :delete, class: "mt-1 block w-full rounded-md px-3 py-2 text-left text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
             </div>
           <% else %>
-            <%= link_to "Sign in", new_user_session_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
+            <%= link_to "Sign in", new_user_session_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
             <%= link_to "Sign up", new_user_registration_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-white bg-indigo-600 hover:bg-indigo-500" %>
           <% end %>
         </div>
@@ -132,10 +139,10 @@
 
     <% if notice.present? %>
       <div class="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
-        <div class="rounded-md bg-green-50 p-4">
+        <div class="rounded-md bg-green-50 dark:bg-green-900/50 p-4">
           <div class="flex">
             <div class="ml-3">
-              <p class="text-sm font-medium text-green-800"><%= notice %></p>
+              <p class="text-sm font-medium text-green-800 dark:text-green-200"><%= notice %></p>
             </div>
           </div>
         </div>
@@ -144,10 +151,10 @@
 
     <% if alert.present? && !content_for?(:inline_alert) %>
       <div class="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
-        <div class="rounded-md bg-red-50 p-4">
+        <div class="rounded-md bg-red-50 dark:bg-red-900/50 p-4">
           <div class="flex">
             <div class="ml-3">
-              <p class="text-sm font-medium text-red-800"><%= alert %></p>
+              <p class="text-sm font-medium text-red-800 dark:text-red-200"><%= alert %></p>
             </div>
           </div>
         </div>

@@ -55,5 +55,8 @@ application.register("sortable", SortableController)
 import TestAgentController from "./test_agent_controller"
 application.register("test-agent", TestAgentController)
 
+import ThemeController from "./theme_controller"
+application.register("theme", ThemeController)
+
 import TooltipController from "./tooltip_controller"
 application.register("tooltip", TooltipController)
