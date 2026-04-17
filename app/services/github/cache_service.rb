@@ -26,8 +26,9 @@ module Github
 
     attr_reader :client
 
-    # @param client [GithubClient] The underlying GitHub API client
-    def initialize(client:)
+    # @param client [GithubClient, nil] The underlying GitHub API client.
+    #   Required for fetch operations; may be omitted for invalidation-only use.
+    def initialize(client: nil)
       @client = client
     end
 
@@ -75,35 +76,35 @@ module Github
       end
     end
 
-    # Invalidates all cached data for a repository.
+    # Invalidates all cached data for a repository by bumping the
+    # per-repo version counter. Existing entries expire naturally via TTL;
+    # no Redis SCAN is required.
     def invalidate_repo(repo)
       instrument(:invalidate, repo: repo, scope: :repo) do
-        normalized = Regexp.escape(normalize_repo(repo))
-        delete_matched(/#{Regexp.escape(CACHE_NAMESPACE)}\/.*\/#{normalized}/)
+        bump_repo_version(repo)
       end
     end
 
-    # Invalidates a cached issue and related list caches.
+    # Invalidates a cached issue and related list caches by bumping
+    # the repo version so all keys (including list caches with varying
+    # query parameters) become unreachable.
     def invalidate_issue(repo, number)
       instrument(:invalidate, repo: repo, scope: :issue, number: number) do
-        Rails.cache.delete(cache_key(:issue, repo, number))
-        normalized = Regexp.escape(normalize_repo(repo))
-        delete_matched(/#{Regexp.escape(CACHE_NAMESPACE)}\/issues\/#{normalized}/)
+        bump_repo_version(repo)
       end
     end
 
-    # Invalidates a cached pull request and related list caches.
+    # Invalidates a cached pull request and related list caches by
+    # bumping the repo version.
     def invalidate_pull_request(repo, number)
       instrument(:invalidate, repo: repo, scope: :pull_request, number: number) do
-        Rails.cache.delete(cache_key(:pull_request, repo, number))
-        normalized = Regexp.escape(normalize_repo(repo))
-        delete_matched(/#{Regexp.escape(CACHE_NAMESPACE)}\/pull_requests\/#{normalized}/)
+        bump_repo_version(repo)
       end
     end
 
     # Delegates uncached methods directly to the underlying client.
     def method_missing(method, ...)
-      if client.respond_to?(method)
+      if client&.respond_to?(method)
         client.public_send(method, ...)
       else
         super
@@ -111,7 +112,7 @@ module Github
     end
 
     def respond_to_missing?(method, include_private = false)
-      client.respond_to?(method, include_private) || super
+      client&.respond_to?(method, include_private) || super
     end
 
     private
@@ -135,23 +136,31 @@ module Github
     end
 
     def cache_key(*parts)
+      repo_part = parts.find { |p| p.is_a?(String) && p.include?("/") }
+      version = repo_part ? repo_version(repo_part) : 0
+
       normalized = parts.map do |p|
         p.is_a?(String) && p.include?("/") ? normalize_repo(p) : p
       end
-      "#{CACHE_NAMESPACE}/#{normalized.join("/")}"
+      "#{CACHE_NAMESPACE}/v#{version}/#{normalized.join("/")}"
     end
 
     def normalize_repo(repo)
       repo.downcase
     end
 
-    def delete_matched(pattern)
-      Rails.cache.delete_matched(pattern)
-    rescue NotImplementedError
-      Rails.logger.warn(
-        message: "github_cache.delete_matched_unsupported",
-        pattern: pattern
-      )
+    def repo_version_key(repo)
+      "#{CACHE_NAMESPACE}:repo_version:#{normalize_repo(repo)}"
+    end
+
+    def repo_version(repo)
+      Rails.cache.read(repo_version_key(repo)) || 0
+    end
+
+    def bump_repo_version(repo)
+      key = repo_version_key(repo)
+      current = repo_version(repo)
+      Rails.cache.write(key, current + 1)
     end
 
     def instrument(event, metadata = {})

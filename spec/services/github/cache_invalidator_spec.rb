@@ -5,6 +5,8 @@ require "rails_helper"
 RSpec.describe Github::CacheInvalidator do
   let(:project) { create(:project) }
   let(:repo) { project.full_name }
+  let(:github_client) { instance_double(GithubClient) }
+  let(:cache_service) { Github::CacheService.new(client: github_client) }
 
   around do |example|
     original_store = Rails.cache
@@ -12,20 +14,6 @@ RSpec.describe Github::CacheInvalidator do
     example.run
   ensure
     Rails.cache = original_store
-  end
-
-  # Cache keys match the format used by Github::CacheService:
-  # github/<type>/<owner>/<repo>[/<number>]
-  def pr_cache_key(number)
-    "github/pull_request/#{repo.downcase}/#{number}"
-  end
-
-  def issue_cache_key(number)
-    "github/issue/#{repo.downcase}/#{number}"
-  end
-
-  def repo_cache_key
-    "github/repository/#{repo.downcase}"
   end
 
   describe ".call" do
@@ -39,11 +27,12 @@ RSpec.describe Github::CacheInvalidator do
       end
 
       it "invalidates the pull request cache" do
-        Rails.cache.write(pr_cache_key(42), "cached_pr")
+        allow(github_client).to receive(:pull_request).with(repo, 42).and_return("original", "fresh")
 
+        cache_service.pull_request(repo, 42)
         described_class.call(project: project, event: "pull_request", payload: payload)
 
-        expect(Rails.cache.read(pr_cache_key(42))).to be_nil
+        expect(cache_service.pull_request(repo, 42)).to eq("fresh")
       end
     end
 
@@ -58,11 +47,12 @@ RSpec.describe Github::CacheInvalidator do
       end
 
       it "invalidates the pull request cache" do
-        Rails.cache.write(pr_cache_key(10), "cached_pr")
+        allow(github_client).to receive(:pull_request).with(repo, 10).and_return("original", "fresh")
 
+        cache_service.pull_request(repo, 10)
         described_class.call(project: project, event: "pull_request_review", payload: payload)
 
-        expect(Rails.cache.read(pr_cache_key(10))).to be_nil
+        expect(cache_service.pull_request(repo, 10)).to eq("fresh")
       end
     end
 
@@ -76,11 +66,12 @@ RSpec.describe Github::CacheInvalidator do
       end
 
       it "invalidates the issue cache" do
-        Rails.cache.write(issue_cache_key(5), "cached_issue")
+        allow(github_client).to receive(:issue).with(repo, 5).and_return("original", "fresh")
 
+        cache_service.issue(repo, 5)
         described_class.call(project: project, event: "issues", payload: payload)
 
-        expect(Rails.cache.read(issue_cache_key(5))).to be_nil
+        expect(cache_service.issue(repo, 5)).to eq("fresh")
       end
     end
 
@@ -98,11 +89,12 @@ RSpec.describe Github::CacheInvalidator do
       end
 
       it "invalidates the pull request cache" do
-        Rails.cache.write(pr_cache_key(42), "cached_pr")
+        allow(github_client).to receive(:pull_request).with(repo, 42).and_return("original", "fresh")
 
+        cache_service.pull_request(repo, 42)
         described_class.call(project: project, event: "issue_comment", payload: payload)
 
-        expect(Rails.cache.read(pr_cache_key(42))).to be_nil
+        expect(cache_service.pull_request(repo, 42)).to eq("fresh")
       end
     end
 
@@ -117,11 +109,12 @@ RSpec.describe Github::CacheInvalidator do
       end
 
       it "invalidates the issue cache" do
-        Rails.cache.write(issue_cache_key(5), "cached_issue")
+        allow(github_client).to receive(:issue).with(repo, 5).and_return("original", "fresh")
 
+        cache_service.issue(repo, 5)
         described_class.call(project: project, event: "issue_comment", payload: payload)
 
-        expect(Rails.cache.read(issue_cache_key(5))).to be_nil
+        expect(cache_service.issue(repo, 5)).to eq("fresh")
       end
     end
 
@@ -134,11 +127,12 @@ RSpec.describe Github::CacheInvalidator do
       end
 
       it "invalidates repo metadata cache" do
-        Rails.cache.write(repo_cache_key, "cached_repo")
+        allow(github_client).to receive(:repository).with(repo).and_return("original", "fresh")
 
+        cache_service.repository(repo)
         described_class.call(project: project, event: "push", payload: payload)
 
-        expect(Rails.cache.read(repo_cache_key)).to be_nil
+        expect(cache_service.repository(repo)).to eq("fresh")
       end
     end
 

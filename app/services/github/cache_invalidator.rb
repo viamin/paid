@@ -50,7 +50,7 @@ module Github
     end
 
     def cache_service
-      @cache_service ||= Github::CacheService.new(client: nil_client)
+      @cache_service ||= Github::CacheService.new
     end
 
     def invalidate_pull_request
@@ -88,21 +88,6 @@ module Github
 
     def invalidate_repo_metadata
       cache_service.invalidate_repo(repo_full_name)
-    end
-
-    # Stub client for invalidation-only operations. The cache service
-    # only needs the client for fetching; invalidation uses Rails.cache
-    # directly via the cache key helpers.
-    def nil_client
-      @nil_client ||= NilClient.new
-    end
-
-    # Minimal stand-in that satisfies CacheService#initialize without
-    # requiring a real GithubClient (and therefore a token).
-    class NilClient
-      def respond_to_missing?(*, **)
-        false
-      end
     end
   end
 end
