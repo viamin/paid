@@ -35,6 +35,11 @@ if [ -z "${CLAUDE_INSTALL_COMMAND}" ]; then
     exit 1
 fi
 
+if [ -z "${CLAUDE_POST_INSTALL_BINARY_PATH}" ]; then
+    echo "ERROR: Could not extract Claude post-install binary path from agent-harness" >&2
+    exit 1
+fi
+
 echo "Building agent container image..."
 echo "  Image: ${FULL_IMAGE}"
 echo "  Context: ${PROJECT_ROOT}/docker/agent"

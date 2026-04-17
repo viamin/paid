@@ -62,6 +62,10 @@ jobs:
             echo "Failed to extract Claude install command from agent-harness" >&2
             exit 1
           fi
+          if [ -z "$post_install_path" ]; then
+            echo "Failed to extract Claude post-install binary path from agent-harness" >&2
+            exit 1
+          fi
           echo "install_command=$install_command" >> "$GITHUB_OUTPUT"
           echo "post_install_binary_path=$post_install_path" >> "$GITHUB_OUTPUT"
 
