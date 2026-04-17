@@ -128,7 +128,7 @@ module QualityMetrics
         .count
 
       DISTRIBUTION_BANDS.each_with_index.map do |band, i|
-        { label: band[:label], count: counts.fetch(i, 0) }
+        { label: band[:label], min: band[:min], count: counts.fetch(i, 0) }
       end
     end
 

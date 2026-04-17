@@ -63,6 +63,7 @@ RSpec.describe QualityMetrics::DashboardStats do
 
         expect(dist.size).to eq(5)
         expect(dist.map { |b| b[:label] }).to eq(%w[0–20 20–40 40–60 60–80 80–100])
+        expect(dist.map { |b| b[:min] }).to eq([ 0.0, 0.2, 0.4, 0.6, 0.8 ])
         # 0.6 falls in 60–80 band, 0.8 falls in 80–100 band
         expect(dist[3][:count]).to eq(1)
         expect(dist[4][:count]).to eq(1)
