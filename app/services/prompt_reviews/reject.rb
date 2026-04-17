@@ -26,12 +26,16 @@ module PromptReviews
     def reject
       validate!
 
-      prompt_version.update!(
-        review_status: "rejected",
-        reviewed_by_user: reviewer,
-        reviewed_at: Time.current,
-        review_notes: notes
-      )
+      prompt_version.prompt.with_lock do
+        raise ArgumentError, "prompt version is no longer pending review" unless prompt_version.reload.pending_review?
+
+        prompt_version.update!(
+          review_status: "rejected",
+          reviewed_by_user: reviewer,
+          reviewed_at: Time.current,
+          review_notes: notes
+        )
+      end
       prompt_version
     end
 

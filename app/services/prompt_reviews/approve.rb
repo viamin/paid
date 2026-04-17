@@ -29,6 +29,8 @@ module PromptReviews
 
       prompt = prompt_version.prompt
       prompt.with_lock do
+        raise ArgumentError, "prompt version is no longer pending review" unless prompt_version.reload.pending_review?
+
         prompt_version.update!(
           review_status: "approved",
           reviewed_by_user: reviewer,
