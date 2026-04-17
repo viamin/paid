@@ -30,13 +30,13 @@ RSpec.describe TenantScoped do
       Current.account = nil
     end
 
-    it "returns all records when Current.account is nil" do
+    it "returns no records when Current.account is nil" do
       create(:project, account: account_a)
       create(:project, account: account_b)
 
       Current.account = nil
       results = Project.for_current_tenant
-      expect(results.count).to eq(Project.count)
+      expect(results).to be_empty
     end
   end
 end

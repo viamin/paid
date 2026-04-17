@@ -68,6 +68,8 @@ class Account < ApplicationRecord
 
   def tenant_setting!
     tenant_setting || create_tenant_setting!
+  rescue ActiveRecord::RecordNotUnique
+    reload_tenant_setting
   end
 
   class InvalidTransitionError < StandardError; end
