@@ -44,6 +44,26 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@a4effe49ee3ee5b8916d8f84b1528502f3f8e5b0 # v1.237.0
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Extract Gemini CLI install command from agent-harness
+        id: gemini-cli
+        run: |
+          command=$(bundle exec ruby -e '
+            require "agent_harness"
+            contract = AgentHarness::Providers::Gemini.install_contract
+            puts contract[:install_command_string]
+          ')
+          if [ -z "$command" ]; then
+            echo "Failed to extract Gemini CLI install command from agent-harness" >&2
+            exit 1
+          fi
+          echo "install_command=$command" >> "$GITHUB_OUTPUT"
+
       - name: Build paid-agent image
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
@@ -54,6 +74,7 @@ jobs:
           tags: paid-agent:latest
           build-args: |
             RUBY_MAAT_VERSION=${{ steps.ruby-maat.outputs.version }}
+            GEMINI_CLI_INSTALL_COMMAND=${{ steps.gemini-cli.outputs.install_command }}
           cache-from: type=gha,scope=paid-agent
           cache-to: type=gha,mode=max,scope=paid-agent
 

@@ -24,15 +24,30 @@ if [ -z "${RUBY_MAAT_VERSION}" ]; then
     exit 1
 fi
 
+# Extract Gemini CLI install command from agent-harness (single source of truth).
+# The install contract is defined by the agent-harness gem, so Paid does not
+# hardcode the package name or version.
+GEMINI_CLI_INSTALL_COMMAND=$(cd "${PROJECT_ROOT}" && bundle exec ruby -e '
+  require "agent_harness"
+  contract = AgentHarness::Providers::Gemini.install_contract
+  puts contract[:install_command_string]
+')
+if [ -z "${GEMINI_CLI_INSTALL_COMMAND}" ]; then
+    echo "ERROR: Could not extract Gemini CLI install command from agent-harness" >&2
+    exit 1
+fi
+
 echo "Building agent container image..."
 echo "  Image: ${FULL_IMAGE}"
 echo "  Context: ${PROJECT_ROOT}/docker/agent"
 echo "  ruby-maat: ${RUBY_MAAT_VERSION}"
+echo "  gemini-cli: ${GEMINI_CLI_INSTALL_COMMAND}"
 
 docker build \
     -t "${FULL_IMAGE}" \
     -f "${PROJECT_ROOT}/docker/agent/Dockerfile" \
     --build-arg "RUBY_MAAT_VERSION=${RUBY_MAAT_VERSION}" \
+    --build-arg "GEMINI_CLI_INSTALL_COMMAND=${GEMINI_CLI_INSTALL_COMMAND}" \
     "${PROJECT_ROOT}/docker/agent/"
 
 echo ""
