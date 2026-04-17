@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_17_052653) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -215,6 +215,81 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
     t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
+  end
+
+  create_table "billing_invoices", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "billing_period_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "due_at"
+    t.string "external_id", limit: 255
+    t.datetime "issued_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "paid_at"
+    t.string "status", limit: 20, default: "draft", null: false
+    t.integer "subtotal_cents", default: 0, null: false
+    t.integer "tax_cents", default: 0, null: false
+    t.integer "total_cents", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "status"], name: "index_billing_invoices_on_account_id_and_status"
+    t.index ["account_id"], name: "index_billing_invoices_on_account_id"
+    t.index ["billing_period_id"], name: "index_billing_invoices_on_billing_period_id"
+    t.index ["external_id"], name: "index_billing_invoices_on_external_id", unique: true, where: "(external_id IS NOT NULL)"
+  end
+
+  create_table "billing_line_items", force: :cascade do |t|
+    t.bigint "billing_invoice_id", null: false
+    t.datetime "created_at", null: false
+    t.string "description", null: false
+    t.string "line_item_type", limit: 30, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.decimal "quantity", precision: 18, scale: 4, default: "0.0", null: false
+    t.integer "total_cents", default: 0, null: false
+    t.integer "unit_price_cents", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["billing_invoice_id"], name: "index_billing_line_items_on_billing_invoice_id"
+    t.index ["line_item_type"], name: "index_billing_line_items_on_line_item_type"
+  end
+
+  create_table "billing_periods", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "billing_plan_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "ends_at", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.string "period_type", limit: 20, null: false
+    t.datetime "starts_at", null: false
+    t.string "status", limit: 20, default: "open", null: false
+    t.integer "total_compute_seconds", default: 0, null: false
+    t.integer "total_cost_cents", default: 0, null: false
+    t.bigint "total_input_tokens", default: 0, null: false
+    t.bigint "total_output_tokens", default: 0, null: false
+    t.integer "total_runs", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "starts_at", "ends_at"], name: "index_billing_periods_on_account_id_and_starts_at_and_ends_at"
+    t.index ["account_id", "status"], name: "index_billing_periods_on_account_id_and_status"
+    t.index ["account_id"], name: "index_billing_periods_on_account_id"
+    t.index ["billing_plan_id"], name: "index_billing_periods_on_billing_plan_id"
+  end
+
+  create_table "billing_plans", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.boolean "active", default: true, null: false
+    t.integer "base_rate_cents", default: 0, null: false
+    t.string "billing_model", limit: 30, null: false
+    t.datetime "created_at", null: false
+    t.integer "included_projects", default: 0, null: false
+    t.integer "included_runs", default: 0, null: false
+    t.bigint "included_tokens", default: 0, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.string "name", limit: 100, null: false
+    t.integer "per_project_rate_cents", default: 0, null: false
+    t.integer "per_run_rate_cents", default: 0, null: false
+    t.decimal "per_token_rate_cents", precision: 12, scale: 6, default: "0.0", null: false
+    t.string "period_type", limit: 20, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "active"], name: "index_billing_plans_on_account_id_and_active"
+    t.index ["account_id"], name: "index_billing_plans_on_account_id"
   end
 
   create_table "collector_runs", force: :cascade do |t|
@@ -742,6 +817,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
     t.index ["user_id"], name: "index_notifications_on_user_id"
   end
 
+  create_table "pr_templates", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.text "body", null: false
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.boolean "enabled", default: true, null: false
+    t.string "name", limit: 255, null: false
+    t.integer "position", default: 0, null: false
+    t.string "pr_type", limit: 50, default: "default", null: false
+    t.bigint "project_id"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index ["account_id", "name"], name: "idx_pr_templates_account_name_unique", unique: true, where: "((project_id IS NULL) AND (user_id IS NULL))"
+    t.index ["account_id", "position"], name: "idx_pr_templates_account_position", where: "((project_id IS NULL) AND (user_id IS NULL))"
+    t.index ["account_id"], name: "index_pr_templates_on_account_id"
+    t.index ["project_id", "name"], name: "idx_pr_templates_project_name_unique", unique: true, where: "(project_id IS NOT NULL)"
+    t.index ["project_id", "position"], name: "idx_pr_templates_project_position", where: "(project_id IS NOT NULL)"
+    t.index ["project_id"], name: "index_pr_templates_on_project_id"
+    t.index ["user_id", "name"], name: "idx_pr_templates_user_name_unique", unique: true, where: "((user_id IS NOT NULL) AND (project_id IS NULL))"
+    t.index ["user_id", "position"], name: "idx_pr_templates_user_position", where: "(user_id IS NOT NULL)"
+    t.index ["user_id"], name: "index_pr_templates_on_user_id"
+    t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "pr_templates_scope_check"
+  end
+
   create_table "pre_commit_requirements", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "check_type", limit: 50, default: "shell_command", null: false
@@ -1196,6 +1295,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "agent_runs", "providers", on_delete: :nullify
+  add_foreign_key "billing_invoices", "accounts"
+  add_foreign_key "billing_invoices", "billing_periods"
+  add_foreign_key "billing_line_items", "billing_invoices"
+  add_foreign_key "billing_periods", "accounts"
+  add_foreign_key "billing_periods", "billing_plans"
+  add_foreign_key "billing_plans", "accounts"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "context_intake_responses", "context_intake_responses", column: "parent_response_id"
@@ -1231,6 +1336,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
   add_foreign_key "model_selections", "llm_models"
   add_foreign_key "notifications", "accounts"
   add_foreign_key "notifications", "users", on_delete: :nullify
+  add_foreign_key "pr_templates", "accounts", on_delete: :cascade
+  add_foreign_key "pr_templates", "projects", on_delete: :cascade
+  add_foreign_key "pr_templates", "users", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade

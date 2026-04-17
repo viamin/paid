@@ -16,6 +16,7 @@ class Account < ApplicationRecord
   has_many :mcp_server_definitions, dependent: :destroy
   has_many :notifications, dependent: :destroy
   has_many :pre_commit_requirements, dependent: :destroy
+  has_many :pr_templates, dependent: :destroy
 
   validates :name, presence: true
   validates :slug, presence: true, uniqueness: true,
