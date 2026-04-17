@@ -23,7 +23,8 @@
     "DB_HOST": "postgres",
     "TEMPORAL_ADDRESS": "temporal:7233",
     "TEMPORAL_NAMESPACE": "default",
-    "TEMPORAL_TASK_QUEUE": "paid-tasks",
+    "TEMPORAL_POLL_TASK_QUEUE": "paid-poll-tasks",
+    "TEMPORAL_AGENT_TASK_QUEUE": "paid-agent-tasks",
     "TEMPORAL_UI_URL": "http://localhost:8080",
     "QDRANT_URL": "http://qdrant:6333",
     // LLM CLI tools - dangerous/auto-approve mode (container only)
