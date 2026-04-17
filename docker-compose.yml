@@ -181,6 +181,9 @@ services:
     build:
       context: ./docker/agent
       dockerfile: Dockerfile
+      args:
+        CLAUDE_INSTALL_COMMAND: ${CLAUDE_INSTALL_COMMAND:-}
+        CLAUDE_POST_INSTALL_BINARY_PATH: ${CLAUDE_POST_INSTALL_BINARY_PATH:-}
     image: paid-agent:latest
     command: ["true"]
     profiles:
@@ -191,6 +194,9 @@ services:
     build:
       context: ./docker/agent
       dockerfile: Dockerfile
+      args:
+        CLAUDE_INSTALL_COMMAND: ${CLAUDE_INSTALL_COMMAND:-}
+        CLAUDE_POST_INSTALL_BINARY_PATH: ${CLAUDE_POST_INSTALL_BINARY_PATH:-}
     image: paid-agent:latest
     volumes:
       - ./agent-workspace:/workspace
