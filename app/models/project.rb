@@ -91,7 +91,8 @@ class Project < ApplicationRecord
     [ "All", "all" ]
   ].freeze
 
-  belongs_to :account
+  include TenantScoped
+
   belongs_to :github_token, counter_cache: true
   belongs_to :created_by, class_name: "User", optional: true
 

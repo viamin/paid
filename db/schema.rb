@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_17_020855) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -81,12 +81,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
 
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.datetime "deactivated_at"
     t.integer "default_max_tokens_per_run", default: 10000000, null: false
     t.string "name", null: false
     t.datetime "scheduler_paused_at"
     t.string "slug", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "suspended_at"
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
+    t.index ["status"], name: "index_accounts_on_status"
   end
 
   create_table "agent_run_anomalies", force: :cascade do |t|
@@ -844,7 +848,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
-    t.jsonb "fitness_weights", default: {}, null: false
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
     t.bigint "github_token_id", null: false
@@ -1060,6 +1063,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
     t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_style_guides_scope_consistency"
   end
 
+  create_table "tenant_settings", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.text "allowed_provider_keys", default: [], array: true
+    t.datetime "created_at", null: false
+    t.jsonb "features", default: {}, null: false
+    t.integer "max_concurrent_runs", default: 10, null: false
+    t.integer "max_monthly_cost_cents"
+    t.integer "max_projects", default: 50, null: false
+    t.integer "max_tokens_per_run", default: 10000000, null: false
+    t.integer "max_users", default: 25, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_tenant_settings_on_account_id", unique: true
+  end
+
   create_table "token_usages", force: :cascade do |t|
     t.bigint "agent_run_id"
     t.integer "cost_cents", default: 0, null: false
@@ -1261,6 +1278,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_221827) do
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
   add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
+  add_foreign_key "tenant_settings", "accounts"
   add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
   add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "user_settings", "users"
