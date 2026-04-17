@@ -19,8 +19,8 @@ module Billing
       invoice = nil
       ActiveRecord::Base.transaction do
         invoice = BillingInvoice.create!(
-          account: billing_period.account,
-          billing_period: billing_period,
+          account_id: billing_period.account_id,
+          billing_period_id: billing_period.id,
           status: "draft"
         )
 

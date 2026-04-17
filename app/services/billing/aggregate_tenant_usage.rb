@@ -41,10 +41,15 @@ module Billing
 
     def aggregate_token_usage
       scope = token_usages_scope
+      totals = scope.pick(
+        Arel.sql("COALESCE(SUM(token_usages.input_tokens), 0)"),
+        Arel.sql("COALESCE(SUM(token_usages.output_tokens), 0)"),
+        Arel.sql("COALESCE(SUM(token_usages.cost_cents), 0)")
+      )
       {
-        total_input_tokens: scope.sum(:input_tokens),
-        total_output_tokens: scope.sum(:output_tokens),
-        total_cost_cents: scope.sum(:cost_cents),
+        total_input_tokens: totals[0],
+        total_output_tokens: totals[1],
+        total_cost_cents: totals[2],
         by_model: scope.group(:llm_model).sum(:cost_cents),
         by_request_type: scope.group(:request_type).sum(:cost_cents)
       }
@@ -52,11 +57,17 @@ module Billing
 
     def aggregate_run_usage
       runs = AgentRun.where(project_id: project_ids, created_at: starts_at..ends_at)
+      totals = runs.pick(
+        Arel.sql("COUNT(*)"),
+        Arel.sql("COUNT(*) FILTER (WHERE status = 'completed')"),
+        Arel.sql("COUNT(*) FILTER (WHERE status = 'failed')"),
+        Arel.sql("COALESCE(SUM(cost_cents), 0)")
+      )
       {
-        total_runs: runs.count,
-        completed_runs: runs.where(status: "completed").count,
-        failed_runs: runs.where(status: "failed").count,
-        total_run_cost_cents: runs.sum(:cost_cents)
+        total_runs: totals[0],
+        completed_runs: totals[1],
+        failed_runs: totals[2],
+        total_run_cost_cents: totals[3]
       }
     end
 
@@ -85,11 +96,12 @@ module Billing
     end
 
     def estimate_compute_seconds(metrics)
-      metrics
+      subquery = metrics
         .group("agent_runs.id")
-        .select("agent_runs.id, EXTRACT(EPOCH FROM (MAX(recorded_at) - MIN(recorded_at)))::integer AS duration")
-        .map { |r| r.duration.to_i }
-        .sum
+        .select("EXTRACT(EPOCH FROM (MAX(recorded_at) - MIN(recorded_at)))::integer AS duration")
+
+      result = ContainerMetric.from(subquery, :sub).pick(Arel.sql("COALESCE(SUM(sub.duration), 0)"))
+      result.to_i
     end
   end
 end
