@@ -33,11 +33,15 @@ module Workflows
 
         record_poll_heartbeat(project_id)
 
-        result[:issues].each do |issue_data|
-          evaluation = run_activity(Activities::DetectLabelsActivity,
-            { project_id: project_id, issue_id: issue_data[:id] }, timeout: 30)
+        if Temporalio::Workflow.patched("batch-evaluate-issues-v1")
+          evaluate_issues_batch(project_id, result[:issues])
+        else
+          result[:issues].each do |issue_data|
+            evaluation = run_activity(Activities::DetectLabelsActivity,
+              { project_id: project_id, issue_id: issue_data[:id] }, timeout: 30)
 
-          handle_automation_result(evaluation, project_id)
+            handle_automation_result(evaluation, project_id)
+          end
         end
 
         record_poll_heartbeat(project_id)
@@ -61,6 +65,18 @@ module Workflows
     end
 
     private
+
+    def evaluate_issues_batch(project_id, issues)
+      return if issues.blank?
+
+      issue_ids = issues.map { |issue_data| issue_data[:id] }
+      batch_result = run_activity(Activities::EvaluateIssuesActivity,
+        { project_id: project_id, issue_ids: issue_ids }, timeout: 120)
+
+      (batch_result[:results] || []).each do |evaluation|
+        handle_automation_result(evaluation, project_id)
+      end
+    end
 
     def record_poll_heartbeat(project_id)
       run_activity(Activities::RecordPollHeartbeatActivity,
