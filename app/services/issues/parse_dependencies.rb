@@ -14,12 +14,23 @@ module Issues
   #   - "Blocked by viamin/other-project#42"
   #   - Checklist items: "- [ ] #101"
   #
+  # Deployment-blocking variants (require the target PR to have been marked
+  # deployed before the dependency unblocks; see IssueDependency#deployment_pending?):
+  #   - "Awaits deployment of #101"
+  #   - "Depends on deployment of #101"
+  #   - "Blocked by deployment of viamin/agent-harness#31"
+  #   - Within a ## Dependencies section: "- Deployment of #101"
+  #
   # Comments support the same addition patterns plus removal patterns.
-  # Removals work for both local (#N) and cross-repo (owner/repo#N) refs:
+  # Removals work for both local (#N) and cross-repo (owner/repo#N) refs and
+  # remove the dependency entirely (regardless of whether it was
+  # deployment-flagged or a plain dependency):
   #   - "No longer depends on #101"
-  #   - "No longer blocked by viamin/agent-harness#31"
+  #   - "No longer awaits deployment of #101"
+  #   - "No longer blocked by deployment of viamin/agent-harness#31"
   #   - "Unblocked by #101"
   #   - "Remove dependency #101"
+  #   - "Remove deployment dependency on #101"
   #
   # Comment-declared dependency additions are applied on top of the
   # body-declared dependencies, but comment-based removals can remove
@@ -29,6 +40,10 @@ module Issues
   #   - Across comments (relative to the body baseline), a later
   #     "Depends on #N" re-adds a previously removed dep, and a later
   #     "No longer depends on #N" removes it again.
+  #
+  # When a ref appears with deployment wording anywhere (body or any comment)
+  # the resulting dependency is marked as requires_deployment. Removing and
+  # re-adding the dep clears and re-derives the flag from later directives.
   #
   # The final dependency set is NOT simply (body + comments) - removals;
   # it is the result of replaying all directives in order.
@@ -53,13 +68,35 @@ module Issues
       ((?:(?:[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+)?\#\d+[\s,]*)+)  # One or more refs
     /xi
 
+    # Matches deployment-blocking phrasing: "awaits deployment of #N",
+    # "depends on deployment of #N", "blocked by deployment of #N".
+    INLINE_DEPLOYMENT_PATTERN = /
+      \b(?:
+        awaits\s+deployment\s+of
+        |(?:depends?\s+on|blocked?\s+by)\s+deployment\s+of
+      )\b
+      :?\s*
+      ((?:(?:[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+)?\#\d+[\s,]*)+)
+    /xi
+
+    # Inside a "## Dependencies" section, users commonly write list items as
+    # bare phrases like "- Deployment of #101" without a preceding verb.
+    SECTION_DEPLOYMENT_PATTERN = /
+      \bdeployment\s+of\b
+      :?\s*
+      ((?:(?:[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+)?\#\d+[\s,]*)+)
+    /xi
+
     INLINE_REMOVAL_PATTERN = /
       \b(?:
-        no\s+longer\s+(?:depends?\s+on|blocked?\s+by)\b # "no longer depends on"
-        |unblocked\s+by\b                               # "unblocked by"
-        |remove\s+dependenc(?:y|ies)\b(?:\s+on\b)?      # "remove dependency [on]"
+        no\s+longer\s+(?:                              # "no longer ..."
+          awaits\s+deployment\s+of                     # "no longer awaits deployment of"
+          |(?:depends?\s+on|blocked?\s+by)(?:\s+deployment\s+of)?  # "no longer depends on [deployment of]"
+        )\b
+        |unblocked\s+by\b                              # "unblocked by"
+        |remove\s+(?:deployment\s+)?dependenc(?:y|ies)\b(?:\s+on\b)?  # "remove [deployment] dependency [on]"
       )
-      :?\s*                                             # Optional colon
+      :?\s*                                            # Optional colon
       ((?:(?:[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+)?\#\d+[\s,]*)+) # local or cross-repo refs
     /xi
 
@@ -84,22 +121,24 @@ module Issues
     end
 
     def call
-      local_numbers, cross_refs = resolve_dependencies
+      local_deps, cross_deps = resolve_dependencies
 
       current_deps = issue.issue_dependencies.to_a
-      current_local_ids = current_deps.select(&:local?).map(&:depends_on_issue_id).to_set
-      current_external_keys = current_deps.select(&:external?).map { |d|
+      current_local_by_id = current_deps.select(&:local?).index_by(&:depends_on_issue_id)
+      current_external_by_key = current_deps.select(&:external?).index_by do |d|
         [ d.depends_on_owner.downcase, d.depends_on_repo.downcase, d.depends_on_number ]
-      }.to_set
+      end
 
-      return if local_numbers.empty? && cross_refs.empty? &&
-               current_local_ids.empty? && current_external_keys.empty?
+      return if local_deps.empty? && cross_deps.empty? &&
+               current_local_by_id.empty? && current_external_by_key.empty?
 
-      new_local_ids = sync_local_deps(local_numbers, current_local_ids)
-      new_cross_refs = sync_cross_project_deps(cross_refs, current_local_ids | new_local_ids, current_external_keys)
+      new_local_deps = sync_local_deps(local_deps, current_local_by_id)
+      current_state = { local_by_id: current_local_by_id, external_by_key: current_external_by_key }
+      new_cross_refs = sync_cross_project_deps(cross_deps, local_deps, current_state, new_local_deps)
 
-      remove_stale_local_deps(current_local_ids, new_local_ids | new_cross_refs[:resolved_ids])
-      remove_stale_external_deps(current_external_keys, new_cross_refs[:external_keys])
+      kept_local_ids = new_local_deps.keys.to_set | new_cross_refs[:resolved_ids]
+      remove_stale_local_deps(current_local_by_id.keys.to_set, kept_local_ids)
+      remove_stale_external_deps(current_external_by_key.keys.to_set, new_cross_refs[:external_keys])
     end
 
     private
@@ -108,19 +147,24 @@ module Issues
     # removals take precedence over additions. Across comments, a later
     # directive can override an earlier one (e.g., re-add after removal).
     # Callers must supply comments sorted oldest-first for correct semantics.
+    #
+    # Returns two hashes keyed by ref identifier with boolean values indicating
+    # whether the resulting dependency requires deployment:
+    #   local_deps:  { github_number => requires_deployment? }
+    #   cross_deps:  { [owner, repo, number] => requires_deployment? }
     def resolve_dependencies
-      local_numbers = Set.new
-      cross_refs = Set.new
+      local_deps = {}
+      cross_deps = {}
 
       if issue.body.present?
-        extract_body_refs(issue.body, local_numbers, cross_refs)
+        extract_body_refs(issue.body, local_deps, cross_deps)
       end
 
       comments.each do |comment_body|
         next if comment_body.blank?
 
-        added_local = Set.new
-        added_cross = Set.new
+        added_local = {}
+        added_cross = {}
         extract_body_refs(comment_body, added_local, added_cross)
 
         removed_local = Set.new
@@ -128,16 +172,28 @@ module Issues
         extract_removal_refs(comment_body, removed_local, removed_cross)
 
         # Within a single comment, removals win over additions.
-        added_local.subtract(removed_local)
-        added_cross.subtract(removed_cross)
+        removed_local.each { |num| added_local.delete(num) }
+        removed_cross.each { |key| added_cross.delete(key) }
 
-        local_numbers.merge(added_local)
-        cross_refs.merge(added_cross)
-        local_numbers.subtract(removed_local)
-        cross_refs.subtract(removed_cross)
+        merge_refs(local_deps, added_local)
+        merge_refs(cross_deps, added_cross)
+        removed_local.each { |num| local_deps.delete(num) }
+        removed_cross.each { |key| cross_deps.delete(key) }
       end
 
-      [ local_numbers.to_a, cross_refs.to_a ]
+      [ local_deps, cross_deps ]
+    end
+
+    # Merges new ref additions into the running map. A deployment flag, once
+    # set by any directive, sticks until the ref is removed — so upgrading a
+    # plain "Depends on #N" to "Awaits deployment of #N" later in the text
+    # promotes the dep, but a later "Depends on #N" cannot silently downgrade
+    # a deployment dep. Explicit removal + re-add resets the flag.
+    def merge_refs(dest, src)
+      src.each do |key, requires_deployment|
+        dest[key] = true if requires_deployment
+        dest[key] = false unless dest.key?(key)
+      end
     end
 
     # Extracts both local (#N) and cross-repo (owner/repo#N) removal refs.
@@ -157,41 +213,84 @@ module Issues
     # Extracts refs from body using both dependency sections and inline patterns.
     # Only dependency-scoped text is parsed — incidental #N mentions (e.g. in a
     # "Notes" section) are intentionally ignored.
-    def extract_body_refs(body, local_numbers, cross_refs)
+    def extract_body_refs(body, local_deps, cross_deps)
       body.scan(DEPENDENCY_SECTION_PATTERN) do |(section_body)|
-        extract_all_refs(section_body, local_numbers, cross_refs)
+        extract_section_refs(section_body, local_deps, cross_deps)
       end
 
-      extract_inline_refs(body, local_numbers, cross_refs)
+      extract_inline_refs(body, local_deps, cross_deps)
     end
 
-    # Extracts refs from inline "Depends on" / "Blocked by" patterns only.
-    def extract_inline_refs(text, local_numbers, cross_refs)
-      text.scan(INLINE_DEPENDS_PATTERN) do |(refs_str)|
-        extract_all_refs(refs_str, local_numbers, cross_refs)
+    # Within a "## Dependencies" section, recognise both explicit
+    # "awaits/depends on/blocked by deployment of #N" phrasing and the shorter
+    # list-item style "- Deployment of #N". Remaining refs are treated as
+    # plain dependencies.
+    def extract_section_refs(section_body, local_deps, cross_deps)
+      scratch = section_body.dup
+
+      [ INLINE_DEPLOYMENT_PATTERN, SECTION_DEPLOYMENT_PATTERN ].each do |pattern|
+        scratch.scan(pattern) do |(refs_str)|
+          extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: true)
+        end
+        scratch = scratch.gsub(pattern, "")
+      end
+
+      extract_all_refs(scratch, local_deps, cross_deps, requires_deployment: false)
+    end
+
+    # Extracts refs from inline "Depends on" / "Blocked by" / deployment patterns.
+    # Deployment-phrased matches are consumed first so the plain pattern does
+    # not double-count them as non-deployment deps.
+    def extract_inline_refs(text, local_deps, cross_deps)
+      scratch = text.dup
+
+      scratch.scan(INLINE_DEPLOYMENT_PATTERN) do |(refs_str)|
+        extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: true)
+      end
+      scratch = scratch.gsub(INLINE_DEPLOYMENT_PATTERN, "")
+
+      scratch.scan(INLINE_DEPENDS_PATTERN) do |(refs_str)|
+        extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: false)
       end
     end
 
     # Extracts both cross-repo and local issue refs from a string of refs.
-    # Cross-repo tuples are normalized to lowercase for consistent Set comparison
+    # Cross-repo tuples are normalized to lowercase for consistent comparison
     # (e.g., removal of "Owner/Repo#1" matches addition of "owner/repo#1").
-    def extract_all_refs(text, local_numbers, cross_refs)
+    # `requires_deployment: true` sets a sticky flag on the ref — once set,
+    # it cannot be silently cleared by a later non-deployment mention of the
+    # same ref (only explicit removal clears it).
+    def extract_all_refs(text, local_deps, cross_deps, requires_deployment:)
       text.scan(CROSS_REPO_REF_PATTERN) do |owner, repo, number|
-        cross_refs << [ owner.downcase, repo.downcase, number.to_i ]
+        key = [ owner.downcase, repo.downcase, number.to_i ]
+        cross_deps[key] = true if requires_deployment
+        cross_deps[key] = false unless cross_deps.key?(key)
       end
 
       stripped = text.gsub(CROSS_REPO_REF_PATTERN, "")
-      stripped.scan(ISSUE_REF_PATTERN) { |(num)| local_numbers << num.to_i }
+      stripped.scan(ISSUE_REF_PATTERN) do |(num)|
+        n = num.to_i
+        local_deps[n] = true if requires_deployment
+        local_deps[n] = false unless local_deps.key?(n)
+      end
     end
 
-    def sync_local_deps(referenced_numbers, current_local_ids)
-      new_local_ids = Set.new
-      return new_local_ids if referenced_numbers.empty?
+    # Returns a Hash mapping dep_issue_id => IssueDependency record for every
+    # local dep persisted in this run (either reused from current_local_by_id
+    # or freshly created). The record handle is needed by sync_cross_project_deps
+    # so a later cross-repo ref for the same local issue can promote the dep's
+    # requires_deployment flag without losing it.
+    def sync_local_deps(local_deps, current_local_by_id)
+      new_local_deps = {}
+      return new_local_deps if local_deps.empty?
+
+      referenced_numbers = local_deps.keys
 
       # Include pull requests so "Depends on #N" resolves when #N is a PR
       # in the same project. Blocking on an open PR is what the user
       # declared; blocking on a closed/merged PR is a satisfied dep and
-      # ready_for_work will correctly not treat it as blocking.
+      # ready_for_work will correctly not treat it as blocking — unless the
+      # dep is deployment-flagged and the PR has not been marked deployed.
       project_issues = issue.project.issues
         .where(github_number: referenced_numbers)
         .index_by(&:github_number)
@@ -203,41 +302,74 @@ module Issues
         next unless dep_issue
         next if dep_issue.id == issue.id
 
-        new_local_ids << dep_issue.id
+        requires_deployment = local_deps[number]
 
-        next if current_local_ids.include?(dep_issue.id)
+        if (existing = current_local_by_id[dep_issue.id])
+          update_deployment_flag(existing, requires_deployment)
+          new_local_deps[dep_issue.id] = existing
+          next
+        end
+
         next if would_create_cycle?(dep_issue, adj)
 
-        issue.issue_dependencies.create!(depends_on_issue: dep_issue)
+        new_local_deps[dep_issue.id] = issue.issue_dependencies.create!(
+          depends_on_issue: dep_issue,
+          requires_deployment: requires_deployment
+        )
       end
 
-      new_local_ids
+      new_local_deps
     end
 
-    def sync_cross_project_deps(cross_refs, current_local_ids, current_external_keys)
+    def sync_cross_project_deps(cross_deps, local_deps, current_state, new_local_deps)
+      current_local_by_id = current_state[:local_by_id]
+      current_external_by_key = current_state[:external_by_key]
       resolved_ids = Set.new
       external_keys = Set.new
-      return { resolved_ids: resolved_ids, external_keys: external_keys } if cross_refs.empty?
+      return { resolved_ids: resolved_ids, external_keys: external_keys } if cross_deps.empty?
 
       account = issue.project.account
       adj = adjacency || IssueDependency.account_adjacency(account)
 
+      cross_refs = cross_deps.keys
       project_lookup = build_project_lookup(account, cross_refs)
       issues_by_project = build_issue_lookup(project_lookup, cross_refs)
 
       cross_refs.each do |owner, repo, number|
+        requires_deployment = cross_deps[[ owner, repo, number ]]
         project_key = [ owner.downcase, repo.downcase ]
         project = project_lookup[project_key]
+        # Preserve the deployment flag from a matching local ref so a plain
+        # self-repo cross-ref (e.g. "Depends on owner/repo#N") cannot silently
+        # downgrade a dep that a local "Awaits deployment of #N" already
+        # promoted. Mirrors the stickiness contract enforced by merge_refs.
+        if project&.id == issue.project_id && local_deps[number]
+          requires_deployment = true
+        end
 
         if project
           dep_issue = issues_by_project.dig(project.id, number)
 
           if dep_issue
             resolved_ids << dep_issue.id
-            next if current_local_ids.include?(dep_issue.id)
+            if (existing = current_local_by_id[dep_issue.id])
+              update_deployment_flag(existing, requires_deployment)
+              next
+            end
+            # A local ref (e.g. "#123") earlier in the body may have already
+            # created this dep without the deployment flag. Promote it here
+            # instead of silently dropping the cross-repo ref's deployment
+            # wording.
+            if (just_created = new_local_deps[dep_issue.id])
+              update_deployment_flag(just_created, requires_deployment)
+              next
+            end
             next if would_create_cycle?(dep_issue, adj)
 
-            issue.issue_dependencies.create!(depends_on_issue: dep_issue)
+            issue.issue_dependencies.create!(
+              depends_on_issue: dep_issue,
+              requires_deployment: requires_deployment
+            )
             next
           end
         end
@@ -245,16 +377,26 @@ module Issues
         # Store as external reference with normalized (downcased) owner/repo
         key = [ owner.downcase, repo.downcase, number ]
         external_keys << key
-        next if current_external_keys.include?(key)
+        if (existing = current_external_by_key[key])
+          update_deployment_flag(existing, requires_deployment)
+          next
+        end
 
         issue.issue_dependencies.create!(
           depends_on_owner: owner.downcase,
           depends_on_repo: repo.downcase,
-          depends_on_number: number
+          depends_on_number: number,
+          requires_deployment: requires_deployment
         )
       end
 
       { resolved_ids: resolved_ids, external_keys: external_keys }
+    end
+
+    def update_deployment_flag(dependency, requires_deployment)
+      return if dependency.requires_deployment == requires_deployment
+
+      dependency.update!(requires_deployment: requires_deployment)
     end
 
     # Batch-loads projects for all unique owner/repo pairs in cross_refs
