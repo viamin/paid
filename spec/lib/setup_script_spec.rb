@@ -124,6 +124,15 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
       BASH
     )
 
+    FileUtils.mkdir_p(File.join(dir, "scripts"))
+    write_executable(
+      File.join(dir, "scripts", "build-agent-image.sh"),
+      <<~BASH
+        #!/usr/bin/env bash
+        exit 0
+      BASH
+    )
+
     script_path
   end
 
