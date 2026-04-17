@@ -58,4 +58,81 @@ RSpec.describe "Health" do
       expect(response).to have_http_status(:ok)
     end
   end
+
+  describe "GET /health/liveness" do
+    it "returns 200 with alive status" do
+      get "/health/liveness"
+
+      expect(response).to have_http_status(:ok)
+      body = response.parsed_body
+      expect(body["status"]).to eq("alive")
+    end
+
+    it "does not require authentication" do
+      get "/health/liveness"
+
+      expect(response).not_to redirect_to(new_user_session_path)
+      expect(response).to have_http_status(:ok)
+    end
+  end
+
+  describe "GET /health/readiness" do
+    context "when database is healthy and migrations are current" do
+      before do
+        allow(ActiveRecord::Migration).to receive(:check_all_pending!)
+      end
+
+      it "returns 200 with ready status" do
+        get "/health/readiness"
+
+        expect(response).to have_http_status(:ok)
+        body = response.parsed_body
+        expect(body["status"]).to eq("ready")
+        expect(body["checks"]["database"]).to eq("ok")
+        expect(body["checks"]["migrations"]).to eq("ok")
+      end
+    end
+
+    context "when database is unavailable" do
+      before do
+        allow(ActiveRecord::Base.connection).to receive(:execute)
+          .and_raise(ActiveRecord::ConnectionNotEstablished)
+        allow(ActiveRecord::Migration).to receive(:check_all_pending!)
+      end
+
+      it "returns 503 with not_ready status" do
+        get "/health/readiness"
+
+        expect(response).to have_http_status(:service_unavailable)
+        body = response.parsed_body
+        expect(body["status"]).to eq("not_ready")
+        expect(body["checks"]["database"]).to eq("failing")
+      end
+    end
+
+    context "when migrations are pending" do
+      before do
+        allow(ActiveRecord::Migration).to receive(:check_all_pending!)
+          .and_raise(ActiveRecord::PendingMigrationError.new("pending"))
+      end
+
+      it "returns 503 with not_ready status" do
+        get "/health/readiness"
+
+        expect(response).to have_http_status(:service_unavailable)
+        body = response.parsed_body
+        expect(body["status"]).to eq("not_ready")
+        expect(body["checks"]["migrations"]).to eq("failing")
+      end
+    end
+
+    it "does not require authentication" do
+      allow(ActiveRecord::Migration).to receive(:check_all_pending!)
+
+      get "/health/readiness"
+
+      expect(response).not_to redirect_to(new_user_session_path)
+      expect(response).to have_http_status(:ok)
+    end
+  end
 end
