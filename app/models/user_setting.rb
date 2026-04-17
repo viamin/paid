@@ -14,8 +14,13 @@ class UserSetting < ApplicationRecord
   PROVIDER_SELECTION_MODES = %w[single round_robin random].freeze
   PROVIDER_SELECTION_MODE_DEFAULT = "single"
 
+  THEME_PREFERENCES = %w[light dark system].freeze
+
   belongs_to :user
   has_many :provider_states, through: :user
+
+  # Theme
+  validates :theme_preference, inclusion: { in: THEME_PREFERENCES }
 
   # Polling & Timing
   validates :default_poll_interval_seconds,

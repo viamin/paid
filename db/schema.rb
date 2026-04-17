@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_17_184749) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -497,7 +497,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
     t.string "depends_on_owner"
     t.string "depends_on_repo"
     t.bigint "issue_id", null: false
-    t.boolean "requires_deployment", default: false, null: false
     t.datetime "updated_at", null: false
     t.index ["depends_on_issue_id"], name: "index_issue_dependencies_on_depends_on_issue_id"
     t.index ["issue_id", "depends_on_issue_id"], name: "idx_issue_dependencies_unique", unique: true
@@ -511,7 +510,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
     t.text "body"
     t.datetime "ci_action_dispatched_at"
     t.datetime "created_at", null: false
-    t.datetime "deployed_at"
     t.integer "draft_review_count", default: 0, null: false
     t.datetime "github_created_at", null: false
     t.string "github_creator_login"
@@ -533,7 +531,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
     t.string "source", default: "github", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
-    t.index ["deployed_at"], name: "idx_issues_deployed_at_on_prs", where: "(is_pull_request = true)"
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
     t.index ["labels"], name: "index_issues_on_labels_gin_open_issues", where: "((is_pull_request = false) AND ((github_state)::text = 'open'::text))", using: :gin
     t.index ["labels"], name: "index_issues_on_labels_gin_open_prs", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))", using: :gin
@@ -830,66 +827,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
     t.index ["project_id"], name: "index_project_versions_on_project_id"
   end
 
-  create_table "projects", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.boolean "active", default: true, null: false
-    t.jsonb "allowed_github_usernames", default: [], null: false
-    t.boolean "auto_add_labels_enabled", default: true, null: false
-    t.boolean "auto_fix_merge_conflicts", default: true, null: false
-    t.boolean "auto_merge_enabled", default: false, null: false
-    t.boolean "auto_pick_enabled", default: false, null: false
-    t.string "auto_release_granularity", default: "off", null: false
-    t.boolean "auto_scan_prs", default: true, null: false
-    t.boolean "auto_scan_security", default: false, null: false
-    t.string "automation_label_name", default: "paid-automation", null: false
-    t.boolean "automation_on_label_enabled", default: true, null: false
-    t.integer "code_scanning_interval_hours", default: 72, null: false
-    t.datetime "created_at", null: false
-    t.bigint "created_by_id"
-    t.string "default_branch", default: "main", null: false
-    t.string "generated_label_name", default: "paid-generated", null: false
-    t.bigint "github_id", null: false
-    t.bigint "github_token_id", null: false
-    t.boolean "inherit_priority_labels", default: true, null: false
-    t.string "knowledge_status", limit: 50, default: "pending", null: false
-    t.jsonb "label_mappings", default: {}, null: false
-    t.datetime "last_agent_run_at"
-    t.datetime "last_code_scanning_scan_at"
-    t.datetime "last_github_activity_at"
-    t.datetime "last_issue_sync_at"
-    t.datetime "last_polled_at"
-    t.integer "max_draft_review_rounds", default: 10, null: false
-    t.integer "max_execution_seconds", default: 3600, null: false
-    t.integer "max_pr_followup_runs", default: 8, null: false
-    t.integer "max_tokens_per_run"
-    t.string "merge_method", default: "squash", null: false
-    t.jsonb "model_preferences", default: {}, null: false
-    t.string "name", null: false
-    t.string "owner", null: false
-    t.string "owner_reviewer_login"
-    t.integer "poll_interval_seconds", default: 60, null: false
-    t.jsonb "pr_action_labels", default: [], null: false
-    t.boolean "pr_aggregation_enabled", default: false, null: false
-    t.jsonb "priority_labels", default: {"P1" => "P1", "P2" => "P2", "P3" => "P3"}, null: false
-    t.string "repo", null: false
-    t.jsonb "review_settings", default: {}, null: false
-    t.jsonb "security_alert_types", default: ["code_scanning"], null: false
-    t.string "security_severity_threshold", default: "high", null: false
-    t.integer "token_limit_warning_threshold", default: 80, null: false
-    t.bigint "total_cost_cents", default: 0, null: false
-    t.bigint "total_tokens_used", default: 0, null: false
-    t.datetime "updated_at", null: false
-    t.text "webhook_secret"
-    t.index ["account_id", "active"], name: "index_projects_on_account_id_and_active"
-    t.index ["account_id", "github_id"], name: "index_projects_on_account_id_and_github_id", unique: true
-    t.index ["account_id", "last_agent_run_at"], name: "index_projects_on_account_id_and_last_agent_run_at"
-    t.index ["account_id", "last_github_activity_at"], name: "index_projects_on_account_id_and_last_github_activity_at"
-    t.index ["account_id"], name: "index_projects_on_account_id"
-    t.index ["created_by_id"], name: "index_projects_on_created_by_id"
-    t.index ["github_token_id"], name: "index_projects_on_github_token_id"
-    t.index ["owner", "repo"], name: "index_projects_on_owner_and_repo"
-  end
-
   create_table "prompt_versions", force: :cascade do |t|
     t.decimal "avg_iterations", precision: 4, scale: 2
     t.decimal "avg_quality_score", precision: 4, scale: 2
@@ -1125,6 +1062,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
     t.integer "style_guide_max_raw_bytes", default: 100000, null: false
     t.integer "style_guide_max_raw_prompt_bytes", default: 8000, null: false
     t.integer "style_guide_max_total_bytes", default: 32000, null: false
+    t.string "theme_preference", default: "system", null: false
     t.integer "token_validation_stale_minutes", default: 2, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
@@ -1185,94 +1123,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
     t.index ["status"], name: "index_worktrees_on_status"
   end
 
-  add_foreign_key "ab_test_assignments", "ab_test_variants", on_delete: :cascade
-  add_foreign_key "ab_test_assignments", "ab_tests", on_delete: :cascade
-  add_foreign_key "ab_test_assignments", "agent_runs", on_delete: :cascade
-  add_foreign_key "ab_test_variants", "ab_tests", on_delete: :cascade
-  add_foreign_key "ab_test_variants", "prompt_versions", on_delete: :restrict
-  add_foreign_key "ab_tests", "ab_test_variants", column: "winner_variant_id", on_delete: :nullify
-  add_foreign_key "ab_tests", "prompt_versions", column: "control_version_id", on_delete: :restrict
-  add_foreign_key "ab_tests", "prompts", on_delete: :cascade
-  add_foreign_key "account_memberships", "accounts"
-  add_foreign_key "account_memberships", "users"
-  add_foreign_key "agent_run_anomalies", "agent_runs"
-  add_foreign_key "agent_run_anomalies", "projects"
-  add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
-  add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
-  add_foreign_key "agent_runs", "issues", on_delete: :nullify
-  add_foreign_key "agent_runs", "projects", on_delete: :cascade
-  add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
-  add_foreign_key "agent_runs", "providers", on_delete: :nullify
-  add_foreign_key "collector_runs", "project_versions"
-  add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
-  add_foreign_key "context_intake_responses", "context_intake_responses", column: "parent_response_id"
-  add_foreign_key "context_intake_responses", "context_intake_sessions"
-  add_foreign_key "context_intake_sessions", "projects"
-  add_foreign_key "context_intake_sessions", "users", column: "started_by_id"
-  add_foreign_key "cost_budgets", "projects", on_delete: :cascade
-  add_foreign_key "decision_record_links", "decision_records", on_delete: :cascade
-  add_foreign_key "decision_records", "agent_runs", on_delete: :nullify
-  add_foreign_key "decision_records", "decision_records", column: "superseded_by_id", on_delete: :nullify
-  add_foreign_key "decision_records", "issues", on_delete: :nullify
-  add_foreign_key "decision_records", "projects", on_delete: :cascade
-  add_foreign_key "github_tokens", "accounts"
-  add_foreign_key "github_tokens", "users", column: "created_by_id"
-  add_foreign_key "integration_credentials", "accounts"
-  add_foreign_key "integration_credentials", "users", column: "created_by_id"
-  add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade
-  add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
-  add_foreign_key "issues", "issues", column: "parent_issue_id"
-  add_foreign_key "issues", "projects"
-  add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
-  add_foreign_key "knowledge_artifacts", "projects"
-  add_foreign_key "knowledge_audit_events", "projects", on_delete: :cascade
-  add_foreign_key "knowledge_chunks", "knowledge_artifacts", on_delete: :cascade
-  add_foreign_key "knowledge_chunks", "projects"
-  add_foreign_key "knowledge_links", "knowledge_chunks", column: "source_chunk_id", on_delete: :cascade
-  add_foreign_key "knowledge_links", "knowledge_chunks", column: "target_chunk_id", on_delete: :cascade
-  add_foreign_key "knowledge_runs", "projects", on_delete: :cascade
-  add_foreign_key "linear_tokens", "accounts"
-  add_foreign_key "linear_tokens", "users", column: "created_by_id"
-  add_foreign_key "mcp_server_definitions", "accounts"
-  add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
-  add_foreign_key "model_selections", "llm_models"
-  add_foreign_key "notifications", "accounts"
-  add_foreign_key "notifications", "users", on_delete: :nullify
-  add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
-  add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
-  add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
-  add_foreign_key "project_baselines", "projects"
-  add_foreign_key "project_mcp_servers", "mcp_server_definitions"
-  add_foreign_key "project_mcp_servers", "projects"
-  add_foreign_key "project_memberships", "projects"
-  add_foreign_key "project_memberships", "users"
-  add_foreign_key "project_service_containers", "projects", on_delete: :cascade
-  add_foreign_key "project_service_containers", "service_containers", on_delete: :cascade
-  add_foreign_key "project_versions", "projects"
-  add_foreign_key "projects", "accounts"
-  add_foreign_key "projects", "github_tokens"
-  add_foreign_key "projects", "users", column: "created_by_id"
   add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify
   add_foreign_key "prompt_versions", "prompts", on_delete: :cascade
   add_foreign_key "prompt_versions", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "prompt_versions", "users", column: "reviewed_by_user_id", on_delete: :nullify
-  add_foreign_key "prompts", "accounts", on_delete: :cascade
-  add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "provider_api_keys", "users", on_delete: :cascade
   add_foreign_key "provider_states", "users", on_delete: :cascade
   add_foreign_key "providers", "provider_api_keys", on_delete: :restrict
   add_foreign_key "providers", "users", on_delete: :cascade
-  add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
-  add_foreign_key "style_guides", "accounts", on_delete: :cascade
-  add_foreign_key "style_guides", "projects", on_delete: :cascade
-  add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
-  add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "user_settings", "users"
-  add_foreign_key "users", "accounts"
-  add_foreign_key "workflow_states", "projects"
-  add_foreign_key "worktrees", "agent_runs", on_delete: :nullify
-  add_foreign_key "worktrees", "projects", on_delete: :cascade
 end

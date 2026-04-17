@@ -46,5 +46,9 @@ FactoryBot.define do
         prompt.create_version!(template: "Default template for {{title}}")
       end
     end
+
+    trait :requires_review do
+      requires_review { true }
+    end
   end
 end
