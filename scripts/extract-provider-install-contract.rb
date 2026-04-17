@@ -20,7 +20,16 @@ unless provider
   exit 1
 end
 
-contract = AgentHarness.install_contract(provider.to_sym)
+begin
+  contract = AgentHarness.install_contract(provider.to_sym)
+rescue AgentHarness::ConfigurationError => e
+  warn "No install contract found for provider: #{provider} (#{e.message})"
+  exit 1
+end
+unless contract
+  warn "No install contract found for provider: #{provider}"
+  exit 1
+end
 
 puts "INSTALL_COMMAND=#{contract.dig(:install, :command)}"
 puts "POST_INSTALL_BINARY_PATH=#{contract.dig(:install, :post_install_binary_path)}"

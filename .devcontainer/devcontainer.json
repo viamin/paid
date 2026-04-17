@@ -78,9 +78,8 @@
   // Use 'postCreateCommand' to run commands after the container is created.
   "postCreateCommand": {
     "setup-signing-key": "bash .devcontainer/setup-signing-key.sh",
-    "setup": "corepack enable && corepack prepare yarn@1.22.22 --activate && bin/setup --skip-server",
+    "setup": "corepack enable && corepack prepare yarn@1.22.22 --activate && bin/setup --skip-server && eval \"$(bundle exec ruby scripts/extract-provider-install-contract.rb claude | sed -n 's/^INSTALL_COMMAND=//p')\"",
     // LLM CLI Tools - Installation
-    "claude-code": "eval \"$(bundle exec ruby scripts/extract-provider-install-contract.rb claude | sed -n 's/^INSTALL_COMMAND=//p')\"",
     "cursor-agent": "curl -fsSL https://cursor.com/install | bash",
     "codex": "npm install -g --ignore-scripts @openai/codex",
     "gemini-cli": "npm install -g --ignore-scripts @google/gemini-cli",
