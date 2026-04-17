@@ -118,6 +118,7 @@ class Project < ApplicationRecord
   has_many :mcp_server_definitions, through: :project_mcp_servers
   has_many :pre_commit_requirements, dependent: :destroy
   has_many :context_intake_sessions, dependent: :destroy
+  has_many :quality_pause_events, dependent: :destroy
 
   encrypts :webhook_secret
 
@@ -561,6 +562,64 @@ class Project < ApplicationRecord
   # would request bot reviews on projects that have opted out of review.
   def review_bot_request_login
     automation_configuration.auto_review.bot_request_login
+  end
+
+  def quality_paused?
+    quality_paused_at.present?
+  end
+
+  # Returns the configured quality pause threshold (0.0–1.0), or nil if
+  # automatic quality pausing is not configured. Reads from the top-level
+  # review_settings key "quality_pause_threshold".
+  def quality_pause_threshold
+    effective_review_settings["quality_pause_threshold"]&.to_f
+  end
+
+  def quality_pause!(score:, threshold:, agent_run: nil, metadata: {})
+    return false if quality_paused?
+
+    now = Time.current
+    pause_meta = {
+      triggered_at: now.iso8601,
+      composite_score: score,
+      threshold: threshold
+    }.merge(metadata)
+
+    update!(
+      quality_paused_at: now,
+      quality_pause_metadata: pause_meta
+    )
+
+    quality_pause_events.create!(
+      event_type: "paused",
+      agent_run: agent_run,
+      composite_score: score,
+      threshold: threshold,
+      metadata: pause_meta
+    )
+
+    true
+  end
+
+  def quality_resume!(metadata: {})
+    return false unless quality_paused?
+
+    resume_meta = {
+      resumed_at: Time.current.iso8601,
+      was_paused_at: quality_paused_at&.iso8601
+    }.merge(metadata)
+
+    update!(
+      quality_paused_at: nil,
+      quality_pause_metadata: {}
+    )
+
+    quality_pause_events.create!(
+      event_type: "resumed",
+      metadata: resume_meta
+    )
+
+    true
   end
 
   private

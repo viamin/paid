@@ -159,7 +159,8 @@ class ProcessRunQueueJob < ApplicationJob
   # don't re-query the project list and aggregate stats each time.
   def ordered_auto_pick_projects
     @ordered_auto_pick_projects ||= begin
-      projects = Project.active.where(auto_pick_enabled: true).includes(:created_by, :account)
+      projects = Project.active.where(auto_pick_enabled: true, quality_paused_at: nil)
+        .includes(:created_by, :account)
         .joins(:account).where(accounts: { scheduler_paused_at: nil })
         .order(:id).to_a
       return projects if projects.empty?
