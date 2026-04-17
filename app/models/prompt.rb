@@ -32,7 +32,7 @@ class Prompt < ApplicationRecord
   scope :for_project, ->(project) { where(project: project) }
 
   def self.ransackable_attributes(auth_object = nil)
-    %w[name slug category active description created_at updated_at]
+    %w[name slug category active description created_at updated_at requires_review]
   end
 
   def self.ransackable_associations(auth_object = nil)
@@ -66,6 +66,29 @@ class Prompt < ApplicationRecord
       update!(current_version: version)
       version
     end
+  end
+
+  # Creates a new version without promoting it to current_version. Used by the
+  # prompt evolution pipeline when +requires_review+ is true so a human can
+  # review the proposed variant before it becomes active.
+  #
+  # @param attributes [Hash] Attributes for the new PromptVersion (review_status
+  #   defaults to "pending")
+  # @return [PromptVersion] The newly created (unpromoted) version
+  def create_pending_version!(attributes = {})
+    with_lock do
+      next_version = (prompt_versions.maximum(:version) || 0) + 1
+
+      # Strip caller-supplied version keys to prevent overriding auto-increment.
+      safe_attributes = attributes.except(:version, "version")
+      safe_attributes[:review_status] ||= "pending"
+
+      prompt_versions.create!(safe_attributes.merge(version: next_version))
+    end
+  end
+
+  def pending_reviews
+    prompt_versions.pending_review
   end
 
   # Resolves the effective prompt for a given project, using inheritance:

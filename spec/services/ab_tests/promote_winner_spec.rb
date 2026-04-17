@@ -37,5 +37,32 @@ RSpec.describe AbTests::PromoteWinner do
 
       expect { described_class.call(ab_test: ab_test) }.to raise_error(ArgumentError, /no winner/)
     end
+
+    context "when the prompt requires human review" do
+      before { prompt.update!(requires_review: true) }
+
+      it "does NOT promote immediately; marks the winning version pending" do
+        original = prompt.current_version
+
+        described_class.call(ab_test: ab_test)
+
+        expect(prompt.reload.current_version).to eq(original)
+        expect(new_version.reload).to be_pending_review
+      end
+
+      it "leaves an already-approved winner alone" do
+        new_version.update!(review_status: "approved")
+
+        described_class.call(ab_test: ab_test)
+
+        # current_version still not auto-promoted (requires explicit approval
+        # through PromptReviews::Approve), and status preserved.
+        expect(new_version.reload).to be_approved
+      end
+
+      it "returns the winning version regardless of gate" do
+        expect(described_class.call(ab_test: ab_test)).to eq(new_version)
+      end
+    end
   end
 end

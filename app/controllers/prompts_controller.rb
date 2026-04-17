@@ -119,7 +119,7 @@ class PromptsController < ApplicationController
   end
 
   def prompt_params
-    params.require(:prompt).permit(:name, :slug, :category, :description, :active, :project_id)
+    params.require(:prompt).permit(:name, :slug, :category, :description, :active, :project_id, :requires_review)
   end
 
   def prompt_version_params

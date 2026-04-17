@@ -1,0 +1,59 @@
+<% content_for :title do %>Pending Reviews - <%= @prompt.name %> - Paid<% end %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to prompt_path(@prompt), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to <%= @prompt.name %>
+    <% end %>
+  </div>
+
+  <div class="bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:px-6">
+      <h1 class="text-xl font-semibold text-gray-900">Pending Reviews</h1>
+      <p class="mt-1 text-sm text-gray-500">
+        Evolved variants for <strong><%= @prompt.name %></strong> waiting for human approval.
+      </p>
+    </div>
+
+    <div class="border-t border-gray-200">
+      <% if @prompt_versions.any? %>
+        <table class="min-w-full divide-y divide-gray-300">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Version</th>
+              <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Change Notes</th>
+              <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Source</th>
+              <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Created</th>
+              <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                <span class="sr-only">Review</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white">
+            <% @prompt_versions.each do |version| %>
+              <tr>
+                <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
+                  v<%= version.version %>
+                  <span class="ml-2 inline-flex items-center rounded-md bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">pending</span>
+                </td>
+                <td class="px-3 py-4 text-sm text-gray-500"><%= version.change_notes.presence || "-" %></td>
+                <td class="px-3 py-4 text-sm text-gray-500"><%= version.created_by || "-" %></td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500"><%= local_time(version.created_at, format: :short) %></td>
+                <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                  <%= link_to "Review", prompt_review_path(@prompt, version), class: "text-indigo-600 hover:text-indigo-900" %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      <% else %>
+        <div class="px-4 py-8 text-center text-sm text-gray-500">
+          No pending reviews for this prompt.
+        </div>
+      <% end %>
+    </div>
+  </div>
+</div>
