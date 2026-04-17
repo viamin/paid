@@ -133,36 +133,50 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
-  describe "AGENT_COMMANDS" do
-    it "includes a command mapping for codex" do
-      expect(described_class::AGENT_COMMANDS).to have_key("codex")
-      expect(described_class::AGENT_COMMANDS["codex"]).to include("codex")
+  describe ".container_executable?" do
+    it "recognizes codex as container executable" do
+      expect(described_class.container_executable?("codex")).to be true
     end
 
-    it "includes upstream sandbox bypass flags for codex" do
-      cmd = described_class::AGENT_COMMANDS["codex"]
-      expect(cmd).to start_with("codex", "exec", "--dangerously-bypass-approvals-and-sandbox")
-      expect(cmd).to include("--")
+    it "recognizes gemini as container executable" do
+      expect(described_class.container_executable?("gemini")).to be true
     end
 
-    it "includes a command mapping for gemini" do
-      expect(described_class::AGENT_COMMANDS).to have_key("gemini")
-      expect(described_class::AGENT_COMMANDS["gemini"]).to include("gemini")
+    it "recognizes kilocode as container executable" do
+      expect(described_class.container_executable?("kilocode")).to be true
     end
 
-    it "includes a command mapping for kilocode" do
-      expect(described_class::AGENT_COMMANDS).to have_key("kilocode")
-      expect(described_class::AGENT_COMMANDS["kilocode"]).to include("kilo")
+    it "recognizes opencode as container executable" do
+      expect(described_class.container_executable?("opencode")).to be true
     end
 
-    it "includes a command mapping for opencode" do
-      expect(described_class::AGENT_COMMANDS).to have_key("opencode")
-      expect(described_class::AGENT_COMMANDS["opencode"]).to eq(%w[opencode run])
+    it "recognizes copilot as container executable" do
+      expect(described_class.container_executable?("copilot")).to be true
     end
 
-    it "includes a command mapping for copilot" do
-      expect(described_class::AGENT_COMMANDS).to have_key("copilot")
-      expect(described_class::AGENT_COMMANDS["copilot"]).to include("github-copilot-cli")
+    it "recognizes claude_code via agent type mapping" do
+      expect(described_class.container_executable?("claude_code")).to be true
+    end
+
+    it "rejects unknown providers" do
+      expect(described_class.container_executable?("unknown")).to be false
+    end
+  end
+
+  describe "harness-generated commands" do
+    it "generates codex command with sandbox bypass through agent-harness" do
+      plan = Providers::HarnessExecutionPlan.for_provider_key(
+        provider_key: "codex", prompt: "test", options: { dangerous_mode: true }
+      )
+      expect(plan.command).to include("codex", "exec")
+      expect(plan.command).to include("--dangerously-bypass-approvals-and-sandbox")
+    end
+
+    it "generates claude command with dangerous-mode flags through agent-harness" do
+      plan = Providers::HarnessExecutionPlan.for_provider_key(
+        provider_key: "claude", prompt: "test", options: { dangerous_mode: true }
+      )
+      expect(plan.command).to include("claude", "--print", "--dangerously-skip-permissions")
     end
   end
 
@@ -255,17 +269,15 @@ RSpec.describe Activities::RunAgentActivity do
       context = described_class::CommandContext.new(
         provider_candidate: "codex",
         provider: "codex",
-        command_prefix: described_class::AGENT_COMMANDS["codex"],
         user: nil
       )
       command = activity.send(:build_command, context, "say 'hi'")
       script = command[2]
-      codex_command = described_class::AGENT_COMMANDS.fetch("codex").join(" ")
 
       expect(command[0..1]).to eq(%w[sh -c])
       expect(script).to include('if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]')
       expect(script).to include("-u OPENAI_API_KEY")
-      expect(script).to include(codex_command)
+      expect(script).to include("codex")
       expect(command[3]).to eq("--")
       expect(command[4]).to eq("say 'hi'")
     end
@@ -274,7 +286,6 @@ RSpec.describe Activities::RunAgentActivity do
       context = described_class::CommandContext.new(
         provider_candidate: "gemini",
         provider: "gemini",
-        command_prefix: described_class::AGENT_COMMANDS["gemini"],
         user: nil
       )
       command = activity.send(:build_command, context, "say 'hi'")
@@ -284,7 +295,7 @@ RSpec.describe Activities::RunAgentActivity do
       expect(script).to include('if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]')
       expect(script).to include("-u GEMINI_API_KEY")
       expect(script).to include("-u GOOGLE_GEMINI_BASE_URL")
-      expect(script).to include("gemini -y -p")
+      expect(script).to include("gemini")
       expect(command[3]).to eq("--")
       expect(command[4]).to eq("say 'hi'")
     end
@@ -294,7 +305,6 @@ RSpec.describe Activities::RunAgentActivity do
       context = described_class::CommandContext.new(
         provider_candidate: "codex",
         provider: "codex",
-        command_prefix: described_class::AGENT_COMMANDS["codex"],
         user: nil
       )
       command = activity.send(:build_command, context, multiline_prompt)
@@ -303,16 +313,16 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command[2]).not_to include("\n")
     end
 
-    it "keeps non-subscription providers in array form" do
+    it "returns the harness-generated command for non-subscription providers" do
       context = described_class::CommandContext.new(
         provider_candidate: "claude",
         provider: "claude",
-        command_prefix: described_class::AGENT_COMMANDS["claude"],
         user: nil
       )
       command = activity.send(:build_command, context, "ping")
 
-      expect(command).to eq(described_class::AGENT_COMMANDS["claude"] + [ "ping" ])
+      expect(command).to include("claude", "--print", "--dangerously-skip-permissions")
+      expect(command.last).to eq("ping")
     end
 
     it "builds an API-key wrapper for anthropic-backed fallback entries" do
@@ -321,7 +331,6 @@ RSpec.describe Activities::RunAgentActivity do
       context = described_class::CommandContext.new(
         provider_candidate: provider.routing_key,
         provider: "claude",
-        command_prefix: described_class::AGENT_COMMANDS["claude"],
         user: user
       )
 
@@ -417,7 +426,6 @@ RSpec.describe Activities::RunAgentActivity do
     described_class::CommandContext.new(
       provider_candidate: provider.routing_key,
       provider: "opencode",
-      command_prefix: described_class::AGENT_COMMANDS["opencode"],
       user: user
     )
   end
@@ -550,7 +558,7 @@ RSpec.describe Activities::RunAgentActivity do
         allow(git_ops).to receive(:has_changes_since?).and_return(false)
 
         expect(container_service).to receive(:execute).with(
-          array_including("claude", "--print", "--output-format=text", "--dangerously-skip-permissions", "-p"),
+          array_including("claude", "--print", "--dangerously-skip-permissions"),
           hash_including(timeout: anything)
         ).and_return(exec_success)
 

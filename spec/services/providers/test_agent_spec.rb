@@ -66,11 +66,11 @@ RSpec.describe Providers::TestAgent do
         expect(result.error_type).to be_nil
       end
 
-      it "executes the claude cli inside the container" do
+      it "executes the claude cli inside the container with harness-generated flags" do
         described_class.call(provider: provider)
 
         expect(test_run).to have_received(:execute_in_container).with(
-          array_including("claude", "--print", "--output-format=text", "--dangerously-skip-permissions", "-p", "Respond with exactly: PING OK"),
+          array_including("claude", "--print", "--dangerously-skip-permissions", "Respond with exactly: PING OK"),
           timeout: 60,
           stream: false,
           env: {}
@@ -341,23 +341,14 @@ RSpec.describe Providers::TestAgent do
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
-      it "adds the skip git repo check flag" do
-        service = described_class.new(provider: provider)
-        base_command = Providers::TestAgent::CONTAINER_COMMANDS.fetch("codex")
-        codex_command = service.send(
-          :command_with_flags_before_separator,
-          base_command,
-          "--skip-git-repo-check",
-          "--output-last-message",
-          "$tmp_output"
-        ).join(" ")
-
+      it "adds the skip git repo check flag before the prompt" do
         described_class.call(provider: provider)
 
         expect(test_run).to have_received(:execute_in_container).with(
-          a_string_including('if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]')
+          a_string_matching(/--skip-git-repo-check\s+--output-last-message\s+\$tmp_output\s+Respond/)
             .and(include("-u OPENAI_API_KEY"))
-            .and(include(codex_command)),
+            .and(include("codex"))
+            .and(include("exec")),
           timeout: 60,
           stream: false,
           env: {}
@@ -414,7 +405,7 @@ RSpec.describe Providers::TestAgent do
           a_string_including('if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]')
             .and(include("-u GEMINI_API_KEY"))
             .and(include("-u GOOGLE_GEMINI_BASE_URL"))
-            .and(include("gemini -y -p"))
+            .and(include("gemini"))
             .and(include('grep -q "Error when talking to Gemini API"'))
             .and(include('ruby -rjson -e')),
           timeout: 60,
