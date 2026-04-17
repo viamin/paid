@@ -81,12 +81,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
 
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.datetime "deactivated_at"
     t.integer "default_max_tokens_per_run", default: 10000000, null: false
     t.string "name", null: false
+    t.datetime "onboarding_completed_at"
+    t.string "plan", default: "trial", null: false
     t.datetime "scheduler_paused_at"
     t.string "slug", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "suspended_at"
+    t.datetime "trial_ends_at"
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
+    t.index ["status"], name: "index_accounts_on_status"
   end
 
   create_table "agent_run_anomalies", force: :cascade do |t|
@@ -745,6 +752,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.index ["user_id"], name: "index_notifications_on_user_id"
   end
 
+  create_table "onboarding_steps", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.jsonb "metadata", default: {}
+    t.integer "position", null: false
+    t.string "status", default: "pending", null: false
+    t.string "step", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "position"], name: "index_onboarding_steps_on_account_id_and_position"
+    t.index ["account_id", "step"], name: "index_onboarding_steps_on_account_id_and_step", unique: true
+    t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
+  end
+
   create_table "pre_commit_requirements", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "check_type", limit: 50, default: "shell_command", null: false
@@ -872,6 +893,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.jsonb "pr_action_labels", default: [], null: false
     t.boolean "pr_aggregation_enabled", default: false, null: false
     t.jsonb "priority_labels", default: {"P1" => "P1", "P2" => "P2", "P3" => "P3"}, null: false
+    t.jsonb "quality_pause_metadata", default: {}, null: false
+    t.datetime "quality_paused_at"
     t.string "repo", null: false
     t.jsonb "review_settings", default: {}, null: false
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false
@@ -900,6 +923,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.bigint "created_by_user_id"
     t.bigint "parent_version_id"
     t.bigint "prompt_id", null: false
+    t.datetime "retired_at"
     t.text "review_notes"
     t.string "review_status", limit: 20
     t.datetime "reviewed_at"
@@ -914,6 +938,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.index ["prompt_id", "review_status"], name: "index_prompt_versions_on_prompt_and_review_status", where: "(review_status IS NOT NULL)"
     t.index ["prompt_id", "version"], name: "index_prompt_versions_on_prompt_id_and_version", unique: true
     t.index ["prompt_id"], name: "index_prompt_versions_on_prompt_id"
+    t.index ["retired_at"], name: "index_prompt_versions_on_retired_at"
     t.index ["reviewed_by_user_id"], name: "index_prompt_versions_on_reviewed_by_user_id"
   end
 
@@ -989,6 +1014,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "providers_subscription_invariants"
   end
 
+  create_table "quality_gate_events", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "event_type", limit: 20, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.bigint "project_id", null: false
+    t.bigint "quality_gate_threshold_id", null: false
+    t.bigint "quality_metric_id", null: false
+    t.decimal "score_value", precision: 5, scale: 4, null: false
+    t.decimal "threshold_value", precision: 5, scale: 4, null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "event_type", "created_at"], name: "idx_quality_gate_events_project_type_time"
+    t.index ["project_id"], name: "index_quality_gate_events_on_project_id"
+    t.index ["quality_gate_threshold_id"], name: "index_quality_gate_events_on_quality_gate_threshold_id"
+    t.index ["quality_metric_id"], name: "index_quality_gate_events_on_quality_metric_id"
+  end
+
+  create_table "quality_gate_thresholds", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: true, null: false
+    t.decimal "max_threshold", precision: 5, scale: 4
+    t.string "metric_key", limit: 50, null: false
+    t.decimal "min_threshold", precision: 5, scale: 4
+    t.bigint "project_id", null: false
+    t.string "severity", limit: 20, default: "warning", null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "metric_key"], name: "index_quality_gate_thresholds_on_project_id_and_metric_key", unique: true
+    t.index ["project_id"], name: "index_quality_gate_thresholds_on_project_id"
+  end
+
   create_table "quality_metrics", force: :cascade do |t|
     t.bigint "agent_run_id", null: false
     t.decimal "composite_score", precision: 5, scale: 4
@@ -1006,6 +1060,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.index ["metric_type"], name: "index_quality_metrics_on_metric_type"
     t.index ["prompt_version_id", "created_at"], name: "index_quality_metrics_on_prompt_version_and_created_at"
     t.index ["prompt_version_id"], name: "index_quality_metrics_on_prompt_version_id"
+  end
+
+  create_table "quality_pause_events", force: :cascade do |t|
+    t.bigint "agent_run_id"
+    t.decimal "composite_score", precision: 5, scale: 4
+    t.datetime "created_at", null: false
+    t.string "event_type", limit: 20, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.bigint "project_id", null: false
+    t.decimal "threshold", precision: 5, scale: 4
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "index_quality_pause_events_on_agent_run_id"
+    t.index ["project_id", "created_at"], name: "index_quality_pause_events_on_project_id_and_created_at"
+    t.index ["project_id"], name: "index_quality_pause_events_on_project_id"
   end
 
   create_table "service_container_metrics", force: :cascade do |t|
@@ -1063,6 +1131,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_style_guides_scope_consistency"
   end
 
+  create_table "tenant_settings", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.text "allowed_provider_keys", default: [], array: true
+    t.datetime "created_at", null: false
+    t.jsonb "features", default: {}, null: false
+    t.integer "max_concurrent_runs", default: 10, null: false
+    t.integer "max_monthly_cost_cents"
+    t.integer "max_projects", default: 50, null: false
+    t.integer "max_tokens_per_run", default: 10000000, null: false
+    t.integer "max_users", default: 25, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_tenant_settings_on_account_id", unique: true
+  end
+
   create_table "token_usages", force: :cascade do |t|
     t.bigint "agent_run_id"
     t.integer "cost_cents", default: 0, null: false
@@ -1089,6 +1171,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.bigint "container_memory_bytes", default: 4294967296, null: false
     t.integer "container_timeout_seconds", default: 3600, null: false
+    t.integer "create_pr_idle_timeout_seconds", default: 300, null: false
     t.datetime "created_at", null: false
     t.string "default_agent_provider", default: "claude", null: false
     t.jsonb "default_agent_providers_by_goal", default: {}, null: false
@@ -1235,6 +1318,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
   add_foreign_key "model_selections", "llm_models"
   add_foreign_key "notifications", "accounts"
   add_foreign_key "notifications", "users", on_delete: :nullify
+  add_foreign_key "onboarding_steps", "accounts"
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
@@ -1260,11 +1344,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
   add_foreign_key "provider_states", "users", on_delete: :cascade
   add_foreign_key "providers", "provider_api_keys", on_delete: :restrict
   add_foreign_key "providers", "users", on_delete: :cascade
+  add_foreign_key "quality_gate_events", "projects"
+  add_foreign_key "quality_gate_events", "quality_gate_thresholds"
+  add_foreign_key "quality_gate_events", "quality_metrics"
+  add_foreign_key "quality_gate_thresholds", "projects"
   add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
+  add_foreign_key "quality_pause_events", "agent_runs"
+  add_foreign_key "quality_pause_events", "projects"
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
   add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
+  add_foreign_key "tenant_settings", "accounts"
   add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
   add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "user_settings", "users"
