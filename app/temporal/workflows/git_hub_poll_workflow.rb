@@ -31,14 +31,24 @@ module Workflows
 
         break if result[:project_missing]
 
-        result[:issues].each do |issue_data|
-          evaluation = run_activity(Activities::DetectLabelsActivity,
-            { project_id: project_id, issue_id: issue_data[:id] }, timeout: 30)
+        record_poll_heartbeat(project_id)
 
-          handle_automation_result(evaluation, project_id)
+        if Temporalio::Workflow.patched("batch-evaluate-issues-v1")
+          evaluate_issues_batch(project_id, result[:issues])
+        else
+          result[:issues].each do |issue_data|
+            evaluation = run_activity(Activities::DetectLabelsActivity,
+              { project_id: project_id, issue_id: issue_data[:id] }, timeout: 30)
+
+            handle_automation_result(evaluation, project_id)
+          end
         end
 
+        record_poll_heartbeat(project_id)
+
         maybe_run_non_critical_activities(project_id)
+
+        record_poll_heartbeat(project_id)
 
         poll_config = run_activity(Activities::GetPollIntervalActivity,
           { project_id: project_id }, timeout: 10)
@@ -55,6 +65,23 @@ module Workflows
     end
 
     private
+
+    def evaluate_issues_batch(project_id, issues)
+      return if issues.blank?
+
+      issue_ids = issues.map { |issue_data| issue_data[:id] }
+      batch_result = run_activity(Activities::EvaluateIssuesActivity,
+        { project_id: project_id, issue_ids: issue_ids }, timeout: 120)
+
+      (batch_result[:results] || []).each do |evaluation|
+        handle_automation_result(evaluation, project_id)
+      end
+    end
+
+    def record_poll_heartbeat(project_id)
+      run_activity(Activities::RecordPollHeartbeatActivity,
+        { project_id: project_id }, timeout: 10)
+    end
 
     def interruptible_sleep(duration)
       cancellation, @sleep_cancel_proc = Temporalio::Cancellation.new
@@ -220,6 +247,7 @@ module Workflows
         Workflows::PlanningWorkflow,
         { project_id: project_id, issue_id: issue_id },
         id: workflow_id,
+        task_queue: Paid::AGENT_TASK_QUEUE,
         parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
       )
     end
