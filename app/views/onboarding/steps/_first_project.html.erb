@@ -31,7 +31,6 @@
       </div>
     </div>
 
-    <% tokens = current_account.github_tokens.where.not(revoked_at: nil).or(current_account.github_tokens.where(revoked_at: nil)) %>
     <% active_tokens = current_account.github_tokens.select(&:active?) %>
     <% if active_tokens.any? %>
       <div>

@@ -62,7 +62,7 @@ class Account < ApplicationRecord
   end
 
   def current_onboarding_step
-    onboarding_steps.ordered.find { |s| !s.completed? && !s.skipped? }
+    onboarding_steps.ordered.where.not(status: %w[completed skipped]).first
   end
 
   def onboarding_progress
