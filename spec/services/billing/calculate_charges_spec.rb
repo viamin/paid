@@ -36,7 +36,8 @@ RSpec.describe Billing::CalculateCharges do
 
       expect(included_item[:quantity]).to eq(1_000_000)
       expect(included_item[:total_cents]).to eq(0)
-      expect(overage_item[:quantity]).to eq(1_000_000)
+      expect(overage_item[:quantity]).to eq(1_000) # in 1K-token units
+      expect(overage_item[:unit_price_cents]).to eq(3) # 0.003¢/token * 1000 = 3¢/1K
       expect(overage_item[:total_cents]).to eq(3000)
     end
 

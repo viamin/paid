@@ -38,6 +38,7 @@ module Billing
       when "per_token" then token_usage_items
       when "per_run" then run_usage_items
       when "per_project" then project_usage_items
+      else []
       end
     end
 
@@ -61,10 +62,10 @@ module Billing
       if billable_tokens > 0
         cost = (billable_tokens * billing_plan.per_token_rate_cents).round
         items << {
-          description: "Overage tokens (#{format_tokens(billable_tokens)})",
+          description: "Overage tokens (#{format_tokens(billable_tokens)} @ #{(billing_plan.per_token_rate_cents * 1000).round(2)}¢/1K)",
           line_item_type: "overage_tokens",
-          quantity: billable_tokens,
-          unit_price_cents: billing_plan.per_token_rate_cents.round,
+          quantity: (billable_tokens / 1000.0).ceil,
+          unit_price_cents: (billing_plan.per_token_rate_cents * 1000).round,
           total_cents: cost
         }
       end
