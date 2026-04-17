@@ -66,8 +66,12 @@ jobs:
             echo "Failed to extract Claude post-install binary path from agent-harness" >&2
             exit 1
           fi
-          echo "install_command=$install_command" >> "$GITHUB_OUTPUT"
-          echo "post_install_binary_path=$post_install_path" >> "$GITHUB_OUTPUT"
+          echo "install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "$install_command" >> "$GITHUB_OUTPUT"
+          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "post_install_binary_path<<PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "$post_install_path" >> "$GITHUB_OUTPUT"
+          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
 
       - name: Build paid-agent image
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
