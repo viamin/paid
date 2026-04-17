@@ -341,14 +341,12 @@ RSpec.describe Providers::TestAgent do
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
-      it "adds the skip git repo check flag" do
+      it "adds the skip git repo check flag before the prompt" do
         described_class.call(provider: provider)
 
         expect(test_run).to have_received(:execute_in_container).with(
-          a_string_including('if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]')
+          a_string_matching(/--skip-git-repo-check\s+--output-last-message\s+\$tmp_output\s+Respond/)
             .and(include("-u OPENAI_API_KEY"))
-            .and(include("--skip-git-repo-check"))
-            .and(include("--output-last-message"))
             .and(include("codex"))
             .and(include("exec")),
           timeout: 60,

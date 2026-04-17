@@ -484,11 +484,13 @@ module Providers
       # Get the base command from agent-harness (without prompt), then add
       # test-specific flags before the prompt argument.
       base_cmd = harness_test_plan.command[0..-2]
-      command = (base_cmd + [
+      separator_index = base_cmd.index("--") || base_cmd.length
+      cmd_with_flags = base_cmd[0...separator_index] + [
         "--skip-git-repo-check",
         "--output-last-message",
         "$tmp_output"
-      ]).join(" ")
+      ] + base_cmd[separator_index..]
+      command = cmd_with_flags.join(" ")
       unset_flags = subscription_auth_unset_flags("codex")
       <<~SH.squish
         tmp_output="$(mktemp)" &&
