@@ -1246,6 +1246,68 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "when stderr matches an abort pattern" do
+      let(:abort_patterns) { [ /free tier limit reached/i ] }
+      let(:quota_error) { "Error: Free tier limit reached. Please upgrade to a paid plan." }
+
+      before do
+        allow(mock_container).to receive(:stop)
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stderr, quota_error) if block
+          # Simulate exec returning after container.stop was called
+          [ [], [ quota_error ], 1 ]
+        end
+      end
+
+      it "raises OutputAbortError with the matched output" do
+        expect { service.execute("kilo run --auto", abort_patterns: abort_patterns) }
+          .to raise_error(described_class::OutputAbortError) { |e|
+            expect(e.matched_output).to eq(quota_error)
+          }
+      end
+
+      it "stops the container immediately" do
+        service.execute("kilo run --auto", abort_patterns: abort_patterns) rescue nil
+
+        expect(mock_container).to have_received(:stop).with(timeout: 0)
+      end
+
+      it "logs the abort pattern match" do
+        allow(agent_run).to receive(:log!)
+
+        service.execute("kilo run --auto", abort_patterns: abort_patterns) rescue nil
+
+        expect(agent_run).to have_received(:log!).with(
+          "system", "container.execute.abort_pattern_matched",
+          metadata: hash_including(output: a_string_matching(/Free tier limit reached/))
+        )
+      end
+    end
+
+    context "when stderr does not match abort patterns" do
+      let(:abort_patterns) { [ /free tier limit reached/i ] }
+
+      before do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stderr, "some benign warning\n") if block
+          [ [ "output" ], [ "some benign warning\n" ], 0 ]
+        end
+      end
+
+      it "does not raise OutputAbortError" do
+        result = service.execute("kilo run --auto", abort_patterns: abort_patterns)
+
+        expect(result.success?).to be true
+      end
+
+      it "does not stop the container" do
+        allow(mock_container).to receive(:stop)
+        service.execute("kilo run --auto", abort_patterns: abort_patterns)
+
+        expect(mock_container).not_to have_received(:stop)
+      end
+    end
+
     context "when container is not provisioned" do
       let(:unprovisioned_service) { described_class.new(agent_run: agent_run, worktree_path: worktree_path) }
 
