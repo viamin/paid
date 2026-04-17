@@ -60,13 +60,12 @@ module Billing
       end
 
       if billable_tokens > 0
-        cost = (billable_tokens * billing_plan.per_token_rate_cents).round
         items << {
           description: "Overage tokens (#{format_tokens(billable_tokens)} @ #{(billing_plan.per_token_rate_cents * 1000).round(2)}¢/1K)",
           line_item_type: "overage_tokens",
           quantity: (billable_tokens / 1000.0).ceil,
           unit_price_cents: (billing_plan.per_token_rate_cents * 1000).round,
-          total_cents: cost
+          total_cents: (billable_tokens / 1000.0).ceil * (billing_plan.per_token_rate_cents * 1000).round
         }
       end
 
