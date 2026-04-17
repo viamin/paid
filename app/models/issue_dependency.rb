@@ -65,6 +65,22 @@ class IssueDependency < ApplicationRecord
     "#{depends_on_owner}/#{depends_on_repo}##{depends_on_number}"
   end
 
+  # True when this dependency should remain blocking until the target PR
+  # has been marked deployed (not merely merged). Only meaningful for
+  # local deps that resolve to a PR; for external deps we cannot observe
+  # deployment state, so requires_deployment has no incremental effect
+  # beyond the existing always-blocking external behaviour.
+  def deployment_pending?
+    return false unless requires_deployment?
+    return false unless local?
+
+    target = depends_on_issue
+    return false unless target&.is_pull_request?
+    return false if target.github_state == "open" # already blocking via the regular path
+
+    target.deployed_at.nil?
+  end
+
   private
 
   def not_self_referential

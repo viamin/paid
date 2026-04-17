@@ -555,5 +555,196 @@ RSpec.describe Issues::ParseDependencies do
       expect { described_class.call(issue: issue, comments: [ "Depends on #9010" ]) }
         .not_to change(IssueDependency, :count)
     end
+
+    describe "deployment-blocked dependencies" do
+      it "parses 'Awaits deployment of #N' as requires_deployment" do
+        pr = create(:issue, :pull_request, project: project, github_number: 9201)
+        issue = create(:issue, project: project, body: "Awaits deployment of #9201")
+
+        described_class.call(issue: issue)
+
+        dep = issue.issue_dependencies.find_by(depends_on_issue_id: pr.id)
+        expect(dep).to be_present
+        expect(dep.requires_deployment).to be true
+      end
+
+      it "parses 'Depends on deployment of #N' as requires_deployment" do
+        pr = create(:issue, :pull_request, project: project, github_number: 9202)
+        issue = create(:issue, project: project, body: "This PR depends on deployment of #9202 before merging.")
+
+        described_class.call(issue: issue)
+
+        dep = issue.issue_dependencies.find_by(depends_on_issue_id: pr.id)
+        expect(dep).to be_present
+        expect(dep.requires_deployment).to be true
+      end
+
+      it "parses 'Blocked by deployment of #N' as requires_deployment" do
+        pr = create(:issue, :pull_request, project: project, github_number: 9203)
+        issue = create(:issue, project: project, body: "Blocked by deployment of #9203.")
+
+        described_class.call(issue: issue)
+
+        dep = issue.issue_dependencies.find_by(depends_on_issue_id: pr.id)
+        expect(dep).to be_present
+        expect(dep.requires_deployment).to be true
+      end
+
+      it "parses cross-repo deployment refs as requires_deployment" do
+        account = create(:account)
+        project_a = create(:project, account: account, owner: "viamin", repo: "repo-a")
+        project_b = create(:project, account: account, owner: "viamin", repo: "repo-b")
+        pr = create(:issue, :pull_request, project: project_b, github_number: 31)
+        issue = create(:issue, project: project_a, body: "Awaits deployment of viamin/repo-b#31.")
+
+        described_class.call(issue: issue)
+
+        dep = issue.issue_dependencies.find_by(depends_on_issue_id: pr.id)
+        expect(dep).to be_present
+        expect(dep.requires_deployment).to be true
+      end
+
+      it "persists requires_deployment on external (unresolvable) refs" do
+        issue = create(:issue, project: project, body: "Awaits deployment of someoneelse/elsewhere#88.")
+
+        described_class.call(issue: issue)
+
+        dep = issue.issue_dependencies.find_by(depends_on_owner: "someoneelse")
+        expect(dep).to be_present
+        expect(dep.requires_deployment).to be true
+      end
+
+      it "treats a plain 'Depends on #N' as a non-deployment dep" do
+        pr = create(:issue, :pull_request, project: project, github_number: 9205)
+        issue = create(:issue, project: project, body: "Depends on #9205")
+
+        described_class.call(issue: issue)
+
+        dep = issue.issue_dependencies.find_by(depends_on_issue_id: pr.id)
+        expect(dep).to be_present
+        expect(dep.requires_deployment).to be false
+      end
+
+      it "parses a ## Dependencies section list item with 'Deployment of #N' as deployment-flagged" do
+        pr = create(:issue, :pull_request, project: project, github_number: 9206)
+        plain = create(:issue, project: project, github_number: 9207)
+        issue = create(:issue, project: project, body: <<~MD)
+          ## Dependencies
+          - Deployment of #9206
+          - #9207
+        MD
+
+        described_class.call(issue: issue)
+
+        deployment_dep = issue.issue_dependencies.find_by(depends_on_issue_id: pr.id)
+        plain_dep = issue.issue_dependencies.find_by(depends_on_issue_id: plain.id)
+
+        expect(deployment_dep.requires_deployment).to be true
+        expect(plain_dep.requires_deployment).to be false
+      end
+
+      it "treats a ref mentioned both with and without deployment wording as deployment-flagged" do
+        pr = create(:issue, :pull_request, project: project, github_number: 9208)
+        issue = create(:issue, project: project, body: "Depends on #9208. Also awaits deployment of #9208.")
+
+        described_class.call(issue: issue)
+
+        dep = issue.issue_dependencies.find_by(depends_on_issue_id: pr.id)
+        expect(dep.requires_deployment).to be true
+      end
+
+      it "promotes an existing non-deployment dep when a later comment uses deployment wording" do
+        pr = create(:issue, :pull_request, project: project, github_number: 9209)
+        issue = create(:issue, project: project, body: "Depends on #9209")
+
+        described_class.call(issue: issue)
+        expect(issue.issue_dependencies.find_by(depends_on_issue_id: pr.id).requires_deployment).to be false
+
+        described_class.call(issue: issue, comments: [ "Actually, this awaits deployment of #9209." ])
+        expect(issue.issue_dependencies.find_by(depends_on_issue_id: pr.id).requires_deployment).to be true
+      end
+
+      it "resets the deployment flag when a ref is removed and re-added as a plain dep" do
+        pr = create(:issue, :pull_request, project: project, github_number: 9210)
+        issue = create(:issue, project: project, body: "Awaits deployment of #9210")
+
+        described_class.call(issue: issue)
+        expect(issue.issue_dependencies.find_by(depends_on_issue_id: pr.id).requires_deployment).to be true
+
+        described_class.call(issue: issue, comments: [
+          "No longer awaits deployment of #9210",
+          "Depends on #9210"
+        ])
+
+        expect(issue.issue_dependencies.find_by(depends_on_issue_id: pr.id).requires_deployment).to be false
+      end
+
+      it "accepts 'No longer blocked by deployment of #N' as removal" do
+        pr = create(:issue, :pull_request, project: project, github_number: 9211)
+        issue = create(:issue, project: project, body: "Blocked by deployment of #9211")
+
+        described_class.call(issue: issue)
+        expect(issue.dependencies).to contain_exactly(pr)
+
+        described_class.call(issue: issue, comments: [ "No longer blocked by deployment of #9211" ])
+        expect(issue.reload.dependencies).to be_empty
+      end
+
+      it "promotes a freshly-created local dep when a self-repo cross-ref flags deployment" do
+        # Body mixes a plain local ref with a self-repo cross-ref that carries
+        # deployment wording. Both resolve to the same local issue; the
+        # deployment flag from the cross-ref must stick.
+        pr = create(:issue, :pull_request, project: project, github_number: 9212)
+        body = <<~MD
+          ## Dependencies
+          - Depends on #9212
+          - Blocked by deployment of #{project.owner}/#{project.repo}#9212
+        MD
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+
+        dep = issue.issue_dependencies.find_by(depends_on_issue_id: pr.id)
+        expect(dep).to be_present
+        expect(dep.requires_deployment).to be true
+      end
+
+      it "preserves deployment flag when a local deployment ref is paired with a plain self-repo cross-ref" do
+        # Inverse of the preceding test: body has a local deployment ref AND a
+        # plain self-repo cross-ref to the same issue. The plain cross-ref must
+        # not silently downgrade the deployment flag set by the local ref.
+        pr = create(:issue, :pull_request, project: project, github_number: 9213)
+        body = <<~MD
+          Awaits deployment of #9213
+          Depends on #{project.owner}/#{project.repo}#9213
+        MD
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+
+        dep = issue.issue_dependencies.find_by(depends_on_issue_id: pr.id)
+        expect(dep).to be_present
+        expect(dep.requires_deployment).to be true
+      end
+
+      it "preserves deployment flag on re-parse when plain self-repo cross-ref is present" do
+        # Same scenario on re-parse: the dep already exists with
+        # requires_deployment=true; a plain self-repo cross-ref in the body
+        # must not downgrade it via the current_local_by_id branch.
+        pr = create(:issue, :pull_request, project: project, github_number: 9214)
+        body = <<~MD
+          Awaits deployment of #9214
+          Depends on #{project.owner}/#{project.repo}#9214
+        MD
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+        described_class.call(issue: issue)
+
+        dep = issue.issue_dependencies.find_by(depends_on_issue_id: pr.id)
+        expect(dep).to be_present
+        expect(dep.requires_deployment).to be true
+      end
+    end
   end
 end

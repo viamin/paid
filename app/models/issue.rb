@@ -67,12 +67,26 @@ class Issue < ApplicationRecord
   scope :pull_requests_only, -> { where(is_pull_request: true) }
   scope :auto_continue_active, -> { where(auto_continue_paused: false) }
   scope :ready_for_work, ->(project) {
-    blocked_by_local = IssueDependency
+    blocked_by_local_open = IssueDependency
       .joins(:issue, :depends_on_issue)
       .where(
         depends_on_issue: { github_state: "open" },
         issues: { project_id: project.id }
       )
+      .select(:issue_id)
+
+    # Deployment-blocked deps: target PR has merged/closed, but has not
+    # yet been marked as deployed. These keep the dependent issue blocked
+    # so multi-step migrations (add column → backfill → drop) cannot be
+    # started out of order.
+    blocked_by_local_deployment_pending = IssueDependency
+      .joins(:issue, :depends_on_issue)
+      .where(
+        requires_deployment: true,
+        depends_on_issue: { is_pull_request: true, deployed_at: nil }
+      )
+      .where.not(depends_on_issue: { github_state: "open" })
+      .where(issues: { project_id: project.id })
       .select(:issue_id)
 
     blocked_by_external = IssueDependency
@@ -82,7 +96,8 @@ class Issue < ApplicationRecord
       .select(:issue_id)
 
     where(project: project, github_state: "open", is_pull_request: false)
-      .where.not(id: blocked_by_local)
+      .where.not(id: blocked_by_local_open)
+      .where.not(id: blocked_by_local_deployment_pending)
       .where.not(id: blocked_by_external)
   }
 
@@ -199,11 +214,24 @@ class Issue < ApplicationRecord
   end
 
   def ready_to_work?
-    blocking_issues.none? && blocking_external_dependencies.none?
+    blocking_issues.none? &&
+      blocking_deployment_dependencies.none? &&
+      blocking_external_dependencies.none?
   end
 
   def blocking_issues
     dependencies.where(github_state: "open").where.not(paid_state: "recommend_close")
+  end
+
+  # Deployment-blocked dependencies whose target PR has merged/closed but
+  # has not yet been marked as deployed. See .ready_for_work for the
+  # corresponding query-level filter used during batch eligibility checks.
+  def blocking_deployment_dependencies
+    issue_dependencies
+      .joins(:depends_on_issue)
+      .where(requires_deployment: true)
+      .where(depends_on_issue: { is_pull_request: true, deployed_at: nil })
+      .where.not(depends_on_issue: { github_state: "open" })
   end
 
   def blocking_external_dependencies
@@ -212,6 +240,23 @@ class Issue < ApplicationRecord
 
   def dependent_issues
     dependents
+  end
+
+  # True when this issue represents a PR that has been marked as deployed
+  # to production. Used by deployment-aware dependency resolution so a
+  # step-N PR can unblock only after step-(N-1) has actually shipped.
+  def deployed?
+    is_pull_request? && deployed_at.present?
+  end
+
+  # Stamps this PR as deployed, clearing deployment-blocked dependents.
+  # Callers (release-please integration, external webhooks, manual
+  # attestation) must ensure the PR has actually reached production
+  # before invoking.
+  def mark_deployed!(time: Time.current)
+    raise ArgumentError, "only pull requests can be marked as deployed" unless is_pull_request?
+
+    update!(deployed_at: time)
   end
 
   # Compute lifecycle statuses for a collection of issues.
@@ -230,6 +275,19 @@ class Issue < ApplicationRecord
       .pluck(:issue_id)
       .to_set
 
+    # Match blocking_deployment_dependencies semantics: target PR has
+    # merged/closed but has not yet been marked deployed.
+    blocked_by_deployment_pending = IssueDependency
+      .joins(:depends_on_issue)
+      .where(
+        issue_id: issue_ids,
+        requires_deployment: true,
+        depends_on_issue: { is_pull_request: true, deployed_at: nil }
+      )
+      .where.not(depends_on_issue: { github_state: "open" })
+      .pluck(:issue_id)
+      .to_set
+
     # Match IssueDependency#external? semantics: owner+repo+number present, no local issue link
     blocked_by_external = IssueDependency
       .where(issue_id: issue_ids, depends_on_issue_id: nil)
@@ -239,7 +297,7 @@ class Issue < ApplicationRecord
       .pluck(:issue_id)
       .to_set
 
-    blocked_ids = blocked_by_local | blocked_by_external
+    blocked_ids = blocked_by_local | blocked_by_deployment_pending | blocked_by_external
 
     active_run_ids = AgentRun
       .where(issue_id: issue_ids, status: AgentRun::UNFINISHED_STATUSES)

@@ -182,6 +182,22 @@ RSpec.describe Issue do
 
         expect(described_class.ready_for_work(project)).to include(issue)
       end
+
+      it "excludes issues whose deployment-blocked dep points at a merged but undeployed PR" do
+        pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: nil)
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
+
+        expect(described_class.ready_for_work(project)).not_to include(issue)
+      end
+
+      it "includes issues whose deployment-blocked dep points at a deployed PR" do
+        pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: Time.current)
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
+
+        expect(described_class.ready_for_work(project)).to include(issue)
+      end
     end
   end
 
@@ -637,6 +653,69 @@ RSpec.describe Issue do
                                 depends_on_number: 42)
 
       expect(issue.ready_to_work?).to be false
+    end
+
+    it "returns false when a deployment-blocked dep points at a merged but undeployed PR" do
+      pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: nil)
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
+
+      expect(issue.ready_to_work?).to be false
+    end
+
+    it "returns true when a deployment-blocked dep's target PR has been marked deployed" do
+      pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: Time.current)
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
+
+      expect(issue.ready_to_work?).to be true
+    end
+  end
+
+  describe "#deployed?" do
+    it "is false for non-PR issues" do
+      issue = build(:issue, is_pull_request: false, deployed_at: Time.current)
+
+      expect(issue).not_to be_deployed
+    end
+
+    it "is false for PRs without a deployed_at timestamp" do
+      pr = build(:issue, :pull_request, deployed_at: nil)
+
+      expect(pr).not_to be_deployed
+    end
+
+    it "is true for PRs with a deployed_at timestamp" do
+      pr = build(:issue, :pull_request, deployed_at: Time.current)
+
+      expect(pr).to be_deployed
+    end
+  end
+
+  describe "#mark_deployed!" do
+    let(:project) { create(:project) }
+
+    it "sets deployed_at on a PR" do
+      pr = create(:issue, :pull_request, project: project, deployed_at: nil)
+
+      freeze_time do
+        pr.mark_deployed!
+        expect(pr.deployed_at).to eq(Time.current)
+      end
+    end
+
+    it "accepts an explicit timestamp" do
+      pr = create(:issue, :pull_request, project: project, deployed_at: nil)
+      ts = 2.days.ago.change(usec: 0)
+
+      pr.mark_deployed!(time: ts)
+      expect(pr.deployed_at).to be_within(1.second).of(ts)
+    end
+
+    it "raises when called on a non-PR issue" do
+      issue = create(:issue, project: project, is_pull_request: false)
+
+      expect { issue.mark_deployed! }.to raise_error(ArgumentError, /pull requests/)
     end
   end
 
@@ -1142,6 +1221,26 @@ RSpec.describe Issue do
       issue = create(:issue, project: project, github_state: "open")
       dep = create(:issue, project: project, github_state: "closed")
       create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "returns :blocked when a deployment-blocked dep points at a merged but undeployed PR" do
+      issue = create(:issue, project: project, github_state: "open")
+      pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: nil)
+      create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:blocked)
+    end
+
+    it "returns :eligible when a deployment-blocked dep's target PR has been marked deployed" do
+      issue = create(:issue, project: project, github_state: "open")
+      pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: Time.current)
+      create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
 
       result = described_class.lifecycle_statuses([ issue ])
 
