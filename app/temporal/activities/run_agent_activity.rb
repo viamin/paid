@@ -977,8 +977,8 @@ module Activities
     # provider CLI flag semantics are owned upstream.
     #
     # The plan is cached per (provider_key, prompt) pair so that
-    # build_command, command_env_for, and command_preparation_for can
-    # share the same capture without re-running the harness provider.
+    # multiple branches within build_command can share the same
+    # capture without re-running the harness provider.
     def harness_execution_plan_for(provider_key, prompt, provider_entry: nil)
       @harness_plan_cache ||= {}
       cache_key = [ provider_key, prompt ]
