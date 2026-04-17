@@ -55,6 +55,8 @@ class UserSetting < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 30, less_than_or_equal_to: PG_INT_MAX }
   validates :review_goal_idle_timeout_seconds,
     numericality: { only_integer: true, greater_than_or_equal_to: 30, less_than_or_equal_to: PG_INT_MAX }
+  validates :create_pr_idle_timeout_seconds,
+    numericality: { only_integer: true, greater_than_or_equal_to: 30, less_than_or_equal_to: PG_INT_MAX }
 
   # Git operation timeouts
   validates :git_clone_timeout_seconds,

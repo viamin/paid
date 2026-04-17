@@ -116,6 +116,7 @@ module Activities
     DEFAULT_ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
     DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
     DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
+    DEFAULT_CREATE_PR_IDLE_TIMEOUT = 300   # 5 minutes without output = stuck
     CHANGE_DETECTION_MAX_ATTEMPTS = 3
     CHANGE_DETECTION_RETRY_BACKOFF = 0.25
     POST_RUN_BOOKKEEPING_ERROR_TYPE = "PostRunBookkeepingFailed"
@@ -603,6 +604,8 @@ module Activities
         user_settings&.issue_goal_idle_timeout_seconds || DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT
       elsif agent_run.review_goal?
         user_settings&.review_goal_idle_timeout_seconds || DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT
+      elsif agent_run.create_pr_goal?
+        user_settings&.create_pr_idle_timeout_seconds || DEFAULT_CREATE_PR_IDLE_TIMEOUT
       end
 
       # Periodic heartbeats during container execution complement the
