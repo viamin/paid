@@ -687,6 +687,9 @@ module Containers
         base_url = "#{proxy_base_url}/api/proxy/openai"
         env_key = "OPENAI_API_KEY"
         wire_api = "responses"
+
+        [notify]
+        command = "date +%s > /tmp/agent_heartbeat"
       TOML
 
       write_container_file("/home/agent/.codex/config.toml", content)
@@ -713,6 +716,30 @@ module Containers
           failure_log_key: "container.codex_credentials_seed_failed"
         )
       end
+
+      seed_codex_notify_hook!
+    end
+
+    # Appends the Codex notify hook to config.toml inside the container.
+    # For subscription auth, the base config may come from the host or local
+    # copy and won't include the heartbeat hook. This method appends the
+    # [notify] section so the watchdog receives heartbeats during Codex turns.
+    # Silently skips when config.toml is bind-mounted read-only (host mount
+    # with existing config.toml).
+    def seed_codex_notify_hook!
+      notify_toml = <<~TOML
+
+        [notify]
+        command = "date +%s > /tmp/agent_heartbeat"
+      TOML
+
+      container.exec(
+        [ "sh", "-lc", "printf '%s' #{Shellwords.escape(notify_toml)} >> /home/agent/.codex/config.toml" ],
+        user: "agent"
+      )
+      log_system("container.codex_notify_hook_seeded")
+    rescue Docker::Error::DockerError => e
+      log_system("container.codex_notify_hook_seed_failed", error: e.message)
     end
 
     # Serializes only Codex CLI executions that share a host-backed auth.json.
