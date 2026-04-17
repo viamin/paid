@@ -29,8 +29,10 @@ module Scaling
 
       class ApiError < OrchestratorError; end
 
-      attr_reader :namespace, :api_url, :bearer_token, :kubeconfig_path
+      attr_reader :namespace, :api_url
 
+      # TODO(#727): Wire up kubeconfig-based auth — parse kubeconfig for server
+      # URL and token when api_url/bearer_token are not explicitly provided.
       def initialize(namespace: "default", kubeconfig_path: nil, api_url: nil, bearer_token: nil, **)
         @namespace = namespace
         @kubeconfig_path = kubeconfig_path
@@ -91,6 +93,8 @@ module Scaling
       end
 
       private
+
+      attr_reader :bearer_token, :kubeconfig_path
 
       def fetch_deployment(service)
         response = api_get(deployment_path(service))
