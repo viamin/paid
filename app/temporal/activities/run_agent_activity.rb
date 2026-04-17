@@ -14,11 +14,11 @@ module Activities
     # Gemini CLI, Kilocode CLI, OpenCode CLI, GitHub Copilot CLI, and Aider CLI
     # are installed in the agent Docker container (docker/agent/Dockerfile).
     #
-    # Copilot remains hardcoded here for now instead of delegating to
-    # agent-harness because the installed Copilot CLI and the harness's
-    # built-in GitHub Copilot provider are not yet aligned on binary name and
-    # invocation shape. Paid installs `github-copilot-cli`, while
-    # agent-harness 0.5.6 expects `copilot -p ...`.
+    # Providers whose Provider record returns `agent_harness_runtime? == true`
+    # (currently Copilot and OpenCode direct-outbound) delegate command
+    # building to HarnessExecutionPlan instead of using the template here.
+    # The entry still needs to exist so provider-order validation accepts the key.
+    #
     # Actual container execution is
     # gated by ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS — providers
     # not in that set are filtered out upstream (UserSetting, ProvidersController)
@@ -30,7 +30,7 @@ module Activities
       "gemini" => %w[gemini -y -p],
       "kilocode" => %w[kilo run --auto],
       "opencode" => %w[opencode run],
-      "copilot" => %w[github-copilot-cli --message],
+      "copilot" => %w[github-copilot-cli -p],
       "cursor" => %w[cursor-agent --message],
       "aider" => %w[aider --yes --no-auto-commits --message]
     }.freeze
@@ -976,7 +976,7 @@ module Activities
     def build_command(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
 
-      if provider_entry&.opencode_agent_harness_runtime?
+      if provider_entry&.agent_harness_runtime?
         harness_runtime_command(provider_entry, prompt)
       elsif provider_entry&.requires_direct_outbound?
         provider_entry.direct_outbound_exec_command(command_prefix: command_context.command_prefix, prompt: prompt)
@@ -991,7 +991,7 @@ module Activities
 
     def command_env_for(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      return direct_outbound_execution_plan(provider_entry, prompt).env if provider_entry&.opencode_agent_harness_runtime?
+      return direct_outbound_execution_plan(provider_entry, prompt).env if provider_entry&.agent_harness_runtime?
       return {} unless provider_entry
       return api_key_command_env(provider_entry) if provider_entry.api_key?
 
@@ -1000,7 +1000,7 @@ module Activities
 
     def command_preparation_for(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      return nil unless provider_entry&.opencode_agent_harness_runtime?
+      return nil unless provider_entry&.agent_harness_runtime?
 
       direct_outbound_execution_plan(provider_entry, prompt).preparation
     end

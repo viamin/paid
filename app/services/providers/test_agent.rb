@@ -20,11 +20,11 @@ module Providers
     CONTAINER_COMMANDS = Activities::RunAgentActivity::AGENT_COMMANDS.slice(
       "claude",
       "codex",
+      "copilot",
       "cursor",
       "gemini",
       "kilocode",
-      "opencode",
-      "copilot"
+      "opencode"
     ).freeze
     RATE_LIMIT_PATTERNS = Activities::RunAgentActivity::RATE_LIMIT_PATTERNS
     AUTHENTICATION_ERROR_PATTERNS = [
@@ -373,13 +373,9 @@ module Providers
       command = CONTAINER_COMMANDS[provider.provider_key]
       raise UnsupportedProviderError, "Unsupported provider: #{provider.provider_key}" unless command
 
-      # This method only builds the container-exec command after that path has
-      # already been selected elsewhere. For Copilot on this path, preserve the
-      # installed CLI contract (`github-copilot-cli --message ...`) rather
-      # than applying any harness-specific invocation shape.
       return codex_test_command if provider.provider_key == "codex"
       return gemini_test_command if provider.provider_key == "gemini"
-      return harness_runtime_command if provider.opencode_agent_harness_runtime?
+      return harness_runtime_command if provider.agent_harness_runtime?
       return provider.direct_outbound_exec_command(command_prefix: command, prompt: PROMPT) if provider.requires_direct_outbound?
       return kilocode_test_command if provider.provider_key == "kilocode"
 
@@ -387,13 +383,13 @@ module Providers
     end
 
     def test_command_env
-      return direct_outbound_execution_plan.env if provider.opencode_agent_harness_runtime?
+      return direct_outbound_execution_plan.env if provider.agent_harness_runtime?
 
       provider.direct_outbound_exec_env
     end
 
     def test_command_preparation
-      return nil unless provider.opencode_agent_harness_runtime?
+      return nil unless provider.agent_harness_runtime?
 
       direct_outbound_execution_plan.preparation
     end
