@@ -31,6 +31,8 @@ module Workflows
 
         break if result[:project_missing]
 
+        record_poll_heartbeat(project_id)
+
         result[:issues].each do |issue_data|
           evaluation = run_activity(Activities::DetectLabelsActivity,
             { project_id: project_id, issue_id: issue_data[:id] }, timeout: 30)
@@ -38,7 +40,11 @@ module Workflows
           handle_automation_result(evaluation, project_id)
         end
 
+        record_poll_heartbeat(project_id)
+
         maybe_run_non_critical_activities(project_id)
+
+        record_poll_heartbeat(project_id)
 
         poll_config = run_activity(Activities::GetPollIntervalActivity,
           { project_id: project_id }, timeout: 10)
@@ -55,6 +61,11 @@ module Workflows
     end
 
     private
+
+    def record_poll_heartbeat(project_id)
+      run_activity(Activities::RecordPollHeartbeatActivity,
+        { project_id: project_id }, timeout: 10)
+    end
 
     def interruptible_sleep(duration)
       cancellation, @sleep_cancel_proc = Temporalio::Cancellation.new

@@ -9,9 +9,12 @@
 # - Crashed workers or connection issues
 #
 # Staleness detection: even if a workflow reports RUNNING, it may be stuck
-# (e.g., nondeterminism errors during replay). Each successful poll cycle
-# updates `project.last_polled_at`; if that timestamp exceeds
-# `3 * poll_interval + 3 minutes`, the workflow is restarted.
+# (e.g., nondeterminism errors during replay). The poll workflow updates
+# `project.last_polled_at` after each major step (fetch issues, detect
+# labels, scans) via RecordPollHeartbeatActivity, so the timestamp
+# reflects last forward progress — not just cycle completion. If that
+# timestamp exceeds `3 * poll_interval + 3 minutes`, the workflow is
+# restarted.
 #
 # Scheduled via GoodJob cron every 5 minutes.
 class PollWorkflowHealthCheckJob < ApplicationJob

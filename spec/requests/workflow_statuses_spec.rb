@@ -96,7 +96,7 @@ RSpec.describe "WorkflowStatuses" do
           project.update_column(:last_polled_at, 2.minutes.ago)
 
           get project_workflow_status_path(project)
-          expect(response.body).to include("Last checked")
+          expect(response.body).to include("Last progress")
           expect(response.body).to include("2 minutes ago")
         end
       end
