@@ -381,6 +381,8 @@ module ApplicationHelper
     raise unless Rails.env.test?
   end
 
+  private
+
   def safe_return_path?(path)
     path.start_with?("/") && !path.start_with?("//")
   end
@@ -391,8 +393,6 @@ module ApplicationHelper
   rescue URI::InvalidURIError
     false
   end
-
-  private
 
   def priority_tier_for_label(project, label)
     return "P0" if label == "P0"
