@@ -139,11 +139,18 @@ RUN SCC_VERSION=3.6.0 \
     && chmod +x /usr/local/bin/scc \
     && rm "${TARBALL}"
 
-# Install Claude Code CLI (primary agent for MVP)
-# The installer places the binary under /root/.local/ which is inaccessible to the
+# Install Claude Code CLI via agent-harness install contract.
+# The install command and post-install binary path are extracted from
+# agent-harness at build time (see scripts/extract-provider-install-contract.rb)
+# so Paid does not own the Claude-specific install recipe or version pin.
+# The installer places the binary under $HOME/.local/ which is inaccessible to the
 # non-root "agent" user. Copy the resolved binary to a system-wide path instead.
-RUN curl -fsSL https://claude.ai/install.sh | bash \
-    && cp -L /root/.local/bin/claude /usr/local/bin/claude \
+ARG CLAUDE_INSTALL_COMMAND
+ARG CLAUDE_POST_INSTALL_BINARY_PATH
+RUN if [ -z "${CLAUDE_INSTALL_COMMAND}" ]; then echo "ERROR: CLAUDE_INSTALL_COMMAND build-arg is required" >&2; exit 1; fi \
+    && if [ -z "${CLAUDE_POST_INSTALL_BINARY_PATH}" ]; then echo "ERROR: CLAUDE_POST_INSTALL_BINARY_PATH build-arg is required" >&2; exit 1; fi \
+    && eval "${CLAUDE_INSTALL_COMMAND}" \
+    && cp -L "$(eval echo "${CLAUDE_POST_INSTALL_BINARY_PATH}")" /usr/local/bin/claude \
     && chmod +x /usr/local/bin/claude
 
 # Install agent CLI tools via npm.
