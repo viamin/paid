@@ -81,10 +81,9 @@ module Scaling
     end
 
     def measure_temporal_queues
-      task_queue = Paid.task_queue
-      depth = fetch_temporal_queue_depth(task_queue)
+      [ Paid.poll_task_queue, Paid.agent_task_queue ].flat_map do |task_queue|
+        depth = fetch_temporal_queue_depth(task_queue)
 
-      [
         QueueDepth.new(
           name: task_queue,
           type: :temporal,
@@ -93,7 +92,7 @@ module Scaling
           threshold_critical: thresholds.dig(:temporal, :critical),
           status: status_for(depth, :temporal)
         )
-      ]
+      end
     rescue => e
       Rails.logger.warn(
         message: "scaling.queue_monitor.temporal_unavailable",
@@ -126,10 +125,7 @@ module Scaling
     end
 
     def fetch_temporal_queue_depth(task_queue)
-      count_running_workflows(Paid.temporal_client, task_queue)
-    end
-
-    def count_running_workflows(client, task_queue)
+      client = Paid.temporal_client
       sanitized_queue = task_queue.gsub("\\", "\\\\\\\\").gsub("'", "\\\\'")
       query = "TaskQueue = '#{sanitized_queue}' AND ExecutionStatus = 'Running'"
       # TODO(#725): Switch to client.count_workflows(query) when the Ruby Temporal SDK

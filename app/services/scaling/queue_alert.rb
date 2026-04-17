@@ -49,7 +49,7 @@ module Scaling
       ).active
 
       if alerted_queue_names.any?
-        scope = scope.where.not("metadata->>'queue_name' IN (?)", alerted_queue_names)
+        scope = scope.where.not("metadata->>'queue_name' IN (?)", alerted_queue_names.map(&:to_s))
       end
 
       scope.update_all(resolved_at: Time.current)

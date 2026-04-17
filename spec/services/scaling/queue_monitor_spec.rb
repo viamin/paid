@@ -84,11 +84,17 @@ RSpec.describe Scaling::QueueMonitor do
     end
 
     context "when Temporal is unavailable" do
-      it "gracefully skips Temporal queues" do
+      it "reports Temporal queues with zero depth" do
         result = described_class.call
 
         temporal_depths = result.queue_depths.select { |d| d.type == :temporal }
-        expect(temporal_depths).to be_empty
+        expect(temporal_depths.map(&:name)).to contain_exactly(
+          Paid.poll_task_queue, Paid.agent_task_queue
+        )
+        temporal_depths.each do |depth|
+          expect(depth.depth).to eq(0)
+          expect(depth.status).to eq(:ok)
+        end
       end
     end
 
