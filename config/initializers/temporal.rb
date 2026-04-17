@@ -52,10 +52,6 @@ module Paid
       ENV.fetch("TEMPORAL_UI_URL", "http://localhost:8080").sub(%r{/+\z}, "")
     end
 
-    def task_queue
-      ENV.fetch("TEMPORAL_TASK_QUEUE", "paid-tasks")
-    end
-
     # Dedicated task queue for GitHubPollWorkflow instances.
     # Isolates poll activities from agent-execution workloads so that
     # long-running agent runs cannot starve time-sensitive poll cycles.
@@ -72,5 +68,5 @@ module Paid
 
   # Resolved at load time so workflow code can reference it as a constant
   # without breaking Temporal's deterministic replay requirement.
-  AGENT_TASK_QUEUE = ENV.fetch("TEMPORAL_AGENT_TASK_QUEUE", "paid-agent-tasks")
+  AGENT_TASK_QUEUE = agent_task_queue
 end
