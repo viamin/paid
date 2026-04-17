@@ -27,18 +27,21 @@ module Scaling
       new(...).call
     end
 
-    def initialize(account: nil, thresholds: {})
+    def initialize(account: nil, thresholds: {}, only: nil)
       @account = account
       @thresholds = DEFAULT_THRESHOLDS.deep_merge(thresholds)
+      @only = only
     end
 
     def call
       depths = []
       alerts = []
 
-      depths.concat(measure_good_job_queues)
-      depths.concat(measure_temporal_queues)
-      depths.concat(measure_agent_run_queue)
+      unless only == :agent_run_queue
+        depths.concat(measure_good_job_queues)
+        depths.concat(measure_temporal_queues)
+      end
+      depths.concat(measure_agent_run_queue) if only.nil? || only == :agent_run_queue
 
       depths.each do |depth|
         alert = evaluate_threshold(depth)
@@ -56,7 +59,7 @@ module Scaling
 
     private
 
-    attr_reader :account, :thresholds
+    attr_reader :account, :thresholds, :only
 
     def measure_good_job_queues
       counts = GoodJob::Job.where(finished_at: nil)
@@ -124,8 +127,9 @@ module Scaling
     end
 
     def count_running_workflows(client, task_queue)
+      sanitized_queue = task_queue.gsub("'", "\\\\'")
       count = 0
-      client.list_workflows("TaskQueue = '#{task_queue}' AND ExecutionStatus = 'Running'").each do |_wf|
+      client.list_workflows("TaskQueue = '#{sanitized_queue}' AND ExecutionStatus = 'Running'").each do |_wf|
         count += 1
       end
       count

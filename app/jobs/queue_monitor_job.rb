@@ -19,32 +19,35 @@ class QueueMonitorJob < ApplicationJob
   def perform
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-    result = Scaling::QueueMonitor.call
+    global_result = Scaling::QueueMonitor.call
+    global_depths = global_result.queue_depths.reject { |d| d.type == :agent_run_queue }
 
     Account.find_each do |account|
-      account_result = Scaling::QueueMonitor.call(account: account)
-      Scaling::QueueAlert.call(account: account, alerts: account_result.alerts) if account_result.alerts.any?
+      account_agent_result = Scaling::QueueMonitor.call(account: account, only: :agent_run_queue)
+      combined_depths = global_depths + account_agent_result.queue_depths
+      combined_alerts = global_result.alerts.select { |a| a.queue_type != :agent_run_queue } + account_agent_result.alerts
 
-      broadcast_queue_health(account, account_result) if account_result.queue_depths.any?
+      Scaling::QueueAlert.call(account: account, alerts: combined_alerts)
+      broadcast_queue_health(account, combined_depths, global_result.healthy? && account_agent_result.healthy?) if combined_depths.any?
     end
 
     duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
     Rails.logger.info(
       message: "scaling.queue_monitor_job.completed",
-      global_healthy: result.healthy?,
-      alert_count: result.alerts.size,
+      global_healthy: global_result.healthy?,
+      alert_count: global_result.alerts.size,
       duration_ms: duration_ms
     )
   end
 
   private
 
-  def broadcast_queue_health(account, result)
+  def broadcast_queue_health(account, queue_depths, healthy)
     Turbo::StreamsChannel.broadcast_update_to(
       [ account, :live_dashboard ],
       target: "queue-health",
       partial: "dashboard/queue_health",
-      locals: { queue_depths: result.queue_depths, healthy: result.healthy? }
+      locals: { queue_depths: queue_depths, healthy: healthy }
     )
   end
 end

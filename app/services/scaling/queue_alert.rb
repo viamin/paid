@@ -41,20 +41,16 @@ module Scaling
     end
 
     def resolve_cleared_queues
-      alerted_sources = alerts.map(&:queue_name)
+      alerted_queue_names = alerts.map(&:queue_name)
 
       Notification.where(
         account: account,
         source: "queue_monitor"
       ).active.find_each do |notification|
         queue_name = notification.metadata&.dig("queue_name")
-        next if alerted_sources.include?(queue_name)
+        next if alerted_queue_names.include?(queue_name)
 
-        Notifications::Resolve.call(
-          account: account,
-          source: "queue_monitor",
-          subject: account
-        )
+        notification.update!(resolved_at: Time.current)
       end
     end
   end
