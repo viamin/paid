@@ -1,0 +1,61 @@
+<% content_for(:title) { "Getting Started - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-8 text-center">
+    <h1 class="text-2xl font-bold text-gray-900">Welcome to Paid</h1>
+    <p class="mt-2 text-sm text-gray-600">Let's get your workspace set up in a few quick steps.</p>
+  </div>
+
+  <%# Progress bar %>
+  <div class="mb-8">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-sm font-medium text-gray-700">Setup Progress</span>
+      <span class="text-sm font-medium text-indigo-600"><%= @progress %>%</span>
+    </div>
+    <div class="w-full bg-gray-200 rounded-full h-2">
+      <div class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width: <%= @progress %>%"></div>
+    </div>
+  </div>
+
+  <%# Step indicators %>
+  <nav aria-label="Progress" class="mb-8">
+    <ol class="flex items-center justify-between">
+      <% @steps.each_with_index do |step, index| %>
+        <li class="flex items-center <%= 'flex-1' unless index == @steps.size - 1 %>">
+          <% if step.completed? || step.skipped? %>
+            <span class="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600">
+              <svg class="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
+              </svg>
+            </span>
+          <% elsif step.in_progress? %>
+            <span class="flex h-8 w-8 items-center justify-center rounded-full border-2 border-indigo-600 bg-white">
+              <span class="text-sm font-medium text-indigo-600"><%= index + 1 %></span>
+            </span>
+          <% else %>
+            <span class="flex h-8 w-8 items-center justify-center rounded-full border-2 border-gray-300 bg-white">
+              <span class="text-sm font-medium text-gray-500"><%= index + 1 %></span>
+            </span>
+          <% end %>
+          <% unless index == @steps.size - 1 %>
+            <div class="ml-2 flex-1 h-0.5 <%= step.completed? || step.skipped? ? 'bg-indigo-600' : 'bg-gray-300' %>"></div>
+          <% end %>
+        </li>
+      <% end %>
+    </ol>
+    <div class="flex justify-between mt-2">
+      <% @steps.each do |step| %>
+        <span class="text-xs text-gray-500"><%= step.step.humanize.titleize %></span>
+      <% end %>
+    </div>
+  </nav>
+
+  <%# Current step form %>
+  <% if @current_step %>
+    <div class="bg-white shadow sm:rounded-lg">
+      <div class="px-4 py-5 sm:p-6">
+        <%= render "onboarding/steps/#{@current_step.step}", step: @current_step %>
+      </div>
+    </div>
+  <% end %>
+</div>
