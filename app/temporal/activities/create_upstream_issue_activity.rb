@@ -87,17 +87,5 @@ module Activities
         error: e.message
       )
     end
-
-    def record_cross_repo_issue(agent_run, target_repo, gh_issue, role:)
-      entry = {
-        "repo" => target_repo,
-        "issue_number" => gh_issue.number,
-        "issue_url" => gh_issue.html_url,
-        "role" => role
-      }
-      agent_run.update!(
-        cross_repo_issues: (agent_run.cross_repo_issues || []) + [ entry ]
-      )
-    end
   end
 end

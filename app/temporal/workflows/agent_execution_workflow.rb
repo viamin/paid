@@ -630,7 +630,8 @@ module Workflows
 
       run_activity(Activities::CreateGithubIssueActivity,
         { agent_run_id: agent_run_id,
-          upstream_issue: upstream_ref },
+          upstream_issue: upstream_ref,
+          body_override: plan[:downstream_body] },
         timeout: 120, retry_policy: NO_RETRY)
     end
 

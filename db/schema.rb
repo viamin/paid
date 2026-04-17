@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_17_031455) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_17_184749) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -81,19 +81,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_031455) do
 
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.datetime "deactivated_at"
     t.integer "default_max_tokens_per_run", default: 10000000, null: false
     t.string "name", null: false
-    t.datetime "onboarding_completed_at"
-    t.string "plan", default: "trial", null: false
     t.datetime "scheduler_paused_at"
     t.string "slug", null: false
-    t.integer "status", default: 0, null: false
-    t.datetime "suspended_at"
-    t.datetime "trial_ends_at"
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
-    t.index ["status"], name: "index_accounts_on_status"
   end
 
   create_table "agent_run_anomalies", force: :cascade do |t|
@@ -223,81 +216,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_031455) do
     t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
-  end
-
-  create_table "billing_invoices", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.bigint "billing_period_id", null: false
-    t.datetime "created_at", null: false
-    t.datetime "due_at"
-    t.string "external_id", limit: 255
-    t.datetime "issued_at"
-    t.jsonb "metadata", default: {}, null: false
-    t.datetime "paid_at"
-    t.string "status", limit: 20, default: "draft", null: false
-    t.integer "subtotal_cents", default: 0, null: false
-    t.integer "tax_cents", default: 0, null: false
-    t.integer "total_cents", default: 0, null: false
-    t.datetime "updated_at", null: false
-    t.index ["account_id", "status"], name: "index_billing_invoices_on_account_id_and_status"
-    t.index ["account_id"], name: "index_billing_invoices_on_account_id"
-    t.index ["billing_period_id"], name: "index_billing_invoices_on_billing_period_id"
-    t.index ["external_id"], name: "index_billing_invoices_on_external_id", unique: true, where: "(external_id IS NOT NULL)"
-  end
-
-  create_table "billing_line_items", force: :cascade do |t|
-    t.bigint "billing_invoice_id", null: false
-    t.datetime "created_at", null: false
-    t.string "description", null: false
-    t.string "line_item_type", limit: 30, null: false
-    t.jsonb "metadata", default: {}, null: false
-    t.decimal "quantity", precision: 18, scale: 4, default: "0.0", null: false
-    t.integer "total_cents", default: 0, null: false
-    t.integer "unit_price_cents", default: 0, null: false
-    t.datetime "updated_at", null: false
-    t.index ["billing_invoice_id"], name: "index_billing_line_items_on_billing_invoice_id"
-    t.index ["line_item_type"], name: "index_billing_line_items_on_line_item_type"
-  end
-
-  create_table "billing_periods", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.bigint "billing_plan_id", null: false
-    t.datetime "created_at", null: false
-    t.datetime "ends_at", null: false
-    t.jsonb "metadata", default: {}, null: false
-    t.string "period_type", limit: 20, null: false
-    t.datetime "starts_at", null: false
-    t.string "status", limit: 20, default: "open", null: false
-    t.integer "total_compute_seconds", default: 0, null: false
-    t.integer "total_cost_cents", default: 0, null: false
-    t.bigint "total_input_tokens", default: 0, null: false
-    t.bigint "total_output_tokens", default: 0, null: false
-    t.integer "total_runs", default: 0, null: false
-    t.datetime "updated_at", null: false
-    t.index ["account_id", "starts_at", "ends_at"], name: "index_billing_periods_on_account_id_and_starts_at_and_ends_at"
-    t.index ["account_id", "status"], name: "index_billing_periods_on_account_id_and_status"
-    t.index ["account_id"], name: "index_billing_periods_on_account_id"
-    t.index ["billing_plan_id"], name: "index_billing_periods_on_billing_plan_id"
-  end
-
-  create_table "billing_plans", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.boolean "active", default: true, null: false
-    t.integer "base_rate_cents", default: 0, null: false
-    t.string "billing_model", limit: 30, null: false
-    t.datetime "created_at", null: false
-    t.integer "included_projects", default: 0, null: false
-    t.integer "included_runs", default: 0, null: false
-    t.bigint "included_tokens", default: 0, null: false
-    t.jsonb "metadata", default: {}, null: false
-    t.string "name", limit: 100, null: false
-    t.integer "per_project_rate_cents", default: 0, null: false
-    t.integer "per_run_rate_cents", default: 0, null: false
-    t.decimal "per_token_rate_cents", precision: 12, scale: 6, default: "0.0", null: false
-    t.string "period_type", limit: 20, null: false
-    t.datetime "updated_at", null: false
-    t.index ["account_id", "active"], name: "index_billing_plans_on_account_id_and_active"
-    t.index ["account_id"], name: "index_billing_plans_on_account_id"
   end
 
   create_table "collector_runs", force: :cascade do |t|
@@ -825,20 +743,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_031455) do
     t.index ["user_id"], name: "index_notifications_on_user_id"
   end
 
-  create_table "onboarding_steps", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.datetime "completed_at"
-    t.datetime "created_at", null: false
-    t.jsonb "metadata", default: {}
-    t.integer "position", null: false
-    t.string "status", default: "pending", null: false
-    t.string "step", null: false
-    t.datetime "updated_at", null: false
-    t.index ["account_id", "position"], name: "index_onboarding_steps_on_account_id_and_position"
-    t.index ["account_id", "step"], name: "index_onboarding_steps_on_account_id_and_step", unique: true
-    t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
-  end
-
   create_table "pre_commit_requirements", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "check_type", limit: 50, default: "shell_command", null: false
@@ -941,6 +845,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_031455) do
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
+    t.jsonb "fitness_settings", default: {}, null: false
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
     t.bigint "github_token_id", null: false
@@ -965,6 +870,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_031455) do
     t.jsonb "pr_action_labels", default: [], null: false
     t.boolean "pr_aggregation_enabled", default: false, null: false
     t.jsonb "priority_labels", default: {"P1" => "P1", "P2" => "P2", "P3" => "P3"}, null: false
+    t.jsonb "quality_gate_settings", default: {}, null: false
     t.string "repo", null: false
     t.jsonb "review_settings", default: {}, null: false
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false
@@ -1072,6 +978,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_031455) do
     t.jsonb "tier_model_ids", default: {}, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
+    t.integer "weight", default: 1, null: false
     t.index ["auth_type"], name: "index_providers_on_auth_type"
     t.index ["provider_api_key_id"], name: "index_providers_on_provider_api_key_id"
     t.index ["tier_model_ids"], name: "index_providers_on_tier_model_ids", using: :gin
@@ -1080,6 +987,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_031455) do
     t.index ["user_id"], name: "index_providers_on_user_id"
     t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL", name: "providers_api_key_requires_key"
     t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "providers_subscription_invariants"
+    t.check_constraint "weight >= 1", name: "providers_weight_positive"
   end
 
   create_table "quality_metrics", force: :cascade do |t|
@@ -1156,32 +1064,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_031455) do
     t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_style_guides_scope_consistency"
   end
 
-  create_table "tenant_configurations", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.jsonb "agent_settings", default: {}, null: false
-    t.jsonb "cost_budgets", default: {}, null: false
-    t.datetime "created_at", null: false
-    t.jsonb "feature_flags", default: {}, null: false
-    t.jsonb "provider_preferences", default: {}, null: false
-    t.jsonb "quality_thresholds", default: {}, null: false
-    t.datetime "updated_at", null: false
-    t.index ["account_id"], name: "index_tenant_configurations_on_account_id", unique: true
-  end
-
-  create_table "tenant_settings", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.text "allowed_provider_keys", default: [], array: true
-    t.datetime "created_at", null: false
-    t.jsonb "features", default: {}, null: false
-    t.integer "max_concurrent_runs", default: 10, null: false
-    t.integer "max_monthly_cost_cents"
-    t.integer "max_projects", default: 50, null: false
-    t.integer "max_tokens_per_run", default: 10000000, null: false
-    t.integer "max_users", default: 25, null: false
-    t.datetime "updated_at", null: false
-    t.index ["account_id"], name: "index_tenant_settings_on_account_id", unique: true
-  end
-
   create_table "token_usages", force: :cascade do |t|
     t.bigint "agent_run_id"
     t.integer "cost_cents", default: 0, null: false
@@ -1234,6 +1116,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_031455) do
     t.integer "max_prompt_comments", default: 20, null: false
     t.integer "max_prs_per_page", default: 50, null: false
     t.integer "max_tokens_per_run", default: 10000000, null: false
+    t.jsonb "provider_round_robin_state", default: {}, null: false
+    t.string "provider_selection_mode", limit: 20, default: "single", null: false
     t.float "retry_base_delay", default: 1.0, null: false
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false
@@ -1241,12 +1125,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_031455) do
     t.integer "style_guide_max_raw_bytes", default: 100000, null: false
     t.integer "style_guide_max_raw_prompt_bytes", default: 8000, null: false
     t.integer "style_guide_max_total_bytes", default: 32000, null: false
+    t.string "theme_preference", default: "system", null: false
     t.integer "token_validation_stale_minutes", default: 2, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.index ["user_id"], name: "index_user_settings_on_user_id", unique: true
     t.check_constraint "max_issues_per_page >= 5 AND max_issues_per_page <= 200", name: "chk_max_issues_per_page_bounds"
     t.check_constraint "max_prs_per_page >= 5 AND max_prs_per_page <= 200", name: "chk_max_prs_per_page_bounds"
+    t.check_constraint "provider_selection_mode::text = ANY (ARRAY['single'::character varying::text, 'round_robin'::character varying::text, 'random'::character varying::text])", name: "chk_provider_selection_mode"
   end
 
   create_table "users", force: :cascade do |t|
@@ -1300,93 +1186,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_031455) do
     t.index ["status"], name: "index_worktrees_on_status"
   end
 
-  add_foreign_key "agent_run_anomalies", "agent_runs"
-  add_foreign_key "agent_run_anomalies", "projects"
-  add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
-  add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
-  add_foreign_key "agent_runs", "issues", on_delete: :nullify
-  add_foreign_key "agent_runs", "projects", on_delete: :cascade
-  add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
-  add_foreign_key "agent_runs", "providers", on_delete: :nullify
-  add_foreign_key "billing_invoices", "accounts"
-  add_foreign_key "billing_invoices", "billing_periods"
-  add_foreign_key "billing_line_items", "billing_invoices"
-  add_foreign_key "billing_periods", "accounts"
-  add_foreign_key "billing_periods", "billing_plans"
-  add_foreign_key "billing_plans", "accounts"
-  add_foreign_key "collector_runs", "project_versions"
-  add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
-  add_foreign_key "context_intake_responses", "context_intake_responses", column: "parent_response_id"
-  add_foreign_key "context_intake_responses", "context_intake_sessions"
-  add_foreign_key "context_intake_sessions", "projects"
-  add_foreign_key "context_intake_sessions", "users", column: "started_by_id"
-  add_foreign_key "cost_budgets", "projects", on_delete: :cascade
-  add_foreign_key "decision_record_links", "decision_records", on_delete: :cascade
-  add_foreign_key "decision_records", "agent_runs", on_delete: :nullify
-  add_foreign_key "decision_records", "decision_records", column: "superseded_by_id", on_delete: :nullify
-  add_foreign_key "decision_records", "issues", on_delete: :nullify
-  add_foreign_key "decision_records", "projects", on_delete: :cascade
-  add_foreign_key "github_tokens", "accounts"
-  add_foreign_key "github_tokens", "users", column: "created_by_id"
-  add_foreign_key "integration_credentials", "accounts"
-  add_foreign_key "integration_credentials", "users", column: "created_by_id"
-  add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade
-  add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
-  add_foreign_key "issues", "issues", column: "parent_issue_id"
-  add_foreign_key "issues", "projects"
-  add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
-  add_foreign_key "knowledge_artifacts", "projects"
-  add_foreign_key "knowledge_audit_events", "projects", on_delete: :cascade
-  add_foreign_key "knowledge_chunks", "knowledge_artifacts", on_delete: :cascade
-  add_foreign_key "knowledge_chunks", "projects"
-  add_foreign_key "knowledge_links", "knowledge_chunks", column: "source_chunk_id", on_delete: :cascade
-  add_foreign_key "knowledge_links", "knowledge_chunks", column: "target_chunk_id", on_delete: :cascade
-  add_foreign_key "knowledge_runs", "projects", on_delete: :cascade
-  add_foreign_key "linear_tokens", "accounts"
-  add_foreign_key "linear_tokens", "users", column: "created_by_id"
-  add_foreign_key "mcp_server_definitions", "accounts"
-  add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
-  add_foreign_key "model_selections", "llm_models"
-  add_foreign_key "notifications", "accounts"
-  add_foreign_key "notifications", "users", on_delete: :nullify
-  add_foreign_key "onboarding_steps", "accounts"
-  add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
-  add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
-  add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
-  add_foreign_key "project_baselines", "projects"
-  add_foreign_key "project_mcp_servers", "mcp_server_definitions"
-  add_foreign_key "project_mcp_servers", "projects"
-  add_foreign_key "project_memberships", "projects"
-  add_foreign_key "project_memberships", "users"
-  add_foreign_key "project_service_containers", "projects", on_delete: :cascade
-  add_foreign_key "project_service_containers", "service_containers", on_delete: :cascade
-  add_foreign_key "project_versions", "projects"
-  add_foreign_key "projects", "accounts"
-  add_foreign_key "projects", "github_tokens"
-  add_foreign_key "projects", "users", column: "created_by_id"
   add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify
   add_foreign_key "prompt_versions", "prompts", on_delete: :cascade
   add_foreign_key "prompt_versions", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "prompt_versions", "users", column: "reviewed_by_user_id", on_delete: :nullify
-  add_foreign_key "prompts", "accounts", on_delete: :cascade
-  add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "provider_api_keys", "users", on_delete: :cascade
   add_foreign_key "provider_states", "users", on_delete: :cascade
   add_foreign_key "providers", "provider_api_keys", on_delete: :restrict
   add_foreign_key "providers", "users", on_delete: :cascade
-  add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
-  add_foreign_key "style_guides", "accounts", on_delete: :cascade
-  add_foreign_key "style_guides", "projects", on_delete: :cascade
-  add_foreign_key "tenant_configurations", "accounts"
-  add_foreign_key "tenant_settings", "accounts"
-  add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
-  add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "user_settings", "users"
-  add_foreign_key "users", "accounts"
-  add_foreign_key "workflow_states", "projects"
-  add_foreign_key "worktrees", "agent_runs", on_delete: :nullify
-  add_foreign_key "worktrees", "projects", on_delete: :cascade
 end

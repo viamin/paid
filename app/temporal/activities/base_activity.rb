@@ -224,6 +224,18 @@ module Activities
       end
     end
 
+    def record_cross_repo_issue(agent_run, repo, gh_issue, role:)
+      entry = {
+        "repo" => repo,
+        "issue_number" => gh_issue.number,
+        "issue_url" => gh_issue.html_url,
+        "role" => role
+      }
+      agent_run.update!(
+        cross_repo_issues: (agent_run.cross_repo_issues || []) + [ entry ]
+      )
+    end
+
     def record_phase(agent_run:, phase_key:, phase_group:, started_at:, finished_at:, status: "completed", metadata: {})
       return unless agent_run
 

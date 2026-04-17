@@ -4,6 +4,9 @@ module Api
   class GithubProxyController < ActionController::API
     include Api::ContainerAuthentication
 
+    REVIEW_COMMENT_MARKER = "<!-- paid:code-review -->"
+    REVIEW_HEADER = "## Code Review"
+
     # Allowlisted GitHub API endpoints (regex with named captures for owner/repo).
     ALLOWED_ENDPOINTS = [
       # Issues
@@ -40,7 +43,8 @@ module Api
         return
       end
 
-      response = proxy_to_github(path, github_authorization_token(path))
+      forwarded_body = maybe_prepend_review_header(path, request.raw_post)
+      response = proxy_to_github(path, github_authorization_token(path), forwarded_body)
       github_token.touch_last_used! unless use_review_bot_token?(path)
 
       if response.status >= 200 && response.status < 300
@@ -81,14 +85,14 @@ module Api
       "#{owner}/#{repo}".casecmp(project_full_name).zero?
     end
 
-    def proxy_to_github(path, authorization_token)
+    def proxy_to_github(path, authorization_token, body = request.raw_post)
       target_url = "https://api.github.com/#{path}"
       target_url = "#{target_url}?#{request.query_string}" if request.query_string.present?
 
       build_connection.run_request(
         request.method.downcase.to_sym,
         target_url,
-        request.raw_post,
+        body,
         forwarded_headers.merge(
           "Authorization" => "Bearer #{authorization_token}",
           "Accept" => "application/vnd.github+json"
@@ -107,6 +111,23 @@ module Api
     def use_review_bot_token?(path)
       @agent_run.review_goal? &&
         @agent_run.project.review_method_enabled?("paid_agent") &&
+        request.method == "POST" &&
+        %r{\Arepos/[^/]+/[^/]+/pulls/\d+/reviews\z}.match?(path)
+    end
+
+    def maybe_prepend_review_header(path, raw_body)
+      return raw_body unless review_creation_request?(path)
+
+      body = parse_request_body(raw_body)
+      return raw_body unless body["body"].is_a?(String)
+      return raw_body if body["body"].include?(REVIEW_COMMENT_MARKER)
+
+      body["body"] = "#{REVIEW_COMMENT_MARKER}\n#{REVIEW_HEADER}\n\n#{body["body"]}"
+      body.to_json
+    end
+
+    def review_creation_request?(path)
+      @agent_run.review_goal? &&
         request.method == "POST" &&
         %r{\Arepos/[^/]+/[^/]+/pulls/\d+/reviews\z}.match?(path)
     end

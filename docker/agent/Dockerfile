@@ -139,11 +139,18 @@ RUN SCC_VERSION=3.6.0 \
     && chmod +x /usr/local/bin/scc \
     && rm "${TARBALL}"
 
-# Install Claude Code CLI (primary agent for MVP)
-# The installer places the binary under /root/.local/ which is inaccessible to the
+# Install Claude Code CLI via agent-harness install contract.
+# The install command and post-install binary path are extracted from
+# agent-harness at build time (see scripts/extract-provider-install-contract.rb)
+# so Paid does not own the Claude-specific install recipe or version pin.
+# The installer places the binary under $HOME/.local/ which is inaccessible to the
 # non-root "agent" user. Copy the resolved binary to a system-wide path instead.
-RUN curl -fsSL https://claude.ai/install.sh | bash \
-    && cp -L /root/.local/bin/claude /usr/local/bin/claude \
+ARG CLAUDE_INSTALL_COMMAND
+ARG CLAUDE_POST_INSTALL_BINARY_PATH
+RUN if [ -z "${CLAUDE_INSTALL_COMMAND}" ]; then echo "ERROR: CLAUDE_INSTALL_COMMAND build-arg is required" >&2; exit 1; fi \
+    && if [ -z "${CLAUDE_POST_INSTALL_BINARY_PATH}" ]; then echo "ERROR: CLAUDE_POST_INSTALL_BINARY_PATH build-arg is required" >&2; exit 1; fi \
+    && eval "${CLAUDE_INSTALL_COMMAND}" \
+    && cp -L "$(eval echo "${CLAUDE_POST_INSTALL_BINARY_PATH}")" /usr/local/bin/claude \
     && chmod +x /usr/local/bin/claude
 
 # Install agent CLI tools via npm.
@@ -170,7 +177,7 @@ RUN npm install -g --ignore-scripts @githubnext/github-copilot-cli@0.1.36
 # The installer places the binary under /root/.local/ which is inaccessible to the
 # non-root "agent" user. Copy the resolved binary to a system-wide path instead.
 # To update: curl -fsSL https://cursor.com/install | sha256sum
-ARG CURSOR_AGENT_INSTALL_SHA256=e94dda4dbf7f0157e75b52b4d886869987c15ef4ce74a0717dc3cab9ab15b79d
+ARG CURSOR_AGENT_INSTALL_SHA256=d8d01263fb3d0642e86170e3476f2d6c94582960d33f786802f5090e1e811941
 RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
     && echo "${CURSOR_AGENT_INSTALL_SHA256}  /tmp/cursor-install.sh" | sha256sum -c - \
     && bash /tmp/cursor-install.sh \
