@@ -604,7 +604,7 @@ module Activities
           idle_timeout: effective_idle_timeout,
           env: command_env,
           preparation: command_preparation,
-          heartbeat_path: heartbeat.heartbeat_path
+          heartbeat_path: heartbeat.available? ? heartbeat.heartbeat_path : nil
         )
       end
       stdout = normalize_output_text(result[:stdout])
