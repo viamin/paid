@@ -21,8 +21,7 @@ class AccountPrTemplatesController < ApplicationController
     authorize @pr_template
 
     if @pr_template.save
-      redirect_to account_pr_templates_path,
-        notice: "PR template created."
+      render json: @pr_template, status: :created
     else
       render json: { errors: @pr_template.errors }, status: :unprocessable_content
     end
@@ -32,8 +31,7 @@ class AccountPrTemplatesController < ApplicationController
     authorize @pr_template
 
     if @pr_template.update(pr_template_params)
-      redirect_to account_pr_templates_path,
-        notice: "PR template updated."
+      render json: @pr_template
     else
       render json: { errors: @pr_template.errors }, status: :unprocessable_content
     end
@@ -42,8 +40,7 @@ class AccountPrTemplatesController < ApplicationController
   def destroy
     authorize @pr_template
     @pr_template.destroy!
-    redirect_to account_pr_templates_path,
-      notice: "PR template removed."
+    head :no_content
   end
 
   private

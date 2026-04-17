@@ -47,7 +47,7 @@ RSpec.describe "Projects::PrTemplates" do
           post project_pr_templates_path(project), params: valid_params
         }.to change(PrTemplate, :count).by(1)
 
-        expect(response).to redirect_to(project_pr_templates_path(project))
+        expect(response).to have_http_status(:created)
         template = PrTemplate.last
         expect(template.name).to eq("standard")
         expect(template.project).to eq(project)
@@ -72,7 +72,7 @@ RSpec.describe "Projects::PrTemplates" do
         patch project_pr_template_path(project, pr_template),
           params: { pr_template: { name: "updated-standard" } }
 
-        expect(response).to redirect_to(project_pr_templates_path(project))
+        expect(response).to have_http_status(:ok)
         expect(pr_template.reload.name).to eq("updated-standard")
       end
     end
@@ -94,7 +94,7 @@ RSpec.describe "Projects::PrTemplates" do
           delete project_pr_template_path(project, pr_template)
         }.to change(PrTemplate, :count).by(-1)
 
-        expect(response).to redirect_to(project_pr_templates_path(project))
+        expect(response).to have_http_status(:no_content)
       end
     end
   end

@@ -158,7 +158,8 @@ services:
       - DATABASE_URL=postgres://paid:paid@postgres:5432/paid_development
       - TEMPORAL_ADDRESS=temporal:7233
       - TEMPORAL_NAMESPACE=default
-      - TEMPORAL_TASK_QUEUE=paid-tasks
+      - TEMPORAL_POLL_TASK_QUEUE=paid-poll-tasks
+      - TEMPORAL_AGENT_TASK_QUEUE=paid-agent-tasks
       - RAILS_ENV=development
       - PAID_PROXY_PORT=3000
       - CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-}

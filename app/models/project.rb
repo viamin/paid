@@ -345,7 +345,7 @@ class Project < ApplicationRecord
 
   # Shared staleness window used by both the health-check job and the
   # automation health UI. A poll workflow is considered stale when it has not
-  # completed a poll cycle within 3× the configured interval plus a buffer.
+  # recorded forward progress within 3× the configured interval plus a buffer.
   STALENESS_BUFFER = 3.minutes
 
   def poll_staleness_window

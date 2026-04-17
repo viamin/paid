@@ -43,7 +43,7 @@ RSpec.describe "UserPrTemplates" do
           post user_pr_templates_path, params: valid_params
         }.to change(PrTemplate, :count).by(1)
 
-        expect(response).to redirect_to(user_pr_templates_path)
+        expect(response).to have_http_status(:created)
         template = PrTemplate.last
         expect(template.name).to eq("my-template")
         expect(template.user).to eq(user)
@@ -64,7 +64,7 @@ RSpec.describe "UserPrTemplates" do
         patch user_pr_template_path(pr_template),
           params: { pr_template: { name: "updated-template" } }
 
-        expect(response).to redirect_to(user_pr_templates_path)
+        expect(response).to have_http_status(:ok)
         expect(pr_template.reload.name).to eq("updated-template")
       end
     end
@@ -83,7 +83,7 @@ RSpec.describe "UserPrTemplates" do
           delete user_pr_template_path(pr_template)
         }.to change(PrTemplate, :count).by(-1)
 
-        expect(response).to redirect_to(user_pr_templates_path)
+        expect(response).to have_http_status(:no_content)
       end
     end
   end

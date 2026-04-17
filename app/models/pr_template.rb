@@ -78,11 +78,7 @@ class PrTemplate < ApplicationRecord
   # @param variables [Hash<String,String>] Variable name => value pairs
   # @return [String] The rendered template body
   def render(variables = {})
-    result = body.dup
-    variables.each do |key, value|
-      result.gsub!("{{#{key}}}", value.to_s)
-    end
-    result
+    body.gsub(/\{\{(\w+)\}\}/) { |match| variables.key?(Regexp.last_match(1)) ? variables[Regexp.last_match(1)].to_s : match }
   end
 
   private
