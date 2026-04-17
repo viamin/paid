@@ -27,10 +27,11 @@ module Scaling
       new(...).call
     end
 
-    def initialize(account: nil, thresholds: {}, only: nil)
+    def initialize(account: nil, thresholds: {}, only: nil, precomputed_depth: nil)
       @account = account
       @thresholds = DEFAULT_THRESHOLDS.deep_merge(thresholds)
       @only = only
+      @precomputed_depth = precomputed_depth
     end
 
     def call
@@ -59,7 +60,7 @@ module Scaling
 
     private
 
-    attr_reader :account, :thresholds, :only
+    attr_reader :account, :thresholds, :only, :precomputed_depth
 
     def measure_good_job_queues
       counts = GoodJob::Job.where(finished_at: nil)
@@ -102,7 +103,9 @@ module Scaling
     end
 
     def measure_agent_run_queue
-      depth = if account
+      depth = if precomputed_depth
+        precomputed_depth
+      elsif account
         AgentRun.joins(:project)
           .where(projects: { account_id: account.id })
           .where(status: "queued").count
@@ -127,7 +130,7 @@ module Scaling
     end
 
     def count_running_workflows(client, task_queue)
-      sanitized_queue = task_queue.gsub("'", "\\\\'")
+      sanitized_queue = task_queue.gsub("\\", "\\\\\\\\").gsub("'", "\\\\'")
       query = "TaskQueue = '#{sanitized_queue}' AND ExecutionStatus = 'Running'"
       # TODO(#725): Switch to client.count_workflows(query) when the Ruby Temporal SDK
       # exposes CountWorkflowExecutions. list_workflows is O(n) and will degrade at scale.

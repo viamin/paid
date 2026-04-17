@@ -36,10 +36,10 @@ RSpec.describe QueueMonitorJob do
       expect(Scaling::QueueMonitor).to have_received(:call).with(no_args)
     end
 
-    it "runs the agent_run_queue monitor per account" do
+    it "runs the agent_run_queue monitor per account with precomputed depth" do
       described_class.perform_now
 
-      expect(Scaling::QueueMonitor).to have_received(:call).with(account: account, only: :agent_run_queue)
+      expect(Scaling::QueueMonitor).to have_received(:call).with(account: account, only: :agent_run_queue, precomputed_depth: 0)
     end
 
     it "broadcasts queue health to each account dashboard" do
@@ -69,7 +69,7 @@ RSpec.describe QueueMonitorJob do
       end
 
       before do
-        allow(Scaling::QueueMonitor).to receive(:call).with(account: account, only: :agent_run_queue).and_return(alert_result)
+        allow(Scaling::QueueMonitor).to receive(:call).with(account: account, only: :agent_run_queue, precomputed_depth: 0).and_return(alert_result)
       end
 
       it "publishes alerts for the account" do

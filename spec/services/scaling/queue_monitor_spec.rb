@@ -92,6 +92,15 @@ RSpec.describe Scaling::QueueMonitor do
       end
     end
 
+    it "uses precomputed_depth when provided instead of querying" do
+      create(:agent_run, project: project, status: "queued")
+
+      result = described_class.call(account: account, only: :agent_run_queue, precomputed_depth: 42)
+
+      agent_depth = result.queue_depths.find { |d| d.type == :agent_run_queue }
+      expect(agent_depth.depth).to eq(42)
+    end
+
     it "accepts custom thresholds" do
       result = described_class.call(
         thresholds: { good_job: { warning: 1, critical: 5 } }

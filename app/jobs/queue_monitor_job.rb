@@ -22,8 +22,14 @@ class QueueMonitorJob < ApplicationJob
     global_result = Scaling::QueueMonitor.call
     global_depths = global_result.queue_depths.reject { |d| d.type == :agent_run_queue }
 
+    agent_run_counts = AgentRun.joins(:project)
+      .where(status: "queued")
+      .group("projects.account_id")
+      .count
+
     Account.find_each do |account|
-      account_agent_result = Scaling::QueueMonitor.call(account: account, only: :agent_run_queue)
+      depth = agent_run_counts.fetch(account.id, 0)
+      account_agent_result = Scaling::QueueMonitor.call(account: account, only: :agent_run_queue, precomputed_depth: depth)
       combined_depths = global_depths + account_agent_result.queue_depths
       combined_alerts = global_result.alerts.select { |a| a.queue_type != :agent_run_queue } + account_agent_result.alerts
 
