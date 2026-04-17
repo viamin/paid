@@ -84,6 +84,57 @@ RSpec.describe PromptVersion do
     end
   end
 
+  describe "review state" do
+    let(:prompt) { create(:prompt, :global) }
+
+    it "defaults to nil review_status (not participating in review workflow)" do
+      version = create(:prompt_version, prompt: prompt, version: 1)
+      expect(version.review_status).to be_nil
+      expect(version).not_to be_under_review
+      expect(version).not_to be_pending_review
+    end
+
+    it "supports pending/approved/rejected transitions" do
+      version = create(:prompt_version, :pending_review, prompt: prompt, version: 1)
+
+      expect(version).to be_pending_review
+      expect(version).to be_under_review
+      expect(version).not_to be_approved
+
+      version.update!(review_status: "approved", reviewed_at: Time.current)
+      expect(version).to be_approved
+      expect(version).not_to be_pending_review
+    end
+
+    it "rejects invalid review_status values" do
+      version = build(:prompt_version, prompt: prompt, version: 1, review_status: "bogus")
+      expect(version).not_to be_valid
+      expect(version.errors[:review_status]).to be_present
+    end
+
+    it "scopes versions by review state" do
+      pending = create(:prompt_version, :pending_review, prompt: prompt, version: 1)
+      approved = create(:prompt_version, :approved, prompt: prompt, version: 2)
+      rejected = create(:prompt_version, :rejected, prompt: prompt, version: 3)
+      _unreviewed = create(:prompt_version, prompt: prompt, version: 4)
+
+      expect(described_class.pending_review).to contain_exactly(pending)
+      expect(described_class.approved).to contain_exactly(approved)
+      expect(described_class.rejected).to contain_exactly(rejected)
+    end
+
+    it "allows review fields to be updated after creation" do
+      version = create(:prompt_version, :pending_review, prompt: prompt, version: 1)
+      user = create(:user)
+
+      version.reviewed_by_user = user
+      version.reviewed_at = Time.current
+      version.review_notes = "Good enough"
+      version.review_status = "approved"
+      expect(version).to be_valid
+    end
+  end
+
   describe "#render" do
     it "interpolates variables into the template" do
       version = build(:prompt_version, template: "Fix **{{title}}** (\#{{number}})\n\n{{body}}")

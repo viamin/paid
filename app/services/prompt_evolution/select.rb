@@ -208,9 +208,10 @@ module PromptEvolution
 
     def promote_if_changed(winner)
       return false unless winner
-      return false if prompt.current_version_id == winner.id
 
       prompt.with_lock do
+        return false if prompt.current_version_id == winner.id
+
         prompt.update!(current_version: winner)
       end
       true

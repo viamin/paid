@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -81,12 +81,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
 
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.datetime "deactivated_at"
     t.integer "default_max_tokens_per_run", default: 10000000, null: false
     t.string "name", null: false
     t.datetime "scheduler_paused_at"
     t.string "slug", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "suspended_at"
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
+    t.index ["status"], name: "index_accounts_on_status"
   end
 
   create_table "agent_run_anomalies", force: :cascade do |t|
@@ -847,7 +851,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
-    t.jsonb "fitness_settings", default: {}, null: false
+    t.jsonb "fitness_weights", default: {}, null: false
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
     t.bigint "github_token_id", null: false
@@ -981,7 +985,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
     t.jsonb "tier_model_ids", default: {}, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
-    t.integer "weight", default: 1, null: false
     t.index ["auth_type"], name: "index_providers_on_auth_type"
     t.index ["provider_api_key_id"], name: "index_providers_on_provider_api_key_id"
     t.index ["tier_model_ids"], name: "index_providers_on_tier_model_ids", using: :gin
@@ -990,7 +993,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
     t.index ["user_id"], name: "index_providers_on_user_id"
     t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL", name: "providers_api_key_requires_key"
     t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "providers_subscription_invariants"
-    t.check_constraint "weight >= 1", name: "providers_weight_positive"
   end
 
   create_table "quality_metrics", force: :cascade do |t|
@@ -1067,6 +1069,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
     t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_style_guides_scope_consistency"
   end
 
+  create_table "tenant_settings", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.text "allowed_provider_keys", default: [], array: true
+    t.datetime "created_at", null: false
+    t.jsonb "features", default: {}, null: false
+    t.integer "max_concurrent_runs", default: 10, null: false
+    t.integer "max_monthly_cost_cents"
+    t.integer "max_projects", default: 50, null: false
+    t.integer "max_tokens_per_run", default: 10000000, null: false
+    t.integer "max_users", default: 25, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_tenant_settings_on_account_id", unique: true
+  end
+
   create_table "token_usages", force: :cascade do |t|
     t.bigint "agent_run_id"
     t.integer "cost_cents", default: 0, null: false
@@ -1088,7 +1104,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
 
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 3600, null: false
-    t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"]
+    t.jsonb "allowed_service_images", default: ["postgres:16.13", "redis:7-alpine", "selenium/standalone-chromium:latest"]
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.bigint "container_memory_bytes", default: 4294967296, null: false
@@ -1119,8 +1135,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
     t.integer "max_prompt_comments", default: 20, null: false
     t.integer "max_prs_per_page", default: 50, null: false
     t.integer "max_tokens_per_run", default: 10000000, null: false
-    t.jsonb "provider_round_robin_state", default: {}, null: false
-    t.string "provider_selection_mode", limit: 20, default: "single", null: false
     t.float "retry_base_delay", default: 1.0, null: false
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false
@@ -1128,13 +1142,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
     t.integer "style_guide_max_raw_bytes", default: 100000, null: false
     t.integer "style_guide_max_raw_prompt_bytes", default: 8000, null: false
     t.integer "style_guide_max_total_bytes", default: 32000, null: false
+    t.string "theme_preference", default: "system", null: false
     t.integer "token_validation_stale_minutes", default: 2, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.index ["user_id"], name: "index_user_settings_on_user_id", unique: true
     t.check_constraint "max_issues_per_page >= 5 AND max_issues_per_page <= 200", name: "chk_max_issues_per_page_bounds"
     t.check_constraint "max_prs_per_page >= 5 AND max_prs_per_page <= 200", name: "chk_max_prs_per_page_bounds"
-    t.check_constraint "provider_selection_mode::text = ANY (ARRAY['single'::character varying::text, 'round_robin'::character varying::text, 'random'::character varying::text])", name: "chk_provider_selection_mode"
   end
 
   create_table "users", force: :cascade do |t|
@@ -1271,6 +1285,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_225105) do
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
   add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
+  add_foreign_key "tenant_settings", "accounts"
   add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
   add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "user_settings", "users"
