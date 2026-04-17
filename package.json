@@ -6,7 +6,7 @@
     "@eslint/js": "10.0.1",
     "esbuild": "0.28.0",
     "eslint": "10.2.0",
-    "markdownlint-cli": "^0.48.0"
+    "markdownlint-cli": "0.48.0"
   },
   "scripts": {
     "build": "esbuild app/javascript/*.* --bundle --sourcemap --format=esm --outdir=app/assets/builds --public-path=/assets",

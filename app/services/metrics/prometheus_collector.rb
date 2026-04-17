@@ -129,9 +129,11 @@ module Metrics
     end
 
     def collect_temporal_config_metrics(lines)
+      slots = temporal_env("TEMPORAL_WORKFLOW_SLOTS", 20)
+
       lines << "# HELP paid_temporal_workflow_slots_total Configured Temporal workflow slots."
       lines << "# TYPE paid_temporal_workflow_slots_total gauge"
-      lines << "paid_temporal_workflow_slots_total #{temporal_env("TEMPORAL_WORKFLOW_SLOTS", 20)}"
+      lines << "paid_temporal_workflow_slots_total #{slots}"
 
       lines << "# HELP paid_temporal_activity_slots_total Configured Temporal activity slots."
       lines << "# TYPE paid_temporal_activity_slots_total gauge"
@@ -142,8 +144,8 @@ module Metrics
       lines << "# TYPE paid_temporal_workflows_running gauge"
       lines << "paid_temporal_workflows_running #{running_workflows}"
 
-      utilization = if temporal_env("TEMPORAL_WORKFLOW_SLOTS", 20).positive?
-        (running_workflows.to_f / temporal_env("TEMPORAL_WORKFLOW_SLOTS", 20) * 100).round(2)
+      utilization = if slots.positive?
+        (running_workflows.to_f / slots * 100).round(2)
       else
         0.0
       end
