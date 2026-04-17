@@ -126,6 +126,61 @@
     </dl>
   </div>
 
+  <% effective_record = final_provider_record || agent_run.provider %>
+  <% initial_provider_name = agent_run.provider&.display_name || agent_run.agent_type&.titleize %>
+  <% effective_provider_name = header_provider_name %>
+  <% fallback_occurred = agent_run.provider_switches > 0 %>
+  <div class="mt-6 rounded-lg bg-white p-4 shadow">
+    <h2 class="text-sm font-semibold text-gray-900">Provider</h2>
+    <dl class="mt-2 divide-y divide-gray-200">
+      <div class="flex justify-between py-2">
+        <dt class="text-sm text-gray-500">Active Provider</dt>
+        <dd class="text-sm font-medium text-gray-900">
+          <%= effective_provider_name %>
+          <% if fallback_occurred %>
+            <span class="ml-1 inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Fallback</span>
+          <% end %>
+        </dd>
+      </div>
+      <% if fallback_occurred && initial_provider_name.present? %>
+        <div class="flex justify-between py-2">
+          <dt class="text-sm text-gray-500">Originally Requested</dt>
+          <dd class="text-sm text-gray-900"><%= initial_provider_name %></dd>
+        </div>
+      <% end %>
+      <% if effective_record&.auth_type.present? %>
+        <div class="flex justify-between py-2">
+          <dt class="text-sm text-gray-500">Auth Type</dt>
+          <dd class="text-sm text-gray-900">
+            <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= effective_record.subscription? ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700' %>">
+              <%= effective_record.auth_type.titleize %>
+            </span>
+          </dd>
+        </div>
+      <% end %>
+      <% if fallback_occurred %>
+        <div class="flex justify-between py-2">
+          <dt class="text-sm text-gray-500">Provider Switches</dt>
+          <dd class="text-sm text-gray-900"><%= agent_run.provider_switches %></dd>
+        </div>
+      <% end %>
+      <% if agent_run.running? %>
+        <div class="flex justify-between py-2">
+          <dt class="text-sm text-gray-500">Status</dt>
+          <dd class="text-sm text-gray-900">
+            <span class="inline-flex items-center gap-1 text-green-700">
+              <span class="relative flex h-2 w-2">
+                <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
+                <span class="relative inline-flex h-2 w-2 rounded-full bg-green-500"></span>
+              </span>
+              Active
+            </span>
+          </dd>
+        </div>
+      <% end %>
+    </dl>
+  </div>
+
   <% phase_summary = local_assigns.fetch(:phase_summary) { agent_run.phase_summary } %>
   <% phase_timeline = local_assigns.fetch(:phase_timeline) { agent_run.phase_timeline } %>
   <% phases = phase_timeline.to_a %>
