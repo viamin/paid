@@ -87,6 +87,16 @@ RSpec.describe Scaling::Configuration do
       config = described_class.new(min_workers: 0)
       expect(config.min_workers).to eq(0)
     end
+
+    it "rejects negative cost_per_worker_hour_cents" do
+      expect { described_class.new(cost_per_worker_hour_cents: -10) }
+        .to raise_error(ArgumentError, /cost_per_worker_hour_cents/)
+    end
+
+    it "rejects negative max_hourly_cost_cents" do
+      expect { described_class.new(max_hourly_cost_cents: -5) }
+        .to raise_error(ArgumentError, /max_hourly_cost_cents/)
+    end
   end
 
   describe "#to_h" do

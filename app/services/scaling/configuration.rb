@@ -67,6 +67,8 @@ module Scaling
       raise ArgumentError, "cooldown_period must be non-negative" if cooldown_period.negative?
       raise ArgumentError, "scale_up_step must be positive" unless scale_up_step.positive?
       raise ArgumentError, "scale_down_step must be positive" unless scale_down_step.positive?
+      raise ArgumentError, "cost_per_worker_hour_cents must be non-negative" if cost_per_worker_hour_cents.negative?
+      raise ArgumentError, "max_hourly_cost_cents must be non-negative" if max_hourly_cost_cents.negative?
     end
   end
 end
