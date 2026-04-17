@@ -128,10 +128,11 @@ module Scaling
 
     def count_running_workflows(client, task_queue)
       sanitized_queue = task_queue.gsub("'", "\\\\'")
+      query = "TaskQueue = '#{sanitized_queue}' AND ExecutionStatus = 'Running'"
+      # TODO(#725): Switch to client.count_workflows(query) when the Ruby Temporal SDK
+      # exposes CountWorkflowExecutions. list_workflows is O(n) and will degrade at scale.
       count = 0
-      client.list_workflows("TaskQueue = '#{sanitized_queue}' AND ExecutionStatus = 'Running'").each do |_wf|
-        count += 1
-      end
+      client.list_workflows(query).each { |_wf| count += 1 }
       count
     rescue => e
       Rails.logger.warn(
@@ -156,7 +157,7 @@ module Scaling
     end
 
     def evaluate_threshold(depth)
-      return unless depth.status != :ok
+      return if depth.status == :ok
 
       Alert.new(
         queue_name: depth.name,

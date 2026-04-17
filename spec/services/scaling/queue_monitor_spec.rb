@@ -61,7 +61,6 @@ RSpec.describe Scaling::QueueMonitor do
 
     context "when a queue exceeds the warning threshold" do
       it "generates a warning alert" do
-        result = described_class.call(thresholds: { agent_run_queue: { warning: 0, critical: 100 } })
         create(:agent_run, project: project, status: "queued")
 
         result = described_class.call(thresholds: { agent_run_queue: { warning: 1, critical: 100 } })

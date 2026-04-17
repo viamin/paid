@@ -43,15 +43,16 @@ module Scaling
     def resolve_cleared_queues
       alerted_queue_names = alerts.map(&:queue_name)
 
-      Notification.where(
+      scope = Notification.where(
         account: account,
         source: "queue_monitor"
-      ).active.find_each do |notification|
-        queue_name = notification.metadata&.dig("queue_name")
-        next if alerted_queue_names.include?(queue_name)
+      ).active
 
-        notification.update!(resolved_at: Time.current)
+      if alerted_queue_names.any?
+        scope = scope.where.not("metadata->>'queue_name' IN (?)", alerted_queue_names)
       end
+
+      scope.update_all(resolved_at: Time.current)
     end
   end
 end
