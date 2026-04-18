@@ -24,14 +24,26 @@ if [ -z "${RUBY_MAAT_VERSION}" ]; then
     exit 1
 fi
 
+# Extract Claude CLI install contract from agent-harness (single source of truth).
+# The helper script outputs key=value pairs; we capture the ones we need.
+CLAUDE_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" claude)
+CLAUDE_INSTALL_COMMAND=$(echo "${CLAUDE_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
+CLAUDE_POST_INSTALL_BINARY_PATH=$(echo "${CLAUDE_CONTRACT}" | sed -n 's/^POST_INSTALL_BINARY_PATH=//p')
+
+if [ -z "${CLAUDE_INSTALL_COMMAND}" ]; then
+    echo "ERROR: Could not extract Claude install command from agent-harness" >&2
+    exit 1
+fi
+
+if [ -z "${CLAUDE_POST_INSTALL_BINARY_PATH}" ]; then
+    echo "ERROR: Could not extract Claude post-install binary path from agent-harness" >&2
+    exit 1
+fi
+
 # Extract Gemini CLI install command from agent-harness (single source of truth).
-# The install contract is defined by the agent-harness gem, so Paid does not
-# hardcode the package name or version.
-GEMINI_CLI_INSTALL_COMMAND=$(cd "${PROJECT_ROOT}" && bundle exec ruby -e '
-  require "agent_harness"
-  contract = AgentHarness::Providers::Gemini.install_contract
-  puts contract[:install_command_string]
-')
+GEMINI_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" gemini)
+GEMINI_CLI_INSTALL_COMMAND=$(echo "${GEMINI_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
+
 if [ -z "${GEMINI_CLI_INSTALL_COMMAND}" ]; then
     echo "ERROR: Could not extract Gemini CLI install command from agent-harness" >&2
     exit 1
@@ -41,12 +53,15 @@ echo "Building agent container image..."
 echo "  Image: ${FULL_IMAGE}"
 echo "  Context: ${PROJECT_ROOT}/docker/agent"
 echo "  ruby-maat: ${RUBY_MAAT_VERSION}"
+echo "  claude-cli: ${CLAUDE_INSTALL_COMMAND}"
 echo "  gemini-cli: ${GEMINI_CLI_INSTALL_COMMAND}"
 
 docker build \
     -t "${FULL_IMAGE}" \
     -f "${PROJECT_ROOT}/docker/agent/Dockerfile" \
     --build-arg "RUBY_MAAT_VERSION=${RUBY_MAAT_VERSION}" \
+    --build-arg "CLAUDE_INSTALL_COMMAND=${CLAUDE_INSTALL_COMMAND}" \
+    --build-arg "CLAUDE_POST_INSTALL_BINARY_PATH=${CLAUDE_POST_INSTALL_BINARY_PATH}" \
     --build-arg "GEMINI_CLI_INSTALL_COMMAND=${GEMINI_CLI_INSTALL_COMMAND}" \
     "${PROJECT_ROOT}/docker/agent/"
 

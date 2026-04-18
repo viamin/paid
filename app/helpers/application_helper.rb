@@ -90,9 +90,20 @@ module ApplicationHelper
   def issue_lifecycle_badge(status)
     display = ISSUE_LIFECYCLE_DISPLAY[status] || ISSUE_LIFECYCLE_DISPLAY[:eligible]
     tag.span(
-      "#{display[:emoji]} #{display[:label]}",
+      display[:emoji],
       title: display[:title] || display[:label],
-      class: "inline-flex items-center text-sm"
+      class: "inline-flex items-center text-sm",
+      aria: { label: display[:label] }
+    )
+  end
+
+  def issue_lifecycle_legend_tooltip
+    legend = ISSUE_LIFECYCLE_DISPLAY.map { |_key, display| "#{display[:emoji]} = #{display[:label]}" }.join("  ·  ")
+    tag.span(
+      "ℹ️",
+      title: legend,
+      class: "ml-1 cursor-help text-sm text-gray-400",
+      aria: { label: "Status legend" }
     )
   end
 
@@ -278,6 +289,20 @@ module ApplicationHelper
     end
   end
 
+  # Returns the best "back" URL: checks params[:return_to] first, then
+  # request.referer, then falls back to the provided default path.
+  # Only internal (same-host, path-only) URLs are accepted to prevent open redirects.
+  def back_link_path(default_path)
+    return_to = params[:return_to]
+    if return_to.present? && safe_return_path?(return_to)
+      return_to
+    elsif request.referer.present? && safe_referer?(request.referer)
+      request.referer
+    else
+      default_path
+    end
+  end
+
   # Redacts potential secrets from error messages before displaying them in the UI.
   # Uses the Knowledge::Redaction::Redactor for consistent secret detection.
   def redacted_error_message(message)
@@ -368,6 +393,17 @@ module ApplicationHelper
   end
 
   private
+
+  def safe_return_path?(path)
+    path.start_with?("/") && !path.start_with?("//")
+  end
+
+  def safe_referer?(url)
+    uri = URI.parse(url)
+    uri.host == request.host
+  rescue URI::InvalidURIError
+    false
+  end
 
   def priority_tier_for_label(project, label)
     return "P0" if label == "P0"
