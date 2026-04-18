@@ -13,7 +13,7 @@ class TrackerConfiguration < ApplicationRecord
   validates :configurable_id, uniqueness: { scope: :configurable_type,
     message: "already has a tracker configuration" }
   validate :credential_belongs_to_same_account
-  validate :credential_is_active, if: -> { integration_credential.present? }
+  validate :credential_is_active, if: -> { integration_credential.present? && integration_credential_id_changed? }
 
   scope :enabled, -> { where(enabled: true) }
 
