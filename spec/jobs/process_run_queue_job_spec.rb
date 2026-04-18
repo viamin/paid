@@ -7,7 +7,7 @@ RSpec.describe ProcessRunQueueJob do
   let(:workflow_handle) { double("WorkflowHandle", id: "queued-workflow-id") } # rubocop:disable RSpec/VerifiedDoubles
 
   before do
-    allow(Paid).to receive_messages(temporal_client: temporal_client, task_queue: "paid-tasks")
+    allow(Paid).to receive_messages(temporal_client: temporal_client, agent_task_queue: "paid-agent-tasks")
     allow(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
   end
 
@@ -27,7 +27,7 @@ RSpec.describe ProcessRunQueueJob do
       expect(temporal_client).to receive(:start_workflow).with(
         Workflows::AgentExecutionWorkflow,
         hash_including(agent_run_id: queued_run.id),
-        hash_including(task_queue: "paid-tasks")
+        hash_including(task_queue: "paid-agent-tasks")
       ).and_return(workflow_handle)
 
       described_class.new.perform
@@ -195,6 +195,39 @@ RSpec.describe ProcessRunQueueJob do
       expect(queued_run.reload.status).to eq("queued")
     end
 
+    it "does not start queued runs when the account's scheduler is paused" do
+      paused_account = create(:account, scheduler_paused_at: Time.current)
+      paused_project = create(:project, account: paused_account, created_by: create(:user, account: paused_account))
+      paused_run = create(:agent_run, :queued, project: paused_project)
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      described_class.new.perform
+
+      expect(paused_run.reload.status).to eq("queued")
+    end
+
+    it "still starts queued runs for accounts whose scheduler is not paused" do
+      paused_account = create(:account, scheduler_paused_at: Time.current)
+      paused_project = create(:project, account: paused_account, created_by: create(:user, account: paused_account))
+      paused_run = create(:agent_run, :queued, project: paused_project, created_at: 2.minutes.ago)
+
+      active_project = create(:project)
+      active_run = create(:agent_run, :queued, project: active_project, created_at: 1.minute.ago)
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      expect(started_ids).to eq([ active_run.id ])
+      expect(active_run.reload.status).to eq("pending")
+      expect(paused_run.reload.status).to eq("queued")
+    end
+
     it "skips blocked user and starts runs for other users" do
       blocked_project = create(:project)
       blocked_user = blocked_project.created_by
@@ -269,6 +302,16 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
       end
 
+      it "skips auto-pick seeding for projects whose account is paused" do
+        paused_account = create(:account, scheduler_paused_at: Time.current)
+        paused_user = create(:user, account: paused_account)
+        create_auto_pick_project(account: paused_account, user: paused_user)
+
+        expect(Issues::AutoPick).not_to receive(:new)
+
+        described_class.new.perform
+      end
+
       it "fills idle capacity from one project when no others have pickable work" do
         project = create(:project, auto_pick_enabled: true)
         user = project.created_by
@@ -323,6 +366,48 @@ RSpec.describe ProcessRunQueueJob do
         expect(project.agent_runs.queued.count).to eq(1)
       end
 
+      it "caps seeded auto-pick runs at the owner's max_concurrent_runs" do
+        project = create(:project, auto_pick_enabled: true)
+        user = project.created_by
+        user.settings.update!(max_concurrent_runs: 2)
+
+        10.times { create(:issue, project: project) }
+
+        described_class.new.perform
+
+        expect(project.agent_runs.where(auto_pick: true).count).to eq(2)
+      end
+
+      it "counts already-running auto-pick runs against the seed budget" do
+        project = create(:project, auto_pick_enabled: true)
+        user = project.created_by
+        user.settings.update!(max_concurrent_runs: 2)
+
+        create(:agent_run, :running, project: project, trigger_type: "automatic", auto_pick: true)
+        5.times { create(:issue, project: project) }
+
+        described_class.new.perform
+
+        expect(project.agent_runs.where(auto_pick: true).count).to eq(2)
+      end
+
+      it "shares the seed budget across projects owned by the same user" do
+        account = create(:account)
+        user = create(:user, account: account)
+        user.settings.update!(max_concurrent_runs: 2)
+
+        first_project = create_auto_pick_project(account: account, user: user)
+        second_project = create_auto_pick_project(account: account, user: user)
+
+        3.times { create(:issue, project: first_project) }
+        3.times { create(:issue, project: second_project) }
+
+        described_class.new.perform
+
+        total_seeded = AgentRun.where(project: [ first_project, second_project ], auto_pick: true).count
+        expect(total_seeded).to eq(2)
+      end
+
       it "still starts a manual run with one slot reserved from auto-pick" do
         project = create(:project)
         user = project.created_by
@@ -334,7 +419,7 @@ RSpec.describe ProcessRunQueueJob do
         expect(temporal_client).to receive(:start_workflow).with(
           Workflows::AgentExecutionWorkflow,
           hash_including(agent_run_id: manual_run.id),
-          hash_including(task_queue: "paid-tasks")
+          hash_including(task_queue: "paid-agent-tasks")
         ).and_return(workflow_handle)
 
         described_class.new.perform

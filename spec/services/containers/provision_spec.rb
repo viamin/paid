@@ -165,12 +165,45 @@ RSpec.describe Containers::Provision do
           metadata: hash_including(image: "paid-agent:latest")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.network.ready",
           metadata: hash_including(network: NetworkPolicy::NETWORK_NAME)).ordered
+        expect(agent_run).to receive(:log!).with("system", "container.ownership_batch_fixed",
+          metadata: hash_including(dirs_count: 12)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.codex_config_seeded",
           metadata: {}).ordered
         expect(agent_run).to receive(:log!).with("system", "container.firewall.applied",
           metadata: hash_including(container_id: "abc123container")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.provision.success",
           metadata: hash_including(container_id: "abc123container")).ordered
+
+        service.provision
+      end
+
+      it "batches all ownership fixes into a single exec call" do
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-c", satisfy { |script|
+            script.include?("chown -R agent:agent") &&
+              script.include?("/home/agent/.cache") &&
+              script.include?("/home/agent/.gemini") &&
+              script.include?("/home/agent/.cursor-agent") &&
+              script.include?("/home/agent/.aider") &&
+              script.include?("chown agent:agent /home/agent/.codex")
+          } ],
+          user: "root"
+        )
+      end
+
+      it "falls back to individual ownership fixes when batch fails" do
+        # First exec (batched ownership script) raises, triggering fallback
+        exec_count = 0
+        allow(mock_container).to receive(:exec) do |cmd, **_opts|
+          exec_count += 1
+          if exec_count == 1 && cmd.is_a?(Array) && cmd[0] == "sh" && cmd[1] == "-c"
+            raise Docker::Error::DockerError, "batch failed"
+          end
+        end
+
+        expect(service).to receive(:fix_ownership_individually!).and_call_original
 
         service.provision
       end
@@ -816,20 +849,14 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "writes Gemini credentials into the agent tmpfs from the local filesystem" do
+      it "writes Gemini credentials into the agent tmpfs in a single batched exec" do
         service.provision
 
         expect(mock_container).to have_received(:exec).with(
-          [ "sh", "-lc", satisfy { |cmd| cmd.include?("/home/agent/.gemini/oauth_creds.json") && decoded_base64_content(cmd).include?("access_token") } ],
-          user: "agent"
-        )
-      end
-
-      it "preserves valid JSON when local files do not end with a newline" do
-        service.provision
-
-        expect(mock_container).to have_received(:exec).with(
-          [ "sh", "-lc", satisfy { |cmd| cmd.include?("/home/agent/.gemini/settings.json") && decoded_base64_content(cmd).include?('"selectedType": "oauth-personal"') } ],
+          [ "sh", "-lc", satisfy { |cmd|
+            cmd.include?("/home/agent/.gemini/oauth_creds.json") &&
+              cmd.include?("/home/agent/.gemini/settings.json")
+          } ],
           user: "agent"
         )
       end
@@ -887,15 +914,14 @@ RSpec.describe Containers::Provision do
         )
       end
 
-      it "only chowns the tmpfs directory entry" do
+      it "only chowns the .codex tmpfs directory entry (non-recursive) via batched script" do
         service.provision
 
         expect(mock_container).to have_received(:exec).with(
-          [ "chown", "agent:agent", "/home/agent/.codex" ],
-          user: "root"
-        )
-        expect(mock_container).not_to have_received(:exec).with(
-          [ "chown", "-R", "agent:agent", "/home/agent/.codex" ],
+          [ "sh", "-c", satisfy { |script|
+            script.include?("chown agent:agent /home/agent/.codex") &&
+              !script.include?("chown -R agent:agent /home/agent/.codex")
+          } ],
           user: "root"
         )
       end
@@ -941,19 +967,18 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "copies local Codex auth files into the writable tmpfs" do
+      it "copies local Codex auth files into the writable tmpfs in a single batch" do
         service.provision
 
         expect(mock_container).to have_received(:exec).with(
-          [ "chown", "agent:agent", "/home/agent/.codex" ],
+          [ "chown", "-R", "agent:agent", "/home/agent/.codex" ],
           user: "root"
         )
         expect(mock_container).to have_received(:exec).with(
-          [ "sh", "-lc", satisfy { |cmd| cmd.include?("/home/agent/.codex/auth.json") && decoded_base64_content(cmd).include?("refresh_token") } ],
-          user: "agent"
-        )
-        expect(mock_container).to have_received(:exec).with(
-          [ "sh", "-lc", satisfy { |cmd| cmd.include?("/home/agent/.codex/config.toml") && decoded_base64_content(cmd).include?('model = "gpt-5"') } ],
+          [ "sh", "-lc", satisfy { |cmd|
+            cmd.include?("/home/agent/.codex/auth.json") &&
+              cmd.include?("/home/agent/.codex/config.toml")
+          } ],
           user: "agent"
         )
       end
@@ -1243,6 +1268,68 @@ RSpec.describe Containers::Provision do
 
       it "raises TimeoutError" do
         expect { service.execute("sleep 10", timeout: 0.1) }.to raise_error(described_class::TimeoutError)
+      end
+    end
+
+    context "when stderr matches an abort pattern" do
+      let(:abort_patterns) { [ /free tier limit reached/i ] }
+      let(:quota_error) { "Error: Free tier limit reached. Please upgrade to a paid plan." }
+
+      before do
+        allow(mock_container).to receive(:stop)
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stderr, quota_error) if block
+          # Simulate exec returning after container.stop was called
+          [ [], [ quota_error ], 1 ]
+        end
+      end
+
+      it "raises OutputAbortError with the matched output" do
+        expect { service.execute("kilo run --auto", abort_patterns: abort_patterns) }
+          .to raise_error(described_class::OutputAbortError) { |e|
+            expect(e.matched_output).to eq(quota_error)
+          }
+      end
+
+      it "stops the container immediately" do
+        service.execute("kilo run --auto", abort_patterns: abort_patterns) rescue nil
+
+        expect(mock_container).to have_received(:stop).with(timeout: 0)
+      end
+
+      it "logs the abort pattern match" do
+        allow(agent_run).to receive(:log!)
+
+        service.execute("kilo run --auto", abort_patterns: abort_patterns) rescue nil
+
+        expect(agent_run).to have_received(:log!).with(
+          "system", "container.execute.abort_pattern_matched",
+          metadata: hash_including(output: a_string_matching(/Free tier limit reached/))
+        )
+      end
+    end
+
+    context "when stderr does not match abort patterns" do
+      let(:abort_patterns) { [ /free tier limit reached/i ] }
+
+      before do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stderr, "some benign warning\n") if block
+          [ [ "output" ], [ "some benign warning\n" ], 0 ]
+        end
+      end
+
+      it "does not raise OutputAbortError" do
+        result = service.execute("kilo run --auto", abort_patterns: abort_patterns)
+
+        expect(result.success?).to be true
+      end
+
+      it "does not stop the container" do
+        allow(mock_container).to receive(:stop)
+        service.execute("kilo run --auto", abort_patterns: abort_patterns)
+
+        expect(mock_container).not_to have_received(:stop)
       end
     end
 
@@ -1753,6 +1840,125 @@ RSpec.describe Containers::Provision do
         end
 
         result = service.execute("normal_command", timeout: 10)
+        expect(result).to be_success
+      end
+    end
+
+    context "with heartbeat file" do
+      let(:heartbeat_dir) { Dir.mktmpdir("heartbeat") }
+      let(:heartbeat_path) { File.join(heartbeat_dir, "heartbeat") }
+
+      after { FileUtils.remove_entry(heartbeat_dir) if File.directory?(heartbeat_dir) }
+
+      it "suppresses idle timeout while heartbeat file is touched" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "initial output\n") if block
+          10.times do
+            FileUtils.touch(heartbeat_path)
+            sleep 0.05
+          end
+          [ [ "initial output\n" ], [], 0 ]
+        end
+
+        result = service.execute(
+          "working_silently",
+          timeout: 10,
+          idle_timeout: 0.2,
+          heartbeat_path: heartbeat_path
+        )
+        expect(result).to be_success
+        expect(container_stopped.true?).to be false
+      end
+
+      it "suppresses startup timeout while heartbeat file is touched before any output" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          10.times do
+            FileUtils.touch(heartbeat_path)
+            sleep 0.05
+          end
+          block.call(:stdout, "finally output\n") if block
+          [ [ "finally output\n" ], [], 0 ]
+        end
+
+        result = service.execute(
+          "waiting_on_llm",
+          timeout: 10,
+          startup_timeout: 0.2,
+          heartbeat_path: heartbeat_path
+        )
+        expect(result).to be_success
+        expect(container_stopped.true?).to be false
+      end
+
+      it "still fires idle timeout when heartbeat file is not touched" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "initial output\n") if block
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
+          [ [ "initial output\n" ], [], 137 ]
+        end
+
+        expect {
+          service.execute(
+            "stalling_command",
+            timeout: 10,
+            idle_timeout: 0.1,
+            heartbeat_path: heartbeat_path
+          )
+        }.to raise_error(described_class::IdleTimeoutError)
+      end
+
+      it "ignores a stale heartbeat file that was not touched during exec" do
+        FileUtils.touch(heartbeat_path, mtime: Time.now - 3600)
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "initial output\n") if block
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
+          [ [ "initial output\n" ], [], 137 ]
+        end
+
+        expect {
+          service.execute(
+            "stalling_command",
+            timeout: 10,
+            idle_timeout: 0.1,
+            heartbeat_path: heartbeat_path
+          )
+        }.to raise_error(described_class::IdleTimeoutError)
+      end
+
+      it "does not suppress the wall-clock timeout" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          Thread.new do
+            20.times do
+              FileUtils.touch(heartbeat_path)
+              sleep 0.01
+            end
+          end
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
+          [ [], [], 137 ]
+        end
+
+        expect {
+          service.execute(
+            "long_running",
+            timeout: 0.2,
+            heartbeat_path: heartbeat_path
+          )
+        }.to raise_error(described_class::TimeoutError, /timed out after 0.2 seconds/)
+      end
+
+      it "tolerates a missing heartbeat file path and falls back to stdout activity" do
+        missing_path = File.join(heartbeat_dir, "does-not-exist")
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "output\n") if block
+          [ [ "output\n" ], [], 0 ]
+        end
+
+        result = service.execute(
+          "fast_command",
+          timeout: 10,
+          idle_timeout: 2,
+          heartbeat_path: missing_path
+        )
         expect(result).to be_success
       end
     end

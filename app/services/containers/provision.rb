@@ -71,12 +71,24 @@ module Containers
       end
     end
 
+    # Raised when streaming output matches an abort pattern, indicating a
+    # fatal provider error where the CLI is known to hang instead of exiting.
+    class OutputAbortError < Error
+      attr_reader :matched_output
+
+      def initialize(msg = "Process aborted due to fatal output pattern", matched_output: nil)
+        @matched_output = matched_output
+        super(msg)
+      end
+    end
+
     # Bundles watchdog shared state (mutex, refs, timeouts) into a single
     # object to keep start_watchdog's parameter list under 4.
     WatchdogContext = Struct.new(
       :container, :mutex, :output_received_ref, :last_activity_ref,
       :exec_completed_ref, :timeout_reason_setter,
       :startup_timeout, :idle_timeout, :wall_clock_timeout, :started_at_ref,
+      :heartbeat_path,
       keyword_init: true
     )
 
@@ -84,7 +96,7 @@ module Containers
     # and check_deadline_exceeded! to keep their parameter lists under 4.
     TimeoutCheckState = Struct.new(
       :mutex, :timeout_reason_ref, :startup_timeout, :idle_timeout,
-      :timeout, :started_at,
+      :timeout, :started_at, :heartbeat_path,
       keyword_init: true
     )
 
@@ -145,21 +157,10 @@ module Containers
       ensure_network!
       @container = create_container
       start_container
-      fix_workspace_ownership!
-      fix_cache_tmpfs_ownership!
-      fix_codex_tmpfs_ownership!
+      fix_all_ownership!
       seed_codex_credentials!
-      fix_gemini_tmpfs_ownership!
       seed_gemini_credentials!
-      fix_cursor_tmpfs_ownership!
-      fix_kilocode_tmpfs_ownership!
-      fix_kilocode_config_tmpfs_ownership!
-      fix_kilocode_data_tmpfs_ownership!
-      fix_opencode_config_tmpfs_ownership!
-      fix_opencode_data_tmpfs_ownership!
-      fix_copilot_tmpfs_ownership!
       seed_copilot_credentials!
-      fix_aider_tmpfs_ownership!
       seed_claude_credentials!
       apply_network_restrictions!
 
@@ -193,17 +194,23 @@ module Containers
     #   stops flowing for longer than this duration.
     # @param stream [Boolean] Whether to stream output to agent logs
     # @param env [Hash] Environment variables for the exec invocation
+    # @param heartbeat_path [String, nil] Optional host-visible path to a
+    #   heartbeat file. When provided, the watchdog treats a recent mtime on
+    #   this file as activity equivalent to stdout output. Agents that wait
+    #   for LLM responses without producing output can touch this file (e.g.
+    #   via Claude Code +PostToolUse+ or Codex +notify+ hooks) to signal
+    #   "still working" and avoid startup/idle timeouts.
     # @return [Result] Result with stdout, stderr, and exit_code
     # @raise [StartupTimeoutError] when no output is received within +startup_timeout+ seconds
     # @raise [IdleTimeoutError] when output stops for more than +idle_timeout+ seconds
     # @raise [TimeoutError] when total wall-clock +timeout+ is exceeded
-    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil)
+    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil)
       raise ProvisionError, "Container not provisioned" unless container
 
-      with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:, preparation:) }
+      with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:, preparation:, heartbeat_path:, abort_patterns:) }
     end
 
-    private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil)
+    private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil)
       timeout ||= options[:timeout_seconds]
       cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
       exec_options = { wait: timeout }
@@ -230,6 +237,7 @@ module Containers
       exec_completed = false
       timeout_reason = nil # :startup, :idle, or :wall_clock, set by watchdog
       timeout_reason_ref = -> { timeout_reason }
+      abort_matched_output = nil # set when an abort_pattern matches stderr
       watchdog = nil
 
       timeout_check = TimeoutCheckState.new(
@@ -238,7 +246,8 @@ module Containers
         startup_timeout: startup_timeout,
         idle_timeout: idle_timeout,
         timeout: timeout,
-        started_at: started_at
+        started_at: started_at,
+        heartbeat_path: heartbeat_path
       )
 
       watchdog_ctx = WatchdogContext.new(
@@ -251,7 +260,8 @@ module Containers
         startup_timeout: startup_timeout,
         idle_timeout: idle_timeout,
         wall_clock_timeout: timeout,
-        started_at_ref: -> { started_at }
+        started_at_ref: -> { started_at },
+        heartbeat_path: heartbeat_path
       )
 
       begin
@@ -272,6 +282,23 @@ module Containers
           when :stderr
             stderr_buffer << normalized_chunk
             log_output(:stderr, normalized_chunk) if stream
+
+            # Check stderr against abort patterns — if the CLI emits a fatal
+            # error but hangs instead of exiting, stop the container immediately
+            # rather than waiting for the idle/wall-clock timeout.
+            if abort_patterns&.any? && abort_matched_output.nil?
+              matched = abort_patterns.any? { |pat| normalized_chunk.match?(pat) }
+              if matched
+                abort_matched_output = normalized_chunk
+                log_system("container.execute.abort_pattern_matched",
+                  output: normalized_chunk.truncate(200))
+                begin
+                  container.stop(timeout: 0)
+                rescue Docker::Error::DockerError => e
+                  log_system("container.execute.abort_stop_failed", error: e.message)
+                end
+              end
+            end
           end
         end
 
@@ -279,6 +306,16 @@ module Containers
         # to prevent late/false timeouts during post-processing.
         watchdog_mutex.synchronize { exec_completed = true }
         stop_watchdog(watchdog)
+
+        # Check if we stopped the container due to an abort pattern match.
+        # This takes precedence over timeout checks because the abort was
+        # the actual cause of termination.
+        if abort_matched_output
+          raise OutputAbortError.new(
+            "Process aborted: fatal output pattern detected",
+            matched_output: abort_matched_output
+          )
+        end
 
         # Check if the watchdog stopped the container (exec returns normally
         # with a non-zero exit code when the process is killed).
@@ -310,6 +347,9 @@ module Containers
             exit_code: exit_code
           )
         end
+      rescue OutputAbortError
+        log_partial_output(stdout_buffer, stderr_buffer)
+        raise
       rescue StartupTimeoutError, IdleTimeoutError => e
         log_partial_output(stdout_buffer, stderr_buffer)
         timeout_value = e.is_a?(StartupTimeoutError) ? startup_timeout : idle_timeout
@@ -321,6 +361,16 @@ module Containers
       rescue Docker::Error::DockerError => e
         # Log partial output first — raise_if_watchdog_timeout! may re-raise.
         log_partial_output(stdout_buffer, stderr_buffer)
+
+        # Check if the Docker error was caused by an abort pattern stopping the
+        # container. This takes precedence over timeout classification.
+        if abort_matched_output
+          raise OutputAbortError.new(
+            "Process aborted: fatal output pattern detected",
+            matched_output: abort_matched_output
+          )
+        end
+
         begin
           raise_if_watchdog_timeout!(timeout_check)
         rescue StartupTimeoutError, IdleTimeoutError => timeout_error
@@ -678,6 +728,9 @@ module Containers
         base_url = "#{proxy_base_url}/api/proxy/openai"
         env_key = "OPENAI_API_KEY"
         wire_api = "responses"
+
+        [notify]
+        command = "date +%s > /tmp/agent_heartbeat"
       TOML
 
       write_container_file("/home/agent/.codex/config.toml", content)
@@ -704,6 +757,30 @@ module Containers
           failure_log_key: "container.codex_credentials_seed_failed"
         )
       end
+
+      seed_codex_notify_hook!
+    end
+
+    # Appends the Codex notify hook to config.toml inside the container.
+    # For subscription auth, the base config may come from the host or local
+    # copy and won't include the heartbeat hook. This method appends the
+    # [notify] section so the watchdog receives heartbeats during Codex turns.
+    # Silently skips when config.toml is bind-mounted read-only (host mount
+    # with existing config.toml).
+    def seed_codex_notify_hook!
+      notify_toml = <<~TOML
+
+        [notify]
+        command = "date +%s > /tmp/agent_heartbeat"
+      TOML
+
+      container.exec(
+        [ "sh", "-lc", "printf '%s' #{Shellwords.escape(notify_toml)} >> /home/agent/.codex/config.toml" ],
+        user: "agent"
+      )
+      log_system("container.codex_notify_hook_seeded")
+    rescue Docker::Error::DockerError => e
+      log_system("container.codex_notify_hook_seed_failed", error: e.message)
     end
 
     # Serializes only Codex CLI executions that share a host-backed auth.json.
@@ -797,18 +874,72 @@ module Containers
     def seed_local_credentials!(source_path:, target_path:, files:, success_log_key:, failure_log_key:)
       container.exec([ "chown", "-R", "agent:agent", target_path ], user: "root")
 
-      copied = 0
+      write_commands = []
       files.each do |filename|
         source_file = File.join(source_path, filename)
         next unless File.file?(source_file)
 
-        write_container_file(File.join(target_path, filename), File.binread(source_file))
-        copied += 1
+        encoded = Base64.strict_encode64(File.binread(source_file))
+        dest = Shellwords.escape(File.join(target_path, filename))
+        write_commands << "echo #{Shellwords.escape(encoded)} | base64 -d > #{dest}"
       end
 
-      log_system(success_log_key, files_copied: copied) if copied > 0
+      if write_commands.any?
+        container.exec([ "sh", "-lc", write_commands.join("; ") ], user: "agent")
+        log_system(success_log_key, files_copied: write_commands.size)
+      end
     rescue Docker::Error::DockerError, SystemCallError => e
       log_system(failure_log_key, error: e.message)
+    end
+
+    # Batches all ownership fixes into a single container exec call.
+    # Each individual tmpfs mount and the workspace directory need their
+    # ownership set to agent:agent after container start. Running these
+    # as a single shell script reduces Docker API round-trips from 12+
+    # down to 1.
+    def fix_all_ownership!
+      dirs = [
+        options[:workspace_mount],
+        "/home/agent/.cache",
+        "/home/agent/.gemini",
+        "/home/agent/.cursor-agent",
+        "/home/agent/.kilocode",
+        "/home/agent/.config/kilo",
+        "/home/agent/.local/share/kilo",
+        "/home/agent/.config/opencode",
+        "/home/agent/.local/share/opencode",
+        "/home/agent/.config/github-copilot",
+        "/home/agent/.aider"
+      ]
+
+      # ~/.codex gets non-recursive chown to preserve host-backed file ownership
+      recursive_script = dirs.map { |d| "chown -R agent:agent #{Shellwords.escape(d)}" }.join("; ")
+      script = "#{recursive_script}; chown agent:agent /home/agent/.codex"
+
+      container.exec([ "sh", "-c", script ], user: "root")
+      log_system("container.ownership_batch_fixed", dirs_count: dirs.size + 1)
+    rescue Docker::Error::DockerError => e
+      log_system("container.ownership_batch_failed", error: e.message)
+      # Fall back to individual fixes for resilience
+      fix_ownership_individually!
+    end
+
+    # Fallback that runs ownership fixes one at a time when the batched
+    # approach fails. This preserves the original behavior where individual
+    # failures are logged but do not prevent provisioning from continuing.
+    def fix_ownership_individually!
+      fix_workspace_ownership!
+      fix_cache_tmpfs_ownership!
+      fix_codex_tmpfs_ownership!
+      fix_gemini_tmpfs_ownership!
+      fix_cursor_tmpfs_ownership!
+      fix_kilocode_tmpfs_ownership!
+      fix_kilocode_config_tmpfs_ownership!
+      fix_kilocode_data_tmpfs_ownership!
+      fix_opencode_config_tmpfs_ownership!
+      fix_opencode_data_tmpfs_ownership!
+      fix_copilot_tmpfs_ownership!
+      fix_aider_tmpfs_ownership!
     end
 
     # Ensures the bind-mounted /workspace is writable by the non-root agent user.
@@ -1482,9 +1613,19 @@ module Containers
       tc = timeout_check
       return unless tc.startup_timeout || tc.idle_timeout || tc.timeout
 
+      heartbeat_age = heartbeat_age_seconds(tc.heartbeat_path)
+
       elapsed_since_activity, elapsed_since_start = tc.mutex.synchronize do
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         [ now - last_activity_at, now - tc.started_at ]
+      end
+
+      # Fold in heartbeat activity using the same rules as the watchdog:
+      # a file touched during the current exec counts as output, and the
+      # startup/idle elapsed window shrinks to the heartbeat's age.
+      if heartbeat_age && heartbeat_age <= elapsed_since_start
+        output_received = true
+        elapsed_since_activity = heartbeat_age if heartbeat_age < elapsed_since_activity
       end
 
       # Check startup/idle before wall-clock to match the watchdog's precedence —
@@ -1519,6 +1660,11 @@ module Containers
         loop do
           sleep watchdog_poll_interval
 
+          # Read heartbeat mtime outside the mutex to avoid holding the lock
+          # across slow filesystem operations. The value is a wall-clock age
+          # in seconds, comparable with elapsed durations inside the mutex.
+          heartbeat_age = heartbeat_age_seconds(ctx.heartbeat_path)
+
           should_fire = ctx.mutex.synchronize do
             if ctx.exec_completed_ref.call
               false
@@ -1526,10 +1672,20 @@ module Containers
               now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
               elapsed = now - ctx.last_activity_ref.call
               total_elapsed = now - ctx.started_at_ref.call
+              output_received = ctx.output_received_ref.call
 
-              reason = if !ctx.output_received_ref.call && ctx.startup_timeout && elapsed >= ctx.startup_timeout
+              # A heartbeat file touched during the current exec counts as
+              # activity equivalent to stdout output, so a working-but-silent
+              # agent does not trip startup/idle timeouts. Wall-clock is still
+              # enforced regardless of heartbeats.
+              if heartbeat_age && heartbeat_age <= total_elapsed
+                output_received = true
+                elapsed = heartbeat_age if heartbeat_age < elapsed
+              end
+
+              reason = if !output_received && ctx.startup_timeout && elapsed >= ctx.startup_timeout
                 :startup
-              elsif ctx.output_received_ref.call && ctx.idle_timeout && elapsed >= ctx.idle_timeout
+              elsif output_received && ctx.idle_timeout && elapsed >= ctx.idle_timeout
                 :idle
               elsif ctx.wall_clock_timeout && total_elapsed >= ctx.wall_clock_timeout
                 :wall_clock
@@ -1566,6 +1722,19 @@ module Containers
     # Extracted as a method so tests can override with a shorter interval.
     def watchdog_poll_interval
       1
+    end
+
+    # Returns the wall-clock age in seconds of the heartbeat file at
+    # +heartbeat_path+, or +nil+ when no path is configured or the file is
+    # unreadable. Callers compare this against elapsed durations from the
+    # monotonic clock; the two are close enough over a watchdog window that
+    # any NTP-induced drift is negligible.
+    def heartbeat_age_seconds(heartbeat_path)
+      return nil if heartbeat_path.blank?
+
+      Time.now - File.mtime(heartbeat_path)
+    rescue Errno::ENOENT, Errno::EACCES, Errno::ENOTDIR
+      nil
     end
 
     # Stops the watchdog thread and waits for it to exit cleanly.

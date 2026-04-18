@@ -9,6 +9,8 @@ Rails.application.routes.draw do
   # Can be used by load balancers and uptime monitors to verify that the app is live.
   get "up" => "rails/health#show", :as => :rails_health_check
   get "health/services", to: "health#show"
+  get "health/liveness", to: "health#liveness"
+  get "health/readiness", to: "health#readiness"
 
   # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
@@ -19,6 +21,11 @@ Rails.application.routes.draw do
     patch :read, on: :member
     patch :dismiss, on: :member
     post :mark_all_read, on: :collection
+  end
+
+  # Onboarding wizard
+  resource :onboarding, only: [ :show, :update ], controller: "onboarding" do
+    post :skip
   end
 
   # Dashboard for authenticated users
@@ -62,7 +69,12 @@ Rails.application.routes.draw do
   resources :service_containers
 
   # All agent runs across projects
-  resources :agent_runs, only: [ :index ]
+  resources :agent_runs, only: [ :index ] do
+    collection do
+      post :pause_scheduler
+      post :resume_scheduler
+    end
+  end
 
   # Prompt management
   resources :prompts do
@@ -72,7 +84,14 @@ Rails.application.routes.draw do
       post :cancel, on: :member
       post :promote, on: :member
     end
+    resources :reviews, only: [ :index, :show, :update ], controller: "prompt_reviews" do
+      post :approve, on: :member
+      post :reject, on: :member
+    end
   end
+
+  # Account-wide pending prompt review queue
+  get "prompt_reviews", to: "prompt_reviews#queue", as: :prompt_reviews_queue
 
   # Style guide management
   resources :style_guides do

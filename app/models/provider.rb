@@ -8,6 +8,10 @@ class Provider < ApplicationRecord
   AUTH_TYPES = %w[subscription api_key].freeze
   FALLBACK_ROLES = %w[standard rate_limit_fallback].freeze
   ROUTING_KEY_PREFIX = "provider:".freeze
+  # Default cutoffs for mapping a complexity score (1-10) to an LlmModel tier.
+  # complexity <= low_max => "low", <= mid_max => "mid", else "high".
+  DEFAULT_COMPLEXITY_THRESHOLDS = { "low_max" => 3, "mid_max" => 7 }.freeze
+  COMPLEXITY_THRESHOLD_KEYS = %w[low_max mid_max].freeze
   # Upstream API providers supported by direct-outbound CLI tools (OpenCode,
   # KiloCode). Each entry maps a slug to its base URL and the ProviderApiKey
   # service type required for authentication.
@@ -72,6 +76,7 @@ class Provider < ApplicationRecord
   validate :opencode_api_key_config_must_be_valid
   validate :kilocode_api_key_config_must_be_valid
   validate :tier_model_ids_must_be_valid
+  validate :complexity_thresholds_must_be_valid
   validate :agent_co_author_trailer_is_single_line
 
   before_destroy :prevent_destroying_last_agent_run_provider
@@ -100,6 +105,17 @@ class Provider < ApplicationRecord
     label += " #{model_id}" if model_id.present?
     label += " (API Key)" if api_key?
     label
+  end
+
+  # Returns a merged hash of complexity thresholds (stored values overlaid on
+  # defaults) so callers can read a concrete mapping without re-checking for
+  # missing keys every time. Integers are coerced so JSONB round-trips (which
+  # may preserve Rails' Integer/Float or return strings) don't leak into the
+  # tier-mapping logic.
+  def effective_complexity_thresholds
+    stored = complexity_thresholds.is_a?(Hash) ? complexity_thresholds : {}
+    DEFAULT_COMPLEXITY_THRESHOLDS.merge(stored.slice(*COMPLEXITY_THRESHOLD_KEYS))
+      .transform_values { |v| Integer(v, exception: false) || v }
   end
 
   def routing_key
@@ -498,6 +514,44 @@ class Provider < ApplicationRecord
         errors.add(:tier_model_ids, "model #{model_id} does not belong to provider #{provider_key}")
       end
     end
+  end
+
+  def complexity_thresholds_must_be_valid
+    return if complexity_thresholds.blank?
+
+    unless complexity_thresholds.is_a?(Hash)
+      errors.add(:complexity_thresholds, "must be a hash of threshold keys to integers")
+      return
+    end
+
+    invalid_keys = complexity_thresholds.keys.map(&:to_s) - COMPLEXITY_THRESHOLD_KEYS
+    if invalid_keys.any?
+      errors.add(:complexity_thresholds, "contains unknown key(s): #{invalid_keys.join(', ')}")
+      return
+    end
+
+    coerced = {}
+    COMPLEXITY_THRESHOLD_KEYS.each do |key|
+      raw = complexity_thresholds[key] || complexity_thresholds[key.to_sym]
+      next if raw.nil?
+
+      value = Integer(raw, exception: false)
+      if value.nil? || !value.between?(1, 10)
+        errors.add(:complexity_thresholds, "#{key} must be an integer between 1 and 10")
+        return
+      end
+      coerced[key] = value
+    end
+
+    # Compare against effective values so partial submissions (e.g. only low_max)
+    # cannot persist a configuration that is inconsistent when merged with the
+    # defaults (e.g. low_max=8 with the default mid_max=7 would leave the "mid"
+    # tier unreachable).
+    effective_low_max = coerced["low_max"] || DEFAULT_COMPLEXITY_THRESHOLDS["low_max"]
+    effective_mid_max = coerced["mid_max"] || DEFAULT_COMPLEXITY_THRESHOLDS["mid_max"]
+    return if effective_low_max < effective_mid_max
+
+    errors.add(:complexity_thresholds, "low_max must be less than mid_max")
   end
 
   def kilocode_api_key_config_must_be_valid

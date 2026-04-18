@@ -48,9 +48,9 @@ RSpec.describe "User Registrations" do
         expect(User.last.account).to eq(Account.last)
       end
 
-      it "redirects to the root path" do
+      it "redirects to the onboarding path" do
         post user_registration_path, params: valid_params
-        expect(response).to redirect_to(root_path)
+        expect(response).to redirect_to(onboarding_path)
       end
     end
 

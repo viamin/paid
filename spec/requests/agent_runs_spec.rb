@@ -131,6 +131,159 @@ RSpec.describe "AgentRuns" do
         get agent_runs_path
         expect(response.body).not_to include(other_project.name)
       end
+
+      it "does not render the navbar pause indicator when the scheduler is running" do
+        get agent_runs_path
+        expect(response.body).not_to include("navbar-scheduler-paused")
+      end
+
+      it "renders the navbar pause indicator (desktop and mobile) when the scheduler is paused" do
+        account.update!(scheduler_paused_at: Time.current)
+        get agent_runs_path
+        expect(response.body).to include("navbar-scheduler-paused")
+        expect(response.body).to include("navbar-scheduler-paused-mobile")
+      end
+
+      context "when authorized to manage the account" do
+        before { user.add_role(:admin, account) }
+
+        it "shows the pause all button when scheduler is running" do
+          get agent_runs_path
+          expect(response.body).to include("Pause All")
+          expect(response.body).to include(pause_scheduler_agent_runs_path)
+        end
+
+        it "shows the resume button and paused banner when scheduler is paused" do
+          account.update!(scheduler_paused_at: Time.current)
+          get agent_runs_path
+          expect(response.body).to include("Resume Scheduler")
+          expect(response.body).to include("Scheduler paused")
+          expect(response.body).to include(resume_scheduler_agent_runs_path)
+        end
+      end
+
+      context "without permission to manage the account" do
+        before { user.add_role(:member, account) }
+
+        it "does not render the pause all button when scheduler is running" do
+          get agent_runs_path
+          expect(response.body).not_to include("Pause All")
+          expect(response.body).not_to include(pause_scheduler_agent_runs_path)
+        end
+
+        it "does not render the resume button when scheduler is paused but still shows the banner" do
+          account.update!(scheduler_paused_at: Time.current)
+          get agent_runs_path
+          expect(response.body).not_to include("Resume Scheduler")
+          expect(response.body).not_to include(resume_scheduler_agent_runs_path)
+          expect(response.body).to include("Scheduler paused")
+        end
+      end
+    end
+  end
+
+  describe "POST /agent_runs/pause_scheduler" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        post pause_scheduler_agent_runs_path
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated as an admin" do
+      before do
+        user.add_role(:admin, account)
+        sign_in user
+      end
+
+      it "marks the current account's scheduler as paused" do
+        freeze_time do
+          post pause_scheduler_agent_runs_path
+
+          expect(account.reload.scheduler_paused_at).to eq(Time.current)
+          expect(response).to redirect_to(agent_runs_path)
+          expect(flash[:notice]).to include("paused")
+        end
+      end
+
+      it "is idempotent when the scheduler is already paused" do
+        original_time = 2.hours.ago
+        account.update!(scheduler_paused_at: original_time)
+
+        post pause_scheduler_agent_runs_path
+
+        expect(account.reload.scheduler_paused_at).to be_within(1.second).of(original_time)
+        expect(response).to redirect_to(agent_runs_path)
+      end
+    end
+
+    context "when authenticated as a member without admin role" do
+      before do
+        user.add_role(:member, account)
+        sign_in user
+      end
+
+      it "rejects the request" do
+        post pause_scheduler_agent_runs_path
+
+        expect(account.reload.scheduler_paused_at).to be_nil
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
+  end
+
+  describe "POST /agent_runs/resume_scheduler" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        post resume_scheduler_agent_runs_path
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated as an admin" do
+      before do
+        user.add_role(:admin, account)
+        sign_in user
+      end
+
+      it "clears the paused-at timestamp and enqueues the queue processor" do
+        account.update!(scheduler_paused_at: 1.hour.ago)
+
+        expect {
+          post resume_scheduler_agent_runs_path
+        }.to have_enqueued_job(ProcessRunQueueJob)
+
+        expect(account.reload.scheduler_paused_at).to be_nil
+        expect(response).to redirect_to(agent_runs_path)
+        expect(flash[:notice]).to include("resumed")
+      end
+
+      it "is a no-op when the scheduler is not paused" do
+        expect {
+          post resume_scheduler_agent_runs_path
+        }.not_to have_enqueued_job(ProcessRunQueueJob)
+
+        expect(account.reload.scheduler_paused_at).to be_nil
+        expect(response).to redirect_to(agent_runs_path)
+      end
+    end
+
+    context "when authenticated as a member without admin role" do
+      before do
+        user.add_role(:member, account)
+        account.update!(scheduler_paused_at: 1.hour.ago)
+        sign_in user
+      end
+
+      it "rejects the request" do
+        original_time = account.scheduler_paused_at
+
+        post resume_scheduler_agent_runs_path
+
+        expect(account.reload.scheduler_paused_at).to be_within(1.second).of(original_time)
+        expect(response).to redirect_to(root_path)
+      end
     end
   end
 
@@ -376,6 +529,47 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Duration")
         expect(response.body).to include("Tokens")
         expect(response.body).to include("Cost")
+      end
+
+      it "shows provider section with active provider name" do
+        owner = project.effective_owner
+        provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+        agent_run = create(:agent_run, :running, project: project, agent_type: "claude_code", provider: provider)
+        get project_agent_run_path(project, agent_run)
+        expect(response.body).to include("Active Provider")
+        expect(response.body).to include(provider.display_name)
+      end
+
+      it "shows fallback badge and originally requested provider when fallback occurred" do
+        owner = project.effective_owner
+        initial_provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+        fallback_provider = owner.providers.create!(provider_key: "cursor", auth_type: "subscription")
+        agent_run = create(
+          :agent_run,
+          :completed,
+          project: project,
+          agent_type: "claude_code",
+          provider: initial_provider,
+          final_provider: fallback_provider.routing_key,
+          provider_switches: 1,
+          providers_attempted: [
+            { "provider" => initial_provider.routing_key, "success" => false, "error_type" => "rate_limited" },
+            { "provider" => fallback_provider.routing_key, "success" => true }
+          ]
+        )
+        get project_agent_run_path(project, agent_run)
+        expect(response.body).to include("Fallback")
+        expect(response.body).to include("Originally Requested")
+        expect(response.body).to include("Provider Switches")
+      end
+
+      it "shows auth type in provider section when provider record exists" do
+        owner = project.effective_owner
+        provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+        agent_run = create(:agent_run, :completed, project: project, provider: provider)
+        get project_agent_run_path(project, agent_run)
+        expect(response.body).to include("Auth Type")
+        expect(response.body).to include("Subscription")
       end
 
       it "shows quality scores when quality metrics exist" do

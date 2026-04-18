@@ -1,0 +1,178 @@
+<% content_for :title do %>Review v<%= @prompt_version.version %> - <%= @prompt.name %> - Paid<% end %>
+
+<% parent = @prompt_version.parent_version || @prompt.current_version %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to back_link_path(prompt_reviews_path(@prompt)), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to Pending Reviews
+    <% end %>
+  </div>
+
+  <div class="bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:px-6 flex items-center justify-between">
+      <div>
+        <h1 class="text-xl font-semibold text-gray-900">
+          Review v<%= @prompt_version.version %> of <%= @prompt.name %>
+        </h1>
+        <p class="mt-1 text-sm text-gray-500">
+          <%= @prompt_version.change_notes.presence || "Evolved variant awaiting approval." %>
+        </p>
+      </div>
+      <span class="inline-flex items-center rounded-md bg-yellow-100 px-3 py-1 text-sm font-medium text-yellow-800">
+        Pending Review
+      </span>
+    </div>
+
+    <div class="border-t border-gray-200">
+      <dl class="divide-y divide-gray-200">
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Source</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <%= @prompt_version.created_by || "-" %>
+            <% if @prompt_version.created_by_user %>
+              (<%= @prompt_version.created_by_user.email %>)
+            <% end %>
+          </dd>
+        </div>
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Created</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= local_time(@prompt_version.created_at, format: :short) %></dd>
+        </div>
+        <% if parent %>
+          <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+            <dt class="text-sm font-medium text-gray-500">Parent version</dt>
+            <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">v<%= parent.version %></dd>
+          </div>
+        <% end %>
+      </dl>
+    </div>
+  </div>
+
+  <%# Quality metrics comparison %>
+  <% parent_score = parent&.avg_quality_score %>
+  <% candidate_score = @prompt_version.avg_quality_score %>
+  <div class="mt-8 bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:px-6">
+      <h2 class="text-lg font-medium text-gray-900">Quality Metrics</h2>
+      <p class="mt-1 text-sm text-gray-500">Observed performance so far (more samples may arrive before you review).</p>
+    </div>
+    <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
+      <dl class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+        <div>
+          <dt class="text-xs uppercase tracking-wide text-gray-500">Parent (v<%= parent&.version || "-" %>)</dt>
+          <dd class="mt-1 text-sm text-gray-900">
+            <% if parent_score %>
+              Avg quality: <span class="font-semibold"><%= parent_score.to_f.round(3) %></span>
+            <% else %>
+              <span class="text-gray-400 italic">No metrics yet</span>
+            <% end %>
+          </dd>
+          <dd class="text-xs text-gray-500 mt-1">Samples: <%= parent&.usage_count || 0 %></dd>
+        </div>
+        <div>
+          <dt class="text-xs uppercase tracking-wide text-gray-500">Candidate (v<%= @prompt_version.version %>)</dt>
+          <dd class="mt-1 text-sm text-gray-900">
+            <% if candidate_score %>
+              Avg quality: <span class="font-semibold"><%= candidate_score.to_f.round(3) %></span>
+            <% else %>
+              <span class="text-gray-400 italic">No metrics yet</span>
+            <% end %>
+          </dd>
+          <dd class="text-xs text-gray-500 mt-1">Samples: <%= @prompt_version.usage_count %></dd>
+        </div>
+      </dl>
+    </div>
+  </div>
+
+  <%# Diff: parent vs candidate %>
+  <% if parent %>
+    <div class="mt-8 bg-white shadow sm:rounded-lg">
+      <div class="px-4 py-5 sm:px-6">
+        <h2 class="text-lg font-medium text-gray-900">Template Diff</h2>
+        <p class="mt-1 text-sm text-gray-500">
+          Current v<%= parent.version %> (left) vs. proposed v<%= @prompt_version.version %> (right).
+        </p>
+      </div>
+      <div class="grid grid-cols-2 divide-x divide-gray-200 border-t border-gray-200">
+        <div class="p-4">
+          <pre class="overflow-x-auto rounded-lg bg-red-50 p-4 text-sm text-gray-800 font-mono whitespace-pre-wrap"><%= parent.template %></pre>
+        </div>
+        <div class="p-4">
+          <pre class="overflow-x-auto rounded-lg bg-green-50 p-4 text-sm text-gray-800 font-mono whitespace-pre-wrap"><%= @prompt_version.template %></pre>
+        </div>
+      </div>
+    </div>
+  <% else %>
+    <div class="mt-8 bg-white shadow sm:rounded-lg">
+      <div class="px-4 py-5 sm:px-6">
+        <h2 class="text-lg font-medium text-gray-900">Template</h2>
+      </div>
+      <div class="border-t border-gray-200 p-4">
+        <pre class="overflow-x-auto rounded-lg bg-gray-50 p-4 text-sm text-gray-800 font-mono whitespace-pre-wrap"><%= @prompt_version.template %></pre>
+      </div>
+    </div>
+  <% end %>
+
+  <% if policy(@prompt).update? %>
+    <%# Approve form %>
+    <div class="mt-8 bg-white shadow sm:rounded-lg">
+      <div class="px-4 py-5 sm:p-6">
+        <h3 class="text-base font-semibold leading-6 text-gray-900">Approve</h3>
+        <p class="mt-1 text-sm text-gray-500">Approving promotes this variant to the prompt's current version.</p>
+        <%= form_with url: approve_prompt_review_path(@prompt, @prompt_version), method: :post, local: true, class: "mt-4" do |form| %>
+          <%= form.label "prompt_version[review_notes]", "Notes (optional)", class: "block text-sm font-medium text-gray-700" %>
+          <%= form.text_area "prompt_version[review_notes]", rows: 2, class: "mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm", placeholder: "LGTM, shipping." %>
+          <div class="mt-4">
+            <%= form.submit "Approve and Promote", class: "rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 cursor-pointer" %>
+          </div>
+        <% end %>
+      </div>
+    </div>
+
+    <%# Reject form %>
+    <div class="mt-8 bg-white shadow sm:rounded-lg">
+      <div class="px-4 py-5 sm:p-6">
+        <h3 class="text-base font-semibold leading-6 text-gray-900">Reject</h3>
+        <p class="mt-1 text-sm text-gray-500">Rejecting keeps the current version active. Notes are required.</p>
+        <%= form_with url: reject_prompt_review_path(@prompt, @prompt_version), method: :post, local: true, class: "mt-4" do |form| %>
+          <%= form.label "prompt_version[review_notes]", "Reason", class: "block text-sm font-medium text-gray-700" %>
+          <%= form.text_area "prompt_version[review_notes]", rows: 3, required: true, class: "mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm", placeholder: "Why are you rejecting this variant?" %>
+          <div class="mt-4">
+            <%= form.submit "Reject", class: "rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 cursor-pointer" %>
+          </div>
+        <% end %>
+      </div>
+    </div>
+
+    <%# Edit form %>
+    <div class="mt-8 bg-white shadow sm:rounded-lg">
+      <div class="px-4 py-5 sm:p-6">
+        <h3 class="text-base font-semibold leading-6 text-gray-900">Edit &amp; Resubmit</h3>
+        <p class="mt-1 text-sm text-gray-500">
+          Tweak the template and save a new pending variant. The current pending version will be superseded.
+        </p>
+        <%= form_with url: prompt_review_path(@prompt, @prompt_version), method: :patch, local: true, class: "mt-4 space-y-4" do |form| %>
+          <div>
+            <%= form.label "prompt_version[template]", "Template", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_area "prompt_version[template]", rows: 10, class: "mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm font-mono", value: @prompt_version.template %>
+          </div>
+          <div>
+            <%= form.label "prompt_version[system_prompt]", "System prompt (optional)", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_area "prompt_version[system_prompt]", rows: 3, class: "mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm font-mono", value: @prompt_version.system_prompt %>
+          </div>
+          <div>
+            <%= form.label "prompt_version[change_notes]", "Change notes", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_field "prompt_version[change_notes]", class: "mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm" %>
+          </div>
+          <div>
+            <%= form.submit "Save edited variant", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 cursor-pointer" %>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>

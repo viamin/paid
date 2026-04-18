@@ -17,5 +17,21 @@ FactoryBot.define do
         version.parent_version ||= build(:prompt_version, prompt: version.prompt)
       end
     end
+
+    trait :pending_review do
+      review_status { "pending" }
+      created_by { "evolution" }
+    end
+
+    trait :approved do
+      review_status { "approved" }
+      reviewed_at { Time.current }
+    end
+
+    trait :rejected do
+      review_status { "rejected" }
+      reviewed_at { Time.current }
+      review_notes { "Did not meet quality bar" }
+    end
   end
 end

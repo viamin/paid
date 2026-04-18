@@ -36,14 +36,6 @@ module Issues
         .eligible_issue_ids(displayed_issues)
     end
 
-    # Builds the base eligible-issue scope for a project. Preserved as a
-    # class method for callers that build on top of the eligibility
-    # filter (e.g. UI hints that display eligibility-derived counts).
-    def self.build_eligible_scope(project)
-      Automation::Strategies::AutoPick::DefaultCandidateSource
-        .eligible_scope(project)
-    end
-
     def initialize(project)
       @project = project
     end
@@ -132,6 +124,11 @@ module Issues
     # yet handed off (missing paid-generated/paid-ready labels, or
     # still in draft/restarted phase).
     #
+    # Escalated PRs are excluded because they have already been surfaced
+    # to the owner for attention — keeping them in the count would let
+    # operationally stalled PRs (e.g. provider exhaustion, repeated
+    # timeouts) block auto-pick indefinitely even after escalation.
+    #
     # Uses a single COUNT query. The handed_off subquery only matches
     # in_progress rows, so failed PRs are never excluded by it.
     def prs_needing_attention_count
@@ -147,7 +144,9 @@ module Issues
         .where("labels @> ?::jsonb", [ @project.generated_label_name, PAID_READY_LABEL ].to_json)
         .where.not(pr_review_phase: %w[draft restarted])
 
-      base.where.not(id: handed_off).count
+      escalated = base.where(pr_review_phase: "escalated")
+
+      base.where.not(id: handed_off).where.not(id: escalated).count
     end
 
     def max_auto_pick_open_prs

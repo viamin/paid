@@ -13,10 +13,10 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(client)
-    allow(client).to receive(:recent_issue_comments).and_return([])
     allow(client).to receive(:add_comment)
     allow(client).to receive(:add_labels_to_issue)
     allow(client).to receive(:remove_label_from_issue)
+    allow(client).to receive_messages(recent_issue_comments: [], remove_labels_from_issue: { removed: [], failed: [] })
   end
 
   describe "#execute" do
@@ -175,24 +175,24 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
           .with(auto_project.full_name, issue.github_number, a_string_including("my-auto"))
       end
 
-      it "removes the automation trigger label from the issue" do
+      it "removes the automation trigger label from the issue in batch" do
         issue = create(:issue, :in_progress, project: auto_project, labels: [ "my-auto" ])
         agent_run = create(:agent_run, :running, project: auto_project, issue: issue)
 
         activity.execute(agent_run_id: agent_run.id, output_present: false)
 
-        expect(client).to have_received(:remove_label_from_issue)
-          .with(auto_project.full_name, issue.github_number, "my-auto")
+        expect(client).to have_received(:remove_labels_from_issue)
+          .with(auto_project.full_name, issue.github_number, [ "my-auto" ])
       end
 
-      it "removes the automation trigger label on recommend_close" do
+      it "removes the automation trigger label on recommend_close in batch" do
         issue = create(:issue, :in_progress, project: auto_project, labels: [ "my-auto" ])
         agent_run = create(:agent_run, :running, project: auto_project, issue: issue)
 
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
-        expect(client).to have_received(:remove_label_from_issue)
-          .with(auto_project.full_name, issue.github_number, "my-auto")
+        expect(client).to have_received(:remove_labels_from_issue)
+          .with(auto_project.full_name, issue.github_number, [ "my-auto" ])
       end
     end
 
@@ -232,6 +232,142 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
         expect(client).not_to have_received(:add_comment)
+      end
+    end
+
+    context "when output is present but agent did not actually run (provider error)" do
+      let(:credit_error) do
+        "Error: This request requires more credits, or fewer max_tokens. " \
+          "You requested up to 32000 tokens, but can only afford 4744. " \
+          "To increase, visit https://openrouter.ai/settings/credits and add more credits"
+      end
+
+      it "classifies as provider_error when iterations and cost are zero" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", credit_error)
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("provider_error")
+      end
+
+      it "fails the run instead of completing it" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", credit_error)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(agent_run.reload.status).to eq("failed")
+      end
+
+      it "does not transition issue to recommend_close" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", credit_error)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(issue.reload.paid_state).not_to eq("recommend_close")
+      end
+
+      it "does not post a recommend-close comment on GitHub" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", credit_error)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).not_to have_received(:add_comment)
+          .with(project.full_name, issue.github_number, a_string_including("Recommend Close"))
+      end
+
+      it "enqueues ProcessRunQueueJob for retry" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", credit_error)
+
+        expect { activity.execute(agent_run_id: agent_run.id, output_present: true) }
+          .to have_enqueued_job(ProcessRunQueueJob)
+      end
+
+      it "allows recommend_close when agent has iterations > 0" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 5, cost_cents: 0)
+        agent_run.log!("stdout", "The issue is already fixed in the codebase")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("recommend_close")
+      end
+
+      it "allows recommend_close when agent has cost_cents > 0" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 50)
+        agent_run.log!("stdout", "This issue appears resolved already")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("recommend_close")
+      end
+
+      it "detects quota exceeded errors" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "Error: quota exceeded for this API key")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("provider_error")
+      end
+
+      it "detects rate limit errors" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "Error: rate limit exceeded, please retry later")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("provider_error")
+      end
+    end
+
+    context "when GitHub comment would contain provider error text" do
+      it "redacts provider error lines from recommend_close comments" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", "Some legitimate output\nError: quota exceeded\nMore output")
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:add_comment) do |_repo, _number, body|
+          expect(body).to include("Recommend Close")
+          expect(body).not_to include("quota exceeded")
+        end
+      end
+
+      it "redacts provider error lines from needs_input comments" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        agent_run.log!("stderr", "Some context\nrequires more credits\nMore context")
+
+        activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(client).to have_received(:add_comment) do |_repo, _number, body|
+          expect(body).to include("Needs Input")
+          expect(body).not_to include("requires more credits")
+        end
       end
     end
 
