@@ -71,6 +71,17 @@ module Containers
       end
     end
 
+    # Raised when streaming output matches an abort pattern, indicating a
+    # fatal provider error where the CLI is known to hang instead of exiting.
+    class OutputAbortError < Error
+      attr_reader :matched_output
+
+      def initialize(msg = "Process aborted due to fatal output pattern", matched_output: nil)
+        @matched_output = matched_output
+        super(msg)
+      end
+    end
+
     # Bundles watchdog shared state (mutex, refs, timeouts) into a single
     # object to keep start_watchdog's parameter list under 4.
     WatchdogContext = Struct.new(
@@ -194,13 +205,13 @@ module Containers
     # @raise [StartupTimeoutError] when no output is received within +startup_timeout+ seconds
     # @raise [IdleTimeoutError] when output stops for more than +idle_timeout+ seconds
     # @raise [TimeoutError] when total wall-clock +timeout+ is exceeded
-    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil)
+    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil)
       raise ProvisionError, "Container not provisioned" unless container
 
-      with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:, preparation:, heartbeat_path:) }
+      with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:, preparation:, heartbeat_path:, abort_patterns:) }
     end
 
-    private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil)
+    private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil)
       timeout ||= options[:timeout_seconds]
       cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
       exec_options = { wait: timeout }
@@ -227,6 +238,7 @@ module Containers
       exec_completed = false
       timeout_reason = nil # :startup, :idle, or :wall_clock, set by watchdog
       timeout_reason_ref = -> { timeout_reason }
+      abort_matched_output = nil # set when an abort_pattern matches stderr
       watchdog = nil
 
       timeout_check = TimeoutCheckState.new(
@@ -271,6 +283,23 @@ module Containers
           when :stderr
             stderr_buffer << normalized_chunk
             log_output(:stderr, normalized_chunk) if stream
+
+            # Check stderr against abort patterns — if the CLI emits a fatal
+            # error but hangs instead of exiting, stop the container immediately
+            # rather than waiting for the idle/wall-clock timeout.
+            if abort_patterns&.any? && abort_matched_output.nil?
+              matched = abort_patterns.any? { |pat| normalized_chunk.match?(pat) }
+              if matched
+                abort_matched_output = normalized_chunk
+                log_system("container.execute.abort_pattern_matched",
+                  output: normalized_chunk.truncate(200))
+                begin
+                  container.stop(timeout: 0)
+                rescue Docker::Error::DockerError => e
+                  log_system("container.execute.abort_stop_failed", error: e.message)
+                end
+              end
+            end
           end
         end
 
@@ -278,6 +307,16 @@ module Containers
         # to prevent late/false timeouts during post-processing.
         watchdog_mutex.synchronize { exec_completed = true }
         stop_watchdog(watchdog)
+
+        # Check if we stopped the container due to an abort pattern match.
+        # This takes precedence over timeout checks because the abort was
+        # the actual cause of termination.
+        if abort_matched_output
+          raise OutputAbortError.new(
+            "Process aborted: fatal output pattern detected",
+            matched_output: abort_matched_output
+          )
+        end
 
         # Check if the watchdog stopped the container (exec returns normally
         # with a non-zero exit code when the process is killed).
@@ -309,6 +348,9 @@ module Containers
             exit_code: exit_code
           )
         end
+      rescue OutputAbortError
+        log_partial_output(stdout_buffer, stderr_buffer)
+        raise
       rescue StartupTimeoutError, IdleTimeoutError => e
         log_partial_output(stdout_buffer, stderr_buffer)
         timeout_value = e.is_a?(StartupTimeoutError) ? startup_timeout : idle_timeout
@@ -320,6 +362,16 @@ module Containers
       rescue Docker::Error::DockerError => e
         # Log partial output first — raise_if_watchdog_timeout! may re-raise.
         log_partial_output(stdout_buffer, stderr_buffer)
+
+        # Check if the Docker error was caused by an abort pattern stopping the
+        # container. This takes precedence over timeout classification.
+        if abort_matched_output
+          raise OutputAbortError.new(
+            "Process aborted: fatal output pattern detected",
+            matched_output: abort_matched_output
+          )
+        end
+
         begin
           raise_if_watchdog_timeout!(timeout_check)
         rescue StartupTimeoutError, IdleTimeoutError => timeout_error
