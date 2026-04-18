@@ -278,6 +278,30 @@
     </div>
   <% end %>
 
+  <% if agent_run.cross_repo_issue_pair? %>
+    <div class="mt-6 rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+      <h2 class="text-sm font-semibold text-indigo-800">Cross-Repo Issue Pair</h2>
+      <ul class="mt-2 space-y-1">
+        <% agent_run.upstream_issues.each do |issue_entry| %>
+          <% if safe_github_url?(issue_entry["issue_url"]) %>
+            <li class="text-sm">
+              <span class="font-medium text-indigo-700">Upstream (<%= issue_entry["repo"] %>):</span>
+              <%= link_to "##{issue_entry["issue_number"]}", issue_entry["issue_url"], target: "_blank", rel: "noopener noreferrer", class: "text-indigo-700 hover:text-indigo-900 underline" %>
+            </li>
+          <% end %>
+        <% end %>
+        <% agent_run.downstream_issues.each do |issue_entry| %>
+          <% if safe_github_url?(issue_entry["issue_url"]) %>
+            <li class="text-sm">
+              <span class="font-medium text-indigo-700">Downstream (<%= issue_entry["repo"] %>):</span>
+              <%= link_to "##{issue_entry["issue_number"]}", issue_entry["issue_url"], target: "_blank", rel: "noopener noreferrer", class: "text-indigo-700 hover:text-indigo-900 underline" %>
+            </li>
+          <% end %>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
 <% if agent_run.token_limit_exceeded? %>
   <div class="mt-6 rounded-lg border border-red-200 bg-red-50 p-4">
     <h2 class="text-sm font-semibold text-red-800">Token Limit Exceeded</h2>

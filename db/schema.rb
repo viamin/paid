@@ -856,6 +856,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_015607) do
     t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
   end
 
+  create_table "pr_templates", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.text "body", null: false
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.boolean "enabled", default: true, null: false
+    t.string "name", limit: 255, null: false
+    t.integer "position", default: 0, null: false
+    t.string "pr_type", limit: 50, default: "default", null: false
+    t.bigint "project_id"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index ["account_id", "name"], name: "idx_pr_templates_account_name_unique", unique: true, where: "((project_id IS NULL) AND (user_id IS NULL))"
+    t.index ["account_id", "position"], name: "idx_pr_templates_account_position", where: "((project_id IS NULL) AND (user_id IS NULL))"
+    t.index ["account_id"], name: "index_pr_templates_on_account_id"
+    t.index ["project_id", "name"], name: "idx_pr_templates_project_name_unique", unique: true, where: "(project_id IS NOT NULL)"
+    t.index ["project_id", "position"], name: "idx_pr_templates_project_position", where: "(project_id IS NOT NULL)"
+    t.index ["project_id"], name: "index_pr_templates_on_project_id"
+    t.index ["user_id", "name"], name: "idx_pr_templates_user_name_unique", unique: true, where: "((user_id IS NOT NULL) AND (project_id IS NULL))"
+    t.index ["user_id", "position"], name: "idx_pr_templates_user_position", where: "(user_id IS NOT NULL)"
+    t.index ["user_id"], name: "index_pr_templates_on_user_id"
+    t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "pr_templates_scope_check"
+  end
+
   create_table "pre_commit_requirements", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "check_type", limit: 50, default: "shell_command", null: false
@@ -959,6 +983,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_015607) do
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
     t.jsonb "fitness_settings", default: {}, null: false
+    t.jsonb "fitness_weights", default: {}, null: false
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
     t.bigint "github_token_id", null: false
@@ -1395,14 +1420,83 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_015607) do
   add_foreign_key "ab_tests", "prompts", on_delete: :cascade
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
+  add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"
+  add_foreign_key "agent_coordination_signals", "agent_runs", column: "target_agent_run_id"
   add_foreign_key "agent_run_anomalies", "agent_runs"
   add_foreign_key "agent_run_anomalies", "projects"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
+  add_foreign_key "agent_runs", "projects", on_delete: :cascade
+  add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
+  add_foreign_key "agent_runs", "providers", on_delete: :nullify
   add_foreign_key "billing_invoices", "billing_periods"
   add_foreign_key "billing_line_items", "billing_invoices"
   add_foreign_key "billing_periods", "billing_plans"
+  add_foreign_key "collector_runs", "project_versions"
+  add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
+  add_foreign_key "context_intake_responses", "context_intake_responses", column: "parent_response_id"
+  add_foreign_key "context_intake_responses", "context_intake_sessions"
+  add_foreign_key "context_intake_sessions", "projects"
+  add_foreign_key "context_intake_sessions", "users", column: "started_by_id"
+  add_foreign_key "cost_budgets", "projects", on_delete: :cascade
+  add_foreign_key "decision_record_links", "decision_records", on_delete: :cascade
+  add_foreign_key "decision_records", "agent_runs", on_delete: :nullify
+  add_foreign_key "decision_records", "decision_records", column: "superseded_by_id", on_delete: :nullify
+  add_foreign_key "decision_records", "issues", on_delete: :nullify
+  add_foreign_key "decision_records", "projects", on_delete: :cascade
+  add_foreign_key "github_tokens", "accounts"
+  add_foreign_key "github_tokens", "users", column: "created_by_id"
+  add_foreign_key "integration_credentials", "accounts"
+  add_foreign_key "integration_credentials", "users", column: "created_by_id"
+  add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade
+  add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
+  add_foreign_key "issues", "issues", column: "parent_issue_id"
+  add_foreign_key "issues", "projects"
+  add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
+  add_foreign_key "knowledge_artifacts", "projects"
+  add_foreign_key "knowledge_audit_events", "projects", on_delete: :cascade
+  add_foreign_key "knowledge_chunks", "knowledge_artifacts", on_delete: :cascade
+  add_foreign_key "knowledge_chunks", "projects"
+  add_foreign_key "knowledge_links", "knowledge_chunks", column: "source_chunk_id", on_delete: :cascade
+  add_foreign_key "knowledge_links", "knowledge_chunks", column: "target_chunk_id", on_delete: :cascade
+  add_foreign_key "knowledge_runs", "projects", on_delete: :cascade
+  add_foreign_key "linear_tokens", "accounts"
+  add_foreign_key "linear_tokens", "users", column: "created_by_id"
+  add_foreign_key "mcp_server_definitions", "accounts"
+  add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
+  add_foreign_key "model_selections", "llm_models"
+  add_foreign_key "notifications", "accounts"
+  add_foreign_key "notifications", "users", on_delete: :nullify
+  add_foreign_key "onboarding_steps", "accounts"
+  add_foreign_key "pr_templates", "accounts", on_delete: :cascade
+  add_foreign_key "pr_templates", "projects", on_delete: :cascade
+  add_foreign_key "pr_templates", "users", on_delete: :cascade
+  add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
+  add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
+  add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
+  add_foreign_key "project_baselines", "projects"
+  add_foreign_key "project_mcp_servers", "mcp_server_definitions"
+  add_foreign_key "project_mcp_servers", "projects"
+  add_foreign_key "project_memberships", "projects"
+  add_foreign_key "project_memberships", "users"
+  add_foreign_key "project_service_containers", "projects", on_delete: :cascade
+  add_foreign_key "project_service_containers", "service_containers", on_delete: :cascade
+  add_foreign_key "project_versions", "projects"
+  add_foreign_key "projects", "accounts"
+  add_foreign_key "projects", "github_tokens"
+  add_foreign_key "projects", "users", column: "created_by_id"
+  add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify
+  add_foreign_key "prompt_versions", "prompts", on_delete: :cascade
+  add_foreign_key "prompt_versions", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "prompt_versions", "users", column: "reviewed_by_user_id", on_delete: :nullify
+  add_foreign_key "prompts", "accounts", on_delete: :cascade
+  add_foreign_key "prompts", "projects", on_delete: :cascade
+  add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
+  add_foreign_key "provider_api_keys", "users", on_delete: :cascade
+  add_foreign_key "provider_states", "users", on_delete: :cascade
+  add_foreign_key "providers", "provider_api_keys", on_delete: :restrict
+  add_foreign_key "providers", "users", on_delete: :cascade
   add_foreign_key "quality_gate_events", "projects"
   add_foreign_key "quality_gate_events", "quality_gate_thresholds"
   add_foreign_key "quality_gate_events", "quality_metrics"
