@@ -594,16 +594,16 @@ class Project < ApplicationRecord
   end
 
   def quality_pause!(score:, threshold:, agent_run: nil, metadata: {})
-    return false if quality_paused?
+    with_lock do
+      return false if quality_paused?
 
-    now = Time.current
-    pause_meta = {
-      triggered_at: now.iso8601,
-      composite_score: score,
-      threshold: threshold
-    }.merge(metadata)
+      now = Time.current
+      pause_meta = {
+        triggered_at: now.iso8601,
+        composite_score: score,
+        threshold: threshold
+      }.merge(metadata)
 
-    transaction do
       update!(
         quality_paused_at: now,
         quality_pause_metadata: pause_meta
@@ -622,14 +622,14 @@ class Project < ApplicationRecord
   end
 
   def quality_resume!(metadata: {})
-    return false unless quality_paused?
+    with_lock do
+      return false unless quality_paused?
 
-    resume_meta = {
-      resumed_at: Time.current.iso8601,
-      was_paused_at: quality_paused_at&.iso8601
-    }.merge(metadata)
+      resume_meta = {
+        resumed_at: Time.current.iso8601,
+        was_paused_at: quality_paused_at&.iso8601
+      }.merge(metadata)
 
-    transaction do
       update!(
         quality_paused_at: nil,
         quality_pause_metadata: {}
