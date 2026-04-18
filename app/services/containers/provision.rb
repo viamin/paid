@@ -697,7 +697,11 @@ module Containers
       stdout, _stderr, exit_code = Array(result)
 
       existing = if exit_code&.zero? && stdout.is_a?(Array) && stdout.join.present?
-        JSON.parse(stdout.join) rescue {}
+        begin
+          JSON.parse(stdout.join)
+        rescue JSON::ParserError
+          {}
+        end
       else
         {}
       end
