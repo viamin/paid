@@ -24,11 +24,28 @@ if [ -z "${RUBY_MAAT_VERSION}" ]; then
     exit 1
 fi
 
+# Extract Claude CLI install contract from agent-harness (single source of truth).
+# The helper script outputs key=value pairs; we capture the ones we need.
+CLAUDE_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" claude)
+CLAUDE_INSTALL_COMMAND=$(echo "${CLAUDE_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
+CLAUDE_POST_INSTALL_BINARY_PATH=$(echo "${CLAUDE_CONTRACT}" | sed -n 's/^POST_INSTALL_BINARY_PATH=//p')
+
+if [ -z "${CLAUDE_INSTALL_COMMAND}" ]; then
+    echo "ERROR: Could not extract Claude install command from agent-harness" >&2
+    exit 1
+fi
+
+if [ -z "${CLAUDE_POST_INSTALL_BINARY_PATH}" ]; then
+    echo "ERROR: Could not extract Claude post-install binary path from agent-harness" >&2
+    exit 1
+fi
+
 # Extract Codex CLI package from agent-harness installation contract.
 # agent-harness owns the supported Codex CLI version; Paid consumes it at build time.
-CODEX_PACKAGE=$(cd "${PROJECT_ROOT}" && bundle exec ruby -e "require 'agent_harness'; puts AgentHarness::Providers::Codex.installation_contract[:package]")
+CODEX_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" codex)
+CODEX_PACKAGE=$(echo "${CODEX_CONTRACT}" | sed -n 's/^PACKAGE=//p')
 if [ -z "${CODEX_PACKAGE}" ]; then
-    echo "ERROR: Could not extract Codex package from agent-harness installation_contract" >&2
+    echo "ERROR: Could not extract Codex package from agent-harness" >&2
     exit 1
 fi
 
@@ -36,12 +53,15 @@ echo "Building agent container image..."
 echo "  Image: ${FULL_IMAGE}"
 echo "  Context: ${PROJECT_ROOT}/docker/agent"
 echo "  ruby-maat: ${RUBY_MAAT_VERSION}"
+echo "  claude: ${CLAUDE_INSTALL_COMMAND}"
 echo "  codex: ${CODEX_PACKAGE}"
 
 docker build \
     -t "${FULL_IMAGE}" \
     -f "${PROJECT_ROOT}/docker/agent/Dockerfile" \
     --build-arg "RUBY_MAAT_VERSION=${RUBY_MAAT_VERSION}" \
+    --build-arg "CLAUDE_INSTALL_COMMAND=${CLAUDE_INSTALL_COMMAND}" \
+    --build-arg "CLAUDE_POST_INSTALL_BINARY_PATH=${CLAUDE_POST_INSTALL_BINARY_PATH}" \
     --build-arg "CODEX_PACKAGE=${CODEX_PACKAGE}" \
     "${PROJECT_ROOT}/docker/agent/"
 
