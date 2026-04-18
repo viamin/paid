@@ -1612,6 +1612,24 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.providers_attempted.first["error_type"]).to eq("timeout")
       end
 
+      it "classifies OutputAbortError from quota patterns as rate_limited instead of timeout" do
+        allow(container_service).to receive(:execute).and_raise(
+          Containers::Provision::OutputAbortError.new(
+            "Process aborted: fatal output pattern detected",
+            matched_output: "Error: Free tier limit reached. Please upgrade to a paid plan."
+          )
+        )
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to include("rate limited")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
       it "preserves timeout handling when the timeout happens before provider execution starts" do
         allow(activity).to receive(:augment_prompt_for_goal)
           .and_raise(Containers::Provision::TimeoutError, "took too long before exec")

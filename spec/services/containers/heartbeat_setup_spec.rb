@@ -33,9 +33,9 @@ RSpec.describe Containers::HeartbeatSetup do
       expect(setup).to be_available
     end
 
-    it "returns true for codex with worktree" do
+    it "returns false for codex (heartbeat handled by Provision)" do
       setup = described_class.new(provider: "codex", worktree_path: worktree_path)
-      expect(setup).to be_available
+      expect(setup).not_to be_available
     end
 
     it "returns false for unsupported provider" do
@@ -136,15 +136,8 @@ RSpec.describe Containers::HeartbeatSetup do
     context "with codex provider" do
       let(:setup) { described_class.new(provider: "codex", worktree_path: worktree_path) }
 
-      it "returns preparation with Codex config file write" do
-        preparation = setup.preparation
-        expect(preparation).to be_a(AgentHarness::ExecutionPreparation)
-        expect(preparation.file_writes.size).to eq(1)
-
-        write = preparation.file_writes.first
-        expect(write.path).to eq("~/.codex/config.toml")
-        expect(write.content).to include("notify")
-        expect(write.content).to include("/workspace/.paid-heartbeat")
+      it "returns nil (codex heartbeat handled by Provision)" do
+        expect(setup.preparation).to be_nil
       end
     end
 

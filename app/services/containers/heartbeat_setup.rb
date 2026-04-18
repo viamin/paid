@@ -22,7 +22,10 @@ module Containers
     CONTAINER_HEARTBEAT_PATH = "/workspace/#{HEARTBEAT_FILENAME}"
 
     # Providers that support heartbeat hooks.
-    SUPPORTED_PROVIDERS = %w[claude codex].freeze
+    # Codex heartbeat is handled by Provision#seed_codex_notify_hook! which
+    # appends a [notify] section to the full config.toml written during
+    # container provisioning. Adding codex here would overwrite that config.
+    SUPPORTED_PROVIDERS = %w[claude].freeze
 
     attr_reader :provider, :worktree_path
 
@@ -67,7 +70,6 @@ module Containers
     def canonical_provider
       case provider
       when "claude", "claude_code" then "claude"
-      when "codex" then "codex"
       else provider
       end
     end
@@ -75,7 +77,6 @@ module Containers
     def preparation_file_writes
       case canonical_provider
       when "claude" then claude_file_writes
-      when "codex" then codex_file_writes
       else []
       end
     end
@@ -112,19 +113,6 @@ module Containers
       JSON.parse(File.read(host_settings_path))
     rescue JSON::ParserError
       {}
-    end
-
-    def codex_file_writes
-      content = <<~TOML
-        notify = ["touch", "#{CONTAINER_HEARTBEAT_PATH}"]
-      TOML
-
-      [
-        AgentHarness::ExecutionPreparation::FileWrite.new(
-          path: "~/.codex/config.toml",
-          content: content
-        )
-      ]
     end
   end
 end
