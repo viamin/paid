@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_18_230411) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_18_233122) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -213,8 +213,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_230411) do
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["parent_workflow_id"], name: "index_agent_runs_on_parent_workflow_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
-    t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
+    t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])))"
+    t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])))"
     t.index ["project_id", "status", "completed_at"], name: "index_agent_runs_on_project_status_completed_at"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
@@ -687,7 +687,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_230411) do
     t.index ["provider", "active"], name: "index_llm_models_on_provider_and_active"
     t.index ["provider"], name: "index_llm_models_on_provider"
     t.index ["tier"], name: "index_llm_models_on_tier"
-    t.check_constraint "tier IS NULL OR (tier::text = ANY (ARRAY['low'::character varying::text, 'mid'::character varying::text, 'high'::character varying::text]))", name: "llm_models_tier_check"
+    t.check_constraint "tier IS NULL OR (tier::text = ANY (ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying]::text[]))", name: "llm_models_tier_check"
   end
 
   create_table "mcp_server_definitions", force: :cascade do |t|
@@ -725,7 +725,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_230411) do
     t.index ["llm_model_id"], name: "index_model_selections_on_llm_model_id"
     t.index ["selector_type"], name: "index_model_selections_on_selector_type"
     t.index ["tier"], name: "index_model_selections_on_tier"
-    t.check_constraint "tier IS NULL OR (tier::text = ANY (ARRAY['low'::character varying::text, 'mid'::character varying::text, 'high'::character varying::text]))", name: "model_selections_tier_check"
+    t.check_constraint "tier IS NULL OR (tier::text = ANY (ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying]::text[]))", name: "model_selections_tier_check"
   end
 
   create_table "notifications", force: :cascade do |t|
@@ -882,8 +882,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_230411) do
     t.jsonb "allowed_github_usernames", default: [], null: false
     t.boolean "auto_add_labels_enabled", default: true, null: false
     t.boolean "auto_fix_merge_conflicts", default: true, null: false
-    t.boolean "auto_merge_dependabot", default: false, null: false
-    t.boolean "auto_merge_enabled", default: false, null: false
+    t.string "auto_merge_mode", default: "off", null: false
     t.boolean "auto_pick_enabled", default: false, null: false
     t.string "auto_release_granularity", default: "off", null: false
     t.boolean "auto_scan_prs", default: true, null: false

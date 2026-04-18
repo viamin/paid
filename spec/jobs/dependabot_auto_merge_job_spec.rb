@@ -4,7 +4,7 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe DependabotAutoMergeJob do
-  let(:project) { create(:project, auto_merge_dependabot: true) }
+  let(:project) { create(:project, auto_merge_mode: "dependabot_only") }
   let(:client) { instance_double(GithubClient) }
 
   let(:dependabot_pr) do
@@ -47,8 +47,8 @@ RSpec.describe DependabotAutoMergeJob do
       expect(client).to have_received(:add_comment)
     end
 
-    it "skips when project has auto_merge_dependabot disabled" do
-      project.update!(auto_merge_dependabot: false)
+    it "skips when project has auto_merge_mode off" do
+      project.update!(auto_merge_mode: "off")
 
       described_class.perform_now(project.id)
 

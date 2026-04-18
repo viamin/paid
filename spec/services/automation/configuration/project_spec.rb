@@ -7,7 +7,7 @@ RSpec.describe Automation::Configuration::Project do
     it "aggregates every sub-config from a project record" do
       project = build(:project,
         auto_pick_enabled: true,
-        auto_merge_enabled: true,
+        auto_merge_mode: "all",
         auto_fix_merge_conflicts: true,
         merge_method: "squash",
         review_settings: {

@@ -524,7 +524,7 @@ RSpec.describe "Api::GithubWebhooks" do
     end
 
     context "with dependabot pull_request.opened event" do
-      let(:project) { create(:project, webhook_secret: "test-secret-123", auto_merge_dependabot: true) }
+      let(:project) { create(:project, webhook_secret: "test-secret-123", auto_merge_mode: "dependabot_only") }
 
       let(:payload) do
         {
@@ -553,8 +553,8 @@ RSpec.describe "Api::GithubWebhooks" do
         expect(response).to have_http_status(:ok)
       end
 
-      it "does not enqueue when auto_merge_dependabot is disabled" do
-        project.update!(auto_merge_dependabot: false)
+      it "does not enqueue when auto_merge_mode is off" do
+        project.update!(auto_merge_mode: "off")
         body, signature = sign_payload(payload, project.webhook_secret)
 
         expect {
@@ -589,7 +589,7 @@ RSpec.describe "Api::GithubWebhooks" do
     end
 
     context "with check_suite.completed event for dependabot PR" do
-      let(:project) { create(:project, webhook_secret: "test-secret-123", auto_merge_dependabot: true) }
+      let(:project) { create(:project, webhook_secret: "test-secret-123", auto_merge_mode: "dependabot_only") }
 
       let(:payload) do
         {

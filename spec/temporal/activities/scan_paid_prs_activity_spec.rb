@@ -3528,7 +3528,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           review_settings: {
             "enabled" => true,
             "methods" => { "manual" => { "enabled" => true, "reviewer_login" => "alice" } }
@@ -3560,7 +3560,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           review_settings: {
             "enabled" => true,
             "methods" => { "ci_action" => { "enabled" => true, "action_name" => "Claude Code Review" } }
@@ -3907,7 +3907,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "auto-merges without review when CI is green and mergeable" do
-        project.update!(auto_merge_enabled: true, owner_reviewer_login: "viamin")
+        project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
         stub_github_for_pr(
           author_login: "dependabot[bot]",
           checks: [ { name: "ci", conclusion: "success" } ],
@@ -3936,7 +3936,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "does not auto-merge when auto_merge is disabled" do
-        project.update!(auto_merge_enabled: false)
+        project.update!(auto_merge_mode: "off")
         stub_github_for_pr(
           author_login: "dependabot[bot]",
           checks: [ { name: "ci", conclusion: "success" } ],
@@ -4417,7 +4417,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner has approved the PR" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4454,7 +4454,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "does not emit owner_approved when auto_merge is disabled" do
-        project.update!(auto_merge_enabled: false)
+        project.update!(auto_merge_mode: "off")
 
         result = activity.execute(project_id: project.id)
 
@@ -4464,7 +4464,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner approved but unresolved human review threads exist" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4497,7 +4497,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner approved but changes_requested exists from trusted user" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true,
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all",
           allowed_github_usernames: [ "viamin", "reviewer" ])
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -4526,7 +4526,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner approved but new conversation comment from trusted user" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         issue = create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4562,7 +4562,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner reviewer is also the PR author" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4582,7 +4582,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when the PR author is not the owner reviewer" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4602,7 +4602,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner approved but head commit is newer than approval" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4625,7 +4625,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner approved after the latest commit" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4652,7 +4652,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           allowed_github_usernames: %w[viamin reviewer],
           review_settings: {
             "enabled" => true,
@@ -4688,7 +4688,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           review_settings: {
             "enabled" => true,
             "methods" => {
@@ -4723,7 +4723,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           review_settings: {
             "enabled" => true,
             "methods" => {
@@ -4760,7 +4760,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           review_settings: {
             "enabled" => true,
             "methods" => {
@@ -4800,7 +4800,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           allowed_github_usernames: %w[viamin reviewer],
           review_settings: {
             "enabled" => true,
@@ -4835,7 +4835,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           allowed_github_usernames: %w[viamin reviewer],
           review_settings: {
             "enabled" => true,
@@ -4870,7 +4870,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           allowed_github_usernames: %w[viamin reviewer],
           review_settings: {
             "enabled" => true,
@@ -4905,7 +4905,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when copilot review is enabled with unresolved bot threads and owner approved" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         enable_copilot_review!
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -4941,7 +4941,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when codex review is enabled and review has comments" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         enable_codex_review!
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -5667,7 +5667,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner has approved an escalated PR with auto_merge enabled" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -5704,7 +5704,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "does not emit owner_approved when auto_merge is disabled" do
-        project.update!(auto_merge_enabled: false)
+        project.update!(auto_merge_mode: "off")
 
         result = activity.execute(project_id: project.id)
 
@@ -7158,7 +7158,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!(project)
-      project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+      project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
       3.times do
         create(:agent_run,
           project: project, issue: approved_ready_retry_issue,

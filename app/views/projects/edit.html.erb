@@ -484,7 +484,27 @@
           </fieldset>
 
           <fieldset id="auto-release" class="space-y-4">
-            <legend class="text-sm font-semibold leading-6 text-gray-900">Auto-Release</legend>
+            <legend class="text-sm font-semibold leading-6 text-gray-900">Auto-Merge &amp; Auto-Release</legend>
+
+            <div>
+              <%= form.label :auto_merge_mode, "Auto-Merge", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2 max-w-xs">
+                <%= form.select :auto_merge_mode,
+                  Project::AUTO_MERGE_MODE_OPTIONS,
+                  {},
+                  class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">
+                Automatically merge PRs when CI passes and all checks are green.
+                "Dependabot Only" merges bot-authored dependency update PRs (review requirements skipped).
+                "All PRs" merges any paid-ready PR, including Paid-generated and Dependabot PRs.
+              </p>
+              <% if @project.errors[:auto_merge_mode].any? %>
+                <% @project.errors[:auto_merge_mode].each do |msg| %>
+                  <p class="mt-1 text-xs text-red-600"><%= msg %></p>
+                <% end %>
+              <% end %>
+            </div>
 
             <div>
               <%= form.label :auto_release_granularity, "Release PR Auto-Merge", class: "block text-sm font-medium leading-6 text-gray-900" %>
@@ -495,7 +515,7 @@
                   class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
               </div>
               <p class="mt-1 text-xs text-gray-500">
-                Automatically merge release-please PRs when CI passes. Controls which semver bump levels are auto-merged.
+                Controls which semver bump levels are auto-merged for release-please PRs.
                 "Minor and below" includes both minor and patch bumps. "Major and below" includes all bump types.
                 Note: 0.x versioning uses literal semver positions (0.22.0 → 0.23.0 is a minor bump).
               </p>
@@ -505,14 +525,6 @@
                 <% end %>
               <% end %>
             </div>
-
-            <div class="flex items-center">
-              <%= form.check_box :auto_merge_dependabot, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
-              <%= form.label :auto_merge_dependabot, "Dependabot Auto-Merge", class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>
-            </div>
-            <p class="mt-1 ml-7 text-xs text-gray-500">
-              Automatically merge Dependabot dependency update PRs when all CI checks pass. Review requirements are skipped.
-            </p>
           </fieldset>
 
           <div class="flex items-center">
