@@ -1258,7 +1258,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.index ["user_id"], name: "index_user_settings_on_user_id", unique: true
     t.check_constraint "max_issues_per_page >= 5 AND max_issues_per_page <= 200", name: "chk_max_issues_per_page_bounds"
     t.check_constraint "max_prs_per_page >= 5 AND max_prs_per_page <= 200", name: "chk_max_prs_per_page_bounds"
-    t.check_constraint "provider_selection_mode::text = ANY (ARRAY['single'::character varying, 'round_robin'::character varying, 'random'::character varying]::text[])", name: "chk_provider_selection_mode"
+    t.check_constraint "provider_selection_mode::text = ANY (ARRAY['single'::character varying::text, 'round_robin'::character varying::text, 'random'::character varying::text])", name: "chk_provider_selection_mode"
   end
 
   create_table "users", force: :cascade do |t|
