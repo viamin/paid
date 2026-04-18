@@ -112,7 +112,7 @@ module QualityMetrics
 
     def export_data(limit: 10_000)
       metrics_scope = QualityMetric.by_project(project.id)
-        .includes(agent_run: :prompt_version)
+        .includes(:prompt_version, :agent_run)
         .order(created_at: :desc)
         .limit(limit)
 
