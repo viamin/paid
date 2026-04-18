@@ -66,6 +66,12 @@ module Api
         enqueue_auto_release_evaluation(pr["number"])
       end
 
+      # Trigger Dependabot auto-merge evaluation when a Dependabot PR is
+      # opened or updated.
+      if %w[opened synchronize].include?(action) && @project&.auto_merge_dependabot?
+        enqueue_dependabot_auto_merge(pr)
+      end
+
       # Only act on merge events — other PR actions (opened, synchronize, etc.)
       # are not relevant to human feedback quality signals.
       unless action == "closed" && pr["merged"] == true
@@ -126,17 +132,30 @@ module Api
 
     def handle_check_suite
       return head(:ok) unless payload["action"] == "completed"
-      return head(:ok) unless @project&.auto_release_enabled?
 
-      enqueue_auto_release_evaluation
+      if @project&.auto_release_enabled?
+        enqueue_auto_release_evaluation
+      end
+
+      if @project&.auto_merge_dependabot?
+        enqueue_dependabot_auto_merge_from_check(payload.dig("check_suite", "pull_requests"))
+      end
+
       head :ok
     end
 
     def handle_check_run
       return head(:ok) unless payload["action"] == "completed"
-      return head(:ok) unless @project&.auto_release_enabled?
 
-      enqueue_auto_release_evaluation
+      if @project&.auto_release_enabled?
+        enqueue_auto_release_evaluation
+      end
+
+      if @project&.auto_merge_dependabot?
+        pr_refs = payload.dig("check_run", "pull_requests")
+        enqueue_dependabot_auto_merge_from_check(pr_refs)
+      end
+
       head :ok
     end
 
@@ -149,6 +168,38 @@ module Api
     rescue => e
       Rails.logger.warn(
         message: "auto_release.enqueue_failed",
+        project_id: @project.id,
+        error: e.message
+      )
+    end
+
+    DEPENDABOT_LOGIN_PREFIX = "dependabot"
+
+    def enqueue_dependabot_auto_merge(pr)
+      author = pr.dig("user", "login").to_s.downcase
+      return unless author.start_with?(DEPENDABOT_LOGIN_PREFIX)
+
+      DependabotAutoMergeJob.perform_later(@project.id, pr_number: pr["number"])
+    rescue => e
+      Rails.logger.warn(
+        message: "dependabot_auto_merge.enqueue_failed",
+        project_id: @project.id,
+        error: e.message
+      )
+    end
+
+    def enqueue_dependabot_auto_merge_from_check(pull_requests)
+      return unless pull_requests.is_a?(Array)
+
+      pull_requests.each do |pr_ref|
+        author = pr_ref.dig("user", "login").to_s.downcase
+        next unless author.start_with?(DEPENDABOT_LOGIN_PREFIX)
+
+        DependabotAutoMergeJob.perform_later(@project.id, pr_number: pr_ref["number"])
+      end
+    rescue => e
+      Rails.logger.warn(
+        message: "dependabot_auto_merge.enqueue_failed",
         project_id: @project.id,
         error: e.message
       )

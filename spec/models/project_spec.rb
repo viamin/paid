@@ -1541,4 +1541,16 @@ RSpec.describe Project do
       end
     end
   end
+
+  describe "#auto_merge_dependabot?" do
+    it "returns false by default" do
+      project = build(:project)
+      expect(project.auto_merge_dependabot?).to be false
+    end
+
+    it "returns true when enabled" do
+      project = build(:project, auto_merge_dependabot: true)
+      expect(project.auto_merge_dependabot?).to be true
+    end
+  end
 end

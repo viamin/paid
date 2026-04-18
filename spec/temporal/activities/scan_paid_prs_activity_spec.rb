@@ -3824,6 +3824,131 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a Dependabot-authored PR is in draft phase" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0,
+          github_creator_login: "dependabot[bot]")
+      end
+
+      it "skips reviews and advances to ready when CI is green" do
+        enable_copilot_review!
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "ready_for_owner" ])
+      end
+
+      it "triggers ci_failure follow-up when CI fails" do
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "failure" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("ci_failure")
+      end
+
+      it "does not request reviews even when review is enabled" do
+        enable_copilot_review!
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).not_to include("review_bot_review_pending")
+        expect(trigger_types).not_to include("paid_agent_review_pending")
+      end
+
+      it "returns nil when CI is still pending" do
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: nil } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to be_empty
+      end
+    end
+
+    context "when a Dependabot-authored PR is in ready phase" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          draft_review_count: 0,
+          github_creator_login: "dependabot[bot]")
+      end
+
+      it "auto-merges without review when CI is green and mergeable" do
+        project.update!(auto_merge_enabled: true, owner_reviewer_login: "viamin")
+        stub_github_for_pr(
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "owner_approved" ])
+      end
+
+      it "triggers ci_failure follow-up without requiring reviews" do
+        stub_github_for_pr(
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "failure" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("ci_failure")
+      end
+
+      it "does not auto-merge when auto_merge is disabled" do
+        project.update!(auto_merge_enabled: false)
+        stub_github_for_pr(
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to be_empty
+      end
+    end
+
     context "when consecutive follow-up runs fail with operational errors" do
       let!(:pr_issue) do
         create(:issue, :pull_request,
