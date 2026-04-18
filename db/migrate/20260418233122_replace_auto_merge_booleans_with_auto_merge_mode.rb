@@ -4,13 +4,18 @@ class ReplaceAutoMergeBooleansWithAutoMergeMode < ActiveRecord::Migration[8.1]
   def up
     add_column :projects, :auto_merge_mode, :string, default: "off", null: false
 
+    has_dependabot = column_exists?(:projects, :auto_merge_dependabot)
+
     Project.reset_column_information
     Project.find_each do |p|
-      mode = if p[:auto_merge_enabled] && p[:auto_merge_dependabot]
+      enabled = p[:auto_merge_enabled]
+      dependabot = has_dependabot && p[:auto_merge_dependabot]
+
+      mode = if enabled && dependabot
         "all"
-      elsif p[:auto_merge_dependabot]
+      elsif dependabot
         "dependabot_only"
-      elsif p[:auto_merge_enabled]
+      elsif enabled
         "all"
       else
         "off"
@@ -19,7 +24,7 @@ class ReplaceAutoMergeBooleansWithAutoMergeMode < ActiveRecord::Migration[8.1]
     end
 
     remove_column :projects, :auto_merge_enabled
-    remove_column :projects, :auto_merge_dependabot
+    remove_column :projects, :auto_merge_dependabot if has_dependabot
   end
 
   def down
@@ -28,8 +33,9 @@ class ReplaceAutoMergeBooleansWithAutoMergeMode < ActiveRecord::Migration[8.1]
 
     Project.reset_column_information
     Project.find_each do |p|
-      enabled = p.auto_merge_mode != "off"
-      dependabot = p.auto_merge_mode.in?(%w[dependabot_only all])
+      mode = p[:auto_merge_mode]
+      enabled = mode != "off"
+      dependabot = mode.in?(%w[dependabot_only all])
       Project.where(id: p.id).update_all(
         auto_merge_enabled: enabled,
         auto_merge_dependabot: dependabot

@@ -148,6 +148,7 @@ class Project < ApplicationRecord
   validates :poll_interval_seconds, numericality: { greater_than_or_equal_to: 60 }
   validates :max_pr_followup_runs, numericality: { greater_than_or_equal_to: 0 }
   validates :merge_method, inclusion: { in: MERGE_METHODS }
+  validates :auto_merge_mode, inclusion: { in: %w[off dependabot_only all] }
   validates :auto_release_granularity, inclusion: { in: AUTO_RELEASE_GRANULARITIES }
   validates :max_draft_review_rounds, numericality: { greater_than_or_equal_to: 0 }
   validates :generated_label_name, presence: true

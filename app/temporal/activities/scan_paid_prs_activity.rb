@@ -476,7 +476,7 @@ module Activities
     # Bot-authored PRs (Dependabot, Renovate) skip review requirements.
     # Auto-merge only needs CI green + mergeable. CI failures trigger follow-up.
     def scan_bot_authored_ready_pr(project, client, issue, pr_data:, checks:, mergeable:)
-      if project.auto_merge_enabled? &&
+      if project.auto_merge_dependabot? &&
           pr_data.present? &&
           !checks.nil? &&
           all_checks_green?(checks) &&
@@ -523,7 +523,7 @@ module Activities
         mergeable = pr_data[:mergeable]
 
         if bot_user?(issue.github_creator_login)
-          if !checks.nil? && all_checks_green?(checks) && mergeable == true
+          if project.auto_merge_dependabot? && !checks.nil? && all_checks_green?(checks) && mergeable == true
             return owner_approved_trigger(issue)
           end
         else
@@ -2122,7 +2122,7 @@ module Activities
     end
 
     def bot_user?(login)
-      return true if login.blank?
+      return false if login.blank?
 
       normalized = login.downcase
       return true if normalized.end_with?("[bot]", "-bot")

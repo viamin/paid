@@ -3921,6 +3921,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "owner_approved" ])
       end
 
+      it "auto-merges in dependabot_only mode without review" do
+        project.update!(auto_merge_mode: "dependabot_only")
+        stub_github_for_pr(
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "owner_approved" ])
+      end
+
       it "triggers ci_failure follow-up without requiring reviews" do
         stub_github_for_pr(
           author_login: "dependabot[bot]",
