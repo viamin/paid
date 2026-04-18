@@ -177,6 +177,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.datetime "created_at", null: false
     t.integer "created_issue_number"
     t.string "created_issue_url", limit: 500
+    t.jsonb "cross_repo_issues", default: []
     t.text "custom_prompt"
     t.string "diagnosis_issue_url", limit: 500
     t.string "diagnosis_status", limit: 50
@@ -982,6 +983,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
     t.jsonb "fitness_settings", default: {}, null: false
+    t.jsonb "fitness_weights", default: {}, null: false
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
     t.bigint "github_token_id", null: false
@@ -1026,6 +1028,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.index ["created_by_id"], name: "index_projects_on_created_by_id"
     t.index ["github_token_id"], name: "index_projects_on_github_token_id"
     t.index ["owner", "repo"], name: "index_projects_on_owner_and_repo"
+    t.index ["quality_paused_at"], name: "index_projects_on_quality_paused_at", where: "(quality_paused_at IS NOT NULL)"
   end
 
   create_table "prompt_versions", force: :cascade do |t|
@@ -1353,7 +1356,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.index ["user_id"], name: "index_user_settings_on_user_id", unique: true
     t.check_constraint "max_issues_per_page >= 5 AND max_issues_per_page <= 200", name: "chk_max_issues_per_page_bounds"
     t.check_constraint "max_prs_per_page >= 5 AND max_prs_per_page <= 200", name: "chk_max_prs_per_page_bounds"
-    t.check_constraint "provider_selection_mode::text = ANY (ARRAY['single'::character varying, 'round_robin'::character varying, 'random'::character varying]::text[])", name: "chk_provider_selection_mode"
+    t.check_constraint "provider_selection_mode::text = ANY (ARRAY['single'::character varying::text, 'round_robin'::character varying::text, 'random'::character varying::text])", name: "chk_provider_selection_mode"
   end
 
   create_table "users", force: :cascade do |t|
@@ -1407,25 +1410,50 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.index ["status"], name: "index_worktrees_on_status"
   end
 
+  add_foreign_key "ab_test_assignments", "ab_test_variants", on_delete: :cascade
+  add_foreign_key "ab_test_assignments", "ab_tests", on_delete: :cascade
+  add_foreign_key "ab_test_assignments", "agent_runs", on_delete: :cascade
+  add_foreign_key "ab_test_variants", "ab_tests", on_delete: :cascade
+  add_foreign_key "ab_test_variants", "prompt_versions", on_delete: :restrict
+  add_foreign_key "ab_tests", "ab_test_variants", column: "winner_variant_id", on_delete: :nullify
+  add_foreign_key "ab_tests", "prompt_versions", column: "control_version_id", on_delete: :restrict
+  add_foreign_key "ab_tests", "prompts", on_delete: :cascade
+  add_foreign_key "account_memberships", "accounts"
+  add_foreign_key "account_memberships", "users"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "target_agent_run_id"
-  add_foreign_key "billing_invoices", "accounts"
+  add_foreign_key "agent_run_anomalies", "agent_runs"
+  add_foreign_key "agent_run_anomalies", "projects"
+  add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
+  add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
+  add_foreign_key "agent_runs", "issues", on_delete: :nullify
+  add_foreign_key "agent_runs", "projects", on_delete: :cascade
+  add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
+  add_foreign_key "agent_runs", "providers", on_delete: :nullify
   add_foreign_key "billing_invoices", "billing_periods"
   add_foreign_key "billing_line_items", "billing_invoices"
-  add_foreign_key "billing_periods", "accounts"
   add_foreign_key "billing_periods", "billing_plans"
-  add_foreign_key "billing_plans", "accounts"
+  add_foreign_key "collector_runs", "project_versions"
+  add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
+  add_foreign_key "context_intake_responses", "context_intake_responses", column: "parent_response_id"
+  add_foreign_key "context_intake_responses", "context_intake_sessions"
+  add_foreign_key "context_intake_sessions", "projects"
+  add_foreign_key "context_intake_sessions", "users", column: "started_by_id"
   add_foreign_key "cost_budgets", "projects", on_delete: :cascade
   add_foreign_key "decision_record_links", "decision_records", on_delete: :cascade
+  add_foreign_key "decision_records", "agent_runs", on_delete: :nullify
   add_foreign_key "decision_records", "decision_records", column: "superseded_by_id", on_delete: :nullify
   add_foreign_key "decision_records", "issues", on_delete: :nullify
   add_foreign_key "decision_records", "projects", on_delete: :cascade
+  add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
+  add_foreign_key "integration_credentials", "accounts"
   add_foreign_key "integration_credentials", "users", column: "created_by_id"
   add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade
   add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
   add_foreign_key "issues", "issues", column: "parent_issue_id"
   add_foreign_key "issues", "projects"
+  add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
   add_foreign_key "knowledge_artifacts", "projects"
   add_foreign_key "knowledge_audit_events", "projects", on_delete: :cascade
   add_foreign_key "knowledge_chunks", "knowledge_artifacts", on_delete: :cascade
@@ -1433,12 +1461,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
   add_foreign_key "knowledge_links", "knowledge_chunks", column: "source_chunk_id", on_delete: :cascade
   add_foreign_key "knowledge_links", "knowledge_chunks", column: "target_chunk_id", on_delete: :cascade
   add_foreign_key "knowledge_runs", "projects", on_delete: :cascade
+  add_foreign_key "linear_tokens", "accounts"
   add_foreign_key "linear_tokens", "users", column: "created_by_id"
+  add_foreign_key "mcp_server_definitions", "accounts"
+  add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
   add_foreign_key "model_selections", "llm_models"
+  add_foreign_key "notifications", "accounts"
   add_foreign_key "notifications", "users", on_delete: :nullify
+  add_foreign_key "onboarding_steps", "accounts"
   add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
   add_foreign_key "pr_templates", "users", on_delete: :cascade
+  add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
   add_foreign_key "project_baselines", "projects"
@@ -1449,12 +1483,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
   add_foreign_key "project_service_containers", "projects", on_delete: :cascade
   add_foreign_key "project_service_containers", "service_containers", on_delete: :cascade
   add_foreign_key "project_versions", "projects"
+  add_foreign_key "projects", "accounts"
   add_foreign_key "projects", "github_tokens"
   add_foreign_key "projects", "users", column: "created_by_id"
   add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify
   add_foreign_key "prompt_versions", "prompts", on_delete: :cascade
   add_foreign_key "prompt_versions", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "prompt_versions", "users", column: "reviewed_by_user_id", on_delete: :nullify
+  add_foreign_key "prompts", "accounts", on_delete: :cascade
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "provider_api_keys", "users", on_delete: :cascade
@@ -1465,15 +1501,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
   add_foreign_key "quality_gate_events", "quality_gate_thresholds"
   add_foreign_key "quality_gate_events", "quality_metrics"
   add_foreign_key "quality_gate_thresholds", "projects"
-  add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
+  add_foreign_key "quality_pause_events", "agent_runs"
   add_foreign_key "quality_pause_events", "projects"
-  add_foreign_key "quality_recovery_actions", "agent_runs", on_delete: :nullify
-  add_foreign_key "quality_recovery_actions", "projects", on_delete: :cascade
-  add_foreign_key "quality_recovery_actions", "prompt_versions", on_delete: :nullify
-  add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
-  add_foreign_key "style_guides", "projects", on_delete: :cascade
-  add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
-  add_foreign_key "user_settings", "users"
-  add_foreign_key "workflow_states", "projects"
-  add_foreign_key "worktrees", "projects", on_delete: :cascade
 end

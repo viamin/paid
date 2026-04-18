@@ -8,5 +8,6 @@ class QualityMetricsCollectionJob < ApplicationJob
     return unless agent_run.finished?
 
     QualityMetrics::Collect.call(agent_run: agent_run)
+    QualityPause::Check.call(agent_run: agent_run)
   end
 end

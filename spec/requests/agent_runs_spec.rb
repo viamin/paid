@@ -531,6 +531,47 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Cost")
       end
 
+      it "shows provider section with active provider name" do
+        owner = project.effective_owner
+        provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+        agent_run = create(:agent_run, :running, project: project, agent_type: "claude_code", provider: provider)
+        get project_agent_run_path(project, agent_run)
+        expect(response.body).to include("Active Provider")
+        expect(response.body).to include(provider.display_name)
+      end
+
+      it "shows fallback badge and originally requested provider when fallback occurred" do
+        owner = project.effective_owner
+        initial_provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+        fallback_provider = owner.providers.create!(provider_key: "cursor", auth_type: "subscription")
+        agent_run = create(
+          :agent_run,
+          :completed,
+          project: project,
+          agent_type: "claude_code",
+          provider: initial_provider,
+          final_provider: fallback_provider.routing_key,
+          provider_switches: 1,
+          providers_attempted: [
+            { "provider" => initial_provider.routing_key, "success" => false, "error_type" => "rate_limited" },
+            { "provider" => fallback_provider.routing_key, "success" => true }
+          ]
+        )
+        get project_agent_run_path(project, agent_run)
+        expect(response.body).to include("Fallback")
+        expect(response.body).to include("Originally Requested")
+        expect(response.body).to include("Provider Switches")
+      end
+
+      it "shows auth type in provider section when provider record exists" do
+        owner = project.effective_owner
+        provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+        agent_run = create(:agent_run, :completed, project: project, provider: provider)
+        get project_agent_run_path(project, agent_run)
+        expect(response.body).to include("Auth Type")
+        expect(response.body).to include("Subscription")
+      end
+
       it "shows quality scores when quality metrics exist" do
         agent_run = create(:agent_run, :completed, project: project)
         create(:quality_metric, agent_run: agent_run, composite_score: 0.85)

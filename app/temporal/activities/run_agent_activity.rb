@@ -88,6 +88,20 @@ module Activities
       /buy (?:more )?credits/i
     ].freeze
 
+    # Patterns that indicate a fatal provider quota/billing error where the
+    # CLI is known to hang instead of exiting promptly. When any of these
+    # match streaming stderr, the container is stopped immediately rather
+    # than waiting for an idle or wall-clock timeout.
+    #
+    # These are intentionally a strict subset of RATE_LIMIT_PATTERNS —
+    # only patterns where the CLI is empirically known to hang after emitting
+    # the error. Generic rate-limit messages from CLIs that exit cleanly
+    # should NOT be added here.
+    PROVIDER_ABORT_PATTERNS = [
+      /free tier limit reached/i,
+      /please upgrade to a paid plan/i
+    ].freeze
+
     # Maximum number of log rows to inspect when reclassifying a timeout.
     # Caps memory and DB load on long-running, verbose agent attempts.
     TIMEOUT_RATE_LIMIT_LOG_LIMIT = 200
@@ -594,7 +608,8 @@ module Activities
           timeout: effective_timeout,
           idle_timeout: effective_idle_timeout,
           env: command_env,
-          preparation: command_preparation
+          preparation: command_preparation,
+          abort_patterns: PROVIDER_ABORT_PATTERNS
         )
       end
       stdout = normalize_output_text(result[:stdout])
@@ -652,6 +667,16 @@ module Activities
       else "wall_clock"
       end
       raise ProviderTimeoutError, "#{timeout_type}_timeout: #{e.message}"
+    rescue Containers::Provision::OutputAbortError => e
+      # The container was stopped early because stderr matched a fatal
+      # provider quota pattern (e.g. KiloCode "Free tier limit reached").
+      # Classify as rate-limited so dashboards and retry logic see the
+      # real root cause instead of a generic timeout.
+      reset_at = parse_rate_limit_reset(e.matched_output.to_s)
+      raise ProviderRateLimitError.new(
+        "Rate limited by #{provider}: #{e.matched_output.to_s.truncate(200)}",
+        reset_at: reset_at
+      )
     end
 
     # Checks if the agent run is stuck in an infinite loop by analyzing

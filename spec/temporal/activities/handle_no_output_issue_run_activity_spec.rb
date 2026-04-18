@@ -13,10 +13,10 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(client)
-    allow(client).to receive(:recent_issue_comments).and_return([])
     allow(client).to receive(:add_comment)
     allow(client).to receive(:add_labels_to_issue)
     allow(client).to receive(:remove_label_from_issue)
+    allow(client).to receive_messages(recent_issue_comments: [], remove_labels_from_issue: { removed: [], failed: [] })
   end
 
   describe "#execute" do
@@ -175,24 +175,24 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
           .with(auto_project.full_name, issue.github_number, a_string_including("my-auto"))
       end
 
-      it "removes the automation trigger label from the issue" do
+      it "removes the automation trigger label from the issue in batch" do
         issue = create(:issue, :in_progress, project: auto_project, labels: [ "my-auto" ])
         agent_run = create(:agent_run, :running, project: auto_project, issue: issue)
 
         activity.execute(agent_run_id: agent_run.id, output_present: false)
 
-        expect(client).to have_received(:remove_label_from_issue)
-          .with(auto_project.full_name, issue.github_number, "my-auto")
+        expect(client).to have_received(:remove_labels_from_issue)
+          .with(auto_project.full_name, issue.github_number, [ "my-auto" ])
       end
 
-      it "removes the automation trigger label on recommend_close" do
+      it "removes the automation trigger label on recommend_close in batch" do
         issue = create(:issue, :in_progress, project: auto_project, labels: [ "my-auto" ])
         agent_run = create(:agent_run, :running, project: auto_project, issue: issue)
 
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
-        expect(client).to have_received(:remove_label_from_issue)
-          .with(auto_project.full_name, issue.github_number, "my-auto")
+        expect(client).to have_received(:remove_labels_from_issue)
+          .with(auto_project.full_name, issue.github_number, [ "my-auto" ])
       end
     end
 
