@@ -24,15 +24,6 @@ if [ -z "${RUBY_MAAT_VERSION}" ]; then
     exit 1
 fi
 
-# Extract agent-harness version from Gemfile.lock.
-# The Dockerfile uses this to install the gem temporarily and read Cursor
-# install metadata from the agent-harness install contract.
-AGENT_HARNESS_VERSION=$(sed -n '/^GEM$/,/^$/s/^  *agent-harness (\(.*\))/\1/p' "${PROJECT_ROOT}/Gemfile.lock" | head -n 1)
-if [ -z "${AGENT_HARNESS_VERSION}" ]; then
-    echo "ERROR: Could not extract agent-harness version from Gemfile.lock" >&2
-    exit 1
-fi
-
 # Extract Claude CLI install contract from agent-harness (single source of truth).
 # The helper script outputs key=value pairs; we capture the ones we need.
 CLAUDE_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" claude)
@@ -49,20 +40,41 @@ if [ -z "${CLAUDE_POST_INSTALL_BINARY_PATH}" ]; then
     exit 1
 fi
 
+# Extract Cursor CLI install contract from agent-harness (single source of truth).
+# Uses the pinned artifact URL + checksum (more stable than the install script).
+CURSOR_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" cursor)
+CURSOR_ARTIFACT_URL=$(echo "${CURSOR_CONTRACT}" | sed -n 's/^ARTIFACT_URL=//p')
+CURSOR_ARTIFACT_SHA256=$(echo "${CURSOR_CONTRACT}" | sed -n 's/^ARTIFACT_SHA256=//p')
+CURSOR_BINARY_NAME=$(echo "${CURSOR_CONTRACT}" | sed -n 's/^BINARY_NAME=//p')
+CURSOR_GLOBAL_PATH=$(echo "${CURSOR_CONTRACT}" | sed -n 's/^GLOBAL_PATH=//p')
+
+if [ -z "${CURSOR_ARTIFACT_URL}" ]; then
+    echo "ERROR: Could not extract Cursor artifact URL from agent-harness" >&2
+    exit 1
+fi
+
+if [ -z "${CURSOR_ARTIFACT_SHA256}" ]; then
+    echo "ERROR: Could not extract Cursor artifact SHA256 from agent-harness" >&2
+    exit 1
+fi
+
 echo "Building agent container image..."
 echo "  Image: ${FULL_IMAGE}"
 echo "  Context: ${PROJECT_ROOT}/docker/agent"
 echo "  ruby-maat: ${RUBY_MAAT_VERSION}"
-echo "  agent-harness: ${AGENT_HARNESS_VERSION}"
 echo "  claude-install: via agent-harness contract"
+echo "  cursor-install: via agent-harness contract"
 
 docker build \
     -t "${FULL_IMAGE}" \
     -f "${PROJECT_ROOT}/docker/agent/Dockerfile" \
     --build-arg "RUBY_MAAT_VERSION=${RUBY_MAAT_VERSION}" \
-    --build-arg "AGENT_HARNESS_VERSION=${AGENT_HARNESS_VERSION}" \
     --build-arg "CLAUDE_INSTALL_COMMAND=${CLAUDE_INSTALL_COMMAND}" \
     --build-arg "CLAUDE_POST_INSTALL_BINARY_PATH=${CLAUDE_POST_INSTALL_BINARY_PATH}" \
+    --build-arg "CURSOR_ARTIFACT_URL=${CURSOR_ARTIFACT_URL}" \
+    --build-arg "CURSOR_ARTIFACT_SHA256=${CURSOR_ARTIFACT_SHA256}" \
+    --build-arg "CURSOR_BINARY_NAME=${CURSOR_BINARY_NAME}" \
+    --build-arg "CURSOR_GLOBAL_PATH=${CURSOR_GLOBAL_PATH}" \
     "${PROJECT_ROOT}/docker/agent/"
 
 echo ""

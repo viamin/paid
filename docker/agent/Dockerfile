@@ -173,30 +173,23 @@ RUN npm install -g --ignore-scripts opencode-ai@1.3.2
 RUN npm install -g --ignore-scripts @githubnext/github-copilot-cli@0.1.36
 
 # Install Cursor agent CLI via agent-harness install contract.
-# agent-harness owns the install script URL, checksum pin, and binary metadata.
-# The gem is installed temporarily to extract these values, then removed so it
-# does not bloat the image.  AGENT_HARNESS_VERSION is sourced from Gemfile.lock
-# at build time — see scripts/build-agent-image.sh and .github/workflows/agent-image.yml.
-ARG AGENT_HARNESS_VERSION
-RUN gem install --no-document "agent-harness:${AGENT_HARNESS_VERSION}" \
-    && CURSOR_META=$(ruby -r agent_harness -e ' \
-      c = AgentHarness::Providers::Cursor; \
-      puts c::INSTALL_SCRIPT_URL; \
-      puts c::INSTALL_SCRIPT_SHA256; \
-      puts c.binary_name; \
-      m = c.install_metadata; \
-      puts m[:binary][:suggested_global_path]') \
-    && CURSOR_INSTALL_URL=$(echo "$CURSOR_META" | sed -n 1p) \
-    && CURSOR_INSTALL_SHA256=$(echo "$CURSOR_META" | sed -n 2p) \
-    && CURSOR_BINARY_NAME=$(echo "$CURSOR_META" | sed -n 3p) \
-    && CURSOR_GLOBAL_PATH=$(echo "$CURSOR_META" | sed -n 4p) \
-    && curl -fsSL "$CURSOR_INSTALL_URL" -o /tmp/cursor-install.sh \
-    && echo "${CURSOR_INSTALL_SHA256}  /tmp/cursor-install.sh" | sha256sum -c - \
-    && bash /tmp/cursor-install.sh \
-    && cp -L "/root/.local/bin/${CURSOR_BINARY_NAME}" "${CURSOR_GLOBAL_PATH}" \
+# agent-harness owns the artifact URL, checksum pin, and binary metadata.
+# These values are extracted at build time (see scripts/extract-provider-install-contract.rb)
+# so Paid does not own the Cursor-specific install recipe or version pin.
+# The artifact tarball is downloaded directly (more stable than the install script
+# whose checksum changes frequently) and verified against agent-harness's pinned SHA256.
+ARG CURSOR_ARTIFACT_URL
+ARG CURSOR_ARTIFACT_SHA256
+ARG CURSOR_BINARY_NAME=cursor-agent
+ARG CURSOR_GLOBAL_PATH=/usr/local/bin/cursor-agent
+RUN if [ -z "${CURSOR_ARTIFACT_URL}" ]; then echo "ERROR: CURSOR_ARTIFACT_URL build-arg is required" >&2; exit 1; fi \
+    && if [ -z "${CURSOR_ARTIFACT_SHA256}" ]; then echo "ERROR: CURSOR_ARTIFACT_SHA256 build-arg is required" >&2; exit 1; fi \
+    && curl -fsSL "${CURSOR_ARTIFACT_URL}" -o /tmp/cursor-artifact.tar.gz \
+    && echo "${CURSOR_ARTIFACT_SHA256}  /tmp/cursor-artifact.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/cursor-artifact.tar.gz -C /tmp \
+    && cp /tmp/dist-package/${CURSOR_BINARY_NAME} "${CURSOR_GLOBAL_PATH}" \
     && chmod +x "${CURSOR_GLOBAL_PATH}" \
-    && rm /tmp/cursor-install.sh \
-    && gem uninstall --silent -x agent-harness
+    && rm -rf /tmp/cursor-artifact.tar.gz /tmp/dist-package
 
 # Install Aider CLI.
 # Follow the official Aider "Install with uv" flow so the tool lives in its own
