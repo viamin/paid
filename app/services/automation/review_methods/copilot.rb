@@ -35,9 +35,7 @@ module Automation
       # Mirrors the existing +PullRequestEvaluator+ behavior, which routes
       # whichever login the scan supplies without re-consulting the config.
       def decision
-        trigger = matching_trigger
-        return nil if trigger.nil?
-        return nil unless trigger[:request_login].to_s.casecmp(BOT_LOGIN).zero?
+        return nil unless matching_trigger
 
         Automation::Decision.request_review(
           pr_number: signals.pr_number,
@@ -48,7 +46,11 @@ module Automation
       private
 
       def matching_trigger
-        signals.trigger(TRIGGER_TYPE)
+        trigger = signals.trigger(TRIGGER_TYPE)
+        return nil if trigger.nil?
+        return nil unless trigger[:request_login].to_s.casecmp(BOT_LOGIN).zero?
+
+        trigger
       end
     end
   end

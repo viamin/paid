@@ -30,9 +30,7 @@ module Automation
       end
 
       def decision
-        trigger = matching_trigger
-        return nil if trigger.nil?
-        return nil unless trigger[:request_login].to_s.casecmp(BOT_LOGIN).zero?
+        return nil unless matching_trigger
 
         Automation::Decision.request_review(
           pr_number: signals.pr_number,
@@ -43,7 +41,11 @@ module Automation
       private
 
       def matching_trigger
-        signals.trigger(TRIGGER_TYPE)
+        trigger = signals.trigger(TRIGGER_TYPE)
+        return nil if trigger.nil?
+        return nil unless trigger[:request_login].to_s.casecmp(BOT_LOGIN).zero?
+
+        trigger
       end
     end
   end

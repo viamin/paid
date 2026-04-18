@@ -43,6 +43,15 @@ RSpec.describe Automation::ReviewMethods::Codex do
     expect(outcome.metadata[:reviewer_login]).to eq("chatgpt-codex-connector")
   end
 
+  it "ignores a trigger addressed to a different bot (e.g. copilot)" do
+    plugin = build_plugin(
+      config: build_config(codex: { "enabled" => true }),
+      triggers: [ { type: "review_bot_review_pending", request_login: "copilot" } ]
+    )
+
+    expect(plugin.evaluate).to be_satisfied
+  end
+
   describe "#decision" do
     it "requests review from the codex login when the trigger targets codex" do
       plugin = build_plugin(
