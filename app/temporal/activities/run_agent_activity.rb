@@ -1033,8 +1033,8 @@ module Activities
     # Combines two ExecutionPreparation instances by concatenating their
     # file_writes. Returns whichever is non-nil when only one is present.
     def merge_preparations(base, additional)
-      return additional if base.nil? || base.empty?
-      return base if additional.nil? || additional.empty?
+      return additional if base.nil?
+      return base if additional.nil?
 
       AgentHarness::ExecutionPreparation.new(
         file_writes: base.file_writes + additional.file_writes
