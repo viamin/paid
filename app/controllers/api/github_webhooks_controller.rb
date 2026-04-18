@@ -145,7 +145,7 @@ module Api
       else
         AutoReleaseEvaluationJob.perform_later(@project.id)
       end
-    rescue => e
+    rescue StandardError => e
       Rails.logger.warn(
         message: "auto_release.enqueue_failed",
         project_id: @project.id,
@@ -199,7 +199,7 @@ module Api
         event: event,
         payload: payload
       )
-    rescue => e
+    rescue StandardError => e
       Rails.logger.warn(
         message: "github_cache.invalidation_failed",
         event: event,

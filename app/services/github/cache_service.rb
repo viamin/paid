@@ -24,6 +24,18 @@ module Github
 
     CACHE_NAMESPACE = "github"
 
+    # Resource type groupings for scoped cache versioning.
+    # Each group has its own version counter so that, for example,
+    # an issue webhook does not flush the PR cache.
+    RESOURCE_TYPES = {
+      repository: :repo,
+      labels: :repo,
+      issue: :issues,
+      issues: :issues,
+      pull_request: :pull_requests,
+      pull_requests: :pull_requests
+    }.freeze
+
     attr_reader :client
 
     # @param client [GithubClient, nil] The underlying GitHub API client.
@@ -76,43 +88,30 @@ module Github
       end
     end
 
-    # Invalidates all cached data for a repository by bumping the
-    # per-repo version counter. Existing entries expire naturally via TTL;
-    # no Redis SCAN is required.
+    # Invalidates all cached data for a repository by bumping every
+    # resource-type version counter. Existing entries expire naturally
+    # via TTL; no Redis SCAN is required.
     def invalidate_repo(repo)
       instrument(:invalidate, repo: repo, scope: :repo) do
-        bump_repo_version(repo)
+        RESOURCE_TYPES.values.uniq.each { |type| bump_version(repo, type) }
       end
     end
 
-    # Invalidates a cached issue and related list caches by bumping
-    # the repo version so all keys (including list caches with varying
-    # query parameters) become unreachable.
+    # Invalidates cached issue and issue-list data by bumping the
+    # issues version counter. PR and repo-metadata caches are unaffected.
     def invalidate_issue(repo, number)
       instrument(:invalidate, repo: repo, scope: :issue, number: number) do
-        bump_repo_version(repo)
+        bump_version(repo, :issues)
       end
     end
 
-    # Invalidates a cached pull request and related list caches by
-    # bumping the repo version.
+    # Invalidates cached pull request and PR-list data by bumping the
+    # pull_requests version counter. Issue and repo-metadata caches
+    # are unaffected.
     def invalidate_pull_request(repo, number)
       instrument(:invalidate, repo: repo, scope: :pull_request, number: number) do
-        bump_repo_version(repo)
+        bump_version(repo, :pull_requests)
       end
-    end
-
-    # Delegates uncached methods directly to the underlying client.
-    def method_missing(method, ...)
-      if client&.respond_to?(method)
-        client.public_send(method, ...)
-      else
-        super
-      end
-    end
-
-    def respond_to_missing?(method, include_private = false)
-      client&.respond_to?(method, include_private) || super
     end
 
     private
@@ -136,25 +135,25 @@ module Github
     end
 
     def cache_key(*parts, repo:)
-      version = repo_version(repo)
-      "#{CACHE_NAMESPACE}/v#{version}/#{normalize_repo(repo)}/#{parts.join("/")}"
+      resource_type = RESOURCE_TYPES.fetch(parts.first)
+      version = type_version(repo, resource_type)
+      "#{CACHE_NAMESPACE}/#{resource_type}/v#{version}/#{normalize_repo(repo)}/#{parts.join("/")}"
     end
 
     def normalize_repo(repo)
       repo.downcase
     end
 
-    def repo_version_key(repo)
-      "#{CACHE_NAMESPACE}:repo_version:#{normalize_repo(repo)}"
+    def version_key(repo, type)
+      "#{CACHE_NAMESPACE}:version:#{type}:#{normalize_repo(repo)}"
     end
 
-    def repo_version(repo)
-      Rails.cache.read(repo_version_key(repo)) || 0
+    def type_version(repo, type)
+      Rails.cache.read(version_key(repo, type)) || 0
     end
 
-    def bump_repo_version(repo)
-      key = repo_version_key(repo)
-      Rails.cache.increment(key, 1, expires_in: 1.day)
+    def bump_version(repo, type)
+      Rails.cache.increment(version_key(repo, type), 1, expires_in: 1.day)
     end
 
     def instrument(event, metadata = {})

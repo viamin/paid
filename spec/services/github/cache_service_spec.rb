@@ -181,40 +181,55 @@ RSpec.describe Github::CacheService do
   end
 
   describe "#invalidate_repo" do
-    let(:repo_data) { OpenStruct.new(id: 1) }
+    it "clears all cached data for the repo" do
+      allow(github_client).to receive(:repository).with(repo).and_return("original_repo")
+      allow(github_client).to receive(:issue).with(repo, 1).and_return("original_issue")
+      allow(github_client).to receive(:pull_request).with(repo, 2).and_return("original_pr")
 
-    before do
-      allow(github_client).to receive(:repository).with(repo).and_return(repo_data)
-    end
-
-    it "clears cached data for the repo" do
       cache_service.repository(repo)
+      cache_service.issue(repo, 1)
+      cache_service.pull_request(repo, 2)
+
       cache_service.invalidate_repo(repo)
 
-      # Second call now returns fresh data
-      new_data = OpenStruct.new(id: 2)
-      allow(github_client).to receive(:repository).with(repo).and_return(new_data)
+      allow(github_client).to receive(:repository).with(repo).and_return("fresh_repo")
+      allow(github_client).to receive(:issue).with(repo, 1).and_return("fresh_issue")
+      allow(github_client).to receive(:pull_request).with(repo, 2).and_return("fresh_pr")
 
-      expect(cache_service.repository(repo)).to eq(new_data)
-      expect(github_client).to have_received(:repository).twice
+      expect(cache_service.repository(repo)).to eq("fresh_repo")
+      expect(cache_service.issue(repo, 1)).to eq("fresh_issue")
+      expect(cache_service.pull_request(repo, 2)).to eq("fresh_pr")
     end
   end
 
   describe "#invalidate_issue" do
-    let(:issue_data) { OpenStruct.new(number: 42, title: "Bug") }
-
-    before do
-      allow(github_client).to receive(:issue).with(repo, 42).and_return(issue_data)
-    end
-
     it "clears the cached issue" do
+      allow(github_client).to receive(:issue).with(repo, 42).and_return("original")
       cache_service.issue(repo, 42)
       cache_service.invalidate_issue(repo, 42)
 
-      new_data = OpenStruct.new(number: 42, title: "Updated")
-      allow(github_client).to receive(:issue).with(repo, 42).and_return(new_data)
+      allow(github_client).to receive(:issue).with(repo, 42).and_return("fresh")
+      expect(cache_service.issue(repo, 42)).to eq("fresh")
+    end
 
-      expect(cache_service.issue(repo, 42)).to eq(new_data)
+    it "does not clear the cached pull request" do
+      allow(github_client).to receive(:pull_request).with(repo, 10).and_return("cached_pr")
+      cache_service.pull_request(repo, 10)
+
+      cache_service.invalidate_issue(repo, 42)
+
+      expect(cache_service.pull_request(repo, 10)).to eq("cached_pr")
+      expect(github_client).to have_received(:pull_request).once
+    end
+
+    it "does not clear the cached repository metadata" do
+      allow(github_client).to receive(:repository).with(repo).and_return("cached_repo")
+      cache_service.repository(repo)
+
+      cache_service.invalidate_issue(repo, 42)
+
+      expect(cache_service.repository(repo)).to eq("cached_repo")
+      expect(github_client).to have_received(:repository).once
     end
 
     it "instruments the invalidation" do
@@ -231,38 +246,43 @@ RSpec.describe Github::CacheService do
   end
 
   describe "#invalidate_pull_request" do
-    let(:pr_data) { OpenStruct.new(number: 10) }
-
-    before do
-      allow(github_client).to receive(:pull_request).with(repo, 10).and_return(pr_data)
-    end
-
     it "clears the cached pull request" do
+      allow(github_client).to receive(:pull_request).with(repo, 10).and_return("original")
       cache_service.pull_request(repo, 10)
       cache_service.invalidate_pull_request(repo, 10)
 
-      new_data = OpenStruct.new(number: 10, title: "Updated")
-      allow(github_client).to receive(:pull_request).with(repo, 10).and_return(new_data)
+      allow(github_client).to receive(:pull_request).with(repo, 10).and_return("fresh")
+      expect(cache_service.pull_request(repo, 10)).to eq("fresh")
+    end
 
-      expect(cache_service.pull_request(repo, 10)).to eq(new_data)
+    it "does not clear the cached issue" do
+      allow(github_client).to receive(:issue).with(repo, 42).and_return("cached_issue")
+      cache_service.issue(repo, 42)
+
+      cache_service.invalidate_pull_request(repo, 10)
+
+      expect(cache_service.issue(repo, 42)).to eq("cached_issue")
+      expect(github_client).to have_received(:issue).once
+    end
+
+    it "does not clear the cached repository metadata" do
+      allow(github_client).to receive(:repository).with(repo).and_return("cached_repo")
+      cache_service.repository(repo)
+
+      cache_service.invalidate_pull_request(repo, 10)
+
+      expect(cache_service.repository(repo)).to eq("cached_repo")
+      expect(github_client).to have_received(:repository).once
     end
   end
 
-  describe "method delegation" do
-    it "delegates uncached methods to the client" do
-      allow(github_client).to receive(:rate_limit_remaining).and_return(4999)
-
-      expect(cache_service.rate_limit_remaining).to eq(4999)
+  describe "unknown methods" do
+    it "raises NoMethodError" do
+      expect { cache_service.rate_limit_remaining }.to raise_error(NoMethodError)
     end
 
-    it "responds to client methods" do
-      allow(github_client).to receive(:respond_to?).with(:rate_limit_remaining, false).and_return(true)
-
-      expect(cache_service).to respond_to(:rate_limit_remaining)
-    end
-
-    it "raises NoMethodError for unknown methods" do
-      expect { cache_service.nonexistent_method_xyz }.to raise_error(NoMethodError)
+    it "does not respond to client methods" do
+      expect(cache_service).not_to respond_to(:rate_limit_remaining)
     end
   end
 end
