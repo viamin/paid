@@ -159,8 +159,7 @@ module Github
 
     def bump_repo_version(repo)
       key = repo_version_key(repo)
-      current = repo_version(repo)
-      Rails.cache.write(key, current + 1)
+      Rails.cache.increment(key, 1, expires_in: 1.day)
     end
 
     def instrument(event, metadata = {})
