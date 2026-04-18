@@ -167,6 +167,8 @@ RSpec.describe Containers::Provision do
           metadata: hash_including(network: NetworkPolicy::NETWORK_NAME)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.codex_config_seeded",
           metadata: {}).ordered
+        expect(agent_run).to receive(:log!).with("system", "container.claude_heartbeat_hook_seeded",
+          metadata: {}).ordered
         expect(agent_run).to receive(:log!).with("system", "container.firewall.applied",
           metadata: hash_including(container_id: "abc123container")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.provision.success",
@@ -650,6 +652,49 @@ RSpec.describe Containers::Provision do
         expect(NetworkPolicy).not_to receive(:apply_firewall_rules)
 
         service.provision
+      end
+    end
+
+    context "with Claude heartbeat hook" do
+      it "writes PostToolUse heartbeat hook into settings.json" do
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-lc", satisfy { |cmd|
+            content = decoded_base64_content(cmd)
+            cmd.include?("/home/agent/.claude/settings.json") &&
+              content.include?('"PostToolUse"') &&
+              content.include?("date +%s > /tmp/agent_heartbeat")
+          } ],
+          user: "agent"
+        )
+      end
+
+      it "merges hooks into existing settings when settings.json is already seeded" do
+        existing_settings = { "model" => "claude-sonnet-4-20250514" }.to_json
+
+        allow(mock_container).to receive(:exec).with([ "cat", "/home/agent/.claude/settings.json" ], user: "agent")
+          .and_return([ [ existing_settings ], [], 0 ])
+
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-lc", satisfy { |cmd|
+            content = decoded_base64_content(cmd)
+            cmd.include?("/home/agent/.claude/settings.json") &&
+              content.include?('"model"') &&
+              content.include?('"PostToolUse"')
+          } ],
+          user: "agent"
+        )
+      end
+
+      it "logs success after writing the heartbeat hook" do
+        allow(agent_run).to receive(:log!).and_call_original
+
+        service.provision
+
+        expect(agent_run).to have_received(:log!).with("system", "container.claude_heartbeat_hook_seeded", metadata: {})
       end
     end
 
