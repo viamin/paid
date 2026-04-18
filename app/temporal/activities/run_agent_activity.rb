@@ -88,6 +88,20 @@ module Activities
       /buy (?:more )?credits/i
     ].freeze
 
+    # Patterns that indicate a fatal provider quota/billing error where the
+    # CLI is known to hang instead of exiting promptly. When any of these
+    # match streaming stderr, the container is stopped immediately rather
+    # than waiting for an idle or wall-clock timeout.
+    #
+    # These are intentionally a strict subset of RATE_LIMIT_PATTERNS —
+    # only patterns where the CLI is empirically known to hang after emitting
+    # the error. Generic rate-limit messages from CLIs that exit cleanly
+    # should NOT be added here.
+    PROVIDER_ABORT_PATTERNS = [
+      /free tier limit reached/i,
+      /please upgrade to a paid plan/i
+    ].freeze
+
     # Maximum number of log rows to inspect when reclassifying a timeout.
     # Caps memory and DB load on long-running, verbose agent attempts.
     TIMEOUT_RATE_LIMIT_LOG_LIMIT = 200
@@ -97,6 +111,7 @@ module Activities
     DEFAULT_ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
     DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
     DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
+    DEFAULT_CREATE_PR_IDLE_TIMEOUT = 300   # 5 minutes without output = stuck
     CHANGE_DETECTION_MAX_ATTEMPTS = 3
     CHANGE_DETECTION_RETRY_BACKOFF = 0.25
     POST_RUN_BOOKKEEPING_ERROR_TYPE = "PostRunBookkeepingFailed"
@@ -551,6 +566,15 @@ module Activities
       command_env = command_env_for(command_context, prompt)
       command_preparation = command_preparation_for(command_context, prompt)
 
+      heartbeat = Containers::HeartbeatSetup.new(
+        provider: provider,
+        worktree_path: agent_run.worktree_path
+      )
+      if heartbeat.available?
+        command_env = command_env.merge(heartbeat.env)
+        command_preparation = merge_preparations(command_preparation, heartbeat.preparation)
+      end
+
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 
       raise ProviderExecutionError, "Agent run already finished with status #{agent_run.status}" if agent_run.finished?
@@ -582,6 +606,8 @@ module Activities
         user_settings&.issue_goal_idle_timeout_seconds || DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT
       elsif agent_run.review_goal?
         user_settings&.review_goal_idle_timeout_seconds || DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT
+      elsif agent_run.create_pr_goal?
+        user_settings&.create_pr_idle_timeout_seconds || DEFAULT_CREATE_PR_IDLE_TIMEOUT
       end
 
       # Periodic heartbeats during container execution complement the
@@ -594,7 +620,9 @@ module Activities
           timeout: effective_timeout,
           idle_timeout: effective_idle_timeout,
           env: command_env,
-          preparation: command_preparation
+          preparation: command_preparation,
+          heartbeat_path: heartbeat.available? ? heartbeat.heartbeat_path : nil,
+          abort_patterns: PROVIDER_ABORT_PATTERNS
         )
       end
       stdout = normalize_output_text(result[:stdout])
@@ -652,6 +680,16 @@ module Activities
       else "wall_clock"
       end
       raise ProviderTimeoutError, "#{timeout_type}_timeout: #{e.message}"
+    rescue Containers::Provision::OutputAbortError => e
+      # The container was stopped early because stderr matched a fatal
+      # provider quota pattern (e.g. KiloCode "Free tier limit reached").
+      # Classify as rate-limited so dashboards and retry logic see the
+      # real root cause instead of a generic timeout.
+      reset_at = parse_rate_limit_reset(e.matched_output.to_s)
+      raise ProviderRateLimitError.new(
+        "Rate limited by #{provider}: #{e.matched_output.to_s.truncate(200)}",
+        reset_at: reset_at
+      )
     end
 
     # Checks if the agent run is stuck in an infinite loop by analyzing
@@ -955,7 +993,7 @@ module Activities
     def build_command(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
 
-      if provider_entry&.opencode_agent_harness_runtime?
+      if provider_entry&.agent_harness_runtime?
         harness_runtime_command(provider_entry, prompt)
       elsif provider_entry&.requires_direct_outbound?
         plan = harness_execution_plan_for(command_context.provider, prompt, provider_entry: provider_entry)
@@ -1006,7 +1044,7 @@ module Activities
 
     def command_env_for(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      return direct_outbound_execution_plan(provider_entry, prompt).env if provider_entry&.opencode_agent_harness_runtime?
+      return direct_outbound_execution_plan(provider_entry, prompt).env if provider_entry&.agent_harness_runtime?
       return {} unless provider_entry
       return api_key_command_env(provider_entry) if provider_entry.api_key?
 
@@ -1015,9 +1053,20 @@ module Activities
 
     def command_preparation_for(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      return nil unless provider_entry&.opencode_agent_harness_runtime?
+      return nil unless provider_entry&.agent_harness_runtime?
 
       direct_outbound_execution_plan(provider_entry, prompt).preparation
+    end
+
+    # Combines two ExecutionPreparation instances by concatenating their
+    # file_writes. Returns whichever is non-nil when only one is present.
+    def merge_preparations(base, additional)
+      return additional if base.nil?
+      return base if additional.nil?
+
+      AgentHarness::ExecutionPreparation.new(
+        file_writes: base.file_writes + additional.file_writes
+      )
     end
 
     def direct_outbound_execution_plan(provider_entry, prompt)
