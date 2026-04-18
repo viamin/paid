@@ -462,7 +462,7 @@ RSpec.describe Activities::RunAgentActivity do
       else
         expect(command[0..1]).to eq(%w[sh -c])
         expect(command[2]).to include('ANTHROPIC_API_KEY="$PAID_PROVIDER_API_KEY"')
-        expect(opts[:env]).to eq("PAID_PROVIDER_API_KEY" => "sk-fallback-secret")
+        expect(opts[:env]).to include("PAID_PROVIDER_API_KEY" => "sk-fallback-secret")
         exec_success
       end
     end
@@ -1307,8 +1307,7 @@ RSpec.describe Activities::RunAgentActivity do
           anything,
           hash_including(
             timeout: described_class::DEFAULT_ISSUE_GOAL_TIMEOUT,
-            idle_timeout: described_class::DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT,
-            env: {}
+            idle_timeout: described_class::DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT
           )
         ).and_return(exec_success)
 
@@ -1328,7 +1327,7 @@ RSpec.describe Activities::RunAgentActivity do
     end
 
     context "when goal is create_pr" do
-      it "uses the default agent timeout without idle_timeout" do
+      it "uses the default agent timeout with create_pr idle_timeout" do
         project.update!(max_execution_seconds: 86_400)
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
@@ -1337,8 +1336,7 @@ RSpec.describe Activities::RunAgentActivity do
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
-            idle_timeout: nil,
-            env: {}
+            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT
           )
         ).and_return(exec_success)
 

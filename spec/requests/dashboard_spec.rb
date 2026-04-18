@@ -73,6 +73,20 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("42s")
       end
 
+      it "includes merged pull requests in the recent activity stream" do
+        merged_pr = create(:issue, :pull_request, project: project,
+                                                  pr_review_phase: "merged",
+                                                  github_number: 1234,
+                                                  title: "Ship the thing",
+                                                  github_updated_at: 3.minutes.ago)
+
+        get dashboard_path
+
+        expect(response.body).to include("PR ##{merged_pr.github_number}")
+        expect(response.body).to include("Ship the thing")
+        expect(response.body).to include("Merged")
+      end
+
       it "has collapsible sections" do
         get dashboard_path
 

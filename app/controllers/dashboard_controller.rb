@@ -22,9 +22,7 @@ class DashboardController < ApplicationController
     @active_runs = live_agent_runs.active.includes(:project, :issue)
       .order("agent_runs.created_at DESC")
       .limit(20)
-    @recent_runs = live_agent_runs.finished.includes(:project, :issue)
-      .order(Arel.sql("COALESCE(agent_runs.completed_at, agent_runs.created_at) DESC"))
-      .limit(10)
+    @recent_activity = Dashboard::RecentActivity.call(account: current_account)
   end
 
   def metrics
