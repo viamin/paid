@@ -31,7 +31,7 @@ class TrackerConfigurationPolicy < ApplicationPolicy
         .or(scope.where(configurable_type: "User", configurable_id: user.id))
         .or(scope.where(
           configurable_type: "Project",
-          configurable_id: user.account.project_ids
+          configurable_id: user.account.projects.select(:id)
         ))
     end
   end

@@ -9,6 +9,8 @@ Rails.application.routes.draw do
   # Can be used by load balancers and uptime monitors to verify that the app is live.
   get "up" => "rails/health#show", :as => :rails_health_check
   get "health/services", to: "health#show"
+  get "health/liveness", to: "health#liveness"
+  get "health/readiness", to: "health#readiness"
 
   # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
@@ -19,6 +21,11 @@ Rails.application.routes.draw do
     patch :read, on: :member
     patch :dismiss, on: :member
     post :mark_all_read, on: :collection
+  end
+
+  # Onboarding wizard
+  resource :onboarding, only: [ :show, :update ], controller: "onboarding" do
+    post :skip
   end
 
   # Dashboard for authenticated users

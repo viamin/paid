@@ -800,6 +800,47 @@ RSpec.describe Issues::AutoPick do
       end
     end
 
+    context "when PR is in escalated phase" do
+      before do
+        project.effective_owner.settings.update!(max_auto_pick_open_prs: 1)
+      end
+
+      it "does not count escalated in_progress PRs as needing attention" do
+        create(:issue, :pull_request, :in_progress,
+          project: project,
+          pr_review_phase: "escalated")
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+
+      it "does not count escalated failed PRs as needing attention" do
+        create(:issue, :pull_request, :failed,
+          project: project,
+          pr_review_phase: "escalated")
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+
+      it "still blocks auto-pick for non-escalated failed PRs" do
+        create(:issue, :pull_request, :failed,
+          project: project,
+          pr_review_phase: "ready")
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+    end
+
     context "with PR WIP limit" do
       it "does not block auto-pick when limit is 0 (no limit)" do
         project.effective_owner.settings.update!(max_auto_pick_open_prs: 0)
