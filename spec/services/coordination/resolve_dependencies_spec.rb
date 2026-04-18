@@ -52,6 +52,23 @@ RSpec.describe Coordination::ResolveDependencies do
       expect(result.failed_run_ids).to include(run_a.id)
     end
 
+    it "ignores failure signals targeted at other runs" do
+      other_run = create(:agent_run, project: project, parent_workflow_id: workflow_id)
+      create(:agent_coordination_signal, :dependency_failed,
+        source_agent_run: run_a, parent_workflow_id: workflow_id,
+        target_agent_run: other_run)
+      create(:agent_coordination_signal, :dependency_completed,
+        source_agent_run: run_a, parent_workflow_id: workflow_id)
+
+      result = described_class.call(
+        agent_run: dependent_run,
+        required_run_ids: [ run_a.id ]
+      )
+
+      expect(result).to be_ready
+      expect(result).not_to be_failed
+    end
+
     it "returns ready for empty required_run_ids" do
       result = described_class.call(
         agent_run: dependent_run,

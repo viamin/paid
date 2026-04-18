@@ -45,6 +45,7 @@ module Coordination
         .for_workflow(agent_run.parent_workflow_id)
         .by_type("dependency_failed")
         .where(source_agent_run_id: required_run_ids)
+        .where("target_agent_run_id = ? OR target_agent_run_id IS NULL", agent_run.id)
         .distinct
         .pluck(:source_agent_run_id)
     end

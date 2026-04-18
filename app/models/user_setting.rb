@@ -12,8 +12,13 @@ class UserSetting < ApplicationRecord
   KB_CHAT_PROVIDERS = ProviderSupport::APP_TO_HARNESS_PROVIDER_KEYS.keys.freeze
   KB_CHAT_PROVIDER_DEFAULT = "claude"
 
+  THEME_PREFERENCES = %w[light dark system].freeze
+
   belongs_to :user
   has_many :provider_states, through: :user
+
+  # Theme
+  validates :theme_preference, inclusion: { in: THEME_PREFERENCES }
 
   # Polling & Timing
   validates :default_poll_interval_seconds,
