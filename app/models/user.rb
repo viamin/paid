@@ -14,6 +14,7 @@ class User < ApplicationRecord
   has_many :providers, dependent: :destroy
   has_many :provider_api_keys, dependent: :destroy
   has_many :pre_commit_requirements, dependent: :destroy
+  has_many :pr_templates, dependent: :destroy
 
   # Include default devise modules. Others available are:
   # :confirmable, :lockable, :timeoutable, :trackable and :omniauthable

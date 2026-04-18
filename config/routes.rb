@@ -9,6 +9,8 @@ Rails.application.routes.draw do
   # Can be used by load balancers and uptime monitors to verify that the app is live.
   get "up" => "rails/health#show", :as => :rails_health_check
   get "health/services", to: "health#show"
+  get "health/liveness", to: "health#liveness"
+  get "health/readiness", to: "health#readiness"
 
   # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
@@ -58,6 +60,12 @@ Rails.application.routes.draw do
 
   # User-level pre-commit requirements (per-user overrides)
   resources :user_pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ]
+
+  # Account-level PR templates (defaults inherited by all projects)
+  resources :account_pr_templates, only: [ :index, :show, :create, :update, :destroy ]
+
+  # User-level PR templates (per-user overrides)
+  resources :user_pr_templates, only: [ :index, :show, :create, :update, :destroy ]
   resources :providers, except: :show do
     patch :settings, on: :collection
     post :test_agent, on: :member
@@ -131,6 +139,8 @@ Rails.application.routes.draw do
     end
     resources :pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pre_commit_requirements"
+    resources :pr_templates, only: [ :index, :show, :create, :update, :destroy ],
+      controller: "projects/pr_templates"
     resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"
     post :detect_services, on: :member
     resource :context_intake, only: [ :show, :create, :update ],

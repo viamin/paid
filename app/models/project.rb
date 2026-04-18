@@ -127,6 +127,7 @@ class Project < ApplicationRecord
   has_many :pre_commit_requirements, dependent: :destroy
   has_many :quality_gate_thresholds, dependent: :destroy
   has_many :quality_gate_events, dependent: :destroy
+  has_many :pr_templates, dependent: :destroy
   has_many :context_intake_sessions, dependent: :destroy
   has_many :quality_pause_events, dependent: :destroy
 
