@@ -162,7 +162,6 @@ module Containers
       seed_copilot_credentials!
       fix_aider_tmpfs_ownership!
       seed_claude_credentials!
-      seed_claude_heartbeat_hook!
       apply_network_restrictions!
 
       log_system("container.provision.success", container_id: container.id)
@@ -673,44 +672,6 @@ module Containers
           failure_log_key: "container.claude_credentials_seed_failed"
         )
       end
-    end
-
-    # Writes a Claude Code PostToolUse heartbeat hook into ~/.claude/settings.json.
-    # The hook runs `date +%s > /tmp/agent_heartbeat` after every tool call,
-    # giving the container watchdog a semantic liveness signal.
-    #
-    # If settings.json was already seeded by seed_claude_credentials!, the
-    # existing content is preserved and the hooks key is merged in.
-    def seed_claude_heartbeat_hook!
-      settings_path = "/home/agent/.claude/settings.json"
-      hook_config = {
-        "hooks" => {
-          "PostToolUse" => [ {
-            "matcher" => "*",
-            "hooks" => [ { "type" => "command", "command" => "date +%s > /tmp/agent_heartbeat" } ]
-          } ]
-        }
-      }
-
-      # Read existing settings seeded by seed_claude_credentials! (if any)
-      result = container.exec([ "cat", settings_path ], user: "agent")
-      stdout, _stderr, exit_code = Array(result)
-
-      existing = if exit_code&.zero? && stdout.is_a?(Array) && stdout.join.present?
-        begin
-          JSON.parse(stdout.join)
-        rescue JSON::ParserError
-          {}
-        end
-      else
-        {}
-      end
-
-      merged = existing.deep_merge(hook_config)
-      write_container_file(settings_path, JSON.pretty_generate(merged))
-      log_system("container.claude_heartbeat_hook_seeded")
-    rescue Docker::Error::DockerError, JSON::ParserError => e
-      log_system("container.claude_heartbeat_hook_seed_failed", error: e.message)
     end
 
     # Writes a minimal Codex config into the writable ~/.codex tmpfs so the

@@ -22,7 +22,7 @@ module Containers
     CONTAINER_HEARTBEAT_PATH = "/workspace/#{HEARTBEAT_FILENAME}"
 
     # Providers that support heartbeat hooks.
-    SUPPORTED_PROVIDERS = %w[claude claude_code codex].freeze
+    SUPPORTED_PROVIDERS = %w[claude codex].freeze
 
     attr_reader :provider, :worktree_path
 
