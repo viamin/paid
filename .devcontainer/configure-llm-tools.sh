@@ -172,9 +172,34 @@ fi
 # the host (only ~/.kilocode is mounted), so writing here is container-local.
 echo "Configuring KiloCode..."
 mkdir -p "$HOME/.config/kilo"
+# NOTE: the schema's string shortcut `"permission": "allow"` is semantically
+# correct ("dangerously skip permissions") but triggers an upstream kilo bug
+# where its save-merge (`{...config.permission, <key>: "allow"}`) spreads the
+# string character-by-character into `{0:"a",1:"l",...}` and corrupts the
+# file. We use the object form with every known key explicitly set to "allow"
+# so the spread-merge is a no-op. Revert to the string shortcut once the
+# upstream save bug is fixed. Keys from https://app.kilo.ai/config.json.
 cat << 'EOF' > "$HOME/.config/kilo/config.json"
 {
-  "permission": "allow"
+  "$schema": "https://app.kilo.ai/config.json",
+  "permission": {
+    "read": "allow",
+    "edit": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "list": "allow",
+    "bash": "allow",
+    "task": "allow",
+    "external_directory": "allow",
+    "todowrite": "allow",
+    "question": "allow",
+    "webfetch": "allow",
+    "websearch": "allow",
+    "codesearch": "allow",
+    "lsp": "allow",
+    "doom_loop": "allow",
+    "skill": "allow"
+  }
 }
 EOF
 
