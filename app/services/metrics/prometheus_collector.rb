@@ -112,18 +112,20 @@ module Metrics
         lines << "paid_service_containers_total{status=\"#{status}\"} #{status_counts.fetch(status, 0)}"
       end
 
+      running_ids = ServiceContainer.where(status: "running").select(:id)
       latest_svc_metrics = ServiceContainerMetric
+        .where(service_container_id: running_ids)
         .where(recorded_at: 5.minutes.ago..)
         .select("DISTINCT ON (service_container_id) service_container_id, cpu_percent, memory_bytes, memory_percent")
         .order(:service_container_id, recorded_at: :desc)
 
       if latest_svc_metrics.any?
-        lines << "# HELP paid_service_containers_avg_cpu_percent Average CPU across service containers."
+        lines << "# HELP paid_service_containers_avg_cpu_percent Average CPU across running service containers."
         lines << "# TYPE paid_service_containers_avg_cpu_percent gauge"
         avg_cpu = latest_svc_metrics.sum(&:cpu_percent) / latest_svc_metrics.size
         lines << "paid_service_containers_avg_cpu_percent #{avg_cpu.round(2)}"
 
-        lines << "# HELP paid_service_containers_avg_memory_percent Average memory across service containers."
+        lines << "# HELP paid_service_containers_avg_memory_percent Average memory across running service containers."
         lines << "# TYPE paid_service_containers_avg_memory_percent gauge"
         avg_mem = latest_svc_metrics.sum(&:memory_percent) / latest_svc_metrics.size
         lines << "paid_service_containers_avg_memory_percent #{avg_mem.round(2)}"

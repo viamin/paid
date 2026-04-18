@@ -122,6 +122,21 @@ RSpec.describe Metrics::PrometheusCollector do
       end
     end
 
+    context "with stopped service container metrics" do
+      before do
+        stopped = create(:service_container, status: "stopped")
+        create(:service_container_metric,
+          service_container: stopped,
+          cpu_percent: 90.0,
+          memory_percent: 80.0,
+          recorded_at: 1.minute.ago)
+      end
+
+      it "excludes stopped containers from resource averages" do
+        expect(output).not_to include("paid_service_containers_avg_cpu_percent")
+      end
+    end
+
     context "with temporal workflows" do
       before do
         create(:agent_run, :running, temporal_workflow_id: "wf-1")
