@@ -174,7 +174,7 @@ RUN if [ -z "${GEMINI_CLI_INSTALL_COMMAND}" ]; then \
         *) echo "ERROR: GEMINI_CLI_INSTALL_COMMAND must include --ignore-scripts for supply-chain safety" >&2; exit 1 ;; \
     esac \
     && echo "Installing Gemini CLI via agent-harness contract: ${GEMINI_CLI_INSTALL_COMMAND}" \
-    && ${GEMINI_CLI_INSTALL_COMMAND}
+    && eval "${GEMINI_CLI_INSTALL_COMMAND}"
 
 RUN npm install -g --ignore-scripts @kilocode/cli@7.1.3
 
