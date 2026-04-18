@@ -5,6 +5,8 @@ class Account < ApplicationRecord
   PLANS = %w[trial free professional enterprise].freeze
   TRIAL_DURATION = 14.days
 
+  enum :status, { active: 0, suspended: 1, deactivated: 2 }
+
   has_many :users, dependent: :destroy
   has_many :account_memberships, dependent: :destroy
   has_many :members, through: :account_memberships, source: :user
@@ -18,6 +20,7 @@ class Account < ApplicationRecord
   has_many :mcp_server_definitions, dependent: :destroy
   has_many :notifications, dependent: :destroy
   has_many :pre_commit_requirements, dependent: :destroy
+  has_one :tenant_setting, dependent: :destroy
   has_many :pr_templates, dependent: :destroy
   has_many :onboarding_steps, dependent: :destroy
 
@@ -50,6 +53,30 @@ class Account < ApplicationRecord
     scheduler_paused_at.present?
   end
 
+  def suspend!
+    raise InvalidTransitionError, "only active accounts can be suspended" unless active?
+
+    update!(status: :suspended, suspended_at: Time.current)
+  end
+
+  def reactivate!
+    raise InvalidTransitionError, "only suspended or deactivated accounts can be reactivated" if active?
+
+    update!(status: :active, suspended_at: nil, deactivated_at: nil)
+  end
+
+  def deactivate!
+    raise InvalidTransitionError, "only suspended accounts can be deactivated" unless suspended?
+
+    update!(status: :deactivated, deactivated_at: Time.current)
+  end
+
+  def tenant_setting!
+    tenant_setting || create_tenant_setting!
+  rescue ActiveRecord::RecordNotUnique
+    reload_tenant_setting
+  end
+
   def onboarding_completed?
     onboarding_completed_at.present?
   end
@@ -73,6 +100,8 @@ class Account < ApplicationRecord
     done = onboarding_steps.where(status: %w[completed skipped]).count
     (done.to_f / total * 100).round
   end
+
+  class InvalidTransitionError < StandardError; end
 
   # Returns the fallback owner for this account — the first owner by ID,
   # or the first user by ID if no owner membership exists. Used for
