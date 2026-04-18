@@ -990,7 +990,7 @@ module Activities
     def build_command(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
 
-      if provider_entry&.opencode_agent_harness_runtime?
+      if provider_entry&.agent_harness_runtime?
         harness_runtime_command(provider_entry, prompt)
       elsif provider_entry&.requires_direct_outbound?
         plan = harness_execution_plan_for(command_context.provider, prompt, provider_entry: provider_entry)
@@ -1041,7 +1041,7 @@ module Activities
 
     def command_env_for(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      return direct_outbound_execution_plan(provider_entry, prompt).env if provider_entry&.opencode_agent_harness_runtime?
+      return direct_outbound_execution_plan(provider_entry, prompt).env if provider_entry&.agent_harness_runtime?
       return {} unless provider_entry
       return api_key_command_env(provider_entry) if provider_entry.api_key?
 
@@ -1050,7 +1050,7 @@ module Activities
 
     def command_preparation_for(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      return nil unless provider_entry&.opencode_agent_harness_runtime?
+      return nil unless provider_entry&.agent_harness_runtime?
 
       direct_outbound_execution_plan(provider_entry, prompt).preparation
     end

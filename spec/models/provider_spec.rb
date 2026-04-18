@@ -471,6 +471,41 @@ RSpec.describe Provider do
     end
   end
 
+  describe "#agent_harness_runtime?" do
+    it "returns true for copilot providers" do
+      provider = build(:provider, provider_key: "copilot")
+
+      expect(provider.agent_harness_runtime?).to be(true)
+    end
+
+    it "returns true for opencode direct-outbound providers" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-test")
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "test-model" } }
+      )
+
+      expect(provider.agent_harness_runtime?).to be(true)
+    end
+
+    it "returns false for claude providers" do
+      provider = build(:provider, provider_key: "claude")
+
+      expect(provider.agent_harness_runtime?).to be(false)
+    end
+
+    it "returns false for opencode subscription providers" do
+      provider = build(:provider, provider_key: "opencode", auth_type: "subscription")
+
+      expect(provider.agent_harness_runtime?).to be(false)
+    end
+  end
+
   describe "#state_key" do
     it "uses the canonical provider key for subscription entries" do
       provider = build(:provider, provider_key: "claude", auth_type: "subscription")

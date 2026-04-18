@@ -367,7 +367,7 @@ module Providers
 
       return codex_test_command if provider.provider_key == "codex"
       return gemini_test_command if provider.provider_key == "gemini"
-      return harness_runtime_command if provider.opencode_agent_harness_runtime?
+      return harness_runtime_command if provider.agent_harness_runtime?
 
       plan = harness_test_plan
       if provider.requires_direct_outbound?
@@ -380,13 +380,13 @@ module Providers
     end
 
     def test_command_env
-      return direct_outbound_execution_plan.env if provider.opencode_agent_harness_runtime?
+      return direct_outbound_execution_plan.env if provider.agent_harness_runtime?
 
       provider.direct_outbound_exec_env
     end
 
     def test_command_preparation
-      return nil unless provider.opencode_agent_harness_runtime?
+      return nil unless provider.agent_harness_runtime?
 
       direct_outbound_execution_plan.preparation
     end
