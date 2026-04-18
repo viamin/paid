@@ -872,7 +872,7 @@ module Containers
       end
 
       if write_commands.any?
-        container.exec([ "sh", "-lc", write_commands.join(" && ") ], user: "agent")
+        container.exec([ "sh", "-lc", write_commands.join("; ") ], user: "agent")
         log_system(success_log_key, files_copied: write_commands.size)
       end
     rescue Docker::Error::DockerError, SystemCallError => e
@@ -900,8 +900,8 @@ module Containers
       ]
 
       # ~/.codex gets non-recursive chown to preserve host-backed file ownership
-      recursive_script = dirs.map { |d| "chown -R agent:agent #{Shellwords.escape(d)}" }.join(" && ")
-      script = "#{recursive_script} && chown agent:agent /home/agent/.codex"
+      recursive_script = dirs.map { |d| "chown -R agent:agent #{Shellwords.escape(d)}" }.join("; ")
+      script = "#{recursive_script}; chown agent:agent /home/agent/.codex"
 
       container.exec([ "sh", "-c", script ], user: "root")
       log_system("container.ownership_batch_fixed", dirs_count: dirs.size + 1)
