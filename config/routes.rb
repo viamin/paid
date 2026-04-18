@@ -21,6 +21,11 @@ Rails.application.routes.draw do
     post :mark_all_read, on: :collection
   end
 
+  # Onboarding wizard
+  resource :onboarding, only: [ :show, :update ], controller: "onboarding" do
+    post :skip
+  end
+
   # Dashboard for authenticated users
   get "dashboard", to: "dashboard#show"
   get "dashboard/live", to: redirect("/dashboard")
@@ -77,7 +82,14 @@ Rails.application.routes.draw do
       post :cancel, on: :member
       post :promote, on: :member
     end
+    resources :reviews, only: [ :index, :show, :update ], controller: "prompt_reviews" do
+      post :approve, on: :member
+      post :reject, on: :member
+    end
   end
+
+  # Account-wide pending prompt review queue
+  get "prompt_reviews", to: "prompt_reviews#queue", as: :prompt_reviews_queue
 
   # Style guide management
   resources :style_guides do

@@ -183,6 +183,36 @@ RSpec.describe Prompt do
         expect(version.version).to eq(1)
       end
     end
+
+    describe "#create_pending_version!" do
+      it "creates a pending version without promoting it to current" do
+        prompt = create(:prompt, :global, :with_version)
+        original = prompt.current_version
+
+        pending = prompt.create_pending_version!(template: "Proposed variant")
+
+        expect(pending).to be_pending_review
+        expect(pending.version).to eq(original.version + 1)
+        expect(prompt.reload.current_version).to eq(original)
+      end
+
+      it "honours an explicit review_status" do
+        prompt = create(:prompt, :global)
+        version = prompt.create_pending_version!(template: "V", review_status: "approved")
+        expect(version).to be_approved
+      end
+    end
+
+    describe "#pending_reviews" do
+      it "returns only pending versions" do
+        prompt = create(:prompt, :global, :with_version)
+        pending_v = prompt.create_pending_version!(template: "Pending")
+        prompt.create_pending_version!(template: "Rejected")
+          .update!(review_status: "rejected", reviewed_at: Time.current, review_notes: "no")
+
+        expect(prompt.pending_reviews).to contain_exactly(pending_v)
+      end
+    end
   end
 
   describe ".resolve" do

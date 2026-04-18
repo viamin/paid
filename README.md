@@ -178,7 +178,8 @@ bin/dev                 # Start Rails, JS/CSS watchers, and the Temporal worker
 | `TEMPORAL_HOST` | Temporal server address | `localhost:7233` |
 | `TEMPORAL_ADDRESS` | Temporal address (alternative to TEMPORAL_HOST) | _(falls back to TEMPORAL_HOST)_ |
 | `TEMPORAL_NAMESPACE` | Temporal namespace | `default` |
-| `TEMPORAL_TASK_QUEUE` | Temporal task queue name | `paid-tasks` |
+| `TEMPORAL_POLL_TASK_QUEUE` | Temporal poll workflow task queue | `paid-poll-tasks` |
+| `TEMPORAL_AGENT_TASK_QUEUE` | Temporal agent execution task queue | `paid-agent-tasks` |
 | `TEMPORAL_UI_URL` | Temporal UI base URL for monitoring links | `http://localhost:8080` |
 | `OPENAI_API_KEY` | OpenAI API key (for agents that use OpenAI) | _(none)_ |
 | `GOOGLE_API_KEY` | Google API key for Gemini proxy requests | _(none)_ |

@@ -53,10 +53,21 @@ RSpec.describe QualityMetrics::DashboardStats do
 
         expect(result[:overview][:total_metrics]).to eq(2)
         expect(result[:overview][:average_score]).to eq(0.7)
-        expect(result[:overview][:min_score]).to eq(0.6)
-        expect(result[:overview][:max_score]).to eq(0.8)
         expect(result[:overview][:automated_count]).to eq(1)
         expect(result[:overview][:human_count]).to eq(1)
+      end
+
+      it "returns score distribution with five bands" do
+        result = described_class.call(project: project)
+        dist = result[:overview][:score_distribution]
+
+        expect(dist.size).to eq(5)
+        expect(dist.map { |b| b[:label] }).to eq(%w[0–20 20–40 40–60 60–80 80–100])
+        expect(dist.map { |b| b[:min] }).to eq([ 0.0, 0.2, 0.4, 0.6, 0.8 ])
+        # 0.6 falls in 60–80 band, 0.8 falls in 80–100 band
+        expect(dist[3][:count]).to eq(1)
+        expect(dist[4][:count]).to eq(1)
+        expect(dist[0][:count]).to eq(0)
       end
 
       it "returns trend data points" do
