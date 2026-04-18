@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.26.0](https://github.com/viamin/paid/compare/v0.25.0...v0.26.0) (2026-04-18)
+
+
+### Features
+
+* **quality:** alert users when quality gates trigger ([#715](https://github.com/viamin/paid/issues/715)) ([#1204](https://github.com/viamin/paid/issues/1204)) ([d5e514c](https://github.com/viamin/paid/commit/d5e514c388e995ce9f3129c12465d96d51c7f896))
+
+
+### Bug Fixes
+
+* 725: feat(scaling): implement queue depth monitoring and alerting ([#1210](https://github.com/viamin/paid/issues/1210)) ([e74e52c](https://github.com/viamin/paid/commit/e74e52ca05302e2c8c734211bbaaea235545f639))
+* 799: feat(agent-runs): support cross-repo upstream/downstream issue pairs in create-issue mode ([#1218](https://github.com/viamin/paid/issues/1218)) ([cb14afa](https://github.com/viamin/paid/commit/cb14afa77f447e3d19753d9397ffef210bc06c00))
+* 851: feat(providers): configure Claude Code PostToolUse heartbeat hook ([#1231](https://github.com/viamin/paid/issues/1231)) ([dc6b8ac](https://github.com/viamin/paid/commit/dc6b8acf52c5862efd09b59fbbcc6c409a839505))
+* **devcontainer:** avoid kilocode permission save-merge corruption ([#1259](https://github.com/viamin/paid/issues/1259)) ([4212e03](https://github.com/viamin/paid/commit/4212e0386b5ea224584a7c96ad3e03494b265f2f))
+* **scheduler:** cap auto-pick seeding at owner concurrency budget ([#1260](https://github.com/viamin/paid/issues/1260)) ([ee8bda8](https://github.com/viamin/paid/commit/ee8bda8ed7d1f55ef955eb177b0a28728276238e))
+
 ## [0.25.0](https://github.com/viamin/paid/compare/v0.24.0...v0.25.0) (2026-04-17)
 
 
