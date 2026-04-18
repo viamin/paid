@@ -12,8 +12,8 @@ module SecurityAlerts
       @project = project
     end
 
-    def call(filtered_alerts)
-      open_alerts = filtered_alerts.select { |a| a[:state] == "open" }
+    def call(alerts)
+      open_alerts = alerts.select { |a| a[:state] == "open" }
       return [] if open_alerts.empty?
 
       synthetic_ids = open_alerts.map { |a| synthetic_issue_id(a) }
@@ -51,7 +51,7 @@ module SecurityAlerts
         github_created_at: parse_alert_time(alert[:created_at]) || now,
         github_updated_at: parse_alert_time(alert[:updated_at]) || now,
         paid_state: "new",
-        labels: %w[security code-scanning],
+        labels: labels_for_alert(alert),
         source: SYNTHETIC_SOURCE
       )
     rescue ActiveRecord::RecordNotUnique => e
@@ -122,6 +122,11 @@ module SecurityAlerts
         raise SecurityAlerts::ConfigurationError,
           "No trusted GitHub usernames configured for project #{@project.id}"
       end
+    end
+
+    def labels_for_alert(alert)
+      priority = Issue::SEVERITY_TO_PRIORITY[alert[:severity]]
+      %w[security code-scanning].tap { |l| l << priority if priority }
     end
   end
 end

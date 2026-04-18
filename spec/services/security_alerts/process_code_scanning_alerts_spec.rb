@@ -35,10 +35,27 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
       expect(issue.title).to include("[Security] CodeQL:")
       expect(issue.title).to include("code-scanning-alert-1667")
       expect(issue.body).to include("Code Scanning Alert #1667")
-      expect(issue.labels).to eq(%w[security code-scanning])
+      expect(issue.labels).to eq(%w[security code-scanning P1])
       expect(issue.paid_state).to eq("new")
       expect(issue.github_state).to eq("open")
       expect(issue.source).to eq(source)
+    end
+
+    it "maps severity to priority label" do
+      {
+        "critical" => "P1",
+        "high" => "P1",
+        "medium" => "P2",
+        "low" => "P3"
+      }.each do |severity, priority|
+        medium_alert = alert.merge(number: rand(1..999_999), severity: severity)
+
+        described_class.new(project).call([ medium_alert ])
+
+        issue = project.issues.find_by(source: source, github_issue_id: id_offset + medium_alert[:number])
+        expect(issue.labels).to include(priority),
+          "Expected severity #{severity.inspect} to include priority #{priority.inspect}, got #{issue.labels.inspect}"
+      end
     end
 
     it "skips non-open alerts" do

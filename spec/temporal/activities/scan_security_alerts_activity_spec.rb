@@ -8,7 +8,6 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
     create(:project,
       auto_scan_security: true,
       security_alert_types: %w[code_scanning],
-      security_severity_threshold: "high",
       code_scanning_interval_hours: 72)
   end
   let(:github_client) { instance_double(GithubClient) }

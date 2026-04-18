@@ -13,6 +13,7 @@ class Issue < ApplicationRecord
   DEPENDABOT_ALERT_SOURCE = "dependabot_alert"
   VALID_SOURCES = [ GITHUB_SOURCE, SYNTHETIC_CODE_SCANNING_SOURCE, DEPENDABOT_ALERT_SOURCE ].freeze
   SEVERITY_ORDER = %w[critical high medium low].freeze
+  SEVERITY_TO_PRIORITY = { "critical" => "P1", "high" => "P1", "medium" => "P2", "low" => "P3" }.freeze
   TRACKER_PATTERN = /\b(?:tracker|remaining\s+work|completion\s+criteria|phase\s+tracker|meta\s+issue)\b/i
   # Body match requires the tracker vocabulary to appear inside a markdown
   # heading (e.g. "## Tracker", "## Remaining Work"). Matching anywhere in
