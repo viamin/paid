@@ -17,15 +17,6 @@ module Providers
     PROMPT = "Respond with exactly: PING OK"
     EXPECTED_OUTPUT = "PING OK"
     TIMEOUT = 60
-    CONTAINER_COMMANDS = Activities::RunAgentActivity::AGENT_COMMANDS.slice(
-      "claude",
-      "codex",
-      "copilot",
-      "cursor",
-      "gemini",
-      "kilocode",
-      "opencode"
-    ).freeze
     RATE_LIMIT_PATTERNS = Activities::RunAgentActivity::RATE_LIMIT_PATTERNS
     AUTHENTICATION_ERROR_PATTERNS = [
       /api[_ -]?key/i,
@@ -370,16 +361,22 @@ module Providers
     end
 
     def test_command
-      command = CONTAINER_COMMANDS[provider.provider_key]
-      raise UnsupportedProviderError, "Unsupported provider: #{provider.provider_key}" unless command
+      unless ProviderSupport.container_executable_provider_key?(provider.provider_key)
+        raise UnsupportedProviderError, "Unsupported provider: #{provider.provider_key}"
+      end
 
       return codex_test_command if provider.provider_key == "codex"
       return gemini_test_command if provider.provider_key == "gemini"
       return harness_runtime_command if provider.agent_harness_runtime?
-      return provider.direct_outbound_exec_command(command_prefix: command, prompt: PROMPT) if provider.requires_direct_outbound?
-      return kilocode_test_command if provider.provider_key == "kilocode"
 
-      command + [ PROMPT ]
+      plan = harness_test_plan
+      if provider.requires_direct_outbound?
+        provider.direct_outbound_exec_command(command_prefix: plan.command[0..-2], prompt: PROMPT)
+      elsif provider.provider_key == "kilocode"
+        kilocode_test_command
+      else
+        plan.command
+      end
     end
 
     def test_command_env
@@ -398,6 +395,14 @@ module Providers
       @direct_outbound_execution_plan ||= Providers::HarnessExecutionPlan.call(
         provider: provider,
         prompt: PROMPT
+      )
+    end
+
+    def harness_test_plan
+      @harness_test_plan ||= Providers::HarnessExecutionPlan.for_provider_key(
+        provider_key: provider.provider_key,
+        prompt: PROMPT,
+        options: { dangerous_mode: true }
       )
     end
 
@@ -476,12 +481,16 @@ module Providers
 
     def codex_test_command
       escaped_prompt = Shellwords.escape(PROMPT)
-      command = command_with_flags_before_separator(
-        CONTAINER_COMMANDS.fetch("codex"),
+      # Get the base command from agent-harness (without prompt), then add
+      # test-specific flags before the prompt argument.
+      base_cmd = harness_test_plan.command[0..-2]
+      separator_index = base_cmd.index("--") || base_cmd.length
+      cmd_with_flags = base_cmd[0...separator_index] + [
         "--skip-git-repo-check",
         "--output-last-message",
         "$tmp_output"
-      ).join(" ")
+      ] + base_cmd[separator_index..]
+      command = cmd_with_flags.join(" ")
       unset_flags = subscription_auth_unset_flags("codex")
       <<~SH.squish
         tmp_output="$(mktemp)" &&
@@ -501,14 +510,11 @@ module Providers
       SH
     end
 
-    def command_with_flags_before_separator(command, *flags)
-      separator_index = command.index("--") || command.length
-      command[0...separator_index] + flags + command[separator_index..]
-    end
-
     def gemini_test_command
       escaped_prompt = Shellwords.escape(PROMPT)
-      command = "gemini -y -p #{escaped_prompt}"
+      # Get the base command from agent-harness (without prompt)
+      base_cmd = harness_test_plan.command[0..-2]
+      command = (base_cmd + [ escaped_prompt ]).join(" ")
       unset_flags = subscription_auth_unset_flags("gemini")
       <<~SH.squish
         tmp_output="$(mktemp)" &&

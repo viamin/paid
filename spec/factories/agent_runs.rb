@@ -169,6 +169,18 @@ FactoryBot.define do
       created_issue_number { 42 }
     end
 
+    trait :with_cross_repo_issue_pair do
+      create_issue_goal
+      created_issue_url { "https://github.com/example/repo/issues/42" }
+      created_issue_number { 42 }
+      cross_repo_issues do
+        [
+          { "repo" => "upstream/dependency", "issue_number" => 10, "issue_url" => "https://github.com/upstream/dependency/issues/10", "role" => "upstream" },
+          { "repo" => "example/repo", "issue_number" => 42, "issue_url" => "https://github.com/example/repo/issues/42", "role" => "downstream" }
+        ]
+      end
+    end
+
     trait :review_goal do
       goal { "review" }
       source_pull_request_number { 10 }

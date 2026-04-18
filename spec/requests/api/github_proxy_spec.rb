@@ -183,6 +183,41 @@ RSpec.describe "Api::GithubProxy" do
       expect(response).to have_http_status(:ok)
     end
 
+    it "prepends the Code Review header to the review body" do
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Looks good", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      sent_body = JSON.parse(WebMock::RequestRegistry.instance.requested_signatures.hash.keys.last.body)
+      expect(sent_body["body"]).to start_with("<!-- paid:code-review -->\n## Code Review\n\n")
+      expect(sent_body["body"]).to end_with("Looks good")
+    end
+
+    it "does not duplicate the header when already present" do
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "<!-- paid:code-review -->\n## Code Review\n\nAlready has header", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      sent_body = JSON.parse(WebMock::RequestRegistry.instance.requested_signatures.hash.keys.last.body)
+      expect(sent_body["body"]).to eq("<!-- paid:code-review -->\n## Code Review\n\nAlready has header")
+    end
+
+    it "does not prepend the header for non-review-goal runs" do
+      non_review_run = create(:agent_run, :running, project: project,
+        goal: "create_pr", source_pull_request_number: 10)
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Looks good", event: "COMMENT" }.to_json,
+        headers: {
+          "Content-Type" => "application/json",
+          "X-Agent-Run-Id" => non_review_run.id.to_s,
+          "X-Proxy-Token" => non_review_run.proxy_token
+        }
+
+      sent_body = JSON.parse(WebMock::RequestRegistry.instance.requested_signatures.hash.keys.last.body)
+      expect(sent_body["body"]).to eq("Looks good")
+    end
+
     it "tracks review_posted_at when PR number matches source_pull_request_number" do
       post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
         params: { body: "Looks good", event: "COMMENT" }.to_json,
