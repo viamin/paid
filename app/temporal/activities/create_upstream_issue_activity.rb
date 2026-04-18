@@ -72,6 +72,8 @@ module Activities
 
     def sync_upstream_issue(source_project, target_repo, gh_issue)
       owner, repo = target_repo.split("/", 2)
+      return unless owner.present? && repo.present?
+
       target_project = source_project.account.projects.find_by(
         "LOWER(owner) = ? AND LOWER(repo) = ?", owner.downcase, repo.downcase
       )

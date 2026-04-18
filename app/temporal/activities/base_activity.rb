@@ -231,6 +231,8 @@ module Activities
         "issue_url" => gh_issue.html_url,
         "role" => role
       }
+      # Reload to avoid stale reads if called concurrently on the same agent_run
+      agent_run.reload
       agent_run.update!(
         cross_repo_issues: (agent_run.cross_repo_issues || []) + [ entry ]
       )
