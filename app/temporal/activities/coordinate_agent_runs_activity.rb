@@ -81,11 +81,11 @@ module Activities
       result = Coordination::SendSignal.call(
         source_agent_run: agent_run,
         signal_type: "dependency_completed",
-        payload: {
+        payload: context.merge(
           completed_at: agent_run.completed_at&.iso8601,
           branch_name: agent_run.branch_name,
           result_commit_sha: agent_run.result_commit_sha
-        }.merge(context)
+        )
       )
       signals_sent << "dependency_completed" if result.success?
 
