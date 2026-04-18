@@ -2,8 +2,7 @@
 
 module QualityAlerts
   # Checks quality gates for a project after metric collection and publishes
-  # notifications when thresholds are breached. Respects per-user notification
-  # preferences to determine who receives alerts.
+  # account-wide notifications when thresholds are breached.
   #
   # @example
   #   QualityAlerts::CheckGate.call(project: project)

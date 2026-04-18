@@ -12,8 +12,13 @@ class UserSetting < ApplicationRecord
   KB_CHAT_PROVIDERS = ProviderSupport::APP_TO_HARNESS_PROVIDER_KEYS.keys.freeze
   KB_CHAT_PROVIDER_DEFAULT = "claude"
 
+  THEME_PREFERENCES = %w[light dark system].freeze
+
   belongs_to :user
   has_many :provider_states, through: :user
+
+  # Theme
+  validates :theme_preference, inclusion: { in: THEME_PREFERENCES }
 
   # Polling & Timing
   validates :default_poll_interval_seconds,
@@ -169,21 +174,6 @@ class UserSetting < ApplicationRecord
       .where(provider_key: executable_keys)
       .distinct
       .pluck(:provider_key)
-  end
-
-  NOTIFICATION_CATEGORIES = %w[quality_gate_alerts guardrail_alerts system_alerts].freeze
-  DEFAULT_NOTIFICATION_PREFERENCES = NOTIFICATION_CATEGORIES.index_with { true }.freeze
-
-  # Returns the effective notification preferences with defaults applied.
-  def effective_notification_preferences
-    saved = notification_preferences
-    saved = saved.is_a?(Hash) ? saved.deep_stringify_keys : {}
-    DEFAULT_NOTIFICATION_PREFERENCES.merge(saved)
-  end
-
-  # Returns whether the user wants to receive a specific notification category.
-  def notification_enabled?(category)
-    effective_notification_preferences.fetch(category.to_s, true)
   end
 
   # Returns default_allowed_github_usernames as a comma-separated string

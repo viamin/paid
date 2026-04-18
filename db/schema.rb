@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -81,12 +81,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
 
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.datetime "deactivated_at"
     t.integer "default_max_tokens_per_run", default: 10000000, null: false
     t.string "name", null: false
+    t.datetime "onboarding_completed_at"
+    t.string "plan", default: "trial", null: false
     t.datetime "scheduler_paused_at"
     t.string "slug", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "suspended_at"
+    t.datetime "trial_ends_at"
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
+    t.index ["status"], name: "index_accounts_on_status"
+  end
+
+  create_table "agent_coordination_signals", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "parent_workflow_id", limit: 255, null: false
+    t.jsonb "payload", default: {}, null: false
+    t.string "signal_type", limit: 50, null: false
+    t.bigint "source_agent_run_id", null: false
+    t.bigint "target_agent_run_id"
+    t.index ["parent_workflow_id", "signal_type"], name: "idx_coordination_signals_workflow_type"
+    t.index ["parent_workflow_id"], name: "index_agent_coordination_signals_on_parent_workflow_id"
+    t.index ["source_agent_run_id"], name: "index_agent_coordination_signals_on_source_agent_run_id"
+    t.index ["target_agent_run_id", "signal_type"], name: "idx_coordination_signals_target_type"
+    t.index ["target_agent_run_id"], name: "index_agent_coordination_signals_on_target_agent_run_id"
   end
 
   create_table "agent_run_anomalies", force: :cascade do |t|
@@ -497,6 +518,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
     t.string "depends_on_owner"
     t.string "depends_on_repo"
     t.bigint "issue_id", null: false
+    t.boolean "requires_deployment", default: false, null: false
     t.datetime "updated_at", null: false
     t.index ["depends_on_issue_id"], name: "index_issue_dependencies_on_depends_on_issue_id"
     t.index ["issue_id", "depends_on_issue_id"], name: "idx_issue_dependencies_unique", unique: true
@@ -510,6 +532,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
     t.text "body"
     t.datetime "ci_action_dispatched_at"
     t.datetime "created_at", null: false
+    t.datetime "deployed_at"
     t.integer "draft_review_count", default: 0, null: false
     t.datetime "github_created_at", null: false
     t.string "github_creator_login"
@@ -531,6 +554,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
     t.string "source", default: "github", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
+    t.index ["deployed_at"], name: "idx_issues_deployed_at_on_prs", where: "(is_pull_request = true)"
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
     t.index ["labels"], name: "index_issues_on_labels_gin_open_issues", where: "((is_pull_request = false) AND ((github_state)::text = 'open'::text))", using: :gin
     t.index ["labels"], name: "index_issues_on_labels_gin_open_prs", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))", using: :gin
@@ -742,6 +766,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
     t.index ["user_id"], name: "index_notifications_on_user_id"
   end
 
+  create_table "onboarding_steps", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.jsonb "metadata", default: {}
+    t.integer "position", null: false
+    t.string "status", default: "pending", null: false
+    t.string "step", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "position"], name: "index_onboarding_steps_on_account_id_and_position"
+    t.index ["account_id", "step"], name: "index_onboarding_steps_on_account_id_and_step", unique: true
+    t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
+  end
+
   create_table "pre_commit_requirements", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "check_type", limit: 50, default: "shell_command", null: false
@@ -900,6 +938,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
     t.bigint "created_by_user_id"
     t.bigint "parent_version_id"
     t.bigint "prompt_id", null: false
+    t.datetime "retired_at"
     t.text "review_notes"
     t.string "review_status", limit: 20
     t.datetime "reviewed_at"
@@ -914,6 +953,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
     t.index ["prompt_id", "review_status"], name: "index_prompt_versions_on_prompt_and_review_status", where: "(review_status IS NOT NULL)"
     t.index ["prompt_id", "version"], name: "index_prompt_versions_on_prompt_id_and_version", unique: true
     t.index ["prompt_id"], name: "index_prompt_versions_on_prompt_id"
+    t.index ["retired_at"], name: "index_prompt_versions_on_retired_at"
     t.index ["reviewed_by_user_id"], name: "index_prompt_versions_on_reviewed_by_user_id"
   end
 
@@ -987,6 +1027,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
     t.index ["user_id"], name: "index_providers_on_user_id"
     t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL", name: "providers_api_key_requires_key"
     t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "providers_subscription_invariants"
+  end
+
+  create_table "quality_gate_events", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "event_type", limit: 20, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.bigint "project_id", null: false
+    t.bigint "quality_gate_threshold_id", null: false
+    t.bigint "quality_metric_id", null: false
+    t.decimal "score_value", precision: 5, scale: 4, null: false
+    t.decimal "threshold_value", precision: 5, scale: 4, null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "event_type", "created_at"], name: "idx_quality_gate_events_project_type_time"
+    t.index ["project_id"], name: "index_quality_gate_events_on_project_id"
+    t.index ["quality_gate_threshold_id"], name: "index_quality_gate_events_on_quality_gate_threshold_id"
+    t.index ["quality_metric_id"], name: "index_quality_gate_events_on_quality_metric_id"
+  end
+
+  create_table "quality_gate_thresholds", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: true, null: false
+    t.decimal "max_threshold", precision: 5, scale: 4
+    t.string "metric_key", limit: 50, null: false
+    t.decimal "min_threshold", precision: 5, scale: 4
+    t.bigint "project_id", null: false
+    t.string "severity", limit: 20, default: "warning", null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "metric_key"], name: "index_quality_gate_thresholds_on_project_id_and_metric_key", unique: true
+    t.index ["project_id"], name: "index_quality_gate_thresholds_on_project_id"
   end
 
   create_table "quality_metrics", force: :cascade do |t|
@@ -1077,6 +1146,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
     t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_style_guides_scope_consistency"
   end
 
+  create_table "tenant_settings", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.text "allowed_provider_keys", default: [], array: true
+    t.datetime "created_at", null: false
+    t.jsonb "features", default: {}, null: false
+    t.integer "max_concurrent_runs", default: 10, null: false
+    t.integer "max_monthly_cost_cents"
+    t.integer "max_projects", default: 50, null: false
+    t.integer "max_tokens_per_run", default: 10000000, null: false
+    t.integer "max_users", default: 25, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_tenant_settings_on_account_id", unique: true
+  end
+
   create_table "token_usages", force: :cascade do |t|
     t.bigint "agent_run_id"
     t.integer "cost_cents", default: 0, null: false
@@ -1098,11 +1181,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
 
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 3600, null: false
-    t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"]
+    t.jsonb "allowed_service_images", default: ["postgres:16.13", "redis:7-alpine", "selenium/standalone-chromium:latest"]
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.bigint "container_memory_bytes", default: 4294967296, null: false
     t.integer "container_timeout_seconds", default: 3600, null: false
+    t.integer "create_pr_idle_timeout_seconds", default: 300, null: false
     t.datetime "created_at", null: false
     t.string "default_agent_provider", default: "claude", null: false
     t.jsonb "default_agent_providers_by_goal", default: {}, null: false
@@ -1129,7 +1213,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
     t.integer "max_prompt_comments", default: 20, null: false
     t.integer "max_prs_per_page", default: 50, null: false
     t.integer "max_tokens_per_run", default: 10000000, null: false
-    t.jsonb "notification_preferences", default: {}, null: false
     t.float "retry_base_delay", default: 1.0, null: false
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false
@@ -1137,6 +1220,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
     t.integer "style_guide_max_raw_bytes", default: 100000, null: false
     t.integer "style_guide_max_raw_prompt_bytes", default: 8000, null: false
     t.integer "style_guide_max_total_bytes", default: 32000, null: false
+    t.string "theme_preference", default: "system", null: false
     t.integer "token_validation_stale_minutes", default: 2, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
@@ -1206,6 +1290,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
   add_foreign_key "ab_tests", "prompts", on_delete: :cascade
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
+  add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"
+  add_foreign_key "agent_coordination_signals", "agent_runs", column: "target_agent_run_id"
   add_foreign_key "agent_run_anomalies", "agent_runs"
   add_foreign_key "agent_run_anomalies", "projects"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
@@ -1249,6 +1335,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
   add_foreign_key "model_selections", "llm_models"
   add_foreign_key "notifications", "accounts"
   add_foreign_key "notifications", "users", on_delete: :nullify
+  add_foreign_key "onboarding_steps", "accounts"
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
@@ -1274,6 +1361,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
   add_foreign_key "provider_states", "users", on_delete: :cascade
   add_foreign_key "providers", "provider_api_keys", on_delete: :restrict
   add_foreign_key "providers", "users", on_delete: :cascade
+  add_foreign_key "quality_gate_events", "projects"
+  add_foreign_key "quality_gate_events", "quality_gate_thresholds"
+  add_foreign_key "quality_gate_events", "quality_metrics"
+  add_foreign_key "quality_gate_thresholds", "projects"
   add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
   add_foreign_key "quality_pause_events", "agent_runs"
@@ -1281,6 +1372,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_002930) do
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
   add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
+  add_foreign_key "tenant_settings", "accounts"
   add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
   add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "user_settings", "users"

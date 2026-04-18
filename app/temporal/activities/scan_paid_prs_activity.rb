@@ -20,6 +20,11 @@ module Activities
 
     MIN_COMMENT_LENGTH = 20
     CI_ACTION_DISPATCH_GRACE_PERIOD = 2.minutes
+    # Floor for re-scanning a PR even when GitHub's `updated_at` has not
+    # advanced. `updated_at` does not bump for check-run state changes,
+    # unanswered bot review requests, or review-goal retry timers — without
+    # a time ceiling, PRs waiting on those signals are skipped indefinitely.
+    SCAN_STALENESS_MULTIPLIER = 3
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
     # Body-only review bots (currently Codex) signal "no findings" by posting
@@ -119,6 +124,15 @@ module Activities
     def scan_pr(project, client, issue)
       return :skipped if active_run_exists?(project, issue)
 
+      # Escalate PRs that are repeatedly failing due to operational issues
+      # (provider exhaustion, timeouts, rate limiting) so they stop blocking
+      # project progress and surface to the owner for attention.
+      if operational_failure_breaker?(project, issue)
+        return escalate_trigger(issue,
+          reason: "Consecutive operational failures " \
+                  "(#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} runs failed due to provider exhaustion/timeout)")
+      end
+
       backfill_review_goal_retry_reset_at!(issue)
 
       retry_needed = review_goal_retry_needed?(project, issue)
@@ -145,7 +159,26 @@ module Activities
         if review_goal_retry_limit_requires_escalation?(project, issue)
           return escalate_trigger(issue, reason: retry_limit_reason)
         end
-        scan_draft_pr(project, client, issue)
+
+        # Check draft-specific escalation conditions before spending rate
+        # budget on a PR data fetch. These mirror the guards at the top of
+        # scan_draft_pr; duplicating them here avoids a wasted API call when
+        # the PR will be immediately escalated anyway.
+        if draft_review_limit_reached?(project, issue)
+          return escalate_trigger(issue)
+        end
+        if consecutive_draft_failures_breaker?(project, issue)
+          return escalate_trigger(issue,
+            reason: "Consecutive draft follow-up failures (#{MAX_CONSECUTIVE_DRAFT_FAILURES} runs with no output)")
+        end
+
+        check_rate_budget!(client)
+        pr_data = fetch_pr_data(client, project, issue)
+        if maybe_advance_to_ready(project, issue, pr_data)
+          scan_ready_pr(project, client, issue, pr_data: pr_data)
+        else
+          scan_draft_pr(project, client, issue, pr_data: pr_data)
+        end
       when "ready"
         check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
@@ -204,12 +237,17 @@ module Activities
     end
 
     MAX_CONSECUTIVE_DRAFT_FAILURES = 3
+    MAX_CONSECUTIVE_OPERATIONAL_FAILURES = 3
 
     # --- Draft phase scanning ---
 
+    def draft_review_limit_reached?(project, issue)
+      project.max_draft_review_rounds.positive? &&
+        issue.draft_review_count >= project.max_draft_review_rounds
+    end
+
     def scan_draft_pr(project, client, issue, pr_data: nil)
-      if project.max_draft_review_rounds.positive? &&
-          issue.draft_review_count >= project.max_draft_review_rounds
+      if draft_review_limit_reached?(project, issue)
         return escalate_trigger(issue)
       end
 
@@ -583,10 +621,35 @@ module Activities
       true
     end
 
+    # Detect when a user marks a draft PR as ready on GitHub without going
+    # through Paid's MarkPrReadyActivity. Advances the local phase to "ready"
+    # so that ready-phase automation (merge-conflict handling, auto-merge,
+    # review-goal evaluation) kicks in. Only applies to draft/restarted
+    # phases — escalated and merged are intentional local states that should
+    # not be overwritten by GitHub draft status alone.
+    def maybe_advance_to_ready(project, issue, pr_data)
+      return false if pr_data.nil?
+      return false if pr_data.draft
+      return false unless issue.draft_phase?
+
+      previous_phase = issue.pr_review_phase
+      issue.update!(pr_review_phase: "ready")
+
+      logger.info(
+        message: "pr_scanner.phase_advanced_to_ready",
+        project_id: project.id,
+        pr_number: issue.github_number,
+        previous_phase: previous_phase
+      )
+
+      true
+    end
+
     def skip_unchanged_pr?(project, issue)
       return false unless issue.last_pr_scan_at
       return false if issue.github_updated_at >= issue.last_pr_scan_at
       return false if recently_completed_run?(project, issue)
+      return false if scan_age_exceeds_ceiling?(project, issue)
 
       logger.debug(
         message: "pr_scanner.skipped_unchanged",
@@ -597,6 +660,31 @@ module Activities
       )
 
       true
+    end
+
+    # Only draft/restarted PRs need a time-based rescan floor. They're the
+    # phases waiting on signals that do not bump GitHub's `updated_at` (bot
+    # review requests, CI state transitions, review-goal retry timers).
+    # `ready`/`escalated` PRs already have a targeted rescan path via
+    # `merge_conflict_rescan_needed?`; bypassing skip here would regress that
+    # optimization back into full per-PR scans.
+    def scan_age_exceeds_ceiling?(project, issue)
+      return false unless issue.pr_review_phase.in?(%w[draft restarted])
+
+      ceiling = SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
+      stale = issue.last_pr_scan_at < ceiling.seconds.ago
+
+      if stale
+        logger.info(
+          message: "pr_scanner.scan_age_ceiling_exceeded",
+          project_id: project.id,
+          pr_number: issue.github_number,
+          last_pr_scan_at: issue.last_pr_scan_at,
+          ceiling_seconds: ceiling
+        )
+      end
+
+      stale
     end
 
     def merge_conflict_rescan_needed?(project, issue)
@@ -677,6 +765,38 @@ module Activities
       recent_runs.all? do |run|
         unproductive_statuses.include?(run.status) && (run.status == "no_output" || run.iterations.to_i.zero?)
       end
+    end
+
+    # Circuit breaker: if the last N automatic follow-up runs on this PR
+    # all failed due to operational issues (provider exhaustion, wall-clock
+    # timeout, auth expiry, rate limiting), escalate to the owner. These
+    # are infrastructure failures the agent cannot fix by retrying — they
+    # indicate a systemic problem (all providers down, quota exceeded, etc.)
+    # that requires human intervention.
+    #
+    # Unlike consecutive_draft_failures_breaker? (draft-phase only, checks
+    # for unproductive output), this breaker applies across all phases and
+    # checks for infrastructure-class failures specifically. A run that
+    # failed due to a code error won't trip this breaker because a retry
+    # with different code changes might succeed.
+    #
+    # Skips PRs already in "escalated" phase to avoid re-escalating.
+    # Skips draft/restarted phases because those have their own failure
+    # breaker (consecutive_draft_failures_breaker?) with phase-aware
+    # guards (e.g. draft_review_count resets on restart).
+    def operational_failure_breaker?(project, issue)
+      return false if issue.pr_review_phase.in?(%w[draft restarted escalated])
+
+      recent_runs = project.agent_runs
+        .where(source_pull_request_number: issue.github_number)
+        .where(trigger_type: "automatic", goal: "create_pr")
+        .finished
+        .order(created_at: :desc)
+        .limit(MAX_CONSECUTIVE_OPERATIONAL_FAILURES)
+
+      return false if recent_runs.size < MAX_CONSECUTIVE_OPERATIONAL_FAILURES
+
+      recent_runs.all?(&:operational_failure?)
     end
 
     # Returns true when the latest finished automatic review-goal run in the
