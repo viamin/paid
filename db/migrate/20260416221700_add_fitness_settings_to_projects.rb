@@ -6,6 +6,8 @@
 # to PromptEvolution::FitnessFunction defaults.
 class AddFitnessSettingsToProjects < ActiveRecord::Migration[8.1]
   def change
-    add_column :projects, :fitness_settings, :jsonb, default: {}, null: false
+    unless column_exists?(:projects, :fitness_settings)
+      add_column :projects, :fitness_settings, :jsonb, default: {}, null: false
+    end
   end
 end

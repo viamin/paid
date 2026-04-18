@@ -480,6 +480,9 @@ class AgentRun < ApplicationRecord
     scope = queued_with_priority.order(QUEUE_ORDER)
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     scope = scope.joins(project: :account).where(accounts: { scheduler_paused_at: nil })
+    scope = scope.where(
+      "agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL"
+    )
     scope.first
   end
 
@@ -694,6 +697,19 @@ class AgentRun < ApplicationRecord
 
   def result_url
     pull_request_url || created_issue_url
+  end
+
+  # Returns cross-repo issues created during this run, filtered by role.
+  def upstream_issues
+    (cross_repo_issues || []).select { |i| i["role"] == "upstream" }
+  end
+
+  def downstream_issues
+    (cross_repo_issues || []).select { |i| i["role"] == "downstream" }
+  end
+
+  def cross_repo_issue_pair?
+    upstream_issues.any? && downstream_issues.any?
   end
 
   def fail!(error: nil)
