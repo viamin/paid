@@ -28,13 +28,13 @@ RSpec.describe Activities::ResolveReviewThreadsActivity do
             { id: "thread_3", is_resolved: false, comments: [] }
           ])
 
-        allow(github_client).to receive(:resolve_review_thread)
+        allow(github_client).to receive(:resolve_review_threads_batch)
+          .and_return(resolved: %w[thread_1 thread_3], failed: [])
       end
 
-      it "resolves unresolved threads" do
-        expect(github_client).to receive(:resolve_review_thread).with("thread_1")
-        expect(github_client).to receive(:resolve_review_thread).with("thread_3")
-        expect(github_client).not_to receive(:resolve_review_thread).with("thread_2")
+      it "resolves unresolved threads in a single batch call" do
+        expect(github_client).to receive(:resolve_review_threads_batch)
+          .with(%w[thread_1 thread_3])
 
         activity.execute(agent_run_id: agent_run.id)
       end
@@ -48,9 +48,9 @@ RSpec.describe Activities::ResolveReviewThreadsActivity do
       end
 
       it "resolves only requested thread ids when provided" do
-        expect(github_client).to receive(:resolve_review_thread).with("thread_3")
-        expect(github_client).not_to receive(:resolve_review_thread).with("thread_1")
-        expect(github_client).not_to receive(:resolve_review_thread).with("thread_2")
+        allow(github_client).to receive(:resolve_review_threads_batch)
+          .with([ "thread_3" ])
+          .and_return(resolved: %w[thread_3], failed: [])
 
         result = activity.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_3", "missing" ])
 
@@ -68,9 +68,12 @@ RSpec.describe Activities::ResolveReviewThreadsActivity do
             { id: "thread_2", is_resolved: false, comments: [] }
           ])
 
-        allow(github_client).to receive(:resolve_review_thread).with("thread_1")
-        allow(github_client).to receive(:resolve_review_thread).with("thread_2")
-          .and_raise(GithubClient::ApiError.new("GraphQL error"))
+        allow(github_client).to receive(:resolve_review_threads_batch)
+          .with(%w[thread_1 thread_2])
+          .and_return(
+            resolved: %w[thread_1],
+            failed: [ { id: "thread_2", error: "GraphQL error" } ]
+          )
       end
 
       it "continues despite individual failures" do
@@ -88,6 +91,10 @@ RSpec.describe Activities::ResolveReviewThreadsActivity do
           .and_return([
             { id: "thread_1", is_resolved: true, comments: [] }
           ])
+
+        allow(github_client).to receive(:resolve_review_threads_batch)
+          .with([])
+          .and_return(resolved: [], failed: [])
       end
 
       it "returns zero counts" do

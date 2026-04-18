@@ -21,19 +21,18 @@ module Activities
       unresolved = threads.reject { |t| t[:is_resolved] }
       unresolved.select! { |thread| thread_ids.include?(thread[:id]) } if thread_ids.any?
 
-      resolved_count = 0
-      failed_count = 0
+      ids_to_resolve = unresolved.map { |t| t[:id] }
+      result = client.resolve_review_threads_batch(ids_to_resolve)
 
-      unresolved.each do |thread|
-        client.resolve_review_thread(thread[:id])
-        resolved_count += 1
-      rescue GithubClient::Error => e
-        failed_count += 1
+      resolved_count = result[:resolved].size
+      failed_count = result[:failed].size
+
+      result[:failed].each do |failure|
         logger.warn(
           message: "agent_execution.resolve_thread_failed",
           agent_run_id: agent_run_id,
-          thread_id: thread[:id],
-          error: e.message
+          thread_id: failure[:id],
+          error: failure[:error]
         )
       end
 

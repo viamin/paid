@@ -178,20 +178,18 @@ module Activities
         labels_to_remove << project.automation_label_name
       end
 
-      labels_to_remove.uniq.each do |label|
-        next unless issue.has_label?(label)
+      present_labels = labels_to_remove.uniq.select { |label| issue.has_label?(label) }
+      return if present_labels.empty?
 
-        begin
-          client.remove_label_from_issue(project.full_name, issue.github_number, label)
-        rescue GithubClient::Error => e
-          logger.warn(
-            message: "agent_execution.remove_trigger_label_failed",
-            agent_run_id: agent_run_id,
-            issue_number: issue.github_number,
-            label: label,
-            error: e.message
-          )
-        end
+      result = client.remove_labels_from_issue(project.full_name, issue.github_number, present_labels)
+      result[:failed].each do |failure|
+        logger.warn(
+          message: "agent_execution.remove_trigger_label_failed",
+          agent_run_id: agent_run_id,
+          issue_number: issue.github_number,
+          label: failure[:label],
+          error: failure[:error]
+        )
       end
     end
 
