@@ -96,6 +96,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.index ["status"], name: "index_accounts_on_status"
   end
 
+  create_table "agent_coordination_signals", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "parent_workflow_id", limit: 255, null: false
+    t.jsonb "payload", default: {}, null: false
+    t.string "signal_type", limit: 50, null: false
+    t.bigint "source_agent_run_id", null: false
+    t.bigint "target_agent_run_id"
+    t.index ["parent_workflow_id", "signal_type"], name: "idx_coordination_signals_workflow_type"
+    t.index ["parent_workflow_id"], name: "index_agent_coordination_signals_on_parent_workflow_id"
+    t.index ["source_agent_run_id"], name: "index_agent_coordination_signals_on_source_agent_run_id"
+    t.index ["target_agent_run_id", "signal_type"], name: "idx_coordination_signals_target_type"
+    t.index ["target_agent_run_id"], name: "index_agent_coordination_signals_on_target_agent_run_id"
+  end
+
   create_table "agent_run_anomalies", force: :cascade do |t|
     t.bigint "agent_run_id", null: false
     t.string "anomaly_type", limit: 50, null: false
@@ -893,6 +907,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.jsonb "pr_action_labels", default: [], null: false
     t.boolean "pr_aggregation_enabled", default: false, null: false
     t.jsonb "priority_labels", default: {"P1" => "P1", "P2" => "P2", "P3" => "P3"}, null: false
+    t.jsonb "quality_gate_settings", default: {}, null: false
     t.jsonb "quality_pause_metadata", default: {}, null: false
     t.datetime "quality_paused_at"
     t.string "repo", null: false
@@ -1275,6 +1290,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
   add_foreign_key "ab_tests", "prompts", on_delete: :cascade
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
+  add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"
+  add_foreign_key "agent_coordination_signals", "agent_runs", column: "target_agent_run_id"
   add_foreign_key "agent_run_anomalies", "agent_runs"
   add_foreign_key "agent_run_anomalies", "projects"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
