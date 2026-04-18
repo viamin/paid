@@ -9,6 +9,7 @@ RSpec.describe Account do
     it { is_expected.to have_many(:members).through(:account_memberships).source(:user) }
     it { is_expected.to have_many(:projects).dependent(:destroy) }
     it { is_expected.to have_many(:github_tokens).dependent(:destroy) }
+    it { is_expected.to have_one(:tenant_setting).dependent(:destroy) }
   end
 
   describe "validations" do
@@ -63,6 +64,88 @@ RSpec.describe Account do
       account = described_class.new(name: "My Company")
       account.valid?
       expect(account.slug).to eq("my-company-2")
+    end
+  end
+
+  describe "status" do
+    it "defaults to active" do
+      expect(create(:account)).to be_active
+    end
+
+    it "defines the expected enum values" do
+      expect(described_class.statuses).to eq("active" => 0, "suspended" => 1, "deactivated" => 2)
+    end
+  end
+
+  describe "#suspend!" do
+    it "transitions active account to suspended" do
+      account = create(:account)
+      freeze_time do
+        account.suspend!
+        expect(account).to be_suspended
+        expect(account.suspended_at).to eq(Time.current)
+      end
+    end
+
+    it "raises for already suspended account" do
+      account = create(:account, status: :suspended, suspended_at: Time.current)
+      expect { account.suspend! }.to raise_error(Account::InvalidTransitionError)
+    end
+
+    it "raises for deactivated account" do
+      account = create(:account, status: :deactivated, deactivated_at: Time.current)
+      expect { account.suspend! }.to raise_error(Account::InvalidTransitionError)
+    end
+  end
+
+  describe "#reactivate!" do
+    it "transitions suspended account to active" do
+      account = create(:account, status: :suspended, suspended_at: Time.current)
+      account.reactivate!
+      expect(account).to be_active
+      expect(account.suspended_at).to be_nil
+    end
+
+    it "transitions deactivated account to active" do
+      account = create(:account, status: :deactivated, deactivated_at: Time.current)
+      account.reactivate!
+      expect(account).to be_active
+      expect(account.deactivated_at).to be_nil
+    end
+
+    it "raises for already active account" do
+      account = create(:account)
+      expect { account.reactivate! }.to raise_error(Account::InvalidTransitionError)
+    end
+  end
+
+  describe "#deactivate!" do
+    it "transitions suspended account to deactivated" do
+      account = create(:account, status: :suspended, suspended_at: Time.current)
+      freeze_time do
+        account.deactivate!
+        expect(account).to be_deactivated
+        expect(account.deactivated_at).to eq(Time.current)
+      end
+    end
+
+    it "raises for active account" do
+      account = create(:account)
+      expect { account.deactivate! }.to raise_error(Account::InvalidTransitionError)
+    end
+  end
+
+  describe "#tenant_setting!" do
+    it "returns existing tenant_setting" do
+      account = create(:account)
+      setting = create(:tenant_setting, account: account)
+      expect(account.tenant_setting!).to eq(setting)
+    end
+
+    it "creates tenant_setting if none exists" do
+      account = create(:account)
+      expect { account.tenant_setting! }.to change(TenantSetting, :count).by(1)
+      expect(account.tenant_setting!.account).to eq(account)
     end
   end
 
