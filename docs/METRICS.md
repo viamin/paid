@@ -1,6 +1,6 @@
 # Prometheus Metrics Reference
 
-Paid exports worker and infrastructure metrics at `GET /api/metrics` in Prometheus text exposition format (`text/plain; version=0.0.4`). This endpoint requires no authentication, making it suitable for scraper-based monitoring systems (Prometheus, Datadog Agent, CloudWatch agent, etc.).
+Paid exports worker and infrastructure metrics at `GET /api/metrics` in Prometheus text exposition format (`text/plain; version=0.0.4`). Authentication is optional: when `METRICS_TOKEN` is set, scrapers must send `Authorization: Bearer <token>`; when unset, the endpoint is unauthenticated and should be network-isolated (VPC-internal only).
 
 ## Agent Run Metrics
 
