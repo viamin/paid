@@ -220,6 +220,11 @@ module Issues
     # yet handed off (missing paid-generated/paid-ready labels, or
     # still in draft/restarted phase).
     #
+    # Escalated PRs are excluded because they have already been surfaced
+    # to the owner for attention — keeping them in the count would let
+    # operationally stalled PRs (e.g. provider exhaustion, repeated
+    # timeouts) block auto-pick indefinitely even after escalation.
+    #
     # Uses a single COUNT query. The handed_off subquery only matches
     # in_progress rows, so failed PRs are never excluded by it.
     def prs_needing_attention_count
@@ -235,7 +240,9 @@ module Issues
         .where("labels @> ?::jsonb", [ @project.generated_label_name, PAID_READY_LABEL ].to_json)
         .where.not(pr_review_phase: %w[draft restarted])
 
-      base.where.not(id: handed_off).count
+      escalated = base.where(pr_review_phase: "escalated")
+
+      base.where.not(id: handed_off).where.not(id: escalated).count
     end
 
     # Returns true if the number of PRs needing attention meets or

@@ -366,6 +366,48 @@ RSpec.describe ProcessRunQueueJob do
         expect(project.agent_runs.queued.count).to eq(1)
       end
 
+      it "caps seeded auto-pick runs at the owner's max_concurrent_runs" do
+        project = create(:project, auto_pick_enabled: true)
+        user = project.created_by
+        user.settings.update!(max_concurrent_runs: 2)
+
+        10.times { create(:issue, project: project) }
+
+        described_class.new.perform
+
+        expect(project.agent_runs.where(auto_pick: true).count).to eq(2)
+      end
+
+      it "counts already-running auto-pick runs against the seed budget" do
+        project = create(:project, auto_pick_enabled: true)
+        user = project.created_by
+        user.settings.update!(max_concurrent_runs: 2)
+
+        create(:agent_run, :running, project: project, trigger_type: "automatic", auto_pick: true)
+        5.times { create(:issue, project: project) }
+
+        described_class.new.perform
+
+        expect(project.agent_runs.where(auto_pick: true).count).to eq(2)
+      end
+
+      it "shares the seed budget across projects owned by the same user" do
+        account = create(:account)
+        user = create(:user, account: account)
+        user.settings.update!(max_concurrent_runs: 2)
+
+        first_project = create_auto_pick_project(account: account, user: user)
+        second_project = create_auto_pick_project(account: account, user: user)
+
+        3.times { create(:issue, project: first_project) }
+        3.times { create(:issue, project: second_project) }
+
+        described_class.new.perform
+
+        total_seeded = AgentRun.where(project: [ first_project, second_project ], auto_pick: true).count
+        expect(total_seeded).to eq(2)
+      end
+
       it "still starts a manual run with one slot reserved from auto-pick" do
         project = create(:project)
         user = project.created_by

@@ -39,6 +39,9 @@
     "OVERMIND_SOCKET": "${containerWorkspaceFolder}/.overmind.sock",
     "PATH": "${containerEnv:PATH}:/home/vscode/.local/bin"
   },
+  // Ensure host paths that are bind-mounted as files (not directories) exist before
+  // Docker creates them as directories. See: https://github.com/moby/moby/issues/26702
+  "initializeCommand": "mkdir -p ~/.config/opencode && touch ~/.config/opencode/auth.json",
   "mounts": [
     // Git configuration
     "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached",
@@ -47,8 +50,8 @@
     "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
     // LLM CLI Authentication - GitHub CLI config
     "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind,consistency=cached",
-    // LLM CLI Authentication - opencode config
-    "source=${localEnv:HOME}/.config/opencode,target=/home/vscode/.config/opencode,type=bind,consistency=cached",
+    // LLM CLI Authentication - opencode auth only (config stays container-local for auto-approval)
+    "source=${localEnv:HOME}/.config/opencode/auth.json,target=/home/vscode/.config/opencode/auth.json,type=bind,consistency=cached",
     // GitHub CLI Extensions - Share extensions between host and container
     "source=${localEnv:HOME}/.local/share/gh,target=/home/vscode/.local/share/gh,type=bind,consistency=cached",
     // opencode Extensions - Share extensions between host and container
