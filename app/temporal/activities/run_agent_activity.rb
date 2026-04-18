@@ -6,34 +6,15 @@ module Activities
   class RunAgentActivity < BaseActivity
     activity_name "RunAgent"
 
-    # Maps agent_type/provider to the CLI command used inside the container.
-    # Each entry is an array of command parts; the prompt is appended as the last argument.
-    #
-    # NOTE: This hash defines command templates for all providers the system
-    # knows how to run. Currently Claude CLI, Codex CLI, Cursor agent CLI,
-    # Gemini CLI, Kilocode CLI, OpenCode CLI, GitHub Copilot CLI, and Aider CLI
-    # are installed in the agent Docker container (docker/agent/Dockerfile).
-    #
-    # Copilot remains hardcoded here for now instead of delegating to
-    # agent-harness because the installed Copilot CLI and the harness's
-    # built-in GitHub Copilot provider are not yet aligned on binary name and
-    # invocation shape. Paid installs `github-copilot-cli`, while
-    # agent-harness 0.5.6 expects `copilot -p ...`.
-    # Actual container execution is
-    # gated by ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS — providers
-    # not in that set are filtered out upstream (UserSetting, ProvidersController)
-    # before reaching provider_order.
-    AGENT_COMMANDS = {
-      "claude_code" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
-      "claude" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
-      "codex" => %w[codex exec --dangerously-bypass-approvals-and-sandbox --],
-      "gemini" => %w[gemini -y -p],
-      "kilocode" => %w[kilo run --auto],
-      "opencode" => %w[opencode run],
-      "copilot" => %w[github-copilot-cli --message],
-      "cursor" => %w[cursor-agent --message],
-      "aider" => %w[aider --yes --no-auto-commits --message]
-    }.freeze
+    # Returns true if the given provider key can be executed inside the
+    # container. Replaces the former AGENT_COMMANDS.key? check. Container
+    # executability is gated by ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS
+    # — providers not in that set are filtered out upstream (UserSetting,
+    # ProvidersController) before reaching provider_order.
+    def self.container_executable?(provider_key)
+      key = AGENT_TYPE_TO_PROVIDER.fetch(provider_key, provider_key)
+      ProviderSupport.container_executable_provider_key?(key)
+    end
 
     # Maps agent_type values to their canonical settings provider name.
     # Some agent types (e.g., "claude_code") share the same underlying provider as
@@ -92,6 +73,35 @@ module Activities
       ].freeze
     }.freeze
 
+    # Patterns for provider-level credit/quota exhaustion errors that may be
+    # emitted as agent "output" even when the CLI exits with a zero status
+    # (observed with OpenRouter-backed providers returning a billing error as
+    # the only stdout line). These must be specific enough to avoid matching
+    # ordinary agent prose that mentions credits/billing — they key on phrases
+    # that only appear in provider error responses.
+    INSUFFICIENT_CREDITS_PATTERNS = [
+      /requires? more credits/i,
+      /add more credits/i,
+      /insufficient credits/i,
+      /not enough credits/i,
+      /purchase (?:more )?credits/i,
+      /buy (?:more )?credits/i
+    ].freeze
+
+    # Patterns that indicate a fatal provider quota/billing error where the
+    # CLI is known to hang instead of exiting promptly. When any of these
+    # match streaming stderr, the container is stopped immediately rather
+    # than waiting for an idle or wall-clock timeout.
+    #
+    # These are intentionally a strict subset of RATE_LIMIT_PATTERNS —
+    # only patterns where the CLI is empirically known to hang after emitting
+    # the error. Generic rate-limit messages from CLIs that exit cleanly
+    # should NOT be added here.
+    PROVIDER_ABORT_PATTERNS = [
+      /free tier limit reached/i,
+      /please upgrade to a paid plan/i
+    ].freeze
+
     # Maximum number of log rows to inspect when reclassifying a timeout.
     # Caps memory and DB load on long-running, verbose agent attempts.
     TIMEOUT_RATE_LIMIT_LOG_LIMIT = 200
@@ -106,7 +116,7 @@ module Activities
     POST_RUN_BOOKKEEPING_ERROR_TYPE = "PostRunBookkeepingFailed"
 
     def self.provider_order(agent_type:, fallback_enabled:, fallback_providers:)
-      return [ agent_type ].select { |p| AGENT_COMMANDS.key?(p) } unless fallback_enabled
+      return [ agent_type ].select { |p| container_executable?(p) } unless fallback_enabled
 
       canonical = AGENT_TYPE_TO_PROVIDER.fetch(agent_type, agent_type)
       providers = [ agent_type ]
@@ -120,7 +130,7 @@ module Activities
         providers << fallback
       end
 
-      providers.select { |p| AGENT_COMMANDS.key?(p) }
+      providers.select { |p| container_executable?(p) }
     end
 
     def self.provider_attempt_count(agent_type:, fallback_enabled:, fallback_providers:)
@@ -390,7 +400,7 @@ module Activities
     class ProviderExecutionError < StandardError; end
     class ProviderTimeoutError < StandardError; end
     class InfiniteLoopError < StandardError; end
-    CommandContext = Struct.new(:provider_candidate, :provider, :command_prefix, :user, keyword_init: true)
+    CommandContext = Struct.new(:provider_candidate, :provider, :user, keyword_init: true)
 
     private
 
@@ -442,7 +452,7 @@ module Activities
               user: user_settings.user
             )
           else
-            [ agent_run.agent_type ].select { |provider| self.class::AGENT_COMMANDS.key?(provider) }
+            [ agent_run.agent_type ].select { |provider| self.class.container_executable?(provider) }
           end
       end
 
@@ -532,8 +542,7 @@ module Activities
       container_service = reconnect_container(agent_run)
       provider = provider_command_key(provider_candidate, agent_run, user_settings.user)
 
-      command_prefix = AGENT_COMMANDS[provider]
-      unless command_prefix
+      unless self.class.container_executable?(provider)
         raise ProviderExecutionError, "Unsupported provider: #{provider}"
       end
 
@@ -550,7 +559,6 @@ module Activities
       command_context = CommandContext.new(
         provider_candidate: provider_candidate,
         provider: provider,
-        command_prefix: command_prefix,
         user: user_settings.user
       )
       command = build_command(command_context, prompt)
@@ -600,13 +608,25 @@ module Activities
           timeout: effective_timeout,
           idle_timeout: effective_idle_timeout,
           env: command_env,
-          preparation: command_preparation
+          preparation: command_preparation,
+          abort_patterns: PROVIDER_ABORT_PATTERNS
         )
       end
       stdout = normalize_output_text(result[:stdout])
       stderr = normalize_output_text(result[:stderr])
 
       if result.success?
+        # Detect provider credit/quota errors that slip through as successful
+        # exits. Some providers (e.g. OpenRouter) return a billing error as
+        # the only stdout line with exit code 0. The agent never actually ran,
+        # so treat this as a provider failure to trigger fallback/retry.
+        combined_output = [ stdout, stderr ].compact.join("\n")
+        sanitized_output = strip_prompt_echo(combined_output, prompt)
+        if insufficient_credits_error?(sanitized_output)
+          raise ProviderExecutionError,
+            "Provider credit/quota error from #{provider}: #{sanitized_output.truncate(500)}"
+        end
+
         output_present = stdout.present? || stderr.present?
         agent_run.log!("system", "Agent execution succeeded with #{provider}")
         return {
@@ -647,6 +667,16 @@ module Activities
       else "wall_clock"
       end
       raise ProviderTimeoutError, "#{timeout_type}_timeout: #{e.message}"
+    rescue Containers::Provision::OutputAbortError => e
+      # The container was stopped early because stderr matched a fatal
+      # provider quota pattern (e.g. KiloCode "Free tier limit reached").
+      # Classify as rate-limited so dashboards and retry logic see the
+      # real root cause instead of a generic timeout.
+      reset_at = parse_rate_limit_reset(e.matched_output.to_s)
+      raise ProviderRateLimitError.new(
+        "Rate limited by #{provider}: #{e.matched_output.to_s.truncate(200)}",
+        reset_at: reset_at
+      )
     end
 
     # Checks if the agent run is stuck in an infinite loop by analyzing
@@ -687,6 +717,16 @@ module Activities
       return false if output.blank?
 
       AUTH_EXPIRED_PATTERNS.fetch(provider.to_s, []).any? { |pattern| output.match?(pattern) }
+    end
+
+    # Detects provider-level credit/quota exhaustion errors surfaced as
+    # agent output. Used in the successful-exit-code path to catch cases
+    # where a provider (e.g. OpenRouter) returns a billing error as the
+    # only stdout content with exit code 0.
+    def insufficient_credits_error?(output)
+      return false if output.blank?
+
+      INSUFFICIENT_CREDITS_PATTERNS.any? { |pattern| output.match?(pattern) }
     end
 
     def strip_prompt_echo(output, prompt)
@@ -943,13 +983,49 @@ module Activities
       if provider_entry&.opencode_agent_harness_runtime?
         harness_runtime_command(provider_entry, prompt)
       elsif provider_entry&.requires_direct_outbound?
-        provider_entry.direct_outbound_exec_command(command_prefix: command_context.command_prefix, prompt: prompt)
+        plan = harness_execution_plan_for(command_context.provider, prompt, provider_entry: provider_entry)
+        provider_entry.direct_outbound_exec_command(command_prefix: plan.command[0..-2], prompt: prompt)
       elsif provider_entry&.api_key?
-        api_key_auth_command(provider_entry, command_context.command_prefix, prompt)
+        plan = harness_execution_plan_for(command_context.provider, prompt)
+        api_key_auth_command(provider_entry, plan.command[0..-2], prompt)
       elsif ProviderSupport.subscription_auth_unset_vars_for(command_context.provider).any?
-        subscription_auth_command(command_context.provider, command_context.command_prefix, prompt)
+        plan = harness_execution_plan_for(command_context.provider, prompt)
+        subscription_auth_command(command_context.provider, plan.command[0..-2], prompt)
       else
-        command_context.command_prefix + [ prompt ]
+        plan = harness_execution_plan_for(command_context.provider, prompt)
+        plan.command
+      end
+    end
+
+    # Builds a harness execution plan for a provider identified by its
+    # app-level key. Delegates command construction to agent-harness so
+    # provider CLI flag semantics are owned upstream.
+    #
+    # The plan is cached per (provider_key, prompt, harness_runtime?)
+    # tuple so that multiple branches within build_command can share
+    # the same capture without re-running the harness provider. The
+    # boolean discriminator ensures calls with and without a
+    # provider_entry that has an agent_harness_provider_runtime are
+    # never conflated.
+    def harness_execution_plan_for(provider_key, prompt, provider_entry: nil)
+      @harness_plan_cache ||= {}
+      cache_key = [ provider_key, prompt, provider_entry&.agent_harness_provider_runtime.present? ]
+      return @harness_plan_cache[cache_key] if @harness_plan_cache.key?(cache_key)
+
+      options = { dangerous_mode: true }
+
+      @harness_plan_cache[cache_key] = if provider_entry&.agent_harness_provider_runtime
+        Providers::HarnessExecutionPlan.call(
+          provider: provider_entry,
+          prompt: prompt,
+          options: options
+        )
+      else
+        Providers::HarnessExecutionPlan.for_provider_key(
+          provider_key: ProviderSupport.provider_key_for_agent_type(provider_key),
+          prompt: prompt,
+          options: options
+        )
       end
     end
 
@@ -1021,7 +1097,7 @@ module Activities
       end
 
       providers.select do |provider_candidate|
-        self.class::AGENT_COMMANDS.key?(provider_command_key(provider_candidate, nil, user))
+        self.class.container_executable?(provider_command_key(provider_candidate, nil, user))
       end
     end
 
