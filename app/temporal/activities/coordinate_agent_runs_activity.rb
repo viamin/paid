@@ -87,7 +87,11 @@ module Activities
           result_commit_sha: agent_run.result_commit_sha
         )
       )
-      signals_sent << "dependency_completed" if result.success?
+      if result.success?
+        signals_sent << "dependency_completed"
+      else
+        return { success: false, error: result.error, signals_sent: signals_sent }
+      end
 
       if context.any?
         result = Coordination::SendSignal.call(

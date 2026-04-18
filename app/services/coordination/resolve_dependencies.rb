@@ -29,8 +29,14 @@ module Coordination
         return Result.new(ready: false, failed: false, error: "agent run has no parent_workflow_id")
       end
 
-      failed = AgentCoordinationSignal.any_dependency_failed?(agent_run, required_run_ids: required_run_ids)
-      return Result.new(ready: false, failed: true, failed_run_ids: failed_source_ids) if failed
+      failed_ids = AgentCoordinationSignal
+        .for_workflow(agent_run.parent_workflow_id)
+        .by_type("dependency_failed")
+        .where(source_agent_run_id: required_run_ids)
+        .where("target_agent_run_id = ? OR target_agent_run_id IS NULL", agent_run.id)
+        .distinct
+        .pluck(:source_agent_run_id)
+      return Result.new(ready: false, failed: true, failed_run_ids: failed_ids) if failed_ids.any?
 
       met = AgentCoordinationSignal.dependencies_met?(agent_run, required_run_ids: required_run_ids)
       Result.new(ready: met, failed: false)
@@ -39,16 +45,6 @@ module Coordination
     private
 
     attr_reader :agent_run, :required_run_ids
-
-    def failed_source_ids
-      AgentCoordinationSignal
-        .for_workflow(agent_run.parent_workflow_id)
-        .by_type("dependency_failed")
-        .where(source_agent_run_id: required_run_ids)
-        .where("target_agent_run_id = ? OR target_agent_run_id IS NULL", agent_run.id)
-        .distinct
-        .pluck(:source_agent_run_id)
-    end
 
     class Result
       attr_reader :error, :failed_run_ids
