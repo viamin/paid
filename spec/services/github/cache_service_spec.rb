@@ -127,6 +127,17 @@ RSpec.describe Github::CacheService do
 
       expect(github_client).to have_received(:issues).twice
     end
+
+    it "caches separately for different options" do
+      allow(github_client).to receive(:issues)
+        .with(repo, labels: nil, state: "open", per_page: 50)
+        .and_return([ issues_data.first ])
+
+      cache_service.issues(repo)
+      cache_service.issues(repo, per_page: 50)
+
+      expect(github_client).to have_received(:issues).twice
+    end
   end
 
   describe "#pull_requests" do

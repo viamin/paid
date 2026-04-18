@@ -34,44 +34,44 @@ module Github
 
     # Fetches repository metadata with caching.
     def repository(repo)
-      cached(:repository, repo, expires_in: REPO_TTL) do
+      cached(:repository, repo: repo, expires_in: REPO_TTL) do
         client.repository(repo)
       end
     end
 
     # Fetches a single issue with caching.
     def issue(repo, number)
-      cached(:issue, repo, number, expires_in: ISSUE_TTL) do
+      cached(:issue, number, repo: repo, expires_in: ISSUE_TTL) do
         client.issue(repo, number)
       end
     end
 
     # Fetches a pull request with caching.
     def pull_request(repo, number)
-      cached(:pull_request, repo, number, expires_in: PULL_REQUEST_TTL) do
+      cached(:pull_request, number, repo: repo, expires_in: PULL_REQUEST_TTL) do
         client.pull_request(repo, number)
       end
     end
 
     # Lists issues for a repository with caching.
     def issues(repo, labels: nil, state: "open", **options)
-      key_parts = [ :issues, repo, state, Array(labels).sort.join(",") ]
-      cached(*key_parts, expires_in: ISSUES_LIST_TTL) do
+      extra = options.sort.map { |k, v| "#{k}=#{v}" }.join("&")
+      cached(:issues, state, Array(labels).sort.join(","), extra, repo: repo, expires_in: ISSUES_LIST_TTL) do
         client.issues(repo, labels: labels, state: state, **options)
       end
     end
 
     # Lists pull requests for a repository with caching.
     def pull_requests(repo, **options)
-      key_parts = [ :pull_requests, repo, options.sort.map { |k, v| "#{k}=#{v}" }.join("&") ]
-      cached(*key_parts, expires_in: PULL_REQUESTS_LIST_TTL) do
+      extra = options.sort.map { |k, v| "#{k}=#{v}" }.join("&")
+      cached(:pull_requests, extra, repo: repo, expires_in: PULL_REQUESTS_LIST_TTL) do
         client.pull_requests(repo, **options)
       end
     end
 
     # Lists labels for a repository with caching.
     def labels(repo)
-      cached(:labels, repo, expires_in: LABELS_TTL) do
+      cached(:labels, repo: repo, expires_in: LABELS_TTL) do
         client.labels(repo)
       end
     end
@@ -117,8 +117,8 @@ module Github
 
     private
 
-    def cached(*key_parts, expires_in:)
-      key = cache_key(*key_parts)
+    def cached(*key_parts, repo:, expires_in:)
+      key = cache_key(*key_parts, repo: repo)
       hit = true
 
       result = Rails.cache.fetch(key, expires_in: expires_in) do
@@ -135,14 +135,9 @@ module Github
       result
     end
 
-    def cache_key(*parts)
-      repo_part = parts.find { |p| p.is_a?(String) && p.include?("/") }
-      version = repo_part ? repo_version(repo_part) : 0
-
-      normalized = parts.map do |p|
-        p.is_a?(String) && p.include?("/") ? normalize_repo(p) : p
-      end
-      "#{CACHE_NAMESPACE}/v#{version}/#{normalized.join("/")}"
+    def cache_key(*parts, repo:)
+      version = repo_version(repo)
+      "#{CACHE_NAMESPACE}/v#{version}/#{normalize_repo(repo)}/#{parts.join("/")}"
     end
 
     def normalize_repo(repo)
