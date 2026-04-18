@@ -603,7 +603,7 @@ class GithubClient
       elsif errors.any?
         failed << { id: thread_id, error: errors.map { |e| e["message"] }.join("; ") }
       else
-        resolved << thread_id
+        failed << { id: thread_id, error: "Thread not confirmed as resolved" }
       end
     end
 

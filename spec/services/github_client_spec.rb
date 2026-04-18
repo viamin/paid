@@ -1272,6 +1272,31 @@ RSpec.describe GithubClient do
       end
     end
 
+    context "when thread resolution is not confirmed" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                resolve_0: { thread: { id: "thread_1", isResolved: true } },
+                resolve_1: { thread: { id: "thread_2", isResolved: false } }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "reports unconfirmed threads as failed" do
+        result = client.resolve_review_threads_batch(%w[thread_1 thread_2])
+
+        expect(result[:resolved]).to eq(%w[thread_1])
+        expect(result[:failed].size).to eq(1)
+        expect(result[:failed].first[:id]).to eq("thread_2")
+        expect(result[:failed].first[:error]).to eq("Thread not confirmed as resolved")
+      end
+    end
+
     context "when called with empty list" do
       it "returns empty results without making API calls" do
         result = client.resolve_review_threads_batch([])
