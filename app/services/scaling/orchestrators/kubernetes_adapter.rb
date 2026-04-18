@@ -86,8 +86,8 @@ module Scaling
       end
 
       def healthy?
-        api_get("/api/v1/namespaces/#{namespace}")
-        true
+        response = api_get("/api/v1/namespaces/#{namespace}")
+        response.success?
       rescue StandardError
         false
       end
@@ -135,11 +135,12 @@ module Scaling
       end
 
       def api_patch(path, body)
-        connection.patch(path, body.to_json) do |req|
+        response = connection.patch(path, body.to_json) do |req|
           req.headers["Authorization"] = "Bearer #{bearer_token}" if bearer_token
           req.headers["Content-Type"] = "application/strategic-merge-patch+json"
           req.headers["Accept"] = "application/json"
         end
+        parse_response(response)
       rescue Faraday::Error => e
         raise ApiError, e.message
       end

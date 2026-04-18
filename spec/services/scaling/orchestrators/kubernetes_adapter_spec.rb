@@ -73,6 +73,18 @@ RSpec.describe Scaling::Orchestrators::KubernetesAdapter do
       expect(result.desired_replicas).to eq(5)
       expect(result.accepted).to be true
     end
+
+    it "raises ApiError when the patch request fails" do
+      stubs.get("/apis/apps/v1/namespaces/test/deployments/agent-worker") do
+        [ 200, { "Content-Type" => "application/json" }, deployment_response.to_json ]
+      end
+      stubs.patch("/apis/apps/v1/namespaces/test/deployments/agent-worker") do
+        [ 422, { "Content-Type" => "application/json" }, { "message" => "invalid" }.to_json ]
+      end
+
+      expect { adapter.scale(service: "agent-worker", desired_replicas: 5) }
+        .to raise_error(described_class::ApiError, /422/)
+    end
   end
 
   describe "#set_resource_limits" do
@@ -101,6 +113,14 @@ RSpec.describe Scaling::Orchestrators::KubernetesAdapter do
       end
 
       expect(adapter.healthy?).to be true
+    end
+
+    it "returns false when the API returns an error status" do
+      stubs.get("/api/v1/namespaces/test") do
+        [ 403, { "Content-Type" => "application/json" }, { "message" => "forbidden" }.to_json ]
+      end
+
+      expect(adapter.healthy?).to be false
     end
 
     it "returns false when the API is unreachable" do
