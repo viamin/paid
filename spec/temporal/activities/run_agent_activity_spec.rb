@@ -1327,7 +1327,7 @@ RSpec.describe Activities::RunAgentActivity do
     end
 
     context "when goal is create_pr" do
-      it "uses the default agent timeout without idle_timeout" do
+      it "uses the default agent timeout with create_pr idle_timeout" do
         project.update!(max_execution_seconds: 86_400)
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
@@ -1336,7 +1336,7 @@ RSpec.describe Activities::RunAgentActivity do
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
-            idle_timeout: nil
+            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT
           )
         ).and_return(exec_success)
 
