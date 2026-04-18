@@ -83,6 +83,44 @@ RSpec.describe Containers::HeartbeatSetup do
         expect(hook["type"]).to eq("command")
         expect(hook["command"]).to include("touch /workspace/.paid-heartbeat")
       end
+
+      context "with existing project settings" do
+        let(:worktree_path) { Dir.mktmpdir("heartbeat-test") }
+
+        after { FileUtils.rm_rf(worktree_path) }
+
+        it "merges heartbeat hook into existing project settings" do
+          existing_settings = {
+            "permissions" => { "allow" => [ "Read", "Write" ] },
+            "hooks" => {
+              "PreToolUse" => [ { "matcher" => "Bash", "hooks" => [ { "type" => "command", "command" => "echo pre" } ] } ]
+            }
+          }
+
+          settings_dir = File.join(worktree_path, ".claude")
+          FileUtils.mkdir_p(settings_dir)
+          File.write(File.join(settings_dir, "settings.json"), JSON.generate(existing_settings))
+
+          setup = described_class.new(provider: "claude", worktree_path: worktree_path)
+          preparation = setup.preparation
+          settings = JSON.parse(preparation.file_writes.first.content)
+
+          expect(settings["permissions"]).to eq("allow" => [ "Read", "Write" ])
+          expect(settings.dig("hooks", "PreToolUse")).to eq(existing_settings["hooks"]["PreToolUse"])
+          expect(settings.dig("hooks", "PostToolUse", 0, "hooks", 0, "command")).to include("touch /workspace/.paid-heartbeat")
+        end
+
+        it "handles malformed existing settings gracefully" do
+          settings_dir = File.join(worktree_path, ".claude")
+          FileUtils.mkdir_p(settings_dir)
+          File.write(File.join(settings_dir, "settings.json"), "not valid json")
+
+          setup = described_class.new(provider: "claude", worktree_path: worktree_path)
+          preparation = setup.preparation
+          settings = JSON.parse(preparation.file_writes.first.content)
+          expect(settings.dig("hooks", "PostToolUse")).to be_present
+        end
+      end
     end
 
     context "with claude_code provider" do

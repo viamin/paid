@@ -81,20 +81,18 @@ module Containers
     end
 
     def claude_file_writes
-      settings = {
-        "hooks" => {
-          "PostToolUse" => [
-            {
-              "matcher" => "",
-              "hooks" => [
-                {
-                  "type" => "command",
-                  "command" => "touch #{CONTAINER_HEARTBEAT_PATH}"
-                }
-              ]
-            }
-          ]
-        }
+      settings = existing_claude_settings
+      hooks = settings["hooks"] ||= {}
+      post_tool = hooks["PostToolUse"] ||= []
+
+      post_tool << {
+        "matcher" => "",
+        "hooks" => [
+          {
+            "type" => "command",
+            "command" => "touch #{CONTAINER_HEARTBEAT_PATH}"
+          }
+        ]
       }
 
       [
@@ -103,6 +101,17 @@ module Containers
           content: JSON.pretty_generate(settings)
         )
       ]
+    end
+
+    def existing_claude_settings
+      return {} unless worktree_path.present?
+
+      host_settings_path = File.join(worktree_path, ".claude", "settings.json")
+      return {} unless File.exist?(host_settings_path)
+
+      JSON.parse(File.read(host_settings_path))
+    rescue JSON::ParserError
+      {}
     end
 
     def codex_file_writes
