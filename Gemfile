@@ -46,7 +46,7 @@ gem "docker-api"
 gem "qdrant-ruby"
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
-gem "agent-harness", "~> 0.7.2"
+gem "agent-harness", "~> 0.7.4"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
 gem "ruby-maat"
@@ -106,7 +106,7 @@ group :development do
   gem "web-console"
 end
 
-gem "good_job", "~> 4.15"
+gem "good_job", "~> 4.18"
 
 # Pagination [https://github.com/ddnexus/pagy]
 gem "pagy", "~> 43.5"
