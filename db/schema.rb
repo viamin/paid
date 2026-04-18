@@ -767,6 +767,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
   end
 
+  create_table "pr_templates", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.text "body", null: false
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.boolean "enabled", default: true, null: false
+    t.string "name", limit: 255, null: false
+    t.integer "position", default: 0, null: false
+    t.string "pr_type", limit: 50, default: "default", null: false
+    t.bigint "project_id"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index ["account_id", "name"], name: "idx_pr_templates_account_name_unique", unique: true, where: "((project_id IS NULL) AND (user_id IS NULL))"
+    t.index ["account_id", "position"], name: "idx_pr_templates_account_position", where: "((project_id IS NULL) AND (user_id IS NULL))"
+    t.index ["account_id"], name: "index_pr_templates_on_account_id"
+    t.index ["project_id", "name"], name: "idx_pr_templates_project_name_unique", unique: true, where: "(project_id IS NOT NULL)"
+    t.index ["project_id", "position"], name: "idx_pr_templates_project_position", where: "(project_id IS NOT NULL)"
+    t.index ["project_id"], name: "index_pr_templates_on_project_id"
+    t.index ["user_id", "name"], name: "idx_pr_templates_user_name_unique", unique: true, where: "((user_id IS NOT NULL) AND (project_id IS NULL))"
+    t.index ["user_id", "position"], name: "idx_pr_templates_user_position", where: "(user_id IS NOT NULL)"
+    t.index ["user_id"], name: "index_pr_templates_on_user_id"
+    t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "pr_templates_scope_check"
+  end
+
   create_table "pre_commit_requirements", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "check_type", limit: 50, default: "shell_command", null: false
@@ -869,6 +893,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
+    t.jsonb "fitness_settings", default: {}, null: false
     t.jsonb "fitness_weights", default: {}, null: false
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
@@ -894,6 +919,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.jsonb "pr_action_labels", default: [], null: false
     t.boolean "pr_aggregation_enabled", default: false, null: false
     t.jsonb "priority_labels", default: {"P1" => "P1", "P2" => "P2", "P3" => "P3"}, null: false
+    t.jsonb "quality_pause_metadata", default: {}, null: false
+    t.datetime "quality_paused_at"
     t.string "repo", null: false
     t.jsonb "review_settings", default: {}, null: false
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false
@@ -1015,6 +1042,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.check_constraint "weight >= 1", name: "providers_weight_positive"
   end
 
+  create_table "quality_gate_events", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "event_type", limit: 20, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.bigint "project_id", null: false
+    t.bigint "quality_gate_threshold_id", null: false
+    t.bigint "quality_metric_id", null: false
+    t.decimal "score_value", precision: 5, scale: 4, null: false
+    t.decimal "threshold_value", precision: 5, scale: 4, null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "event_type", "created_at"], name: "idx_quality_gate_events_project_type_time"
+    t.index ["project_id"], name: "index_quality_gate_events_on_project_id"
+    t.index ["quality_gate_threshold_id"], name: "index_quality_gate_events_on_quality_gate_threshold_id"
+    t.index ["quality_metric_id"], name: "index_quality_gate_events_on_quality_metric_id"
+  end
+
+  create_table "quality_gate_thresholds", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: true, null: false
+    t.decimal "max_threshold", precision: 5, scale: 4
+    t.string "metric_key", limit: 50, null: false
+    t.decimal "min_threshold", precision: 5, scale: 4
+    t.bigint "project_id", null: false
+    t.string "severity", limit: 20, default: "warning", null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "metric_key"], name: "index_quality_gate_thresholds_on_project_id_and_metric_key", unique: true
+    t.index ["project_id"], name: "index_quality_gate_thresholds_on_project_id"
+  end
+
   create_table "quality_metrics", force: :cascade do |t|
     t.bigint "agent_run_id", null: false
     t.decimal "composite_score", precision: 5, scale: 4
@@ -1032,6 +1088,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.index ["metric_type"], name: "index_quality_metrics_on_metric_type"
     t.index ["prompt_version_id", "created_at"], name: "index_quality_metrics_on_prompt_version_and_created_at"
     t.index ["prompt_version_id"], name: "index_quality_metrics_on_prompt_version_id"
+  end
+
+  create_table "quality_pause_events", force: :cascade do |t|
+    t.bigint "agent_run_id"
+    t.decimal "composite_score", precision: 5, scale: 4
+    t.datetime "created_at", null: false
+    t.string "event_type", limit: 20, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.bigint "project_id", null: false
+    t.decimal "threshold", precision: 5, scale: 4
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "index_quality_pause_events_on_agent_run_id"
+    t.index ["project_id", "created_at"], name: "index_quality_pause_events_on_project_id_and_created_at"
+    t.index ["project_id"], name: "index_quality_pause_events_on_project_id"
   end
 
   create_table "service_container_metrics", force: :cascade do |t|
@@ -1129,6 +1199,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.bigint "container_memory_bytes", default: 4294967296, null: false
     t.integer "container_timeout_seconds", default: 3600, null: false
+    t.integer "create_pr_idle_timeout_seconds", default: 300, null: false
     t.datetime "created_at", null: false
     t.string "default_agent_provider", default: "claude", null: false
     t.jsonb "default_agent_providers_by_goal", default: {}, null: false
@@ -1171,7 +1242,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.index ["user_id"], name: "index_user_settings_on_user_id", unique: true
     t.check_constraint "max_issues_per_page >= 5 AND max_issues_per_page <= 200", name: "chk_max_issues_per_page_bounds"
     t.check_constraint "max_prs_per_page >= 5 AND max_prs_per_page <= 200", name: "chk_max_prs_per_page_bounds"
-    t.check_constraint "provider_selection_mode::text = ANY (ARRAY['single'::character varying::text, 'round_robin'::character varying::text, 'random'::character varying::text])", name: "chk_provider_selection_mode"
+    t.check_constraint "provider_selection_mode::text = ANY (ARRAY['single'::character varying, 'round_robin'::character varying, 'random'::character varying]::text[])", name: "chk_provider_selection_mode"
   end
 
   create_table "users", force: :cascade do |t|
@@ -1240,4 +1311,90 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
+  add_foreign_key "agent_runs", "projects", on_delete: :cascade
+  add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
+  add_foreign_key "agent_runs", "providers", on_delete: :nullify
+  add_foreign_key "collector_runs", "project_versions"
+  add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
+  add_foreign_key "context_intake_responses", "context_intake_responses", column: "parent_response_id"
+  add_foreign_key "context_intake_responses", "context_intake_sessions"
+  add_foreign_key "context_intake_sessions", "projects"
+  add_foreign_key "context_intake_sessions", "users", column: "started_by_id"
+  add_foreign_key "cost_budgets", "projects", on_delete: :cascade
+  add_foreign_key "decision_record_links", "decision_records", on_delete: :cascade
+  add_foreign_key "decision_records", "agent_runs", on_delete: :nullify
+  add_foreign_key "decision_records", "decision_records", column: "superseded_by_id", on_delete: :nullify
+  add_foreign_key "decision_records", "issues", on_delete: :nullify
+  add_foreign_key "decision_records", "projects", on_delete: :cascade
+  add_foreign_key "github_tokens", "accounts"
+  add_foreign_key "github_tokens", "users", column: "created_by_id"
+  add_foreign_key "integration_credentials", "accounts"
+  add_foreign_key "integration_credentials", "users", column: "created_by_id"
+  add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade
+  add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
+  add_foreign_key "issues", "issues", column: "parent_issue_id"
+  add_foreign_key "issues", "projects"
+  add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
+  add_foreign_key "knowledge_artifacts", "projects"
+  add_foreign_key "knowledge_audit_events", "projects", on_delete: :cascade
+  add_foreign_key "knowledge_chunks", "knowledge_artifacts", on_delete: :cascade
+  add_foreign_key "knowledge_chunks", "projects"
+  add_foreign_key "knowledge_links", "knowledge_chunks", column: "source_chunk_id", on_delete: :cascade
+  add_foreign_key "knowledge_links", "knowledge_chunks", column: "target_chunk_id", on_delete: :cascade
+  add_foreign_key "knowledge_runs", "projects", on_delete: :cascade
+  add_foreign_key "linear_tokens", "accounts"
+  add_foreign_key "linear_tokens", "users", column: "created_by_id"
+  add_foreign_key "mcp_server_definitions", "accounts"
+  add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
+  add_foreign_key "model_selections", "llm_models"
+  add_foreign_key "notifications", "accounts"
+  add_foreign_key "notifications", "users", on_delete: :nullify
+  add_foreign_key "onboarding_steps", "accounts"
+  add_foreign_key "pr_templates", "accounts", on_delete: :cascade
+  add_foreign_key "pr_templates", "projects", on_delete: :cascade
+  add_foreign_key "pr_templates", "users", on_delete: :cascade
+  add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
+  add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
+  add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
+  add_foreign_key "project_baselines", "projects"
+  add_foreign_key "project_mcp_servers", "mcp_server_definitions"
+  add_foreign_key "project_mcp_servers", "projects"
+  add_foreign_key "project_memberships", "projects"
+  add_foreign_key "project_memberships", "users"
+  add_foreign_key "project_service_containers", "projects", on_delete: :cascade
+  add_foreign_key "project_service_containers", "service_containers", on_delete: :cascade
+  add_foreign_key "project_versions", "projects"
+  add_foreign_key "projects", "accounts"
+  add_foreign_key "projects", "github_tokens"
+  add_foreign_key "projects", "users", column: "created_by_id"
+  add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify
+  add_foreign_key "prompt_versions", "prompts", on_delete: :cascade
+  add_foreign_key "prompt_versions", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "prompt_versions", "users", column: "reviewed_by_user_id", on_delete: :nullify
+  add_foreign_key "prompts", "accounts", on_delete: :cascade
+  add_foreign_key "prompts", "projects", on_delete: :cascade
+  add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
+  add_foreign_key "provider_api_keys", "users", on_delete: :cascade
+  add_foreign_key "provider_states", "users", on_delete: :cascade
+  add_foreign_key "providers", "provider_api_keys", on_delete: :restrict
+  add_foreign_key "providers", "users", on_delete: :cascade
+  add_foreign_key "quality_gate_events", "projects"
+  add_foreign_key "quality_gate_events", "quality_gate_thresholds"
+  add_foreign_key "quality_gate_events", "quality_metrics"
+  add_foreign_key "quality_gate_thresholds", "projects"
+  add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
+  add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
+  add_foreign_key "quality_pause_events", "agent_runs"
+  add_foreign_key "quality_pause_events", "projects"
+  add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
+  add_foreign_key "style_guides", "accounts", on_delete: :cascade
+  add_foreign_key "style_guides", "projects", on_delete: :cascade
+  add_foreign_key "tenant_settings", "accounts"
+  add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
+  add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
+  add_foreign_key "user_settings", "users"
+  add_foreign_key "users", "accounts"
+  add_foreign_key "workflow_states", "projects"
+  add_foreign_key "worktrees", "agent_runs", on_delete: :nullify
+  add_foreign_key "worktrees", "projects", on_delete: :cascade
 end
