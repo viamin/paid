@@ -131,6 +131,11 @@ Rails.application.configure do
       class: "OrphanBranchReaperJob",
       description: "Delete remote branches orphaned by retried/timeout/failed agent runs"
     },
+    prompt_evolution: {
+      cron: "0 3 * * 1",
+      class: "PromptEvolutionJob",
+      description: "Trigger prompt evolution workflows for eligible prompts (weekly)"
+    },
     delayed_human_feedback: {
       # Runs hourly, but the job itself skips runs polled within the last 12 hours
       # (SWEEP_INTERVAL). Hourly ticks prevent the scenario where a poll just
