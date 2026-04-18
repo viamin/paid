@@ -15,6 +15,7 @@ module Api
     def create
       event = request.headers["X-GitHub-Event"]
 
+      # Must come before event handlers; also initializes @payload via #payload.
       invalidate_cache(event)
 
       case event
@@ -145,7 +146,7 @@ module Api
       else
         AutoReleaseEvaluationJob.perform_later(@project.id)
       end
-    rescue StandardError => e
+    rescue => e
       Rails.logger.warn(
         message: "auto_release.enqueue_failed",
         project_id: @project.id,
