@@ -160,7 +160,21 @@ RUN if [ -z "${CLAUDE_INSTALL_COMMAND}" ]; then echo "ERROR: CLAUDE_INSTALL_COMM
 # See: https://www.elastic.co/security-labs/axios-one-rat-to-rule-them-all
 RUN npm install -g --ignore-scripts @openai/codex@0.116.0
 
-RUN npm install -g --ignore-scripts @google/gemini-cli@0.35.3
+# Gemini CLI version is owned by agent-harness; the install command is extracted
+# at build time by scripts/build-agent-image.sh and passed as a build arg.
+# Supply-chain hardening: enforce --ignore-scripts regardless of what the
+# contract returns, matching the policy applied to every other npm install above.
+ARG GEMINI_CLI_INSTALL_COMMAND
+RUN if [ -z "${GEMINI_CLI_INSTALL_COMMAND}" ]; then \
+        echo "ERROR: GEMINI_CLI_INSTALL_COMMAND not set; aborting build" >&2; \
+        exit 1; \
+    fi \
+    && case "${GEMINI_CLI_INSTALL_COMMAND}" in \
+        *--ignore-scripts*) ;; \
+        *) echo "ERROR: GEMINI_CLI_INSTALL_COMMAND must include --ignore-scripts for supply-chain safety" >&2; exit 1 ;; \
+    esac \
+    && echo "Installing Gemini CLI via agent-harness contract: ${GEMINI_CLI_INSTALL_COMMAND}" \
+    && eval "${GEMINI_CLI_INSTALL_COMMAND}"
 
 RUN npm install -g --ignore-scripts @kilocode/cli@7.1.3
 
@@ -177,7 +191,7 @@ RUN npm install -g --ignore-scripts @githubnext/github-copilot-cli@0.1.36
 # The installer places the binary under /root/.local/ which is inaccessible to the
 # non-root "agent" user. Copy the resolved binary to a system-wide path instead.
 # To update: curl -fsSL https://cursor.com/install | sha256sum
-ARG CURSOR_AGENT_INSTALL_SHA256=d8d01263fb3d0642e86170e3476f2d6c94582960d33f786802f5090e1e811941
+ARG CURSOR_AGENT_INSTALL_SHA256=c41ebee3b301f49cb712e87e84a9e8bbf02bac52309c30aa83a4a8fe3ee85383
 RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
     && echo "${CURSOR_AGENT_INSTALL_SHA256}  /tmp/cursor-install.sh" | sha256sum -c - \
     && bash /tmp/cursor-install.sh \

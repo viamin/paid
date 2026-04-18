@@ -40,10 +40,21 @@ if [ -z "${CLAUDE_POST_INSTALL_BINARY_PATH}" ]; then
     exit 1
 fi
 
+# Extract Gemini CLI install command from agent-harness (single source of truth).
+GEMINI_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" gemini)
+GEMINI_CLI_INSTALL_COMMAND=$(echo "${GEMINI_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
+
+if [ -z "${GEMINI_CLI_INSTALL_COMMAND}" ]; then
+    echo "ERROR: Could not extract Gemini CLI install command from agent-harness" >&2
+    exit 1
+fi
+
 echo "Building agent container image..."
 echo "  Image: ${FULL_IMAGE}"
 echo "  Context: ${PROJECT_ROOT}/docker/agent"
 echo "  ruby-maat: ${RUBY_MAAT_VERSION}"
+echo "  claude-cli: ${CLAUDE_INSTALL_COMMAND}"
+echo "  gemini-cli: ${GEMINI_CLI_INSTALL_COMMAND}"
 
 docker build \
     -t "${FULL_IMAGE}" \
@@ -51,6 +62,7 @@ docker build \
     --build-arg "RUBY_MAAT_VERSION=${RUBY_MAAT_VERSION}" \
     --build-arg "CLAUDE_INSTALL_COMMAND=${CLAUDE_INSTALL_COMMAND}" \
     --build-arg "CLAUDE_POST_INSTALL_BINARY_PATH=${CLAUDE_POST_INSTALL_BINARY_PATH}" \
+    --build-arg "GEMINI_CLI_INSTALL_COMMAND=${GEMINI_CLI_INSTALL_COMMAND}" \
     "${PROJECT_ROOT}/docker/agent/"
 
 echo ""
