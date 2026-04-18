@@ -47,15 +47,11 @@ module Dashboard
     def broadcast_activity_stream
       return unless agent_run.finished?
 
-      recent_runs = account_agent_runs.finished.includes(:project, :issue)
-        .order(Arel.sql("COALESCE(agent_runs.completed_at, agent_runs.created_at) DESC"))
-        .limit(10)
-
       Turbo::StreamsChannel.broadcast_update_to(
         stream_name,
         target: "activity-stream",
         partial: "dashboard/activity_stream",
-        locals: { recent_runs: recent_runs }
+        locals: { activity_items: Dashboard::RecentActivity.call(account: account) }
       )
     end
 
