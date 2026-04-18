@@ -108,6 +108,17 @@ RSpec.describe PromptEvolution::FitnessFunction do
       expect(result.cost_score).to be_within(1e-4).of(0.5)
     end
 
+    it "correctly reads zero values without falling through to string key lookup" do
+      result = described_class.call(samples: [
+        { composite_score: 0.0, cost_cents: 0, duration_seconds: 0 }
+      ])
+
+      expect(result.quality_score).to eq(0.0)
+      expect(result.cost_score).to be_within(1e-4).of(1.0)
+      expect(result.speed_score).to be_within(1e-4).of(1.0)
+      expect(result.sample_count).to eq(1)
+    end
+
     it "supports samples with string keys" do
       result = described_class.call(samples: [
         { "composite_score" => 0.8, "cost_cents" => 100, "duration_seconds" => 600 }

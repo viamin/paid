@@ -132,7 +132,7 @@ module PromptEvolution
 
     def sample_value(sample, key)
       if sample.is_a?(Hash)
-        sample[key] || sample[key.to_s]
+        sample.key?(key) ? sample[key] : sample[key.to_s]
       elsif sample.respond_to?(key)
         sample.public_send(key)
       end
@@ -171,7 +171,7 @@ module PromptEvolution
       settings = @project.fitness_settings
       return nil unless settings.is_a?(Hash)
 
-      settings[key] || settings[key.to_sym]
+      settings.key?(key) ? settings[key] : settings[key.to_sym]
     end
 
     def positive_or_default(value, fallback)
