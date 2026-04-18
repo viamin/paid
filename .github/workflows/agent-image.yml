@@ -73,6 +73,19 @@ jobs:
           echo "$post_install_path" >> "$GITHUB_OUTPUT"
           echo "PAID_EOF" >> "$GITHUB_OUTPUT"
 
+      - name: Extract Gemini CLI install contract from agent-harness
+        id: gemini-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-provider-install-contract.rb gemini)
+          install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
+          if [ -z "$install_command" ]; then
+            echo "Failed to extract Gemini CLI install command from agent-harness" >&2
+            exit 1
+          fi
+          echo "install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "$install_command" >> "$GITHUB_OUTPUT"
+          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
+
       - name: Build paid-agent image
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
@@ -85,6 +98,7 @@ jobs:
             RUBY_MAAT_VERSION=${{ steps.ruby-maat.outputs.version }}
             CLAUDE_INSTALL_COMMAND=${{ steps.claude-contract.outputs.install_command }}
             CLAUDE_POST_INSTALL_BINARY_PATH=${{ steps.claude-contract.outputs.post_install_binary_path }}
+            GEMINI_CLI_INSTALL_COMMAND=${{ steps.gemini-contract.outputs.install_command }}
           cache-from: type=gha,scope=paid-agent
           cache-to: type=gha,mode=max,scope=paid-agent
 
