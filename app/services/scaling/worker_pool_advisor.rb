@@ -154,7 +154,7 @@ module Scaling
 
       # Enforce cost cap
       if config.cost_per_worker_hour_cents.positive? && config.max_hourly_cost_cents.positive?
-        max_affordable = config.max_hourly_cost_cents / config.cost_per_worker_hour_cents
+        max_affordable = (config.max_hourly_cost_cents / config.cost_per_worker_hour_cents.to_f).floor
         if target > max_affordable
           target = max_affordable
           reason = "#{reason} (capped by cost limit: max #{max_affordable} workers at " \
