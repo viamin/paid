@@ -133,6 +133,8 @@ module Containers
       .rubocop-cache/
       .rubocop_cache/
       .aider*
+      # Paid heartbeat file (touched by agent CLI hooks)
+      .paid-heartbeat
     PATTERNS
 
     # Maximum number of files allowed in the auto-commit safety net.
@@ -223,6 +225,7 @@ module Containers
       .pg_log.txt
       .ruby_env.sh
       .aider*
+      .paid-heartbeat
       vendor/bundle/
       vendor/gems/
       node_modules/

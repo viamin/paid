@@ -187,3 +187,6 @@ __pycache__/
 
 # Aider tool artifacts
 .aider*
+
+# Paid heartbeat file (touched by agent CLI hooks during container execution)
+.paid-heartbeat
