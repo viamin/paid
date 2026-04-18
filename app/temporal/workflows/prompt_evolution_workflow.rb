@@ -22,7 +22,7 @@ module Workflows
   #   min_samples:     - Minimum samples per A/B test variant (default: 30)
   #   confidence:      - Statistical confidence threshold (default: 0.95)
   class PromptEvolutionWorkflow < BaseWorkflow
-    # LLM mutation can take longer than the default 300s
+    # Explicit activity timeouts (BaseWorkflow default is 300s)
     MUTATION_TIMEOUT = 120
     AB_TEST_TIMEOUT = 30
 

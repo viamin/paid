@@ -27,12 +27,19 @@ module QualityMetrics
 
       update_ab_test_variant_stats(automated_metric)
       update_prompt_version_stats if agent_run.prompt_version.present?
+      enqueue_quality_gate_check
       automated_metric
     end
 
     private
 
     attr_reader :agent_run, :automated_metric
+
+    def enqueue_quality_gate_check
+      return unless agent_run.project.quality_gates_enabled?
+
+      QualityAlerts::CheckGateJob.perform_later(project_id: agent_run.project_id)
+    end
 
     # Builds scores for metrics relevant to the agent run's goal type.
     # `ci_passed` and `tests_pass` are intentionally omitted because the agent run

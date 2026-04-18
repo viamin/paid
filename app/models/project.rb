@@ -66,6 +66,14 @@ class Project < ApplicationRecord
     }
   }.freeze
 
+  DEFAULT_QUALITY_GATE_SETTINGS = {
+    "enabled" => false,
+    "composite_score_threshold" => 0.5,
+    "min_recent_runs" => 3,
+    "lookback_window_hours" => 24,
+    "metric_thresholds" => {}
+  }.freeze
+
   AUTOMATION_SETTINGS = [
     { label: "Auto-Add Labels", attribute: :auto_add_labels_enabled,
      description: "Automatically add the generated label to PRs and issues created by Paid." }.freeze,
@@ -118,6 +126,7 @@ class Project < ApplicationRecord
   has_many :mcp_server_definitions, through: :project_mcp_servers
   has_many :pre_commit_requirements, dependent: :destroy
   has_many :context_intake_sessions, dependent: :destroy
+  has_many :quality_pause_events, dependent: :destroy
 
   encrypts :webhook_secret
 
@@ -344,7 +353,7 @@ class Project < ApplicationRecord
 
   # Shared staleness window used by both the health-check job and the
   # automation health UI. A poll workflow is considered stale when it has not
-  # completed a poll cycle within 3× the configured interval plus a buffer.
+  # recorded forward progress within 3× the configured interval plus a buffer.
   STALENESS_BUFFER = 3.minutes
 
   def poll_staleness_window
@@ -474,6 +483,16 @@ class Project < ApplicationRecord
     end
   end
 
+  def effective_quality_gate_settings
+    saved = quality_gate_settings
+    saved = saved.is_a?(Hash) ? saved.deep_stringify_keys : {}
+    DEFAULT_QUALITY_GATE_SETTINGS.deep_merge(saved)
+  end
+
+  def quality_gates_enabled?
+    effective_quality_gate_settings["enabled"] == true
+  end
+
   def review_settings=(value)
     @effective_review_settings = nil
     @automation_configuration = nil
@@ -561,6 +580,68 @@ class Project < ApplicationRecord
   # would request bot reviews on projects that have opted out of review.
   def review_bot_request_login
     automation_configuration.auto_review.bot_request_login
+  end
+
+  def quality_paused?
+    quality_paused_at.present?
+  end
+
+  # Returns the configured quality pause threshold (0.0–1.0), or nil if
+  # automatic quality pausing is not configured. Reads from the top-level
+  # review_settings key "quality_pause_threshold".
+  def quality_pause_threshold
+    effective_review_settings["quality_pause_threshold"]&.to_f
+  end
+
+  def quality_pause!(score:, threshold:, agent_run: nil, metadata: {})
+    with_lock do
+      return false if quality_paused?
+
+      now = Time.current
+      pause_meta = {
+        triggered_at: now.iso8601,
+        composite_score: score,
+        threshold: threshold
+      }.merge(metadata)
+
+      update!(
+        quality_paused_at: now,
+        quality_pause_metadata: pause_meta
+      )
+
+      quality_pause_events.create!(
+        event_type: "paused",
+        agent_run: agent_run,
+        composite_score: score,
+        threshold: threshold,
+        metadata: pause_meta
+      )
+    end
+
+    true
+  end
+
+  def quality_resume!(metadata: {})
+    with_lock do
+      return false unless quality_paused?
+
+      resume_meta = {
+        resumed_at: Time.current.iso8601,
+        was_paused_at: quality_paused_at&.iso8601
+      }.merge(metadata)
+
+      update!(
+        quality_paused_at: nil,
+        quality_pause_metadata: {}
+      )
+
+      quality_pause_events.create!(
+        event_type: "resumed",
+        metadata: resume_meta
+      )
+    end
+
+    true
   end
 
   private

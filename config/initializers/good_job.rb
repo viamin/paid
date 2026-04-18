@@ -143,6 +143,11 @@ Rails.application.configure do
       cron: "0 * * * *",
       class: "DelayedHumanFeedbackCollectionJob",
       description: "Collect delayed human feedback (reactions, reviews) for recent agent runs"
+    },
+    queue_monitor: {
+      cron: "*/5 * * * *",
+      class: "QueueMonitorJob",
+      description: "Monitor queue depths and alert when thresholds are exceeded"
     }
   }
 end

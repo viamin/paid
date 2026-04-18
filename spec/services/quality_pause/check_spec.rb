@@ -1,0 +1,67 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe QualityPause::Check do
+  let(:project) { create(:project, review_settings: { "quality_pause_threshold" => 0.5 }) }
+  let(:agent_run) { create(:agent_run, :completed, project: project) }
+
+  describe ".call" do
+    it "does nothing when no threshold is configured" do
+      project.update!(review_settings: {})
+      described_class.call(agent_run: agent_run)
+      expect(project.reload.quality_paused?).to be false
+    end
+
+    it "does nothing when project is already paused" do
+      project.update!(quality_paused_at: Time.current)
+      described_class.call(agent_run: agent_run)
+      expect(project.quality_pause_events.count).to eq(0)
+    end
+
+    it "does nothing when fewer than minimum samples exist" do
+      create(:quality_metric, agent_run: agent_run, composite_score: 0.2)
+      described_class.call(agent_run: agent_run)
+      expect(project.reload.quality_paused?).to be false
+    end
+
+    it "does nothing when rolling average is above threshold" do
+      create_quality_metrics(project, scores: [ 0.8, 0.7, 0.9, 0.6, 0.8 ])
+      described_class.call(agent_run: agent_run)
+      expect(project.reload.quality_paused?).to be false
+    end
+
+    it "pauses the project when rolling average falls below threshold" do
+      create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ])
+      described_class.call(agent_run: agent_run)
+
+      project.reload
+      expect(project.quality_paused?).to be true
+      expect(project.quality_pause_events.pauses.count).to eq(1)
+
+      event = project.quality_pause_events.last
+      expect(event.agent_run).to eq(agent_run)
+      expect(event.threshold).to eq(0.5)
+    end
+
+    it "logs a warning when pausing" do
+      create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ])
+
+      expect(Rails.logger).to receive(:warn).with(hash_including(
+        message: "quality_pause.project_paused",
+        project_id: project.id
+      ))
+
+      described_class.call(agent_run: agent_run)
+    end
+  end
+
+  private
+
+  def create_quality_metrics(project, scores:)
+    scores.each do |score|
+      run = create(:agent_run, :completed, project: project)
+      create(:quality_metric, agent_run: run, composite_score: score)
+    end
+  end
+end
