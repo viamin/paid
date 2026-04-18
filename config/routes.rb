@@ -121,7 +121,9 @@ Rails.application.routes.draw do
     resource :workflow_status, only: [ :show ] do
       post :restart
     end
-    resource :quality_dashboard, only: [ :show ], controller: "projects/quality_dashboards"
+    resource :quality_dashboard, only: [ :show ], controller: "projects/quality_dashboards" do
+      get :export
+    end
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
     resources :cost_budgets, only: [ :create, :update, :destroy ], controller: "projects/cost_budgets"
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
