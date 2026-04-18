@@ -1430,6 +1430,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_015607) do
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "agent_runs", "providers", on_delete: :nullify
+  add_foreign_key "billing_invoices", "accounts"
   add_foreign_key "billing_invoices", "billing_periods"
   add_foreign_key "billing_line_items", "billing_invoices"
   add_foreign_key "billing_periods", "billing_plans"
