@@ -15,6 +15,9 @@ module Api
     def create
       event = request.headers["X-GitHub-Event"]
 
+      # Must come before event handlers; also initializes @payload via #payload.
+      invalidate_cache(event)
+
       case event
       when "pull_request_review"
         handle_pull_request_review
@@ -189,6 +192,20 @@ module Api
         .where(created_issue_number: issue_number, status: "completed")
         .order(created_at: :desc)
         .first
+    end
+
+    def invalidate_cache(event)
+      Github::CacheInvalidator.call(
+        project: @project,
+        event: event,
+        payload: payload
+      )
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "github_cache.invalidation_failed",
+        event: event,
+        error: e.message
+      )
     end
 
     def payload
