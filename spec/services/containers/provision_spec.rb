@@ -169,8 +169,6 @@ RSpec.describe Containers::Provision do
           metadata: hash_including(dirs_count: 12)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.codex_config_seeded",
           metadata: {}).ordered
-        expect(agent_run).to receive(:log!).with("system", "container.claude_heartbeat_hook_seeded",
-          metadata: {}).ordered
         expect(agent_run).to receive(:log!).with("system", "container.firewall.applied",
           metadata: hash_including(container_id: "abc123container")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.provision.success",
@@ -685,49 +683,6 @@ RSpec.describe Containers::Provision do
         expect(NetworkPolicy).not_to receive(:apply_firewall_rules)
 
         service.provision
-      end
-    end
-
-    context "with Claude heartbeat hook" do
-      it "writes PostToolUse heartbeat hook into settings.json" do
-        service.provision
-
-        expect(mock_container).to have_received(:exec).with(
-          [ "sh", "-lc", satisfy { |cmd|
-            content = decoded_base64_content(cmd)
-            cmd.include?("/home/agent/.claude/settings.json") &&
-              content.include?('"PostToolUse"') &&
-              content.include?("date +%s > /tmp/agent_heartbeat")
-          } ],
-          user: "agent"
-        )
-      end
-
-      it "merges hooks into existing settings when settings.json is already seeded" do
-        existing_settings = { "model" => "claude-sonnet-4-20250514" }.to_json
-
-        allow(mock_container).to receive(:exec).with([ "cat", "/home/agent/.claude/settings.json" ], user: "agent")
-          .and_return([ [ existing_settings ], [], 0 ])
-
-        service.provision
-
-        expect(mock_container).to have_received(:exec).with(
-          [ "sh", "-lc", satisfy { |cmd|
-            content = decoded_base64_content(cmd)
-            cmd.include?("/home/agent/.claude/settings.json") &&
-              content.include?('"model"') &&
-              content.include?('"PostToolUse"')
-          } ],
-          user: "agent"
-        )
-      end
-
-      it "logs success after writing the heartbeat hook" do
-        allow(agent_run).to receive(:log!).and_call_original
-
-        service.provision
-
-        expect(agent_run).to have_received(:log!).with("system", "container.claude_heartbeat_hook_seeded", metadata: {})
       end
     end
 
@@ -1313,6 +1268,68 @@ RSpec.describe Containers::Provision do
 
       it "raises TimeoutError" do
         expect { service.execute("sleep 10", timeout: 0.1) }.to raise_error(described_class::TimeoutError)
+      end
+    end
+
+    context "when stderr matches an abort pattern" do
+      let(:abort_patterns) { [ /free tier limit reached/i ] }
+      let(:quota_error) { "Error: Free tier limit reached. Please upgrade to a paid plan." }
+
+      before do
+        allow(mock_container).to receive(:stop)
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stderr, quota_error) if block
+          # Simulate exec returning after container.stop was called
+          [ [], [ quota_error ], 1 ]
+        end
+      end
+
+      it "raises OutputAbortError with the matched output" do
+        expect { service.execute("kilo run --auto", abort_patterns: abort_patterns) }
+          .to raise_error(described_class::OutputAbortError) { |e|
+            expect(e.matched_output).to eq(quota_error)
+          }
+      end
+
+      it "stops the container immediately" do
+        service.execute("kilo run --auto", abort_patterns: abort_patterns) rescue nil
+
+        expect(mock_container).to have_received(:stop).with(timeout: 0)
+      end
+
+      it "logs the abort pattern match" do
+        allow(agent_run).to receive(:log!)
+
+        service.execute("kilo run --auto", abort_patterns: abort_patterns) rescue nil
+
+        expect(agent_run).to have_received(:log!).with(
+          "system", "container.execute.abort_pattern_matched",
+          metadata: hash_including(output: a_string_matching(/Free tier limit reached/))
+        )
+      end
+    end
+
+    context "when stderr does not match abort patterns" do
+      let(:abort_patterns) { [ /free tier limit reached/i ] }
+
+      before do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stderr, "some benign warning\n") if block
+          [ [ "output" ], [ "some benign warning\n" ], 0 ]
+        end
+      end
+
+      it "does not raise OutputAbortError" do
+        result = service.execute("kilo run --auto", abort_patterns: abort_patterns)
+
+        expect(result.success?).to be true
+      end
+
+      it "does not stop the container" do
+        allow(mock_container).to receive(:stop)
+        service.execute("kilo run --auto", abort_patterns: abort_patterns)
+
+        expect(mock_container).not_to have_received(:stop)
       end
     end
 
