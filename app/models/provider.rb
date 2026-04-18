@@ -245,8 +245,16 @@ class Provider < ApplicationRecord
     nil
   end
 
+  def agent_harness_runtime?
+    opencode_agent_harness_runtime? || copilot_agent_harness_runtime?
+  end
+
   def opencode_agent_harness_runtime?
     provider_key == "opencode" && requires_direct_outbound?
+  end
+
+  def copilot_agent_harness_runtime?
+    provider_key == "copilot"
   end
 
   # Returns the provider key that must always exist and remain enabled for

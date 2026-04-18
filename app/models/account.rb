@@ -19,6 +19,7 @@ class Account < ApplicationRecord
   has_many :notifications, dependent: :destroy
   has_many :pre_commit_requirements, dependent: :destroy
   has_one :tracker_configuration, as: :configurable, dependent: :destroy
+  has_many :pr_templates, dependent: :destroy
   has_many :onboarding_steps, dependent: :destroy
 
   validates :name, presence: true

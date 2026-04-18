@@ -62,7 +62,7 @@ class TrackerConfigurationsController < ApplicationController
     when "Account"
       current_account
     else
-      current_account
+      raise ActionController::BadRequest, "Invalid configurable_type: #{params.dig(:tracker_configuration, :configurable_type).inspect}"
     end
   end
 
