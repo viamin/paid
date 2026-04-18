@@ -177,6 +177,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.datetime "created_at", null: false
     t.integer "created_issue_number"
     t.string "created_issue_url", limit: 500
+    t.jsonb "cross_repo_issues", default: []
     t.text "custom_prompt"
     t.string "diagnosis_issue_url", limit: 500
     t.string "diagnosis_status", limit: 50
@@ -780,6 +781,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
   end
 
+  create_table "pr_templates", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.text "body", null: false
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.boolean "enabled", default: true, null: false
+    t.string "name", limit: 255, null: false
+    t.integer "position", default: 0, null: false
+    t.string "pr_type", limit: 50, default: "default", null: false
+    t.bigint "project_id"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index ["account_id", "name"], name: "idx_pr_templates_account_name_unique", unique: true, where: "((project_id IS NULL) AND (user_id IS NULL))"
+    t.index ["account_id", "position"], name: "idx_pr_templates_account_position", where: "((project_id IS NULL) AND (user_id IS NULL))"
+    t.index ["account_id"], name: "index_pr_templates_on_account_id"
+    t.index ["project_id", "name"], name: "idx_pr_templates_project_name_unique", unique: true, where: "(project_id IS NOT NULL)"
+    t.index ["project_id", "position"], name: "idx_pr_templates_project_position", where: "(project_id IS NOT NULL)"
+    t.index ["project_id"], name: "index_pr_templates_on_project_id"
+    t.index ["user_id", "name"], name: "idx_pr_templates_user_name_unique", unique: true, where: "((user_id IS NOT NULL) AND (project_id IS NULL))"
+    t.index ["user_id", "position"], name: "idx_pr_templates_user_position", where: "(user_id IS NOT NULL)"
+    t.index ["user_id"], name: "index_pr_templates_on_user_id"
+    t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "pr_templates_scope_check"
+  end
+
   create_table "pre_commit_requirements", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "check_type", limit: 50, default: "shell_command", null: false
@@ -882,6 +907,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
+    t.jsonb "fitness_settings", default: {}, null: false
     t.jsonb "fitness_weights", default: {}, null: false
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
@@ -1019,6 +1045,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.jsonb "tier_model_ids", default: {}, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
+    t.integer "weight", default: 1, null: false
     t.index ["auth_type"], name: "index_providers_on_auth_type"
     t.index ["provider_api_key_id"], name: "index_providers_on_provider_api_key_id"
     t.index ["tier_model_ids"], name: "index_providers_on_tier_model_ids", using: :gin
@@ -1027,6 +1054,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.index ["user_id"], name: "index_providers_on_user_id"
     t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL", name: "providers_api_key_requires_key"
     t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "providers_subscription_invariants"
+    t.check_constraint "weight >= 1", name: "providers_weight_positive"
   end
 
   create_table "quality_gate_events", force: :cascade do |t|
@@ -1213,6 +1241,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.integer "max_prompt_comments", default: 20, null: false
     t.integer "max_prs_per_page", default: 50, null: false
     t.integer "max_tokens_per_run", default: 10000000, null: false
+    t.jsonb "provider_round_robin_state", default: {}, null: false
+    t.string "provider_selection_mode", limit: 20, default: "single", null: false
     t.float "retry_base_delay", default: 1.0, null: false
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false
@@ -1227,6 +1257,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
     t.index ["user_id"], name: "index_user_settings_on_user_id", unique: true
     t.check_constraint "max_issues_per_page >= 5 AND max_issues_per_page <= 200", name: "chk_max_issues_per_page_bounds"
     t.check_constraint "max_prs_per_page >= 5 AND max_prs_per_page <= 200", name: "chk_max_prs_per_page_bounds"
+    t.check_constraint "provider_selection_mode::text = ANY (ARRAY['single'::character varying, 'round_robin'::character varying, 'random'::character varying]::text[])", name: "chk_provider_selection_mode"
   end
 
   create_table "users", force: :cascade do |t|
@@ -1336,6 +1367,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
   add_foreign_key "notifications", "accounts"
   add_foreign_key "notifications", "users", on_delete: :nullify
   add_foreign_key "onboarding_steps", "accounts"
+  add_foreign_key "pr_templates", "accounts", on_delete: :cascade
+  add_foreign_key "pr_templates", "projects", on_delete: :cascade
+  add_foreign_key "pr_templates", "users", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
