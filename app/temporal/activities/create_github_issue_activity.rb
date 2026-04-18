@@ -50,6 +50,8 @@ module Activities
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
+      upstream_issue = input[:upstream_issue]
+      body_override = input[:body_override]
       agent_run = AgentRun.find(agent_run_id)
       track_phase(agent_run_id: agent_run_id, phase_key: "create_github_issue", phase_group: "post", agent_run: agent_run) do
         project = agent_run.project
@@ -58,7 +60,8 @@ module Activities
         summary = agent_run.agent_summary_with_stderr_fallback
         validate_issue_creation_attempt!(agent_run)
         title = extract_title(summary, agent_run.custom_prompt)
-        body = issue_body(summary)
+        body = body_override.present? ? issue_body(body_override) : issue_body(summary)
+        body = append_dependency_text(body, upstream_issue) if upstream_issue
 
         issue_labels = project.auto_add_labels_enabled? ? [ project.generated_label_name ] : []
         priority_label = priority_label_for(agent_run)
@@ -72,6 +75,10 @@ module Activities
         )
 
         sync_issue_record(project, gh_issue)
+
+        if upstream_issue
+          record_cross_repo_issue(agent_run, project.full_name, gh_issue, role: "downstream")
+        end
 
         agent_run.complete!(issue_url: gh_issue.html_url, issue_number: gh_issue.number)
 
@@ -284,6 +291,11 @@ module Activities
 
     def issue_creation_failure_marker?(text)
       ISSUE_CREATION_FAILURE_PATTERNS.any? { |pattern| pattern.match?(text) }
+    end
+
+    def append_dependency_text(body, upstream_issue)
+      dep_line = "Blocked by #{upstream_issue[:target_repo]}##{upstream_issue[:issue_number]}"
+      "#{body}\n\n## Dependencies\n\n- #{dep_line}"
     end
 
     def sync_issue_record(project, gh_issue)

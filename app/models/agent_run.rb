@@ -696,6 +696,19 @@ class AgentRun < ApplicationRecord
     pull_request_url || created_issue_url
   end
 
+  # Returns cross-repo issues created during this run, filtered by role.
+  def upstream_issues
+    (cross_repo_issues || []).select { |i| i["role"] == "upstream" }
+  end
+
+  def downstream_issues
+    (cross_repo_issues || []).select { |i| i["role"] == "downstream" }
+  end
+
+  def cross_repo_issue_pair?
+    upstream_issues.any? && downstream_issues.any?
+  end
+
   def fail!(error: nil)
     update!(
       status: "failed",

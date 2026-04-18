@@ -63,5 +63,9 @@
       <% issue_link_text = agent_run.created_issue_number.present? ? "Issue ##{agent_run.created_issue_number}" : "Issue" %>
       <%= link_to issue_link_text, agent_run.created_issue_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
     <% end %>
+    <% if agent_run.cross_repo_issue_pair? %>
+      &middot;
+      <span class="text-indigo-600">Cross-repo pair</span>
+    <% end %>
   </td>
 </tr>

@@ -682,5 +682,51 @@ RSpec.describe Activities::CreateGithubIssueActivity do
         activity.execute(agent_run_id: -1)
       }.to raise_error(ActiveRecord::RecordNotFound)
     end
+
+    context "with upstream_issue reference" do
+      let(:upstream_ref) do
+        {
+          target_repo: "viamin/agent-harness",
+          issue_number: 5,
+          issue_url: "https://github.com/viamin/agent-harness/issues/5"
+        }
+      end
+
+      it "appends dependency text to the issue body" do
+        agent_run.log!("stdout", "# Adopt upstream change\n\nAdopt the new streaming API.")
+
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(body: a_string_matching(/Blocked by viamin\/agent-harness#5/))
+        ).and_return(issue_response)
+
+        activity.execute(agent_run_id: agent_run.id, upstream_issue: upstream_ref)
+      end
+
+      it "includes a Dependencies section in the body" do
+        agent_run.log!("stdout", "# Adopt upstream change\n\nAdopt the new streaming API.")
+
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(body: a_string_matching(/## Dependencies/))
+        ).and_return(issue_response)
+
+        activity.execute(agent_run_id: agent_run.id, upstream_issue: upstream_ref)
+      end
+
+      it "records the downstream issue in cross_repo_issues" do
+        agent_run.log!("stdout", "# Adopt upstream change\n\nSome body.")
+
+        activity.execute(agent_run_id: agent_run.id, upstream_issue: upstream_ref)
+
+        agent_run.reload
+        expect(agent_run.cross_repo_issues).to include(
+          a_hash_including(
+            "role" => "downstream",
+            "issue_number" => 10
+          )
+        )
+      end
+    end
   end
 end

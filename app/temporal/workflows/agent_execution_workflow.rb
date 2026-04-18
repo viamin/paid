@@ -200,10 +200,20 @@ module Workflows
           # Fallback: if the agent didn't create an issue directly, create one
           # from the agent's output using the platform's GitHub integration.
           if issue_result[:issue_created] == false
-            # Longer timeout: includes an agent_harness LLM call for title
-            # generation, plus GitHub API and DB writes.
-            run_activity(Activities::CreateGithubIssueActivity,
-              { agent_run_id: agent_run_id }, timeout: 120, retry_policy: NO_RETRY)
+            # Check for cross-repo issue plan before falling back to single-issue creation
+            cross_repo_result = run_activity(Activities::ParseCrossRepoIssuePlanActivity,
+              { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)
+
+            plan = cross_repo_result[:plan]
+
+            if plan
+              create_cross_repo_issue_pair(agent_run_id, plan)
+            else
+              # Longer timeout: includes an agent_harness LLM call for title
+              # generation, plus GitHub API and DB writes.
+              run_activity(Activities::CreateGithubIssueActivity,
+                { agent_run_id: agent_run_id }, timeout: 120, retry_policy: NO_RETRY)
+            end
           end
         elsif goal == "enhance_issue"
           # Enhance-issue goal: the agent reads the issue and posts a comment
@@ -592,6 +602,37 @@ module Workflows
         type: "ProxyUnavailable",
         non_retryable: true
       )
+    end
+
+    # Creates a cross-repo upstream/downstream issue pair:
+    # 1. Create the upstream issue in the target repo
+    # 2. Create the downstream issue in the current project's repo with
+    #    a dependency declaration referencing the upstream issue
+    #
+    # If the upstream issue is created but the downstream fails, the run
+    # is marked failed with the upstream issue recorded in cross_repo_issues
+    # so the partial result is visible in the UI.
+    def create_cross_repo_issue_pair(agent_run_id, plan)
+      # Step 1: Create upstream issue in the target repo
+      upstream_result = run_activity(Activities::CreateUpstreamIssueActivity,
+        { agent_run_id: agent_run_id,
+          target_repo: plan[:target_repo],
+          title: plan[:upstream_title],
+          body: plan[:upstream_body] },
+        timeout: 60, retry_policy: NO_RETRY)
+
+      # Step 2: Create downstream issue with dependency on upstream
+      upstream_ref = {
+        target_repo: upstream_result[:target_repo],
+        issue_number: upstream_result[:issue_number],
+        issue_url: upstream_result[:issue_url]
+      }
+
+      run_activity(Activities::CreateGithubIssueActivity,
+        { agent_run_id: agent_run_id,
+          upstream_issue: upstream_ref,
+          body_override: plan[:downstream_body] },
+        timeout: 120, retry_policy: NO_RETRY)
     end
 
     def request_project_resync(project_id)
