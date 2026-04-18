@@ -224,6 +224,22 @@ module Activities
       end
     end
 
+    def record_cross_repo_issue(agent_run, repo, gh_issue, role:)
+      entry = {
+        "repo" => repo,
+        "issue_number" => gh_issue.number,
+        "issue_url" => gh_issue.html_url,
+        "role" => role
+      }
+      # Atomic append to avoid lost updates if called concurrently on the same agent_run
+      AgentRun.where(id: agent_run.id).update_all(
+        Arel.sql(<<~SQL.squish)
+          cross_repo_issues = COALESCE(cross_repo_issues, '[]'::jsonb) || #{ActiveRecord::Base.connection.quote(entry.to_json)}::jsonb
+        SQL
+      )
+      agent_run.reload
+    end
+
     def record_phase(agent_run:, phase_key:, phase_group:, started_at:, finished_at:, status: "completed", metadata: {})
       return unless agent_run
 
