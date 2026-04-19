@@ -25,6 +25,8 @@ module Automation
     # * +:human+  — explicit human reviewer (manual). Gated on approval.
     # * +:ci+     — GitHub Action (ci_action). Gated on check-run success.
     class Base
+      include Automation::ReviewBotTrigger
+
       # @param method [Automation::Configuration::ReviewMethod]
       # @param config [Automation::Configuration::AutoReview]
       # @param signals [Automation::Strategies::AutoReview::Signals]

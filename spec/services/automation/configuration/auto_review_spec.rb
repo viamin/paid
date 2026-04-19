@@ -44,6 +44,40 @@ RSpec.describe Automation::Configuration::AutoReview do
     end
   end
 
+  describe "#bot_request_chain" do
+    it "returns an empty array when the review toggle is off" do
+      config = build_config(enabled: false, copilot: { "enabled" => true }, codex: { "enabled" => true })
+
+      expect(config.bot_request_chain).to eq([])
+    end
+
+    it "returns an empty array when no bot-backed method is enabled" do
+      config = build_config(manual: { "enabled" => true, "reviewer_login" => "alice" })
+
+      expect(config.bot_request_chain).to eq([])
+    end
+
+    it "returns only the enabled bot, with copilot taking precedence" do
+      copilot_only = build_config(copilot: { "enabled" => true })
+      codex_only = build_config(codex: { "enabled" => true })
+
+      expect(copilot_only.bot_request_chain).to eq([ "copilot" ])
+      expect(codex_only.bot_request_chain).to eq([ "chatgpt-codex-connector" ])
+    end
+
+    it "returns the full ordered chain when both copilot and codex are enabled" do
+      config = build_config(copilot: { "enabled" => true }, codex: { "enabled" => true })
+
+      expect(config.bot_request_chain).to eq([ "copilot", "chatgpt-codex-connector" ])
+    end
+
+    it "keeps bot_request_login aligned with the chain head" do
+      config = build_config(copilot: { "enabled" => true }, codex: { "enabled" => true })
+
+      expect(config.bot_request_login).to eq(config.bot_request_chain.first)
+    end
+  end
+
   describe "#ordered_enabled_methods" do
     it "returns enabled methods in canonical order regardless of input order" do
       config = build_config(

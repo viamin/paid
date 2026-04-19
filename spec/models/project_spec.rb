@@ -829,6 +829,34 @@ RSpec.describe Project do
       end
     end
 
+    describe "#review_bot_request_chain" do
+      it "returns an empty array when reviews are globally disabled" do
+        project = build(:project, review_settings: {
+          "enabled" => false,
+          "methods" => { "copilot" => { "enabled" => true }, "codex" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_chain).to eq([])
+      end
+
+      it "returns the ordered fallback chain when both bots are enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "copilot" => { "enabled" => true }, "codex" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_chain).to eq(
+          [ Activities::RequestReviewActivity::COPILOT_LOGIN, Activities::RequestReviewActivity::CODEX_LOGIN ]
+        )
+      end
+
+      it "returns only the enabled bot when one of the two is disabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "codex" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_chain).to eq([ Activities::RequestReviewActivity::CODEX_LOGIN ])
+      end
+    end
+
     describe "#review_method_config" do
       it "returns merged config for a method" do
         project = build(:project, review_settings: {

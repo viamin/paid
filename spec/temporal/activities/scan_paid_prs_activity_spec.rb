@@ -2338,6 +2338,34 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger = result[:prs_to_trigger].first[:triggers].sole
         expect(trigger[:type]).to eq("review_bot_review_pending")
         expect(trigger[:request_login]).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
+        expect(trigger[:request_logins]).to eq([ Activities::RequestReviewActivity::COPILOT_LOGIN ])
+      end
+    end
+
+    context "when both copilot and codex are enabled and no bot reviews exist" do
+      before do
+        enable_copilot_and_codex_review!
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(reviews: [])
+      end
+
+      it "emits the full bot chain in request_logins for fallback in RequestReviewActivity" do
+        result = activity.execute(project_id: project.id)
+
+        trigger = result[:prs_to_trigger].first[:triggers].find { |t| t[:type] == "review_bot_review_pending" }
+        expect(trigger).not_to be_nil
+        expect(trigger[:request_logins]).to eq([
+          Activities::RequestReviewActivity::COPILOT_LOGIN,
+          Activities::RequestReviewActivity::CODEX_LOGIN
+        ])
+        # Single request_login is preserved for in-flight workflow histories
+        # whose code pre-dates the chain field. It is the chain head.
+        expect(trigger[:request_login]).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
       end
     end
 

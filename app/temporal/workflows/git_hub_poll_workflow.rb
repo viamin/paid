@@ -11,6 +11,7 @@ module Workflows
   # Temporal's event limit. The server signals when history is getting
   # large via continue_as_new_suggested; a hard cap provides a safety net.
   class GitHubPollWorkflow < BaseWorkflow
+    include Automation::ReviewBotTrigger
     MAX_ITERATIONS = 100
 
     workflow_signal
@@ -425,16 +426,18 @@ module Workflows
     end
 
     def dispatch_review_bot_review_request(project_id, pr_data)
-      # Use the login from the trigger: nil means the bot auto-reviews (e.g.
-      # Codex via GitHub App) and no explicit request is needed.
+      # Use the chain from the trigger: an empty list means the bot
+      # auto-reviews (e.g. Codex via GitHub App) and no explicit request is
+      # needed. The full chain is forwarded to RequestReviewActivity so it
+      # can fall through to a configured secondary bot when the primary is
+      # rate-limited or unavailable.
       pending_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
-      login = pending_trigger&.dig(:request_login)
+      reviewers = review_bot_reviewers_from(pending_trigger)
+      return if reviewers.empty?
 
-      if login
-        request_review(project_id, pr_data[:pr_number],
-          [ login ],
-          log_key: "pr_review.request_review_bot_review_failed")
-      end
+      request_review(project_id, pr_data[:pr_number],
+        reviewers,
+        log_key: "pr_review.request_review_bot_review_failed")
     end
 
     def handle_review_goal_retry(project_id, pr_data)
@@ -499,13 +502,11 @@ module Workflows
 
     def dispatch_bot_review_request(project_id, pr_data)
       pending_bot = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
-      return unless pending_bot
-
-      login = pending_bot[:request_login]
-      return unless login
+      reviewers = review_bot_reviewers_from(pending_bot)
+      return if reviewers.empty?
 
       request_review(project_id, pr_data[:pr_number],
-        [ login ],
+        reviewers,
         log_key: "pr_review.request_review_bot_review_failed")
     end
 

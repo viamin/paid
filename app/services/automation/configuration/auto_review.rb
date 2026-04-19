@@ -64,12 +64,22 @@ module Automation
       # rule that a globally-disabled review toggle short-circuits the
       # lookup regardless of per-method flags.
       def bot_request_login
-        return nil unless enabled?
+        bot_request_chain.first
+      end
 
-        BOT_REQUEST_PRIORITY.each do |name|
-          return BOT_REVIEWER_LOGINS.fetch(name) if method_enabled?(name)
+      # Returns the ordered list of bot-backed reviewer logins to try when
+      # requesting an automated review, with the primary provider first.
+      # Used by +Activities::RequestReviewActivity+ to attempt fallback
+      # reviewers when the primary bot is unavailable (e.g. Copilot
+      # rate-limited or not enabled on the repo).
+      #
+      # Honors the global review toggle: returns +[]+ when reviews are
+      # disabled regardless of per-method flags.
+      def bot_request_chain
+        return [] unless enabled?
+        BOT_REQUEST_PRIORITY.filter_map do |name|
+          BOT_REVIEWER_LOGINS.fetch(name) if method_enabled?(name)
         end
-        nil
       end
 
       # True when +paid_agent+ is the only enabled review method. Used by

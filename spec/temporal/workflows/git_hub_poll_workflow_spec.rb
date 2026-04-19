@@ -621,6 +621,22 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RequestReviewActivity, anything, timeout: anything)
     end
 
+    it "forwards the full request_logins chain so RequestReviewActivity can fall back" do
+      chain = [ Activities::RequestReviewActivity::COPILOT_LOGIN,
+                Activities::RequestReviewActivity::CODEX_LOGIN ]
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [ { type: "review_bot_review_pending",
+                      request_login: chain.first, request_logins: chain } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, hash_including(reviewers: chain), timeout: anything)
+    end
+
     it "requests review and dispatches draft followup when other triggers are present in draft" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
