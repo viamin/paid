@@ -11,6 +11,8 @@ class UserSetting < ApplicationRecord
   KB_EMBEDDING_PROVIDER_DEFAULT = "openai"
   KB_CHAT_PROVIDERS = ProviderSupport::APP_TO_HARNESS_PROVIDER_KEYS.keys.freeze
   KB_CHAT_PROVIDER_DEFAULT = "claude"
+  PROVIDER_SELECTION_MODES = %w[single round_robin random].freeze
+  PROVIDER_SELECTION_MODE_DEFAULT = "single"
 
   THEME_PREFERENCES = %w[light dark system].freeze
 
@@ -60,6 +62,8 @@ class UserSetting < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 30, less_than_or_equal_to: PG_INT_MAX }
   validates :review_goal_idle_timeout_seconds,
     numericality: { only_integer: true, greater_than_or_equal_to: 30, less_than_or_equal_to: PG_INT_MAX }
+  validates :create_pr_idle_timeout_seconds,
+    numericality: { only_integer: true, greater_than_or_equal_to: 30, less_than_or_equal_to: PG_INT_MAX }
 
   # Git operation timeouts
   validates :git_clone_timeout_seconds,
@@ -101,6 +105,7 @@ class UserSetting < ApplicationRecord
     numericality: { greater_than: 0, less_than_or_equal_to: MAX_DELAY_SECONDS }
 
   # Provider Fallback
+  validates :provider_selection_mode, inclusion: { in: PROVIDER_SELECTION_MODES }
   validate :validate_fallback_providers
   validate :validate_kb_embedding_provider
   validate :validate_kb_embedding_fallback_providers
@@ -242,6 +247,34 @@ class UserSetting < ApplicationRecord
     resolved || default_provider_identifier
   end
 
+  # Returns the next automated provider identifier to use for an agent run,
+  # honoring the configured provider_selection_mode (single, round_robin,
+  # random) and per-provider weights.
+  #
+  # When fewer than two providers are enabled or the mode is "single",
+  # falls back to the goal-specific default provider identifier.
+  #
+  # round_robin mode persists state on the user_setting so the next call
+  # picks up where the previous call left off, respecting provider weights
+  # (a provider with weight N is used N consecutive times).
+  #
+  # @param goal [String, nil] The agent run goal (e.g. "create_pr").
+  # @return [String, nil] A provider routing-key identifier or nil if none.
+  def select_automated_provider_identifier(goal: nil)
+    fallback_identifier = default_provider_identifier_for_goal(goal)
+    candidates = allowed_provider_identifiers_for_agent_runs
+    return fallback_identifier if candidates.length < 2 || provider_selection_mode == "single"
+
+    case provider_selection_mode
+    when "random"
+      pick_random_provider_identifier(candidates) || fallback_identifier
+    when "round_robin"
+      pick_round_robin_provider_identifier(candidates) || fallback_identifier
+    else
+      fallback_identifier
+    end
+  end
+
   def provider_priority_for_goal(goal, identifiers: false)
     goal_identifier = default_provider_identifier_for_goal(goal)
     default = goal_identifier.present? ? [ goal_identifier ] : []
@@ -332,6 +365,97 @@ class UserSetting < ApplicationRecord
   end
 
   private
+
+  # Picks a candidate at random, weighted by each provider's weight column.
+  # Falls back to uniform random when weights cannot be resolved (e.g. no
+  # user attached for unsaved settings).
+  def pick_random_provider_identifier(candidates)
+    weighted = weighted_candidate_pairs(candidates)
+    return candidates.sample if weighted.empty?
+
+    total = weighted.sum { |(_id, weight)| weight }
+    return weighted.first.first if total <= 0
+
+    target = SecureRandom.random_number(total)
+    cumulative = 0
+    weighted.each do |identifier, weight|
+      cumulative += weight
+      return identifier if target < cumulative
+    end
+    weighted.last.first
+  end
+
+  # Picks the next provider in round-robin order, repeating each provider
+  # consecutively N times when its weight is N. Persists state on the
+  # user_setting so subsequent calls advance the cursor.
+  def pick_round_robin_provider_identifier(candidates)
+    weighted = weighted_candidate_pairs(candidates)
+    return candidates.first if weighted.empty?
+
+    state = round_robin_state_for(weighted)
+    cursor = (state["index"] || 0) % weighted.length
+    identifier, weight = weighted[cursor]
+    consumed = (state["consumed"] || 0) + 1
+
+    if consumed >= weight
+      state["index"] = (cursor + 1) % weighted.length
+      state["consumed"] = 0
+    else
+      state["index"] = cursor
+      state["consumed"] = consumed
+    end
+    state["fingerprint"] = round_robin_fingerprint(weighted)
+
+    persist_round_robin_state!(state)
+    identifier
+  end
+
+  # Returns [[identifier, weight], ...] in candidate order, looking up each
+  # provider's weight from the user's saved providers. Unknown identifiers
+  # fall back to Provider::DEFAULT_WEIGHT so the cycle still advances.
+  def weighted_candidate_pairs(candidates)
+    weights_by_identifier = provider_weights_by_identifier(candidates)
+    candidates.map do |identifier|
+      [ identifier, weights_by_identifier.fetch(identifier, Provider::DEFAULT_WEIGHT) ]
+    end
+  end
+
+  def provider_weights_by_identifier(candidates)
+    return {} unless user
+    return {} if user.new_record?
+
+    routing_ids = candidates.filter_map { |identifier| Provider.id_from_routing_key(identifier) }
+    return {} if routing_ids.empty?
+
+    user.providers.where(id: routing_ids).pluck(:id, :weight).to_h do |id, weight|
+      [ "#{Provider::ROUTING_KEY_PREFIX}#{id}", weight || Provider::DEFAULT_WEIGHT ]
+    end
+  end
+
+  # Returns a fingerprint for the current candidate ordering and weights so
+  # the cursor resets when providers are added, removed, or re-weighted.
+  def round_robin_fingerprint(weighted)
+    weighted.map { |identifier, weight| "#{identifier}:#{weight}" }.join("|")
+  end
+
+  def round_robin_state_for(weighted)
+    state = provider_round_robin_state.is_a?(Hash) ? provider_round_robin_state.dup : {}
+    fingerprint = round_robin_fingerprint(weighted)
+    state = {} if state["fingerprint"] != fingerprint
+    state
+  end
+
+  def persist_round_robin_state!(state)
+    return unless persisted?
+
+    update_column(:provider_round_robin_state, state)
+  rescue ActiveRecord::ActiveRecordError => e
+    Rails.logger.warn(
+      message: "user_setting.round_robin_state_persist_failed",
+      user_id: user_id,
+      error: e.message
+    )
+  end
 
   def validate_fallback_providers
     return if fallback_providers.blank?

@@ -41,7 +41,7 @@ STOPPED_OVERMIND=0
 OVERMIND_STOP_POLL_COUNT="${DEV_UPDATE_OVERMIND_STOP_POLL_COUNT:-10}"
 OVERMIND_START_POLL_COUNT="${DEV_UPDATE_OVERMIND_START_POLL_COUNT:-15}"
 OVERMIND_POLL_INTERVAL="${DEV_UPDATE_OVERMIND_POLL_INTERVAL:-1}"
-STARTUP_CLEANUP_GRACE_PERIOD="${DEV_UPDATE_STARTUP_CLEANUP_GRACE_PERIOD:-300}"
+STARTUP_CLEANUP_KILL_ALL="${DEV_UPDATE_STARTUP_CLEANUP_KILL_ALL:-}"
 
 newline_list_to_csv() {
   printf '%s' "${1:-}" | tr '\n' ',' | sed 's/,$//'
@@ -244,7 +244,7 @@ stop_overmind() {
 
 run_setup() {
   log "Running bin/setup --skip-server..."
-  STARTUP_CLEANUP_GRACE_PERIOD="$STARTUP_CLEANUP_GRACE_PERIOD" bin/setup --skip-server
+  STARTUP_CLEANUP_KILL_ALL="$STARTUP_CLEANUP_KILL_ALL" bin/setup --skip-server
 }
 
 start_dev() {
@@ -267,7 +267,7 @@ start_dev() {
   # Start bin/dev detached so this script can exit cleanly.
   # Unset PORT so bin/dev applies its own default (3000) instead of
   # inheriting a per-process port assigned by the previous Overmind session.
-  env -u PORT STARTUP_CLEANUP_GRACE_PERIOD="$STARTUP_CLEANUP_GRACE_PERIOD" nohup bin/dev >>"$START_DEV_LOG" 2>&1 &
+  env -u PORT STARTUP_CLEANUP_KILL_ALL="$STARTUP_CLEANUP_KILL_ALL" nohup bin/dev >>"$START_DEV_LOG" 2>&1 &
   disown
   log "Dev environment start command launched (PID $!)."
 

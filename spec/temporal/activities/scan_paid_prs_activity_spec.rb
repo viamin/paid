@@ -2338,6 +2338,34 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger = result[:prs_to_trigger].first[:triggers].sole
         expect(trigger[:type]).to eq("review_bot_review_pending")
         expect(trigger[:request_login]).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
+        expect(trigger[:request_logins]).to eq([ Activities::RequestReviewActivity::COPILOT_LOGIN ])
+      end
+    end
+
+    context "when both copilot and codex are enabled and no bot reviews exist" do
+      before do
+        enable_copilot_and_codex_review!
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(reviews: [])
+      end
+
+      it "emits the full bot chain in request_logins for fallback in RequestReviewActivity" do
+        result = activity.execute(project_id: project.id)
+
+        trigger = result[:prs_to_trigger].first[:triggers].find { |t| t[:type] == "review_bot_review_pending" }
+        expect(trigger).not_to be_nil
+        expect(trigger[:request_logins]).to eq([
+          Activities::RequestReviewActivity::COPILOT_LOGIN,
+          Activities::RequestReviewActivity::CODEX_LOGIN
+        ])
+        # Single request_login is preserved for in-flight workflow histories
+        # whose code pre-dates the chain field. It is the chain head.
+        expect(trigger[:request_login]).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
       end
     end
 
@@ -3821,6 +3849,145 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         triggers = result[:prs_to_trigger].first[:triggers]
         expect(triggers.first[:type]).not_to eq("escalate_to_owner")
+      end
+    end
+
+    context "when consecutive follow-up runs fail with operational errors" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          draft_review_count: 0)
+      end
+
+      before do
+        stub_github_for_pr(review_threads: [], reviews: [], checks: [])
+      end
+
+      def create_followup_run(status:, error_message: nil, created_at: Time.current)
+        create(:agent_run,
+          project: project,
+          issue: pr_issue,
+          source_pull_request_number: 42,
+          trigger_type: "automatic",
+          goal: "create_pr",
+          status: status,
+          error_message: error_message,
+          started_at: created_at - 5.minutes,
+          completed_at: created_at,
+          created_at: created_at)
+      end
+
+      it "escalates after 3 consecutive provider exhaustion failures" do
+        3.times do |i|
+          create_followup_run(
+            status: "failed",
+            error_message: "All providers exhausted: claude_code, codex",
+            created_at: i.minutes.ago)
+        end
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
+        expect(trigger[:triggers].first[:details]).to include("Consecutive operational failures")
+      end
+
+      it "escalates after 3 consecutive timeout failures" do
+        3.times do |i|
+          create_followup_run(
+            status: "timeout",
+            error_message: "wall_clock_timeout: exceeded 30 minutes",
+            created_at: i.minutes.ago)
+        end
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
+        expect(trigger[:triggers].first[:details]).to include("Consecutive operational failures")
+      end
+
+      it "escalates after 3 consecutive mixed operational failures" do
+        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 1.minute.ago)
+        create_followup_run(status: "rate_limited", error_message: "All providers rate limited", created_at: 2.minutes.ago)
+        create_followup_run(status: "failed", error_message: "All providers exhausted: claude_code", created_at: 3.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
+      end
+
+      it "does not escalate when a code-level failure breaks the streak" do
+        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 1.minute.ago)
+        create_followup_run(status: "failed", error_message: "An error occurred during execution", created_at: 2.minutes.ago)
+        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 3.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger]
+        if triggers.any?
+          expect(triggers.first[:triggers].first[:type]).not_to eq("escalate_to_owner")
+        end
+      end
+
+      it "does not escalate with fewer than 3 consecutive operational failures" do
+        2.times do |i|
+          create_followup_run(
+            status: "failed",
+            error_message: "All providers exhausted: claude_code",
+            created_at: i.minutes.ago)
+        end
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger]
+        if triggers.any?
+          expect(triggers.first[:triggers].first[:type]).not_to eq("escalate_to_owner")
+        end
+      end
+
+      it "does not re-escalate PRs already in escalated phase" do
+        pr_issue.update!(pr_review_phase: "escalated")
+        3.times do |i|
+          create_followup_run(
+            status: "failed",
+            error_message: "All providers exhausted: claude_code",
+            created_at: i.minutes.ago)
+        end
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger]
+        escalation_triggers = triggers.select do |t|
+          t[:triggers].any? { |tr| tr[:details]&.include?("Consecutive operational failures") }
+        end
+        expect(escalation_triggers).to be_empty
+      end
+
+      it "does not count manual runs toward the breaker" do
+        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 1.minute.ago)
+        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 2.minutes.ago)
+        create(:agent_run, :timeout,
+          project: project,
+          issue: pr_issue,
+          source_pull_request_number: 42,
+          trigger_type: "manual",
+          goal: "create_pr",
+          error_message: "wall_clock_timeout",
+          created_at: 3.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger]
+        if triggers.any?
+          expect(triggers.first[:triggers].first[:type]).not_to eq("escalate_to_owner")
+        end
       end
     end
 

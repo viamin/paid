@@ -9,6 +9,8 @@ Rails.application.routes.draw do
   # Can be used by load balancers and uptime monitors to verify that the app is live.
   get "up" => "rails/health#show", :as => :rails_health_check
   get "health/services", to: "health#show"
+  get "health/liveness", to: "health#liveness"
+  get "health/readiness", to: "health#readiness"
 
   # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
@@ -19,6 +21,11 @@ Rails.application.routes.draw do
     patch :read, on: :member
     patch :dismiss, on: :member
     post :mark_all_read, on: :collection
+  end
+
+  # Onboarding wizard
+  resource :onboarding, only: [ :show, :update ], controller: "onboarding" do
+    post :skip
   end
 
   # Dashboard for authenticated users
@@ -42,6 +49,9 @@ Rails.application.routes.draw do
   # Linear tokens management
   resources :linear_tokens, only: [ :index, :new, :create, :show, :destroy ]
 
+  # Issue tracker configurations (account/user/project-level)
+  resources :tracker_configurations, only: [ :index, :show, :create, :update, :destroy ]
+
   # LLM provider API keys
   resources :provider_api_keys, only: [ :index, :new, :create, :show, :edit, :update, :destroy ]
 
@@ -53,6 +63,12 @@ Rails.application.routes.draw do
 
   # User-level pre-commit requirements (per-user overrides)
   resources :user_pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ]
+
+  # Account-level PR templates (defaults inherited by all projects)
+  resources :account_pr_templates, only: [ :index, :show, :create, :update, :destroy ]
+
+  # User-level PR templates (per-user overrides)
+  resources :user_pr_templates, only: [ :index, :show, :create, :update, :destroy ]
   resources :providers, except: :show do
     patch :settings, on: :collection
     post :test_agent, on: :member
@@ -108,7 +124,9 @@ Rails.application.routes.draw do
     resource :workflow_status, only: [ :show ] do
       post :restart
     end
-    resource :quality_dashboard, only: [ :show ], controller: "projects/quality_dashboards"
+    resource :quality_dashboard, only: [ :show ], controller: "projects/quality_dashboards" do
+      get :export
+    end
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
     resources :cost_budgets, only: [ :create, :update, :destroy ], controller: "projects/cost_budgets"
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
@@ -124,6 +142,8 @@ Rails.application.routes.draw do
     end
     resources :pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pre_commit_requirements"
+    resources :pr_templates, only: [ :index, :show, :create, :update, :destroy ],
+      controller: "projects/pr_templates"
     resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"
     post :detect_services, on: :member
     resource :context_intake, only: [ :show, :create, :update ],

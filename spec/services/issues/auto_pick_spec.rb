@@ -673,6 +673,19 @@ RSpec.describe Issues::AutoPick do
         expect(result).to eq(existing_run)
         expect(AgentRun.where(issue: issue, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).count).to eq(1)
       end
+
+      it "returns nil when the selected issue is deleted between candidate lookup and agent-run creation" do
+        # Simulates a race where the strategy selects an issue but it is
+        # destroyed before the orchestrator re-loads it. The tick must not
+        # raise — it should log + return nil like the duplicate_skipped path.
+        issue = create(:issue, project: project)
+        allow(Issue).to receive(:find_by).and_wrap_original do |original, **kwargs|
+          issue.destroy! if kwargs[:id] == issue.id
+          original.call(**kwargs)
+        end
+
+        expect { described_class.new(project).call }.not_to raise_error
+      end
     end
 
     context "when project has PRs needing attention" do
@@ -797,6 +810,47 @@ RSpec.describe Issues::AutoPick do
 
         expect(result).to be_a(AgentRun)
         expect(result.issue).to eq(issue)
+      end
+    end
+
+    context "when PR is in escalated phase" do
+      before do
+        project.effective_owner.settings.update!(max_auto_pick_open_prs: 1)
+      end
+
+      it "does not count escalated in_progress PRs as needing attention" do
+        create(:issue, :pull_request, :in_progress,
+          project: project,
+          pr_review_phase: "escalated")
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+
+      it "does not count escalated failed PRs as needing attention" do
+        create(:issue, :pull_request, :failed,
+          project: project,
+          pr_review_phase: "escalated")
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+
+      it "still blocks auto-pick for non-escalated failed PRs" do
+        create(:issue, :pull_request, :failed,
+          project: project,
+          pr_review_phase: "ready")
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
       end
     end
 

@@ -1,0 +1,53 @@
+<h2 class="text-lg font-semibold text-gray-900">Create Your First Project</h2>
+<p class="mt-1 text-sm text-gray-500">Connect a GitHub repository to start using Paid agents.</p>
+
+<%= form_with url: onboarding_path, method: :patch, class: "mt-6" do |form| %>
+  <div class="space-y-6">
+    <div>
+      <%= form.label "project[name]", "Project Name", class: "block text-sm font-medium leading-6 text-gray-900" %>
+      <div class="mt-2">
+        <%= form.text_field "project[name]",
+            class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
+            placeholder: "e.g., My App", required: true %>
+      </div>
+    </div>
+
+    <div>
+      <%= form.label "project[owner]", "Repository Owner", class: "block text-sm font-medium leading-6 text-gray-900" %>
+      <div class="mt-2">
+        <%= form.text_field "project[owner]",
+            class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
+            placeholder: "e.g., octocat", required: true %>
+      </div>
+      <p class="mt-1 text-xs text-gray-500">The GitHub user or organization that owns the repository.</p>
+    </div>
+
+    <div>
+      <%= form.label "project[repo]", "Repository Name", class: "block text-sm font-medium leading-6 text-gray-900" %>
+      <div class="mt-2">
+        <%= form.text_field "project[repo]",
+            class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
+            placeholder: "e.g., my-app", required: true %>
+      </div>
+    </div>
+
+    <% active_tokens = current_account.github_tokens.select(&:active?) %>
+    <% if active_tokens.any? %>
+      <div>
+        <%= form.label "project[github_token_id]", "GitHub Token", class: "block text-sm font-medium leading-6 text-gray-900" %>
+        <div class="mt-2">
+          <%= form.select "project[github_token_id]",
+              active_tokens.map { |t| [t.name, t.id] },
+              {},
+              class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+
+  <%= form.hidden_field :step, value: "first_project" %>
+
+  <div class="mt-6 flex justify-end">
+    <%= form.submit "Continue", class: "rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 cursor-pointer" %>
+  </div>
+<% end %>

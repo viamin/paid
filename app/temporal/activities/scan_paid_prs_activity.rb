@@ -124,6 +124,15 @@ module Activities
     def scan_pr(project, client, issue)
       return :skipped if active_run_exists?(project, issue)
 
+      # Escalate PRs that are repeatedly failing due to operational issues
+      # (provider exhaustion, timeouts, rate limiting) so they stop blocking
+      # project progress and surface to the owner for attention.
+      if operational_failure_breaker?(project, issue)
+        return escalate_trigger(issue,
+          reason: "Consecutive operational failures " \
+                  "(#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} runs failed due to provider exhaustion/timeout)")
+      end
+
       backfill_review_goal_retry_reset_at!(issue)
 
       retry_needed = review_goal_retry_needed?(project, issue)
@@ -228,6 +237,7 @@ module Activities
     end
 
     MAX_CONSECUTIVE_DRAFT_FAILURES = 3
+    MAX_CONSECUTIVE_OPERATIONAL_FAILURES = 3
 
     # --- Draft phase scanning ---
 
@@ -757,6 +767,38 @@ module Activities
       end
     end
 
+    # Circuit breaker: if the last N automatic follow-up runs on this PR
+    # all failed due to operational issues (provider exhaustion, wall-clock
+    # timeout, auth expiry, rate limiting), escalate to the owner. These
+    # are infrastructure failures the agent cannot fix by retrying — they
+    # indicate a systemic problem (all providers down, quota exceeded, etc.)
+    # that requires human intervention.
+    #
+    # Unlike consecutive_draft_failures_breaker? (draft-phase only, checks
+    # for unproductive output), this breaker applies across all phases and
+    # checks for infrastructure-class failures specifically. A run that
+    # failed due to a code error won't trip this breaker because a retry
+    # with different code changes might succeed.
+    #
+    # Skips PRs already in "escalated" phase to avoid re-escalating.
+    # Skips draft/restarted phases because those have their own failure
+    # breaker (consecutive_draft_failures_breaker?) with phase-aware
+    # guards (e.g. draft_review_count resets on restart).
+    def operational_failure_breaker?(project, issue)
+      return false if issue.pr_review_phase.in?(%w[draft restarted escalated])
+
+      recent_runs = project.agent_runs
+        .where(source_pull_request_number: issue.github_number)
+        .where(trigger_type: "automatic", goal: "create_pr")
+        .finished
+        .order(created_at: :desc)
+        .limit(MAX_CONSECUTIVE_OPERATIONAL_FAILURES)
+
+      return false if recent_runs.size < MAX_CONSECUTIVE_OPERATIONAL_FAILURES
+
+      recent_runs.all?(&:operational_failure?)
+    end
+
     # Returns true when the latest finished automatic review-goal run in the
     # current cycle ended in a retryable failure status. Only applies when the
     # paid_agent review method is enabled (review-goal runs are how paid_agent
@@ -953,6 +995,17 @@ module Activities
       project.review_bot_request_login
     end
 
+    # Returns the ordered list of bot logins to attempt for an explicit
+    # review-bot review, with the primary provider first. Forwarded into
+    # the +review_bot_review_pending+ trigger as +request_logins+ so the
+    # workflow can pass the full chain to +RequestReviewActivity+, which
+    # falls through to a configured secondary bot when the primary is
+    # rate-limited or unavailable. Returns +[]+ when no bot-backed method
+    # is enabled. See Project#review_bot_request_chain.
+    def review_bot_request_chain(project)
+      project.review_bot_request_chain
+    end
+
     # Review-bot logins that post feedback as a single top-level review body
     # rather than as inline review threads. These bots need the body-only
     # anti-loop guard in check_review_bot_status because thread resolution
@@ -1005,9 +1058,19 @@ module Activities
         # other bot can still complete its review cycle. Suppress only when
         # login is nil (paid_agent-only project) and rounds are exhausted;
         # the elsif branch handles that via check_paid_agent_review_status.
-        login = project && review_bot_request_login(project)
-        if login
-          [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
+        #
+        # Emit the full bot chain (primary first, then fallbacks) as
+        # +request_logins+ so RequestReviewActivity can fall through to a
+        # configured secondary bot when the primary is rate-limited or
+        # unavailable. The single +request_login+ field is preserved for
+        # in-flight workflow replays whose history pre-dates the chain
+        # support — old workflow code reads it without falling back.
+        chain = project ? review_bot_request_chain(project) : []
+        if chain.any?
+          [ { type: "review_bot_review_pending",
+              details: "No review bot review found",
+              request_login: chain.first,
+              request_logins: chain } ]
         elsif project&.review_enabled? && project.review_method_enabled?("paid_agent")
           check_paid_agent_review_status(project, issue)
         else

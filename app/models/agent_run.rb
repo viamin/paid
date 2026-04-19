@@ -41,6 +41,16 @@ class AgentRun < ApplicationRecord
   has_one :model_selection, dependent: :destroy
   has_one :decision_record, dependent: :nullify
   has_many :agent_run_anomalies, dependent: :destroy
+  has_many :sent_coordination_signals,
+    class_name: "AgentCoordinationSignal",
+    foreign_key: :source_agent_run_id,
+    dependent: :destroy,
+    inverse_of: :source_agent_run
+  has_many :received_coordination_signals,
+    class_name: "AgentCoordinationSignal",
+    foreign_key: :target_agent_run_id,
+    dependent: :nullify,
+    inverse_of: :target_agent_run
 
   attr_readonly :mcp_server_snapshot
 
@@ -233,6 +243,31 @@ class AgentRun < ApplicationRecord
   # Returns the count of active runs for a given project.
   def self.active_count_for_project(project)
     active.where(project_id: project.id).count
+  end
+
+  # Returns the count of unfinished (queued/pending/running/paused) auto-pick
+  # runs attributable to the given user. Used by queue seeding to cap queued
+  # auto-pick work at the user's max_concurrent_runs instead of seeding every
+  # eligible issue. Mirrors active_count_for_user's owner-resolution chain.
+  #
+  # Filters on the explicit `auto_pick: true` column set by
+  # Issues::AutoPick#create_agent_run, not the broader legacy inference used by
+  # ProcessRunQueueJob#auto_pick_run? (which also treats any automatic run
+  # without a source_pull_request_number as auto-pick). The column is set on
+  # every new auto-pick run, so the count is accurate for seeding decisions.
+  def self.unfinished_auto_pick_count_for_user(user)
+    base = where(status: UNFINISHED_STATUSES, auto_pick: true)
+    scope = base.joins(:project).where(projects: { created_by_id: user.id })
+
+    if orphaned_project_owner?(user)
+      scope = scope.or(
+        base.joins(:project).where(
+          projects: { created_by_id: nil, account_id: user.account_id }
+        )
+      )
+    end
+
+    scope.count
   end
 
   def self.stale_running_timeout
@@ -455,6 +490,9 @@ class AgentRun < ApplicationRecord
     scope = queued_with_priority.order(QUEUE_ORDER)
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     scope = scope.joins(project: :account).where(accounts: { scheduler_paused_at: nil })
+    scope = scope.where(
+      "agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL"
+    )
     scope.first
   end
 
@@ -541,6 +579,23 @@ class AgentRun < ApplicationRecord
 
   def successful?
     status == "completed"
+  end
+
+  # Returns true when this run failed due to an operational/infrastructure
+  # issue (provider exhaustion, timeout, auth expiry, rate limiting) rather
+  # than a code-level failure. Used by the PR scanner's operational failure
+  # breaker to detect when a PR is stalled due to infrastructure problems
+  # that the agent cannot fix by retrying.
+  #
+  # A "failed" run is only operational when the error message indicates
+  # provider exhaustion or rate limiting — other "failed" runs are assumed
+  # to be code-level failures where a retry might help.
+  def operational_failure?
+    return false unless FAILURE_STATUSES.include?(status)
+    return true if status.in?(%w[timeout auth_expired rate_limited])
+
+    # "failed" status: only operational when caused by provider exhaustion
+    error_message.to_s.match?(/All providers exhausted/i)
   end
 
   def total_tokens
@@ -652,6 +707,19 @@ class AgentRun < ApplicationRecord
 
   def result_url
     pull_request_url || created_issue_url
+  end
+
+  # Returns cross-repo issues created during this run, filtered by role.
+  def upstream_issues
+    (cross_repo_issues || []).select { |i| i["role"] == "upstream" }
+  end
+
+  def downstream_issues
+    (cross_repo_issues || []).select { |i| i["role"] == "downstream" }
+  end
+
+  def cross_repo_issue_pair?
+    upstream_issues.any? && downstream_issues.any?
   end
 
   def fail!(error: nil)
