@@ -647,7 +647,7 @@ The interface code is placed under `app/services/automation/providers/` (rather 
 1. Extract auto-merge policy into `Automation::Strategies::AutoMerge`.
 2. Extract auto-review policy into `Automation::Strategies::AutoReview`.
 3. Extract auto-continue policy into `Automation::Strategies::AutoContinue`.
-4. Refactor auto-pick: extract selection policy from `Issues::AutoPick` into `Automation::Strategies::AutoPick`, keeping the service as an orchestration wrapper.
+4. Refactor auto-pick: extract selection policy from `Issues::AutoPick` into `Automation::Strategies::AutoPick`, keeping the service as an orchestration wrapper. — *Shipped in #1122.* The strategy consumes project-level guard signals (`pr_attention_count`, `pr_attention_limit`) from `Automation::Context#metadata` and delegates data access to `Automation::Strategies::AutoPick::CandidateSource`. The default, GitHub-backed implementation (`DefaultCandidateSource`) holds the existing Postgres queries; alternate work-item providers can implement the interface without changing the policy layer.
 5. Implement `Automation::StrategyCoordinator` for multi-strategy evaluation.
 6. Wire strategies into activities via coordinator.
 
