@@ -58,6 +58,28 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(result[:pull_request_number]).to eq(42)
     end
 
+    it "preserves conventional commit issue titles in the PR title" do
+      issue.update!(title: "feat(quality): automatic pause on quality threshold breach")
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).to have_received(:create_pull_request).with(
+        anything,
+        hash_including(title: "feat(quality): automatic pause on quality threshold breach")
+      )
+    end
+
+    it "normalizes the conventional commit type to lowercase in PR titles" do
+      issue.update!(title: "Feat(quality): automatic pause on quality threshold breach")
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).to have_received(:create_pull_request).with(
+        anything,
+        hash_including(title: "feat(quality): automatic pause on quality threshold breach")
+      )
+    end
+
     it "checks for an existing PR before creating a new one" do
       activity.execute(agent_run_id: agent_run.id)
 

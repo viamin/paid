@@ -1064,6 +1064,17 @@ module Activities
       project.review_bot_request_login
     end
 
+    # Returns the ordered list of bot logins to attempt for an explicit
+    # review-bot review, with the primary provider first. Forwarded into
+    # the +review_bot_review_pending+ trigger as +request_logins+ so the
+    # workflow can pass the full chain to +RequestReviewActivity+, which
+    # falls through to a configured secondary bot when the primary is
+    # rate-limited or unavailable. Returns +[]+ when no bot-backed method
+    # is enabled. See Project#review_bot_request_chain.
+    def review_bot_request_chain(project)
+      project.review_bot_request_chain
+    end
+
     # Review-bot logins that post feedback as a single top-level review body
     # rather than as inline review threads. These bots need the body-only
     # anti-loop guard in check_review_bot_status because thread resolution
@@ -1116,9 +1127,19 @@ module Activities
         # other bot can still complete its review cycle. Suppress only when
         # login is nil (paid_agent-only project) and rounds are exhausted;
         # the elsif branch handles that via check_paid_agent_review_status.
-        login = project && review_bot_request_login(project)
-        if login
-          [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
+        #
+        # Emit the full bot chain (primary first, then fallbacks) as
+        # +request_logins+ so RequestReviewActivity can fall through to a
+        # configured secondary bot when the primary is rate-limited or
+        # unavailable. The single +request_login+ field is preserved for
+        # in-flight workflow replays whose history pre-dates the chain
+        # support — old workflow code reads it without falling back.
+        chain = project ? review_bot_request_chain(project) : []
+        if chain.any?
+          [ { type: "review_bot_review_pending",
+              details: "No review bot review found",
+              request_login: chain.first,
+              request_logins: chain } ]
         elsif project&.review_enabled? && project.review_method_enabled?("paid_agent")
           check_paid_agent_review_status(project, issue)
         else
