@@ -587,6 +587,15 @@ class Project < ApplicationRecord
     automation_configuration.auto_review.bot_request_login
   end
 
+  # Returns the ordered list of bot-backed reviewer logins to attempt when
+  # requesting an automated review, with the primary provider first. Used
+  # by RequestReviewActivity to fall back to a secondary bot when the
+  # primary is unavailable (e.g. Copilot rate-limited). Returns +[]+ when
+  # reviews are globally disabled or no bot-backed method is enabled.
+  def review_bot_request_chain
+    automation_configuration.auto_review.bot_request_chain
+  end
+
   def quality_paused?
     quality_paused_at.present?
   end
