@@ -21,6 +21,32 @@ RSpec.describe Provider do
       expect(provider).not_to allow_value("unknown_provider").for(:provider_key)
     end
 
+    describe "weight" do
+      it "defaults to 1 on new records" do
+        expect(provider.weight).to eq(1)
+      end
+
+      it "accepts positive integer values up to MAX_WEIGHT" do
+        provider.weight = 1
+        expect(provider).to be_valid
+
+        provider.weight = described_class::MAX_WEIGHT
+        expect(provider).to be_valid
+      end
+
+      it "rejects zero or negative weights" do
+        provider.weight = 0
+        expect(provider).not_to be_valid
+        expect(provider.errors[:weight]).to be_present
+      end
+
+      it "rejects weights above MAX_WEIGHT" do
+        provider.weight = described_class::MAX_WEIGHT + 1
+        expect(provider).not_to be_valid
+        expect(provider.errors[:weight]).to be_present
+      end
+    end
+
     describe "complexity_thresholds" do
       let(:provider) { build(:provider, provider_key: "cursor") }
 

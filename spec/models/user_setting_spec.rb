@@ -396,6 +396,77 @@ RSpec.describe UserSetting do
     end
   end
 
+  describe "#select_automated_provider_identifier" do
+    let(:user) { create(:user) }
+    let(:claude) { user.providers.find_by!(provider_key: "claude") }
+    let!(:cursor) { user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true) }
+    let!(:aider) { user.providers.create!(provider_key: "aider", enabled_for_agent_runs: true) }
+    let(:settings) { user.settings }
+
+    before do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
+    end
+
+    it "returns the goal-specific default in single mode" do
+      settings.update!(provider_selection_mode: "single", default_agent_provider: claude.routing_key)
+      expect(settings.select_automated_provider_identifier).to eq(claude.routing_key)
+    end
+
+    it "returns the only enabled provider when fewer than two are enabled" do
+      cursor.update!(enabled_for_agent_runs: false)
+      aider.update!(enabled_for_agent_runs: false)
+      settings.update!(provider_selection_mode: "round_robin")
+
+      expect(settings.select_automated_provider_identifier).to eq(claude.routing_key)
+    end
+
+    describe "round_robin mode" do
+      it "cycles through providers in alphabetical-key order, repeating each weight times" do
+        # Providers iterate in `ordered` scope (provider_key ASC):
+        # aider, claude, cursor.
+        aider.update!(weight: 1)
+        claude.update!(weight: 3)
+        cursor.update!(weight: 1)
+        settings.update!(provider_selection_mode: "round_robin")
+
+        sequence = Array.new(10) { settings.select_automated_provider_identifier }
+        expected_cycle = [
+          aider.routing_key,
+          claude.routing_key, claude.routing_key, claude.routing_key,
+          cursor.routing_key
+        ]
+        expect(sequence).to eq(expected_cycle + expected_cycle)
+      end
+
+      it "resets the cursor when provider weights change" do
+        aider.update!(weight: 5)
+        settings.update!(provider_selection_mode: "round_robin")
+
+        2.times { settings.select_automated_provider_identifier }
+        aider.update!(weight: 1)
+
+        first_after_change = settings.select_automated_provider_identifier
+        expect(first_after_change).to eq(aider.routing_key)
+      end
+    end
+
+    describe "random mode" do
+      it "respects weights when picking a provider" do
+        # Ordered candidates: aider (1), claude (3), cursor (1)
+        # Cumulative weights: aider [0..0], claude [1..3], cursor [4..4]
+        aider.update!(weight: 1)
+        claude.update!(weight: 3)
+        cursor.update!(weight: 1)
+        settings.update!(provider_selection_mode: "random")
+
+        allow(SecureRandom).to receive(:random_number).with(5).and_return(0, 1, 3, 4)
+
+        results = Array.new(4) { settings.select_automated_provider_identifier }
+        expect(results).to eq([ aider.routing_key, claude.routing_key, claude.routing_key, cursor.routing_key ])
+      end
+    end
+  end
+
   describe "#fallback_priority_for" do
     let(:user) { create(:user) }
 
