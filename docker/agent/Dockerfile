@@ -158,7 +158,16 @@ RUN if [ -z "${CLAUDE_INSTALL_COMMAND}" ]; then echo "ERROR: CLAUDE_INSTALL_COMM
 # --ignore-scripts on every install: supply-chain hardening — prevents npm
 # lifecycle scripts (postinstall, preinstall) from executing arbitrary code.
 # See: https://www.elastic.co/security-labs/axios-one-rat-to-rule-them-all
-RUN npm install -g --ignore-scripts @openai/codex@0.116.0
+
+# Codex CLI: version is owned by agent-harness (installation_contract).
+# CODEX_PACKAGE is extracted from agent-harness at build time by
+# build-agent-image.sh / agent-image.yml — Paid no longer pins this version.
+ARG CODEX_PACKAGE
+RUN if [ -z "${CODEX_PACKAGE}" ]; then \
+        echo "ERROR: CODEX_PACKAGE build-arg is required (sourced from agent-harness)" >&2; \
+        exit 1; \
+    fi \
+    && npm install -g --ignore-scripts "${CODEX_PACKAGE}"
 
 # Gemini CLI version is owned by agent-harness; the install command is extracted
 # at build time by scripts/build-agent-image.sh and passed as a build arg.

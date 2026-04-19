@@ -40,6 +40,15 @@ if [ -z "${CLAUDE_POST_INSTALL_BINARY_PATH}" ]; then
     exit 1
 fi
 
+# Extract Codex CLI package from agent-harness installation contract.
+# agent-harness owns the supported Codex CLI version; Paid consumes it at build time.
+CODEX_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" codex)
+CODEX_PACKAGE=$(echo "${CODEX_CONTRACT}" | sed -n 's/^PACKAGE=//p')
+if [ -z "${CODEX_PACKAGE}" ]; then
+    echo "ERROR: Could not extract Codex package from agent-harness" >&2
+    exit 1
+fi
+
 # Extract Gemini CLI install command from agent-harness (single source of truth).
 GEMINI_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" gemini)
 GEMINI_CLI_INSTALL_COMMAND=$(echo "${GEMINI_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
@@ -54,6 +63,7 @@ echo "  Image: ${FULL_IMAGE}"
 echo "  Context: ${PROJECT_ROOT}/docker/agent"
 echo "  ruby-maat: ${RUBY_MAAT_VERSION}"
 echo "  claude-cli: ${CLAUDE_INSTALL_COMMAND}"
+echo "  codex: ${CODEX_PACKAGE}"
 echo "  gemini-cli: ${GEMINI_CLI_INSTALL_COMMAND}"
 
 docker build \
@@ -62,6 +72,7 @@ docker build \
     --build-arg "RUBY_MAAT_VERSION=${RUBY_MAAT_VERSION}" \
     --build-arg "CLAUDE_INSTALL_COMMAND=${CLAUDE_INSTALL_COMMAND}" \
     --build-arg "CLAUDE_POST_INSTALL_BINARY_PATH=${CLAUDE_POST_INSTALL_BINARY_PATH}" \
+    --build-arg "CODEX_PACKAGE=${CODEX_PACKAGE}" \
     --build-arg "GEMINI_CLI_INSTALL_COMMAND=${GEMINI_CLI_INSTALL_COMMAND}" \
     "${PROJECT_ROOT}/docker/agent/"
 
