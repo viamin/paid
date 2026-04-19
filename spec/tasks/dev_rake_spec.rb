@@ -13,7 +13,6 @@ RSpec.describe "dev:cleanup" do
 
     allow(DevCleanup).to receive(:find_orphaned_containers).and_return([])
     allow(DevCleanup).to receive(:mark_service_containers_stopped)
-    allow(DevCleanup).to receive(:cleanup_stale_service_containers)
   end
 
   around do |example|
@@ -128,10 +127,17 @@ RSpec.describe "dev:cleanup" do
       expect(pending_run.reload.status).to eq("timeout")
     end
 
-    it "triggers ProcessRunQueueJob when runs are resolved" do
+    it "triggers ProcessRunQueueJob when queued runs exist alongside resolved runs" do
       create(:agent_run, :running)
+      create(:agent_run, :queued)
 
       expect { task.invoke }.to have_enqueued_job(ProcessRunQueueJob)
+    end
+
+    it "does not trigger ProcessRunQueueJob when only active runs are resolved" do
+      create(:agent_run, :running)
+
+      expect { task.invoke }.not_to have_enqueued_job(ProcessRunQueueJob)
     end
 
     it "marks service containers as stopped when orphaned containers were found" do
