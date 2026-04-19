@@ -2,7 +2,7 @@
 
 This document outlines the phased implementation plan for Paid. Each phase builds on the previous, delivering usable functionality at each step while progressing toward the complete vision.
 
-**Current Status**: Phase 2 (Intelligence) is complete as of 2026-04-01. Phase 3 (Scale) is next.
+**Current Status**: Phase 3 (Scale) in progress as of 2026-04-19. Sections 3.1–3.3 and 3.6 are complete; 3.4, 3.5, and 3.7 are partially done. A new Phase 3.5 (Completion & Hardening) has been added to close gaps in Phase 2–3 feature completion and address security/reliability P1s before Phase 4 begins.
 
 ## Phase Overview
 
@@ -10,7 +10,7 @@ This document outlines the phased implementation plan for Paid. Each phase build
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           PAID IMPLEMENTATION PHASES                         │
 │                                                                              │
-│  Phase 1: Foundation✓   Phase 2: Intelligence✓  Phase 3: Scale              │
+│  Phase 1: Foundation✓   Phase 2: Intelligence✓  Phase 3: Scale⏳             │
 │  ──────────────────     ──────────────────────  ─────────────               │
 │  • Rails app skeleton   • Prompt versioning     • Multi-agent               │
 │  • GitHub integration   • A/B testing           • Auto-scaling              │
@@ -19,6 +19,12 @@ This document outlines the phased implementation plan for Paid. Each phase build
 │  • Container isolation  • Cost tracking         • Performance               │
 │  • Manual PR creation   • Semantic code search  • Multi-tenancy prep        │
 │  •                      • Live dashboard        •                           │
+│                                                                              │
+│  Phase 3.5: Completion & Hardening                                          │
+│  ─────────────────────────────────                                           │
+│  • Security & reliability P1s     • Performance fundamentals                │
+│  • Wire half-built Phase 2 feats  • Quality recovery workflows              │
+│  • Multi-provider & model select  • Fair queueing                           │
 │                                                                              │
 │  Phase 4: AI-Native Evolution                                               │
 │  ────────────────────────────                                               │
@@ -404,16 +410,16 @@ Deliverables:
 
 **Objective**: Multiple agents work on different parts of a feature simultaneously.
 
-**Status**: Not started (Issue #734)
+**Status**: Complete — `PlanningWorkflow` decomposes features into sub-tasks; `ParallelAgentExecutionWorkflow` runs multiple agents concurrently with capacity checks, batch execution, and deadline enforcement. Conflict detection/resolution and aggregated PR creation included.
 
 Tasks:
 
-- [ ] Implement PlanningWorkflow for feature decomposition (#694)
-- [ ] Create sub-issues in GitHub from decomposed plan (#695)
-- [ ] Parallel AgentExecutionWorkflow invocation (#696)
-- [ ] Coordination between related agents (#697)
-- [ ] Conflict detection and resolution (#698)
-- [ ] Aggregated PR creation option (#699)
+- [x] Implement PlanningWorkflow for feature decomposition (#694)
+- [x] Create sub-issues in GitHub from decomposed plan (#695)
+- [x] Parallel AgentExecutionWorkflow invocation (#696)
+- [x] Coordination between related agents (#697)
+- [x] Conflict detection and resolution (#698)
+- [x] Aggregated PR creation option (#699)
 
 Deliverables:
 
@@ -426,16 +432,16 @@ Deliverables:
 
 **Objective**: Prevent runaway agents and control costs.
 
-**Status**: Partially started (Issue #735) — `CostBudget`, `StaleRunDetectorJob`, and `AgentRunResourceJanitorJob` exist but don't enforce hard limits.
+**Status**: Complete — `AgentRuns::DetectInfiniteLoop` detects repeated/cycling output; `CostBudget` enforces token and cost limits with `hard_stop` mode; `Anomalies::Detect` uses z-score baselines; `Guardrails::ViolationHandler` pauses runs on all five violation types (loop, token, cost, time, anomaly) and publishes dashboard alerts.
 
 Tasks:
 
-- [ ] Implement infinite loop detection (#700)
-- [ ] Token usage limits per run (#701)
-- [ ] Cost limits per project (hard stop) (#702)
-- [ ] Execution time limits (#703)
-- [ ] Anomaly detection (unusual patterns) (#704)
-- [ ] Automatic pause and alert (#705)
+- [x] Implement infinite loop detection (#700)
+- [x] Token usage limits per run (#701)
+- [x] Cost limits per project (hard stop) (#702)
+- [x] Execution time limits (#703)
+- [x] Anomaly detection (unusual patterns) (#704)
+- [x] Automatic pause and alert (#705)
 
 Deliverables:
 
@@ -448,16 +454,16 @@ Deliverables:
 
 **Objective**: Prompts automatically improve based on performance.
 
-**Status**: Not started (Issue #736)
+**Status**: Complete — `PromptEvolutionWorkflow` runs a weekly cycle: sample runs → generate LLM mutations → persist `PromptVersion` variants → create A/B test. `PromptReviewsController` provides human review gate. `PromptEvolution::Select` evaluates fitness.
 
 Tasks:
 
-- [ ] Implement PromptEvolutionWorkflow (#706)
-- [ ] Random sampling of completed runs (#707)
-- [ ] Prompt mutation agent (#708)
-- [ ] Fitness function (quality + cost + speed) (#709)
-- [ ] Evolutionary selection of prompts (#710)
-- [ ] Human review of evolved prompts (optional gate) (#711)
+- [x] Implement PromptEvolutionWorkflow (#706)
+- [x] Random sampling of completed runs (#707)
+- [x] Prompt mutation agent (#708)
+- [x] Fitness function (quality + cost + speed) (#709)
+- [x] Evolutionary selection of prompts (#710)
+- [x] Human review of evolved prompts (optional gate) (#711)
 
 Deliverables:
 
@@ -470,16 +476,16 @@ Deliverables:
 
 **Objective**: Automatically pause work when quality drops.
 
-**Status**: Not started (Issue #737) — `QualityMetric` and `QualityMetrics::TrendAnalysis` exist from Phase 2 but no gate enforcement.
+**Status**: Mostly complete — `QualityGateThreshold` model with configurable per-project thresholds, `QualityAlerts::CheckGate` and `QualityPause::Check` enforce gates and auto-pause. `QualityMetrics::TrendAnalysis` integrated. Only quality recovery workflows (#716) remain (schema table exists, no model/service yet).
 
 Tasks:
 
-- [ ] Define quality thresholds (configurable) (#712)
-- [ ] Implement quality gate checks in workflows (#713)
-- [ ] Automatic pause on threshold breach (#714)
-- [ ] Alert to user for intervention (#715)
-- [ ] Quality recovery workflows (#716)
-- [ ] Quality trend analysis with gate integration (#717)
+- [x] Define quality thresholds (configurable) (#712)
+- [x] Implement quality gate checks in workflows (#713)
+- [x] Automatic pause on threshold breach (#714)
+- [x] Alert to user for intervention (#715)
+- [ ] Quality recovery workflows (#716) — schema table exists, model/service pending
+- [x] Quality trend analysis with gate integration (#717)
 
 Deliverables:
 
@@ -492,14 +498,14 @@ Deliverables:
 
 **Objective**: Handle more projects and agents efficiently.
 
-**Status**: Partially started (Issue #738) — connection pool optimization done, container metrics in place.
+**Status**: Partially started (Issue #738) — GitHub API caching layer complete (`Github::CacheService`, `CacheWarmer`, `CacheMetrics`, `CacheInvalidator`). Container pool warming, database optimization, benchmarking suite, and workflow batching remain.
 
 Tasks:
 
 - [ ] Container pool warming (#718)
 - [ ] Workflow batching optimizations (#719)
 - [ ] Database query optimization (#720)
-- [ ] Caching layer for GitHub data (#721)
+- [x] Caching layer for GitHub data (#721) — `Github::CacheService`, `CacheWarmer`, `CacheMetrics`, `CacheInvalidator`
 - [ ] Worker pool tuning (#722)
 - [ ] Performance benchmarking (#723)
 
@@ -514,15 +520,15 @@ Deliverables:
 
 **Objective**: Lay groundwork for automatic worker scaling.
 
-**Status**: Not started (Issue #739)
+**Status**: Complete — `Scaling::WorkerPoolAdvisor` implements hybrid reactive/predictive algorithm with cost caps and cooldown. `Scaling::QueueMonitor` + `QueueMonitorJob` track GoodJob, Temporal, and agent-run queues. `Scaling::Orchestrator` interface with `KubernetesAdapter` and `DockerComposeAdapter`. Scaling documentation in `docs/SCALING.md`, `docs/runbooks/scaling.md`, and `docs/rdrs/RDR-024`.
 
 Tasks:
 
-- [ ] Worker metrics export (#724)
-- [ ] Queue depth monitoring (#725)
-- [ ] Scaling algorithm design (#726)
-- [ ] Integration points for orchestrators (K8s, etc.) (#727)
-- [ ] Documentation for scaling (#728)
+- [x] Worker metrics export (#724)
+- [x] Queue depth monitoring (#725)
+- [x] Scaling algorithm design (#726)
+- [x] Integration points for orchestrators (K8s, etc.) (#727)
+- [x] Documentation for scaling (#728)
 
 Deliverables:
 
@@ -534,14 +540,14 @@ Deliverables:
 
 **Objective**: Architecture ready for multiple teams/organizations.
 
-**Status**: Partially started (Issue #740) — `Account` model with memberships provides basic tenant isolation.
+**Status**: Mostly complete — `Account` model with plan tiers (trial/free/professional/enterprise), `TenantSetting` with resource limits, `TenantScoped` concern for application-level isolation. Billing schema designed (4 tables: plans, periods, invoices, line_items). Only tenant onboarding flow (#733) remains.
 
 Tasks:
 
-- [ ] Tenant model design (#729)
-- [ ] Data isolation patterns (schema or RLS) (#730)
-- [ ] Per-tenant configuration (#731)
-- [ ] Billing aggregation design (#732)
+- [x] Tenant model design (#729) — `Account` with plans, `TenantSetting` with limits, `TenantScoped` concern
+- [x] Data isolation patterns (schema or RLS) (#730) — `TenantScoped` concern with `for_tenant` / `for_current_tenant` scopes
+- [x] Per-tenant configuration (#731) — `TenantSetting` model with limits and feature flags
+- [x] Billing aggregation design (#732) — schema tables for `billing_plans`, `billing_periods`, `billing_invoices`, `billing_line_items` (models pending)
 - [ ] Tenant onboarding flow design (#733)
 
 Deliverables:
@@ -553,12 +559,120 @@ Deliverables:
 
 ### Phase 3 Completion Criteria
 
-- [ ] Multiple agents run in parallel on one feature
-- [ ] Guardrails prevent runaway costs
-- [ ] Prompts evolve based on measured performance
-- [ ] Quality gates pause work automatically
+- [x] Multiple agents run in parallel on one feature
+- [x] Guardrails prevent runaway costs
+- [x] Prompts evolve based on measured performance
+- [x] Quality gates pause work automatically
 - [ ] Performance handles 10+ concurrent projects
-- [ ] Multi-tenancy migration path clear
+- [ ] Multi-tenancy migration path clear — tenant model and isolation done; onboarding flow pending
+
+---
+
+## Phase 3.5: Completion & Hardening
+
+**Goal**: Close gaps in Phase 2–3 feature completion, fix security and reliability P1s, and ensure the system is production-ready at scale before beginning Phase 4's learning systems.
+
+**Why this phase exists**: Phase 3's core features are built (multi-agent orchestration, prompt evolution, guardrails, scaling infrastructure), but open issues reveal unfinished wiring in Phase 2's intelligence layer and several security/reliability gaps. Phase 4's learning systems require these foundations to be solid — A/B tests must produce real data, multi-provider must work end-to-end, and the system must handle concurrent load without credential leaks or data drift.
+
+**Status**: Not started.
+
+### 3.5.1 Security & Reliability
+
+**Objective**: Fix P1 security vulnerabilities and data integrity issues.
+
+Tasks:
+
+- [ ] Remove direct provider credential injection from agent runs (#1281)
+- [ ] Fix schema.rb drift from shared database across agent containers (#1280)
+- [ ] Fix container network isolation alignment across provider auth modes (#1284)
+- [ ] Fix GitHub sync incremental watermark permanently skipping issues (#1257)
+- [ ] Fix notification Turbo Frame mismatch ("Content missing") (#1263)
+
+Deliverables:
+
+- No credentials exposed to agent containers except through secrets proxy
+- Schema.rb stays consistent across container runs
+- GitHub issue sync is lossless
+- Notifications navigate correctly
+
+### 3.5.2 Core Feature Completion
+
+**Objective**: Wire half-built Phase 2 features so they work end-to-end in production.
+
+Tasks:
+
+- [ ] Wire A/B test assignment into live agent execution (#1267)
+- [ ] Complete enhance_issue pipeline: knowledge context injection (#1265)
+- [ ] Complete enhance_issue pipeline: quality metrics (#1266)
+- [ ] Complete enhance_issue pipeline: label management and re-evaluation loop (#991)
+- [ ] Add tests for enhance_issue enhancement and re-evaluation workflow (#992)
+- [ ] Replace "primary provider" with "automated provider" and multi-provider modes (#778)
+- [ ] Intelligent model selection based on task complexity (#760)
+- [ ] Add container-authenticated knowledge search endpoint for agent tool access (#1272)
+
+Deliverables:
+
+- A/B tests produce real quality data from live agent runs
+- enhance_issue goal works end-to-end with knowledge, quality, and re-evaluation
+- Users can configure multiple providers with automatic selection and fallback
+- Agents can search the knowledge base from within containers
+
+### 3.5.3 Fair Queueing
+
+**Objective**: Prevent any single user or project from monopolizing agent run capacity.
+
+Tasks:
+
+- [ ] Implement within-user fair queueing across projects (#1274)
+- [ ] Implement cross-user fair queueing (#1275)
+
+Deliverables:
+
+- No single user can starve others of agent capacity
+- Projects share capacity proportionally within a user's account
+- Queue depth visible in dashboard
+
+### 3.5.4 Performance Fundamentals
+
+**Objective**: Complete the remaining Phase 3.5 performance items needed to handle 10+ concurrent projects.
+
+Tasks:
+
+- [ ] Container pool warming (#718)
+- [ ] Database query optimization (#720)
+- [ ] Workflow batching optimizations (#719)
+- [ ] Worker pool tuning (#722)
+- [ ] Performance benchmarking suite (#723)
+- [ ] Reduce GitHub API calls per polling cycle (#879)
+
+Deliverables:
+
+- Faster container startup via pre-warmed pool
+- Database queries optimized for multi-project concurrency
+- Baseline performance benchmarks established
+- Tuning recommendations documented
+
+### 3.5.5 Quality Recovery
+
+**Objective**: Complete the quality gate loop — when quality gates pause work, provide a clear path to resume.
+
+Tasks:
+
+- [ ] Implement quality recovery workflows (#716) — build model and service for `quality_recovery_actions` table
+
+Deliverables:
+
+- Quality pause events trigger recovery suggestions
+- Users can acknowledge and resume with actionable next steps
+
+### Phase 3.5 Completion Criteria
+
+- [ ] Zero P1 security or data integrity issues open
+- [ ] A/B tests produce data from live agent runs
+- [ ] enhance_issue goal works end-to-end
+- [ ] Multi-provider with automatic selection works
+- [ ] Fair queueing prevents capacity starvation
+- [ ] Performance handles 10+ concurrent projects with benchmarks
 
 ---
 
@@ -763,6 +877,12 @@ Phase 2.1 (Prompts) ────────────────────
 Phase 2.3 (Model Meta-Agent) ────────────────────────────────────►
 Phase 2.4 (Cost Tracking) ───────────────────────────────────────►
 Phase 2.7 (Semantic Search) ─────────────────────────────────────►
+
+Phase 3 (Scale) ─────────────────────────────────────────────────►
+          │
+          └── 3.5 (Completion & Hardening) ────────────────────►
+                    │
+                    └── 4.1 (Decision Logging) ─── prerequisite gate
 ```
 
 ---
@@ -777,6 +897,7 @@ Phase 2.7 (Semantic Search) ─────────────────�
 | Cost overruns | Implement guardrails early in Phase 2 |
 | Quality degradation | A/B testing before full prompt evolution |
 | Scope creep | Strict phase gates, MVP mindset |
+| Phase 4 premature | Phase 3.5 completion gate ensures foundations are solid |
 
 ---
 
@@ -802,6 +923,15 @@ Phase 2.7 (Semantic Search) ─────────────────�
 - Prompt evolution shows measurable improvement
 - Quality gates catch 90% of regressions
 - Performance handles 10 concurrent projects
+
+### Phase 3.5
+
+- Zero open P1 security or data integrity issues
+- A/B tests producing quality data from ≥ 20 live runs
+- enhance_issue goal: end-to-end with knowledge, quality, and re-evaluation
+- Multi-provider automatic selection working with fallback
+- Fair queueing: no user starvation under load
+- Performance: 10 concurrent projects with P95 container startup < 30s
 
 ### Phase 4
 
