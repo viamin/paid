@@ -127,6 +127,9 @@ module Activities
     def pr_title(issue)
       return "Agent changes" unless issue
 
+      conventional_title = ConventionalCommitTitle.normalize(issue.title)
+      return conventional_title.truncate(255) if conventional_title
+
       "Fix ##{issue.github_number}: #{issue.title}".truncate(255)
     end
 

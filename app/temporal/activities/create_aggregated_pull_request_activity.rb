@@ -86,6 +86,9 @@ module Activities
 
     def pr_title(parent_issue)
       if parent_issue
+        conventional_title = ConventionalCommitTitle.normalize(parent_issue.title)
+        return conventional_title.truncate(255) if conventional_title
+
         "Feature ##{parent_issue.github_number}: #{parent_issue.title}".truncate(255)
       else
         "Aggregated feature changes"

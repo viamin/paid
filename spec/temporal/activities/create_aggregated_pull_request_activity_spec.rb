@@ -77,6 +77,17 @@ RSpec.describe Activities::CreateAggregatedPullRequestActivity do
       )
     end
 
+    it "preserves conventional commit parent issue titles in the PR title" do
+      parent_issue = create(:issue, project: project, github_number: 99, title: "feat(scaling): worker pool tuning")
+
+      activity.execute(base_input.merge(parent_issue_id: parent_issue.id))
+
+      expect(client).to have_received(:create_pull_request).with(
+        anything,
+        hash_including(title: "feat(scaling): worker pool tuning")
+      )
+    end
+
     it "uses generic title when no parent issue" do
       activity.execute(base_input)
 
