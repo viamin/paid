@@ -12,9 +12,10 @@ DOCKERFILE_PATH = APP_ROOT.join("docker/agent/Dockerfile")
 PACKAGE_JSON_PATH = APP_ROOT.join("package.json")
 GEMFILE_LOCK_PATH = APP_ROOT.join("Gemfile.lock")
 YARN_LOCK_PATH = APP_ROOT.join("yarn.lock")
+# Codex CLI version is owned by agent-harness (installation_contract) and
+# injected at Docker build time — it is no longer pinned in the Dockerfile.
 DOCKERFILE_NPM_PACKAGES = {
-  "yarn" => /^(\s*&& corepack prepare yarn@)([^\s]+)( --activate\s*)$/,
-  "@openai/codex" => /^(RUN npm install -g\s+(?:--ignore-scripts\s+)?@openai\/codex@)([^\s]+)(\s*)$/
+  "yarn" => /^(\s*&& corepack prepare yarn@)([^\s]+)( --activate\s*)$/
 }.freeze
 
 # Minimum age (in hours) a package version must have been published before

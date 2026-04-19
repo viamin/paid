@@ -30,11 +30,12 @@ module Automation
       end
 
       def decision
-        return nil unless matching_trigger
+        trigger = matching_trigger
+        return nil unless trigger
 
         Automation::Decision.request_review(
           pr_number: signals.pr_number,
-          reviewers: [ BOT_LOGIN ]
+          reviewers: review_bot_reviewers_from(trigger)
         )
       end
 
