@@ -425,5 +425,163 @@ RSpec.describe Activities::RequestReviewActivity do
           .with(project.full_name, 42, reviewers: [ "octocat" ])
       end
     end
+
+    context "when the primary bot is rate limited and a fallback bot is configured" do
+      let(:head_sha) { "fa11bac0" }
+      let(:pr_struct) { OpenStruct.new(head: OpenStruct.new(sha: head_sha)) }
+
+      before do
+        allow(github_client).to receive_messages(
+          pull_request_review_requests: { users: [] },
+          pull_request: pr_struct,
+          recent_issue_comments: [],
+          authenticated_login: "paid-bot"
+        )
+        allow(github_client).to receive(:add_comment)
+        allow(github_client).to receive(:request_bot_review)
+          .and_raise(GithubClient::ApiError.new("Copilot rate-limited", status: 422))
+      end
+
+      it "falls through to the next bot in the chain after a 422" do
+        result = activity.execute(
+          project_id: project.id, pr_number: 42,
+          reviewers: [ "copilot", described_class::CODEX_LOGIN ]
+        )
+
+        expect(result[:requested]).to eq([ described_class::CODEX_LOGIN ])
+        expect(result[:fallback_used]).to be true
+        expect(result[:primary_bot]).to eq("copilot")
+        expect(result[:fallback_bots]).to eq([ described_class::CODEX_LOGIN ])
+        expect(result[:bot_errors]).to include("copilot" => a_string_including("Copilot rate-limited"))
+        expect(github_client).to have_received(:add_comment)
+          .with(project.full_name, 42, a_string_including("@codex review"))
+      end
+
+      it "leaves fallback_used false when the primary succeeds" do
+        allow(github_client).to receive(:request_bot_review).and_return(true)
+
+        result = activity.execute(
+          project_id: project.id, pr_number: 42,
+          reviewers: [ "copilot", described_class::CODEX_LOGIN ]
+        )
+
+        expect(result[:requested]).to eq([ "copilot" ])
+        expect(result).not_to have_key(:fallback_used)
+        expect(result).not_to have_key(:fallback_bots)
+        expect(github_client).not_to have_received(:add_comment)
+      end
+    end
+
+    context "when every bot in the chain returns 422" do
+      let(:head_sha) { "deadfa11" }
+      let(:pr_struct) { OpenStruct.new(head: OpenStruct.new(sha: head_sha)) }
+
+      before do
+        allow(github_client).to receive_messages(
+          pull_request_review_requests: { users: [] },
+          pull_request: pr_struct,
+          recent_issue_comments: [],
+          authenticated_login: "paid-bot"
+        )
+        allow(github_client).to receive(:request_bot_review)
+          .and_raise(GithubClient::ApiError.new("Copilot rate-limited", status: 422))
+        allow(github_client).to receive(:add_comment)
+          .and_raise(GithubClient::ApiError.new("Codex rate-limited", status: 422))
+      end
+
+      it "records every non-primary bot attempted and surfaces their errors" do
+        result = activity.execute(
+          project_id: project.id, pr_number: 42,
+          reviewers: [ "copilot", described_class::CODEX_LOGIN ]
+        )
+
+        expect(result[:requested]).to eq([])
+        expect(result[:primary_bot]).to eq("copilot")
+        expect(result[:fallback_bots]).to eq([ described_class::CODEX_LOGIN ])
+        expect(result[:bot_errors]).to include(
+          "copilot" => a_string_including("Copilot rate-limited"),
+          described_class::CODEX_LOGIN => a_string_including("Codex rate-limited")
+        )
+      end
+    end
+
+    context "when a fallback bot already has an outstanding trigger for the current HEAD" do
+      let(:head_sha) { "ca11bac0" }
+      let(:marker) { "#{described_class::COMMENT_TRIGGER_MARKER_PREFIX}: #{head_sha}" }
+      let(:pr_struct) { OpenStruct.new(head: OpenStruct.new(sha: head_sha)) }
+      let(:paid_user) { OpenStruct.new(login: "paid-bot") }
+      let(:existing_trigger) { OpenStruct.new(body: "<!-- #{marker} -->\n@codex review", user: paid_user) }
+
+      before do
+        allow(github_client).to receive_messages(
+          pull_request_review_requests: { users: [] },
+          pull_request: pr_struct,
+          recent_issue_comments: [ existing_trigger ],
+          authenticated_login: "paid-bot"
+        )
+        allow(github_client).to receive(:request_bot_review)
+          .and_raise(GithubClient::ApiError.new("Copilot rate-limited", status: 422))
+        allow(github_client).to receive(:add_comment)
+      end
+
+      it "records the terminal fallback bot in fallback_bots without posting" do
+        result = activity.execute(
+          project_id: project.id, pr_number: 42,
+          reviewers: [ "copilot", described_class::CODEX_LOGIN ]
+        )
+
+        expect(result[:requested]).to eq([])
+        expect(result[:primary_bot]).to eq("copilot")
+        expect(result[:fallback_bots]).to eq([ described_class::CODEX_LOGIN ])
+        expect(result[:bot_errors]).to include("copilot" => a_string_including("Copilot rate-limited"))
+        expect(github_client).not_to have_received(:add_comment)
+      end
+    end
+
+    context "when the project's enabled chain is resolved automatically" do
+      let(:project) do
+        create(:project, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "copilot" => { "enabled" => true },
+            "codex" => { "enabled" => true }
+          }
+        })
+      end
+      let(:head_sha) { "ba5eba11" }
+      let(:pr_struct) { OpenStruct.new(head: OpenStruct.new(sha: head_sha)) }
+
+      before do
+        allow(github_client).to receive_messages(
+          pull_request_review_requests: { users: [] },
+          pull_request: pr_struct,
+          recent_issue_comments: [],
+          authenticated_login: "paid-bot"
+        )
+        allow(github_client).to receive(:add_comment)
+      end
+
+      it "uses the project chain to fall back from a rate-limited primary" do
+        allow(github_client).to receive(:request_bot_review)
+          .and_raise(GithubClient::ApiError.new("Copilot rate-limited", status: 422))
+
+        result = activity.execute(project_id: project.id, pr_number: 42)
+
+        expect(result[:requested]).to eq([ described_class::CODEX_LOGIN ])
+        expect(result[:fallback_used]).to be true
+        expect(github_client).to have_received(:add_comment)
+          .with(project.full_name, 42, a_string_including("@codex review"))
+      end
+
+      it "stops at the primary on success without invoking the fallback bot" do
+        allow(github_client).to receive(:request_bot_review).and_return(true)
+
+        result = activity.execute(project_id: project.id, pr_number: 42)
+
+        expect(result[:requested]).to eq([ "copilot" ])
+        expect(result).not_to have_key(:fallback_used)
+        expect(github_client).not_to have_received(:add_comment)
+      end
+    end
   end
 end

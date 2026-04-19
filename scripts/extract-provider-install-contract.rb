@@ -31,6 +31,13 @@ unless contract
   exit 1
 end
 
-puts "INSTALL_COMMAND=#{contract.dig(:install, :command)}"
-puts "POST_INSTALL_BINARY_PATH=#{contract.dig(:install, :post_install_binary_path)}"
-puts "SUPPORTED_VERSION=#{contract.dig(:supported_versions, :default)}"
+# Contracts may use nested (:install -> :command) or flat (:install_command_string)
+# structures depending on the provider. Support both layouts so the script works
+# across all providers without provider-specific branching.
+install_command = contract.dig(:install, :command) || contract[:install_command_string]
+post_install_path = contract.dig(:install, :post_install_binary_path)
+supported_version = contract.dig(:supported_versions, :default) || contract[:default_version]
+
+puts "INSTALL_COMMAND=#{install_command}"
+puts "POST_INSTALL_BINARY_PATH=#{post_install_path}"
+puts "SUPPORTED_VERSION=#{supported_version}"

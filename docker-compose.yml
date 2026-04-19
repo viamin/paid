@@ -184,6 +184,7 @@ services:
       args:
         CLAUDE_INSTALL_COMMAND: ${CLAUDE_INSTALL_COMMAND:-}
         CLAUDE_POST_INSTALL_BINARY_PATH: ${CLAUDE_POST_INSTALL_BINARY_PATH:-}
+        GEMINI_CLI_INSTALL_COMMAND: ${GEMINI_CLI_INSTALL_COMMAND:-}
     image: paid-agent:latest
     command: ["true"]
     profiles:
@@ -197,6 +198,7 @@ services:
       args:
         CLAUDE_INSTALL_COMMAND: ${CLAUDE_INSTALL_COMMAND:-}
         CLAUDE_POST_INSTALL_BINARY_PATH: ${CLAUDE_POST_INSTALL_BINARY_PATH:-}
+        GEMINI_CLI_INSTALL_COMMAND: ${GEMINI_CLI_INSTALL_COMMAND:-}
     image: paid-agent:latest
     volumes:
       - ./agent-workspace:/workspace
