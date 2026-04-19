@@ -37,6 +37,16 @@ RSpec.describe Automation::Strategies::AutoPick do
       expect(candidate_source).not_to have_received(:next_candidate)
     end
 
+    it "returns a noop result when quality is paused on the project" do
+      allow(project).to receive(:quality_paused?).and_return(true)
+      allow(candidate_source).to receive(:next_candidate)
+
+      result = strategy.evaluate(build_context)
+
+      expect(result.decisions.map(&:type)).to eq([ "noop" ])
+      expect(candidate_source).not_to have_received(:next_candidate)
+    end
+
     it "returns a noop result when the candidate source has no issue to pick" do
       allow(candidate_source).to receive(:next_candidate).with(project).and_return(nil)
 

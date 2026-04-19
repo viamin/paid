@@ -40,6 +40,7 @@ module Automation
       def evaluate(context)
         project = context.project
         return noop_result unless auto_pick_enabled?(project)
+        return noop_result if project.quality_paused?
         return noop_result if deferred_by_pr_attention_limit?(context)
 
         issue = @candidate_source.next_candidate(project)
