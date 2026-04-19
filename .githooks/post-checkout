@@ -89,7 +89,7 @@ if [ -n "$removed" ]; then
         failed_count=$((failed_count + 1))
         echo "  ⚠  Rollback failed for $version"
       fi
-    done <<< "$removed"
+    done <<< "$(echo "$removed" | tac)"
 
     if [ "$rollback_count" -gt 0 ]; then
       echo "  Rolled back $rollback_count migration(s)."
