@@ -99,7 +99,8 @@ class Project < ApplicationRecord
     [ "All", "all" ]
   ].freeze
 
-  belongs_to :account
+  include TenantScoped
+
   belongs_to :github_token, counter_cache: true
   belongs_to :created_by, class_name: "User", optional: true
 
@@ -125,8 +126,11 @@ class Project < ApplicationRecord
   has_many :project_mcp_servers, dependent: :destroy
   has_many :mcp_server_definitions, through: :project_mcp_servers
   has_many :pre_commit_requirements, dependent: :destroy
+  has_many :quality_gate_thresholds, dependent: :destroy
+  has_many :quality_gate_events, dependent: :destroy
   has_many :pr_templates, dependent: :destroy
   has_many :context_intake_sessions, dependent: :destroy
+  has_one :tracker_configuration, as: :configurable, dependent: :destroy
   has_many :quality_pause_events, dependent: :destroy
 
   encrypts :webhook_secret
