@@ -220,37 +220,37 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  it "passes a startup cleanup grace period to bin/setup during full restart" do
+  it "does not forward STARTUP_CLEANUP_KILL_ALL when unset during full restart" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
-      script_path = prepare_script_fixture(dir, capture_startup_cleanup_grace_period_in_dev: true)
+      script_path = prepare_script_fixture(dir, capture_kill_all_in_dev: true)
 
       env = poll_env.merge(
         "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
         "OVERMIND_SOCKET" => ".overmind.sock",
-        "DEV_UPDATE_STARTUP_CLEANUP_GRACE_PERIOD" => nil
+        "DEV_UPDATE_STARTUP_CLEANUP_KILL_ALL" => nil
       )
       stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
 
       expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
-      expect(File.read(File.join(dir, "setup-env.log"))).to eq("300\n")
-      expect(File.read(File.join(dir, "dev-env.log"))).to eq("300\n")
+      expect(File.read(File.join(dir, "setup-env.log"))).to eq("\n")
+      expect(File.read(File.join(dir, "dev-env.log"))).to eq("\n")
     end
   end
 
-  it "forwards an overridden startup cleanup grace period to both setup and dev during full restart" do
+  it "forwards STARTUP_CLEANUP_KILL_ALL to both setup and dev during full restart" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
-      script_path = prepare_script_fixture(dir, capture_startup_cleanup_grace_period_in_dev: true)
+      script_path = prepare_script_fixture(dir, capture_kill_all_in_dev: true)
 
       env = poll_env.merge(
         "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
         "OVERMIND_SOCKET" => ".overmind.sock",
-        "DEV_UPDATE_STARTUP_CLEANUP_GRACE_PERIOD" => "600"
+        "DEV_UPDATE_STARTUP_CLEANUP_KILL_ALL" => "1"
       )
       stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
 
       expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
-      expect(File.read(File.join(dir, "setup-env.log"))).to eq("600\n")
-      expect(File.read(File.join(dir, "dev-env.log"))).to eq("600\n")
+      expect(File.read(File.join(dir, "setup-env.log"))).to eq("1\n")
+      expect(File.read(File.join(dir, "dev-env.log"))).to eq("1\n")
     end
   end
 
@@ -346,7 +346,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     start_overmind_running: false,
     dev_starts_overmind: true,
     capture_port_in_dev: false,
-    capture_startup_cleanup_grace_period_in_dev: false
+    capture_kill_all_in_dev: false
   )
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
@@ -362,15 +362,15 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
 
     dev_start_line = dev_starts_overmind ? %(touch "#{dir}/overmind-running") : ""
     capture_port_line = capture_port_in_dev ? %(printf '%s\n' "${PORT:-}" > "#{dir}/dev-port.log") : ""
-    capture_startup_cleanup_grace_period_line =
-      capture_startup_cleanup_grace_period_in_dev ? %(printf '%s\n' "${STARTUP_CLEANUP_GRACE_PERIOD:-}" > "#{dir}/dev-env.log") : ""
+    capture_kill_all_line =
+      capture_kill_all_in_dev ? %(printf '%s\n' "${STARTUP_CLEANUP_KILL_ALL:-}" > "#{dir}/dev-env.log") : ""
 
     write_executable(
       File.join(dir, "bin", "setup"),
       <<~BASH
         #!/usr/bin/env bash
         touch "#{dir}/setup-ran"
-        printf '%s\n' "${STARTUP_CLEANUP_GRACE_PERIOD:-}" > "#{dir}/setup-env.log"
+        printf '%s\n' "${STARTUP_CLEANUP_KILL_ALL:-}" > "#{dir}/setup-env.log"
         exit #{setup_exit_status}
       BASH
     )
@@ -381,7 +381,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
         #!/usr/bin/env bash
         touch "#{dir}/dev-ran"
         #{capture_port_line}
-        #{capture_startup_cleanup_grace_period_line}
+        #{capture_kill_all_line}
         #{dev_start_line}
         echo "bin/dev booted"
       BASH
