@@ -118,7 +118,9 @@ module Activities
       settings = AgentRuns::UserSettingsResolver.call(project: project, strict: false)
       return Provider.ensure_default_for(owner) unless settings
 
-      Provider.for_identifier(settings.user, settings.default_provider_identifier_for_goal(goal)) || Provider.ensure_default_for(settings.user)
+      identifier = settings.select_automated_provider_identifier(goal: goal) ||
+        settings.default_provider_identifier_for_goal(goal)
+      Provider.for_identifier(settings.user, identifier) || Provider.ensure_default_for(settings.user)
     end
 
     def provider_for_id(provider_id)

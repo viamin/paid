@@ -121,11 +121,12 @@ class ProvidersController < ApplicationController
     authorize @user_setting, :update?
 
     update_fallback_provider_flags!
+    weights_ok = update_provider_weights!
 
     attrs = provider_settings_params
     attrs[:default_agent_providers_by_goal] = goal_default_provider_attrs(attrs)
 
-    if @user_setting.update(attrs)
+    if weights_ok && @user_setting.update(attrs)
       redirect_to providers_path, notice: "Provider settings saved successfully."
     else
       load_index_context
@@ -147,7 +148,7 @@ class ProvidersController < ApplicationController
   end
 
   def provider_params
-    permitted = [ :enabled_for_agent_runs, :enabled_for_fallback, :name, :fallback_role, :agent_co_author_trailer ]
+    permitted = [ :enabled_for_agent_runs, :enabled_for_fallback, :name, :fallback_role, :agent_co_author_trailer, :weight ]
     if action_name == "create"
       permitted.push(:provider_key, :auth_type, :provider_api_key_id)
     end
@@ -325,6 +326,7 @@ class ProvidersController < ApplicationController
     @provider_states = current_user.provider_states.index_by(&:provider_name)
     @user_setting = current_user.settings
     @enabled_agent_providers = enabled_agent_provider_identifiers
+    @run_enabled_providers = run_enabled_providers_in_identifier_order(@enabled_agent_providers)
     @fallback_candidate_providers = fallback_candidate_provider_identifiers
     @default_provider_identifier = @user_setting.default_provider_identifier
     @goal_provider_labels = {
@@ -373,6 +375,7 @@ class ProvidersController < ApplicationController
       :default_agent_provider,
       :fallback_enabled,
       :fallback_providers,
+      :provider_selection_mode,
       default_agent_providers_by_goal: AgentRun::GOALS
     )
 
@@ -380,7 +383,51 @@ class ProvidersController < ApplicationController
       permitted[:fallback_providers] = UserSetting.normalize_fallback_providers_param(permitted[:fallback_providers])
     end
 
+    if permitted.key?(:provider_selection_mode) && permitted[:provider_selection_mode].present?
+      mode = permitted[:provider_selection_mode].to_s
+      if UserSetting::PROVIDER_SELECTION_MODES.include?(mode)
+        permitted[:provider_selection_mode] = mode
+      else
+        permitted.delete(:provider_selection_mode)
+      end
+    end
+
     permitted
+  end
+
+  # Applies per-provider weight updates from form params. Each entry must
+  # be a positive integer; invalid values flash a single error and abort
+  # the settings save so the user sees the failure rather than a silent
+  # partial update.
+  def update_provider_weights!
+    raw = params.dig(:user_setting, :provider_weights)
+    return true if raw.blank?
+
+    weights = raw.respond_to?(:to_unsafe_h) ? raw.to_unsafe_h : raw.to_h
+    invalid = false
+    Provider.transaction do
+      weights.each do |provider_id, weight_value|
+        provider = current_user.providers.find_by(id: provider_id)
+        next unless provider
+
+        coerced = Integer(weight_value, exception: false)
+        if coerced.nil? || coerced < 1 || coerced > Provider::MAX_WEIGHT
+          @user_setting.errors.add(:base, "#{provider.display_name} weight must be an integer between 1 and #{Provider::MAX_WEIGHT}")
+          invalid = true
+          raise ActiveRecord::Rollback
+        end
+
+        next if provider.weight == coerced
+
+        unless provider.update(weight: coerced)
+          @user_setting.errors.add(:base, "#{provider.display_name} weight: #{provider.errors.full_messages.to_sentence}")
+          invalid = true
+          raise ActiveRecord::Rollback
+        end
+      end
+    end
+
+    !invalid
   end
 
   def compatible_api_key_for_provider?(api_key:, provider_key:)
@@ -399,6 +446,17 @@ class ProvidersController < ApplicationController
       .where(provider_key: executable_keys)
       .ordered
     UserSetting.provider_identifiers_for(providers, identifiers: true)
+  end
+
+  # Returns Provider records corresponding to the given routing-key
+  # identifiers, preserving the identifier order so the settings UI can
+  # render weight rows in the same order as the rest of the page.
+  def run_enabled_providers_in_identifier_order(identifiers)
+    return [] if identifiers.blank?
+
+    ids = identifiers.filter_map { |identifier| Provider.id_from_routing_key(identifier) }
+    providers_by_id = current_user.providers.where(id: ids).index_by(&:id)
+    ids.filter_map { |id| providers_by_id[id] }
   end
 
   def fallback_candidate_provider_identifiers

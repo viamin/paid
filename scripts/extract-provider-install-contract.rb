@@ -40,22 +40,38 @@ end
 
 begin
   contract = AgentHarness.install_contract(provider.to_sym)
-rescue AgentHarness::ConfigurationError => e
-  warn "No install contract found for provider: #{provider} (#{e.message})"
-  exit 1
+rescue AgentHarness::ConfigurationError
+  # Some providers (e.g., Codex) use the class-level installation_contract
+  # instead of the generic registry method. Fall back to that API.
+  begin
+    provider_class = AgentHarness::Providers.const_get(provider.capitalize)
+    contract = provider_class.installation_contract
+  rescue NameError, NoMethodError => e
+    warn "No install contract found for provider: #{provider} (#{e.message})"
+    exit 1
+  end
 end
 unless contract
   warn "No install contract found for provider: #{provider}"
   exit 1
 end
 
-# Contracts may use nested (:install -> :command) or flat (:install_command_string)
-# structures depending on the provider. Support both layouts so the script works
-# across all providers without provider-specific branching.
-install_command = contract.dig(:install, :command) || contract[:install_command_string]
-post_install_path = contract.dig(:install, :post_install_binary_path)
-supported_version = contract.dig(:supported_versions, :default) || contract[:default_version]
+# Support all contract shapes:
+# - Shell-based (Claude): {install: {command:, post_install_binary_path:}, supported_versions: {default:}}
+# - npm-based (Codex):    {source: :npm, package:, install_command: [...], version:}
+# - Flat (Gemini):        {install_command_string:, default_version:}
+if contract[:source] == :npm
+  puts "SOURCE=npm"
+  puts "PACKAGE=#{contract[:package]}"
+  puts "INSTALL_COMMAND=#{contract[:install_command]&.join(" ")}"
+  puts "SUPPORTED_VERSION=#{contract[:version]}"
+else
+  install_command = contract.dig(:install, :command) || contract[:install_command_string]
+  post_install_path = contract.dig(:install, :post_install_binary_path)
+  supported_version = contract.dig(:supported_versions, :default) || contract[:default_version]
 
-puts "INSTALL_COMMAND=#{install_command}"
-puts "POST_INSTALL_BINARY_PATH=#{post_install_path}"
-puts "SUPPORTED_VERSION=#{supported_version}"
+  puts "SOURCE=shell"
+  puts "INSTALL_COMMAND=#{install_command}"
+  puts "POST_INSTALL_BINARY_PATH=#{post_install_path}"
+  puts "SUPPORTED_VERSION=#{supported_version}"
+end
