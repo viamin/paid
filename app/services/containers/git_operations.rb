@@ -594,6 +594,11 @@ module Containers
       true
     end
 
+    def head_differs_from_remote_branch?(branch)
+      fetch_branch(branch)
+      head_sha != remote_branch_sha(branch)
+    end
+
     # Force-pushes the current branch using --force-with-lease.
     #
     # Used after a successful rebase when the remote branch already exists

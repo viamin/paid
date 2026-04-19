@@ -594,6 +594,29 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       end
     end
 
+    def stub_rebase_only_followup
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::ProvisionServicesActivity" then {}
+        when "Activities::ProvisionContainerActivity" then {}
+        when "Activities::CheckProxyHealthActivity" then {}
+        when "Activities::CloneRepoActivity" then {}
+        when "Activities::RebaseBranchActivity" then { rebase_succeeded: true, branch_changed: true }
+        when "Activities::PreparePrPromptActivity" then { includes_review_threads: false, review_thread_ids: [] }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: false }
+        when "Activities::PushBranchActivity" then {}
+        when "Activities::CompleteExistingPrRunActivity" then { pr_review_phase: "ready" }
+        when "Activities::RequestReviewActivity" then {}
+        when "Activities::DraftDecisionRecordActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        else {}
+        end
+      end
+    end
+
     it "requests a review-bot review even when the agent makes no changes on an existing PR" do
       stub_no_changes_followup
 
@@ -646,6 +669,25 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         .with(Activities::ResolveReviewThreadsActivity,
           { agent_run_id: 42 },
           timeout: 60)
+    end
+
+    it "pushes an automatic rebase even when the agent makes no additional changes" do
+      stub_rebase_only_followup
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::PushBranchActivity,
+          { agent_run_id: 42 },
+          timeout: 60)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CompleteExistingPrRunActivity,
+          { agent_run_id: 42 },
+          timeout: 60)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::MarkAgentRunCompleteActivity,
+          { agent_run_id: 42, reason: "no_changes" },
+          timeout: 30)
     end
   end
 
