@@ -154,6 +154,7 @@ class Project < ApplicationRecord
   validates :max_draft_review_rounds, numericality: { greater_than_or_equal_to: 0 }
   validates :generated_label_name, presence: true
   validates :automation_label_name, presence: true
+  validates :security_severity_threshold, inclusion: { in: Issue::SEVERITY_ORDER }
   validates :code_scanning_interval_hours, numericality: { greater_than_or_equal_to: 24 }
   validates :knowledge_status, inclusion: { in: KNOWLEDGE_STATUSES }
   validates :max_tokens_per_run,

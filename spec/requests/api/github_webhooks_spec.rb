@@ -598,7 +598,7 @@ RSpec.describe "Api::GithubWebhooks" do
             head_sha: "abc123",
             conclusion: "success",
             pull_requests: [
-              { number: 99, user: { login: "dependabot[bot]" } }
+              { number: 99 }
             ]
           },
           repository: { id: project.github_id, full_name: project.full_name }
@@ -621,8 +621,8 @@ RSpec.describe "Api::GithubWebhooks" do
         expect(response).to have_http_status(:ok)
       end
 
-      it "does not enqueue for non-dependabot PRs in the check suite" do
-        payload[:check_suite][:pull_requests][0][:user][:login] = "viamin"
+      it "does not enqueue when auto_merge_mode is off" do
+        project.update!(auto_merge_mode: "off")
         body, signature = sign_payload(payload, project.webhook_secret)
 
         expect {

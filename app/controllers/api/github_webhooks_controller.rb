@@ -191,10 +191,10 @@ module Api
     def enqueue_dependabot_auto_merge_from_check(pull_requests)
       return unless pull_requests.is_a?(Array)
 
+      # check_suite/check_run payloads include only lightweight PR refs without
+      # a "user" object, so we cannot filter by author here. The job itself
+      # fetches the full PR and checks the author before proceeding.
       pull_requests.each do |pr_ref|
-        author = pr_ref.dig("user", "login").to_s.downcase
-        next unless author.start_with?(DEPENDABOT_LOGIN_PREFIX)
-
         DependabotAutoMergeJob.perform_later(@project.id, pr_number: pr_ref["number"])
       end
     rescue => e

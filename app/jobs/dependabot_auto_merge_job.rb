@@ -66,7 +66,7 @@ class DependabotAutoMergeJob < ApplicationJob
     end
 
     prs = client.pull_requests(project.full_name, state: "open")
-    prs.find { |pr| dependabot_pr?(pr) }
+    prs.find { |pr| dependabot_pr?(pr) && !merged?(pr) }
   rescue GithubClient::Error => e
     Rails.logger.warn(
       message: "dependabot_auto_merge.find_pr_failed",
