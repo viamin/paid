@@ -169,7 +169,21 @@ RUN if [ -z "${CODEX_PACKAGE}" ]; then \
     fi \
     && npm install -g --ignore-scripts "${CODEX_PACKAGE}"
 
-RUN npm install -g --ignore-scripts @google/gemini-cli@0.35.3
+# Gemini CLI version is owned by agent-harness; the install command is extracted
+# at build time by scripts/build-agent-image.sh and passed as a build arg.
+# Supply-chain hardening: enforce --ignore-scripts regardless of what the
+# contract returns, matching the policy applied to every other npm install above.
+ARG GEMINI_CLI_INSTALL_COMMAND
+RUN if [ -z "${GEMINI_CLI_INSTALL_COMMAND}" ]; then \
+        echo "ERROR: GEMINI_CLI_INSTALL_COMMAND not set; aborting build" >&2; \
+        exit 1; \
+    fi \
+    && case "${GEMINI_CLI_INSTALL_COMMAND}" in \
+        *--ignore-scripts*) ;; \
+        *) echo "ERROR: GEMINI_CLI_INSTALL_COMMAND must include --ignore-scripts for supply-chain safety" >&2; exit 1 ;; \
+    esac \
+    && echo "Installing Gemini CLI via agent-harness contract: ${GEMINI_CLI_INSTALL_COMMAND}" \
+    && eval "${GEMINI_CLI_INSTALL_COMMAND}"
 
 RUN npm install -g --ignore-scripts @kilocode/cli@7.1.3
 

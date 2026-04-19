@@ -69,6 +69,36 @@ RSpec.describe Automation::PullRequestEvaluator do
       expect(decision_types).not_to include("queue_create_pr_run")
     end
 
+    it "forwards the review-bot fallback chain into the request_review decision" do
+      chain = [ Activities::RequestReviewActivity::COPILOT_LOGIN,
+                Activities::RequestReviewActivity::CODEX_LOGIN ]
+      result = described_class.new(record: pull_request, explicit_pr_decisions: true).call(scan: {
+        issue_id: pull_request.id, pr_number: 42, phase: "draft", current_draft_review_count: 0,
+        triggers: [ { type: "review_bot_review_pending",
+                      request_login: chain.first, request_logins: chain } ]
+      })
+
+      request_decision = result.to_h[:decisions].find { |d| d[:type] == "request_review" }
+      expect(request_decision[:reviewers]).to eq(chain)
+    end
+
+    it "falls back to the legacy single request_login when request_logins is absent" do
+      # Backward compatibility for in-flight workflow histories whose recorded
+      # scan output pre-dates the chain field.
+      result = described_class.new(record: pull_request, explicit_pr_decisions: true).call(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [
+          { type: "review_bot_review_pending", request_login: Activities::RequestReviewActivity::COPILOT_LOGIN }
+        ]
+      })
+
+      request_decision = result.to_h[:decisions].find { |d| d[:type] == "request_review" }
+      expect(request_decision[:reviewers]).to eq([ Activities::RequestReviewActivity::COPILOT_LOGIN ])
+    end
+
     it "suppresses create_pr followup even with active_run and multiple triggers (#1135)" do
       result = described_class.new(record: pull_request, explicit_pr_decisions: true).call(scan: {
         issue_id: pull_request.id,
