@@ -15,6 +15,11 @@ require Rails.root.join("db/migrate/20260416050235_move_co_author_trailer_from_p
 # through factories (post-migration schema), then replay `down` + `up` while
 # manually restoring the legacy column state with SQL.
 RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures do
+  # DDL operations (add_column / remove_column) acquire AccessExclusiveLock
+  # which deadlocks with transactional fixtures. Disable transactional tests
+  # and truncate tables manually after each example.
+  self.use_transactional_tests = false
+
   let(:migration) { described_class.new }
   let(:trailer) { "Co-Authored-By: Claude <noreply@anthropic.com>" }
 
@@ -23,7 +28,9 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
     return if connection.column_exists?(:projects, :agent_co_author_trailer)
 
     connection.add_column(:projects, :agent_co_author_trailer, :text)
-    connection.remove_column(:providers, :agent_co_author_trailer)
+    if connection.column_exists?(:providers, :agent_co_author_trailer)
+      connection.remove_column(:providers, :agent_co_author_trailer)
+    end
   end
 
   def run_migration_up
@@ -33,13 +40,25 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
   end
 
   # Ensure the schema ends each example in its post-migration state so the
-  # rest of the suite is unaffected.
+  # rest of the suite is unaffected. Also clean up data created without
+  # transactional rollback.
   after do
-    unless ActiveRecord::Base.connection.column_exists?(:providers, :agent_co_author_trailer)
-      migration.up
+    connection = ActiveRecord::Base.connection
+    unless connection.column_exists?(:providers, :agent_co_author_trailer)
+      connection.add_column(:providers, :agent_co_author_trailer, :text)
+    end
+    if connection.column_exists?(:projects, :agent_co_author_trailer)
+      connection.remove_column(:projects, :agent_co_author_trailer)
     end
     Project.reset_column_information
     Provider.reset_column_information
+    # Clean up data that was not rolled back by transactional fixtures.
+    # Use disable_referential_integrity to avoid FK ordering issues.
+    connection.disable_referential_integrity do
+      %w[projects providers provider_states account_memberships github_tokens users accounts].each do |table|
+        connection.execute("DELETE FROM #{table}")
+      end
+    end
   end
 
   it "copies a project trailer onto the creator's default subscription provider" do

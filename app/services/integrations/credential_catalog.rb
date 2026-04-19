@@ -39,6 +39,20 @@ module Integrations
         category: :issue_tracking,
         auth_kinds: %w[api_key oauth_token]
       },
+      "linear" => {
+        key: "linear",
+        label: "Linear",
+        description: "API keys for Linear issue tracking and project management workflows.",
+        category: :issue_tracking,
+        auth_kinds: %w[api_key]
+      },
+      "azure_devops" => {
+        key: "azure_devops",
+        label: "Azure DevOps",
+        description: "API tokens for Azure DevOps issue tracking and boards.",
+        category: :issue_tracking,
+        auth_kinds: %w[api_key oauth_token]
+      },
       "github_signing" => {
         key: "github_signing",
         label: "GitHub Signing",
