@@ -1228,6 +1228,37 @@ RSpec.describe Containers::GitOperations do
     end
   end
 
+  describe "#head_differs_from_remote_branch?" do
+    it "returns true when HEAD differs from the remote branch" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "refs/heads/feature:refs/remotes/origin/feature" ], timeout: nil, stream: false)
+        .and_return(success_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "local-sha\n", stderr: "", exit_code: 0))
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "refs/remotes/origin/feature" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "remote-sha\n", stderr: "", exit_code: 0))
+
+      expect(git_ops.head_differs_from_remote_branch?("feature")).to be true
+    end
+
+    it "returns false when HEAD matches the remote branch" do
+      sha = Containers::Provision::Result.success(stdout: "same-sha\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "refs/heads/feature:refs/remotes/origin/feature" ], timeout: nil, stream: false)
+        .and_return(success_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(sha)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "refs/remotes/origin/feature" ], timeout: nil, stream: false)
+        .and_return(sha)
+
+      expect(git_ops.head_differs_from_remote_branch?("feature")).to be false
+    end
+  end
+
   describe "#rebase_onto" do
     let(:fetch_result) { success_result }
     let(:shallow_true_result) { Containers::Provision::Result.success(stdout: "true\n", stderr: "", exit_code: 0) }

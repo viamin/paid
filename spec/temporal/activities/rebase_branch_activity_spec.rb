@@ -23,7 +23,7 @@ RSpec.describe Activities::RebaseBranchActivity do
   end
 
   before do
-    agent_run.update!(container_id: "container-123")
+    agent_run.update!(container_id: "container-123", branch_name: "fix-branch")
 
     allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
     allow(GithubClient).to receive(:new).and_return(github_client)
@@ -37,15 +37,38 @@ RSpec.describe Activities::RebaseBranchActivity do
     context "when rebase succeeds" do
       before do
         success_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+        after_sha = Containers::Provision::Result.success(stdout: "after-sha\n", stderr: "", exit_code: 0)
+        remote_sha = Containers::Provision::Result.success(stdout: "remote-sha\n", stderr: "", exit_code: 0)
         allow(container_service).to receive(:execute).and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+          .and_return(after_sha)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "refs/remotes/origin/fix-branch" ], timeout: nil, stream: false)
+          .and_return(remote_sha)
       end
 
       it "returns rebase_succeeded: true" do
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(result[:rebase_succeeded]).to be true
+        expect(result[:branch_changed]).to be true
         expect(result[:base_branch]).to eq("main")
         expect(result[:agent_run_id]).to eq(agent_run.id)
+      end
+
+      it "returns branch_changed: false when HEAD is unchanged" do
+        same_sha = Containers::Provision::Result.success(stdout: "same-sha\n", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+          .and_return(same_sha)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "refs/remotes/origin/fix-branch" ], timeout: nil, stream: false)
+          .and_return(same_sha)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:branch_changed]).to be false
       end
 
       it "fetches the base branch from the PR" do
@@ -96,6 +119,7 @@ RSpec.describe Activities::RebaseBranchActivity do
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(result[:rebase_succeeded]).to be false
+        expect(result[:branch_changed]).to be false
         expect(result[:base_branch]).to eq("main")
       end
     end
