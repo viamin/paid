@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Post-checkout hook: automatically rolls back orphaned migrations and runs
+# pending ones when switching branches. Prevents DB/code schema mismatches.
+#
+# Receives three args from git:
+#   $1 = previous HEAD ref
+#   $2 = new HEAD ref
+#   $3 = flag (1 = branch checkout, 0 = file checkout)
+#
+# Override:
+#   SKIP_MIGRATION_GUARD=1 git checkout <branch>
+
+[ "${SKIP_MIGRATION_GUARD:-0}" = "1" ] && exit 0
+
+prev_head=$1
+new_head=$2
+branch_checkout=$3
+
+[ "$branch_checkout" -eq 1 ] || exit 0
+
+if ! command -v bin/rails &>/dev/null; then
+  exit 0
+fi
+
+removed=$(comm -23 \
+  <(git ls-tree --name-only -r "$prev_head" -- db/migrate/ 2>/dev/null | sort) \
+  <(git ls-tree --name-only -r "$new_head" -- db/migrate/ 2>/dev/null | sort) || true)
+
+added=$(comm -13 \
+  <(git ls-tree --name-only -r "$prev_head" -- db/migrate/ 2>/dev/null | sort) \
+  <(git ls-tree --name-only -r "$new_head" -- db/migrate/ 2>/dev/null | sort) || true)
+
+if [ -z "$removed" ] && [ -z "$added" ]; then
+  exit 0
+fi
+
+restored_files=()
+
+cleanup() {
+  for f in "${restored_files[@]}"; do
+    rm -f "$f" 2>/dev/null || true
+  done
+}
+trap cleanup EXIT
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  Migration changes detected on branch switch"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+if [ -n "$removed" ]; then
+  echo ""
+  echo "  Migrations REMOVED (were in previous branch):"
+  echo "$removed" | sed 's|db/migrate/||' | sed 's/^/    /'
+  echo ""
+
+  restored_count=0
+  rollback_count=0
+  failed_count=0
+
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    if ! git show "$prev_head:$f" > "$f" 2>/dev/null; then
+      echo "  ⚠  Could not restore $(basename "$f") from previous ref"
+      continue
+    fi
+    restored_files+=("$f")
+    restored_count=$((restored_count + 1))
+  done <<< "$removed"
+
+  if [ "$restored_count" -eq 0 ]; then
+    echo "  ⚠  Could not restore any migration files. Rollback skipped."
+    echo "  Roll back manually from the previous branch:"
+    echo "$removed" | while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      version=$(basename "$f" | grep -oE '^[0-9]+' || true)
+      [ -n "$version" ] && echo "    bin/rails db:migrate:down:primary VERSION=$version"
+    done
+  else
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      version=$(basename "$f" | grep -oE '^[0-9]+' || true)
+      [ -n "$version" ] || continue
+      if bin/rails db:migrate:down:primary VERSION="$version" 2>&1; then
+        rollback_count=$((rollback_count + 1))
+      else
+        failed_count=$((failed_count + 1))
+        echo "  ⚠  Rollback failed for $version"
+      fi
+    done <<< "$removed"
+
+    if [ "$rollback_count" -gt 0 ]; then
+      echo "  Rolled back $rollback_count migration(s)."
+    fi
+    if [ "$failed_count" -gt 0 ]; then
+      echo "  ⚠  $failed_count rollback(s) failed (migration may not have been run)."
+    fi
+
+    for f in "${restored_files[@]}"; do
+      rm -f "$f" 2>/dev/null || true
+    done
+    restored_files=()
+  fi
+fi
+
+if [ -n "$added" ]; then
+  echo ""
+  echo "  Migrations ADDED (new in this branch):"
+  echo "$added" | sed 's|db/migrate/||' | sed 's/^/    /'
+  echo ""
+  echo "  Running pending migrations..."
+  if bin/rails db:migrate 2>&1; then
+    echo "  Migrations complete."
+  else
+    echo "  ⚠  db:migrate failed. Run manually to investigate."
+  fi
+fi
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
