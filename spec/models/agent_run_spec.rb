@@ -2083,6 +2083,79 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe "#agent_summary JSON envelope stripping" do
+    let(:agent_run) { create(:agent_run) }
+
+    it "extracts result text from a Claude CLI JSON envelope" do
+      envelope = {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "All done. Here's a summary:\n\n- Fixed the bug\n- Added tests",
+        duration_ms: 5000,
+        session_id: "abc-123",
+        total_cost_usd: 0.05,
+        usage: { input_tokens: 100, output_tokens: 50 }
+      }.to_json
+
+      agent_run.log!("stdout", envelope)
+
+      expect(agent_run.agent_summary).to eq("All done. Here's a summary:\n\n- Fixed the bug\n- Added tests")
+    end
+
+    it "returns raw stdout when it is not a JSON envelope" do
+      agent_run.log!("stdout", "Just some plain text output")
+
+      expect(agent_run.agent_summary).to eq("Just some plain text output")
+    end
+
+    it "returns raw stdout when JSON is not a CLI envelope" do
+      agent_run.log!("stdout", '{"some": "other", "json": true}')
+
+      expect(agent_run.agent_summary).to eq('{"some": "other", "json": true}')
+    end
+
+    it "returns raw stdout when envelope result is empty" do
+      agent_run.log!("stdout", '{"type":"result","result":"","is_error":false}')
+
+      expect(agent_run.agent_summary).to eq('{"type":"result","result":"","is_error":false}')
+    end
+
+    it "surfaces classified error message for is_error envelopes" do
+      envelope = {
+        type: "result",
+        result: "Rate limit exceeded: too many requests",
+        is_error: true
+      }.to_json
+
+      agent_run.log!("stdout", envelope)
+
+      expect(agent_run.agent_summary).to eq("Agent encountered an error: Rate limit exceeded")
+    end
+
+    it "handles multi-chunk stdout that forms a complete JSON envelope" do
+      part1 = '{"type":"result","result":"Done","is_error":false'
+      part2 = ',"session_id":"abc"}'
+
+      agent_run.log!("stdout", part1)
+      agent_run.log!("stdout", part2)
+
+      expect(agent_run.agent_summary).to eq("Done")
+    end
+
+    it "strips envelope in agent_summary_with_stderr_fallback too" do
+      envelope = { type: "result", result: "Task complete", is_error: false }.to_json
+      agent_run.log!("stdout", envelope)
+      agent_run.log!("stderr", "some error output")
+
+      expect(agent_run.agent_summary_with_stderr_fallback).to eq("Task complete")
+    end
+
+    it "returns empty string when no stdout logs exist" do
+      expect(agent_run.agent_summary).to eq("")
+    end
+  end
+
   describe "#phase_summary" do
     def set_run_timestamps(agent_run, base_time)
       agent_run.update_columns(
