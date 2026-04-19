@@ -99,7 +99,8 @@ class Project < ApplicationRecord
     [ "All", "all" ]
   ].freeze
 
-  belongs_to :account
+  include TenantScoped
+
   belongs_to :github_token, counter_cache: true
   belongs_to :created_by, class_name: "User", optional: true
 
@@ -125,8 +126,11 @@ class Project < ApplicationRecord
   has_many :project_mcp_servers, dependent: :destroy
   has_many :mcp_server_definitions, through: :project_mcp_servers
   has_many :pre_commit_requirements, dependent: :destroy
+  has_many :quality_gate_thresholds, dependent: :destroy
+  has_many :quality_gate_events, dependent: :destroy
   has_many :pr_templates, dependent: :destroy
   has_many :context_intake_sessions, dependent: :destroy
+  has_one :tracker_configuration, as: :configurable, dependent: :destroy
   has_many :quality_pause_events, dependent: :destroy
 
   encrypts :webhook_secret
@@ -581,6 +585,15 @@ class Project < ApplicationRecord
   # would request bot reviews on projects that have opted out of review.
   def review_bot_request_login
     automation_configuration.auto_review.bot_request_login
+  end
+
+  # Returns the ordered list of bot-backed reviewer logins to attempt when
+  # requesting an automated review, with the primary provider first. Used
+  # by RequestReviewActivity to fall back to a secondary bot when the
+  # primary is unavailable (e.g. Copilot rate-limited). Returns +[]+ when
+  # reviews are globally disabled or no bot-backed method is enabled.
+  def review_bot_request_chain
+    automation_configuration.auto_review.bot_request_chain
   end
 
   def quality_paused?

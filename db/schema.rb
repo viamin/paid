@@ -1306,6 +1306,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_015607) do
     t.check_constraint "(agent_run_id IS NOT NULL) <> (knowledge_run_id IS NOT NULL)", name: "token_usages_exactly_one_run"
   end
 
+  create_table "tracker_configurations", force: :cascade do |t|
+    t.string "base_url"
+    t.bigint "configurable_id", null: false
+    t.string "configurable_type", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.boolean "enabled", default: true, null: false
+    t.bigint "integration_credential_id"
+    t.jsonb "project_mapping", default: {}
+    t.string "tracker_type", null: false
+    t.datetime "updated_at", null: false
+    t.uuid "uuid", default: -> { "gen_random_uuid()" }, null: false
+    t.index ["configurable_type", "configurable_id"], name: "index_tracker_configurations_on_configurable", unique: true
+    t.index ["created_by_id"], name: "index_tracker_configurations_on_created_by_id"
+    t.index ["integration_credential_id"], name: "index_tracker_configurations_on_integration_credential_id"
+    t.index ["tracker_type"], name: "index_tracker_configurations_on_tracker_type"
+    t.index ["uuid"], name: "index_tracker_configurations_on_uuid", unique: true
+  end
+
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 3600, null: false
     t.jsonb "allowed_service_images", default: ["postgres:16.13", "redis:7-alpine", "selenium/standalone-chromium:latest"]
@@ -1430,6 +1449,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_015607) do
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "agent_runs", "providers", on_delete: :nullify
+  add_foreign_key "billing_invoices", "accounts"
   add_foreign_key "billing_invoices", "billing_periods"
   add_foreign_key "billing_line_items", "billing_invoices"
   add_foreign_key "billing_periods", "billing_plans"
@@ -1503,4 +1523,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_015607) do
   add_foreign_key "quality_gate_thresholds", "projects"
   add_foreign_key "quality_pause_events", "agent_runs"
   add_foreign_key "quality_pause_events", "projects"
+  add_foreign_key "tracker_configurations", "integration_credentials"
+  add_foreign_key "tracker_configurations", "users", column: "created_by_id"
 end

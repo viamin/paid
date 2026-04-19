@@ -32,14 +32,16 @@ module Automation
 
       # Emits a request_review decision whenever the scan surfaces a
       # review_bot_review_pending trigger addressed to the copilot login.
-      # Mirrors the existing +PullRequestEvaluator+ behavior, which routes
-      # whichever login the scan supplies without re-consulting the config.
+      # When the trigger carries a +request_logins+ fallback chain, the
+      # full chain is forwarded so RequestReviewActivity can attempt
+      # secondaries on 422 errors.
       def decision
-        return nil unless matching_trigger
+        trigger = matching_trigger
+        return nil unless trigger
 
         Automation::Decision.request_review(
           pr_number: signals.pr_number,
-          reviewers: [ BOT_LOGIN ]
+          reviewers: review_bot_reviewers_from(trigger)
         )
       end
 

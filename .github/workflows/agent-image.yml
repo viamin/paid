@@ -47,7 +47,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@4c56a21280b36d862b5fc31348f463d60bdc55d5
+        uses: ruby/setup-ruby@7372622e62b60b3cb750dcd2b9e32c247ffec26a
         with:
           ruby-version: .tool-versions
           bundler-cache: true
@@ -94,6 +94,19 @@ jobs:
           echo "binary_name=$binary_name" >> "$GITHUB_OUTPUT"
           echo "global_path=$global_path" >> "$GITHUB_OUTPUT"
 
+      - name: Extract Gemini CLI install contract from agent-harness
+        id: gemini-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-provider-install-contract.rb gemini)
+          install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
+          if [ -z "$install_command" ]; then
+            echo "Failed to extract Gemini CLI install command from agent-harness" >&2
+            exit 1
+          fi
+          echo "install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "$install_command" >> "$GITHUB_OUTPUT"
+          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
+
       - name: Build paid-agent image
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
@@ -110,6 +123,7 @@ jobs:
             CURSOR_ARTIFACT_SHA256=${{ steps.cursor-contract.outputs.artifact_sha256 }}
             CURSOR_BINARY_NAME=${{ steps.cursor-contract.outputs.binary_name }}
             CURSOR_GLOBAL_PATH=${{ steps.cursor-contract.outputs.global_path }}
+            GEMINI_CLI_INSTALL_COMMAND=${{ steps.gemini-contract.outputs.install_command }}
           cache-from: type=gha,scope=paid-agent
           cache-to: type=gha,mode=max,scope=paid-agent
 
