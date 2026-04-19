@@ -12,6 +12,7 @@ class TrackerConfiguration < ApplicationRecord
   validates :configurable_type, inclusion: { in: CONFIGURABLE_TYPES }
   validates :configurable_id, uniqueness: { scope: :configurable_type,
     message: "already has a tracker configuration" }
+  validates :integration_credential, presence: { message: "must exist" }, if: -> { integration_credential_id.present? }
   validate :credential_belongs_to_same_account
   validate :credential_is_active, if: -> { integration_credential.present? && integration_credential_id_changed? }
 

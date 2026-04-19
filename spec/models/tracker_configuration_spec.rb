@@ -66,6 +66,14 @@ RSpec.describe TrackerConfiguration do
       expect(tracker_config.errors[:integration_credential]).to include("must belong to the same account")
     end
 
+    it "rejects non-existent integration_credential_id" do
+      tracker_config = build(:tracker_configuration,
+        integration_credential_id: 999_999_999)
+
+      expect(tracker_config).not_to be_valid
+      expect(tracker_config.errors[:integration_credential]).to include("must exist")
+    end
+
     it "validates credential is active" do
       account = create(:account)
       credential = create(:integration_credential, :jira, :revoked, account: account)
