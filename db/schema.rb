@@ -880,7 +880,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_233122) do
     t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "pr_templates_scope_check"
   end
 
-
   create_table "pre_commit_requirements", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "check_type", limit: 50, default: "shell_command", null: false
@@ -1132,35 +1131,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_233122) do
     t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL", name: "providers_api_key_requires_key"
     t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "providers_subscription_invariants"
     t.check_constraint "weight >= 1", name: "providers_weight_positive"
-  end
-
-  create_table "quality_gate_events", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.string "event_type", limit: 20, null: false
-    t.jsonb "metadata", default: {}, null: false
-    t.bigint "project_id", null: false
-    t.bigint "quality_gate_threshold_id", null: false
-    t.bigint "quality_metric_id", null: false
-    t.decimal "score_value", precision: 5, scale: 4, null: false
-    t.decimal "threshold_value", precision: 5, scale: 4, null: false
-    t.datetime "updated_at", null: false
-    t.index ["project_id", "event_type", "created_at"], name: "idx_quality_gate_events_project_type_time"
-    t.index ["project_id"], name: "index_quality_gate_events_on_project_id"
-    t.index ["quality_gate_threshold_id"], name: "index_quality_gate_events_on_quality_gate_threshold_id"
-    t.index ["quality_metric_id"], name: "index_quality_gate_events_on_quality_metric_id"
-  end
-
-  create_table "quality_gate_thresholds", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.boolean "enabled", default: true, null: false
-    t.decimal "max_threshold", precision: 5, scale: 4
-    t.string "metric_key", limit: 50, null: false
-    t.decimal "min_threshold", precision: 5, scale: 4
-    t.bigint "project_id", null: false
-    t.string "severity", limit: 20, default: "warning", null: false
-    t.datetime "updated_at", null: false
-    t.index ["project_id", "metric_key"], name: "index_quality_gate_thresholds_on_project_id_and_metric_key", unique: true
-    t.index ["project_id"], name: "index_quality_gate_thresholds_on_project_id"
   end
 
   create_table "quality_gate_events", force: :cascade do |t|
