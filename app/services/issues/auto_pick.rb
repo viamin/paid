@@ -109,13 +109,13 @@ module Issues
     end
 
     def build_context
-      Automation::Context.build(
-        record: nil,
-        project: @project,
-        metadata: {
-          Automation::Strategies::AutoPick::PR_ATTENTION_COUNT_KEY => prs_needing_attention_count,
-          Automation::Strategies::AutoPick::PR_ATTENTION_LIMIT_KEY => max_auto_pick_open_prs
-        }
+      context = Automation::Context.build(record: nil, project: @project, metadata: {})
+      # Avoid expensive PR-attention query when early guards will noop.
+      return context unless @project.auto_pick_enabled? && !@project.quality_paused?
+
+      context.with_metadata(
+        Automation::Strategies::AutoPick::PR_ATTENTION_COUNT_KEY => prs_needing_attention_count,
+        Automation::Strategies::AutoPick::PR_ATTENTION_LIMIT_KEY => max_auto_pick_open_prs
       )
     end
 
