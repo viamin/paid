@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.27.0](https://github.com/viamin/paid/compare/v0.26.0...v0.27.0) (2026-04-18)
+
+
+### Features
+
+* **agent-execution:** abort container early on provider quota errors that hang ([#1251](https://github.com/viamin/paid/issues/1251)) ([af9fbc7](https://github.com/viamin/paid/commit/af9fbc7fbf795d4da7d9f470cc9fb30a58775205)), closes [#827](https://github.com/viamin/paid/issues/827)
+* **dashboard:** include merged pull requests in the recent activity stream ([#1264](https://github.com/viamin/paid/issues/1264)) ([3cbf708](https://github.com/viamin/paid/commit/3cbf708179b19994fd912a88b392c0311a339a87))
+* **evolution:** implement PromptEvolutionWorkflow ([#706](https://github.com/viamin/paid/issues/706)) ([#1245](https://github.com/viamin/paid/issues/1245)) ([df041d6](https://github.com/viamin/paid/commit/df041d6d6c8494c024737533e8af54f228098503))
+
+
+### Bug Fixes
+
+* 714: feat(quality): automatic pause on quality threshold breach ([#1205](https://github.com/viamin/paid/issues/1205)) ([ea94fcc](https://github.com/viamin/paid/commit/ea94fcc30ab0da7a411c4ac87ddf90c9ff139c28))
+* 719: feat(performance): workflow batching optimizations ([#1208](https://github.com/viamin/paid/issues/1208)) ([ea7c306](https://github.com/viamin/paid/commit/ea7c3067e94cc598e4848a9b899785439a1a50c8))
+* 721: feat(performance): add caching layer for GitHub data ([#1209](https://github.com/viamin/paid/issues/1209)) ([12c2cb7](https://github.com/viamin/paid/commit/12c2cb7439206915d872fdbf417b13e642a841c9))
+* 727: feat(scaling): add integration points for container orchestrators ([#1214](https://github.com/viamin/paid/issues/1214)) ([3bb3a0a](https://github.com/viamin/paid/commit/3bb3a0adc5095b78e915618dd6ee9c9efbe1d9f4))
+* 802: "Back to ..." links should return to the previous page, not a hardcoded destination ([#1232](https://github.com/viamin/paid/issues/1232)) ([4026eb1](https://github.com/viamin/paid/commit/4026eb1524392fc055ab8ef58a52f1da4cebf10b))
+* 854: feat(agent-harness): add heartbeat/progress support to agent-harness gem ([#1233](https://github.com/viamin/paid/issues/1233)) ([3f49a8f](https://github.com/viamin/paid/commit/3f49a8f0adec65908c0cbafadbfa3154f511ee48))
+
+## [0.26.0](https://github.com/viamin/paid/compare/v0.25.0...v0.26.0) (2026-04-18)
+
+
+### Features
+
+* **quality:** alert users when quality gates trigger ([#715](https://github.com/viamin/paid/issues/715)) ([#1204](https://github.com/viamin/paid/issues/1204)) ([d5e514c](https://github.com/viamin/paid/commit/d5e514c388e995ce9f3129c12465d96d51c7f896))
+
+
+### Bug Fixes
+
+* 725: feat(scaling): implement queue depth monitoring and alerting ([#1210](https://github.com/viamin/paid/issues/1210)) ([e74e52c](https://github.com/viamin/paid/commit/e74e52ca05302e2c8c734211bbaaea235545f639))
+* 799: feat(agent-runs): support cross-repo upstream/downstream issue pairs in create-issue mode ([#1218](https://github.com/viamin/paid/issues/1218)) ([cb14afa](https://github.com/viamin/paid/commit/cb14afa77f447e3d19753d9397ffef210bc06c00))
+* 851: feat(providers): configure Claude Code PostToolUse heartbeat hook ([#1231](https://github.com/viamin/paid/issues/1231)) ([dc6b8ac](https://github.com/viamin/paid/commit/dc6b8acf52c5862efd09b59fbbcc6c409a839505))
+* **devcontainer:** avoid kilocode permission save-merge corruption ([#1259](https://github.com/viamin/paid/issues/1259)) ([4212e03](https://github.com/viamin/paid/commit/4212e0386b5ea224584a7c96ad3e03494b265f2f))
+* **scheduler:** cap auto-pick seeding at owner concurrency budget ([#1260](https://github.com/viamin/paid/issues/1260)) ([ee8bda8](https://github.com/viamin/paid/commit/ee8bda8ed7d1f55ef955eb177b0a28728276238e))
+
 ## [0.25.0](https://github.com/viamin/paid/compare/v0.24.0...v0.25.0) (2026-04-17)
 
 

@@ -34,6 +34,7 @@ RSpec.describe UserSetting do
     it { is_expected.to validate_numericality_of(:issue_goal_timeout_seconds).only_integer.is_greater_than_or_equal_to(30).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
     it { is_expected.to validate_numericality_of(:issue_goal_idle_timeout_seconds).only_integer.is_greater_than_or_equal_to(30).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
     it { is_expected.to validate_numericality_of(:review_goal_idle_timeout_seconds).only_integer.is_greater_than_or_equal_to(30).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    it { is_expected.to validate_numericality_of(:create_pr_idle_timeout_seconds).only_integer.is_greater_than_or_equal_to(30).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
     # Git operation timeouts
     it { is_expected.to validate_numericality_of(:git_clone_timeout_seconds).only_integer.is_greater_than_or_equal_to(30).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
     it { is_expected.to validate_numericality_of(:git_push_timeout_seconds).only_integer.is_greater_than_or_equal_to(10).is_less_than_or_equal_to(described_class::PG_INT_MAX) }

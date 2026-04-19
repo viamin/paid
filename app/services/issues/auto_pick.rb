@@ -159,6 +159,7 @@ module Issues
 
     def call
       return nil unless @project.auto_pick_enabled?
+      return nil if @project.quality_paused?
       return nil if prs_needing_attention_exceed_limit?
 
       issue = find_next_eligible_issue
