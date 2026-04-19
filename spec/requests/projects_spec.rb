@@ -757,7 +757,7 @@ RSpec.describe "Projects" do
 
         {
           "Auto-Add Labels" => "Enabled", "Automation on Label" => "Disabled",
-          "Auto-Pick Issues" => "Enabled", "Auto-Merge" => "Disabled",
+          "Auto-Pick Issues" => "Enabled", "Auto-Merge" => "Off",
           "Auto-Fix Merge Conflicts" => "Enabled"
         }.each do |label, state|
           expect(response.body).to match(

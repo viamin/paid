@@ -145,9 +145,11 @@ module Workflows
         # don't need the PR-editing prompt that instructs the agent to commit fixes.
         pr_run_without_prompt = source_pull_request_number.present? && custom_prompt.blank? && goal != "review"
         pr_prompt_result = {}
+        branch_changed_before_agent = false
         if pr_run_without_prompt
           rebase_result = run_activity(Activities::RebaseBranchActivity,
             { agent_run_id: agent_run_id }, timeout: 120)
+          branch_changed_before_agent = rebase_result[:branch_changed] == true
 
           pr_prompt_result = run_activity(Activities::PreparePrPromptActivity,
             { agent_run_id: agent_run_id,
@@ -224,7 +226,7 @@ module Workflows
           # by the agent via the GitHub API proxy during execution.
           run_activity(Activities::CompleteReviewGoalActivity,
             { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)
-        elsif agent_result[:has_changes]
+        elsif agent_result[:has_changes] || branch_changed_before_agent
           # Step 5: Push branch (inside container)
           # Re-check proxy health before push — the agent may have run for
           # a long time and the proxy could have gone down in the meantime.

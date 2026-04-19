@@ -8,7 +8,7 @@
 # Triggered by:
 # - GitHub webhooks (check_suite.completed, pull_request.opened/synchronize)
 #
-# Concurrency: at most one evaluation per project at a time.
+# Concurrency: at most one evaluation per project+PR at a time.
 class DependabotAutoMergeJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
@@ -17,7 +17,7 @@ class DependabotAutoMergeJob < ApplicationJob
   good_job_control_concurrency_with(
     total_limit: 1,
     enqueue_limit: 1,
-    key: -> { "dependabot-auto-merge-#{arguments.first}" }
+    key: -> { "dependabot-auto-merge-#{arguments.first}-#{arguments.second&.fetch(:pr_number, nil)}" }
   )
 
   DEPENDABOT_AUTHORS = %w[dependabot[bot] dependabot-preview[bot]].freeze

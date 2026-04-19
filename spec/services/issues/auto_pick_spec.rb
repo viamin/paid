@@ -673,6 +673,19 @@ RSpec.describe Issues::AutoPick do
         expect(result).to eq(existing_run)
         expect(AgentRun.where(issue: issue, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).count).to eq(1)
       end
+
+      it "returns nil when the selected issue is deleted between candidate lookup and agent-run creation" do
+        # Simulates a race where the strategy selects an issue but it is
+        # destroyed before the orchestrator re-loads it. The tick must not
+        # raise — it should log + return nil like the duplicate_skipped path.
+        issue = create(:issue, project: project)
+        allow(Issue).to receive(:find_by).and_wrap_original do |original, **kwargs|
+          issue.destroy! if kwargs[:id] == issue.id
+          original.call(**kwargs)
+        end
+
+        expect { described_class.new(project).call }.not_to raise_error
+      end
     end
 
     context "when project has PRs needing attention" do
