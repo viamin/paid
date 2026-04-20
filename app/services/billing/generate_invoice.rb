@@ -13,25 +13,36 @@ module Billing
     end
 
     def call
+      return existing_invoice if billing_period.invoiced?
+
       GeneratePeriodSummary.call(billing_period: billing_period)
       line_item_attrs = CalculateCharges.call(billing_period: billing_period)
 
       invoice = nil
       ActiveRecord::Base.transaction do
-        invoice = BillingInvoice.create!(
-          account_id: billing_period.account_id,
-          billing_period_id: billing_period.id,
-          status: "draft"
-        )
-
-        line_item_attrs.each do |attrs|
-          invoice.billing_line_items.create!(attrs)
-        end
-
-        invoice.recalculate_totals!
-        billing_period.update!(status: "invoiced")
+        billing_period.lock!
+        invoice = billing_period.invoiced? ? existing_invoice : create_invoice(line_item_attrs)
       end
 
+      invoice
+    end
+
+    private
+
+    def existing_invoice
+      BillingInvoice.where(billing_period_id: billing_period.id).last
+    end
+
+    def create_invoice(line_item_attrs)
+      invoice = BillingInvoice.create!(
+        account_id: billing_period.account_id,
+        billing_period_id: billing_period.id,
+        status: "draft"
+      )
+
+      line_item_attrs.each { |attrs| invoice.billing_line_items.create!(attrs) }
+      invoice.recalculate_totals!
+      billing_period.update!(status: "invoiced")
       invoice
     end
   end

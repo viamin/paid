@@ -36,6 +36,13 @@ RSpec.describe Billing::GenerateInvoice do
       expect(billing_period.reload.status).to eq("invoiced")
     end
 
+    it "returns the existing invoice when the billing period is already invoiced" do
+      invoice = described_class.call(billing_period: billing_period)
+
+      expect(described_class.call(billing_period: billing_period)).to eq(invoice)
+      expect(billing_period.billing_invoices.count).to eq(1)
+    end
+
     it "calculates invoice totals from line items" do
       invoice = described_class.call(billing_period: billing_period)
 

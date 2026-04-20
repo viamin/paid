@@ -28,9 +28,6 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
     return if connection.column_exists?(:projects, :agent_co_author_trailer)
 
     connection.add_column(:projects, :agent_co_author_trailer, :text)
-    if connection.column_exists?(:providers, :agent_co_author_trailer)
-      connection.remove_column(:providers, :agent_co_author_trailer)
-    end
   end
 
   def run_migration_up
