@@ -1593,6 +1593,15 @@ module Activities
         (replace `main` with the PR's actual base branch if different).
       You also have access to the GitHub API via a proxy for posting review comments.
 
+      You may run targeted validation when it is useful for review confidence.
+      Before running Ruby/Rails commands such as `bin/rspec`, run
+      `BUNDLE_PATH=/tmp/bundle BUNDLE_APP_CONFIG=/tmp/bundle-config BUNDLE_FROZEN=true bundle check || BUNDLE_PATH=/tmp/bundle BUNDLE_APP_CONFIG=/tmp/bundle-config BUNDLE_FROZEN=true bundle install --jobs 4 --retry 3`
+      so the fresh review checkout has the bundled gems it needs in a writable
+      path outside the repository without changing the lockfile. If dependency
+      installation or test execution still
+      fails because of missing network access, services, or environment
+      constraints, mention that specific blocker in the review body.
+
       Review the code for:
       1. **Performance** — inefficient algorithms, N+1 queries, unnecessary allocations, missing caching
       2. **Security** — SQL injection, XSS, insecure deserialization, secrets in code
