@@ -560,7 +560,7 @@ module Containers
           db_name: db_name,
           service_container: service_container.name)
       end
-    rescue Docker::Error::DockerError => e
+    rescue Docker::Error::DockerError, Excon::Error => e
       log_warn("service_provisioner.database_drop_error",
         db_name: per_run_db_name(agent_run),
         service_container: service_container.name,

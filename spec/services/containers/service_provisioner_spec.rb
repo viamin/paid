@@ -704,6 +704,23 @@ RSpec.describe Containers::ServiceProvisioner do
       expect(commands.last.last).to eq("DROP DATABASE IF EXISTS \"#{db_name}\"")
     end
 
+    it "logs and continues when Docker transport fails during drop" do
+      sc = create(:service_container, :running)
+      allow(Docker::Container).to receive(:get)
+        .with(sc.docker_container_id).and_raise(Excon::Error.new("connection reset"))
+
+      expect(Rails.logger).to receive(:warn).with(
+        hash_including(
+          message: "service_provisioner.database_drop_error",
+          db_name: provisioner.send(:per_run_db_name, agent_run),
+          service_container: sc.name,
+          error: "connection reset"
+        )
+      )
+
+      expect { provisioner.send(:drop_per_run_database, sc, agent_run) }.not_to raise_error
+    end
+
     it "connects psql commands to the configured postgres database" do
       sc = create(:service_container, :running, env: {
         "POSTGRES_USER" => "agent",
