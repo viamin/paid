@@ -33,9 +33,14 @@ module Billing
     end
 
     def token_usages_scope
+      return TokenUsage.none if project_ids.empty?
+
       TokenUsage.billable
-        .joins("INNER JOIN agent_runs ON agent_runs.id = token_usages.agent_run_id")
-        .where(agent_runs: { project_id: project_ids })
+        .left_outer_joins(:agent_run, :knowledge_run)
+        .where(
+          "agent_runs.project_id IN (:project_ids) OR knowledge_runs.project_id IN (:project_ids)",
+          project_ids: project_ids
+        )
         .where(token_usages: { created_at: starts_at..ends_at })
     end
 
@@ -45,7 +50,7 @@ module Billing
         Arel.sql("COALESCE(SUM(token_usages.input_tokens), 0)"),
         Arel.sql("COALESCE(SUM(token_usages.output_tokens), 0)"),
         Arel.sql("COALESCE(SUM(token_usages.cost_cents), 0)")
-      )
+      ) || [ 0, 0, 0 ]
       {
         total_input_tokens: totals[0],
         total_output_tokens: totals[1],
@@ -91,7 +96,7 @@ module Billing
 
     def cost_by_project
       token_usages_scope
-        .group("agent_runs.project_id")
+        .group("COALESCE(agent_runs.project_id, knowledge_runs.project_id)")
         .sum(:cost_cents)
     end
 
