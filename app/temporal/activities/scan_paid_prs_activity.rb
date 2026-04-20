@@ -415,7 +415,7 @@ module Activities
         return draft_trigger_payload(issue, ci_triggers)
       end
 
-      if !checks.nil? && all_checks_green?(checks)
+      if !checks.nil? && checks.any? && all_checks_green?(checks)
         return ready_for_owner_trigger(issue)
       end
 
@@ -478,7 +478,7 @@ module Activities
     def scan_bot_authored_ready_pr(project, client, issue, pr_data:, checks:, mergeable:)
       if project.auto_merge_dependabot? &&
           pr_data.present? &&
-          !checks.nil? &&
+          !checks.nil? && checks.any? &&
           all_checks_green?(checks) &&
           mergeable == true
         return owner_approved_trigger(issue)
@@ -523,7 +523,7 @@ module Activities
         mergeable = pr_data[:mergeable]
 
         if bot_user?(issue.github_creator_login)
-          if project.auto_merge_dependabot? && !checks.nil? && all_checks_green?(checks) && mergeable == true
+          if project.auto_merge_dependabot? && !checks.nil? && checks.any? && all_checks_green?(checks) && mergeable == true
             return owner_approved_trigger(issue)
           end
         else

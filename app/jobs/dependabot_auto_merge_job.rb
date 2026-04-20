@@ -92,7 +92,7 @@ class DependabotAutoMergeJob < ApplicationJob
   def all_checks_green?(client, project, pr_data)
     sha = pr_data.respond_to?(:head) ? pr_data.head.sha : pr_data.dig(:head, :sha)
     checks = client.check_runs_for_ref(project.full_name, sha)
-    return true if checks.nil? || checks.empty?
+    return false if checks.nil? || checks.empty?
 
     checks.all? { |c| %w[success skipped neutral].include?(c[:conclusion]) }
   rescue GithubClient::Error => e

@@ -173,12 +173,12 @@ RSpec.describe DependabotAutoMergeJob do
       expect(client).to have_received(:merge_pull_request)
     end
 
-    it "merges when no CI checks exist" do
+    it "skips when no CI checks exist" do
       allow(client).to receive(:check_runs_for_ref).and_return([])
 
       described_class.perform_now(project.id)
 
-      expect(client).to have_received(:merge_pull_request)
+      expect(client).not_to have_received(:merge_pull_request)
     end
 
     it "merges when mode is all" do
