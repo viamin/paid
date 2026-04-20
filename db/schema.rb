@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_18_233122) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_17_204111) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -896,7 +896,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_233122) do
     t.jsonb "allowed_github_usernames", default: [], null: false
     t.boolean "auto_add_labels_enabled", default: true, null: false
     t.boolean "auto_fix_merge_conflicts", default: true, null: false
-    t.string "auto_merge_mode", default: "off", null: false
+    t.boolean "auto_merge_enabled", default: false, null: false
     t.boolean "auto_pick_enabled", default: false, null: false
     t.string "auto_release_granularity", default: "off", null: false
     t.boolean "auto_scan_prs", default: true, null: false
@@ -1056,6 +1056,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_233122) do
     t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL", name: "providers_api_key_requires_key"
     t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "providers_subscription_invariants"
     t.check_constraint "weight >= 1", name: "providers_weight_positive"
+  end
+
+  create_table "quality_gate_events", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "event_type", limit: 20, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.bigint "project_id", null: false
+    t.bigint "quality_gate_threshold_id", null: false
+    t.bigint "quality_metric_id", null: false
+    t.decimal "score_value", precision: 5, scale: 4, null: false
+    t.decimal "threshold_value", precision: 5, scale: 4, null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "event_type", "created_at"], name: "idx_quality_gate_events_project_type_time"
+    t.index ["project_id"], name: "index_quality_gate_events_on_project_id"
+    t.index ["quality_gate_threshold_id"], name: "index_quality_gate_events_on_quality_gate_threshold_id"
+    t.index ["quality_metric_id"], name: "index_quality_gate_events_on_quality_metric_id"
+  end
+
+  create_table "quality_gate_thresholds", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: true, null: false
+    t.decimal "max_threshold", precision: 5, scale: 4
+    t.string "metric_key", limit: 50, null: false
+    t.decimal "min_threshold", precision: 5, scale: 4
+    t.bigint "project_id", null: false
+    t.string "severity", limit: 20, default: "warning", null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "metric_key"], name: "index_quality_gate_thresholds_on_project_id_and_metric_key", unique: true
+    t.index ["project_id"], name: "index_quality_gate_thresholds_on_project_id"
   end
 
   create_table "quality_gate_events", force: :cascade do |t|
@@ -1354,6 +1383,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_233122) do
     t.index ["status"], name: "index_worktrees_on_status"
   end
 
+  add_foreign_key "ab_test_assignments", "ab_test_variants", on_delete: :cascade
+  add_foreign_key "ab_test_assignments", "ab_tests", on_delete: :cascade
+  add_foreign_key "ab_test_assignments", "agent_runs", on_delete: :cascade
+  add_foreign_key "ab_test_variants", "ab_tests", on_delete: :cascade
+  add_foreign_key "ab_test_variants", "prompt_versions", on_delete: :restrict
+  add_foreign_key "ab_tests", "ab_test_variants", column: "winner_variant_id", on_delete: :nullify
+  add_foreign_key "ab_tests", "prompt_versions", column: "control_version_id", on_delete: :restrict
+  add_foreign_key "ab_tests", "prompts", on_delete: :cascade
+  add_foreign_key "account_memberships", "accounts"
+  add_foreign_key "account_memberships", "users"
+  add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"
+  add_foreign_key "agent_coordination_signals", "agent_runs", column: "target_agent_run_id"
+  add_foreign_key "agent_run_anomalies", "agent_runs"
+  add_foreign_key "agent_run_anomalies", "projects"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
@@ -1387,8 +1430,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_233122) do
   add_foreign_key "linear_tokens", "users", column: "created_by_id"
   add_foreign_key "model_selections", "llm_models"
   add_foreign_key "notifications", "users", on_delete: :nullify
+  add_foreign_key "onboarding_steps", "accounts"
+  add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
   add_foreign_key "pr_templates", "users", on_delete: :cascade
+  add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
   add_foreign_key "project_baselines", "projects"
