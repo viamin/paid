@@ -413,6 +413,24 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Claude Code")
       end
 
+      it "masks the auth refresh token input when a browser auth URL is available" do
+        agent_run = create(:agent_run, :auth_expired, project: project, auth_provider: "claude")
+        without_partial_double_verification do
+          allow(AgentHarness).to receive(:respond_to?).and_call_original
+          allow(AgentHarness).to receive(:respond_to?).with(:refresh_auth).and_return(true)
+          allow(AgentHarness).to receive(:respond_to?).with(:auth_url).and_return(true)
+          allow(AgentHarness).to receive(:auth_url).with(:claude).and_return("https://example.com/auth")
+        end
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include('type="password"')
+        expect(response.body).to include('name="auth_token"')
+        expect(response.body).to include('autocomplete="off"')
+        expect(response.body).to include('spellcheck="false"')
+      end
+
       it "shows auth-expired details when the provider cannot generate an auth URL" do
         agent_run = create(:agent_run, :auth_expired, project: project, agent_type: "codex", auth_provider: "codex")
         without_partial_double_verification do
