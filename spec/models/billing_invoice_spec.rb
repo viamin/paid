@@ -15,6 +15,13 @@ RSpec.describe BillingInvoice do
     it { is_expected.to validate_numericality_of(:subtotal_cents).is_greater_than_or_equal_to(0) }
     it { is_expected.to validate_numericality_of(:tax_cents).is_greater_than_or_equal_to(0) }
     it { is_expected.to validate_numericality_of(:total_cents).is_greater_than_or_equal_to(0) }
+
+    it "validates billing period belongs to the same account" do
+      invoice = build(:billing_invoice, account: create(:account), billing_period: create(:billing_period))
+
+      expect(invoice).not_to be_valid
+      expect(invoice.errors[:billing_period]).to include("must belong to the same account")
+    end
   end
 
   describe "#issue!" do

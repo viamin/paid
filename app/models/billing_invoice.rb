@@ -12,6 +12,7 @@ class BillingInvoice < ApplicationRecord
   validates :tax_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :total_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :external_id, uniqueness: true, allow_nil: true
+  validate :billing_period_belongs_to_account
 
   scope :draft, -> { where(status: "draft") }
   scope :issued, -> { where(status: "issued") }
@@ -36,5 +37,14 @@ class BillingInvoice < ApplicationRecord
     self.subtotal_cents = billing_line_items.sum(:total_cents)
     self.total_cents = subtotal_cents + tax_cents
     save!
+  end
+
+  private
+
+  def billing_period_belongs_to_account
+    return if billing_period.blank? || account_id.blank?
+    return if billing_period.account_id == account_id
+
+    errors.add(:billing_period, "must belong to the same account")
   end
 end

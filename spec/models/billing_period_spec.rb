@@ -24,6 +24,13 @@ RSpec.describe BillingPeriod do
       expect(period).not_to be_valid
       expect(period.errors[:ends_at]).to include("must be after starts_at")
     end
+
+    it "validates billing plan belongs to the same account" do
+      period = build(:billing_period, account: create(:account), billing_plan: create(:billing_plan))
+
+      expect(period).not_to be_valid
+      expect(period.errors[:billing_plan]).to include("must belong to the same account")
+    end
   end
 
   describe "scopes" do

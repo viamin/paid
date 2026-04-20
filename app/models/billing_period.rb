@@ -18,6 +18,7 @@ class BillingPeriod < ApplicationRecord
   validates :total_runs, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :total_compute_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :ends_at_after_starts_at
+  validate :billing_plan_belongs_to_account
 
   scope :open, -> { where(status: "open") }
   scope :closed, -> { where(status: "closed") }
@@ -49,5 +50,12 @@ class BillingPeriod < ApplicationRecord
     return if starts_at.blank? || ends_at.blank?
 
     errors.add(:ends_at, "must be after starts_at") unless ends_at > starts_at
+  end
+
+  def billing_plan_belongs_to_account
+    return if billing_plan.blank? || account_id.blank?
+    return if billing_plan.account_id == account_id
+
+    errors.add(:billing_plan, "must belong to the same account")
   end
 end

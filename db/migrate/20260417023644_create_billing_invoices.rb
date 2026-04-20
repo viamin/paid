@@ -3,7 +3,7 @@
 class CreateBillingInvoices < ActiveRecord::Migration[8.1]
   def change
     create_table :billing_invoices do |t|
-      t.references :account, null: false, foreign_key: true
+      t.references :account, null: false
       t.references :billing_period, null: false, foreign_key: true
       t.string :external_id, limit: 255
       t.string :status, null: false, limit: 20, default: "draft"
@@ -18,6 +18,7 @@ class CreateBillingInvoices < ActiveRecord::Migration[8.1]
       t.timestamps
     end
 
+    add_foreign_key :billing_invoices, :accounts
     add_index :billing_invoices, :external_id, unique: true, where: "external_id IS NOT NULL"
     add_index :billing_invoices, [ :account_id, :status ]
   end

@@ -3,7 +3,7 @@
 FactoryBot.define do
   factory :billing_period do
     account
-    billing_plan
+    billing_plan { association(:billing_plan, account: account) }
     period_type { "monthly" }
     starts_at { Time.current.beginning_of_month }
     ends_at { Time.current.end_of_month }

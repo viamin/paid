@@ -15,13 +15,15 @@ module Billing
     def call
       return existing_invoice if billing_period.invoiced?
 
-      GeneratePeriodSummary.call(billing_period: billing_period)
-      line_item_attrs = CalculateCharges.call(billing_period: billing_period)
-
       invoice = nil
       ActiveRecord::Base.transaction do
         billing_period.lock!
-        invoice = billing_period.invoiced? ? existing_invoice : create_invoice(line_item_attrs)
+        invoice = if billing_period.invoiced?
+          existing_invoice
+        else
+          GeneratePeriodSummary.call(billing_period: billing_period)
+          create_invoice(CalculateCharges.call(billing_period: billing_period))
+        end
       end
 
       invoice

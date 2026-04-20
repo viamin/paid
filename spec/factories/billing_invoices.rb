@@ -3,7 +3,7 @@
 FactoryBot.define do
   factory :billing_invoice do
     account
-    billing_period
+    billing_period { association(:billing_period, account: account) }
     status { "draft" }
     subtotal_cents { 0 }
     tax_cents { 0 }
