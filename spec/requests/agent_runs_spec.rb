@@ -413,6 +413,24 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Claude Code")
       end
 
+      it "shows auth-expired details when the provider cannot generate an auth URL" do
+        agent_run = create(:agent_run, :auth_expired, project: project, agent_type: "codex", auth_provider: "codex")
+        without_partial_double_verification do
+          allow(AgentHarness).to receive(:respond_to?).and_call_original
+          allow(AgentHarness).to receive(:respond_to?).with(:refresh_auth).and_return(true)
+          allow(AgentHarness).to receive(:respond_to?).with(:auth_url).and_return(true)
+          allow(AgentHarness).to receive(:auth_url)
+            .with(:codex)
+            .and_raise(NotImplementedError, "Provider codex uses api_key auth and does not support OAuth URL generation")
+        end
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Paid cannot generate a browser login URL")
+        expect(response.body).to include("Codex")
+      end
+
       it "shows the run timeline when phase data exists" do
         agent_run = create(:agent_run, :completed, project: project)
         create(:agent_run_phase, agent_run: agent_run, phase_key: "prepare_pr_prompt", phase_group: "prompt")
@@ -1879,14 +1897,14 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Only runs with expired authentication")
       end
 
-      it "redirects when auth code is blank" do
+      it "redirects when auth token is blank" do
         agent_run = create(:agent_run, :auth_expired, project: project)
 
         post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "  " }
 
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         follow_redirect!
-        expect(response.body).to include("Please provide an authentication code")
+        expect(response.body).to include("Please provide an authentication token")
       end
 
       it "creates a new queued run and marks original as retried on success" do
@@ -1896,7 +1914,7 @@ RSpec.describe "AgentRuns" do
         end
 
         expect {
-          post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
+          post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "valid-token" }
         }.to change(AgentRun, :count).by(1)
 
         new_run = AgentRun.last
@@ -1908,7 +1926,20 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.reload.status).to eq("retried")
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
         without_partial_double_verification do
-          expect(AgentHarness).to have_received(:refresh_auth).with(:claude, code: "valid-code")
+          expect(AgentHarness).to have_received(:refresh_auth).with(:claude, token: "valid-token")
+        end
+      end
+
+      it "still accepts the legacy auth_code parameter as a token" do
+        agent_run = create(:agent_run, :auth_expired, project: project)
+        without_partial_double_verification do
+          allow(AgentHarness).to receive(:refresh_auth)
+        end
+
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "legacy-token" }
+
+        without_partial_double_verification do
+          expect(AgentHarness).to have_received(:refresh_auth).with(:claude, token: "legacy-token")
         end
       end
 
@@ -1919,14 +1950,14 @@ RSpec.describe "AgentRuns" do
         end
 
         expect {
-          post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
+          post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "valid-token" }
         }.to have_enqueued_job(ProcessRunQueueJob)
       end
 
       it "redirects with alert when auth_provider is missing" do
         agent_run = create(:agent_run, :auth_expired, project: project, auth_provider: nil)
 
-        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "valid-token" }
 
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         follow_redirect!
@@ -1938,11 +1969,25 @@ RSpec.describe "AgentRuns" do
         allow(AgentHarness).to receive(:respond_to?).and_call_original
         allow(AgentHarness).to receive(:respond_to?).with(:refresh_auth).and_return(false)
 
-        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "valid-token" }
 
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         follow_redirect!
         expect(response.body).to include("Re-authentication is not supported")
+      end
+
+      it "redirects with alert when the provider does not support refresh_auth" do
+        agent_run = create(:agent_run, :auth_expired, project: project, auth_provider: "codex")
+        without_partial_double_verification do
+          allow(AgentHarness).to receive(:refresh_auth)
+            .and_raise(NotImplementedError, "Provider codex uses api_key auth and does not support credential refresh")
+        end
+
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "valid-token" }
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        follow_redirect!
+        expect(response.body).to include("Re-authentication is not supported for this provider")
       end
 
       it "redirects with alert on AgentHarness::AuthenticationError" do
@@ -1952,7 +1997,7 @@ RSpec.describe "AgentRuns" do
             .and_raise(AgentHarness::AuthenticationError, "Invalid code")
         end
 
-        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "bad-code" }
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "bad-token" }
 
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         follow_redirect!
@@ -1967,7 +2012,7 @@ RSpec.describe "AgentRuns" do
             .and_raise(AgentHarness::Error, "Provider unavailable")
         end
 
-        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "some-code" }
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "some-token" }
 
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         follow_redirect!
@@ -1983,7 +2028,7 @@ RSpec.describe "AgentRuns" do
         end
 
         expect {
-          post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
+          post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "valid-token" }
         }.to change(AgentRun, :count).by(1)
 
         new_run = AgentRun.last

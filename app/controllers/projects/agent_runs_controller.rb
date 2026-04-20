@@ -407,10 +407,10 @@ module Projects
         return
       end
 
-      code = params[:auth_code]&.strip
-      if code.blank?
+      token = (params[:auth_token].presence || params[:auth_code])&.strip
+      if token.blank?
         redirect_to project_agent_run_path(@project, @agent_run),
-          alert: "Please provide an authentication code."
+          alert: "Please provide an authentication token."
         return
       end
 
@@ -436,7 +436,7 @@ module Projects
         return
       end
 
-      AgentHarness.refresh_auth(provider, code: code)
+      AgentHarness.refresh_auth(provider, token: token)
 
       new_run = AgentRun.create!(
         project: @project,
@@ -465,6 +465,16 @@ module Projects
       )
       redirect_to project_agent_run_path(@project, @agent_run),
         alert: "Re-authentication failed: #{e.message}"
+    rescue NotImplementedError => e
+      Rails.logger.error(
+        message: "agent_execution.refresh_auth_unavailable",
+        agent_run_id: @agent_run.id,
+        provider: @agent_run.auth_provider,
+        error_class: e.class.name,
+        error_message: e.message
+      )
+      redirect_to project_agent_run_path(@project, @agent_run),
+        alert: "Re-authentication is not supported for this provider."
     rescue ActiveRecord::RecordNotUnique => e
       alert = if (e.cause&.message || e.message).include?("proxy_token")
         "An unexpected error occurred. Please try again."
