@@ -35,10 +35,36 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
       expect(issue.title).to include("[Security] CodeQL:")
       expect(issue.title).to include("code-scanning-alert-1667")
       expect(issue.body).to include("Code Scanning Alert #1667")
-      expect(issue.labels).to eq(%w[security code-scanning])
+      expect(issue.labels).to eq(%w[security code-scanning P1])
       expect(issue.paid_state).to eq("new")
       expect(issue.github_state).to eq("open")
       expect(issue.source).to eq(source)
+    end
+
+    it "maps severity to priority label" do
+      {
+        "critical" => "P1",
+        "high" => "P1",
+        "medium" => "P2",
+        "low" => "P3"
+      }.each.with_index(1) do |(severity, priority), index|
+        medium_alert = alert.merge(number: 10_000 + index, severity: severity)
+
+        described_class.new(project).call([ medium_alert ])
+
+        issue = project.issues.find_by(source: source, github_issue_id: id_offset + medium_alert[:number])
+        expect(issue.labels).to include(priority),
+          "Expected severity #{severity.inspect} to include priority #{priority.inspect}, got #{issue.labels.inspect}"
+      end
+    end
+
+    it "uses custom project priority labels" do
+      project.update!(priority_labels: { "P1" => "urgent", "P2" => "normal", "P3" => "low" })
+
+      described_class.new(project).call([ alert.merge(severity: "medium") ])
+
+      issue = project.issues.find_by(source: source, github_issue_id: id_offset + 1667)
+      expect(issue.labels).to eq(%w[security code-scanning normal])
     end
 
     it "skips non-open alerts" do
@@ -63,6 +89,7 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
       existing.reload
       expect(existing.github_state).to eq("open")
       expect(existing.paid_state).to eq("new")
+      expect(existing.labels).to eq(%w[security code-scanning P1])
     end
 
     it "updates metadata when an existing open issue has changed alert payload" do
@@ -81,6 +108,26 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
       existing.reload
       expect(existing.title).to include("code-scanning-alert-1667")
       expect(existing.body).to include("Code Scanning Alert #1667")
+      expect(existing.labels).to eq(%w[security code-scanning P1])
+    end
+
+    it "updates priority label when an existing open issue severity changes" do
+      title = SecurityAlerts::FormatCodeScanningAlert.title(alert)
+      body = SecurityAlerts::FormatCodeScanningAlert.body(alert)
+      existing = create(:issue,
+        project: project,
+        github_issue_id: id_offset + 1667,
+        github_number: 200_001_667,
+        source: source,
+        github_state: "open",
+        paid_state: "new",
+        title: title,
+        body: body,
+        labels: %w[security code-scanning P3])
+
+      described_class.new(project).call([ alert.merge(severity: "medium") ])
+
+      expect(existing.reload.labels).to eq(%w[security code-scanning P2])
     end
 
     it "does not update when metadata is unchanged" do
@@ -95,7 +142,8 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
         github_state: "open",
         paid_state: "new",
         title: title,
-        body: body)
+        body: body,
+        labels: %w[security code-scanning P1])
 
       expect { described_class.new(project).call([ alert ]) }
         .not_to change { existing.reload.updated_at }
