@@ -195,18 +195,27 @@ RUN npm install -g --ignore-scripts opencode-ai@1.3.2
 # producing an OCI "executable file not found in $PATH" failure at runtime.
 RUN npm install -g --ignore-scripts @githubnext/github-copilot-cli@0.1.36
 
-# Install Cursor agent CLI
-# Pin the install script checksum for reproducible builds and supply-chain security.
-# The installer places the binary under /root/.local/ which is inaccessible to the
-# non-root "agent" user. Copy the resolved binary to a system-wide path instead.
-# To update: curl -fsSL https://cursor.com/install | sha256sum
-ARG CURSOR_AGENT_INSTALL_SHA256=c41ebee3b301f49cb712e87e84a9e8bbf02bac52309c30aa83a4a8fe3ee85383
-RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
-    && echo "${CURSOR_AGENT_INSTALL_SHA256}  /tmp/cursor-install.sh" | sha256sum -c - \
-    && bash /tmp/cursor-install.sh \
-    && cp -L /root/.local/bin/cursor-agent /usr/local/bin/cursor-agent \
-    && chmod +x /usr/local/bin/cursor-agent \
-    && rm /tmp/cursor-install.sh
+# Install Cursor agent CLI via agent-harness install contract.
+# agent-harness owns the artifact URL, checksum pin, and binary metadata.
+# These values are extracted at build time (see scripts/extract-provider-install-contract.rb)
+# so Paid does not own the Cursor-specific install recipe or version pin.
+# The artifact tarball is downloaded directly (more stable than the install script
+# whose checksum changes frequently) and verified against agent-harness's pinned SHA256.
+ARG CURSOR_ARTIFACT_URL
+ARG CURSOR_ARTIFACT_SHA256
+ARG CURSOR_BINARY_NAME=cursor-agent
+ARG CURSOR_GLOBAL_PATH=/usr/local/bin/cursor-agent
+RUN if [ -z "${CURSOR_ARTIFACT_URL}" ]; then echo "ERROR: CURSOR_ARTIFACT_URL build-arg is required" >&2; exit 1; fi \
+    && if [ -z "${CURSOR_ARTIFACT_SHA256}" ]; then echo "ERROR: CURSOR_ARTIFACT_SHA256 build-arg is required" >&2; exit 1; fi \
+    && curl -fsSL "${CURSOR_ARTIFACT_URL}" -o /tmp/cursor-artifact.tar.gz \
+    && echo "${CURSOR_ARTIFACT_SHA256}  /tmp/cursor-artifact.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/cursor-artifact.tar.gz -C /tmp \
+    && mkdir -p /opt/cursor-agent "$(dirname "${CURSOR_GLOBAL_PATH}")" \
+    && cp -R /tmp/dist-package/. /opt/cursor-agent/ \
+    && test -f "/opt/cursor-agent/${CURSOR_BINARY_NAME}" \
+    && chmod +x "/opt/cursor-agent/${CURSOR_BINARY_NAME}" \
+    && ln -sf "/opt/cursor-agent/${CURSOR_BINARY_NAME}" "${CURSOR_GLOBAL_PATH}" \
+    && rm -rf /tmp/cursor-artifact.tar.gz /tmp/dist-package
 
 # Install Aider CLI.
 # Follow the official Aider "Install with uv" flow so the tool lives in its own
@@ -238,6 +247,16 @@ RUN git config --system init.defaultBranch main \
 RUN useradd -m -s /bin/bash agent \
     && mkdir -p /workspace /home/agent/.config /home/agent/.local/share \
     && chown -R agent:agent /workspace /home/agent
+
+# Pre-seed the OpenCode SQLite database so the first container invocation does
+# not emit "Performing one time database migration, may take a few minutes..."
+# into stdout, which breaks the Test Agent ping response matching.
+# The opencode binary creates its DB on first run; this step discards the
+# network-dependent output and only keeps the migrated SQLite file.
+USER agent
+RUN mkdir -p /home/agent/.local/share/opencode \
+    && timeout 10s opencode run "OK" > /dev/null 2>&1 || true
+USER root
 
 # Set up working directory
 WORKDIR /workspace

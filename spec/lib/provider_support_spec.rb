@@ -25,8 +25,8 @@ RSpec.describe ProviderSupport do
       expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("opencode")
     end
 
-    it "includes copilot" do
-      expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("copilot")
+    it "excludes copilot because the CLI is not an agent runner" do
+      expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).not_to include("copilot")
     end
 
     it "includes aider" do
@@ -56,9 +56,9 @@ RSpec.describe ProviderSupport do
       expect(keys).to include("opencode")
     end
 
-    it "includes copilot when backed by the agent harness registry" do
+    it "excludes copilot even when backed by the agent harness registry" do
       keys = described_class.container_executable_provider_keys
-      expect(keys).to include("copilot")
+      expect(keys).not_to include("copilot")
     end
 
     it "includes aider when backed by the agent harness registry" do
@@ -88,8 +88,8 @@ RSpec.describe ProviderSupport do
       expect(described_class.container_executable_provider_key?("opencode")).to be true
     end
 
-    it "returns true for copilot" do
-      expect(described_class.container_executable_provider_key?("copilot")).to be true
+    it "returns false for copilot" do
+      expect(described_class.container_executable_provider_key?("copilot")).to be false
     end
 
     it "returns true for aider" do

@@ -630,6 +630,48 @@ RSpec.describe Containers::ServiceProvisioner do
       expect(docker_container).to have_received(:exec).twice
     end
 
+    it "quotes database and owner identifiers in create statements" do
+      sc = create(:service_container, :running, env: {
+        "POSTGRES_USER" => "agent\" WITH SUPERUSER --",
+        "POSTGRES_PASSWORD" => "agent",
+        "POSTGRES_DB" => "agent_test"
+      })
+      docker_container = instance_double(Docker::Container)
+      commands = []
+
+      allow(Docker::Container).to receive(:get)
+        .with(sc.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive(:exec) do |cmd|
+        commands << cmd
+        commands.one? ? [ [ "(0 rows)" ], [], 0 ] : [ [ "CREATE DATABASE" ], [], 0 ]
+      end
+
+      db_name = provisioner.send(:per_run_db_name, agent_run)
+      provisioner.send(:create_per_run_database, sc, db_name)
+
+      expect(commands.last.last).to eq(
+        "CREATE DATABASE \"#{db_name}\" OWNER \"agent\"\" WITH SUPERUSER --\""
+      )
+    end
+
+    it "quotes database identifiers in drop statements" do
+      sc = create(:service_container, :running)
+      docker_container = instance_double(Docker::Container)
+      commands = []
+
+      allow(Docker::Container).to receive(:get)
+        .with(sc.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive(:exec) do |cmd|
+        commands << cmd
+        [ [], [], 0 ]
+      end
+
+      db_name = provisioner.send(:per_run_db_name, agent_run)
+      provisioner.send(:drop_per_run_database, sc, agent_run)
+
+      expect(commands.last.last).to eq("DROP DATABASE IF EXISTS \"#{db_name}\"")
+    end
+
     it "skips creation when database already exists (idempotent)" do
       sc = create(:service_container, :running)
       docker_container = instance_double(Docker::Container)

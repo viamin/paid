@@ -722,15 +722,13 @@ module Containers
     def seed_codex_config!
       content = <<~TOML
         model_provider = "paid"
+        notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]
 
         [model_providers.paid]
         name = "Paid"
         base_url = "#{proxy_base_url}/api/proxy/openai"
         env_key = "OPENAI_API_KEY"
         wire_api = "responses"
-
-        [notify]
-        command = "date +%s > /tmp/agent_heartbeat"
       TOML
 
       write_container_file("/home/agent/.codex/config.toml", content)
@@ -748,39 +746,100 @@ module Containers
       host = codex_subscription_auth_host_mount_path
       if host.present?
         log_system("container.codex_credentials_shared", source_path: host)
+        seed_sanitized_codex_config!(source_path: host)
       else
         seed_local_credentials!(
           source_path: codex_local_config_path,
           target_path: "/home/agent/.codex",
-          files: %w[auth.json config.toml],
+          files: %w[auth.json],
           success_log_key: "container.codex_credentials_seeded",
           failure_log_key: "container.codex_credentials_seed_failed"
         )
+        seed_sanitized_codex_config!(source_path: codex_local_config_path)
       end
 
       seed_codex_notify_hook!
     end
 
+    # Writes a Codex config.toml derived from the host config but with
+    # incompatible sections stripped. The host config may contain [projects.*]
+    # map sections that newer Codex CLI versions reject ("invalid type: map,
+    # expected a sequence"). For container runs, project trust is managed by
+    # --skip-git-repo-check, so those sections are unnecessary.
+    def seed_sanitized_codex_config!(source_path:)
+      return unless source_path.present?
+
+      source_file = File.join(source_path, "config.toml")
+      return unless File.file?(source_file)
+
+      content = File.read(source_file)
+      sanitized = strip_codex_project_sections(content)
+      write_container_file("/home/agent/.codex/config.toml", sanitized)
+      log_system("container.codex_config_sanitized")
+    rescue Docker::Error::DockerError, SystemCallError => e
+      log_system("container.codex_config_sanitization_failed", error: e.message)
+    end
+
+    def strip_codex_project_sections(toml)
+      in_projects = false
+      toml.lines.reject do |line|
+        if line.match?(/\A\[projects/)
+          in_projects = true
+          next true
+        end
+
+        if in_projects
+          if line.match?(/\A\[/) && !line.match?(/\A\[projects/)
+            in_projects = false
+            next false
+          end
+
+          next true
+        end
+
+        false
+      end.join
+    end
+
     # Appends the Codex notify hook to config.toml inside the container.
     # For subscription auth, the base config may come from the host or local
-    # copy and won't include the heartbeat hook. This method appends the
-    # [notify] section so the watchdog receives heartbeats during Codex turns.
-    # Silently skips when config.toml is bind-mounted read-only (host mount
-    # with existing config.toml).
+    # copy and may include an older notify shape. This method rewrites the
+    # notify command idempotently so the watchdog receives heartbeats during
+    # Codex turns without leaving duplicate TOML keys.
+    # Creates config.toml when subscription auth only provided auth.json.
     def seed_codex_notify_hook!
-      notify_toml = <<~TOML
+      result = container.exec([ "sh", "-lc", codex_notify_rewrite_script ], user: "agent")
+      exit_code = result.is_a?(Array) ? result[2].to_i : 0
+      raise Docker::Error::DockerError, "config rewrite exited with #{exit_code}" unless exit_code == 0
 
-        [notify]
-        command = "date +%s > /tmp/agent_heartbeat"
-      TOML
-
-      container.exec(
-        [ "sh", "-lc", "printf '%s' #{Shellwords.escape(notify_toml)} >> /home/agent/.codex/config.toml" ],
-        user: "agent"
-      )
       log_system("container.codex_notify_hook_seeded")
     rescue Docker::Error::DockerError => e
       log_system("container.codex_notify_hook_seed_failed", error: e.message)
+    end
+
+    def codex_notify_rewrite_script
+      notify_line = 'notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]'
+      escaped_notify_line = Shellwords.escape(notify_line)
+
+      <<~SH.squish
+        config=/home/agent/.codex/config.toml;
+        touch "$config" 2>/dev/null || true;
+        tmp="$(mktemp)";
+        awk -v notify_line=#{escaped_notify_line} '
+          BEGIN { in_notify = 0 }
+          /^[[:space:]]*\\[notify\\][[:space:]]*$/ { in_notify = 1; next }
+          in_notify && /^[[:space:]]*\\[[^]]+\\][[:space:]]*$/ { in_notify = 0 }
+          in_notify { next }
+          /^[[:space:]]*notify[[:space:]]*=/ { next }
+          !inserted && /^[[:space:]]*\\[[^]]+\\][[:space:]]*$/ { print notify_line; print ""; inserted = 1 }
+          { print }
+          END { if (!inserted) { print ""; print notify_line } }
+        ' "$config" > "$tmp" &&
+        cat "$tmp" > "$config";
+        status=$?;
+        rm -f "$tmp";
+        exit "$status"
+      SH
     end
 
     # Serializes only Codex CLI executions that share a host-backed auth.json.
@@ -1431,10 +1490,7 @@ module Containers
       base = codex_subscription_auth_host_mount_path
       return [] unless base.present?
 
-      binds = [ "#{File.join(base, 'auth.json')}:/home/agent/.codex/auth.json:rw" ]
-      config_path = File.join(base, "config.toml")
-      binds << "#{config_path}:/home/agent/.codex/config.toml:ro" if File.file?(config_path)
-      binds
+      [ "#{File.join(base, 'auth.json')}:/home/agent/.codex/auth.json:rw" ]
     end
 
     def codex_auth_lock_required?(command)

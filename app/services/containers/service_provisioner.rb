@@ -492,7 +492,7 @@ module Containers
       container = Docker::Container.get(service_container.docker_container_id)
       stdout, stderr, status = container.exec([
         "psql", "-U", user, "-c",
-        "SELECT 1 FROM pg_database WHERE datname = '#{db_name}'"
+        "SELECT 1 FROM pg_database WHERE datname = #{postgres_string_literal(db_name)}"
       ])
 
       if status != 0
@@ -503,7 +503,7 @@ module Containers
       if stdout.join.exclude?("1 row")
         stdout, stderr, status = container.exec([
           "psql", "-U", user, "-c",
-          "CREATE DATABASE \"#{db_name}\" OWNER \"#{user}\""
+          "CREATE DATABASE #{postgres_identifier(db_name)} OWNER #{postgres_identifier(user)}"
         ])
 
         if status != 0
@@ -531,12 +531,12 @@ module Containers
       # Terminate active connections before dropping
       container.exec([
         "psql", "-U", user, "-c",
-        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '#{db_name}' AND pid <> pg_backend_pid()"
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = #{postgres_string_literal(db_name)} AND pid <> pg_backend_pid()"
       ])
 
       _stdout, stderr, status = container.exec([
         "psql", "-U", user, "-c",
-        "DROP DATABASE IF EXISTS \"#{db_name}\""
+        "DROP DATABASE IF EXISTS #{postgres_identifier(db_name)}"
       ])
 
       if status != 0
@@ -554,6 +554,14 @@ module Containers
         db_name: per_run_db_name(agent_run),
         service_container: service_container.name,
         error: e.message)
+    end
+
+    def postgres_identifier(value)
+      %("#{value.to_s.gsub('"', '""')}")
+    end
+
+    def postgres_string_literal(value)
+      "'#{value.to_s.gsub("'", "''")}'"
     end
 
     def schedule_metrics_collection(service_container)
