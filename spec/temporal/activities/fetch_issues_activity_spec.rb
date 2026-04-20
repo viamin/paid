@@ -1009,12 +1009,12 @@ RSpec.describe Activities::FetchIssuesActivity do
         ).once
       end
 
-      it "updates last_issue_sync_at after sync" do
+      it "updates last_issue_sync_at to sync_started_at minus 1 second" do
         freeze_time do
           activity.execute(project_id: project.id)
 
           project.reload
-          expect(project.last_issue_sync_at).to be_within(1.second).of(Time.current)
+          expect(project.last_issue_sync_at).to be_within(0.1).of(Time.current - 1.second)
         end
       end
 
@@ -1130,6 +1130,39 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
+    context "when an issue has updated_at equal to the previous watermark" do
+      let(:watermark) { 10.minutes.ago.change(usec: 0) }
+      let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, last_issue_sync_at: watermark) }
+
+      let(:boundary_issue) do
+        OpenStruct.new(
+          id: 1001,
+          number: 1,
+          title: "Boundary issue",
+          body: "Body",
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 1.day.ago,
+          updated_at: watermark
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:issues).and_return([ boundary_issue ])
+      end
+
+      it "sets the watermark to sync_started_at minus 1 second so boundary issues are re-fetched" do
+        freeze_time do
+          activity.execute(project_id: project.id)
+
+          project.reload
+          expect(project.last_issue_sync_at).to be_within(0.1).of(Time.current - 1.second)
+        end
+      end
+    end
+
     context "when project has no last_issue_sync_at (first sync)" do
       let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, last_issue_sync_at: nil) }
 
@@ -1155,7 +1188,7 @@ RSpec.describe Activities::FetchIssuesActivity do
           activity.execute(project_id: project.id)
 
           project.reload
-          expect(project.last_issue_sync_at).to be_within(1.second).of(Time.current)
+          expect(project.last_issue_sync_at).to be_within(0.1).of(Time.current - 1.second)
         end
       end
     end
