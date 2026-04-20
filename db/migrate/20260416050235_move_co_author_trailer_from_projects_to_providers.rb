@@ -15,7 +15,7 @@ class MoveCoAuthorTrailerFromProjectsToProviders < ActiveRecord::Migration[8.1]
   # but it preserves the most-recent intent and avoids wiping configuration.
 
   def up
-    add_column :providers, :agent_co_author_trailer, :text
+    add_column :providers, :agent_co_author_trailer, :text, if_not_exists: true
 
     # Copy project-level trailers onto the owning user's default subscription
     # provider (prefer "claude" when present, otherwise the lowest-id
@@ -73,11 +73,11 @@ class MoveCoAuthorTrailerFromProjectsToProviders < ActiveRecord::Migration[8.1]
       WHERE providers.id = targets.id
     SQL
 
-    remove_column :projects, :agent_co_author_trailer
+    remove_column :projects, :agent_co_author_trailer, if_exists: true
   end
 
   def down
-    add_column :projects, :agent_co_author_trailer, :text
+    add_column :projects, :agent_co_author_trailer, :text, if_not_exists: true
 
     # Best-effort restore: copy each owning user's provider trailer back onto
     # every project the user created. Projects without a created_by are left
@@ -99,6 +99,6 @@ class MoveCoAuthorTrailerFromProjectsToProviders < ActiveRecord::Migration[8.1]
       WHERE projects.created_by_id = src.user_id
     SQL
 
-    remove_column :providers, :agent_co_author_trailer
+    remove_column :providers, :agent_co_author_trailer, if_exists: true
   end
 end

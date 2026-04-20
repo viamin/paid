@@ -10,7 +10,7 @@ class ServiceContainerMetricsCollectionJob < ApplicationJob
 
   queue_as :metrics
 
-  COLLECTION_INTERVAL = 15.seconds
+  COLLECTION_INTERVAL = 30.seconds
   MAX_BACKOFF_INTERVAL = 5.minutes
 
   good_job_control_concurrency_with(
