@@ -490,7 +490,7 @@ module Containers
       user = env.fetch("POSTGRES_USER", POSTGRES_DEFAULT_ENV["POSTGRES_USER"])
 
       container = Docker::Container.get(service_container.docker_container_id)
-      _stdout, stderr, status = container.exec([
+      stdout, stderr, status = container.exec([
         "psql", "-U", user, "-c",
         "SELECT 1 FROM pg_database WHERE datname = '#{db_name}'"
       ])
@@ -500,10 +500,10 @@ module Containers
       end
 
       # Create only if it doesn't already exist (idempotent for retries)
-      if _stdout.join.exclude?("1 row")
-        _stdout, stderr, status = container.exec([
+      if stdout.join.exclude?("1 row")
+        stdout, stderr, status = container.exec([
           "psql", "-U", user, "-c",
-          "CREATE DATABASE #{db_name} OWNER #{user}"
+          "CREATE DATABASE \"#{db_name}\" OWNER \"#{user}\""
         ])
 
         if status != 0
@@ -536,7 +536,7 @@ module Containers
 
       _stdout, stderr, status = container.exec([
         "psql", "-U", user, "-c",
-        "DROP DATABASE IF EXISTS #{db_name}"
+        "DROP DATABASE IF EXISTS \"#{db_name}\""
       ])
 
       if status != 0
