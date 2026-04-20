@@ -99,7 +99,6 @@ class MoveCoAuthorTrailerFromProjectsToProviders < ActiveRecord::Migration[8.1]
       WHERE projects.created_by_id = src.user_id
     SQL
 
-    # Provider model code assumes this post-migration column exists, including
-    # while migration specs run in the application process.
+    remove_column :providers, :agent_co_author_trailer
   end
 end
