@@ -133,6 +133,8 @@ module Containers
       .rubocop-cache/
       .rubocop_cache/
       .aider*
+      # Paid heartbeat file (touched by agent CLI hooks)
+      .paid-heartbeat
     PATTERNS
 
     # Maximum number of files allowed in the auto-commit safety net.
@@ -223,6 +225,7 @@ module Containers
       .pg_log.txt
       .ruby_env.sh
       .aider*
+      .paid-heartbeat
       vendor/bundle/
       vendor/gems/
       node_modules/
@@ -589,6 +592,11 @@ module Containers
       end
 
       true
+    end
+
+    def head_differs_from_remote_branch?(branch)
+      fetch_branch(branch)
+      head_sha != remote_branch_sha(branch)
     end
 
     # Force-pushes the current branch using --force-with-lease.

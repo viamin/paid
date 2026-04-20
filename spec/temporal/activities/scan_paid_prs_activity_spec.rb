@@ -157,6 +157,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "escalates draft PRs at max review rounds without checking rate budget" do
         project.update!(max_draft_review_rounds: 3)
         pr_issue.update!(pr_review_phase: "draft", draft_review_count: 3)
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, 99)
+          .and_return(OpenStruct.new(draft: true, number: 99, head: OpenStruct.new(sha: "abc123", repo: OpenStruct.new(fork: false)), mergeable: true, user: OpenStruct.new(login: "someone-else")))
         allow(github_client).to receive(:rate_limit_remaining!).and_return(5)
 
         result = activity.execute(project_id: project.id)
@@ -702,7 +705,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft_review_count: 0)
         create(:agent_run, :running,
           project: project, source_pull_request_number: 42, goal: "review")
-        stub_github_for_pr(reviews: [])
+        stub_github_for_pr(draft: true, reviews: [])
       end
 
       it "does not skip the PR" do
@@ -852,6 +855,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [ { id: 1, user_login: "copilot", state: "COMMENTED",
                        body: "I found some issues.", submitted_at: 1.hour.ago } ],
           review_threads: [
@@ -882,6 +886,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           checks: [],
           reviews: [ { id: 1, user_login: "copilot", state: "COMMENTED",
                        body: "I found some issues.", submitted_at: 1.hour.ago } ],
@@ -963,6 +968,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           created_at: 10.minutes.ago
         )
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
                        body: "Here are some automated review suggestions.",
@@ -1122,6 +1128,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         # must NOT be silently dropped just because Codex separately commented
         # clean. The two bots' state is independent.
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
                        body: "Copilot reviewed 5 out of 5 changed files and generated 2 comments.",
@@ -1163,6 +1170,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         # Copilot has NOT reviewed at all. The pending trigger for Copilot
         # must still fire — Codex's clean comment cannot speak for Copilot.
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
                        body: "Found 2 issues.", submitted_at: 10.minutes.ago } ],
@@ -1224,6 +1232,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           created_at: 30.minutes.ago
         )
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [],
           review_threads: [],
@@ -1303,6 +1312,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           source_pull_request_number: 42,
           completed_at: 2.hours.ago)
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
                        body: "Here are some automated review suggestions.",
@@ -1547,6 +1557,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           trigger_type: "automatic",
           completed_at: 30.minutes.ago)
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
                        body: "Here are some review suggestions.",
@@ -1715,6 +1726,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [ { id: 1, user_login: "claude[bot]", state: "COMMENTED",
                        body: "I found some issues.", submitted_at: 1.hour.ago } ],
           review_threads: [
@@ -1745,6 +1757,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [ { id: 1, user_login: "claude-code[bot]", state: "COMMENTED",
                        body: "I found some issues.", submitted_at: 1.hour.ago } ],
           review_threads: [
@@ -1777,6 +1790,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
               body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
@@ -1806,6 +1820,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
               body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago }
@@ -1839,6 +1854,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [],
           review_threads: [
             {
@@ -1868,6 +1884,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
               body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
@@ -1979,6 +1996,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
               body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
@@ -2008,6 +2026,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
               body: "Please tighten the error handling.", submitted_at: 1.hour.ago },
@@ -2042,6 +2061,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           created_at: 10.minutes.ago
         )
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
               body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
@@ -2077,6 +2097,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           created_at: 10.minutes.ago
         )
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
               body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
@@ -2107,6 +2128,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
               body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
@@ -2139,6 +2161,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
               body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
@@ -2170,6 +2193,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
               body: "<!-- PAID_AGENT_REVIEW_STATUS: clean -->", submitted_at: 1.hour.ago },
@@ -2198,6 +2222,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
                        body: "Copilot reviewed 5 out of 5 changed files and generated no comments.",
                        submitted_at: 1.hour.ago } ],
@@ -2228,6 +2253,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [],
           checks: [ { name: "ci", conclusion: "success" } ]
         )
@@ -2255,6 +2281,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [ { id: 100, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
                        body: "Copilot found issues.", submitted_at: 1.day.ago } ],
           checks: [ { name: "ci", conclusion: "success" } ]
@@ -2278,7 +2305,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
-        stub_github_for_pr(reviews: [])
+        stub_github_for_pr(draft: true, reviews: [])
       end
 
       it "keeps the PR in draft and requests a bot review" do
@@ -2301,7 +2328,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
-        stub_github_for_pr(reviews: [])
+        stub_github_for_pr(draft: true, reviews: [])
       end
 
       it "still requests review from the configured bot only" do
@@ -2310,6 +2337,34 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first[:triggers].sole
         expect(trigger[:type]).to eq("review_bot_review_pending")
+        expect(trigger[:request_login]).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
+        expect(trigger[:request_logins]).to eq([ Activities::RequestReviewActivity::COPILOT_LOGIN ])
+      end
+    end
+
+    context "when both copilot and codex are enabled and no bot reviews exist" do
+      before do
+        enable_copilot_and_codex_review!
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(reviews: [])
+      end
+
+      it "emits the full bot chain in request_logins for fallback in RequestReviewActivity" do
+        result = activity.execute(project_id: project.id)
+
+        trigger = result[:prs_to_trigger].first[:triggers].find { |t| t[:type] == "review_bot_review_pending" }
+        expect(trigger).not_to be_nil
+        expect(trigger[:request_logins]).to eq([
+          Activities::RequestReviewActivity::COPILOT_LOGIN,
+          Activities::RequestReviewActivity::CODEX_LOGIN
+        ])
+        # Single request_login is preserved for in-flight workflow histories
+        # whose code pre-dates the chain field. It is the chain head.
         expect(trigger[:request_login]).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
       end
     end
@@ -2322,7 +2377,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
-        stub_github_for_pr
+        stub_github_for_pr(draft: true)
         allow(github_client).to receive(:pull_request_reviews)
           .with(project.full_name, 42)
           .and_raise(GithubClient::Error, "GitHub review API unavailable")
@@ -2345,6 +2400,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           review_threads: [
             {
               id: "thread_1",
@@ -2374,6 +2430,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
                        body: "Copilot reviewed 3 out of 5 changed files and generated 2 comments.",
                        submitted_at: 1.hour.ago } ]
@@ -2401,6 +2458,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [],
           checks: [ { name: "rspec", conclusion: "failure" } ]
         )
@@ -2425,6 +2483,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
                        body: "Copilot reviewed 3 out of 3 changed files and generated 2 comments.",
                        submitted_at: 1.hour.ago } ],
@@ -2458,6 +2517,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
                        body: "Looks good. <!-- paid-review-clean -->",
                        submitted_at: 1.hour.ago } ],
@@ -2483,6 +2543,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
                        body: "Found a few things to fix in the error handling.",
                        submitted_at: 1.hour.ago } ],
@@ -2512,6 +2573,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
               body: "Looks good. <!-- paid-review-clean -->",
@@ -2552,6 +2614,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
               body: "Looks good. <!-- paid-review-clean -->",
@@ -2588,6 +2651,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
                        body: "Looks good. <!-- paid-review-clean -->",
                        submitted_at: 1.hour.ago } ],
@@ -2623,6 +2687,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 1)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
               body: "Found issues.", submitted_at: 3.hours.ago },
@@ -2666,6 +2731,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 1)
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
@@ -2709,6 +2775,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
               body: "Found issues.", submitted_at: 2.hours.ago },
@@ -2747,6 +2814,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
               body: "Found issues.", submitted_at: 3.hours.ago },
@@ -2789,6 +2857,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 1)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
               body: "Found issues.", submitted_at: 2.hours.ago },
@@ -2827,6 +2896,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 3)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
               body: "Found issues.", submitted_at: 1.hour.ago }
@@ -2907,6 +2977,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 1)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
               body: "Found issues.", submitted_at: 3.hours.ago },
@@ -2956,6 +3027,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           comments: [ { author: "copilot-pull-request-reviewer[bot]", body: "Please fix this" } ]
         }
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
               body: "Found issues.", submitted_at: 3.hours.ago },
@@ -3003,6 +3075,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           comments: [ { author: "copilot-pull-request-reviewer[bot]", body: "Please fix this" } ]
         }
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
               body: "Copilot found issues.", submitted_at: 3.hours.ago },
@@ -3046,6 +3119,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 1)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
               body: "Found issues.", submitted_at: 2.hours.ago },
@@ -3084,6 +3158,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 1)
         stub_github_for_pr(
+          draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
               body: "Found issues.", submitted_at: 2.hours.ago },
@@ -3114,6 +3189,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success" } ],
           review_threads: []
         )
@@ -3138,6 +3214,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
                        body: "Copilot reviewed 9 out of 9 changed files and generated 2 comments.",
@@ -3171,6 +3248,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [],
           review_threads: []
@@ -3205,6 +3283,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [
             { id: 1, user_login: "alice", state: "APPROVED", body: "LGTM",
@@ -3238,6 +3317,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [
             { id: 1, user_login: "alice", state: "APPROVED", body: "LGTM",
@@ -3275,6 +3355,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [],
           review_threads: []
@@ -3310,6 +3391,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [],
           review_threads: []
@@ -3347,6 +3429,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
         pr_issue
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [],
           review_threads: []
@@ -3376,6 +3459,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           head_repo_fork: true,
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [],
@@ -3407,6 +3491,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           checks: [
             { name: "ci", conclusion: "success" },
             { name: "e2e-suite", conclusion: "success" }
@@ -3440,6 +3525,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           checks: [
             { name: "ci", conclusion: "success" },
             { name: "e2e-suite", conclusion: "success" }
@@ -3470,7 +3556,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           review_settings: {
             "enabled" => true,
             "methods" => { "manual" => { "enabled" => true, "reviewer_login" => "alice" } }
@@ -3502,7 +3588,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           review_settings: {
             "enabled" => true,
             "methods" => { "ci_action" => { "enabled" => true, "action_name" => "Claude Code Review" } }
@@ -3574,6 +3660,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           checks: [
             { name: "lint", conclusion: "success" },
             { name: "rspec", conclusion: nil }
@@ -3615,6 +3702,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "does not advance last_pr_scan_at when CI is still in-progress" do
         stub_github_for_pr(
+          draft: true,
           checks: [
             { name: "lint", conclusion: "success" },
             { name: "rspec", conclusion: nil }
@@ -3628,22 +3716,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "emits ready_for_owner on second scan after CI finishes green" do
-        stub_github_for_pr(
-          checks: [
-            { name: "lint", conclusion: "success" },
-            { name: "rspec", conclusion: nil }
-          ],
-          review_threads: []
-        )
+        pending_checks = [ { name: "lint", conclusion: "success" }, { name: "rspec", conclusion: nil } ]
+        stub_github_for_pr(draft: true, checks: pending_checks, review_threads: [])
         activity.execute(project_id: project.id)
 
-        stub_github_for_pr(
-          checks: [
-            { name: "lint", conclusion: "success" },
-            { name: "rspec", conclusion: "success" }
-          ],
-          review_threads: []
-        )
+        green_checks = [ { name: "lint", conclusion: "success" }, { name: "rspec", conclusion: "success" } ]
+        stub_github_for_pr(draft: true, checks: green_checks, review_threads: [])
 
         result = activity.execute(project_id: project.id)
         expect(result[:prs_to_trigger].size).to eq(1)
@@ -3653,6 +3731,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "returns :skipped when check fetch fails (checks nil)" do
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success" } ],
           review_threads: []
         )
@@ -3673,6 +3752,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 3)
+        stub_github_for_pr(draft: true)
       end
 
       it "returns escalate_to_owner trigger" do
@@ -3696,6 +3776,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       before do
         stub_github_for_pr(
+          draft: true,
           review_threads: [
             { id: "thread_1", is_resolved: false,
               comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "viamin" } ] }
@@ -3771,6 +3852,285 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a Dependabot-authored PR is in draft phase" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0,
+          github_creator_login: "dependabot[bot]")
+      end
+
+      it "skips reviews and advances to ready when CI is green" do
+        enable_copilot_review!
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "ready_for_owner" ])
+      end
+
+      it "triggers ci_failure follow-up when CI fails" do
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "failure" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("ci_failure")
+      end
+
+      it "does not request reviews even when review is enabled" do
+        enable_copilot_review!
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).not_to include("review_bot_review_pending")
+        expect(trigger_types).not_to include("paid_agent_review_pending")
+      end
+
+      it "returns nil when CI is still pending" do
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: nil } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to be_empty
+      end
+    end
+
+    context "when a Dependabot-authored PR is in ready phase" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          draft_review_count: 0,
+          github_creator_login: "dependabot[bot]")
+      end
+
+      it "auto-merges without review when CI is green and mergeable" do
+        project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
+        stub_github_for_pr(
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "owner_approved" ])
+      end
+
+      it "auto-merges in dependabot_only mode without review" do
+        project.update!(auto_merge_mode: "dependabot_only")
+        stub_github_for_pr(
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "owner_approved" ])
+      end
+
+      it "triggers ci_failure follow-up without requiring reviews" do
+        stub_github_for_pr(
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "failure" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("ci_failure")
+      end
+
+      it "does not auto-merge when auto_merge is disabled" do
+        project.update!(auto_merge_mode: "off")
+        stub_github_for_pr(
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to be_empty
+      end
+    end
+
+    context "when consecutive follow-up runs fail with operational errors" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          draft_review_count: 0)
+      end
+
+      before do
+        stub_github_for_pr(review_threads: [], reviews: [], checks: [])
+      end
+
+      def create_followup_run(status:, error_message: nil, created_at: Time.current)
+        create(:agent_run,
+          project: project,
+          issue: pr_issue,
+          source_pull_request_number: 42,
+          trigger_type: "automatic",
+          goal: "create_pr",
+          status: status,
+          error_message: error_message,
+          started_at: created_at - 5.minutes,
+          completed_at: created_at,
+          created_at: created_at)
+      end
+
+      it "escalates after 3 consecutive provider exhaustion failures" do
+        3.times do |i|
+          create_followup_run(
+            status: "failed",
+            error_message: "All providers exhausted: claude_code, codex",
+            created_at: i.minutes.ago)
+        end
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
+        expect(trigger[:triggers].first[:details]).to include("Consecutive operational failures")
+      end
+
+      it "escalates after 3 consecutive timeout failures" do
+        3.times do |i|
+          create_followup_run(
+            status: "timeout",
+            error_message: "wall_clock_timeout: exceeded 30 minutes",
+            created_at: i.minutes.ago)
+        end
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
+        expect(trigger[:triggers].first[:details]).to include("Consecutive operational failures")
+      end
+
+      it "escalates after 3 consecutive mixed operational failures" do
+        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 1.minute.ago)
+        create_followup_run(status: "rate_limited", error_message: "All providers rate limited", created_at: 2.minutes.ago)
+        create_followup_run(status: "failed", error_message: "All providers exhausted: claude_code", created_at: 3.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
+      end
+
+      it "does not escalate when a code-level failure breaks the streak" do
+        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 1.minute.ago)
+        create_followup_run(status: "failed", error_message: "An error occurred during execution", created_at: 2.minutes.ago)
+        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 3.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger]
+        if triggers.any?
+          expect(triggers.first[:triggers].first[:type]).not_to eq("escalate_to_owner")
+        end
+      end
+
+      it "does not escalate with fewer than 3 consecutive operational failures" do
+        2.times do |i|
+          create_followup_run(
+            status: "failed",
+            error_message: "All providers exhausted: claude_code",
+            created_at: i.minutes.ago)
+        end
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger]
+        if triggers.any?
+          expect(triggers.first[:triggers].first[:type]).not_to eq("escalate_to_owner")
+        end
+      end
+
+      it "does not re-escalate PRs already in escalated phase" do
+        pr_issue.update!(pr_review_phase: "escalated")
+        3.times do |i|
+          create_followup_run(
+            status: "failed",
+            error_message: "All providers exhausted: claude_code",
+            created_at: i.minutes.ago)
+        end
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger]
+        escalation_triggers = triggers.select do |t|
+          t[:triggers].any? { |tr| tr[:details]&.include?("Consecutive operational failures") }
+        end
+        expect(escalation_triggers).to be_empty
+      end
+
+      it "does not count manual runs toward the breaker" do
+        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 1.minute.ago)
+        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 2.minutes.ago)
+        create(:agent_run, :timeout,
+          project: project,
+          issue: pr_issue,
+          source_pull_request_number: 42,
+          trigger_type: "manual",
+          goal: "create_pr",
+          error_message: "wall_clock_timeout",
+          created_at: 3.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger]
+        if triggers.any?
+          expect(triggers.first[:triggers].first[:type]).not_to eq("escalate_to_owner")
+        end
+      end
+    end
+
     context "when draft PR has unresolved trusted review threads" do
       before do
         create(:issue, :pull_request,
@@ -3779,6 +4139,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           review_threads: [
             {
               id: "thread_1",
@@ -3817,7 +4178,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         create(:agent_run, :completed,
           project: project, source_pull_request_number: 42,
           completed_at: 1.hour.ago)
-        stub_github_for_pr(issue_comments: [ comment ])
+        stub_github_for_pr(draft: true, issue_comments: [ comment ])
       end
 
       it "triggers a draft followup for new conversation comments" do
@@ -3849,6 +4210,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           project: project, source_pull_request_number: 42,
           completed_at: 1.hour.ago)
         stub_github_for_pr(
+          draft: true,
           issue_comments: [ comment ],
           checks: [ { name: "ci", conclusion: nil } ]
         )
@@ -3872,6 +4234,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           project: project, source_pull_request_number: 42,
           completed_at: 1.hour.ago)
         stub_github_for_pr(
+          draft: true,
           reviews: default_clean_copilot_review + [
             { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "", submitted_at: 30.minutes.ago }
           ]
@@ -3896,6 +4259,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
                        body: "Copilot reviewed and generated 1 comment.",
                        submitted_at: 1.hour.ago } ],
@@ -3927,6 +4291,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          draft: true,
           checks: [],
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
                        body: "Copilot reviewed 20 out of 20 changed files in this pull request and generated 3 comments.",
@@ -3957,6 +4322,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "still requires a clean bot review before returning ready_for_owner" do
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [],
           review_threads: []
@@ -3972,6 +4338,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "does not return ready_for_owner when CI is failing" do
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "failure" } ],
           reviews: [],
           review_threads: []
@@ -3986,6 +4353,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "ignores review threads but still requires a clean bot review when CI is green" do
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [],
           review_threads: [
@@ -4006,22 +4374,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "returns review_bot_review_pending when bot review is non-clean even without fetching threads" do
-        stub_github_for_pr(
-          checks: [ { name: "ci", conclusion: "success" } ],
-          reviews: [
-            { id: 200, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-              body: "Copilot reviewed 3 out of 5 changed files and generated 2 comments.",
-              submitted_at: 1.hour.ago }
-          ],
-          review_threads: [
-            {
-              id: "thread_bot",
-              is_resolved: false,
-              comments: [ { body: "Fix this", path: "app/model.rb", line: 5,
-                            author: "copilot-pull-request-reviewer[bot]" } ]
-            }
-          ]
-        )
+        non_clean_review = { id: 200, user_login: "copilot-pull-request-reviewer[bot]",
+                             state: "COMMENTED",
+                             body: "Copilot reviewed 3 out of 5 changed files and generated 2 comments.",
+                             submitted_at: 1.hour.ago }
+        bot_thread = { id: "thread_bot", is_resolved: false,
+                       comments: [ { body: "Fix this", path: "app/model.rb", line: 5,
+                                     author: "copilot-pull-request-reviewer[bot]" } ] }
+        stub_github_for_pr(draft: true, checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [ non_clean_review ], review_threads: [ bot_thread ])
 
         result = activity.execute(project_id: project.id)
 
@@ -4033,6 +4394,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "returns ready_for_owner when CI is green and the latest bot review is clean" do
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success" } ],
           review_threads: []
         )
@@ -4046,6 +4408,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "returns ready_for_owner when the latest bot review is clean and the repo has no checks" do
         stub_github_for_pr(
+          draft: true,
           checks: [],
           review_threads: []
         )
@@ -4059,6 +4422,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "does not return ready_for_owner when CI is pending" do
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: nil } ],
           review_threads: []
         )
@@ -4071,6 +4435,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "detects non-configured bot unresolved threads with address_all_bot_reviews enabled" do
         project.update!(review_settings: project.review_settings.merge("address_all_bot_reviews" => true))
         stub_github_for_pr(
+          draft: true,
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [
             { id: 200, user_login: "chatgpt-codex-connector", state: "COMMENTED",
@@ -4095,7 +4460,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner has approved the PR" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4132,7 +4497,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "does not emit owner_approved when auto_merge is disabled" do
-        project.update!(auto_merge_enabled: false)
+        project.update!(auto_merge_mode: "off")
 
         result = activity.execute(project_id: project.id)
 
@@ -4142,7 +4507,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner approved but unresolved human review threads exist" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4175,7 +4540,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner approved but changes_requested exists from trusted user" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true,
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all",
           allowed_github_usernames: [ "viamin", "reviewer" ])
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -4204,7 +4569,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner approved but new conversation comment from trusted user" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         issue = create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4240,7 +4605,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner reviewer is also the PR author" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4260,7 +4625,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when the PR author is not the owner reviewer" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4280,7 +4645,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner approved but head commit is newer than approval" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4303,7 +4668,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner approved after the latest commit" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4330,7 +4695,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           allowed_github_usernames: %w[viamin reviewer],
           review_settings: {
             "enabled" => true,
@@ -4366,7 +4731,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           review_settings: {
             "enabled" => true,
             "methods" => {
@@ -4401,7 +4766,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           review_settings: {
             "enabled" => true,
             "methods" => {
@@ -4438,7 +4803,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           review_settings: {
             "enabled" => true,
             "methods" => {
@@ -4478,7 +4843,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           allowed_github_usernames: %w[viamin reviewer],
           review_settings: {
             "enabled" => true,
@@ -4513,7 +4878,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           allowed_github_usernames: %w[viamin reviewer],
           review_settings: {
             "enabled" => true,
@@ -4548,7 +4913,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           allowed_github_usernames: %w[viamin reviewer],
           review_settings: {
             "enabled" => true,
@@ -4583,7 +4948,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when copilot review is enabled with unresolved bot threads and owner approved" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         enable_copilot_review!
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -4619,7 +4984,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when codex review is enabled and review has comments" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         enable_codex_review!
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -4928,6 +5293,100 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(trigger[:phase]).to eq("restarted")
         expect(pending_trigger[:details]).to eq("No paid_agent review found for PR")
+      end
+    end
+
+    context "when a draft PR is manually marked ready on GitHub" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 2,
+          pr_followup_count: 1)
+      end
+
+      before do
+        stub_github_for_pr(draft: false,
+          checks: [ { name: "ci", conclusion: "failure" } ])
+      end
+
+      it "advances the local phase to ready" do
+        activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload.pr_review_phase).to eq("ready")
+      end
+
+      it "scans the PR using ready-phase logic" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("ready")
+        expect(trigger[:triggers].first[:type]).to eq("ci_failure")
+      end
+
+      it "preserves existing draft_review_count" do
+        activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload.draft_review_count).to eq(2)
+      end
+    end
+
+    context "when a restarted PR is manually marked ready on GitHub" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "restarted",
+          draft_review_count: 0,
+          pr_followup_count: 0)
+      end
+
+      before do
+        stub_github_for_pr(draft: false,
+          checks: [ { name: "ci", conclusion: "failure" } ])
+      end
+
+      it "advances the local phase to ready" do
+        activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload.pr_review_phase).to eq("ready")
+      end
+
+      it "scans the PR using ready-phase logic" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("ready")
+        expect(trigger[:triggers].first[:type]).to eq("ci_failure")
+      end
+    end
+
+    context "when a draft PR fetch fails during phase reconciliation" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft")
+      end
+
+      before do
+        allow(github_client).to receive(:pull_request)
+          .and_raise(GithubClient::Error.new("API error"))
+        allow(github_client).to receive(:review_threads)
+          .and_raise(GithubClient::Error.new("API error"))
+        allow(github_client).to receive(:pull_request_reviews)
+          .and_raise(GithubClient::Error.new("API error"))
+        allow(github_client).to receive(:recent_issue_comments)
+          .and_raise(GithubClient::Error.new("API error"))
+      end
+
+      it "keeps the phase as draft" do
+        activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload.pr_review_phase).to eq("draft")
       end
     end
 
@@ -5251,7 +5710,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner has approved an escalated PR with auto_merge enabled" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -5288,7 +5747,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "does not emit owner_approved when auto_merge is disabled" do
-        project.update!(auto_merge_enabled: false)
+        project.update!(auto_merge_mode: "off")
 
         result = activity.execute(project_id: project.id)
 
@@ -5324,6 +5783,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "restarted",
           draft_review_count: 2)
         stub_github_for_pr(
+          draft: true,
           reviews: [ { id: 1, user_login: "copilot", state: "COMMENTED",
                        body: "I found issues.", submitted_at: 1.hour.ago } ],
           review_threads: [
@@ -5378,8 +5838,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
           paid_state: "completed",
-          github_updated_at: 2.hours.ago,
-          last_pr_scan_at: 1.hour.ago)
+          github_updated_at: 5.minutes.ago,
+          last_pr_scan_at: 30.seconds.ago)
       end
 
       it "skips PRs where github_updated_at < last_pr_scan_at" do
@@ -5411,11 +5871,39 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         create(:agent_run, :completed,
           project: project,
           source_pull_request_number: 42,
-          completed_at: 30.minutes.ago)
+          completed_at: 30.seconds.ago)
         stub_github_for_pr
         activity.execute(project_id: project.id)
 
-        expect(unchanged_pr.reload.last_pr_scan_at).to be_present
+        expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
+      end
+
+      it "rescans draft PRs whose last scan exceeds the staleness ceiling" do
+        ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
+        unchanged_pr.update!(pr_review_phase: "draft")
+        unchanged_pr.update_columns(
+          github_updated_at: (ceiling + 60).seconds.ago,
+          last_pr_scan_at: (ceiling + 30).seconds.ago
+        )
+        stub_github_for_pr
+
+        activity.execute(project_id: project.id)
+
+        expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
+      end
+
+      it "does not bypass skip for stale ready PRs (preserves merge-conflict rescan path)" do
+        ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
+        unchanged_pr.update!(pr_review_phase: "ready")
+        unchanged_pr.update_columns(
+          github_updated_at: (ceiling + 60).seconds.ago,
+          last_pr_scan_at: (ceiling + 30).seconds.ago
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+        expect(unchanged_pr.reload.last_pr_scan_at).to be < ceiling.seconds.ago
       end
 
       it "scans ready PRs for merge conflicts when auto-fix is enabled" do
@@ -5670,7 +6158,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         enable_paid_agent_review!
         pr_issue
-        stub_github_for_pr(reviews: [])
+        stub_github_for_pr(draft: true, reviews: [])
       end
 
       it "emits review_goal_retry when most recent review-goal run failed" do
@@ -5831,6 +6319,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             goal: "review",
             source_pull_request_number: 42)
         end
+        stub_github_for_pr(draft: false, reviews: [])
 
         result = activity.execute(project_id: project.id)
 
@@ -5853,6 +6342,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           goal: "review",
           status: "running",
           source_pull_request_number: 42)
+        stub_github_for_pr(draft: false, reviews: [])
 
         result = activity.execute(project_id: project.id)
 
@@ -5865,18 +6355,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not escalate in ready phase while a manual review-goal run is still running" do
         pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
         3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42,
-            trigger_type: "automatic")
+          create(:agent_run, :failed, project: project, goal: "review",
+            source_pull_request_number: 42, trigger_type: "automatic")
         end
-        create(:agent_run,
-          project: project,
-          goal: "review",
-          status: "running",
-          trigger_type: "manual",
-          source_pull_request_number: 42)
+        create(:agent_run, project: project, goal: "review",
+          status: "running", trigger_type: "manual", source_pull_request_number: 42)
+        stub_github_for_pr(draft: false, reviews: [])
 
         result = activity.execute(project_id: project.id)
 
@@ -5946,6 +6430,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "continues scanning other signals alongside review_goal_retry" do
         stub_github_for_pr(
+          draft: true,
           reviews: [],
           checks: [ { name: "rspec", conclusion: "failure" } ]
         )
@@ -5988,7 +6473,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "preserves paid_agent_review_pending draft gate when sole reviewer and retry is needed" do
-        stub_github_for_pr(reviews: [])
+        stub_github_for_pr(draft: true, reviews: [])
         create(:agent_run, :failed,
           project: project,
           goal: "review",
@@ -6011,7 +6496,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             "copilot" => { "enabled" => true }
           }
         })
-        stub_github_for_pr(reviews: [])
+        stub_github_for_pr(draft: true, reviews: [])
         create(:agent_run, :failed,
           project: project,
           goal: "review",
@@ -6153,7 +6638,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         labels: [ "paid-generated", "paid-automation" ],
         pr_review_phase: "draft",
         draft_review_count: 0)
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "blocks draft exit with a paid_agent_review_pending trigger (no ready_for_owner)" do
@@ -6181,7 +6666,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         "enabled" => false,
         "methods" => { "paid_agent" => { "enabled" => true } }
       })
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "does not emit a paid_agent_review_pending trigger" do
@@ -6216,7 +6701,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project: project, issue: issue,
         source_pull_request_number: 42,
         goal: "review", status: "queued")
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "keeps the paid_agent_review_pending trigger active" do
@@ -6245,7 +6730,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project: project, issue: issue,
         source_pull_request_number: 42,
         goal: "review", status: "running")
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "still blocks draft exit until the review is posted" do
@@ -6275,7 +6760,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           goal: "review", status: "completed",
           completed_at: 1.hour.ago)
       end
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "does not emit a paid_agent_review_pending trigger" do
@@ -6304,7 +6789,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         source_pull_request_number: 42,
         goal: "review", status: "completed",
         completed_at: 1.hour.ago)
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "does not emit a paid_agent_review_pending trigger" do
@@ -6333,7 +6818,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         source_pull_request_number: 42,
         goal: "review", status: "timeout")
       run.update_columns(updated_at: 1.hour.ago)
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "retries the timed-out review" do
@@ -6359,7 +6844,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           source_pull_request_number: 42,
           goal: "review", status: "timeout")
       end
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "does not emit a paid_agent_review_pending trigger" do
@@ -6398,7 +6883,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         source_pull_request_number: 42,
         goal: "create_pr", status: "completed",
         completed_at: 1.hour.ago)
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "emits a paid_agent_review_pending trigger because retried runs do not consume review rounds" do
@@ -6428,7 +6913,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         source_pull_request_number: 42,
         goal: "create_pr", status: "completed",
         completed_at: 1.hour.ago)
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "emits a paid_agent_review_pending trigger" do
@@ -6456,7 +6941,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         source_pull_request_number: 42,
         goal: "review", status: "failed",
         started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "emits a paid_agent_review_pending trigger to retry" do
@@ -6509,7 +6994,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         goal: "review", status: "cancelled",
         trigger_type: "automatic",
         started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "does not emit review_goal_retry or paid_agent_review_pending" do
@@ -6539,7 +7024,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           goal: "review", status: "failed",
           started_at: 1.hour.ago, completed_at: 1.hour.ago)
       end
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "escalates to owner instead of retrying" do
@@ -6661,7 +7146,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         source_pull_request_number: 42,
         goal: "review", status: "failed",
         started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "caps default retry limit to max_review_rounds and escalates" do
@@ -6716,7 +7201,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!(project)
-      project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+      project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
       3.times do
         create(:agent_run,
           project: project, issue: approved_ready_retry_issue,
@@ -6836,7 +7321,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         goal: "review",
         started_at: 1.hour.ago,
         completed_at: 1.hour.ago)
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "retries instead of escalating because the breaker resets for the new cycle" do
@@ -6880,7 +7365,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         goal: "review",
         started_at: 1.hour.ago,
         completed_at: 1.hour.ago)
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "retries instead of escalating because the breaker resets after a successful review" do
@@ -6919,7 +7404,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         source_pull_request_number: 42,
         goal: "review", status: "completed",
         completed_at: 1.hour.ago)
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "does not retry when a completed review exists after the last create_pr run" do
@@ -6957,7 +7442,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         source_pull_request_number: 42,
         goal: "review", status: "failed",
         started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "escalates after custom retry limit" do
@@ -6985,7 +7470,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         source_pull_request_number: 42,
         goal: "review", status: "timeout",
         started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "counts timeout as a failure and retries" do
@@ -7013,7 +7498,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         source_pull_request_number: 42,
         goal: "review", status: "no_output",
         started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "treats no_output as retryable and re-emits paid_agent_review_pending" do
@@ -7044,7 +7529,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           goal: "review", status: "no_output",
           started_at: 1.hour.ago, completed_at: 1.hour.ago)
       end
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "escalates instead of getting stuck behind the rounds cap" do
@@ -7138,7 +7623,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         labels: [ "paid-generated", "paid-automation" ],
         pr_review_phase: "draft",
         draft_review_count: 0)
-      stub_github_for_pr(reviews: [
+      stub_github_for_pr(draft: true, reviews: [
         { id: 200, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
           body: "Review complete.\n<!-- paid-review-clean -->", submitted_at: 1.hour.ago }
       ])
@@ -7169,7 +7654,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         labels: [ "paid-generated", "paid-automation" ],
         pr_review_phase: "draft",
         draft_review_count: 0)
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "gates draft exit via copilot (paid_agent does not independently block)" do
@@ -7210,7 +7695,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           goal: "review", status: "failed",
           started_at: 1.hour.ago, completed_at: 1.hour.ago)
       end
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "stops retrying paid_agent and lets copilot keep gating the PR" do
@@ -7246,6 +7731,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         pr_review_phase: "draft",
         draft_review_count: 1)
       stub_github_for_pr(
+        draft: true,
         reviews: [
           { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
             body: "Found issues.", submitted_at: 2.hours.ago },
@@ -7295,7 +7781,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           goal: "review", status: "failed",
           started_at: 1.hour.ago, completed_at: 1.hour.ago)
       end
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "escalates because paid_agent is the sole bot and manual cannot recover failed review-goal runs" do
@@ -7338,7 +7824,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           goal: "review", status: "failed",
           started_at: 1.hour.ago, completed_at: 1.hour.ago)
       end
-      stub_github_for_pr(reviews: [])
+      stub_github_for_pr(draft: true, reviews: [])
     end
 
     it "escalates because paid_agent is the sole bot and ci_action cannot recover failed review-goal runs" do

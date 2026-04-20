@@ -594,6 +594,29 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       end
     end
 
+    def stub_rebase_only_followup
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::ProvisionServicesActivity" then {}
+        when "Activities::ProvisionContainerActivity" then {}
+        when "Activities::CheckProxyHealthActivity" then {}
+        when "Activities::CloneRepoActivity" then {}
+        when "Activities::RebaseBranchActivity" then { rebase_succeeded: true, branch_changed: true }
+        when "Activities::PreparePrPromptActivity" then { includes_review_threads: false, review_thread_ids: [] }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: false }
+        when "Activities::PushBranchActivity" then {}
+        when "Activities::CompleteExistingPrRunActivity" then { pr_review_phase: "ready" }
+        when "Activities::RequestReviewActivity" then {}
+        when "Activities::DraftDecisionRecordActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        else {}
+        end
+      end
+    end
+
     it "requests a review-bot review even when the agent makes no changes on an existing PR" do
       stub_no_changes_followup
 
@@ -646,6 +669,99 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         .with(Activities::ResolveReviewThreadsActivity,
           { agent_run_id: 42 },
           timeout: 60)
+    end
+
+    it "pushes an automatic rebase even when the agent makes no additional changes" do
+      stub_rebase_only_followup
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::PushBranchActivity,
+          { agent_run_id: 42 },
+          timeout: 60)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CompleteExistingPrRunActivity,
+          { agent_run_id: 42 },
+          timeout: 60)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::MarkAgentRunCompleteActivity,
+          { agent_run_id: 42, reason: "no_changes" },
+          timeout: 30)
+    end
+  end
+
+  describe "new PR creation review-bot request" do
+    let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
+
+    before do
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
+    end
+
+    def stub_new_pr_creation
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::ProvisionServicesActivity" then {}
+        when "Activities::ProvisionContainerActivity" then {}
+        when "Activities::CheckProxyHealthActivity" then {}
+        when "Activities::CloneRepoActivity" then {}
+        when "Activities::RunAgentActivity" then { success: true, has_changes: true }
+        when "Activities::PushBranchActivity" then {}
+        when "Activities::CreatePullRequestActivity"
+          { pull_request_url: "https://github.com/o/r/pull/99", pull_request_number: 99 }
+        when "Activities::UpdateIssueWithPrActivity" then {}
+        when "Activities::RequestReviewActivity" then {}
+        when "Activities::DraftDecisionRecordActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        when "Activities::EnqueueJanitorActivity" then {}
+        else {}
+        end
+      end
+    end
+
+    it "requests a review-bot review on the newly created PR without hardcoded reviewers" do
+      stub_new_pr_creation
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          { project_id: 1, pr_number: 99 },
+          timeout: 60)
+    end
+
+    it "emits the pre-patch activity input shape for new PR when the workflow patch is not set" do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("request_review_resolve_reviewer_from_project").and_return(false)
+      stub_new_pr_creation
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          { project_id: 1, pr_number: 99,
+            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] },
+          timeout: 60)
+    end
+
+    it "does not request a review-bot review when the agent produces no changes" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, any_args)
     end
   end
 

@@ -227,6 +227,54 @@ RSpec.describe IssueDependency do
     end
   end
 
+  describe "#deployment_pending?" do
+    let(:project) { create(:project) }
+    let(:issue) { create(:issue, project: project) }
+
+    it "returns false when requires_deployment is false" do
+      pr = create(:issue, :pull_request, :closed, project: project, deployed_at: nil)
+      dep = create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: false)
+
+      expect(dep).not_to be_deployment_pending
+    end
+
+    it "returns false when target is still open (regular blocking path applies)" do
+      pr = create(:issue, :pull_request, project: project, github_state: "open", deployed_at: nil)
+      dep = create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
+
+      expect(dep).not_to be_deployment_pending
+    end
+
+    it "returns false when target is not a pull request" do
+      non_pr = create(:issue, :closed, project: project)
+      dep = create(:issue_dependency, issue: issue, depends_on_issue: non_pr, requires_deployment: true)
+
+      expect(dep).not_to be_deployment_pending
+    end
+
+    it "returns true when target PR has merged but has no deployed_at" do
+      pr = create(:issue, :pull_request, :closed, project: project, deployed_at: nil)
+      dep = create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
+
+      expect(dep).to be_deployment_pending
+    end
+
+    it "returns false when target PR has been marked deployed" do
+      pr = create(:issue, :pull_request, :closed, project: project, deployed_at: Time.current)
+      dep = create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
+
+      expect(dep).not_to be_deployment_pending
+    end
+
+    it "returns false for external deps (deployment cannot be observed)" do
+      dep = create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                       depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                       depends_on_number: 31, requires_deployment: true)
+
+      expect(dep).not_to be_deployment_pending
+    end
+  end
+
   describe "cascade deletion" do
     it "is destroyed when the dependent issue is destroyed" do
       project = create(:project)

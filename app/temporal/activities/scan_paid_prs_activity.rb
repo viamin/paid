@@ -20,6 +20,11 @@ module Activities
 
     MIN_COMMENT_LENGTH = 20
     CI_ACTION_DISPATCH_GRACE_PERIOD = 2.minutes
+    # Floor for re-scanning a PR even when GitHub's `updated_at` has not
+    # advanced. `updated_at` does not bump for check-run state changes,
+    # unanswered bot review requests, or review-goal retry timers — without
+    # a time ceiling, PRs waiting on those signals are skipped indefinitely.
+    SCAN_STALENESS_MULTIPLIER = 3
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
     # Body-only review bots (currently Codex) signal "no findings" by posting
@@ -119,6 +124,15 @@ module Activities
     def scan_pr(project, client, issue)
       return :skipped if active_run_exists?(project, issue)
 
+      # Escalate PRs that are repeatedly failing due to operational issues
+      # (provider exhaustion, timeouts, rate limiting) so they stop blocking
+      # project progress and surface to the owner for attention.
+      if operational_failure_breaker?(project, issue)
+        return escalate_trigger(issue,
+          reason: "Consecutive operational failures " \
+                  "(#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} runs failed due to provider exhaustion/timeout)")
+      end
+
       backfill_review_goal_retry_reset_at!(issue)
 
       retry_needed = review_goal_retry_needed?(project, issue)
@@ -145,7 +159,26 @@ module Activities
         if review_goal_retry_limit_requires_escalation?(project, issue)
           return escalate_trigger(issue, reason: retry_limit_reason)
         end
-        scan_draft_pr(project, client, issue)
+
+        # Check draft-specific escalation conditions before spending rate
+        # budget on a PR data fetch. These mirror the guards at the top of
+        # scan_draft_pr; duplicating them here avoids a wasted API call when
+        # the PR will be immediately escalated anyway.
+        if draft_review_limit_reached?(project, issue)
+          return escalate_trigger(issue)
+        end
+        if consecutive_draft_failures_breaker?(project, issue)
+          return escalate_trigger(issue,
+            reason: "Consecutive draft follow-up failures (#{MAX_CONSECUTIVE_DRAFT_FAILURES} runs with no output)")
+        end
+
+        check_rate_budget!(client)
+        pr_data = fetch_pr_data(client, project, issue)
+        if maybe_advance_to_ready(project, issue, pr_data)
+          scan_ready_pr(project, client, issue, pr_data: pr_data)
+        else
+          scan_draft_pr(project, client, issue, pr_data: pr_data)
+        end
       when "ready"
         check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
@@ -204,12 +237,17 @@ module Activities
     end
 
     MAX_CONSECUTIVE_DRAFT_FAILURES = 3
+    MAX_CONSECUTIVE_OPERATIONAL_FAILURES = 3
 
     # --- Draft phase scanning ---
 
+    def draft_review_limit_reached?(project, issue)
+      project.max_draft_review_rounds.positive? &&
+        issue.draft_review_count >= project.max_draft_review_rounds
+    end
+
     def scan_draft_pr(project, client, issue, pr_data: nil)
-      if project.max_draft_review_rounds.positive? &&
-          issue.draft_review_count >= project.max_draft_review_rounds
+      if draft_review_limit_reached?(project, issue)
         return escalate_trigger(issue)
       end
 
@@ -218,6 +256,10 @@ module Activities
       end
 
       check_rate_budget!(client)
+
+      if bot_user?(issue.github_creator_login)
+        return scan_bot_authored_draft_pr(project, client, issue, pr_data: pr_data)
+      end
 
       skip_comment_signals = project.max_draft_review_rounds.zero?
       unresolved_threads = nil
@@ -359,14 +401,40 @@ module Activities
       draft_trigger_payload(issue, triggers)
     end
 
+    # Bot-authored PRs (Dependabot, Renovate) skip review requirements.
+    # Only CI failures trigger auto-continue; green CI advances to ready.
+    def scan_bot_authored_draft_pr(project, client, issue, pr_data: nil)
+      pr_data ||= fetch_pr_data(client, project, issue)
+      return :skipped if pr_data.nil?
+
+      checks = fetch_check_runs(client, project, pr_data)
+      ci_triggers = ci_failure_triggers(checks || [])
+
+      if ci_triggers.any?
+        log_triggers(project, issue, ci_triggers)
+        return draft_trigger_payload(issue, ci_triggers)
+      end
+
+      if !checks.nil? && checks.any? && all_checks_green?(checks)
+        return ready_for_owner_trigger(issue)
+      end
+
+      nil
+    end
+
     # --- Ready phase scanning ---
 
     def scan_ready_pr(project, client, issue, pr_data:)
       return :skipped if pr_data.nil?
 
       checks = fetch_check_runs(client, project, pr_data)
-      reviews = fetch_reviews(client, project, issue)
       mergeable = pr_data && pr_data[:mergeable]
+
+      if bot_user?(issue.github_creator_login)
+        return scan_bot_authored_ready_pr(project, client, issue, pr_data: pr_data, checks: checks, mergeable: mergeable)
+      end
+
+      reviews = fetch_reviews(client, project, issue)
 
       if project.auto_merge_enabled? &&
           pr_data.present? &&
@@ -405,6 +473,38 @@ module Activities
       }
     end
 
+    # Bot-authored PRs (Dependabot, Renovate) skip review requirements.
+    # Auto-merge only needs CI green + mergeable. CI failures trigger follow-up.
+    def scan_bot_authored_ready_pr(project, client, issue, pr_data:, checks:, mergeable:)
+      if project.auto_merge_dependabot? &&
+          pr_data.present? &&
+          !checks.nil? && checks.any? &&
+          all_checks_green?(checks) &&
+          mergeable == true
+        return owner_approved_trigger(issue)
+      end
+
+      return nil if followup_limit_reached?(project, issue)
+
+      ci_triggers = ci_failure_triggers(checks || [])
+      merge_conflict_triggers = check_merge_conflicts(project, pr_data)
+      label_triggers = check_actionable_labels(project, issue)
+      triggers = ci_triggers + merge_conflict_triggers + label_triggers
+
+      return nil if triggers.empty?
+
+      log_triggers(project, issue, triggers)
+
+      {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: triggers,
+        phase: "ready",
+        labels_to_remove: extract_actionable_labels(triggers),
+        current_followup_count: issue.pr_followup_count
+      }
+    end
+
     # --- Escalated phase scanning ---
 
     DISMISS_ESCALATION_LABEL = "paid-dismiss-escalation"
@@ -420,17 +520,24 @@ module Activities
       # Owner approval on an escalated PR unblocks auto-merge.
       if project.auto_merge_enabled? && pr_data.present?
         checks = fetch_check_runs(client, project, pr_data)
-        reviews = fetch_reviews(client, project, issue)
         mergeable = pr_data[:mergeable]
 
-        if owner_approved_or_self_authored?(project, reviews, pr_data) &&
-            !checks.nil? &&
-            all_checks_green?(checks) &&
-            mergeable == true &&
-            no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks, pr_data: pr_data) &&
-            all_blocking_review_methods_complete?(project, reviews, checks, pr_data: pr_data) &&
-            !review_stale_for_head?(client, project, issue, pr_data, reviews)
-          return owner_approved_trigger(issue)
+        if bot_user?(issue.github_creator_login)
+          if project.auto_merge_dependabot? && !checks.nil? && checks.any? && all_checks_green?(checks) && mergeable == true
+            return owner_approved_trigger(issue)
+          end
+        else
+          reviews = fetch_reviews(client, project, issue)
+
+          if owner_approved_or_self_authored?(project, reviews, pr_data) &&
+              !checks.nil? &&
+              all_checks_green?(checks) &&
+              mergeable == true &&
+              no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks, pr_data: pr_data) &&
+              all_blocking_review_methods_complete?(project, reviews, checks, pr_data: pr_data) &&
+              !review_stale_for_head?(client, project, issue, pr_data, reviews)
+            return owner_approved_trigger(issue)
+          end
         end
       end
 
@@ -583,10 +690,35 @@ module Activities
       true
     end
 
+    # Detect when a user marks a draft PR as ready on GitHub without going
+    # through Paid's MarkPrReadyActivity. Advances the local phase to "ready"
+    # so that ready-phase automation (merge-conflict handling, auto-merge,
+    # review-goal evaluation) kicks in. Only applies to draft/restarted
+    # phases — escalated and merged are intentional local states that should
+    # not be overwritten by GitHub draft status alone.
+    def maybe_advance_to_ready(project, issue, pr_data)
+      return false if pr_data.nil?
+      return false if pr_data.draft
+      return false unless issue.draft_phase?
+
+      previous_phase = issue.pr_review_phase
+      issue.update!(pr_review_phase: "ready")
+
+      logger.info(
+        message: "pr_scanner.phase_advanced_to_ready",
+        project_id: project.id,
+        pr_number: issue.github_number,
+        previous_phase: previous_phase
+      )
+
+      true
+    end
+
     def skip_unchanged_pr?(project, issue)
       return false unless issue.last_pr_scan_at
       return false if issue.github_updated_at >= issue.last_pr_scan_at
       return false if recently_completed_run?(project, issue)
+      return false if scan_age_exceeds_ceiling?(project, issue)
 
       logger.debug(
         message: "pr_scanner.skipped_unchanged",
@@ -597,6 +729,31 @@ module Activities
       )
 
       true
+    end
+
+    # Only draft/restarted PRs need a time-based rescan floor. They're the
+    # phases waiting on signals that do not bump GitHub's `updated_at` (bot
+    # review requests, CI state transitions, review-goal retry timers).
+    # `ready`/`escalated` PRs already have a targeted rescan path via
+    # `merge_conflict_rescan_needed?`; bypassing skip here would regress that
+    # optimization back into full per-PR scans.
+    def scan_age_exceeds_ceiling?(project, issue)
+      return false unless issue.pr_review_phase.in?(%w[draft restarted])
+
+      ceiling = SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
+      stale = issue.last_pr_scan_at < ceiling.seconds.ago
+
+      if stale
+        logger.info(
+          message: "pr_scanner.scan_age_ceiling_exceeded",
+          project_id: project.id,
+          pr_number: issue.github_number,
+          last_pr_scan_at: issue.last_pr_scan_at,
+          ceiling_seconds: ceiling
+        )
+      end
+
+      stale
     end
 
     def merge_conflict_rescan_needed?(project, issue)
@@ -677,6 +834,38 @@ module Activities
       recent_runs.all? do |run|
         unproductive_statuses.include?(run.status) && (run.status == "no_output" || run.iterations.to_i.zero?)
       end
+    end
+
+    # Circuit breaker: if the last N automatic follow-up runs on this PR
+    # all failed due to operational issues (provider exhaustion, wall-clock
+    # timeout, auth expiry, rate limiting), escalate to the owner. These
+    # are infrastructure failures the agent cannot fix by retrying — they
+    # indicate a systemic problem (all providers down, quota exceeded, etc.)
+    # that requires human intervention.
+    #
+    # Unlike consecutive_draft_failures_breaker? (draft-phase only, checks
+    # for unproductive output), this breaker applies across all phases and
+    # checks for infrastructure-class failures specifically. A run that
+    # failed due to a code error won't trip this breaker because a retry
+    # with different code changes might succeed.
+    #
+    # Skips PRs already in "escalated" phase to avoid re-escalating.
+    # Skips draft/restarted phases because those have their own failure
+    # breaker (consecutive_draft_failures_breaker?) with phase-aware
+    # guards (e.g. draft_review_count resets on restart).
+    def operational_failure_breaker?(project, issue)
+      return false if issue.pr_review_phase.in?(%w[draft restarted escalated])
+
+      recent_runs = project.agent_runs
+        .where(source_pull_request_number: issue.github_number)
+        .where(trigger_type: "automatic", goal: "create_pr")
+        .finished
+        .order(created_at: :desc)
+        .limit(MAX_CONSECUTIVE_OPERATIONAL_FAILURES)
+
+      return false if recent_runs.size < MAX_CONSECUTIVE_OPERATIONAL_FAILURES
+
+      recent_runs.all?(&:operational_failure?)
     end
 
     # Returns true when the latest finished automatic review-goal run in the
@@ -875,6 +1064,17 @@ module Activities
       project.review_bot_request_login
     end
 
+    # Returns the ordered list of bot logins to attempt for an explicit
+    # review-bot review, with the primary provider first. Forwarded into
+    # the +review_bot_review_pending+ trigger as +request_logins+ so the
+    # workflow can pass the full chain to +RequestReviewActivity+, which
+    # falls through to a configured secondary bot when the primary is
+    # rate-limited or unavailable. Returns +[]+ when no bot-backed method
+    # is enabled. See Project#review_bot_request_chain.
+    def review_bot_request_chain(project)
+      project.review_bot_request_chain
+    end
+
     # Review-bot logins that post feedback as a single top-level review body
     # rather than as inline review threads. These bots need the body-only
     # anti-loop guard in check_review_bot_status because thread resolution
@@ -927,9 +1127,19 @@ module Activities
         # other bot can still complete its review cycle. Suppress only when
         # login is nil (paid_agent-only project) and rounds are exhausted;
         # the elsif branch handles that via check_paid_agent_review_status.
-        login = project && review_bot_request_login(project)
-        if login
-          [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
+        #
+        # Emit the full bot chain (primary first, then fallbacks) as
+        # +request_logins+ so RequestReviewActivity can fall through to a
+        # configured secondary bot when the primary is rate-limited or
+        # unavailable. The single +request_login+ field is preserved for
+        # in-flight workflow replays whose history pre-dates the chain
+        # support — old workflow code reads it without falling back.
+        chain = project ? review_bot_request_chain(project) : []
+        if chain.any?
+          [ { type: "review_bot_review_pending",
+              details: "No review bot review found",
+              request_login: chain.first,
+              request_logins: chain } ]
         elsif project&.review_enabled? && project.review_method_enabled?("paid_agent")
           check_paid_agent_review_status(project, issue)
         else
@@ -1933,7 +2143,7 @@ module Activities
     end
 
     def bot_user?(login)
-      return true if login.blank?
+      return false if login.blank?
 
       normalized = login.downcase
       return true if normalized.end_with?("[bot]", "-bot")

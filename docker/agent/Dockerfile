@@ -139,11 +139,18 @@ RUN SCC_VERSION=3.6.0 \
     && chmod +x /usr/local/bin/scc \
     && rm "${TARBALL}"
 
-# Install Claude Code CLI (primary agent for MVP)
-# The installer places the binary under /root/.local/ which is inaccessible to the
+# Install Claude Code CLI via agent-harness install contract.
+# The install command and post-install binary path are extracted from
+# agent-harness at build time (see scripts/extract-provider-install-contract.rb)
+# so Paid does not own the Claude-specific install recipe or version pin.
+# The installer places the binary under $HOME/.local/ which is inaccessible to the
 # non-root "agent" user. Copy the resolved binary to a system-wide path instead.
-RUN curl -fsSL https://claude.ai/install.sh | bash \
-    && cp -L /root/.local/bin/claude /usr/local/bin/claude \
+ARG CLAUDE_INSTALL_COMMAND
+ARG CLAUDE_POST_INSTALL_BINARY_PATH
+RUN if [ -z "${CLAUDE_INSTALL_COMMAND}" ]; then echo "ERROR: CLAUDE_INSTALL_COMMAND build-arg is required" >&2; exit 1; fi \
+    && if [ -z "${CLAUDE_POST_INSTALL_BINARY_PATH}" ]; then echo "ERROR: CLAUDE_POST_INSTALL_BINARY_PATH build-arg is required" >&2; exit 1; fi \
+    && eval "${CLAUDE_INSTALL_COMMAND}" \
+    && cp -L "$(eval echo "${CLAUDE_POST_INSTALL_BINARY_PATH}")" /usr/local/bin/claude \
     && chmod +x /usr/local/bin/claude
 
 # Install agent CLI tools via npm.
@@ -151,9 +158,32 @@ RUN curl -fsSL https://claude.ai/install.sh | bash \
 # --ignore-scripts on every install: supply-chain hardening — prevents npm
 # lifecycle scripts (postinstall, preinstall) from executing arbitrary code.
 # See: https://www.elastic.co/security-labs/axios-one-rat-to-rule-them-all
-RUN npm install -g --ignore-scripts @openai/codex@0.116.0
 
-RUN npm install -g --ignore-scripts @google/gemini-cli@0.35.3
+# Codex CLI: version is owned by agent-harness (installation_contract).
+# CODEX_PACKAGE is extracted from agent-harness at build time by
+# build-agent-image.sh / agent-image.yml — Paid no longer pins this version.
+ARG CODEX_PACKAGE
+RUN if [ -z "${CODEX_PACKAGE}" ]; then \
+        echo "ERROR: CODEX_PACKAGE build-arg is required (sourced from agent-harness)" >&2; \
+        exit 1; \
+    fi \
+    && npm install -g --ignore-scripts "${CODEX_PACKAGE}"
+
+# Gemini CLI version is owned by agent-harness; the install command is extracted
+# at build time by scripts/build-agent-image.sh and passed as a build arg.
+# Supply-chain hardening: enforce --ignore-scripts regardless of what the
+# contract returns, matching the policy applied to every other npm install above.
+ARG GEMINI_CLI_INSTALL_COMMAND
+RUN if [ -z "${GEMINI_CLI_INSTALL_COMMAND}" ]; then \
+        echo "ERROR: GEMINI_CLI_INSTALL_COMMAND not set; aborting build" >&2; \
+        exit 1; \
+    fi \
+    && case "${GEMINI_CLI_INSTALL_COMMAND}" in \
+        *--ignore-scripts*) ;; \
+        *) echo "ERROR: GEMINI_CLI_INSTALL_COMMAND must include --ignore-scripts for supply-chain safety" >&2; exit 1 ;; \
+    esac \
+    && echo "Installing Gemini CLI via agent-harness contract: ${GEMINI_CLI_INSTALL_COMMAND}" \
+    && eval "${GEMINI_CLI_INSTALL_COMMAND}"
 
 RUN npm install -g --ignore-scripts @kilocode/cli@7.1.3
 
@@ -170,7 +200,7 @@ RUN npm install -g --ignore-scripts @githubnext/github-copilot-cli@0.1.36
 # The installer places the binary under /root/.local/ which is inaccessible to the
 # non-root "agent" user. Copy the resolved binary to a system-wide path instead.
 # To update: curl -fsSL https://cursor.com/install | sha256sum
-ARG CURSOR_AGENT_INSTALL_SHA256=e94dda4dbf7f0157e75b52b4d886869987c15ef4ce74a0717dc3cab9ab15b79d
+ARG CURSOR_AGENT_INSTALL_SHA256=c41ebee3b301f49cb712e87e84a9e8bbf02bac52309c30aa83a4a8fe3ee85383
 RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
     && echo "${CURSOR_AGENT_INSTALL_SHA256}  /tmp/cursor-install.sh" | sha256sum -c - \
     && bash /tmp/cursor-install.sh \

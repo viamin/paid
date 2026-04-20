@@ -1,5 +1,125 @@
 # Changelog
 
+## [0.28.1](https://github.com/viamin/paid/compare/v0.28.0...v0.28.1) (2026-04-19)
+
+
+### Bug Fixes
+
+* 709: feat(evolution): define fitness function for prompt quality ([#1199](https://github.com/viamin/paid/issues/1199)) ([56c4ae8](https://github.com/viamin/paid/commit/56c4ae808e23eec521d2dd095d2db01600084570))
+* 716: feat(quality): implement quality recovery workflows ([#1206](https://github.com/viamin/paid/issues/1206)) ([f8f30bc](https://github.com/viamin/paid/commit/f8f30bce1c80341f52edce0b5051ce1da74e70b1))
+* **agent-runs:** push rebase-only PR followups ([#1306](https://github.com/viamin/paid/issues/1306)) ([4f37a8c](https://github.com/viamin/paid/commit/4f37a8cd4b870e0f449240bc48887a31e663c390))
+* **agent-runs:** strip Claude CLI JSON envelope from agent summary ([#1298](https://github.com/viamin/paid/issues/1298)) ([8c87cd8](https://github.com/viamin/paid/commit/8c87cd8628679a89d90954ccea836d623f0d611c))
+
+## [0.28.0](https://github.com/viamin/paid/compare/v0.27.0...v0.28.0) (2026-04-19)
+
+
+### Features
+
+* **agent-runs:** add idle timeout for create_pr agent runs ([#1225](https://github.com/viamin/paid/issues/1225)) ([57ee92e](https://github.com/viamin/paid/commit/57ee92e21ccdfe9e0657c6c12181c4ca98b58ea6)), closes [#849](https://github.com/viamin/paid/issues/849)
+* **dev:** add post-checkout hook to auto-sync migrations on branch switch ([#1292](https://github.com/viamin/paid/issues/1292)) ([4581f5f](https://github.com/viamin/paid/commit/4581f5f24f3b1a320bebbe404022962edf694670))
+
+
+### Bug Fixes
+
+* 1119: Extract auto-review into strategy modules ([#1186](https://github.com/viamin/paid/issues/1186)) ([b1762c4](https://github.com/viamin/paid/commit/b1762c43178f504cc174957d0fda6bfed468e1f8))
+* 1122: Extract auto-pick into strategy modules ([#1188](https://github.com/viamin/paid/issues/1188)) ([5544f9c](https://github.com/viamin/paid/commit/5544f9cbe356d8c134f77bfee3c459496d16a72a))
+* 660: Support custom issue trackers (configurable at project/user/account level) ([#1243](https://github.com/viamin/paid/issues/1243)) ([703a754](https://github.com/viamin/paid/commit/703a754e53a8ff71745d5925adc57b8c2b38beaa))
+* 665: Support PR templates (configurable at project/user/account level) ([#1229](https://github.com/viamin/paid/issues/1229)) ([a42ad2d](https://github.com/viamin/paid/commit/a42ad2d855bd36146f509c6c1b4c9f9b759f65aa))
+* 697: feat(orchestration): coordination between related agents ([#1228](https://github.com/viamin/paid/issues/1228)) ([7474062](https://github.com/viamin/paid/commit/747406214880c3608ba8a416c3fb4f66f5f42dac))
+* 710: feat(evolution): implement evolutionary selection of prompts ([#1200](https://github.com/viamin/paid/issues/1200)) ([001b748](https://github.com/viamin/paid/commit/001b748397974f6cb0201f3f288e93d1bbc7e800))
+* 717: feat(quality): enhance quality trend analysis with gate integration ([#1207](https://github.com/viamin/paid/issues/1207)) ([5472d29](https://github.com/viamin/paid/commit/5472d29975391b9e53588cf7419d04eecdfb81be))
+* 726: feat(scaling): design scaling algorithm for worker pools ([#1211](https://github.com/viamin/paid/issues/1211)) ([f3810cc](https://github.com/viamin/paid/commit/f3810cc26d496b9519a8448362c72b0ad229a0ca))
+* 729: feat(multi-tenancy): design tenant model and isolation strategy ([#1215](https://github.com/viamin/paid/issues/1215)) ([8824a95](https://github.com/viamin/paid/commit/8824a952b98a3098e65071904fd12f3829057230))
+* 778: Replace "primary provider" with "automated provider" and add multi-provider modes ([#1203](https://github.com/viamin/paid/issues/1203)) ([fd1e08b](https://github.com/viamin/paid/commit/fd1e08bb02992475c60a06a5289415b3e3e0ebdf))
+* 779: feat(reviews): allow fallback code review strategies with token limits ([#1195](https://github.com/viamin/paid/issues/1195)) ([e5e1aaf](https://github.com/viamin/paid/commit/e5e1aaf8a8190d8a5466914817e49f951ff881b3))
+* 789: refactor(agent-image): delegate Codex CLI installation to agent-harness ([#1248](https://github.com/viamin/paid/issues/1248)) ([e88ec13](https://github.com/viamin/paid/commit/e88ec13bc236f18954e57f47196773722c209a40))
+* 790: refactor(agent-image): delegate Gemini CLI installation to agent-harness ([#1247](https://github.com/viamin/paid/issues/1247)) ([722e9f8](https://github.com/viamin/paid/commit/722e9f83d920937ab1b57b88e7dfbd6d3d76240a))
+* **agent-runs:** remove stale run detection from startup cleanup ([#1277](https://github.com/viamin/paid/issues/1277)) ([850f1ba](https://github.com/viamin/paid/commit/850f1ba0a93a05cb980b099fb1edcc4490fa5c5f))
+* **release:** preserve conventional PR titles ([#1294](https://github.com/viamin/paid/issues/1294)) ([10ca996](https://github.com/viamin/paid/commit/10ca99620a4953f520b9e18139ebf41f7c91be43))
+
+## [0.27.0](https://github.com/viamin/paid/compare/v0.26.0...v0.27.0) (2026-04-18)
+
+
+### Features
+
+* **agent-execution:** abort container early on provider quota errors that hang ([#1251](https://github.com/viamin/paid/issues/1251)) ([af9fbc7](https://github.com/viamin/paid/commit/af9fbc7fbf795d4da7d9f470cc9fb30a58775205)), closes [#827](https://github.com/viamin/paid/issues/827)
+* **dashboard:** include merged pull requests in the recent activity stream ([#1264](https://github.com/viamin/paid/issues/1264)) ([3cbf708](https://github.com/viamin/paid/commit/3cbf708179b19994fd912a88b392c0311a339a87))
+* **evolution:** implement PromptEvolutionWorkflow ([#706](https://github.com/viamin/paid/issues/706)) ([#1245](https://github.com/viamin/paid/issues/1245)) ([df041d6](https://github.com/viamin/paid/commit/df041d6d6c8494c024737533e8af54f228098503))
+
+
+### Bug Fixes
+
+* 714: feat(quality): automatic pause on quality threshold breach ([#1205](https://github.com/viamin/paid/issues/1205)) ([ea94fcc](https://github.com/viamin/paid/commit/ea94fcc30ab0da7a411c4ac87ddf90c9ff139c28))
+* 719: feat(performance): workflow batching optimizations ([#1208](https://github.com/viamin/paid/issues/1208)) ([ea7c306](https://github.com/viamin/paid/commit/ea7c3067e94cc598e4848a9b899785439a1a50c8))
+* 721: feat(performance): add caching layer for GitHub data ([#1209](https://github.com/viamin/paid/issues/1209)) ([12c2cb7](https://github.com/viamin/paid/commit/12c2cb7439206915d872fdbf417b13e642a841c9))
+* 727: feat(scaling): add integration points for container orchestrators ([#1214](https://github.com/viamin/paid/issues/1214)) ([3bb3a0a](https://github.com/viamin/paid/commit/3bb3a0adc5095b78e915618dd6ee9c9efbe1d9f4))
+* 802: "Back to ..." links should return to the previous page, not a hardcoded destination ([#1232](https://github.com/viamin/paid/issues/1232)) ([4026eb1](https://github.com/viamin/paid/commit/4026eb1524392fc055ab8ef58a52f1da4cebf10b))
+* 854: feat(agent-harness): add heartbeat/progress support to agent-harness gem ([#1233](https://github.com/viamin/paid/issues/1233)) ([3f49a8f](https://github.com/viamin/paid/commit/3f49a8f0adec65908c0cbafadbfa3154f511ee48))
+
+## [0.26.0](https://github.com/viamin/paid/compare/v0.25.0...v0.26.0) (2026-04-18)
+
+
+### Features
+
+* **quality:** alert users when quality gates trigger ([#715](https://github.com/viamin/paid/issues/715)) ([#1204](https://github.com/viamin/paid/issues/1204)) ([d5e514c](https://github.com/viamin/paid/commit/d5e514c388e995ce9f3129c12465d96d51c7f896))
+
+
+### Bug Fixes
+
+* 725: feat(scaling): implement queue depth monitoring and alerting ([#1210](https://github.com/viamin/paid/issues/1210)) ([e74e52c](https://github.com/viamin/paid/commit/e74e52ca05302e2c8c734211bbaaea235545f639))
+* 799: feat(agent-runs): support cross-repo upstream/downstream issue pairs in create-issue mode ([#1218](https://github.com/viamin/paid/issues/1218)) ([cb14afa](https://github.com/viamin/paid/commit/cb14afa77f447e3d19753d9397ffef210bc06c00))
+* 851: feat(providers): configure Claude Code PostToolUse heartbeat hook ([#1231](https://github.com/viamin/paid/issues/1231)) ([dc6b8ac](https://github.com/viamin/paid/commit/dc6b8acf52c5862efd09b59fbbcc6c409a839505))
+* **devcontainer:** avoid kilocode permission save-merge corruption ([#1259](https://github.com/viamin/paid/issues/1259)) ([4212e03](https://github.com/viamin/paid/commit/4212e0386b5ea224584a7c96ad3e03494b265f2f))
+* **scheduler:** cap auto-pick seeding at owner concurrency budget ([#1260](https://github.com/viamin/paid/issues/1260)) ([ee8bda8](https://github.com/viamin/paid/commit/ee8bda8ed7d1f55ef955eb177b0a28728276238e))
+
+## [0.25.0](https://github.com/viamin/paid/compare/v0.24.0...v0.25.0) (2026-04-17)
+
+
+### Features
+
+* **agent-runs:** display provider information and fallback status on agent run page ([#1234](https://github.com/viamin/paid/issues/1234)) ([4f886e2](https://github.com/viamin/paid/commit/4f886e261e59a7f875d7cb3fb302ec26191df476)), closes [#803](https://github.com/viamin/paid/issues/803)
+* **auto-pick:** prioritize issues by label (P1 &gt; P2 &gt; P3 &gt; unlabeled) ([#1179](https://github.com/viamin/paid/issues/1179)) ([0ebfee8](https://github.com/viamin/paid/commit/0ebfee8433d06cddee532d54577340b39df5b301)), closes [#1176](https://github.com/viamin/paid/issues/1176)
+* **automation:** define provider capability interfaces ([#1116](https://github.com/viamin/paid/issues/1116)) ([#1173](https://github.com/viamin/paid/issues/1173)) ([c504ee8](https://github.com/viamin/paid/commit/c504ee8989cad4101b972a25928d82f264d9822b))
+* **automation:** normalize review/automation settings into config value objects ([#1185](https://github.com/viamin/paid/issues/1185)) ([4b96bcc](https://github.com/viamin/paid/commit/4b96bcc0c9b48d86555d89e800587ebfea368498))
+* **containers:** accept heartbeat file for watchdog liveness ([#850](https://github.com/viamin/paid/issues/850)) ([#1198](https://github.com/viamin/paid/issues/1198)) ([fd53233](https://github.com/viamin/paid/commit/fd5323317993f73599e96a7356204b5032b8979a))
+* **models:** add max_tier project preference and tier-bypass regression tests ([#1226](https://github.com/viamin/paid/issues/1226)) ([824567a](https://github.com/viamin/paid/commit/824567a2bfcc4bb9de2fa42514266be2104c7b49)), closes [#878](https://github.com/viamin/paid/issues/878)
+* **projects:** show emoji-only status in issues table with header tooltip legend ([#1223](https://github.com/viamin/paid/issues/1223)) ([5f90968](https://github.com/viamin/paid/commit/5f90968c7fad9d28e08e02a4d58568b5db53c236)), closes [#841](https://github.com/viamin/paid/issues/841)
+* **providers:** configure Codex notify heartbeat hook ([#852](https://github.com/viamin/paid/issues/852)) ([#1230](https://github.com/viamin/paid/issues/1230)) ([c2d3070](https://github.com/viamin/paid/commit/c2d307021acf57fff031cc0dc5b85fc733e130b7))
+* **review-runs:** prepend Code Review header to posted review comments ([#1220](https://github.com/viamin/paid/issues/1220)) ([4d04b91](https://github.com/viamin/paid/commit/4d04b914f5f9d550981d13513a0d164ccc4bf742)), closes [#840](https://github.com/viamin/paid/issues/840)
+* **rollout:** enable explicit_pr_automation_decisions for viamin/paid ([#1193](https://github.com/viamin/paid/issues/1193)) ([68dc3d8](https://github.com/viamin/paid/commit/68dc3d8763e8d87af507e0140ec240af1b198b24))
+
+
+### Bug Fixes
+
+* 1118: Add GitHub automation adapters ([#1183](https://github.com/viamin/paid/issues/1183)) ([9298996](https://github.com/viamin/paid/commit/92989966d903b447eb67634cc36591cc94b51776))
+* 1163: Move co-authored-by trailer from project setting to provider setting ([#1178](https://github.com/viamin/paid/issues/1178)) ([28ca0af](https://github.com/viamin/paid/commit/28ca0af8e2341f2996e088ddda6d7cdb48811bde))
+* 1180: Support multi-step PRs for multi-deployment migrations ([#1191](https://github.com/viamin/paid/issues/1191)) ([8186a5f](https://github.com/viamin/paid/commit/8186a5fdd6c885c6bcadb5dcd39cd9c9d3e70af7))
+* 1181: Disable issues with open paid-generated PRs from quick run in project issues table and Trigger Agent Run form ([#1184](https://github.com/viamin/paid/issues/1184)) ([df62822](https://github.com/viamin/paid/commit/df628229183d8b3c62a9ac1c3bd0b0dfb4dfcc21))
+* 1235: perf(poll-workflow): batch DetectLabels into a single activity ([#1239](https://github.com/viamin/paid/issues/1239)) ([05a0985](https://github.com/viamin/paid/commit/05a09852aa2181d278c5f4e8470263521522e088))
+* 1236: perf(temporal-worker): isolate poll workflows from agent execution workloads ([#1241](https://github.com/viamin/paid/issues/1241)) ([c8ce7db](https://github.com/viamin/paid/commit/c8ce7db866deaad8b6911a409704c10fa85e3264))
+* 711: feat(evolution): human review gate for evolved prompts ([#1201](https://github.com/viamin/paid/issues/1201)) ([7bdfbd6](https://github.com/viamin/paid/commit/7bdfbd6e09c280c41e4f3feda85e7f8feb9f5c85))
+* 728: docs(scaling): create scaling documentation and runbook ([#1212](https://github.com/viamin/paid/issues/1212)) ([6e06ac5](https://github.com/viamin/paid/commit/6e06ac5ae505aa9f65345c4b61d2dbc899c66606))
+* 733: feat(multi-tenancy): design tenant onboarding flow ([#1217](https://github.com/viamin/paid/issues/1217)) ([2630ed2](https://github.com/viamin/paid/commit/2630ed297efda432ac08896865a01668bfe2b8d5))
+* 784: refactor(agent-runs): move RunAgentActivity provider execution behind agent-harness ([#1244](https://github.com/viamin/paid/issues/1244)) ([7496951](https://github.com/viamin/paid/commit/7496951904d66d1012855bb38db4960d4ecb87ab))
+* 788: refactor(agent-image): delegate Claude CLI installation to agent-harness ([#1249](https://github.com/viamin/paid/issues/1249)) ([114c6a4](https://github.com/viamin/paid/commit/114c6a4152712cb6a3ca5140a0d5a86f886f2b6b))
+* 805: Add pause all button to agent runs page with navigation indicator ([#1194](https://github.com/viamin/paid/issues/1194)) ([f345915](https://github.com/viamin/paid/commit/f345915b1d09395566e26dfaf0000021c2a48c93))
+* 829: fix(agent-runs): provider exhaustion on PR follow-up runs can leave projects effectively stalled ([#1221](https://github.com/viamin/paid/issues/1221)) ([071a3f1](https://github.com/viamin/paid/commit/071a3f179989fa24c0233a19b0f87a644bda524d))
+* 842: Replace project quality summary range with score distribution histogram ([#1222](https://github.com/viamin/paid/issues/1222)) ([368fe99](https://github.com/viamin/paid/commit/368fe99cb6d1e949fcde758e2cbd93d4d95434b1))
+* 863: fix(devcontainer): configure OpenCode auto-approval inside container only ([#1224](https://github.com/viamin/paid/issues/1224)) ([49f9f99](https://github.com/viamin/paid/commit/49f9f992addb4544e1a1459b47b65afd5801e732))
+* 875: feat(models): map task complexity score to model tier ([#1197](https://github.com/viamin/paid/issues/1197)) ([01534a7](https://github.com/viamin/paid/commit/01534a7bda197328aff25248e978ae1bb842358f))
+* 885: Add dark mode UI with user settings and system preference detection ([#1240](https://github.com/viamin/paid/issues/1240)) ([5b2a806](https://github.com/viamin/paid/commit/5b2a80692726956f63347a5d73a9f2bae303ba6c))
+* **agent-runs:** prevent provider credit/quota errors from being misclassified as recommend_close ([#1192](https://github.com/viamin/paid/issues/1192)) ([#1202](https://github.com/viamin/paid/issues/1202)) ([0995240](https://github.com/viamin/paid/commit/0995240505ef98b91d248754187d207b329e3ec3))
+* **auto-pick:** detect trackers by body heading, not prose ([#1187](https://github.com/viamin/paid/issues/1187)) ([5ecb794](https://github.com/viamin/paid/commit/5ecb794430db9b4b7a643550901a241daca381bd))
+* **auto-pick:** resolve self-repo PR refs as local deps, not external ([#1189](https://github.com/viamin/paid/issues/1189)) ([45e8ccf](https://github.com/viamin/paid/commit/45e8ccf1df4f464c2861b5f05a638a05d07f5fa4))
+* **knowledge:** create writable log/ and tmp/ in collector workspace ([#1175](https://github.com/viamin/paid/issues/1175)) ([7093508](https://github.com/viamin/paid/commit/7093508862b1f4970e9e07de21ff47eb57d58cdf))
+* **poll-workflow:** heartbeat last_polled_at mid-cycle, not only at the end ([#1242](https://github.com/viamin/paid/issues/1242)) ([b7d5f21](https://github.com/viamin/paid/commit/b7d5f21f7b6c69256d13fcddda7a67485c522196)), closes [#1237](https://github.com/viamin/paid/issues/1237)
+* **pr-review:** reconcile internal pr_review_phase with GitHub draft state ([#826](https://github.com/viamin/paid/issues/826)) ([#1219](https://github.com/viamin/paid/issues/1219)) ([5c8ef0b](https://github.com/viamin/paid/commit/5c8ef0b850ee2c418a2d6ba869793e3df406abb0))
+* **pr-scanner:** rescan draft PRs beyond a staleness ceiling ([#1252](https://github.com/viamin/paid/issues/1252)) ([15916a7](https://github.com/viamin/paid/commit/15916a79ec695b88d4afc29d5313164ce99b417d))
+* **review-runs:** avoid malformed JSON in PR review proxy requests ([#1196](https://github.com/viamin/paid/issues/1196)) ([9dfa5f0](https://github.com/viamin/paid/commit/9dfa5f05bb317be1f15d1d699c3072f468c093cc)), closes [#839](https://github.com/viamin/paid/issues/839)
+* **reviews:** respect configured review methods when requesting bot reviews after push ([#1227](https://github.com/viamin/paid/issues/1227)) ([4854366](https://github.com/viamin/paid/commit/4854366b113e45013427fd793d6d752d374213bb)), closes [#860](https://github.com/viamin/paid/issues/860)
+* **service-containers:** pin postgres default to 16.13 to stop schema drift ([#1256](https://github.com/viamin/paid/issues/1256)) ([2bde5e3](https://github.com/viamin/paid/commit/2bde5e3f587cbc19a1f639a5e9c7c9b233f15dc5))
+* **setup:** pass Claude install contract build args to agent-image ([#1253](https://github.com/viamin/paid/issues/1253)) ([419ca07](https://github.com/viamin/paid/commit/419ca079eac934cfa4f6a2f248abdefc93a372c0))
+
 ## [0.24.0](https://github.com/viamin/paid/compare/v0.23.0...v0.24.0) (2026-04-16)
 
 

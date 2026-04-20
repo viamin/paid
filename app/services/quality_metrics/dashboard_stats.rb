@@ -28,7 +28,9 @@ module QualityMetrics
         trends: trends,
         breakdown: score_breakdown,
         prompt_comparison: prompt_comparison,
+        model_comparison: model_comparison,
         human_feedback: human_feedback,
+        gate_status: gate_status,
         metrics_reference: self.class.metrics_reference
       }
     end
@@ -77,6 +79,14 @@ module QualityMetrics
       end
     end
 
+    DISTRIBUTION_BANDS = [
+      { label: "0–20", min: 0.0, max: 0.2 },
+      { label: "20–40", min: 0.2, max: 0.4 },
+      { label: "40–60", min: 0.4, max: 0.6 },
+      { label: "60–80", min: 0.6, max: 0.8 },
+      { label: "80–100", min: 0.8, max: 1.01 }
+    ].freeze
+
     def overview
       row = metrics
         .select(
@@ -95,14 +105,55 @@ module QualityMetrics
         min_score: row.min_score&.to_f,
         max_score: row.max_score&.to_f,
         automated_count: row.automated_count.to_i,
-        human_count: row.human_count.to_i
+        human_count: row.human_count.to_i,
+        score_distribution: score_distribution
       }
+    end
+
+    def export_data(limit: 10_000)
+      metrics_scope = QualityMetric.by_project(project.id)
+        .includes(:prompt_version, :agent_run)
+        .order(created_at: :desc)
+        .limit(limit)
+
+      metrics_scope.map do |m|
+        {
+          id: m.id,
+          date: m.created_at.iso8601,
+          metric_type: m.metric_type,
+          composite_score: m.composite_score&.to_f,
+          scores: m.scores,
+          feedback_source: m.feedback_source,
+          agent_run_id: m.agent_run_id,
+          provider: m.agent_run&.effective_provider,
+          goal: m.agent_run&.goal,
+          prompt_version: m.prompt_version&.version
+        }
+      end
     end
 
     private
 
     def metrics
       @metrics ||= QualityMetric.by_project(project.id).with_composite_score
+    end
+
+    def score_distribution
+      counts = metrics
+        .group(Arel.sql(<<~SQL.squish))
+          CASE
+            WHEN composite_score < 0.2 THEN 0
+            WHEN composite_score < 0.4 THEN 1
+            WHEN composite_score < 0.6 THEN 2
+            WHEN composite_score < 0.8 THEN 3
+            ELSE 4
+          END
+        SQL
+        .count
+
+      DISTRIBUTION_BANDS.each_with_index.map do |band, i|
+        { label: band[:label], min: band[:min], count: counts.fetch(i, 0) }
+      end
     end
 
     def trends
@@ -208,6 +259,78 @@ module QualityMetrics
           review_reaction: source_tally["review_reaction"].to_i,
           comment: source_tally["comment"].to_i
         }
+      }
+    end
+
+    def model_comparison
+      runs_with_metrics = AgentRun.where(project: project)
+        .joins(:quality_metrics)
+        .where(quality_metrics: { composite_score: ..Float::INFINITY })
+        .where.not(quality_metrics: { composite_score: nil })
+        .select(
+          Arel.sql("#{AgentRun.effective_provider_sql} AS eff_provider"),
+          "AVG(quality_metrics.composite_score) AS avg_score",
+          "COUNT(quality_metrics.id) AS sample_size"
+        )
+        .group(Arel.sql(AgentRun.effective_provider_sql))
+        .to_a
+
+      runs_with_metrics.filter_map do |row|
+        next if row.eff_provider.blank?
+
+        {
+          provider: row.eff_provider,
+          avg_score: row.avg_score.to_f.round(4),
+          sample_size: row.sample_size.to_i
+        }
+      end.sort_by { |r| -r[:avg_score] }
+    end
+
+    def gate_status
+      thresholds = project.quality_gate_thresholds.enabled
+      return { thresholds: [], recent_events: [], active_breaches: 0 } if thresholds.empty?
+
+      recent_events = project.quality_gate_events
+        .includes(:quality_gate_threshold)
+        .order(created_at: :desc)
+        .limit(20)
+        .map do |e|
+          {
+            event_type: e.event_type,
+            metric_key: e.quality_gate_threshold.metric_key,
+            severity: e.quality_gate_threshold.severity,
+            score_value: e.score_value.to_f,
+            threshold_value: e.threshold_value.to_f,
+            created_at: e.created_at.iso8601
+          }
+        end
+
+      # Count active breaches: thresholds whose most recent event is a trigger.
+      # Uses DISTINCT ON to fetch the latest event per threshold in a single query.
+      threshold_ids = thresholds.pluck(:id)
+      active_breaches = QualityGateEvent
+        .where(quality_gate_threshold_id: threshold_ids)
+        .where(
+          "id IN (SELECT DISTINCT ON (quality_gate_threshold_id) id " \
+          "FROM quality_gate_events " \
+          "WHERE quality_gate_threshold_id IN (?) " \
+          "ORDER BY quality_gate_threshold_id, created_at DESC)",
+          threshold_ids
+        )
+        .where(event_type: "trigger")
+        .count
+
+      {
+        thresholds: thresholds.map do |t|
+          {
+            metric_key: t.metric_key,
+            min_threshold: t.min_threshold&.to_f,
+            max_threshold: t.max_threshold&.to_f,
+            severity: t.severity
+          }
+        end,
+        recent_events: recent_events,
+        active_breaches: active_breaches
       }
     end
 

@@ -57,7 +57,6 @@ module Api
       authorize current_account, :billing?, policy_class: BillingPolicy
 
       invoices = current_account.billing_invoices
-        .includes(:billing_line_items)
         .order(created_at: :desc)
         .limit(params.fetch(:limit, 12).to_i.clamp(1, 100))
 
@@ -88,10 +87,6 @@ module Api
     end
 
     private
-
-    def current_account
-      current_user.account
-    end
 
     def authenticate_user!
       return if user_signed_in?

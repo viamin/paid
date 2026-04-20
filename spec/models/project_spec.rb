@@ -268,7 +268,7 @@ RSpec.describe Project do
     let(:workflow_handle) { double("workflow_handle") } # rubocop:disable RSpec/VerifiedDoubles
 
     before do
-      allow(Paid).to receive_messages(temporal_client: temporal_client, task_queue: "paid-tasks")
+      allow(Paid).to receive_messages(temporal_client: temporal_client, poll_task_queue: "paid-poll-tasks")
       allow(temporal_client).to receive(:start_workflow)
       allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
       allow(workflow_handle).to receive(:cancel)
@@ -282,7 +282,7 @@ RSpec.describe Project do
           Workflows::GitHubPollWorkflow,
           { project_id: project.id },
           id: "github-poll-#{project.id}",
-          task_queue: "paid-tasks"
+          task_queue: "paid-poll-tasks"
         )
       end
 
@@ -344,7 +344,7 @@ RSpec.describe Project do
           Workflows::GitHubPollWorkflow,
           { project_id: project.id },
           id: "github-poll-#{project.id}",
-          task_queue: "paid-tasks"
+          task_queue: "paid-poll-tasks"
         )
       end
 
@@ -373,7 +373,7 @@ RSpec.describe Project do
     let(:temporal_client) { instance_double(Temporalio::Client) }
 
     before do
-      allow(Paid).to receive_messages(temporal_client: temporal_client, task_queue: "paid-tasks")
+      allow(Paid).to receive_messages(temporal_client: temporal_client, poll_task_queue: "paid-poll-tasks")
       allow(temporal_client).to receive(:start_workflow)
     end
 
@@ -829,6 +829,34 @@ RSpec.describe Project do
       end
     end
 
+    describe "#review_bot_request_chain" do
+      it "returns an empty array when reviews are globally disabled" do
+        project = build(:project, review_settings: {
+          "enabled" => false,
+          "methods" => { "copilot" => { "enabled" => true }, "codex" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_chain).to eq([])
+      end
+
+      it "returns the ordered fallback chain when both bots are enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "copilot" => { "enabled" => true }, "codex" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_chain).to eq(
+          [ Activities::RequestReviewActivity::COPILOT_LOGIN, Activities::RequestReviewActivity::CODEX_LOGIN ]
+        )
+      end
+
+      it "returns only the enabled bot when one of the two is disabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "codex" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_chain).to eq([ Activities::RequestReviewActivity::CODEX_LOGIN ])
+      end
+    end
+
     describe "#review_method_config" do
       it "returns merged config for a method" do
         project = build(:project, review_settings: {
@@ -873,7 +901,7 @@ RSpec.describe Project do
 
     describe "#automation_configuration" do
       it "exposes the aggregate Automation::Configuration::Project value object" do
-        project = build(:project, auto_pick_enabled: true, auto_merge_enabled: true)
+        project = build(:project, auto_pick_enabled: true, auto_merge_mode: "all")
 
         config = project.automation_configuration
 
@@ -1539,6 +1567,40 @@ RSpec.describe Project do
       %w[major minor patch].each do |bump|
         expect(project.auto_release_allows_bump?(bump)).to be true
       end
+    end
+  end
+
+  describe "#auto_merge_enabled?" do
+    it "returns false when mode is off" do
+      project = build(:project, auto_merge_mode: "off")
+      expect(project.auto_merge_enabled?).to be false
+    end
+
+    it "returns true when mode is dependabot_only" do
+      project = build(:project, auto_merge_mode: "dependabot_only")
+      expect(project.auto_merge_enabled?).to be true
+    end
+
+    it "returns true when mode is all" do
+      project = build(:project, auto_merge_mode: "all")
+      expect(project.auto_merge_enabled?).to be true
+    end
+  end
+
+  describe "#auto_merge_dependabot?" do
+    it "returns false when mode is off" do
+      project = build(:project, auto_merge_mode: "off")
+      expect(project.auto_merge_dependabot?).to be false
+    end
+
+    it "returns true when mode is dependabot_only" do
+      project = build(:project, auto_merge_mode: "dependabot_only")
+      expect(project.auto_merge_dependabot?).to be true
+    end
+
+    it "returns true when mode is all" do
+      project = build(:project, auto_merge_mode: "all")
+      expect(project.auto_merge_dependabot?).to be true
     end
   end
 end

@@ -15,6 +15,9 @@ module Api
     def create
       event = request.headers["X-GitHub-Event"]
 
+      # Must come before event handlers; also initializes @payload via #payload.
+      invalidate_cache(event)
+
       case event
       when "pull_request_review"
         handle_pull_request_review
@@ -61,6 +64,12 @@ module Api
       # updated, or labeled — these events may make it eligible for auto-merge.
       if %w[opened synchronize labeled].include?(action) && @project&.auto_release_enabled?
         enqueue_auto_release_evaluation(pr["number"])
+      end
+
+      # Trigger Dependabot auto-merge evaluation when a Dependabot PR is
+      # opened or updated.
+      if %w[opened synchronize].include?(action) && @project&.auto_merge_dependabot?
+        enqueue_dependabot_auto_merge(pr)
       end
 
       # Only act on merge events — other PR actions (opened, synchronize, etc.)
@@ -123,17 +132,30 @@ module Api
 
     def handle_check_suite
       return head(:ok) unless payload["action"] == "completed"
-      return head(:ok) unless @project&.auto_release_enabled?
 
-      enqueue_auto_release_evaluation
+      if @project&.auto_release_enabled?
+        enqueue_auto_release_evaluation
+      end
+
+      if @project&.auto_merge_dependabot?
+        enqueue_dependabot_auto_merge_from_check(payload.dig("check_suite", "pull_requests"))
+      end
+
       head :ok
     end
 
     def handle_check_run
       return head(:ok) unless payload["action"] == "completed"
-      return head(:ok) unless @project&.auto_release_enabled?
 
-      enqueue_auto_release_evaluation
+      if @project&.auto_release_enabled?
+        enqueue_auto_release_evaluation
+      end
+
+      if @project&.auto_merge_dependabot?
+        pr_refs = payload.dig("check_run", "pull_requests")
+        enqueue_dependabot_auto_merge_from_check(pr_refs)
+      end
+
       head :ok
     end
 
@@ -146,6 +168,38 @@ module Api
     rescue => e
       Rails.logger.warn(
         message: "auto_release.enqueue_failed",
+        project_id: @project.id,
+        error: e.message
+      )
+    end
+
+    DEPENDABOT_LOGIN_PREFIX = "dependabot"
+
+    def enqueue_dependabot_auto_merge(pr)
+      author = pr.dig("user", "login").to_s.downcase
+      return unless author.start_with?(DEPENDABOT_LOGIN_PREFIX)
+
+      DependabotAutoMergeJob.perform_later(@project.id, pr_number: pr["number"])
+    rescue => e
+      Rails.logger.warn(
+        message: "dependabot_auto_merge.enqueue_failed",
+        project_id: @project.id,
+        error: e.message
+      )
+    end
+
+    def enqueue_dependabot_auto_merge_from_check(pull_requests)
+      return unless pull_requests.is_a?(Array)
+
+      # check_suite/check_run payloads include only lightweight PR refs without
+      # a "user" object, so we cannot filter by author here. The job itself
+      # fetches the full PR and checks the author before proceeding.
+      pull_requests.each do |pr_ref|
+        DependabotAutoMergeJob.perform_later(@project.id, pr_number: pr_ref["number"])
+      end
+    rescue => e
+      Rails.logger.warn(
+        message: "dependabot_auto_merge.enqueue_failed",
         project_id: @project.id,
         error: e.message
       )
@@ -189,6 +243,20 @@ module Api
         .where(created_issue_number: issue_number, status: "completed")
         .order(created_at: :desc)
         .first
+    end
+
+    def invalidate_cache(event)
+      Github::CacheInvalidator.call(
+        project: @project,
+        event: event,
+        payload: payload
+      )
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "github_cache.invalidation_failed",
+        event: event,
+        error: e.message
+      )
     end
 
     def payload

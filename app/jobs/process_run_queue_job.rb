@@ -30,7 +30,6 @@ class ProcessRunQueueJob < ApplicationJob
   # Prevents unbounded scanning when a large queue has many runs that
   # can't start due to per-user capacity limits.
   MAX_ITERATIONS_PER_PERFORM = 100
-  MAX_SEEDS_PER_PERFORM = 20
   AUTO_PICK_RESERVED_SLOTS = 1
 
   def perform
@@ -45,6 +44,7 @@ class ProcessRunQueueJob < ApplicationJob
       iterations = 0
       skipped_ids = Set.new
       @user_capacity = {}  # { user_id => { active: count, max: limit } }
+      @auto_pick_seed_budget = {}  # { user_id => { active: unfinished auto-pick count, max: concurrency } }
 
       seed_auto_pick_queue
 
@@ -126,27 +126,24 @@ class ProcessRunQueueJob < ApplicationJob
     cap[:active] += 1 if cap
   end
 
-  # Seeds the queue with all currently auto-pickable issues before run
-  # selection. Priorities still determine what starts next, but keeping
-  # low-priority auto-pick work queued makes latent work visible and ready
-  # to consume spare capacity.
+  # Seeds the queue with auto-pickable issues up to each owner's
+  # max_concurrent_runs budget. Priorities still determine what starts next;
+  # capping seeding at user capacity keeps low-priority work out of the queue
+  # unless higher-priority work is exhausted, and avoids flooding the queue
+  # with runs that cannot start for a long time.
   def seed_auto_pick_queue
-    seeds_count = 0
-
     loop do
-      break if seeds_count >= MAX_SEEDS_PER_PERFORM
-
       created_in_pass = false
 
       ordered_auto_pick_projects.each do |project|
-        break if seeds_count >= MAX_SEEDS_PER_PERFORM
-
-        next unless project.effective_owner
+        owner = project.effective_owner
+        next unless owner
+        next unless owner_has_seed_budget?(owner)
 
         run = Issues::AutoPick.new(project).call
         next unless run
 
-        seeds_count += 1
+        record_seeded_auto_pick_run(owner)
         created_in_pass = true
         @ordered_auto_pick_projects = nil
       end
@@ -155,11 +152,32 @@ class ProcessRunQueueJob < ApplicationJob
     end
   end
 
+  # Checks whether the owner has remaining auto-pick seed budget. Uses an
+  # in-memory cache (mirrors #user_has_capacity?) to avoid repeated COUNTs
+  # as the same owner is visited across projects and passes.
+  def owner_has_seed_budget?(owner)
+    budget = seed_budget_for(owner)
+    budget[:active] < budget[:max]
+  end
+
+  def seed_budget_for(owner)
+    @auto_pick_seed_budget[owner.id] ||= {
+      active: AgentRun.unfinished_auto_pick_count_for_user(owner),
+      max: owner.settings.max_concurrent_runs
+    }
+  end
+
+  def record_seeded_auto_pick_run(owner)
+    budget = @auto_pick_seed_budget[owner.id]
+    budget[:active] += 1 if budget
+  end
+
   # Memoized within a single perform so repeated auto-pick passes
   # don't re-query the project list and aggregate stats each time.
   def ordered_auto_pick_projects
     @ordered_auto_pick_projects ||= begin
-      projects = Project.active.where(auto_pick_enabled: true).includes(:created_by, :account)
+      projects = Project.active.where(auto_pick_enabled: true, quality_paused_at: nil)
+        .includes(:created_by, :account)
         .joins(:account).where(accounts: { scheduler_paused_at: nil })
         .order(:id).to_a
       return projects if projects.empty?
@@ -250,7 +268,7 @@ class ProcessRunQueueJob < ApplicationJob
       Workflows::AgentExecutionWorkflow,
       workflow_input,
       id: workflow_id,
-      task_queue: Paid.task_queue
+      task_queue: Paid.agent_task_queue
     )
 
     Rails.logger.info(

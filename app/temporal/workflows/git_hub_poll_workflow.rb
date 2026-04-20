@@ -11,6 +11,7 @@ module Workflows
   # Temporal's event limit. The server signals when history is getting
   # large via continue_as_new_suggested; a hard cap provides a safety net.
   class GitHubPollWorkflow < BaseWorkflow
+    include Automation::ReviewBotTrigger
     MAX_ITERATIONS = 100
 
     workflow_signal
@@ -31,14 +32,24 @@ module Workflows
 
         break if result[:project_missing]
 
-        result[:issues].each do |issue_data|
-          evaluation = run_activity(Activities::DetectLabelsActivity,
-            { project_id: project_id, issue_id: issue_data[:id] }, timeout: 30)
+        record_poll_heartbeat(project_id)
 
-          handle_automation_result(evaluation, project_id)
+        if Temporalio::Workflow.patched("batch-evaluate-issues-v1")
+          evaluate_issues_batch(project_id, result[:issues])
+        else
+          result[:issues].each do |issue_data|
+            evaluation = run_activity(Activities::DetectLabelsActivity,
+              { project_id: project_id, issue_id: issue_data[:id] }, timeout: 30)
+
+            handle_automation_result(evaluation, project_id)
+          end
         end
 
+        record_poll_heartbeat(project_id)
+
         maybe_run_non_critical_activities(project_id)
+
+        record_poll_heartbeat(project_id)
 
         poll_config = run_activity(Activities::GetPollIntervalActivity,
           { project_id: project_id }, timeout: 10)
@@ -55,6 +66,23 @@ module Workflows
     end
 
     private
+
+    def evaluate_issues_batch(project_id, issues)
+      return if issues.blank?
+
+      issue_ids = issues.map { |issue_data| issue_data[:id] }
+      batch_result = run_activity(Activities::EvaluateIssuesActivity,
+        { project_id: project_id, issue_ids: issue_ids }, timeout: 120)
+
+      (batch_result[:results] || []).each do |evaluation|
+        handle_automation_result(evaluation, project_id)
+      end
+    end
+
+    def record_poll_heartbeat(project_id)
+      run_activity(Activities::RecordPollHeartbeatActivity,
+        { project_id: project_id }, timeout: 10)
+    end
 
     def interruptible_sleep(duration)
       cancellation, @sleep_cancel_proc = Temporalio::Cancellation.new
@@ -220,6 +248,7 @@ module Workflows
         Workflows::PlanningWorkflow,
         { project_id: project_id, issue_id: issue_id },
         id: workflow_id,
+        task_queue: Paid::AGENT_TASK_QUEUE,
         parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
       )
     end
@@ -397,16 +426,18 @@ module Workflows
     end
 
     def dispatch_review_bot_review_request(project_id, pr_data)
-      # Use the login from the trigger: nil means the bot auto-reviews (e.g.
-      # Codex via GitHub App) and no explicit request is needed.
+      # Use the chain from the trigger: an empty list means the bot
+      # auto-reviews (e.g. Codex via GitHub App) and no explicit request is
+      # needed. The full chain is forwarded to RequestReviewActivity so it
+      # can fall through to a configured secondary bot when the primary is
+      # rate-limited or unavailable.
       pending_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
-      login = pending_trigger&.dig(:request_login)
+      reviewers = review_bot_reviewers_from(pending_trigger)
+      return if reviewers.empty?
 
-      if login
-        request_review(project_id, pr_data[:pr_number],
-          [ login ],
-          log_key: "pr_review.request_review_bot_review_failed")
-      end
+      request_review(project_id, pr_data[:pr_number],
+        reviewers,
+        log_key: "pr_review.request_review_bot_review_failed")
     end
 
     def handle_review_goal_retry(project_id, pr_data)
@@ -471,13 +502,11 @@ module Workflows
 
     def dispatch_bot_review_request(project_id, pr_data)
       pending_bot = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
-      return unless pending_bot
-
-      login = pending_bot[:request_login]
-      return unless login
+      reviewers = review_bot_reviewers_from(pending_bot)
+      return if reviewers.empty?
 
       request_review(project_id, pr_data[:pr_number],
-        [ login ],
+        reviewers,
         log_key: "pr_review.request_review_bot_review_failed")
     end
 

@@ -566,6 +566,58 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#operational_failure?" do
+      it "returns true for timeout status" do
+        agent_run = build(:agent_run, :timeout, error_message: "wall_clock_timeout: exceeded 30 minutes")
+
+        expect(agent_run.operational_failure?).to be true
+      end
+
+      it "returns true for auth_expired status" do
+        agent_run = build(:agent_run, :auth_expired)
+
+        expect(agent_run.operational_failure?).to be true
+      end
+
+      it "returns true for rate_limited status" do
+        agent_run = build(:agent_run, :rate_limited)
+
+        expect(agent_run.operational_failure?).to be true
+      end
+
+      it "returns true for failed status with provider exhaustion error" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "All providers exhausted: claude_code, codex")
+
+        expect(agent_run.operational_failure?).to be true
+      end
+
+      it "returns false for failed status with code-level error" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "An error occurred during execution")
+
+        expect(agent_run.operational_failure?).to be false
+      end
+
+      it "returns false for completed status" do
+        agent_run = build(:agent_run, :completed)
+
+        expect(agent_run.operational_failure?).to be false
+      end
+
+      it "returns false for no_output status" do
+        agent_run = build(:agent_run, :no_output)
+
+        expect(agent_run.operational_failure?).to be false
+      end
+
+      it "returns false for failed status with nil error message" do
+        agent_run = build(:agent_run, :failed, error_message: nil)
+
+        expect(agent_run.operational_failure?).to be false
+      end
+    end
+
     describe "#total_tokens" do
       it "returns sum of input and output tokens" do
         agent_run = build(:agent_run, tokens_input: 1000, tokens_output: 500)
@@ -2028,6 +2080,79 @@ RSpec.describe AgentRun do
 
     it "returns empty string when no logs exist" do
       expect(agent_run.agent_summary_with_stderr_fallback).to eq("")
+    end
+  end
+
+  describe "#agent_summary JSON envelope stripping" do
+    let(:agent_run) { create(:agent_run) }
+
+    it "extracts result text from a Claude CLI JSON envelope" do
+      envelope = {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "All done. Here's a summary:\n\n- Fixed the bug\n- Added tests",
+        duration_ms: 5000,
+        session_id: "abc-123",
+        total_cost_usd: 0.05,
+        usage: { input_tokens: 100, output_tokens: 50 }
+      }.to_json
+
+      agent_run.log!("stdout", envelope)
+
+      expect(agent_run.agent_summary).to eq("All done. Here's a summary:\n\n- Fixed the bug\n- Added tests")
+    end
+
+    it "returns raw stdout when it is not a JSON envelope" do
+      agent_run.log!("stdout", "Just some plain text output")
+
+      expect(agent_run.agent_summary).to eq("Just some plain text output")
+    end
+
+    it "returns raw stdout when JSON is not a CLI envelope" do
+      agent_run.log!("stdout", '{"some": "other", "json": true}')
+
+      expect(agent_run.agent_summary).to eq('{"some": "other", "json": true}')
+    end
+
+    it "returns raw stdout when envelope result is empty" do
+      agent_run.log!("stdout", '{"type":"result","result":"","is_error":false}')
+
+      expect(agent_run.agent_summary).to eq('{"type":"result","result":"","is_error":false}')
+    end
+
+    it "surfaces classified error message for is_error envelopes" do
+      envelope = {
+        type: "result",
+        result: "Rate limit exceeded: too many requests",
+        is_error: true
+      }.to_json
+
+      agent_run.log!("stdout", envelope)
+
+      expect(agent_run.agent_summary).to eq("Agent encountered an error: Rate limit exceeded")
+    end
+
+    it "handles multi-chunk stdout that forms a complete JSON envelope" do
+      part1 = '{"type":"result","result":"Done","is_error":false'
+      part2 = ',"session_id":"abc"}'
+
+      agent_run.log!("stdout", part1)
+      agent_run.log!("stdout", part2)
+
+      expect(agent_run.agent_summary).to eq("Done")
+    end
+
+    it "strips envelope in agent_summary_with_stderr_fallback too" do
+      envelope = { type: "result", result: "Task complete", is_error: false }.to_json
+      agent_run.log!("stdout", envelope)
+      agent_run.log!("stderr", "some error output")
+
+      expect(agent_run.agent_summary_with_stderr_fallback).to eq("Task complete")
+    end
+
+    it "returns empty string when no stdout logs exist" do
+      expect(agent_run.agent_summary).to eq("")
     end
   end
 

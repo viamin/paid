@@ -12,16 +12,23 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 
 - **GitHub Integration**: Add projects via PAT, watch for labeled issues
 - **Temporal Workflows**: Durable, observable orchestration of agent activities
-- **Container Isolation**: Agents run in sandboxed Docker containers with no default internet access
-- **Multiple Agents and Providers**: Support for Claude Code, Codex, Cursor, Gemini, Aider, OpenCode, Kilocode, Copilot, and other `agent-harness`-supported runtimes
-- **Secrets Proxy**: API keys and git credentials never enter agent containers; proxied through authenticated endpoints
+- **Container Isolation**: Agents run in sandboxed Docker containers; proxy-mode runs use the restricted `paid_agent` network with no default internet access
+  - Gap: subscription-auth and direct-outbound provider runs use the internal network for provider access; tracked by [#1284](https://github.com/viamin/paid/issues/1284).
+- **Multiple Agents and Providers**: Support for Claude Code, Codex, Cursor, Gemini, Aider, OpenCode, Kilocode, and Copilot when the runtime is both supported by `agent-harness` and installed in `paid-agent`
+  - Gap: broader runtime parity is tracked by provider metadata and smoke-test refactors ([#798](https://github.com/viamin/paid/issues/798), [#796](https://github.com/viamin/paid/issues/796)) plus agent-image install delegation work ([#789](https://github.com/viamin/paid/issues/789)-[#795](https://github.com/viamin/paid/issues/795)).
+- **Secrets Proxy**: Git credentials and default platform LLM keys are proxied through authenticated endpoints
+  - Gap: stored provider API-key auth and subscription auth can still place provider credentials inside the agent runtime; agent-run cleanup is tracked by [#1281](https://github.com/viamin/paid/issues/1281), and knowledge-side direct key usage is tracked by [#1043](https://github.com/viamin/paid/issues/1043) and [#1044](https://github.com/viamin/paid/issues/1044).
 - **Human-in-the-Loop**: All changes go through PRs; humans approve merges (can be automated if desired)
 - **Full Automation or Manual Control**: Auto-pick next issue or trigger runs manually from the UI
-- **Prompt Management**: Version prompts as data, diff versions, and run A/B tests before promoting prompt changes
+- **Prompt Management**: Version prompts as data, diff versions, and manage A/B tests before promoting prompt changes
+  - Gap: live agent-run A/B assignment is not wired into execution yet; tracked by [#1267](https://github.com/viamin/paid/issues/1267).
 - **Knowledge Base**: Index repos into PostgreSQL + Qdrant for hybrid exact/semantic search and richer prompt context
+  - Gap: some goal and prompt paths still need knowledge injection or container-accessible search; tracked by [#1265](https://github.com/viamin/paid/issues/1265) and [#1272](https://github.com/viamin/paid/issues/1272).
 - **Live Dashboards**: Track active runs, performance, quality, cost, and knowledge-collection health from the UI
-- **Provider and Integration Management**: Test provider auth from the UI and manage GitHub, Linear, provider API keys, and generic integration credentials
+- **Provider and Integration Management**: Test provider auth from the UI and manage GitHub, Linear, and provider API keys
+  - Gap: generic integration credentials exist in the data model but are hidden from the main integrations hub pending RBAC/admin-role work; tracked by [#1283](https://github.com/viamin/paid/issues/1283).
 - **Service Containers**: Attach approved supporting services like Postgres, Redis, or Selenium to project runs when agents need dependencies beyond the app code
+  - Gap: direct-outbound provider runs can select a different Docker network than service provisioning expects; tracked by [#1282](https://github.com/viamin/paid/issues/1282). Shared-database isolation fallout is tracked separately by [#1280](https://github.com/viamin/paid/issues/1280).
 
 ## How It Works
 
@@ -178,7 +185,8 @@ bin/dev                 # Start Rails, JS/CSS watchers, and the Temporal worker
 | `TEMPORAL_HOST` | Temporal server address | `localhost:7233` |
 | `TEMPORAL_ADDRESS` | Temporal address (alternative to TEMPORAL_HOST) | _(falls back to TEMPORAL_HOST)_ |
 | `TEMPORAL_NAMESPACE` | Temporal namespace | `default` |
-| `TEMPORAL_TASK_QUEUE` | Temporal task queue name | `paid-tasks` |
+| `TEMPORAL_POLL_TASK_QUEUE` | Temporal poll workflow task queue | `paid-poll-tasks` |
+| `TEMPORAL_AGENT_TASK_QUEUE` | Temporal agent execution task queue | `paid-agent-tasks` |
 | `TEMPORAL_UI_URL` | Temporal UI base URL for monitoring links | `http://localhost:8080` |
 | `OPENAI_API_KEY` | OpenAI API key (for agents that use OpenAI) | _(none)_ |
 | `GOOGLE_API_KEY` | Google API key for Gemini proxy requests | _(none)_ |
