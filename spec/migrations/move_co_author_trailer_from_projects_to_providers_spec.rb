@@ -10,10 +10,10 @@ require Rails.root.join("db/migrate/20260416050235_move_co_author_trailer_from_p
 #
 # Model code (Provider) holds the post-migration schema assumption — it has a
 # before_validation callback that reads `agent_co_author_trailer`. That means
-# spec setup must happen in the post-migration world, using raw SQL to simulate
-# the legacy project column while the migration runs. The specs build records
-# through factories (post-migration schema), then replay `down` + `up` while
-# manually restoring the legacy column state with SQL.
+# spec setup must happen in the post-migration world, using raw SQL to add and
+# populate the legacy project column while the migration runs. Keep the provider
+# column present because current model callbacks read it during factory setup and
+# after-commit broadcasts elsewhere in the suite.
 RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures do
   # DDL operations (add_column / remove_column) acquire AccessExclusiveLock
   # which deadlocks with transactional fixtures. Disable transactional tests
@@ -28,9 +28,6 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
     return if connection.column_exists?(:projects, :agent_co_author_trailer)
 
     connection.add_column(:projects, :agent_co_author_trailer, :text)
-    if connection.column_exists?(:providers, :agent_co_author_trailer)
-      connection.remove_column(:providers, :agent_co_author_trailer)
-    end
   end
 
   def run_migration_up
@@ -52,12 +49,11 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
     end
     Project.reset_column_information
     Provider.reset_column_information
-    # Clean up data that was not rolled back by transactional fixtures.
-    # Use disable_referential_integrity to avoid FK ordering issues.
-    connection.disable_referential_integrity do
-      %w[projects providers provider_states account_memberships github_tokens users accounts].each do |table|
-        connection.execute("DELETE FROM #{table}")
-      end
+    # Clean up data that was not rolled back by transactional fixtures. Keep
+    # deletes ordered from child tables to parent tables so this does not need
+    # disable_referential_integrity, which takes broad locks across the suite.
+    %w[projects providers provider_states account_memberships github_tokens users accounts].each do |table|
+      connection.execute("DELETE FROM #{table}")
     end
   end
 
