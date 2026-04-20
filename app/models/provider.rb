@@ -8,6 +8,8 @@ class Provider < ApplicationRecord
   AUTH_TYPES = %w[subscription api_key].freeze
   FALLBACK_ROLES = %w[standard rate_limit_fallback].freeze
   ROUTING_KEY_PREFIX = "provider:".freeze
+  DEFAULT_WEIGHT = 1
+  MAX_WEIGHT = 1000
   # Default cutoffs for mapping a complexity score (1-10) to an LlmModel tier.
   # complexity <= low_max => "low", <= mid_max => "mid", else "high".
   DEFAULT_COMPLEXITY_THRESHOLDS = { "low_max" => 3, "mid_max" => 7 }.freeze
@@ -55,6 +57,7 @@ class Provider < ApplicationRecord
 
   before_validation :normalize_agent_co_author_trailer
 
+  validates :weight, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: MAX_WEIGHT }
   validates :provider_key, presence: true, length: { maximum: 50 }
   validates :provider_key, inclusion: { in: ->(_) { supported_provider_keys }, message: "is not supported" },
     allow_blank: true, if: -> { new_record? || will_save_change_to_provider_key? }
@@ -245,8 +248,16 @@ class Provider < ApplicationRecord
     nil
   end
 
+  def agent_harness_runtime?
+    opencode_agent_harness_runtime? || copilot_agent_harness_runtime?
+  end
+
   def opencode_agent_harness_runtime?
     provider_key == "opencode" && requires_direct_outbound?
+  end
+
+  def copilot_agent_harness_runtime?
+    provider_key == "copilot"
   end
 
   # Returns the provider key that must always exist and remain enabled for

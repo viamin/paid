@@ -53,7 +53,12 @@ module Activities
           project.touch_last_issue_sync_at(new_watermark)
         end
       elsif !truncated
-        project.touch_last_issue_sync_at(sync_started_at)
+        # Subtract 1 second to create an inclusive boundary: GitHub's
+        # `since` filter is strictly `updated_at > X`, so any issue whose
+        # `updated_at` equals the watermark exactly would be excluded on
+        # the next poll. The small overlap is harmless because sync_issue
+        # is idempotent (upsert by github_issue_id).
+        project.touch_last_issue_sync_at(sync_started_at - 1.second)
       end
 
       # Exclude closed issues from downstream processing (DetectLabelsActivity).

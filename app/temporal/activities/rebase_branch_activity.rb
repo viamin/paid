@@ -23,6 +23,7 @@ module Activities
         )
 
         rebase_succeeded = git_ops.rebase_onto(base_branch)
+        branch_changed = rebase_succeeded && git_ops.head_differs_from_remote_branch?(agent_run.branch_name)
 
         agent_run.log!("system",
           rebase_succeeded ? "Rebased onto #{base_branch}" : "Rebase onto #{base_branch} failed (conflicts)")
@@ -31,10 +32,16 @@ module Activities
           message: "agent_execution.rebase_branch",
           agent_run_id: agent_run_id,
           base_branch: base_branch,
-          rebase_succeeded: rebase_succeeded
+          rebase_succeeded: rebase_succeeded,
+          branch_changed: branch_changed
         )
 
-        { agent_run_id: agent_run_id, rebase_succeeded: rebase_succeeded, base_branch: base_branch }
+        {
+          agent_run_id: agent_run_id,
+          rebase_succeeded: rebase_succeeded,
+          base_branch: base_branch,
+          branch_changed: branch_changed
+        }
       end
     end
 

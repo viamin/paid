@@ -150,8 +150,8 @@ RSpec.describe Activities::RunAgentActivity do
       expect(described_class.container_executable?("opencode")).to be true
     end
 
-    it "recognizes copilot as container executable" do
-      expect(described_class.container_executable?("copilot")).to be true
+    it "does not treat copilot as container executable" do
+      expect(described_class.container_executable?("copilot")).to be false
     end
 
     it "recognizes claude_code via agent type mapping" do
@@ -241,14 +241,14 @@ RSpec.describe Activities::RunAgentActivity do
       expect(result).to eq(%w[claude_code opencode codex])
     end
 
-    it "includes copilot in fallback order when listed" do
+    it "skips copilot in fallback order because it is not an agent runner" do
       result = described_class.provider_order(
         agent_type: "claude_code",
         fallback_enabled: true,
         fallback_providers: %w[copilot codex]
       )
 
-      expect(result).to eq(%w[claude_code copilot codex])
+      expect(result).to eq(%w[claude_code codex])
     end
   end
 
@@ -416,6 +416,29 @@ RSpec.describe Activities::RunAgentActivity do
       providers = activity.send(:build_provider_order, provider_run, user.settings)
 
       expect(providers).to eq([ cursor.routing_key, aider.routing_key, claude.routing_key ])
+    end
+
+    it "filters an explicitly selected provider that is no longer container executable" do
+      copilot_provider = create(:provider, user: user, provider_key: "copilot")
+      codex_provider = create(:provider, user: user, provider_key: "codex")
+      agent_run.update!(provider: copilot_provider, agent_type: "copilot")
+      user.settings.update!(fallback_enabled: true, fallback_providers: [ codex_provider.routing_key ])
+
+      providers = activity.send(:build_provider_order, agent_run, user.settings)
+
+      expect(providers).to eq([ codex_provider.routing_key, user.providers.find_by!(provider_key: "claude").routing_key ])
+      expect(providers).not_to include(copilot_provider.routing_key)
+    end
+
+    it "falls back to a runnable default when a saved provider is no longer container executable" do
+      copilot_provider = create(:provider, user: user, provider_key: "copilot")
+      agent_run.update!(provider: copilot_provider, agent_type: "copilot")
+      user.settings.update!(fallback_enabled: false)
+
+      providers = activity.send(:build_provider_order, agent_run, user.settings)
+
+      expect(providers).to eq([ user.providers.find_by!(provider_key: "claude").routing_key ])
+      expect(providers).not_to include(copilot_provider.routing_key)
     end
   end
 
@@ -1327,7 +1350,7 @@ RSpec.describe Activities::RunAgentActivity do
     end
 
     context "when goal is create_pr" do
-      it "uses the default agent timeout without idle_timeout" do
+      it "uses the default agent timeout with create_pr idle_timeout" do
         project.update!(max_execution_seconds: 86_400)
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
@@ -1336,7 +1359,43 @@ RSpec.describe Activities::RunAgentActivity do
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
-            idle_timeout: nil
+            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT
+          )
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "does not apply idle timeout to providers without heartbeat support" do
+        agent_run.update!(agent_type: "kilocode")
+        project.update!(max_execution_seconds: 86_400)
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(
+            timeout: AGENT_TIMEOUT_DEFAULT,
+            idle_timeout: nil,
+            heartbeat_path: nil
+          )
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "applies idle timeout and heartbeat path to codex" do
+        agent_run.update!(agent_type: "codex")
+        project.update!(max_execution_seconds: 86_400)
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(
+            timeout: AGENT_TIMEOUT_DEFAULT,
+            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
+            heartbeat_path: File.join(agent_run.worktree_path, ".paid-heartbeat")
           )
         ).and_return(exec_success)
 

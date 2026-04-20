@@ -47,8 +47,8 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
         "high" => "P1",
         "medium" => "P2",
         "low" => "P3"
-      }.each do |severity, priority|
-        medium_alert = alert.merge(number: rand(1..999_999), severity: severity)
+      }.each.with_index(1) do |(severity, priority), index|
+        medium_alert = alert.merge(number: 10_000 + index, severity: severity)
 
         described_class.new(project).call([ medium_alert ])
 
@@ -80,6 +80,7 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
       existing.reload
       expect(existing.github_state).to eq("open")
       expect(existing.paid_state).to eq("new")
+      expect(existing.labels).to eq(%w[security code-scanning P1])
     end
 
     it "updates metadata when an existing open issue has changed alert payload" do
@@ -98,6 +99,26 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
       existing.reload
       expect(existing.title).to include("code-scanning-alert-1667")
       expect(existing.body).to include("Code Scanning Alert #1667")
+      expect(existing.labels).to eq(%w[security code-scanning P1])
+    end
+
+    it "updates priority label when an existing open issue severity changes" do
+      title = SecurityAlerts::FormatCodeScanningAlert.title(alert)
+      body = SecurityAlerts::FormatCodeScanningAlert.body(alert)
+      existing = create(:issue,
+        project: project,
+        github_issue_id: id_offset + 1667,
+        github_number: 200_001_667,
+        source: source,
+        github_state: "open",
+        paid_state: "new",
+        title: title,
+        body: body,
+        labels: %w[security code-scanning P3])
+
+      described_class.new(project).call([ alert.merge(severity: "medium") ])
+
+      expect(existing.reload.labels).to eq(%w[security code-scanning P2])
     end
 
     it "does not update when metadata is unchanged" do
@@ -112,7 +133,8 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
         github_state: "open",
         paid_state: "new",
         title: title,
-        body: body)
+        body: body,
+        labels: %w[security code-scanning P1])
 
       expect { described_class.new(project).call([ alert ]) }
         .not_to change { existing.reload.updated_at }

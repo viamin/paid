@@ -111,6 +111,7 @@ module Activities
     DEFAULT_ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
     DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
     DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
+    DEFAULT_CREATE_PR_IDLE_TIMEOUT = 300   # 5 minutes without output = stuck
     CHANGE_DETECTION_MAX_ATTEMPTS = 3
     CHANGE_DETECTION_RETRY_BACKOFF = 0.25
     POST_RUN_BOOKKEEPING_ERROR_TYPE = "PostRunBookkeepingFailed"
@@ -456,6 +457,13 @@ module Activities
           end
       end
 
+      providers = providers.select do |provider_candidate|
+        self.class.container_executable?(provider_command_key(provider_candidate, agent_run, user_settings.user))
+      end
+      if providers.empty? && fallback_to_default_provider?(agent_run)
+        providers = default_provider_candidates(agent_run, user_settings)
+      end
+
       @rate_limit_fallbacks = load_rate_limit_fallbacks(user_settings.user)
       @inserted_rate_limit_fallbacks = Set.new
 
@@ -523,6 +531,33 @@ module Activities
     # Returns the canonical settings-level provider name for a given agent type.
     def canonical_provider(provider)
       AGENT_TYPE_TO_PROVIDER.fetch(provider, provider)
+    end
+
+    def default_provider_candidates(agent_run, user_settings)
+      candidates = [
+        user_settings.default_provider_identifier_for_goal(agent_run.goal),
+        "claude_code"
+      ].compact_blank
+
+      seen = Set.new
+      candidates.each_with_object([]) do |provider_candidate, runnable|
+        provider = provider_command_key(provider_candidate, agent_run, user_settings.user)
+        next unless self.class.container_executable?(provider)
+
+        canonical = canonical_provider(provider)
+        next if seen.include?(canonical)
+
+        seen << canonical
+        runnable << provider_candidate
+      end
+    end
+
+    def fallback_to_default_provider?(agent_run)
+      return true if agent_run.provider.present?
+
+      provider_key = Provider.provider_key_for_agent_type(agent_run.agent_type)
+      AgentRun::AGENT_TYPES.include?(agent_run.agent_type) &&
+        ProviderSupport.supported_provider_key?(provider_key)
     end
 
     def provider_state_for(user_settings, provider_state_name, provider_states)
@@ -605,6 +640,8 @@ module Activities
         user_settings&.issue_goal_idle_timeout_seconds || DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT
       elsif agent_run.review_goal?
         user_settings&.review_goal_idle_timeout_seconds || DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT
+      elsif agent_run.create_pr_goal?
+        user_settings&.create_pr_idle_timeout_seconds || DEFAULT_CREATE_PR_IDLE_TIMEOUT
       end
 
       # Periodic heartbeats during container execution complement the
@@ -615,7 +652,7 @@ module Activities
         container_service.execute(
           command,
           timeout: effective_timeout,
-          idle_timeout: effective_idle_timeout,
+          idle_timeout: heartbeat.available? ? effective_idle_timeout : nil,
           env: command_env,
           preparation: command_preparation,
           heartbeat_path: heartbeat.available? ? heartbeat.heartbeat_path : nil,
@@ -990,7 +1027,7 @@ module Activities
     def build_command(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
 
-      if provider_entry&.opencode_agent_harness_runtime?
+      if provider_entry&.agent_harness_runtime?
         harness_runtime_command(provider_entry, prompt)
       elsif provider_entry&.requires_direct_outbound?
         plan = harness_execution_plan_for(command_context.provider, prompt, provider_entry: provider_entry)
@@ -1041,7 +1078,7 @@ module Activities
 
     def command_env_for(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      return direct_outbound_execution_plan(provider_entry, prompt).env if provider_entry&.opencode_agent_harness_runtime?
+      return direct_outbound_execution_plan(provider_entry, prompt).env if provider_entry&.agent_harness_runtime?
       return {} unless provider_entry
       return api_key_command_env(provider_entry) if provider_entry.api_key?
 
@@ -1050,7 +1087,7 @@ module Activities
 
     def command_preparation_for(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      return nil unless provider_entry&.opencode_agent_harness_runtime?
+      return nil unless provider_entry&.agent_harness_runtime?
 
       direct_outbound_execution_plan(provider_entry, prompt).preparation
     end

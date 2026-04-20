@@ -127,15 +127,28 @@ module Activities
     def pr_title(issue)
       return "Agent changes" unless issue
 
+      conventional_title = ConventionalCommitTitle.normalize(issue.title)
+      return conventional_title.truncate(255) if conventional_title
+
       "Fix ##{issue.github_number}: #{issue.title}".truncate(255)
     end
 
     def pr_body(issue, agent_run, client: nil)
-      parts = []
-
       summary = agent_run.agent_summary
       validate_summary_scope(summary, issue, agent_run, client: client)
       description = generate_description(summary, issue, agent_run_id: agent_run.id)
+
+      template = resolve_pr_template(agent_run)
+
+      if template
+        render_pr_template(template, issue, agent_run, description)
+      else
+        build_default_pr_body(issue, description)
+      end
+    end
+
+    def build_default_pr_body(issue, description)
+      parts = []
 
       if description.present?
         parts << description
@@ -152,6 +165,33 @@ module Activities
       end
 
       parts.join("\n")
+    end
+
+    def resolve_pr_template(agent_run)
+      PrTemplate.resolve(
+        project: agent_run.project,
+        user: agent_run.project.effective_owner
+      )
+    rescue StandardError => e
+      logger.warn(
+        message: "agent_execution.pr_template_resolve_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      nil
+    end
+
+    def render_pr_template(template, issue, agent_run, description)
+      variables = {
+        "description" => description.presence || "",
+        "agent_summary" => agent_run.agent_summary.presence || "",
+        "branch_name" => agent_run.branch_name.to_s,
+        "issue_number" => issue&.github_number.to_s,
+        "issue_title" => issue&.title.to_s,
+        "issue_url" => issue ? "##{issue.github_number}" : ""
+      }
+      template.render(variables)
     end
 
     def fallback_body(issue)

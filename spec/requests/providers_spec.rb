@@ -26,12 +26,13 @@ RSpec.describe "Providers" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Providers")
         expect(response.body).to include("Provider Priority")
-        expect(response.body).to include("Primary Provider")
+        expect(response.body).to include("Automated Provider")
+        expect(response.body).not_to include(">Primary Provider<")
         expect(response.body).to include("Per-Run-Type Defaults")
         expect(response.body).to include("PR Agent")
         expect(response.body).to include("Code Review Agent")
         expect(response.body).to include("fallback starts after it and wraps around")
-        expect(response.body).to include("The active primary provider is excluded automatically for each run")
+        expect(response.body).to include("The active automated provider is excluded automatically for each run")
       end
 
       it "renders collapsed auth instructions for every supported provider" do
@@ -100,6 +101,19 @@ RSpec.describe "Providers" do
 
         expect(response.body).to match(/Kimi K2\.5.*Available/m)
         expect(response.body).not_to match(/Kimi K2\.5.*Circuit Open/m)
+      end
+
+      it "renders selection mode controls only when more than one provider is enabled" do
+        get providers_path
+        expect(response.body).not_to include("Selection Mode")
+        expect(response.body).not_to include("Provider Weights")
+
+        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor])
+        user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
+
+        get providers_path
+        expect(response.body).to include("Selection Mode")
+        expect(response.body).to include("Provider Weights")
       end
 
       it "still shows canonical provider state for subscription fallback entries" do
@@ -263,6 +277,60 @@ RSpec.describe "Providers" do
       expect(response).to redirect_to(providers_path)
       expect(user.providers.find_by(provider_key: "claude").enabled_for_fallback).to be(true)
       expect(user.providers.find_by(provider_key: "cursor").enabled_for_fallback).to be(true)
+    end
+
+    it "persists provider_selection_mode and per-provider weights" do
+      cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
+
+      patch settings_providers_path, params: {
+        user_setting: {
+          default_agent_provider: "claude",
+          provider_selection_mode: "round_robin",
+          provider_weights: { cursor.id.to_s => "5" },
+          fallback_enabled: false,
+          fallback_providers: [].to_json
+        }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      expect(user.reload.settings.provider_selection_mode).to eq("round_robin")
+      expect(cursor.reload.weight).to eq(5)
+    end
+
+    it "rejects an invalid provider_selection_mode by ignoring the change" do
+      user.settings.update!(provider_selection_mode: "single")
+
+      patch settings_providers_path, params: {
+        user_setting: {
+          default_agent_provider: "claude",
+          provider_selection_mode: "bogus",
+          fallback_enabled: false,
+          fallback_providers: [].to_json
+        }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      expect(user.reload.settings.provider_selection_mode).to eq("single")
+    end
+
+    it "rejects non-positive weight values without persisting other changes" do
+      cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
+      cursor.update!(weight: 2)
+      user.settings.update!(provider_selection_mode: "single")
+
+      patch settings_providers_path, params: {
+        user_setting: {
+          default_agent_provider: "claude",
+          provider_selection_mode: "round_robin",
+          provider_weights: { cursor.id.to_s => "0" },
+          fallback_enabled: false,
+          fallback_providers: [].to_json
+        }
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(cursor.reload.weight).to eq(2)
+      expect(user.reload.settings.provider_selection_mode).to eq("single")
     end
   end
 

@@ -2338,6 +2338,34 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger = result[:prs_to_trigger].first[:triggers].sole
         expect(trigger[:type]).to eq("review_bot_review_pending")
         expect(trigger[:request_login]).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
+        expect(trigger[:request_logins]).to eq([ Activities::RequestReviewActivity::COPILOT_LOGIN ])
+      end
+    end
+
+    context "when both copilot and codex are enabled and no bot reviews exist" do
+      before do
+        enable_copilot_and_codex_review!
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(reviews: [])
+      end
+
+      it "emits the full bot chain in request_logins for fallback in RequestReviewActivity" do
+        result = activity.execute(project_id: project.id)
+
+        trigger = result[:prs_to_trigger].first[:triggers].find { |t| t[:type] == "review_bot_review_pending" }
+        expect(trigger).not_to be_nil
+        expect(trigger[:request_logins]).to eq([
+          Activities::RequestReviewActivity::COPILOT_LOGIN,
+          Activities::RequestReviewActivity::CODEX_LOGIN
+        ])
+        # Single request_login is preserved for in-flight workflow histories
+        # whose code pre-dates the chain field. It is the chain head.
+        expect(trigger[:request_login]).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
       end
     end
 
@@ -3528,7 +3556,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           review_settings: {
             "enabled" => true,
             "methods" => { "manual" => { "enabled" => true, "reviewer_login" => "alice" } }
@@ -3560,7 +3588,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           review_settings: {
             "enabled" => true,
             "methods" => { "ci_action" => { "enabled" => true, "action_name" => "Claude Code Review" } }
@@ -3821,6 +3849,146 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         triggers = result[:prs_to_trigger].first[:triggers]
         expect(triggers.first[:type]).not_to eq("escalate_to_owner")
+      end
+    end
+
+    context "when a Dependabot-authored PR is in draft phase" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0,
+          github_creator_login: "dependabot[bot]")
+      end
+
+      it "skips reviews and advances to ready when CI is green" do
+        enable_copilot_review!
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "ready_for_owner" ])
+      end
+
+      it "triggers ci_failure follow-up when CI fails" do
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "failure" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("ci_failure")
+      end
+
+      it "does not request reviews even when review is enabled" do
+        enable_copilot_review!
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).not_to include("review_bot_review_pending")
+        expect(trigger_types).not_to include("paid_agent_review_pending")
+      end
+
+      it "returns nil when CI is still pending" do
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: nil } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to be_empty
+      end
+    end
+
+    context "when a Dependabot-authored PR is in ready phase" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          draft_review_count: 0,
+          github_creator_login: "dependabot[bot]")
+      end
+
+      it "auto-merges without review when CI is green and mergeable" do
+        project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
+        stub_github_for_pr(
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "owner_approved" ])
+      end
+
+      it "auto-merges in dependabot_only mode without review" do
+        project.update!(auto_merge_mode: "dependabot_only")
+        stub_github_for_pr(
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "owner_approved" ])
+      end
+
+      it "triggers ci_failure follow-up without requiring reviews" do
+        stub_github_for_pr(
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "failure" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("ci_failure")
+      end
+
+      it "does not auto-merge when auto_merge is disabled" do
+        project.update!(auto_merge_mode: "off")
+        stub_github_for_pr(
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          reviews: [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to be_empty
       end
     end
 
@@ -4292,7 +4460,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner has approved the PR" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4329,7 +4497,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "does not emit owner_approved when auto_merge is disabled" do
-        project.update!(auto_merge_enabled: false)
+        project.update!(auto_merge_mode: "off")
 
         result = activity.execute(project_id: project.id)
 
@@ -4339,7 +4507,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner approved but unresolved human review threads exist" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4372,7 +4540,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner approved but changes_requested exists from trusted user" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true,
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all",
           allowed_github_usernames: [ "viamin", "reviewer" ])
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -4401,7 +4569,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner approved but new conversation comment from trusted user" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         issue = create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4437,7 +4605,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner reviewer is also the PR author" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4457,7 +4625,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when the PR author is not the owner reviewer" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4477,7 +4645,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner approved but head commit is newer than approval" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4500,7 +4668,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner approved after the latest commit" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -4527,7 +4695,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           allowed_github_usernames: %w[viamin reviewer],
           review_settings: {
             "enabled" => true,
@@ -4563,7 +4731,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           review_settings: {
             "enabled" => true,
             "methods" => {
@@ -4598,7 +4766,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           review_settings: {
             "enabled" => true,
             "methods" => {
@@ -4635,7 +4803,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           review_settings: {
             "enabled" => true,
             "methods" => {
@@ -4675,7 +4843,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           allowed_github_usernames: %w[viamin reviewer],
           review_settings: {
             "enabled" => true,
@@ -4710,7 +4878,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           allowed_github_usernames: %w[viamin reviewer],
           review_settings: {
             "enabled" => true,
@@ -4745,7 +4913,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          auto_merge_enabled: true,
+          auto_merge_mode: "all",
           allowed_github_usernames: %w[viamin reviewer],
           review_settings: {
             "enabled" => true,
@@ -4780,7 +4948,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when copilot review is enabled with unresolved bot threads and owner approved" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         enable_copilot_review!
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -4816,7 +4984,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when codex review is enabled and review has comments" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         enable_codex_review!
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -5542,7 +5710,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner has approved an escalated PR with auto_merge enabled" do
       before do
-        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -5579,7 +5747,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "does not emit owner_approved when auto_merge is disabled" do
-        project.update!(auto_merge_enabled: false)
+        project.update!(auto_merge_mode: "off")
 
         result = activity.execute(project_id: project.id)
 
@@ -7033,7 +7201,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!(project)
-      project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+      project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
       3.times do
         create(:agent_run,
           project: project, issue: approved_ready_retry_issue,

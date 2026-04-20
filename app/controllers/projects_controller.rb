@@ -126,7 +126,24 @@ class ProjectsController < ApplicationController
   end
 
   def toggle_auto_merge
-    toggle_automation(:auto_merge, AUTO_MERGE_PARTIALS)
+    authorize @project, :update?
+    next_mode = case @project.auto_merge_mode
+    when "off" then "dependabot_only"
+    when "dependabot_only" then "all"
+    else "off"
+    end
+    @project.update!(auto_merge_mode: next_mode)
+
+    respond_to do |format|
+      format.turbo_stream do
+        render turbo_stream: turbo_stream.replace(
+          ActionView::RecordIdentifier.dom_id(@project, :auto_merge_toggle),
+          partial: "projects/auto_merge_toggle_index",
+          locals: { project: @project }
+        )
+      end
+      format.html { redirect_to @project }
+    end
   end
 
   def detect_services
@@ -223,7 +240,7 @@ class ProjectsController < ApplicationController
   def project_params
     params.require(:project).permit(:github_token_id, :owner, :repo, :name, :active,
       :poll_interval_seconds, :github_id, :default_branch,
-      :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled, :auto_merge_enabled,
+      :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled, :auto_merge_mode,
       :auto_fix_merge_conflicts, :auto_scan_security,
       :generated_label_name, :automation_label_name,
       :auto_add_labels_enabled, :automation_on_label_enabled, :pr_aggregation_enabled,

@@ -41,6 +41,16 @@ class AgentRun < ApplicationRecord
   has_one :model_selection, dependent: :destroy
   has_one :decision_record, dependent: :nullify
   has_many :agent_run_anomalies, dependent: :destroy
+  has_many :sent_coordination_signals,
+    class_name: "AgentCoordinationSignal",
+    foreign_key: :source_agent_run_id,
+    dependent: :destroy,
+    inverse_of: :source_agent_run
+  has_many :received_coordination_signals,
+    class_name: "AgentCoordinationSignal",
+    foreign_key: :target_agent_run_id,
+    dependent: :nullify,
+    inverse_of: :target_agent_run
 
   attr_readonly :mcp_server_snapshot
 
@@ -869,11 +879,13 @@ class AgentRun < ApplicationRecord
   end
 
   # Returns the agent's stdout output joined as a single string.
+  # Strips the raw JSON envelope when stdout is a Claude CLI --output-format json
+  # response, extracting just the assistant's result text.
   #
   # @param limit [Integer] Max number of log entries to fetch (default 500)
   # @return [String] The agent summary text (may be empty)
   def agent_summary(limit: 500)
-    logs_text(log_type: "stdout", limit: limit)
+    extract_text_from_stdout(logs_text(log_type: "stdout", limit: limit))
   end
 
   # Returns the agent's output, preferring stdout but falling back to stderr.
@@ -882,7 +894,7 @@ class AgentRun < ApplicationRecord
   # @param limit [Integer] Max number of log entries to fetch (default 500)
   # @return [String] The best available agent output (may be empty)
   def agent_summary_with_stderr_fallback(limit: 500)
-    summary = logs_text(log_type: "stdout", limit: limit)
+    summary = extract_text_from_stdout(logs_text(log_type: "stdout", limit: limit))
     return summary if summary.present?
 
     logs_text(log_type: "stderr", limit: limit)
@@ -1084,6 +1096,19 @@ class AgentRun < ApplicationRecord
 
     if expected_draft_review_count.blank?
       errors.add(:expected_draft_review_count, "is required when counting toward draft review rounds")
+    end
+  end
+
+  def extract_text_from_stdout(raw_stdout)
+    return raw_stdout if raw_stdout.blank?
+
+    parsed = AgentHarness::Providers::Anthropic.parse_cli_json_envelope(raw_stdout)
+    return raw_stdout unless parsed
+
+    if parsed[:error].present?
+      "Agent encountered an error: #{parsed[:error]}"
+    else
+      parsed[:output].presence || raw_stdout
     end
   end
 

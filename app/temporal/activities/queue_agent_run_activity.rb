@@ -95,20 +95,32 @@ module Activities
     def resolve_provider_selection(project:, requested_agent_type:, requested_provider_id:, goal:, agent_type_provided:, provider_id_provided:)
       if provider_id_provided || agent_type_provided
         provider = provider_for_id(requested_provider_id)
-        resolved_agent_type =
-          if provider
-            Provider.agent_type_for(provider.provider_key)
-          else
-            requested_agent_type || "claude_code"
-          end
+        return [ provider.id, Provider.agent_type_for(provider.provider_key) ] if provider && provider_runnable?(provider)
+        return [ nil, requested_agent_type ] if agent_type_runnable?(requested_agent_type)
 
-        return [ requested_provider_id, resolved_agent_type ]
+        logger.warn(
+          message: "agent_execution.requested_provider_not_runnable",
+          project_id: project.id,
+          requested_provider_id: requested_provider_id,
+          requested_agent_type: requested_agent_type
+        )
       end
 
       provider = default_provider_for(project, goal: goal)
       return [ provider&.id, Provider.agent_type_for(provider.provider_key) ] if provider
 
       [ nil, "claude_code" ]
+    end
+
+    def provider_runnable?(provider)
+      ProviderSupport.container_executable_provider_key?(provider.provider_key)
+    end
+
+    def agent_type_runnable?(agent_type)
+      return false if agent_type.blank?
+
+      AgentRun::AGENT_TYPES.include?(agent_type) &&
+        ProviderSupport.container_executable_provider_key?(Provider.provider_key_for_agent_type(agent_type))
     end
 
     def default_provider_for(project, goal:)
@@ -118,7 +130,9 @@ module Activities
       settings = AgentRuns::UserSettingsResolver.call(project: project, strict: false)
       return Provider.ensure_default_for(owner) unless settings
 
-      Provider.for_identifier(settings.user, settings.default_provider_identifier_for_goal(goal)) || Provider.ensure_default_for(settings.user)
+      identifier = settings.select_automated_provider_identifier(goal: goal) ||
+        settings.default_provider_identifier_for_goal(goal)
+      Provider.for_identifier(settings.user, identifier) || Provider.ensure_default_for(settings.user)
     end
 
     def provider_for_id(provider_id)

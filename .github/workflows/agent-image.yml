@@ -47,7 +47,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@4c56a21280b36d862b5fc31348f463d60bdc55d5
+        uses: ruby/setup-ruby@7372622e62b60b3cb750dcd2b9e32c247ffec26a
         with:
           ruby-version: .tool-versions
           bundler-cache: true
@@ -73,6 +73,59 @@ jobs:
           echo "$post_install_path" >> "$GITHUB_OUTPUT"
           echo "PAID_EOF" >> "$GITHUB_OUTPUT"
 
+      - name: Extract Cursor install contract from agent-harness
+        id: cursor-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-provider-install-contract.rb cursor)
+          artifact_url=$(echo "$contract" | sed -n 's/^ARTIFACT_URL=//p')
+          artifact_sha256=$(echo "$contract" | sed -n 's/^ARTIFACT_SHA256=//p')
+          binary_name=$(echo "$contract" | sed -n 's/^BINARY_NAME=//p')
+          global_path=$(echo "$contract" | sed -n 's/^GLOBAL_PATH=//p')
+          if [ -z "$artifact_url" ]; then
+            echo "Failed to extract Cursor artifact URL from agent-harness" >&2
+            exit 1
+          fi
+          if [ -z "$artifact_sha256" ]; then
+            echo "Failed to extract Cursor artifact SHA256 from agent-harness" >&2
+            exit 1
+          fi
+          if [ -z "$binary_name" ]; then
+            echo "Failed to extract Cursor binary name from agent-harness" >&2
+            exit 1
+          fi
+          if [ -z "$global_path" ]; then
+            echo "Failed to extract Cursor global path from agent-harness" >&2
+            exit 1
+          fi
+          echo "artifact_url=$artifact_url" >> "$GITHUB_OUTPUT"
+          echo "artifact_sha256=$artifact_sha256" >> "$GITHUB_OUTPUT"
+          echo "binary_name=$binary_name" >> "$GITHUB_OUTPUT"
+          echo "global_path=$global_path" >> "$GITHUB_OUTPUT"
+
+      - name: Extract Codex package from agent-harness
+        id: codex-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-provider-install-contract.rb codex)
+          package=$(echo "$contract" | sed -n 's/^PACKAGE=//p')
+          if [ -z "$package" ]; then
+            echo "Failed to extract Codex package from agent-harness" >&2
+            exit 1
+          fi
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+
+      - name: Extract Gemini CLI install contract from agent-harness
+        id: gemini-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-provider-install-contract.rb gemini)
+          install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
+          if [ -z "$install_command" ]; then
+            echo "Failed to extract Gemini CLI install command from agent-harness" >&2
+            exit 1
+          fi
+          echo "install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "$install_command" >> "$GITHUB_OUTPUT"
+          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
+
       - name: Build paid-agent image
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
@@ -85,6 +138,12 @@ jobs:
             RUBY_MAAT_VERSION=${{ steps.ruby-maat.outputs.version }}
             CLAUDE_INSTALL_COMMAND=${{ steps.claude-contract.outputs.install_command }}
             CLAUDE_POST_INSTALL_BINARY_PATH=${{ steps.claude-contract.outputs.post_install_binary_path }}
+            CURSOR_ARTIFACT_URL=${{ steps.cursor-contract.outputs.artifact_url }}
+            CURSOR_ARTIFACT_SHA256=${{ steps.cursor-contract.outputs.artifact_sha256 }}
+            CURSOR_BINARY_NAME=${{ steps.cursor-contract.outputs.binary_name }}
+            CURSOR_GLOBAL_PATH=${{ steps.cursor-contract.outputs.global_path }}
+            CODEX_PACKAGE=${{ steps.codex-contract.outputs.package }}
+            GEMINI_CLI_INSTALL_COMMAND=${{ steps.gemini-contract.outputs.install_command }}
           cache-from: type=gha,scope=paid-agent
           cache-to: type=gha,mode=max,scope=paid-agent
 

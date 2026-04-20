@@ -79,6 +79,7 @@ module SecurityAlerts
         body: FormatCodeScanningAlert.body(alert),
         github_state: "open",
         paid_state: "new",
+        labels: labels_for_alert(alert),
         github_updated_at: parse_alert_time(alert[:updated_at]) || Time.current
       )
     end
@@ -86,12 +87,14 @@ module SecurityAlerts
     def update_metadata_if_changed(issue, alert)
       new_title = FormatCodeScanningAlert.title(alert)
       new_body = FormatCodeScanningAlert.body(alert)
+      new_labels = labels_for_alert(alert)
 
-      return if issue.title == new_title && issue.body == new_body
+      return if issue.title == new_title && issue.body == new_body && issue.labels == new_labels
 
       issue.update!(
         title: new_title,
         body: new_body,
+        labels: new_labels,
         github_updated_at: parse_alert_time(alert[:updated_at]) || Time.current
       )
     end
@@ -125,7 +128,7 @@ module SecurityAlerts
     end
 
     def labels_for_alert(alert)
-      priority = Issue::SEVERITY_TO_PRIORITY[alert[:severity]]
+      priority = Issue::SEVERITY_TO_PRIORITY[alert[:severity].to_s.downcase]
       %w[security code-scanning].tap { |l| l << priority if priority }
     end
   end

@@ -21,6 +21,32 @@ RSpec.describe Provider do
       expect(provider).not_to allow_value("unknown_provider").for(:provider_key)
     end
 
+    describe "weight" do
+      it "defaults to 1 on new records" do
+        expect(provider.weight).to eq(1)
+      end
+
+      it "accepts positive integer values up to MAX_WEIGHT" do
+        provider.weight = 1
+        expect(provider).to be_valid
+
+        provider.weight = described_class::MAX_WEIGHT
+        expect(provider).to be_valid
+      end
+
+      it "rejects zero or negative weights" do
+        provider.weight = 0
+        expect(provider).not_to be_valid
+        expect(provider.errors[:weight]).to be_present
+      end
+
+      it "rejects weights above MAX_WEIGHT" do
+        provider.weight = described_class::MAX_WEIGHT + 1
+        expect(provider).not_to be_valid
+        expect(provider.errors[:weight]).to be_present
+      end
+    end
+
     describe "complexity_thresholds" do
       let(:provider) { build(:provider, provider_key: "cursor") }
 
@@ -468,6 +494,41 @@ RSpec.describe Provider do
       expect(provider.direct_outbound_exec_env).to eq({})
       expect(provider.direct_outbound_exec_command(command_prefix: %w[opencode run], prompt: "ping")).to eq(%w[opencode run ping])
       expect(provider.agent_harness_provider_runtime).to be_nil
+    end
+  end
+
+  describe "#agent_harness_runtime?" do
+    it "returns true for copilot providers" do
+      provider = build(:provider, provider_key: "copilot")
+
+      expect(provider.agent_harness_runtime?).to be(true)
+    end
+
+    it "returns true for opencode direct-outbound providers" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-test")
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "test-model" } }
+      )
+
+      expect(provider.agent_harness_runtime?).to be(true)
+    end
+
+    it "returns false for claude providers" do
+      provider = build(:provider, provider_key: "claude")
+
+      expect(provider.agent_harness_runtime?).to be(false)
+    end
+
+    it "returns false for opencode subscription providers" do
+      provider = build(:provider, provider_key: "opencode", auth_type: "subscription")
+
+      expect(provider.agent_harness_runtime?).to be(false)
     end
   end
 

@@ -184,6 +184,11 @@ services:
       args:
         CLAUDE_INSTALL_COMMAND: ${CLAUDE_INSTALL_COMMAND:-}
         CLAUDE_POST_INSTALL_BINARY_PATH: ${CLAUDE_POST_INSTALL_BINARY_PATH:-}
+        CURSOR_ARTIFACT_URL: ${CURSOR_ARTIFACT_URL:-}
+        CURSOR_ARTIFACT_SHA256: ${CURSOR_ARTIFACT_SHA256:-}
+        CURSOR_BINARY_NAME: ${CURSOR_BINARY_NAME:-cursor-agent}
+        CURSOR_GLOBAL_PATH: ${CURSOR_GLOBAL_PATH:-/usr/local/bin/cursor-agent}
+        GEMINI_CLI_INSTALL_COMMAND: ${GEMINI_CLI_INSTALL_COMMAND:-}
     image: paid-agent:latest
     command: ["true"]
     profiles:
@@ -197,6 +202,11 @@ services:
       args:
         CLAUDE_INSTALL_COMMAND: ${CLAUDE_INSTALL_COMMAND:-}
         CLAUDE_POST_INSTALL_BINARY_PATH: ${CLAUDE_POST_INSTALL_BINARY_PATH:-}
+        CURSOR_ARTIFACT_URL: ${CURSOR_ARTIFACT_URL:-}
+        CURSOR_ARTIFACT_SHA256: ${CURSOR_ARTIFACT_SHA256:-}
+        CURSOR_BINARY_NAME: ${CURSOR_BINARY_NAME:-cursor-agent}
+        CURSOR_GLOBAL_PATH: ${CURSOR_GLOBAL_PATH:-/usr/local/bin/cursor-agent}
+        GEMINI_CLI_INSTALL_COMMAND: ${GEMINI_CLI_INSTALL_COMMAND:-}
     image: paid-agent:latest
     volumes:
       - ./agent-workspace:/workspace

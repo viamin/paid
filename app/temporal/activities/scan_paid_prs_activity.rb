@@ -257,6 +257,10 @@ module Activities
 
       check_rate_budget!(client)
 
+      if bot_user?(issue.github_creator_login)
+        return scan_bot_authored_draft_pr(project, client, issue, pr_data: pr_data)
+      end
+
       skip_comment_signals = project.max_draft_review_rounds.zero?
       unresolved_threads = nil
       human_triggers = []
@@ -397,14 +401,40 @@ module Activities
       draft_trigger_payload(issue, triggers)
     end
 
+    # Bot-authored PRs (Dependabot, Renovate) skip review requirements.
+    # Only CI failures trigger auto-continue; green CI advances to ready.
+    def scan_bot_authored_draft_pr(project, client, issue, pr_data: nil)
+      pr_data ||= fetch_pr_data(client, project, issue)
+      return :skipped if pr_data.nil?
+
+      checks = fetch_check_runs(client, project, pr_data)
+      ci_triggers = ci_failure_triggers(checks || [])
+
+      if ci_triggers.any?
+        log_triggers(project, issue, ci_triggers)
+        return draft_trigger_payload(issue, ci_triggers)
+      end
+
+      if !checks.nil? && checks.any? && all_checks_green?(checks)
+        return ready_for_owner_trigger(issue)
+      end
+
+      nil
+    end
+
     # --- Ready phase scanning ---
 
     def scan_ready_pr(project, client, issue, pr_data:)
       return :skipped if pr_data.nil?
 
       checks = fetch_check_runs(client, project, pr_data)
-      reviews = fetch_reviews(client, project, issue)
       mergeable = pr_data && pr_data[:mergeable]
+
+      if bot_user?(issue.github_creator_login)
+        return scan_bot_authored_ready_pr(project, client, issue, pr_data: pr_data, checks: checks, mergeable: mergeable)
+      end
+
+      reviews = fetch_reviews(client, project, issue)
 
       if project.auto_merge_enabled? &&
           pr_data.present? &&
@@ -443,6 +473,38 @@ module Activities
       }
     end
 
+    # Bot-authored PRs (Dependabot, Renovate) skip review requirements.
+    # Auto-merge only needs CI green + mergeable. CI failures trigger follow-up.
+    def scan_bot_authored_ready_pr(project, client, issue, pr_data:, checks:, mergeable:)
+      if project.auto_merge_dependabot? &&
+          pr_data.present? &&
+          !checks.nil? && checks.any? &&
+          all_checks_green?(checks) &&
+          mergeable == true
+        return owner_approved_trigger(issue)
+      end
+
+      return nil if followup_limit_reached?(project, issue)
+
+      ci_triggers = ci_failure_triggers(checks || [])
+      merge_conflict_triggers = check_merge_conflicts(project, pr_data)
+      label_triggers = check_actionable_labels(project, issue)
+      triggers = ci_triggers + merge_conflict_triggers + label_triggers
+
+      return nil if triggers.empty?
+
+      log_triggers(project, issue, triggers)
+
+      {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: triggers,
+        phase: "ready",
+        labels_to_remove: extract_actionable_labels(triggers),
+        current_followup_count: issue.pr_followup_count
+      }
+    end
+
     # --- Escalated phase scanning ---
 
     DISMISS_ESCALATION_LABEL = "paid-dismiss-escalation"
@@ -458,17 +520,24 @@ module Activities
       # Owner approval on an escalated PR unblocks auto-merge.
       if project.auto_merge_enabled? && pr_data.present?
         checks = fetch_check_runs(client, project, pr_data)
-        reviews = fetch_reviews(client, project, issue)
         mergeable = pr_data[:mergeable]
 
-        if owner_approved_or_self_authored?(project, reviews, pr_data) &&
-            !checks.nil? &&
-            all_checks_green?(checks) &&
-            mergeable == true &&
-            no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks, pr_data: pr_data) &&
-            all_blocking_review_methods_complete?(project, reviews, checks, pr_data: pr_data) &&
-            !review_stale_for_head?(client, project, issue, pr_data, reviews)
-          return owner_approved_trigger(issue)
+        if bot_user?(issue.github_creator_login)
+          if project.auto_merge_dependabot? && !checks.nil? && checks.any? && all_checks_green?(checks) && mergeable == true
+            return owner_approved_trigger(issue)
+          end
+        else
+          reviews = fetch_reviews(client, project, issue)
+
+          if owner_approved_or_self_authored?(project, reviews, pr_data) &&
+              !checks.nil? &&
+              all_checks_green?(checks) &&
+              mergeable == true &&
+              no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks, pr_data: pr_data) &&
+              all_blocking_review_methods_complete?(project, reviews, checks, pr_data: pr_data) &&
+              !review_stale_for_head?(client, project, issue, pr_data, reviews)
+            return owner_approved_trigger(issue)
+          end
         end
       end
 
@@ -995,6 +1064,17 @@ module Activities
       project.review_bot_request_login
     end
 
+    # Returns the ordered list of bot logins to attempt for an explicit
+    # review-bot review, with the primary provider first. Forwarded into
+    # the +review_bot_review_pending+ trigger as +request_logins+ so the
+    # workflow can pass the full chain to +RequestReviewActivity+, which
+    # falls through to a configured secondary bot when the primary is
+    # rate-limited or unavailable. Returns +[]+ when no bot-backed method
+    # is enabled. See Project#review_bot_request_chain.
+    def review_bot_request_chain(project)
+      project.review_bot_request_chain
+    end
+
     # Review-bot logins that post feedback as a single top-level review body
     # rather than as inline review threads. These bots need the body-only
     # anti-loop guard in check_review_bot_status because thread resolution
@@ -1047,9 +1127,19 @@ module Activities
         # other bot can still complete its review cycle. Suppress only when
         # login is nil (paid_agent-only project) and rounds are exhausted;
         # the elsif branch handles that via check_paid_agent_review_status.
-        login = project && review_bot_request_login(project)
-        if login
-          [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
+        #
+        # Emit the full bot chain (primary first, then fallbacks) as
+        # +request_logins+ so RequestReviewActivity can fall through to a
+        # configured secondary bot when the primary is rate-limited or
+        # unavailable. The single +request_login+ field is preserved for
+        # in-flight workflow replays whose history pre-dates the chain
+        # support — old workflow code reads it without falling back.
+        chain = project ? review_bot_request_chain(project) : []
+        if chain.any?
+          [ { type: "review_bot_review_pending",
+              details: "No review bot review found",
+              request_login: chain.first,
+              request_logins: chain } ]
         elsif project&.review_enabled? && project.review_method_enabled?("paid_agent")
           check_paid_agent_review_status(project, issue)
         else
@@ -2053,7 +2143,7 @@ module Activities
     end
 
     def bot_user?(login)
-      return true if login.blank?
+      return false if login.blank?
 
       normalized = login.downcase
       return true if normalized.end_with?("[bot]", "-bot")
