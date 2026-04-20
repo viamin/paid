@@ -155,6 +155,7 @@ Rails.application.routes.draw do
 
   # API endpoints for agent containers
   namespace :api do
+    get "metrics", to: "metrics#show"
     match "proxy/anthropic/*path", to: "secrets_proxy#anthropic", via: :post, format: false
     match "proxy/openai/*path", to: "secrets_proxy#openai", via: :post, format: false
     match "proxy/google/*path", to: "secrets_proxy#google", via: :post, format: false
