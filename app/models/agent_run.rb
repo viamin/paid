@@ -16,6 +16,7 @@ class AgentRun < ApplicationRecord
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
   MAX_STALE_REQUEUES = 2
   STALE_PENDING_TIMEOUT = 15.minutes
+  STALE_PAUSED_TIMEOUT = 2.hours
   STALE_RUNNING_GRACE_PERIOD = 10.minutes
 
   # Sentinel prefix written into AgentRun#error_message by `bin/rails dev:cleanup`
@@ -278,12 +279,20 @@ class AgentRun < ApplicationRecord
     STALE_PENDING_TIMEOUT
   end
 
+  def self.stale_paused_timeout
+    STALE_PAUSED_TIMEOUT
+  end
+
   def self.stale_running_cutoff(now: Time.current)
     now - stale_running_timeout
   end
 
   def self.stale_pending_cutoff(now: Time.current)
     now - stale_pending_timeout
+  end
+
+  def self.stale_paused_cutoff(now: Time.current)
+    now - stale_paused_timeout
   end
 
   # Returns true if this user is the fallback owner for orphaned

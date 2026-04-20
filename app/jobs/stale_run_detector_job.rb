@@ -1,13 +1,15 @@
 # frozen_string_literal: true
 
-# Detects agent runs stuck in "running" or "pending" status beyond
+# Detects agent runs stuck in "running", "pending", or "paused" status beyond
 # the configured timeout thresholds.
 #
 # Running runs use the full agent timeout plus a grace period.
 # Pending runs use a shorter threshold since the pending→running
 # transition (container provisioning + clone) should complete in minutes.
+# Paused runs use their own threshold so guardrail pauses do not block
+# auto-pick forever when nobody manually resumes or terminates them.
 #
-# Stale pending runs that have not exhausted their requeue budget are
+# Stale pending/paused runs that have not exhausted their requeue budget are
 # automatically requeued (reset to "queued") so transient failures
 # (e.g. worker restart, temporary resource exhaustion) self-heal.
 # Runs that exceed MAX_STALE_REQUEUES are timed out like stale running runs.
@@ -33,6 +35,10 @@ class StaleRunDetectorJob < ApplicationJob
   # (70 min) for pending runs delays detection of stuck runs unnecessarily.
   PENDING_TIMEOUT = AgentRun.stale_pending_timeout
 
+  # Paused runs need a manual decision in the happy path, but should not block
+  # PR scanning indefinitely if the pause is never acted on.
+  PAUSED_TIMEOUT = AgentRun.stale_paused_timeout
+
   # Maximum times a stale pending run can be automatically requeued before
   # being timed out. Prevents infinite retry loops when the underlying
   # issue is persistent (e.g. misconfigured project, missing credentials).
@@ -42,6 +48,7 @@ class StaleRunDetectorJob < ApplicationJob
     job_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     running_threshold = agent_timeout_with_grace.ago
     pending_threshold = PENDING_TIMEOUT.ago
+    paused_threshold = PAUSED_TIMEOUT.ago
     resolved = 0
     requeued = 0
 
@@ -57,6 +64,21 @@ class StaleRunDetectorJob < ApplicationJob
 
     stale_pending_runs(pending_threshold).find_each do |agent_run|
       case requeue_stale_pending_run(agent_run)
+      when :requeued
+        requeued += 1
+      when :exhausted
+        resolved += 1 if resolve_stale_run(agent_run)
+      end
+    rescue => e
+      Rails.logger.error(
+        message: "stale_run_detector.resolve_failed",
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+    end
+
+    stale_paused_runs(paused_threshold).find_each do |agent_run|
+      case requeue_stale_paused_run(agent_run)
       when :requeued
         requeued += 1
       when :exhausted
@@ -104,6 +126,11 @@ class StaleRunDetectorJob < ApplicationJob
     AgentRun.pending.where("updated_at < ?", threshold)
   end
 
+  # Runs stuck in "paused" whose pause timestamp is before the threshold.
+  def stale_paused_runs(threshold)
+    AgentRun.paused.where("paused_at < ?", threshold)
+  end
+
   # Attempts to requeue a stale pending run.
   # Returns :requeued if successfully requeued, :exhausted if requeue budget
   # is spent (caller should time out), or :skip if the run is no longer
@@ -115,46 +142,37 @@ class StaleRunDetectorJob < ApplicationJob
   # non-NOT_FOUND error, we skip the requeue to avoid duplicate workflows — the
   # next detector cycle will retry.
   def requeue_stale_pending_run(agent_run)
-    pending_threshold = PENDING_TIMEOUT.ago
+    requeue_stale_unfinished_run(agent_run, pending_requeue_policy)
+  end
+
+  def requeue_stale_paused_run(agent_run)
+    requeue_stale_unfinished_run(agent_run, paused_requeue_policy)
+  end
+
+  def requeue_stale_unfinished_run(agent_run, policy)
     old_container_id = nil
     old_service_container_ids = nil
-    old_workflow_id = nil
 
     agent_run.with_lock do
       agent_run.reload
       return :skip if agent_run.finished?
-      return :skip unless agent_run.status == "pending"
-      return :skip unless agent_run.updated_at < pending_threshold
+      return :skip unless agent_run.status == policy.fetch(:status)
+      return :skip unless stale_for_requeue?(agent_run, policy)
+      return :exhausted if timeout_before_requeue?(agent_run, policy)
       return :exhausted if agent_run.stale_requeue_count >= MAX_STALE_REQUEUES
 
       old_container_id = agent_run.container_id
       old_service_container_ids = agent_run.service_container_ids.dup
-      old_workflow_id = agent_run.temporal_workflow_id
 
-      # Cancel the old Temporal workflow before requeuing. If cancellation
-      # fails (non-NOT_FOUND), skip this requeue to prevent duplicate workflows.
-      #
-      # NOTE: This network call is intentionally inside with_lock. Releasing
-      # the lock first would create a window where the run is still "pending"
-      # and another detector cycle could double-requeue it. The Temporal cancel
-      # RPC is fast (sub-second) so the lock duration is bounded in practice.
-      unless cancel_temporal_workflow(agent_run, old_workflow_id)
+      unless cancel_temporal_workflow(agent_run, agent_run.temporal_workflow_id)
         return :skip
       end
 
-      agent_run.update!(
-        status: "queued",
-        stale_requeue_count: agent_run.stale_requeue_count + 1,
-        temporal_workflow_id: nil,
-        temporal_run_id: nil,
-        service_environment: nil,
-        container_id: nil,
-        service_container_ids: []
-      )
-      agent_run.log!("system", "Stale pending run requeued by stale run detector (attempt #{agent_run.stale_requeue_count}/#{MAX_STALE_REQUEUES})")
+      agent_run.update!(requeue_attributes(agent_run, policy))
+      agent_run.log!("system", stale_requeue_log(agent_run))
 
       Rails.logger.info(
-        message: "stale_run_detector.requeued_stale_pending_run",
+        message: "stale_run_detector.requeued_stale_#{agent_run.status_before_last_save}_run",
         agent_run_id: agent_run.id,
         project_id: agent_run.project_id,
         stale_requeue_count: agent_run.stale_requeue_count
@@ -164,6 +182,67 @@ class StaleRunDetectorJob < ApplicationJob
     cleanup_docker_resources_by_id(agent_run, old_container_id, old_service_container_ids)
 
     :requeued
+  end
+
+  def pending_requeue_policy
+    {
+      status: "pending",
+      stale_attribute: :updated_at,
+      threshold: PENDING_TIMEOUT.ago,
+      reset_attributes: {}
+    }
+  end
+
+  def paused_requeue_policy
+    {
+      status: "paused",
+      stale_attribute: :paused_at,
+      threshold: PAUSED_TIMEOUT.ago,
+      reset_attributes: {
+        started_at: nil,
+        completed_at: nil,
+        duration_seconds: nil,
+        paused_at: nil,
+        guardrail_violation_type: nil,
+        guardrail_context: nil
+      },
+      timeout_before_requeue: true
+    }
+  end
+
+  def stale_for_requeue?(agent_run, policy)
+    stale_at = agent_run.public_send(policy.fetch(:stale_attribute))
+    stale_at.present? && stale_at < policy.fetch(:threshold)
+  end
+
+  def timeout_before_requeue?(agent_run, policy)
+    policy[:timeout_before_requeue] && non_restartable_paused_run?(agent_run)
+  end
+
+  def non_restartable_paused_run?(agent_run)
+    guardrail_violation_type(agent_run) == "time_limit" && agent_run.iterations.to_i.zero?
+  end
+
+  def guardrail_violation_type(agent_run)
+    agent_run.guardrail_violation_type.presence ||
+      agent_run.guardrail_context&.dig("violation_type").presence
+  end
+
+  def requeue_attributes(agent_run, policy)
+    {
+      status: "queued",
+      stale_requeue_count: agent_run.stale_requeue_count + 1,
+      temporal_workflow_id: nil,
+      temporal_run_id: nil,
+      service_environment: nil,
+      container_id: nil,
+      service_container_ids: []
+    }.merge(policy.fetch(:reset_attributes))
+  end
+
+  def stale_requeue_log(agent_run)
+    previous_status = agent_run.status_before_last_save
+    "Stale #{previous_status} run requeued by stale run detector (attempt #{agent_run.stale_requeue_count}/#{MAX_STALE_REQUEUES})"
   end
 
   def resolve_stale_run(agent_run)

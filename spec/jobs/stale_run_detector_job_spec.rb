@@ -7,6 +7,8 @@ RSpec.describe StaleRunDetectorJob do
   let(:running_threshold) { AGENT_TIMEOUT_DEFAULT + described_class::GRACE_PERIOD.to_i }
   # Pending runs: shorter dedicated threshold
   let(:pending_threshold) { described_class::PENDING_TIMEOUT.to_i }
+  # Paused runs: guardrail pauses should not block auto-pick indefinitely
+  let(:paused_threshold) { described_class::PAUSED_TIMEOUT.to_i }
 
   describe "#perform" do
     it "times out runs stuck in running beyond the threshold" do
@@ -320,6 +322,71 @@ RSpec.describe StaleRunDetectorJob do
         described_class.perform_now
 
         expect(stale_run.reload.status).to eq("queued")
+      end
+    end
+
+    context "with stale paused runs" do
+      it "requeues a stale paused run that has not exhausted requeue budget" do
+        stale_run = create(:agent_run, :paused, paused_at: (paused_threshold + 60).seconds.ago)
+
+        described_class.perform_now
+
+        stale_run.reload
+        expect(stale_run.status).to eq("queued")
+        expect(stale_run.stale_requeue_count).to eq(1)
+        expect(stale_run.started_at).to be_nil
+        expect(stale_run.paused_at).to be_nil
+        expect(stale_run.guardrail_violation_type).to be_nil
+        expect(stale_run.guardrail_context).to be_nil
+      end
+
+      it "does not touch paused runs within the threshold" do
+        recent_run = create(:agent_run, :paused, paused_at: (paused_threshold - 60).seconds.ago)
+
+        described_class.perform_now
+
+        expect(recent_run.reload.status).to eq("paused")
+      end
+
+      it "times out a stale paused run that has exhausted requeue budget" do
+        stale_run = create(:agent_run, :paused,
+          paused_at: (paused_threshold + 60).seconds.ago,
+          stale_requeue_count: described_class::MAX_STALE_REQUEUES)
+
+        described_class.perform_now
+
+        stale_run.reload
+        expect(stale_run.status).to eq("timeout")
+        expect(stale_run.error_message).to include("Stale run detected")
+      end
+
+      it "times out a stale time-limit paused run with zero iterations" do
+        stale_run = create(:agent_run, :paused,
+          paused_at: (paused_threshold + 60).seconds.ago,
+          guardrail_violation_type: "time_limit",
+          guardrail_context: { violation_type: "time_limit" },
+          iterations: 0)
+
+        described_class.perform_now
+
+        stale_run.reload
+        expect(stale_run.status).to eq("timeout")
+        expect(stale_run.stale_requeue_count).to eq(0)
+        expect(stale_run.error_message).to include("Stale run detected")
+      end
+
+      it "requeues a stale time-limit paused run that made progress" do
+        stale_run = create(:agent_run, :paused,
+          paused_at: (paused_threshold + 60).seconds.ago,
+          guardrail_violation_type: "time_limit",
+          guardrail_context: { violation_type: "time_limit" },
+          iterations: 1)
+
+        described_class.perform_now
+
+        stale_run.reload
+        expect(stale_run.status).to eq("queued")
+        expect(stale_run.stale_requeue_count).to eq(1)
       end
     end
   end
