@@ -12,7 +12,7 @@ module ReleasePlease
   # Returns a result struct with the parsed PR details and bump classification,
   # or nil if the PR is not a valid release-please PR.
   class ParseReleasePr
-    TITLE_PATTERN = /\Achore\(.+\): release (\d+\.\d+\.\d+)\z/
+    TITLE_PATTERN = /\Achore\(.+\): release (?:\S+ )?(\d+\.\d+\.\d+)\z/
     RELEASE_PLEASE_AUTHORS = %w[github-actions[bot] release-please[bot]].freeze
     AUTORELEASE_LABEL = "autorelease: pending"
 

@@ -105,6 +105,14 @@ RSpec.describe AutoReleaseEvaluationJob do
       expect(client).not_to have_received(:merge_pull_request)
     end
 
+    it "merges when no CI checks exist" do
+      allow(client).to receive(:check_runs_for_ref).and_return([])
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:merge_pull_request)
+    end
+
     it "skips when no release PR is found" do
       allow(client).to receive(:pull_requests).and_return([])
 
