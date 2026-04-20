@@ -60,16 +60,22 @@ module Billing
       end
 
       if billable_tokens > 0
-        items << {
-          description: "Overage tokens (#{format_tokens(billable_tokens)} @ #{(billing_plan.per_token_rate_cents * 1000).round(2)}¢/1K)",
-          line_item_type: "overage_tokens",
-          quantity: (billable_tokens / 1000.0).ceil,
-          unit_price_cents: (billing_plan.per_token_rate_cents * 1000).round,
-          total_cents: (billable_tokens / 1000.0).ceil * (billing_plan.per_token_rate_cents * 1000).round
-        }
+        items << overage_token_item(billable_tokens)
       end
 
       items
+    end
+
+    def overage_token_item(billable_tokens)
+      per_thousand_rate_cents = billing_plan.per_token_rate_cents * 1000
+
+      {
+        description: "Overage tokens (#{format_tokens(billable_tokens)} @ #{format_decimal(per_thousand_rate_cents)}¢/1K)",
+        line_item_type: "overage_tokens",
+        quantity: billable_tokens / 1000.0,
+        unit_price_cents: per_thousand_rate_cents.round,
+        total_cents: (billable_tokens * billing_plan.per_token_rate_cents).round
+      }
     end
 
     def run_usage_items
@@ -140,6 +146,11 @@ module Billing
       else
         count.to_s
       end
+    end
+
+    def format_decimal(value)
+      formatted = BigDecimal(value.to_s).to_s("F").sub(/\.?0+\z/, "")
+      formatted.presence || "0"
     end
   end
 end

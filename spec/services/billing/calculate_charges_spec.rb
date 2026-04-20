@@ -49,6 +49,21 @@ RSpec.describe Billing::CalculateCharges do
 
       expect(items.none? { |i| i[:line_item_type] == "overage_tokens" }).to be true
     end
+
+    it "accumulates fractional-cent token rates before rounding the total" do
+      plan = create(:billing_plan, account: account, billing_model: "per_token",
+                    per_token_rate_cents: 0.0004, included_tokens: 0, base_rate_cents: 0)
+      period = create(:billing_period, account: account, billing_plan: plan,
+                       total_input_tokens: 10_000, total_output_tokens: 0)
+
+      items = described_class.call(billing_period: period)
+
+      overage_item = items.find { |i| i[:line_item_type] == "overage_tokens" }
+      expect(overage_item[:quantity]).to eq(10)
+      expect(overage_item[:unit_price_cents]).to eq(0)
+      expect(overage_item[:total_cents]).to eq(4)
+      expect(overage_item[:description]).to include("0.4¢/1K")
+    end
   end
 
   describe "per_run billing model" do
