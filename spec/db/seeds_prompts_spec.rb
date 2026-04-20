@@ -110,6 +110,25 @@ RSpec.describe Prompt, type: :model do
         .to include('Case B: body starts with EXACTLY "Generated no new comments." and "comments" is []')
     end
 
+    it "seeded template tells reviewers to install bundled gems before Ruby validation" do
+      template = described_class.global.find_by(slug: "goal.review_pull_request").current_version.template
+      expect(template).to include("bundle check || BUNDLE_FROZEN=true bundle install --jobs 4 --retry 3")
+      expect(template).to include("Before running Ruby/Rails commands")
+      expect(template).to match(/without\s+changing the lockfile/)
+      expect(template).to include("missing network access")
+    end
+
+    it "FALLBACK_REVIEW_GOAL_PROMPT tells reviewers to install bundled gems before Ruby validation" do
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to include("bundle check || BUNDLE_FROZEN=true bundle install --jobs 4 --retry 3")
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to include("Before running Ruby/Rails commands")
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to match(/without\s+changing the lockfile/)
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to include("missing network access")
+    end
+
     # Regression for #839: review JSON posted with inline `-d '...'` breaks
     # when the body contains multiline markdown or apostrophes, producing an
     # invalid JSON payload that Rails rejects before the request reaches
