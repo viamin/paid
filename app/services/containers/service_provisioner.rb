@@ -45,6 +45,7 @@ module Containers
   #   provisioner.cleanup(agent_run)
   class ServiceProvisioner
     class Error < StandardError; end
+    class DatabaseError < Error; end
 
     POSTGRES_DEFAULT_ENV = {
       "POSTGRES_USER" => "agent",
@@ -123,6 +124,12 @@ module Containers
           else
             env_vars.merge!(generate_env_vars(sc))
           end
+        rescue DatabaseError => e
+          log_error("service_provisioner.database_error",
+            name: sc.name,
+            image: sc.image,
+            error: e.message)
+          raise
         rescue Error => e
           sc.update!(status: "error", docker_container_id: nil)
           log_error("service_provisioner.container_error",
@@ -497,7 +504,7 @@ module Containers
       ])
 
       if status != 0
-        raise Error, "Failed to check for existing database #{db_name}: #{stderr.join}"
+        raise DatabaseError, "Failed to check for existing database #{db_name}: #{stderr.join}"
       end
 
       # Create only if it doesn't already exist (idempotent for retries)
@@ -508,13 +515,15 @@ module Containers
         ])
 
         if status != 0
-          raise Error, "Failed to create per-run database #{db_name}: #{stderr.join}"
+          raise DatabaseError, "Failed to create per-run database #{db_name}: #{stderr.join}"
         end
 
         log_info("service_provisioner.database_created",
           db_name: db_name,
           service_container: service_container.name)
       end
+    rescue Docker::Error::DockerError, Excon::Error => e
+      raise DatabaseError, "Failed to create per-run database #{db_name}: #{e.message}"
     end
 
     # Drops the per-run database during cleanup. Best-effort: logs

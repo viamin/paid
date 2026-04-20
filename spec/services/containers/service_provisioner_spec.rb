@@ -156,6 +156,36 @@ RSpec.describe Containers::ServiceProvisioner do
       end
     end
 
+    context "when per-run database creation fails" do
+      let(:service_container) do
+        create(:service_container,
+          image: "postgres:16",
+          name: "db-fail-postgres",
+          port: 5432,
+          status: "running",
+          docker_container_id: "shared123",
+          env: { "POSTGRES_USER" => "agent", "POSTGRES_PASSWORD" => "agent", "POSTGRES_DB" => "agent_test" })
+      end
+
+      before do
+        create(:project_service_container, project: project, service_container: service_container)
+      end
+
+      it "leaves the shared container record intact" do
+        docker_container = instance_double(Docker::Container,
+          info: { "State" => { "Running" => true } })
+        allow(Docker::Container).to receive(:get).with("shared123").and_return(docker_container)
+        allow(docker_container).to receive(:exec)
+          .and_return([ [], [ "psql: connection refused" ], 2 ])
+
+        expect { provisioner.provision(agent_run) }
+          .to raise_error(Containers::ServiceProvisioner::DatabaseError, /Failed to check/)
+
+        expect(service_container.reload.status).to eq("running")
+        expect(service_container.docker_container_id).to eq("shared123")
+      end
+    end
+
     context "when Docker container name conflicts" do
       let(:service_container) do
         create(:service_container,
