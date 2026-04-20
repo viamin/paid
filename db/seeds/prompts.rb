@@ -586,9 +586,10 @@ upsert_global_prompt.call(
 
     You may run targeted validation when it is useful for review confidence.
     Before running Ruby/Rails commands such as `bin/rspec`, run
-    `bundle check || BUNDLE_FROZEN=true bundle install --jobs 4 --retry 3`
-    so the fresh review checkout has the bundled gems it needs without
-    changing the lockfile. If dependency installation or test execution still
+    `BUNDLE_PATH=/tmp/bundle BUNDLE_APP_CONFIG=/tmp/bundle-config BUNDLE_FROZEN=true bundle check || BUNDLE_PATH=/tmp/bundle BUNDLE_APP_CONFIG=/tmp/bundle-config BUNDLE_FROZEN=true bundle install --jobs 4 --retry 3`
+    so the fresh review checkout has the bundled gems it needs in a writable
+    path outside the repository without changing the lockfile. If dependency
+    installation or test execution still
     fails because of missing network access, services, or environment
     constraints, mention that specific blocker in the review body.
 
