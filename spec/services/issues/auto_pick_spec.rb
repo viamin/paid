@@ -711,10 +711,10 @@ RSpec.describe Issues::AutoPick do
         expect(result).to be_nil
       end
 
-      it "picks an issue when a paid-generated PR is paid-ready and out of draft" do
+      it "picks an issue when an automation-labeled PR is paid-ready and out of draft" do
         create(:issue, :pull_request, :in_progress,
           project: project,
-          labels: [ "paid-generated", "paid-ready" ],
+          labels: [ project.automation_label_name, "paid-ready" ],
           pr_review_phase: "ready")
         issue = create(:issue, project: project)
 
@@ -724,10 +724,10 @@ RSpec.describe Issues::AutoPick do
         expect(result.issue).to eq(issue)
       end
 
-      it "returns nil when a paid-generated PR is paid-ready but still in draft" do
+      it "returns nil when an automation-labeled paid-ready PR is still in draft" do
         create(:issue, :pull_request, :in_progress,
           project: project,
-          labels: [ "paid-generated", "paid-ready" ],
+          labels: [ project.automation_label_name, "paid-ready" ],
           pr_review_phase: "draft")
         create(:issue, project: project)
 
@@ -736,10 +736,10 @@ RSpec.describe Issues::AutoPick do
         expect(result).to be_nil
       end
 
-      it "returns nil when a paid-generated PR leaves draft without the paid-ready label" do
+      it "returns nil when a paid-ready PR leaves draft without the automation label" do
         create(:issue, :pull_request, :in_progress,
           project: project,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-ready" ],
           pr_review_phase: "ready")
         create(:issue, project: project)
 
@@ -748,10 +748,10 @@ RSpec.describe Issues::AutoPick do
         expect(result).to be_nil
       end
 
-      it "returns nil when a paid-ready PR is in restarted review phase" do
+      it "returns nil when an automation-labeled paid-ready PR is in restarted review phase" do
         create(:issue, :pull_request, :in_progress,
           project: project,
-          labels: [ "paid-generated", "paid-ready" ],
+          labels: [ project.automation_label_name, "paid-ready" ],
           pr_review_phase: "restarted")
         create(:issue, project: project)
 
@@ -760,10 +760,10 @@ RSpec.describe Issues::AutoPick do
         expect(result).to be_nil
       end
 
-      it "returns nil when a paid-ready PR has failed" do
+      it "returns nil when an automation-labeled paid-ready PR has failed" do
         create(:issue, :pull_request, :failed,
           project: project,
-          labels: [ "paid-generated", "paid-ready" ],
+          labels: [ project.automation_label_name, "paid-ready" ],
           pr_review_phase: "ready")
         create(:issue, project: project)
 
@@ -913,7 +913,7 @@ RSpec.describe Issues::AutoPick do
         project.effective_owner.settings.update!(max_auto_pick_open_prs: 1)
         create(:issue, :pull_request, :in_progress,
           project: project,
-          labels: [ "paid-generated", "paid-ready" ],
+          labels: [ project.automation_label_name, "paid-ready" ],
           pr_review_phase: "ready")
         issue = create(:issue, project: project)
 
@@ -921,6 +921,35 @@ RSpec.describe Issues::AutoPick do
 
         expect(result).to be_a(AgentRun)
         expect(result.issue).to eq(issue)
+      end
+
+      it "uses the project's custom automation label for handed-off PRs" do
+        project.update!(automation_label_name: "custom-automation")
+        project.effective_owner.settings.update!(max_auto_pick_open_prs: 1)
+        create(:issue, :pull_request, :in_progress,
+          project: project,
+          labels: [ "custom-automation", "paid-ready" ],
+          pr_review_phase: "ready")
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+
+      it "does not treat the default automation label as handed off when the project uses a custom label" do
+        project.update!(automation_label_name: "custom-automation")
+        project.effective_owner.settings.update!(max_auto_pick_open_prs: 1)
+        create(:issue, :pull_request, :in_progress,
+          project: project,
+          labels: [ "paid-automation", "paid-ready" ],
+          pr_review_phase: "ready")
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
       end
     end
 
