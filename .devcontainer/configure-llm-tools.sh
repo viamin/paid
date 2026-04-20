@@ -6,22 +6,23 @@
 # the container may persist back to the host.
 
 set -euo pipefail
+set -x
+echo "[DEBUG] Starting configure-llm-tools.sh"
 
 echo "Configuring LLM CLI tools for devcontainer..."
 
-# Create wrapper directory for container-specific scripts
+
+echo "[DEBUG] Creating wrapper directory..."
 WRAPPER_DIR="/usr/local/bin/devcontainer-llm-wrappers"
 sudo mkdir -p "$WRAPPER_DIR"
 
-PLUGIN_DIR="/workspaces/claude-ai-toolkit"
 
 # ============================================================================
 # Claude Code
 # ============================================================================
 
-# Persist Claude state (~/.claude.json) across container rebuilds by
-# symlinking it into the bind-mounted ~/.claude/ directory.
-# This MUST happen before the VS Code extension launches Claude.
+
+echo "[DEBUG] Setting up Claude state symlink..."
 CLAUDE_STATE="$HOME/.claude.json"
 CLAUDE_STATE_PERSISTENT="$HOME/.claude/claude.json"
 
@@ -44,6 +45,8 @@ else
 fi
 
 # Resolve Claude binary location: prefer PATH, fall back to default install path
+
+echo "[DEBUG] Resolving Claude binary..."
 CLAUDE_BIN_DEFAULT="$HOME/.local/bin/claude"
 CLAUDE_BIN_RESOLVED="$(command -v claude 2>/dev/null || true)"
 
@@ -56,24 +59,15 @@ else
   CLAUDE_BIN=""
 fi
 
-# Create Claude wrapper that adds --dangerously-skip-permissions and --plugin-dir
+# Create Claude wrapper that adds --dangerously-skip-permissions
 if [ -n "$CLAUDE_BIN" ] && [ -f "$CLAUDE_BIN" ] && [ ! -f "$CLAUDE_BIN.real" ]; then
-  echo "Creating Claude wrapper..."
+  echo "[DEBUG] Creating Claude wrapper..."
   mv "$CLAUDE_BIN" "$CLAUDE_BIN.real"
-  if [ -d "$PLUGIN_DIR" ]; then
-    cat << CLAUDE_EOF > "$CLAUDE_BIN"
-#!/bin/bash
-# Claude wrapper for devcontainer - dangerous mode + plugin
-exec "$CLAUDE_BIN.real" --dangerously-skip-permissions --plugin-dir "$PLUGIN_DIR" "\$@"
-CLAUDE_EOF
-  else
-    echo "WARNING: Plugin directory $PLUGIN_DIR not found; skipping --plugin-dir flag." >&2
-    cat << CLAUDE_EOF > "$CLAUDE_BIN"
+  cat << CLAUDE_EOF > "$CLAUDE_BIN"
 #!/bin/bash
 # Claude wrapper for devcontainer - dangerous mode
 exec "$CLAUDE_BIN.real" --dangerously-skip-permissions "\$@"
 CLAUDE_EOF
-  fi
   chmod +x "$CLAUDE_BIN"
 fi
 
@@ -82,7 +76,7 @@ fi
 # ============================================================================
 
 # Create Codex wrapper that uses CLI flags for dangerous mode
-echo "Creating Codex wrapper..."
+echo "[DEBUG] Creating Codex wrapper..."
 cat << 'EOF' | sudo tee "$WRAPPER_DIR/codex" > /dev/null
 #!/bin/bash
 # Codex wrapper for devcontainer - auto-approve mode
@@ -102,7 +96,7 @@ fi
 
 # Create Aider path shim (resolves install location; does not add auto-approval flags
 # since Aider does not have a global auto-approve mode)
-echo "Creating Aider path shim..."
+echo "[DEBUG] Creating Aider path shim..."
 cat << 'EOF' | sudo tee "$WRAPPER_DIR/aider" > /dev/null
 #!/bin/bash
 # Aider path shim for devcontainer
@@ -137,7 +131,7 @@ fi
 
 # For Gemini CLI, create a container-specific settings file
 # We put it in /etc to avoid conflicts with bind-mounted ~/.config
-echo "Configuring Gemini CLI..."
+echo "[DEBUG] Configuring Gemini CLI..."
 sudo mkdir -p /etc/gemini-cli
 cat << 'EOF' | sudo tee /etc/gemini-cli/settings.json > /dev/null
 {
@@ -170,7 +164,7 @@ fi
 
 # KiloCode reads config from ~/.config/kilo/ which is NOT bind-mounted from
 # the host (only ~/.kilocode is mounted), so writing here is container-local.
-echo "Configuring KiloCode..."
+echo "[DEBUG] Configuring KiloCode..."
 mkdir -p "$HOME/.config/kilo"
 # NOTE: the schema's string shortcut `"permission": "allow"` is semantically
 # correct ("dangerously skip permissions") but triggers an upstream kilo bug
@@ -209,8 +203,11 @@ EOF
 
 # Only auth.json is bind-mounted from the host, so writing opencode.json here
 # stays container-local and won't affect the host's OpenCode installation.
-echo "Configuring OpenCode..."
+echo "[DEBUG] Configuring OpenCode..."
+# Ensure ~/.config/opencode is owned by the devcontainer user and writable
 mkdir -p "$HOME/.config/opencode"
+sudo chown -R "${DEVCONTAINER_USER:-$USER}:${DEVCONTAINER_GROUP:-$(id -gn "${DEVCONTAINER_USER:-$USER}")}" "$HOME/.config/opencode"
+sudo chmod -R u+rwX "$HOME/.config/opencode"
 cat << 'EOF' > "$HOME/.config/opencode/opencode.json"
 {
   "$schema": "https://opencode.ai/config.json",
@@ -226,13 +223,10 @@ EOF
 # Cursor: Uses ~/.cursor config (bind-mounted from host)
 
 echo ""
-echo "LLM CLI tools configured for devcontainer!"
+echo "[DEBUG] LLM CLI tools configured for devcontainer!"
 echo ""
 echo "Configured tools:"
 echo "  - Claude: Dangerous mode (--dangerously-skip-permissions)"
-if [ -d "$PLUGIN_DIR" ]; then
-  echo "            Plugin: claude-ai-toolkit loaded from $PLUGIN_DIR"
-fi
 echo "  - Codex: Auto-approve mode (approval_policy=never, sandbox=danger-full-access)"
 echo "  - Gemini CLI: Auto-accept mode (autoAccept=true)"
 echo "  - KiloCode: Auto-approve mode (permission=allow, container-specific config)"
