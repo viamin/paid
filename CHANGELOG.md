@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.28.1](https://github.com/viamin/paid/compare/v0.28.0...v0.28.1) (2026-04-19)
+
+
+### Bug Fixes
+
+* 709: feat(evolution): define fitness function for prompt quality ([#1199](https://github.com/viamin/paid/issues/1199)) ([56c4ae8](https://github.com/viamin/paid/commit/56c4ae808e23eec521d2dd095d2db01600084570))
+* 716: feat(quality): implement quality recovery workflows ([#1206](https://github.com/viamin/paid/issues/1206)) ([f8f30bc](https://github.com/viamin/paid/commit/f8f30bce1c80341f52edce0b5051ce1da74e70b1))
+* **agent-runs:** push rebase-only PR followups ([#1306](https://github.com/viamin/paid/issues/1306)) ([4f37a8c](https://github.com/viamin/paid/commit/4f37a8cd4b870e0f449240bc48887a31e663c390))
+* **agent-runs:** strip Claude CLI JSON envelope from agent summary ([#1298](https://github.com/viamin/paid/issues/1298)) ([8c87cd8](https://github.com/viamin/paid/commit/8c87cd8628679a89d90954ccea836d623f0d611c))
+
 ## [0.28.0](https://github.com/viamin/paid/compare/v0.27.0...v0.28.0) (2026-04-19)
 
 
