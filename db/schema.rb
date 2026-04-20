@@ -1014,7 +1014,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_233122) do
     t.string "repo", null: false
     t.jsonb "review_settings", default: {}, null: false
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false
-    t.string "security_severity_threshold", default: "high", null: false
     t.integer "token_limit_warning_threshold", default: 80, null: false
     t.bigint "total_cost_cents", default: 0, null: false
     t.bigint "total_tokens_used", default: 0, null: false

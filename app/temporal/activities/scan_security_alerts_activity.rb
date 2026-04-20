@@ -13,18 +13,13 @@ module Activities
   class ScanSecurityAlertsActivity < BaseActivity
     activity_name "ScanSecurityAlerts"
 
-    SEVERITY_ORDER = Issue::SEVERITY_ORDER
-
     def execute(input)
       project_id = input[:project_id]
       project = Project.find_by(id: project_id)
       return { alerts_to_fix: [], project_missing: true } unless project
       return { alerts_to_fix: [] } unless project.auto_scan_security
 
-      severity_filter = severities_at_or_above(project.security_severity_threshold)
-
-      # CodeQL code scanning path (interval-gated)
-      scan_code_scanning_alerts(project, severity_filter)
+      scan_code_scanning_alerts(project)
 
       { alerts_to_fix: [] }
     rescue SecurityAlerts::ConfigurationError => e
@@ -43,15 +38,13 @@ module Activities
 
     private
 
-    def scan_code_scanning_alerts(project, severity_filter)
+    def scan_code_scanning_alerts(project)
       return unless project.security_alert_types.include?("code_scanning")
       return unless should_scan_code_scanning?(project)
 
       all_alerts = fetch_code_scanning_alerts(project)
 
       if all_alerts.nil?
-        # Graceful 403/404 — record the scan attempt to avoid hammering the
-        # API every cycle, but there is nothing else to process.
         project.update_column(:last_code_scanning_scan_at, Time.current)
         return
       end
@@ -61,8 +54,8 @@ module Activities
         source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE
       ).call
 
-      filtered = all_alerts.select { |a| severity_filter.include?(a[:severity]) }
-      SecurityAlerts::ProcessCodeScanningAlerts.new(project).call(filtered)
+      open_alerts = all_alerts.select { |a| a[:state] == "open" }
+      SecurityAlerts::ProcessCodeScanningAlerts.new(project).call(open_alerts)
 
       # Record successful scan. Retryable errors (5xx) intentionally skip
       # this so Temporal retries re-check within the same interval window.
@@ -72,7 +65,7 @@ module Activities
         message: "github_sync.code_scanning_scan_complete",
         project_id: project.id,
         alerts_fetched: all_alerts.size,
-        alerts_actionable: filtered.count { |a| a[:state] == "open" }
+        alerts_actionable: open_alerts.size
       )
     end
 
@@ -104,11 +97,6 @@ module Activities
       else
         raise
       end
-    end
-
-    def severities_at_or_above(threshold)
-      idx = SEVERITY_ORDER.index(threshold) || 1
-      SEVERITY_ORDER[0..idx]
     end
   end
 end
