@@ -97,14 +97,14 @@ RSpec.describe "Projects" do
       end
 
       it "shows auto-merge toggle on project cards" do
-        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: false)
+        project = create(:project, account: account, github_token: github_token, auto_merge_mode: "off")
         get projects_path
         expect(response.body).to match(/Auto-Merge[\s\S]*?bg-gray-100 text-gray-600/)
         expect(response.body).to include(toggle_auto_merge_project_path(project))
       end
 
       it "shows auto-merge enabled state on project cards" do
-        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
+        project = create(:project, account: account, github_token: github_token, auto_merge_mode: "all")
         get projects_path
         expect(response.body).to match(/Auto-Merge[\s\S]*?bg-green-100 text-green-700/)
         expect(response.body).to include(toggle_auto_merge_project_path(project))
@@ -112,7 +112,7 @@ RSpec.describe "Projects" do
 
       it "shows auto-merge status but no toggle controls for viewers" do
         viewer_user = create(:user, :viewer, account: account)
-        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
+        project = create(:project, account: account, github_token: github_token, auto_merge_mode: "all")
 
         sign_out user
         sign_in viewer_user
@@ -640,7 +640,7 @@ RSpec.describe "Projects" do
       end
 
       it "shows recently merged PRs with linked closed issues when auto-merge is enabled" do
-        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
+        project = create(:project, account: account, github_token: github_token, auto_merge_mode: "all")
         issue = create(:issue, project: project, github_number: 21, title: "Fix flaky spec")
         pr = create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
           github_number: 34, title: "Fix flaky spec in CI", pr_review_phase: "merged",
@@ -661,7 +661,7 @@ RSpec.describe "Projects" do
       end
 
       it "shows the issue from cached closing references when parent_issue is absent" do
-        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
+        project = create(:project, account: account, github_token: github_token, auto_merge_mode: "all")
         create(:issue, project: project, github_number: 21, title: "Fix flaky spec")
         pr = create(:issue, :pull_request, :closed, project: project,
           github_number: 34, title: "Fix flaky spec in CI", pr_review_phase: "merged",
@@ -682,7 +682,7 @@ RSpec.describe "Projects" do
       end
 
       it "shows the empty recent merged PR state when auto-merge is enabled but nothing has merged" do
-        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
+        project = create(:project, account: account, github_token: github_token, auto_merge_mode: "all")
 
         get project_path(project)
 
@@ -691,7 +691,7 @@ RSpec.describe "Projects" do
       end
 
       it "hides the recent merged PR section when auto-merge is disabled" do
-        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: false)
+        project = create(:project, account: account, github_token: github_token, auto_merge_mode: "off")
         issue = create(:issue, project: project, github_number: 21, title: "Fix flaky spec")
         create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
           github_number: 34, title: "Fix flaky spec in CI", pr_review_phase: "merged")
@@ -743,7 +743,7 @@ RSpec.describe "Projects" do
       it "shows automation settings with their current state" do
         project = create(:project, account: account, github_token: github_token,
           auto_add_labels_enabled: true, automation_on_label_enabled: false,
-          auto_pick_enabled: true, auto_merge_enabled: false, auto_fix_merge_conflicts: true,
+          auto_pick_enabled: true, auto_merge_mode: "off", auto_fix_merge_conflicts: true,
           auto_scan_security: true, security_severity_threshold: "medium")
         get project_path(project)
         expect(response.body).to include("Configuration")
@@ -757,7 +757,7 @@ RSpec.describe "Projects" do
 
         {
           "Auto-Add Labels" => "Enabled", "Automation on Label" => "Disabled",
-          "Auto-Pick Issues" => "Enabled", "Auto-Merge" => "Disabled",
+          "Auto-Pick Issues" => "Enabled", "Auto-Merge" => "Off",
           "Auto-Fix Merge Conflicts" => "Enabled"
         }.each do |label, state|
           expect(response.body).to match(
@@ -1235,16 +1235,22 @@ RSpec.describe "Projects" do
     context "when authenticated as owner" do
       before { sign_in user }
 
-      it "enables auto_merge when currently disabled" do
-        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: false)
+      it "cycles to dependabot_only when currently off" do
+        project = create(:project, account: account, github_token: github_token, auto_merge_mode: "off")
         post toggle_auto_merge_project_path(project)
-        expect(project.reload.auto_merge_enabled).to be true
+        expect(project.reload.auto_merge_mode).to eq("dependabot_only")
       end
 
-      it "disables auto_merge when currently enabled" do
-        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
+      it "cycles to all when currently dependabot_only" do
+        project = create(:project, account: account, github_token: github_token, auto_merge_mode: "dependabot_only")
         post toggle_auto_merge_project_path(project)
-        expect(project.reload.auto_merge_enabled).to be false
+        expect(project.reload.auto_merge_mode).to eq("all")
+      end
+
+      it "cycles to off when currently all" do
+        project = create(:project, account: account, github_token: github_token, auto_merge_mode: "all")
+        post toggle_auto_merge_project_path(project)
+        expect(project.reload.auto_merge_mode).to eq("off")
       end
 
       it "redirects to the project for HTML requests" do
@@ -1254,7 +1260,7 @@ RSpec.describe "Projects" do
       end
 
       it "responds with turbo_stream when requested" do
-        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: false)
+        project = create(:project, account: account, github_token: github_token, auto_merge_mode: "off")
         post toggle_auto_merge_project_path(project), headers: { "Accept" => "text/vnd.turbo-stream.html" }
         expect(response.media_type).to eq("text/vnd.turbo-stream.html")
         expect(response.body).to include("turbo-stream")
@@ -1262,7 +1268,7 @@ RSpec.describe "Projects" do
       end
 
       it "responds with index partial for turbo_stream index context" do
-        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: false)
+        project = create(:project, account: account, github_token: github_token, auto_merge_mode: "off")
 
         post toggle_auto_merge_project_path(project),
           params: { context: "index" },

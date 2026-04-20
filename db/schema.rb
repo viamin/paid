@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_18_015607) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_18_233122) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -972,7 +972,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_015607) do
     t.jsonb "allowed_github_usernames", default: [], null: false
     t.boolean "auto_add_labels_enabled", default: true, null: false
     t.boolean "auto_fix_merge_conflicts", default: true, null: false
-    t.boolean "auto_merge_enabled", default: false, null: false
+    t.string "auto_merge_mode", default: "off", null: false
     t.boolean "auto_pick_enabled", default: false, null: false
     t.string "auto_release_granularity", default: "off", null: false
     t.boolean "auto_scan_prs", default: true, null: false

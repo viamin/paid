@@ -522,5 +522,121 @@ RSpec.describe "Api::GithubWebhooks" do
         expect(response).to have_http_status(:ok)
       end
     end
+
+    context "with dependabot pull_request.opened event" do
+      let(:project) { create(:project, webhook_secret: "test-secret-123", auto_merge_mode: "dependabot_only") }
+
+      let(:payload) do
+        {
+          action: "opened",
+          pull_request: {
+            number: 55,
+            user: { login: "dependabot[bot]" }
+          },
+          repository: { id: project.github_id, full_name: project.full_name }
+        }
+      end
+
+      it "enqueues DependabotAutoMergeJob when enabled and author is dependabot" do
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect {
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "pull_request",
+              "X-Hub-Signature-256" => signature
+            }
+        }.to have_enqueued_job(DependabotAutoMergeJob).with(project.id, pr_number: 55)
+
+        expect(response).to have_http_status(:ok)
+      end
+
+      it "does not enqueue when auto_merge_mode is off" do
+        project.update!(auto_merge_mode: "off")
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect {
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "pull_request",
+              "X-Hub-Signature-256" => signature
+            }
+        }.not_to have_enqueued_job(DependabotAutoMergeJob)
+
+        expect(response).to have_http_status(:ok)
+      end
+
+      it "does not enqueue for non-dependabot authors" do
+        payload[:pull_request][:user][:login] = "viamin"
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect {
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "pull_request",
+              "X-Hub-Signature-256" => signature
+            }
+        }.not_to have_enqueued_job(DependabotAutoMergeJob)
+
+        expect(response).to have_http_status(:ok)
+      end
+    end
+
+    context "with check_suite.completed event for dependabot PR" do
+      let(:project) { create(:project, webhook_secret: "test-secret-123", auto_merge_mode: "dependabot_only") }
+
+      let(:payload) do
+        {
+          action: "completed",
+          check_suite: {
+            head_sha: "abc123",
+            conclusion: "success",
+            pull_requests: [
+              { number: 99 }
+            ]
+          },
+          repository: { id: project.github_id, full_name: project.full_name }
+        }
+      end
+
+      it "enqueues DependabotAutoMergeJob for dependabot PRs" do
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect {
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "check_suite",
+              "X-Hub-Signature-256" => signature
+            }
+        }.to have_enqueued_job(DependabotAutoMergeJob).with(project.id, pr_number: 99)
+
+        expect(response).to have_http_status(:ok)
+      end
+
+      it "does not enqueue when auto_merge_mode is off" do
+        project.update!(auto_merge_mode: "off")
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect {
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "check_suite",
+              "X-Hub-Signature-256" => signature
+            }
+        }.not_to have_enqueued_job(DependabotAutoMergeJob)
+
+        expect(response).to have_http_status(:ok)
+      end
+    end
   end
 end

@@ -901,7 +901,7 @@ RSpec.describe Project do
 
     describe "#automation_configuration" do
       it "exposes the aggregate Automation::Configuration::Project value object" do
-        project = build(:project, auto_pick_enabled: true, auto_merge_enabled: true)
+        project = build(:project, auto_pick_enabled: true, auto_merge_mode: "all")
 
         config = project.automation_configuration
 
@@ -1567,6 +1567,40 @@ RSpec.describe Project do
       %w[major minor patch].each do |bump|
         expect(project.auto_release_allows_bump?(bump)).to be true
       end
+    end
+  end
+
+  describe "#auto_merge_enabled?" do
+    it "returns false when mode is off" do
+      project = build(:project, auto_merge_mode: "off")
+      expect(project.auto_merge_enabled?).to be false
+    end
+
+    it "returns true when mode is dependabot_only" do
+      project = build(:project, auto_merge_mode: "dependabot_only")
+      expect(project.auto_merge_enabled?).to be true
+    end
+
+    it "returns true when mode is all" do
+      project = build(:project, auto_merge_mode: "all")
+      expect(project.auto_merge_enabled?).to be true
+    end
+  end
+
+  describe "#auto_merge_dependabot?" do
+    it "returns false when mode is off" do
+      project = build(:project, auto_merge_mode: "off")
+      expect(project.auto_merge_dependabot?).to be false
+    end
+
+    it "returns true when mode is dependabot_only" do
+      project = build(:project, auto_merge_mode: "dependabot_only")
+      expect(project.auto_merge_dependabot?).to be true
+    end
+
+    it "returns true when mode is all" do
+      project = build(:project, auto_merge_mode: "all")
+      expect(project.auto_merge_dependabot?).to be true
     end
   end
 end
