@@ -55,6 +55,34 @@ if [ -z "${CLAUDE_POST_INSTALL_BINARY_PATH}" ]; then
     exit 1
 fi
 
+# Extract Cursor CLI install contract from agent-harness (single source of truth).
+# Uses the pinned artifact URL + checksum (more stable than the install script).
+CURSOR_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" cursor)
+CURSOR_ARTIFACT_URL=$(echo "${CURSOR_CONTRACT}" | sed -n 's/^ARTIFACT_URL=//p')
+CURSOR_ARTIFACT_SHA256=$(echo "${CURSOR_CONTRACT}" | sed -n 's/^ARTIFACT_SHA256=//p')
+CURSOR_BINARY_NAME=$(echo "${CURSOR_CONTRACT}" | sed -n 's/^BINARY_NAME=//p')
+CURSOR_GLOBAL_PATH=$(echo "${CURSOR_CONTRACT}" | sed -n 's/^GLOBAL_PATH=//p')
+
+if [ -z "${CURSOR_ARTIFACT_URL}" ]; then
+    echo "ERROR: Could not extract Cursor artifact URL from agent-harness" >&2
+    exit 1
+fi
+
+if [ -z "${CURSOR_ARTIFACT_SHA256}" ]; then
+    echo "ERROR: Could not extract Cursor artifact SHA256 from agent-harness" >&2
+    exit 1
+fi
+
+if [ -z "${CURSOR_BINARY_NAME}" ]; then
+    echo "ERROR: Could not extract Cursor binary name from agent-harness" >&2
+    exit 1
+fi
+
+if [ -z "${CURSOR_GLOBAL_PATH}" ]; then
+    echo "ERROR: Could not extract Cursor global path from agent-harness" >&2
+    exit 1
+fi
+
 # Extract Codex CLI package from agent-harness installation contract.
 # agent-harness owns the supported Codex CLI version; Paid consumes it at build time.
 CODEX_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" codex)
@@ -77,7 +105,8 @@ echo "Building agent container image..."
 echo "  Image: ${FULL_IMAGE}"
 echo "  Context: ${PROJECT_ROOT}/docker/agent"
 echo "  ruby-maat: ${RUBY_MAAT_VERSION}"
-echo "  claude-cli: ${CLAUDE_INSTALL_COMMAND}"
+echo "  claude-install: via agent-harness contract"
+echo "  cursor-install: via agent-harness contract"
 echo "  codex: ${CODEX_PACKAGE}"
 echo "  gemini-cli: ${GEMINI_CLI_INSTALL_COMMAND}"
 
@@ -87,6 +116,10 @@ echo "  gemini-cli: ${GEMINI_CLI_INSTALL_COMMAND}"
     --build-arg "RUBY_MAAT_VERSION=${RUBY_MAAT_VERSION}" \
     --build-arg "CLAUDE_INSTALL_COMMAND=${CLAUDE_INSTALL_COMMAND}" \
     --build-arg "CLAUDE_POST_INSTALL_BINARY_PATH=${CLAUDE_POST_INSTALL_BINARY_PATH}" \
+    --build-arg "CURSOR_ARTIFACT_URL=${CURSOR_ARTIFACT_URL}" \
+    --build-arg "CURSOR_ARTIFACT_SHA256=${CURSOR_ARTIFACT_SHA256}" \
+    --build-arg "CURSOR_BINARY_NAME=${CURSOR_BINARY_NAME}" \
+    --build-arg "CURSOR_GLOBAL_PATH=${CURSOR_GLOBAL_PATH}" \
     --build-arg "CODEX_PACKAGE=${CODEX_PACKAGE}" \
     --build-arg "GEMINI_CLI_INSTALL_COMMAND=${GEMINI_CLI_INSTALL_COMMAND}" \
     "${PROJECT_ROOT}/docker/agent/"
