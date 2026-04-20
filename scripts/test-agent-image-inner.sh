@@ -57,6 +57,7 @@ check_tool "   Claude Code CLI" claude --help
 check_tool "   OpenAI Codex CLI" codex --help
 check_tool "   Gemini CLI" gemini --help
 check_tool "   Kilocode CLI" kilo --help
+check_tool "   Cursor agent CLI" cursor-agent --version
 check_tool "   Aider CLI" aider --help
 
 echo ""
