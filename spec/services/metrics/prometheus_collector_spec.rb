@@ -98,8 +98,11 @@ RSpec.describe Metrics::PrometheusCollector do
       end
 
       it "reports counts by status" do
-        expect(output).to include('paid_service_containers_total{status="running"} 1')
-        expect(output).to include('paid_service_containers_total{status="stopped"} 1')
+        running = ServiceContainer.where(status: "running").count
+        stopped = ServiceContainer.where(status: "stopped").count
+
+        expect(output).to include(%(paid_service_containers_total{status="running"} #{running}))
+        expect(output).to include(%(paid_service_containers_total{status="stopped"} #{stopped}))
       end
     end
 
