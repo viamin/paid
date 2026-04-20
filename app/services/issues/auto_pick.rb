@@ -121,8 +121,8 @@ module Issues
 
     # Returns the count of open PRs that still need Paid's attention.
     # A PR "needs attention" if it is failed, or in_progress but not
-    # yet handed off (missing paid-generated/paid-ready labels, or
-    # still in draft/restarted phase).
+    # yet handed off (missing the automation/ready labels, or still in
+    # draft/restarted phase).
     #
     # Escalated PRs are excluded because they have already been surfaced
     # to the owner for attention — keeping them in the count would let
@@ -141,7 +141,7 @@ module Issues
 
       handed_off = base
         .where(paid_state: "in_progress")
-        .where("labels @> ?::jsonb", [ @project.generated_label_name, PAID_READY_LABEL ].to_json)
+        .where("labels @> ?::jsonb", [ @project.automation_label_name, PAID_READY_LABEL ].to_json)
         .where.not(pr_review_phase: %w[draft restarted])
 
       escalated = base.where(pr_review_phase: "escalated")
