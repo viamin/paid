@@ -488,10 +488,11 @@ module Containers
 
       env = container_env_for(service_container)
       user = env.fetch("POSTGRES_USER", POSTGRES_DEFAULT_ENV["POSTGRES_USER"])
+      admin_db = env.fetch("POSTGRES_DB", POSTGRES_DEFAULT_ENV["POSTGRES_DB"])
 
       container = Docker::Container.get(service_container.docker_container_id)
       stdout, stderr, status = container.exec([
-        "psql", "-U", user, "-c",
+        "psql", "-U", user, "-d", admin_db, "-c",
         "SELECT 1 FROM pg_database WHERE datname = #{postgres_string_literal(db_name)}"
       ])
 
@@ -502,7 +503,7 @@ module Containers
       # Create only if it doesn't already exist (idempotent for retries)
       if stdout.join.exclude?("1 row")
         stdout, stderr, status = container.exec([
-          "psql", "-U", user, "-c",
+          "psql", "-U", user, "-d", admin_db, "-c",
           "CREATE DATABASE #{postgres_identifier(db_name)} OWNER #{postgres_identifier(user)}"
         ])
 
@@ -525,17 +526,18 @@ module Containers
       db_name = per_run_db_name(agent_run)
       env = container_env_for(service_container)
       user = env.fetch("POSTGRES_USER", POSTGRES_DEFAULT_ENV["POSTGRES_USER"])
+      admin_db = env.fetch("POSTGRES_DB", POSTGRES_DEFAULT_ENV["POSTGRES_DB"])
 
       container = Docker::Container.get(service_container.docker_container_id)
 
       # Terminate active connections before dropping
       container.exec([
-        "psql", "-U", user, "-c",
+        "psql", "-U", user, "-d", admin_db, "-c",
         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = #{postgres_string_literal(db_name)} AND pid <> pg_backend_pid()"
       ])
 
       _stdout, stderr, status = container.exec([
-        "psql", "-U", user, "-c",
+        "psql", "-U", user, "-d", admin_db, "-c",
         "DROP DATABASE IF EXISTS #{postgres_identifier(db_name)}"
       ])
 

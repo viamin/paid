@@ -649,6 +649,7 @@ RSpec.describe Containers::ServiceProvisioner do
       db_name = provisioner.send(:per_run_db_name, agent_run)
       provisioner.send(:create_per_run_database, sc, db_name)
 
+      expect(commands.last).to include("-d", "agent_test")
       expect(commands.last.last).to eq(
         "CREATE DATABASE \"#{db_name}\" OWNER \"agent\"\" WITH SUPERUSER --\""
       )
@@ -669,7 +670,30 @@ RSpec.describe Containers::ServiceProvisioner do
       db_name = provisioner.send(:per_run_db_name, agent_run)
       provisioner.send(:drop_per_run_database, sc, agent_run)
 
+      expect(commands).to all(include("-d", "agent_test"))
       expect(commands.last.last).to eq("DROP DATABASE IF EXISTS \"#{db_name}\"")
+    end
+
+    it "connects psql commands to the configured postgres database" do
+      sc = create(:service_container, :running, env: {
+        "POSTGRES_USER" => "agent",
+        "POSTGRES_PASSWORD" => "agent",
+        "POSTGRES_DB" => "app_test"
+      })
+      docker_container = instance_double(Docker::Container)
+      commands = []
+
+      allow(Docker::Container).to receive(:get)
+        .with(sc.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive(:exec) do |cmd|
+        commands << cmd
+        commands.one? ? [ [ "(0 rows)" ], [], 0 ] : [ [ "CREATE DATABASE" ], [], 0 ]
+      end
+
+      db_name = provisioner.send(:per_run_db_name, agent_run)
+      provisioner.send(:create_per_run_database, sc, db_name)
+
+      expect(commands).to all(include("-d", "app_test"))
     end
 
     it "skips creation when database already exists (idempotent)" do
