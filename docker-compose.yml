@@ -134,7 +134,7 @@ services:
     networks:
       - paid_internal
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:6333/healthz || exit 1"]
+      test: ["CMD-SHELL", "bash -ec ': >/dev/tcp/127.0.0.1/6333'"]
       interval: 10s
       timeout: 5s
       retries: 5

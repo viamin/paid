@@ -75,6 +75,12 @@ Rails.application.configure do
   # Shutdown timeout — how long to wait for in-flight jobs before forcing exit.
   config.good_job.shutdown_timeout = Paid::GoodJobConfig.shutdown_timeout
 
+  # Automatically delete finished jobs older than 24 hours. Without this,
+  # completed job records accumulate indefinitely (the metrics collection
+  # self-re-enqueue loop creates ~15K records/day), bloating the good_jobs
+  # and good_job_executions tables and slowing every DB query.
+  config.good_job.cleanup_preserved_jobs_before_seconds_ago = 1.day
+
   config.x.good_job_enable_cron = Paid::GoodJobConfig.enable_cron
   config.good_job.enable_cron = config.x.good_job_enable_cron
 
