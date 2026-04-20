@@ -210,8 +210,10 @@ RUN if [ -z "${CURSOR_ARTIFACT_URL}" ]; then echo "ERROR: CURSOR_ARTIFACT_URL bu
     && curl -fsSL "${CURSOR_ARTIFACT_URL}" -o /tmp/cursor-artifact.tar.gz \
     && echo "${CURSOR_ARTIFACT_SHA256}  /tmp/cursor-artifact.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/cursor-artifact.tar.gz -C /tmp \
-    && cp /tmp/dist-package/${CURSOR_BINARY_NAME} "${CURSOR_GLOBAL_PATH}" \
-    && chmod +x "${CURSOR_GLOBAL_PATH}" \
+    && mkdir -p /opt/cursor-agent "$(dirname "${CURSOR_GLOBAL_PATH}")" \
+    && cp -R /tmp/dist-package/. /opt/cursor-agent/ \
+    && chmod +x "/opt/cursor-agent/${CURSOR_BINARY_NAME}" \
+    && ln -sf "/opt/cursor-agent/${CURSOR_BINARY_NAME}" "${CURSOR_GLOBAL_PATH}" \
     && rm -rf /tmp/cursor-artifact.tar.gz /tmp/dist-package
 
 # Install Aider CLI.
