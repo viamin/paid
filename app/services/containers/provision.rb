@@ -748,17 +748,63 @@ module Containers
       host = codex_subscription_auth_host_mount_path
       if host.present?
         log_system("container.codex_credentials_shared", source_path: host)
+        seed_sanitized_codex_config!(source_path: host)
       else
         seed_local_credentials!(
           source_path: codex_local_config_path,
           target_path: "/home/agent/.codex",
-          files: %w[auth.json config.toml],
+          files: %w[auth.json],
           success_log_key: "container.codex_credentials_seeded",
           failure_log_key: "container.codex_credentials_seed_failed"
         )
+        seed_sanitized_codex_config!(source_path: codex_local_config_path)
       end
 
       seed_codex_notify_hook!
+    end
+
+    # Writes a minimal Codex config.toml derived from the host config but with
+    # incompatible sections stripped. The host config may contain [projects.*]
+    # map sections that newer Codex CLI versions reject ("invalid type: map,
+    # expected a sequence"). For container runs, project trust is managed by
+    # --skip-git-repo-check, so those sections are unnecessary.
+    def seed_sanitized_codex_config!(source_path:)
+      return unless source_path.present?
+
+      source_file = File.join(source_path, "config.toml")
+      return unless File.file?(source_file)
+
+      content = File.read(source_file)
+      sanitized = strip_codex_project_sections(content)
+      encoded = Base64.strict_encode64(sanitized)
+      container.exec(
+        [ "sh", "-lc", "echo #{Shellwords.escape(encoded)} | base64 -d > /home/agent/.codex/config.toml" ],
+        user: "agent"
+      )
+      log_system("container.codex_config_sanitized")
+    rescue Docker::Error::DockerError, SystemCallError => e
+      log_system("container.codex_config_sanitization_failed", error: e.message)
+    end
+
+    def strip_codex_project_sections(toml)
+      in_projects = false
+      toml.lines.reject do |line|
+        if line.match?(/\A\[projects/)
+          in_projects = true
+          next true
+        end
+
+        if in_projects
+          if line.match?(/\A\[/) && !line.match?(/\A\[projects/)
+            in_projects = false
+            next false
+          end
+
+          next true
+        end
+
+        false
+      end.join
     end
 
     # Appends the Codex notify hook to config.toml inside the container.
@@ -1431,10 +1477,7 @@ module Containers
       base = codex_subscription_auth_host_mount_path
       return [] unless base.present?
 
-      binds = [ "#{File.join(base, 'auth.json')}:/home/agent/.codex/auth.json:rw" ]
-      config_path = File.join(base, "config.toml")
-      binds << "#{config_path}:/home/agent/.codex/config.toml:ro" if File.file?(config_path)
-      binds
+      [ "#{File.join(base, 'auth.json')}:/home/agent/.codex/auth.json:rw" ]
     end
 
     def codex_auth_lock_required?(command)

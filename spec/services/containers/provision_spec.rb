@@ -883,11 +883,11 @@ RSpec.describe Containers::Provision do
         FileUtils.rm_rf(codex_config_dir)
       end
 
-      it "bind-mounts only Codex auth/config files and sets the subscription marker" do
+      it "bind-mounts only Codex auth.json and sets the subscription marker" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
           expect(binds).to include("#{File.join(codex_config_dir, 'auth.json')}:/home/agent/.codex/auth.json:rw")
-          expect(binds).to include("#{File.join(codex_config_dir, 'config.toml')}:/home/agent/.codex/config.toml:ro")
+          expect(binds).not_to include("config.toml")
           env = config["Env"]
           expect(env).to include("PAID_CODEX_SUBSCRIPTION_AUTH=1")
           expect(env).to include("ANTHROPIC_BASE_URL=http://web:3000/api/proxy/anthropic")
@@ -898,15 +898,15 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "uses a shared writable Codex auth mount instead of copying credentials" do
+      it "writes a sanitized config.toml and uses a shared writable auth mount" do
         allow(agent_run).to receive(:log!).and_call_original
 
         service.provision
 
-        expect(mock_container).not_to have_received(:exec).with(
-          [ "sh", "-lc", include("/home/agent/.codex/config.toml").and(include('model_provider = "paid"')) ],
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-lc", include("/home/agent/.codex/config.toml") ],
           user: "agent"
-        )
+        ).at_least(:once)
         expect(agent_run).to have_received(:log!).with(
           "system",
           "container.codex_credentials_shared",
@@ -967,7 +967,7 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "copies local Codex auth files into the writable tmpfs in a single batch" do
+      it "copies local Codex auth files into the writable tmpfs" do
         service.provision
 
         expect(mock_container).to have_received(:exec).with(
@@ -976,11 +976,16 @@ RSpec.describe Containers::Provision do
         )
         expect(mock_container).to have_received(:exec).with(
           [ "sh", "-lc", satisfy { |cmd|
-            cmd.include?("/home/agent/.codex/auth.json") &&
-              cmd.include?("/home/agent/.codex/config.toml")
+            cmd.include?("/home/agent/.codex/auth.json")
           } ],
           user: "agent"
-        )
+        ).at_least(:once)
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-lc", satisfy { |cmd|
+            cmd.include?("/home/agent/.codex/config.toml")
+          } ],
+          user: "agent"
+        ).at_least(:once)
       end
     end
 
@@ -1961,6 +1966,50 @@ RSpec.describe Containers::Provision do
         )
         expect(result).to be_success
       end
+    end
+  end
+
+  describe "#strip_codex_project_sections" do
+    let(:service) { described_class.new(agent_run: agent_run, project: project) }
+
+    it "strips [projects.*] sections and their key-value pairs" do
+      toml = <<~TOML
+        model = "gpt-5"
+        [projects."/Users/bart/Projects/paid"]
+        trust_level = "trusted"
+        [projects."/workspaces/other"]
+        trust_level = "untrusted"
+        [notice]
+        key = "value"
+      TOML
+
+      result = service.send(:strip_codex_project_sections, toml)
+
+      expect(result).to eq("model = \"gpt-5\"\n[notice]\nkey = \"value\"\n")
+    end
+
+    it "returns content unchanged when no [projects] sections exist" do
+      toml = "model = \"gpt-5\"\n"
+
+      result = service.send(:strip_codex_project_sections, toml)
+
+      expect(result).to eq(toml)
+    end
+
+    it "handles consecutive [projects.*] sections" do
+      toml = <<~TOML
+        model = "gpt-5"
+        [projects."/a"]
+        trust_level = "trusted"
+        [projects."/b"]
+        trust_level = "trusted"
+        [features]
+        multi_agent = true
+      TOML
+
+      result = service.send(:strip_codex_project_sections, toml)
+
+      expect(result).to eq("model = \"gpt-5\"\n[features]\nmulti_agent = true\n")
     end
   end
 end
