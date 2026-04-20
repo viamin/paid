@@ -82,6 +82,24 @@ RSpec.describe ReleasePlease::ParseReleasePr do
       expect(result.bump).to eq("minor")
     end
 
+    it "parses ruby gem release titles with package name" do
+      pr = build_pr_data(title: "chore(main): release agent-harness 0.9.1")
+      result = described_class.call(pr_data: pr, previous_version: "0.9.0")
+
+      expect(result).to be_present
+      expect(result.new_version).to eq("0.9.1")
+      expect(result.bump).to eq("patch")
+    end
+
+    it "parses scoped npm package release titles" do
+      pr = build_pr_data(title: "chore(main): release @scope/package 2.0.0")
+      result = described_class.call(pr_data: pr, previous_version: "1.5.0")
+
+      expect(result).to be_present
+      expect(result.new_version).to eq("2.0.0")
+      expect(result.bump).to eq("major")
+    end
+
     it "returns nil when versions are equal" do
       pr = build_pr_data(title: "chore(main): release 1.0.0")
       result = described_class.call(pr_data: pr, previous_version: "1.0.0")
@@ -93,6 +111,11 @@ RSpec.describe ReleasePlease::ParseReleasePr do
   describe ".release_please_pr?" do
     it "returns true for valid release-please PRs" do
       pr = build_pr_data(title: "chore(main): release 1.0.0")
+      expect(described_class.release_please_pr?(pr)).to be true
+    end
+
+    it "returns true for release-please PRs with package name" do
+      pr = build_pr_data(title: "chore(main): release agent-harness 1.0.0")
       expect(described_class.release_please_pr?(pr)).to be true
     end
 
