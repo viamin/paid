@@ -212,6 +212,7 @@ RUN if [ -z "${CURSOR_ARTIFACT_URL}" ]; then echo "ERROR: CURSOR_ARTIFACT_URL bu
     && tar -xzf /tmp/cursor-artifact.tar.gz -C /tmp \
     && mkdir -p /opt/cursor-agent "$(dirname "${CURSOR_GLOBAL_PATH}")" \
     && cp -R /tmp/dist-package/. /opt/cursor-agent/ \
+    && test -f "/opt/cursor-agent/${CURSOR_BINARY_NAME}" \
     && chmod +x "/opt/cursor-agent/${CURSOR_BINARY_NAME}" \
     && ln -sf "/opt/cursor-agent/${CURSOR_BINARY_NAME}" "${CURSOR_GLOBAL_PATH}" \
     && rm -rf /tmp/cursor-artifact.tar.gz /tmp/dist-package

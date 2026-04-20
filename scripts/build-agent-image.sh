@@ -73,6 +73,16 @@ if [ -z "${CURSOR_ARTIFACT_SHA256}" ]; then
     exit 1
 fi
 
+if [ -z "${CURSOR_BINARY_NAME}" ]; then
+    echo "ERROR: Could not extract Cursor binary name from agent-harness" >&2
+    exit 1
+fi
+
+if [ -z "${CURSOR_GLOBAL_PATH}" ]; then
+    echo "ERROR: Could not extract Cursor global path from agent-harness" >&2
+    exit 1
+fi
+
 # Extract Codex CLI package from agent-harness installation contract.
 # agent-harness owns the supported Codex CLI version; Paid consumes it at build time.
 CODEX_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" codex)
