@@ -218,9 +218,9 @@ module Providers
         )
       end
 
-      output = normalize_output_text(response[:stdout]).strip
+      output = extract_ping_output(response[:stdout])
 
-      if output == EXPECTED_OUTPUT
+      if output.include?(EXPECTED_OUTPUT)
         Result.new(success: true, error_type: nil, message: "Agent is healthy")
       else
         Result.new(
@@ -229,6 +229,77 @@ module Providers
           message: "Agent responded but output did not match expected ping"
         )
       end
+    end
+
+    # Extracts the agent text response from stdout, handling multiple output
+    # formats that providers produce:
+    #
+    # - Plain text ("PING OK") — direct match
+    # - JSON envelope (Claude --output-format=json) — extracts "result" field
+    # - JSONL (Kilocode --format json) — extracts "text" from structured events
+    # - Noisy output (OpenCode migration, tool banners) — strips known noise
+    def extract_ping_output(stdout)
+      raw = normalize_output_text(stdout).strip
+      return raw if raw == EXPECTED_OUTPUT
+
+      extract_from_json_envelope(raw) ||
+        extract_from_jsonl(raw) ||
+        strip_noise_from_output(raw)
+    end
+
+    def extract_from_json_envelope(raw)
+      parsed = JSON.parse(raw)
+      return nil unless parsed.is_a?(Hash)
+
+      result = parsed["result"]
+      result.is_a?(String) ? result.strip : nil
+    rescue JSON::ParserError
+      nil
+    end
+
+    def extract_from_jsonl(raw)
+      text_parts = []
+      raw.each_line do |line|
+        line = line.strip
+        next if line.empty?
+
+        begin
+          event = JSON.parse(line)
+          next unless event.is_a?(Hash)
+
+          text = extract_text_from_jsonl_event(event)
+          text_parts << text if text
+        rescue JSON::ParserError
+          text_parts << line
+        end
+      end
+
+      text_parts.any? ? text_parts.join.strip : nil
+    end
+
+    def extract_text_from_jsonl_event(event)
+      case event["type"]
+      when "text"
+        event.dig("part", "text") || event["text"]
+      when "result"
+        event["result"] || event.dig("part", "text") || event["text"] || event["message"]
+      end
+    end
+
+    OUTPUT_NOISE_PATTERNS = [
+      /Performing one time database migration/i,
+      /npm warn/i
+    ].freeze
+
+    def strip_noise_from_output(raw)
+      cleaned = raw.lines
+        .map(&:strip)
+        .reject(&:empty?)
+        .reject { |line| OUTPUT_NOISE_PATTERNS.any? { |p| p.match?(line) } }
+        .join(" ")
+        .strip
+
+      cleaned.presence || raw
     end
 
     def build_test_run
