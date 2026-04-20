@@ -245,6 +245,16 @@ RUN useradd -m -s /bin/bash agent \
     && mkdir -p /workspace /home/agent/.config /home/agent/.local/share \
     && chown -R agent:agent /workspace /home/agent
 
+# Pre-seed the OpenCode SQLite database so the first container invocation does
+# not emit "Performing one time database migration, may take a few minutes..."
+# into stdout, which breaks the Test Agent ping response matching.
+# The opencode binary creates its DB on first run; this step discards the
+# network-dependent output and only keeps the migrated SQLite file.
+USER agent
+RUN mkdir -p /home/agent/.local/share/opencode \
+    && timeout 10s opencode run "OK" > /dev/null 2>&1 || true
+USER root
+
 # Set up working directory
 WORKDIR /workspace
 

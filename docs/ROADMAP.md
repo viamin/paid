@@ -2,7 +2,7 @@
 
 This document outlines the phased implementation plan for Paid. Each phase builds on the previous, delivering usable functionality at each step while progressing toward the complete vision.
 
-**Current Status**: Phase 3 (Scale) in progress as of 2026-04-19. Sections 3.1–3.3 and 3.6 are complete; 3.4, 3.5, and 3.7 are partially done. A new Phase 3.5 (Completion & Hardening) has been added to close gaps in Phase 2–3 feature completion and address security/reliability P1s before Phase 4 begins.
+**Current Status**: Phase 3 (Scale) in progress as of 2026-04-19. Sections 3.1–3.3 and 3.6 are complete; 3.4, 3.5, and 3.7 are partially done. Phase 3.5 (Completion & Hardening) is in progress with provider quota tracking (3.5.6) starting with quick-win internal usage display and agent-harness upstreaming.
 
 ## Phase Overview
 
@@ -665,6 +665,135 @@ Deliverables:
 - Quality pause events trigger recovery suggestions
 - Users can acknowledge and resume with actionable next steps
 
+### 3.5.6 Provider Quota Tracking
+
+**Objective**: Give users visibility into upstream provider subscription quotas and use that data to make smarter provider routing decisions.
+
+**Why this matters**: Users with active subscriptions (Claude Pro, Codex Pro, Copilot Business, Z.ai Coding Max) need to know how close each provider is to hitting its quota, and Paid should proactively avoid routing to nearly-exhausted providers instead of waiting for 429 errors.
+
+**RDR**: [RDR-025](rdrs/RDR-025-provider-quota-tracking.md)
+
+**Approach**: Provider-specific quota API knowledge and response parsing live in agent-harness (per AGENTS.md boundary). Paid stores credentials, persists snapshots, displays data, and makes routing decisions. Starts with a quick win showing existing internal usage data, then layers on upstream quota polling.
+
+#### Step 1: Internal Provider Usage Display (Quick Win)
+
+Display per-provider aggregations from data Paid already collects — no new credentials or APIs needed.
+
+Tasks:
+
+- [ ] Create `Providers::UsageStats` service — aggregate `TokenUsage` by `AgentRun.effective_provider` for 7-day and 30-day windows
+- [ ] Add per-provider spend column to `/providers` index (tokens, cost, run count)
+- [ ] Add per-provider fallback frequency display (from `providers_attempted` JSON)
+- [ ] Add per-provider rate-limit event count (from `AgentRun` statuses)
+- [ ] Add per-provider circuit breaker history (recent transitions from `ProviderState`)
+
+Deliverables:
+
+- `/providers` page shows how much Paid has consumed from each provider
+- Users can see which providers hit rate limits most often
+- Zero new infrastructure required
+
+#### Step 2: Upstream Provider-Specific Code to agent-harness
+
+Move existing provider-specific logic from Paid into agent-harness where it belongs per AGENTS.md. This is tech debt payoff that also establishes the provider-class extension pattern needed for quota polling.
+
+Tasks:
+
+- [ ] Move `AUTH_EXPIRED_PATTERNS` (Codex-specific) to agent-harness Codex provider class
+- [ ] Move `PROVIDER_ABORT_PATTERNS` to agent-harness provider classes
+- [ ] Deduplicate and move `parse_rate_limit_reset` to agent-harness provider classes
+- [ ] Move `api_key_env_var_names_for` / `api_key_unset_vars_for` / `SUBSCRIPTION_AUTH_UNSET_VARS` to agent-harness provider classes as `env_var_names` / `subscription_unset_vars`
+- [ ] Move Codex config TOML format (`wire_api`, `model_provider`) to agent-harness Codex provider class
+- [ ] Move Gemini-specific env vars (`GEMINI_SANDBOX`, `GEMINI_CLI_DISABLE_RETRIES`) to agent-harness Gemini provider class
+- [ ] Move Codex OAuth lockfile mechanism to agent-harness Codex provider class
+- [ ] Move provider-specific test command flags to agent-harness provider classes
+- [ ] Move secrets proxy token extraction (Anthropic/OpenAI/Google response shapes) to agent-harness provider classes
+- [ ] Move TestAgent error patterns to agent-harness provider classes
+- [ ] Replace all Paid hard-coded arrays/methods with agent-harness calls
+
+Deliverables:
+
+- No provider-specific error patterns, env var names, or config formats hard-coded in Paid
+- All provider-specific execution knowledge centralized in agent-harness
+- agent-harness provider classes have the extension points needed for quota polling
+
+#### Step 3: Quota Polling Interface in agent-harness
+
+Add `provider_quota()` method to agent-harness with per-provider implementations. Start with Z.ai (simplest — API key auth), then expand to Claude, Codex, and Copilot.
+
+Tasks:
+
+- [ ] Design `QuotaSnapshot` and `QuotaMetric` data structures in agent-harness
+- [ ] Add `supports_quota_polling?`, `quota(credentials:)`, `quota_credentials_type` to provider base class
+- [ ] Implement Z.ai quota polling (`api.z.ai/api/monitor/usage/quota/limit`)
+- [ ] Implement Claude quota polling (`api.anthropic.com/api/oauth/usage`) with OAuth refresh
+- [ ] Implement Codex quota polling (`chatgpt.com/backend-api/wham/usage`) with OAuth refresh
+- [ ] Implement Copilot quota polling (`api.github.com/copilot_internal/user`)
+- [ ] Implement Cursor quota polling (`api2.cursor.sh/.../GetCurrentPeriodUsage`) with OAuth refresh
+- [ ] Add `AgentHarness.all_provider_quotas` orchestration method
+
+Deliverables:
+
+- `AgentHarness.provider_quota(:zai, credentials: { api_key: "..." })` returns `QuotaSnapshot`
+- Each provider knows its quota API, response format, and credential requirements
+- Paid can call a single interface regardless of provider
+
+#### Step 4: Quota Storage and Scheduled Refresh in Paid
+
+Wire agent-harness quota polling into Paid with encrypted credential storage and scheduled refresh.
+
+Tasks:
+
+- [ ] Create `provider_quota_credentials` table (encrypted OAuth tokens/API keys per provider)
+- [ ] Create `provider_quota_snapshots` table (cached quota metrics per provider)
+- [ ] Create `ProviderQuotaCredential` model with encryption
+- [ ] Create `ProviderQuotaSnapshot` model with upsert logic
+- [ ] Create `Providers::RefreshQuotas` service (calls agent-harness, upserts snapshots)
+- [ ] Create `Providers::RefreshQuotasJob` (GoodJob cron, every 15 minutes)
+- [ ] Add credential collection UI for Z.ai (API key — reuses `ProviderApiKey` pattern)
+- [ ] Add credential collection UI for Copilot (GitHub token)
+- [ ] Add opportunistic OAuth token capture for Claude/Codex (read from container after successful run)
+- [ ] Add quota display to `/providers` page (progress bars, plan name, reset timers)
+
+Deliverables:
+
+- Quota snapshots refresh on schedule for all configured providers
+- `/providers` page shows real upstream quota status per provider
+- Users can configure credentials for quota polling per provider
+
+#### Step 5: Quota-Aware Provider Routing
+
+Enhance provider selection to consider upstream quota state when choosing which provider to use for a run.
+
+Tasks:
+
+- [ ] Create `Providers::QuotaScore` service (scores providers by remaining quota)
+- [ ] Enhance `RunAgentActivity#build_provider_order` to incorporate quota scores
+- [ ] Add quota-based routing logging (visible in dashboard and run details)
+- [ ] Add quota-exhaustion anticipation: prefer fallback when primary > 80% session usage
+
+Deliverables:
+
+- Provider routing considers upstream quota state, not just circuit breaker health
+- Runs avoid providers nearing quota exhaustion
+- Routing decisions logged with quota context
+
+#### Step 6: Predictive Analytics (Future)
+
+Use historical data to predict quota exhaustion and suggest configuration changes.
+
+Tasks:
+
+- [ ] Build quota consumption rate model from historical `ProviderQuotaSnapshot` data
+- [ ] Add "predicted exhaustion" cards to dashboard ("Claude session will exhaust in ~2 hours")
+- [ ] Add provider configuration suggestions ("Copilot at 92% — consider adding Codex fallback")
+- [ ] Add weekly quota digest notification
+
+Deliverables:
+
+- Users receive proactive alerts before quotas exhaust
+- System suggests optimal provider configuration
+
 ### Phase 3.5 Completion Criteria
 
 - [ ] Zero P1 security or data integrity issues open
@@ -673,6 +802,9 @@ Deliverables:
 - [ ] Multi-provider with automatic selection works
 - [ ] Fair queueing prevents capacity starvation
 - [ ] Performance handles 10+ concurrent projects with benchmarks
+- [ ] Provider quota tracking: per-provider usage visible on /providers page
+- [ ] Provider-specific code upstreamed to agent-harness
+- [ ] Upstream quota polling wired for at least one provider
 
 ---
 

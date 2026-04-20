@@ -78,6 +78,81 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
+    context "when claude returns JSON envelope output from the container runtime path" do
+      let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
+      let(:execution_result) do
+        Containers::Provision::Result.success(
+          stdout: JSON.generate("result" => "PING OK", "is_error" => false, "session_id" => "abc123"),
+          stderr: "",
+          exit_code: 0
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "claude")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "extracts the result from the JSON envelope and returns success" do
+        result = described_class.call(provider: provider)
+
+        expect(result).to be_success
+        expect(result.message).to eq("Agent is healthy")
+      end
+    end
+
+    context "when kilocode returns JSONL output from the container runtime path" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      let(:execution_result) do
+        jsonl = [
+          JSON.generate("type" => "text", "part" => { "text" => "PING OK" }),
+          JSON.generate("type" => "result", "result" => "PING OK")
+        ].join("\n")
+        Containers::Provision::Result.success(stdout: jsonl, stderr: "", exit_code: 0)
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "extracts text from JSONL events and returns success" do
+        result = described_class.call(provider: provider)
+
+        expect(result).to be_success
+        expect(result.message).to eq("Agent is healthy")
+      end
+    end
+
+    context "when opencode returns migration noise with the ping response" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "opencode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      let(:execution_result) do
+        Containers::Provision::Result.success(
+          stdout: "Performing one time database migration, may take a few minutes...\nPING OK",
+          stderr: "",
+          exit_code: 0
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "opencode")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "strips the migration noise and returns success" do
+        result = described_class.call(provider: provider)
+
+        expect(result).to be_success
+        expect(result.message).to eq("Agent is healthy")
+      end
+    end
+
     context "when claude returns an auth error from the container runtime path" do
       let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
       let(:execution_result) do
