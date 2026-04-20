@@ -21,11 +21,10 @@ module ProviderSupport
   }.freeze
 
   # Provider keys whose CLIs are actually installed in the agent Docker container
-  # (docker/agent/Dockerfile). Only these providers can execute in container-based
-  # runs. Currently Claude CLI, Codex CLI, Cursor agent CLI, Gemini CLI,
-  # Kilocode CLI, OpenCode CLI, GitHub Copilot CLI, and Aider CLI are installed
-  # in the container image. Update this list when new CLIs are added to the Dockerfile.
-  CONTAINER_EXECUTABLE_PROVIDER_KEYS = Set.new(%w[aider claude codex copilot cursor gemini kilocode opencode]).freeze
+  # and can execute repository-changing agent tasks. GitHub Copilot CLI is
+  # intentionally excluded: the installed github-copilot-cli only supports
+  # shell/git/gh assist subcommands, not a general agent run command.
+  CONTAINER_EXECUTABLE_PROVIDER_KEYS = Set.new(%w[aider claude codex cursor gemini kilocode opencode]).freeze
 
   module_function
 
