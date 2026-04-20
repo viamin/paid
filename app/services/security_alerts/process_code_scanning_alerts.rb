@@ -129,7 +129,7 @@ module SecurityAlerts
 
     def labels_for_alert(alert)
       priority = Issue::SEVERITY_TO_PRIORITY[alert[:severity].to_s.downcase]
-      %w[security code-scanning].tap { |l| l << priority if priority }
+      %w[security code-scanning].tap { |l| l << @project.priority_label_for(priority) if priority }
     end
   end
 end

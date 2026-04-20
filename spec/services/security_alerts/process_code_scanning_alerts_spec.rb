@@ -58,6 +58,15 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
       end
     end
 
+    it "uses custom project priority labels" do
+      project.update!(priority_labels: { "P1" => "urgent", "P2" => "normal", "P3" => "low" })
+
+      described_class.new(project).call([ alert.merge(severity: "medium") ])
+
+      issue = project.issues.find_by(source: source, github_issue_id: id_offset + 1667)
+      expect(issue.labels).to eq(%w[security code-scanning normal])
+    end
+
     it "skips non-open alerts" do
       dismissed_alert = alert.merge(state: "dismissed")
 
