@@ -49,6 +49,15 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(result[:provider_attempt_count]).to eq(1)
     end
 
+    it "falls back to the runnable default when a requested agent_type is not container executable" do
+      result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "copilot")
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.provider).to eq(project.created_by.providers.find_by!(provider_key: "claude"))
+      expect(agent_run.agent_type).to eq("claude_code")
+      expect(result[:provider_attempt_count]).to eq(1)
+    end
+
     it "derives agent_type from provider_id when only a provider is supplied" do
       provider = create(:provider, user: project.created_by, provider_key: "cursor")
 
@@ -57,6 +66,16 @@ RSpec.describe Activities::CreateAgentRunActivity do
       agent_run = AgentRun.find(result[:agent_run_id])
       expect(agent_run.provider).to eq(provider)
       expect(agent_run.agent_type).to eq("cursor")
+    end
+
+    it "falls back to the runnable default when a requested provider_id is not container executable" do
+      provider = create(:provider, user: project.created_by, provider_key: "copilot")
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: provider.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.provider).to eq(project.created_by.providers.find_by!(provider_key: "claude"))
+      expect(agent_run.agent_type).to eq("claude_code")
     end
 
     it "persists the goal when provided" do

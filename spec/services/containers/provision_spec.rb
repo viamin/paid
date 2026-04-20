@@ -271,6 +271,25 @@ RSpec.describe Containers::Provision do
         )
       end
 
+      it "seeds Codex config with the current notify command shape" do
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [
+            "sh",
+            "-lc",
+            satisfy { |cmd|
+              decoded = decoded_base64_content(cmd)
+              cmd.include?("/home/agent/.codex/config.toml") &&
+                decoded.include?('notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]') &&
+                decoded.index('notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]') < decoded.index("[model_providers.paid]") &&
+                !decoded.include?("[notify]")
+            }
+          ],
+          user: "agent"
+        )
+      end
+
       it "does not mount host subscription auth directories by default" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
@@ -867,7 +886,15 @@ RSpec.describe Containers::Provision do
 
       before do
         File.write(File.join(codex_config_dir, "auth.json"), "{}")
-        File.write(File.join(codex_config_dir, "config.toml"), "model = \"gpt-5\"")
+        File.write(File.join(codex_config_dir, "config.toml"), <<~TOML)
+          model = "gpt-5"
+
+          [projects."/workspaces/paid"]
+          trust_level = "trusted"
+
+          [features]
+          multi_agent = true
+        TOML
 
         allow(ENV).to receive(:fetch).and_call_original
         allow(ENV).to receive(:[]).and_call_original
@@ -883,11 +910,11 @@ RSpec.describe Containers::Provision do
         FileUtils.rm_rf(codex_config_dir)
       end
 
-      it "bind-mounts only Codex auth.json and sets the subscription marker" do
+      it "bind-mounts only Codex auth and sets the subscription marker" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
           expect(binds).to include("#{File.join(codex_config_dir, 'auth.json')}:/home/agent/.codex/auth.json:rw")
-          expect(binds).not_to include("config.toml")
+          expect(binds.none? { |bind| bind.include?("/home/agent/.codex/config.toml") }).to be true
           env = config["Env"]
           expect(env).to include("PAID_CODEX_SUBSCRIPTION_AUTH=1")
           expect(env).to include("ANTHROPIC_BASE_URL=http://web:3000/api/proxy/anthropic")
@@ -898,19 +925,60 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "writes a sanitized config.toml and uses a shared writable auth mount" do
+      it "uses a shared writable Codex auth mount instead of copying credentials" do
         allow(agent_run).to receive(:log!).and_call_original
 
         service.provision
 
-        expect(mock_container).to have_received(:exec).with(
-          [ "sh", "-lc", include("/home/agent/.codex/config.toml") ],
+        expect(mock_container).not_to have_received(:exec).with(
+          [ "sh", "-lc", include("/home/agent/.codex/config.toml").and(include('model_provider = "paid"')) ],
           user: "agent"
-        ).at_least(:once)
+        )
         expect(agent_run).to have_received(:log!).with(
           "system",
           "container.codex_credentials_shared",
           metadata: hash_including(source_path: codex_config_dir)
+        )
+      end
+
+      it "writes a sanitized host Codex config into writable tmpfs before rewriting notify" do
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [
+            "sh",
+            "-lc",
+            satisfy { |cmd|
+              decoded = decoded_base64_content(cmd)
+              cmd.include?("/home/agent/.codex/config.toml") &&
+                decoded.include?('model = "gpt-5"') &&
+                decoded.include?("[features]") &&
+                !decoded.include?("[projects")
+            }
+          ],
+          user: "agent"
+        )
+      end
+
+      it "rewrites Codex notify command using the current CLI config shape" do
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [
+            "sh",
+            "-lc",
+            satisfy { |cmd|
+              cmd.include?("/home/agent/.codex/config.toml") &&
+                cmd.include?('touch "$config"') &&
+                cmd.include?("awk") &&
+                cmd.include?("-v notify_line=") &&
+                cmd.include?("!inserted") &&
+                cmd.include?("notify[[:space:]]*=") &&
+                cmd.include?(".paid-heartbeat") &&
+                !cmd.include?("[notify]")
+            }
+          ],
+          user: "agent"
         )
       end
 
@@ -967,7 +1035,7 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "copies local Codex auth files into the writable tmpfs" do
+      it "copies local Codex auth and writes sanitized config into the writable tmpfs" do
         service.provision
 
         expect(mock_container).to have_received(:exec).with(
@@ -976,16 +1044,18 @@ RSpec.describe Containers::Provision do
         )
         expect(mock_container).to have_received(:exec).with(
           [ "sh", "-lc", satisfy { |cmd|
-            cmd.include?("/home/agent/.codex/auth.json")
+            cmd.include?("/home/agent/.codex/auth.json") &&
+              !cmd.include?("/home/agent/.codex/config.toml")
           } ],
           user: "agent"
-        ).at_least(:once)
+        )
         expect(mock_container).to have_received(:exec).with(
           [ "sh", "-lc", satisfy { |cmd|
-            cmd.include?("/home/agent/.codex/config.toml")
+            cmd.include?("/home/agent/.codex/config.toml") &&
+              decoded_base64_content(cmd).include?('model = "gpt-5"')
           } ],
           user: "agent"
-        ).at_least(:once)
+        )
       end
     end
 

@@ -23,9 +23,10 @@ module Containers
 
     # Providers that support heartbeat hooks.
     # Codex heartbeat is handled by Provision#seed_codex_notify_hook! which
-    # appends a [notify] section to the full config.toml written during
-    # container provisioning. Adding codex here would overwrite that config.
-    SUPPORTED_PROVIDERS = %w[claude].freeze
+    # appends a notify command to the full config.toml written during
+    # container provisioning. HeartbeatSetup still advertises availability so
+    # the container watchdog checks the host-visible heartbeat file.
+    SUPPORTED_PROVIDERS = %w[claude codex].freeze
 
     attr_reader :provider, :worktree_path
 
@@ -77,6 +78,7 @@ module Containers
     def preparation_file_writes
       case canonical_provider
       when "claude" then claude_file_writes
+      when "codex" then []
       else []
       end
     end

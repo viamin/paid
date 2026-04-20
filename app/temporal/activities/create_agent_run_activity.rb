@@ -15,7 +15,6 @@ module Activities
       issue_id = input[:issue_id]
       custom_prompt = input[:custom_prompt]
       provider_id = input[:provider_id]
-      agent_type = resolve_agent_type(input[:agent_type], provider_id)
       goal = input.fetch(:goal, "create_pr")
       source_pull_request_number = input[:source_pull_request_number]
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
@@ -131,19 +130,34 @@ module Activities
 
     def resolve_agent_type(requested_agent_type, provider_id)
       provider = Provider.find_by(id: provider_id) if provider_id.present?
-      return Provider.agent_type_for(provider.provider_key) if provider
+      return Provider.agent_type_for(provider.provider_key) if provider && provider_runnable?(provider)
 
-      requested_agent_type || "claude_code"
+      agent_type_runnable?(requested_agent_type) ? requested_agent_type : "claude_code"
     end
 
     def resolve_provider_selection(project:, requested_agent_type:, requested_provider_id:, goal:)
-      resolved_agent_type = resolve_agent_type(requested_agent_type, requested_provider_id)
-      return [ requested_provider_id, resolved_agent_type ] if requested_provider_id.present? || requested_agent_type.present?
+      requested_provider = Provider.find_by(id: requested_provider_id) if requested_provider_id.present?
+      if requested_provider && provider_runnable?(requested_provider)
+        return [ requested_provider.id, Provider.agent_type_for(requested_provider.provider_key) ]
+      end
+
+      return [ nil, requested_agent_type ] if agent_type_runnable?(requested_agent_type)
 
       provider = default_provider_for(project, goal: goal)
-      return [ nil, resolved_agent_type ] unless provider
+      return [ nil, "claude_code" ] unless provider
 
       [ provider.id, Provider.agent_type_for(provider.provider_key) ]
+    end
+
+    def provider_runnable?(provider)
+      ProviderSupport.container_executable_provider_key?(provider.provider_key)
+    end
+
+    def agent_type_runnable?(agent_type)
+      return false if agent_type.blank?
+
+      AgentRun::AGENT_TYPES.include?(agent_type) &&
+        ProviderSupport.container_executable_provider_key?(Provider.provider_key_for_agent_type(agent_type))
     end
 
     def default_provider_for(project, goal:)

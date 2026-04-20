@@ -33,9 +33,9 @@ RSpec.describe Containers::HeartbeatSetup do
       expect(setup).to be_available
     end
 
-    it "returns false for codex (heartbeat handled by Provision)" do
+    it "returns true for codex with worktree" do
       setup = described_class.new(provider: "codex", worktree_path: worktree_path)
-      expect(setup).not_to be_available
+      expect(setup).to be_available
     end
 
     it "returns false for unsupported provider" do
@@ -136,7 +136,7 @@ RSpec.describe Containers::HeartbeatSetup do
     context "with codex provider" do
       let(:setup) { described_class.new(provider: "codex", worktree_path: worktree_path) }
 
-      it "returns nil (codex heartbeat handled by Provision)" do
+      it "returns nil because codex config is handled by Provision" do
         expect(setup.preparation).to be_nil
       end
     end

@@ -46,6 +46,14 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.provider_id).to be_nil
     end
 
+    it "falls back to the runnable default when a requested agent_type is not container executable" do
+      result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "copilot")
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.provider).to eq(user.providers.find_by!(provider_key: "claude"))
+      expect(agent_run.agent_type).to eq("claude_code")
+    end
+
     it "derives agent_type from provider_id when only a provider is supplied" do
       codex_provider = user.providers.find_or_create_by!(provider_key: "codex", auth_type: "subscription")
 
@@ -54,6 +62,16 @@ RSpec.describe Activities::QueueAgentRunActivity do
       agent_run = AgentRun.find(result[:agent_run_id])
       expect(agent_run.provider).to eq(codex_provider)
       expect(agent_run.agent_type).to eq("codex")
+    end
+
+    it "falls back to the runnable default when a requested provider_id is not container executable" do
+      copilot_provider = user.providers.find_or_create_by!(provider_key: "copilot", auth_type: "subscription")
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: copilot_provider.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.provider).to eq(user.providers.find_by!(provider_key: "claude"))
+      expect(agent_run.agent_type).to eq("claude_code")
     end
 
     it "uses the configured primary provider when agent type is omitted" do
