@@ -1,5 +1,5 @@
 <%# Multi-select table for enhance_issue goal %>
-<div data-goal-toggle-target="issueTable" hidden>
+<div data-goal-toggle-target="issueTable" <%= "hidden" unless local_assigns.fetch(:initially_visible, false) %>>
   <p class="block text-sm font-medium text-gray-700 mb-2">Select issues to enhance:</p>
   <div class="overflow-x-auto rounded-md border border-gray-200">
     <table class="min-w-full divide-y divide-gray-200">
