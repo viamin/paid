@@ -30,7 +30,6 @@ class ProcessRunQueueJob < ApplicationJob
   # Prevents unbounded scanning when a large queue has many runs that
   # can't start due to per-user capacity limits.
   MAX_ITERATIONS_PER_PERFORM = 100
-  AUTO_PICK_RESERVED_SLOTS = 1
 
   def perform
     # Use a PostgreSQL advisory lock to ensure only one job processes the queue at a time.
@@ -71,7 +70,7 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
-        unless user_has_capacity?(user, next_run)
+        unless user_has_capacity?(user)
           skipped_ids.add(next_run.id)
           next
         end
@@ -112,12 +111,12 @@ class ProcessRunQueueJob < ApplicationJob
   # Checks per-user capacity using an in-memory cache. The active count
   # is fetched from the DB on first access per user, then updated
   # in-memory as runs are started, avoiding repeated COUNT queries.
-  def user_has_capacity?(user, run)
+  def user_has_capacity?(user)
     cap = @user_capacity[user.id] ||= {
       active: AgentRun.active_count_for_user(user),
       max: user.settings.max_concurrent_runs
     }
-    cap[:active] < start_capacity_limit(cap[:max], run)
+    cap[:active] < cap[:max]
   end
 
   # Updates the in-memory capacity tracker after a run is started.
@@ -213,22 +212,6 @@ class ProcessRunQueueJob < ApplicationJob
         ]
       end
     end
-  end
-
-  def start_capacity_limit(max_concurrent_runs, run)
-    return max_concurrent_runs unless auto_pick_run?(run)
-
-    reserved = max_concurrent_runs > AUTO_PICK_RESERVED_SLOTS ? AUTO_PICK_RESERVED_SLOTS : 0
-    max_concurrent_runs - reserved
-  end
-
-  # Treat a run as auto-pick if it is explicitly marked via the auto_pick
-  # column, or if it matches the legacy inference used elsewhere in the
-  # scheduler (automatic trigger with no source pull request).  The legacy
-  # check keeps reserved-slot behavior consistent until all historical
-  # rows are backfilled.
-  def auto_pick_run?(run)
-    run.auto_pick? || (run.trigger_type == "automatic" && run.source_pull_request_number.nil?)
   end
 
   def start_claimed_run(agent_run)

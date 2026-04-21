@@ -252,10 +252,8 @@ class AgentRun < ApplicationRecord
   # eligible issue. Mirrors active_count_for_user's owner-resolution chain.
   #
   # Filters on the explicit `auto_pick: true` column set by
-  # Issues::AutoPick#create_agent_run, not the broader legacy inference used by
-  # ProcessRunQueueJob#auto_pick_run? (which also treats any automatic run
-  # without a source_pull_request_number as auto-pick). The column is set on
-  # every new auto-pick run, so the count is accurate for seeding decisions.
+  # Issues::AutoPick#create_agent_run. The column is set on every new auto-pick
+  # run, so the count is accurate for seeding decisions.
   def self.unfinished_auto_pick_count_for_user(user)
     base = where(status: UNFINISHED_STATUSES, auto_pick: true)
     scope = base.joins(:project).where(projects: { created_by_id: user.id })
@@ -432,7 +430,8 @@ class AgentRun < ApplicationRecord
     indicator ? "#{indicator} - #{priority[:label]}" : priority[:label]
   end
 
-  # LATERAL join that aggregates candidate issue labels once per agent run.
+  # Queue context joins that aggregate candidate issue labels once per agent run
+  # and resolve the same project owner used by Project#effective_owner.
   # Matches the issue either by direct association (issue_id) or by
   # source_pull_request_number for PR-based runs, merging labels from all
   # matching rows so a run with both an issue and a source PR considers
@@ -449,6 +448,26 @@ class AgentRun < ApplicationRecord
              AND i.is_pull_request = TRUE)
     ) issue_labels ON TRUE
     LEFT JOIN projects p ON p.id = agent_runs.project_id
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(
+        p.created_by_id,
+        (
+          SELECT account_memberships.user_id
+          FROM account_memberships
+          WHERE account_memberships.account_id = p.account_id
+            AND account_memberships.role = 3
+          ORDER BY account_memberships.id
+          LIMIT 1
+        ),
+        (
+          SELECT users.id
+          FROM users
+          WHERE users.account_id = p.account_id
+          ORDER BY users.id
+          LIMIT 1
+        )
+      ) AS user_id
+    ) project_owner ON TRUE
   SQL
 
   # Priority SQL using the LATERAL-joined issue_labels to avoid repeated
@@ -475,15 +494,31 @@ class AgentRun < ApplicationRecord
       ELSE 1
     END
   SQL
-  QUEUE_ORDER = [ QUEUE_PRIORITY_SQL, GOAL_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
+  PROJECT_ACTIVE_COUNT_SQL = Arel.sql(<<~SQL.squish).freeze
+    CASE
+      WHEN COALESCE(user_settings.fair_queue_across_projects, TRUE)
+        THEN COALESCE(project_active_counts.project_active_count, 0)
+      ELSE 0
+    END ASC
+  SQL
+  QUEUE_ORDER = [ QUEUE_PRIORITY_SQL, PROJECT_ACTIVE_COUNT_SQL, GOAL_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
 
-  # Scope that adds the LATERAL join required by QUEUE_PRIORITY_SQL.
+  # Scope that adds the CTE and joins required by QUEUE_ORDER.
   # All queue-ordering methods use this instead of bare `queued`.
   scope :queued_with_priority, -> {
     queued
+      .with(project_active_counts: project_active_counts_cte)
       .joins(QUEUE_LATERAL_JOIN)
+      .joins("LEFT JOIN project_active_counts ON project_active_counts.project_id = agent_runs.project_id")
+      .joins("LEFT JOIN user_settings ON user_settings.user_id = project_owner.user_id")
       .select("agent_runs.*")
   }
+
+  def self.project_active_counts_cte
+    active
+      .select("project_id, COUNT(*) AS project_active_count")
+      .group(:project_id)
+  end
 
   def self.next_queued_run
     queued_with_priority.order(QUEUE_ORDER).first
