@@ -200,6 +200,18 @@ RSpec.describe Containers::PoolManager do
       expect(project.container_pool_entries.warm.sole.container_id).to eq("warm-3")
     end
 
+    it "removes warm entries with an old network" do
+      stale_entry = create(:container_pool_entry, project: project, network: "paid_internal")
+
+      expect_replenish_to_remove_stale_warm_entry(stale_entry)
+    end
+
+    it "removes warm entries with an old image" do
+      stale_entry = create(:container_pool_entry, project: project, image: "old-image")
+
+      expect_replenish_to_remove_stale_warm_entry(stale_entry)
+    end
+
     it "removes warm entries when the target size is zero" do
       entry = create(:container_pool_entry, project: project)
       container = instance_double(Docker::Container, info: { "State" => { "Running" => true } }, stop: true, delete: true)
@@ -251,5 +263,25 @@ RSpec.describe Containers::PoolManager do
       expect(project.container_pool_entries.reload.count).to eq(0)
       expect(provision).to have_received(:cleanup).with(force: true)
     end
+  end
+
+  def expect_replenish_to_remove_stale_warm_entry(stale_entry)
+    container = instance_double(Docker::Container, info: { "State" => { "Running" => true } }, stop: true, delete: true)
+    volume = instance_double(Docker::Volume, remove: true)
+    provision = instance_double(Containers::Provision)
+    allow(Docker::Container).to receive(:get).with(stale_entry.container_id).and_return(container)
+    allow(Docker::Volume).to receive(:get).with(stale_entry.workspace_volume).and_return(volume)
+    allow(Containers::Provision).to receive(:new).and_return(provision)
+    allow(provision).to receive_messages(
+      network_name: "paid_agent",
+      provision: Containers::Provision::Result.success(container_id: "warm-4")
+    )
+
+    described_class.new(project: project, target_size: 1).replenish
+
+    expect(ContainerPoolEntry.exists?(stale_entry.id)).to be(false)
+    expect(project.container_pool_entries.warm.sole.container_id).to eq("warm-4")
+    expect(container).to have_received(:delete).with(force: true, v: true)
+    expect(volume).to have_received(:remove)
   end
 end

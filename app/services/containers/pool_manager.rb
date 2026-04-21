@@ -160,6 +160,10 @@ module Containers
     end
 
     def cleanup_stale_pool_entries
+      stale_warm_pool_entries.find_each do |entry|
+        remove_entry(entry, force: true)
+      end
+
       project.container_pool_entries.stale_warming.find_each do |entry|
         remove_error_entry(entry, "warming container did not finish before stale threshold")
       end
@@ -188,6 +192,13 @@ module Containers
             ContainerPoolEntry.arel_table[:created_at].gteq(ContainerPoolEntry::WARMING_STALE_AFTER.ago)
           )
         )
+      )
+    end
+
+    def stale_warm_pool_entries
+      project.container_pool_entries.warm.where.not(
+        image: Provision::DEFAULTS[:image],
+        network: pool_network_name
       )
     end
 
