@@ -182,7 +182,7 @@ RSpec.describe Activities::FetchIssuesActivity do
           project: project,
           github_issue_id: 9101,
           github_number: 91,
-          labels: [ project.enhance_issue_needs_input_label_name ],
+          labels: [ project.enhance_issue_needs_input_label_name, "paid-build" ],
           enhance_issue_rounds: 0)
       end
 
@@ -193,7 +193,7 @@ RSpec.describe Activities::FetchIssuesActivity do
           title: issue.title,
           body: issue.body,
           state: "open",
-          labels: [],
+          labels: [ OpenStruct.new(name: "paid-build") ],
           pull_request: nil,
           user: OpenStruct.new(login: "viamin"),
           created_at: issue.github_created_at,
@@ -205,14 +205,15 @@ RSpec.describe Activities::FetchIssuesActivity do
         stub_issues_by_label(nil => [ github_issue ])
       end
 
-      it "returns a recheck request and increments the issue round" do
+      it "returns a recheck request and suppresses normal label evaluation" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:enhance_issue_rechecks]).to contain_exactly(
           hash_including(issue_id: issue.id, issue_number: issue.github_number, enhance_issue_rounds: 1)
         )
         expect(issue.reload.enhance_issue_rounds).to eq(1)
-        expect(issue.paid_state).to eq("new")
+        expect(issue.paid_state).to eq("in_progress")
+        expect(result[:issues]).not_to include(hash_including(id: issue.id))
       end
 
       it "posts a stop comment instead of rechecking after the max round" do

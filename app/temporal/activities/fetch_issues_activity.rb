@@ -63,12 +63,19 @@ module Activities
         project.touch_last_issue_sync_at(sync_started_at - 1.second)
       end
 
-      # Exclude closed issues from downstream processing (DetectLabelsActivity).
+      recheck_issue_ids = enhance_issue_rechecks.map { |recheck| recheck[:issue_id] }.to_set
+
+      # Exclude closed issues and enhance_issue rechecks from downstream
+      # processing (DetectLabelsActivity). Rechecks are returned separately for
+      # the workflow to queue, so evaluating their automation labels in this
+      # poll can incorrectly start a create_pr run before enhancement completes.
       # sync_issue already persisted their github_state to the DB, but passing
       # them downstream could incorrectly trigger agent runs for closed work.
       # Note: parse_issue_relationships receives all synced_issues (including
-      # closed), but filters to github_state: "open" internally (line 227).
-      open_issues = synced_issues.reject { |si| si[:github_state] == "closed" }
+      # closed), but filters to github_state: "open" internally.
+      open_issues = synced_issues.reject do |si|
+        si[:github_state] == "closed" || recheck_issue_ids.include?(si[:id])
+      end
 
       # During incremental fetches, issues whose `updated_at` did not change
       # on GitHub are not returned by the API. However, those issues may still
@@ -245,7 +252,7 @@ module Activities
           issue.update!(paid_state: "completed")
           limit_reached = true
         else
-          issue.update!(enhance_issue_rounds: issue.enhance_issue_rounds + 1, paid_state: "new")
+          issue.update!(enhance_issue_rounds: issue.enhance_issue_rounds + 1, paid_state: "in_progress")
         end
       end
 

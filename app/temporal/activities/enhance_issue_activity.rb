@@ -313,24 +313,22 @@ module Activities
 
     def apply_label_state(client, project, issue, parsed)
       if parsed[:sufficient_context]
-        add_label(client, project, issue, project.enhance_issue_enhanced_label_name)
-        remove_label(client, project, issue, project.enhance_issue_needs_input_label_name)
-        merge_local_labels(issue, add: [ project.enhance_issue_enhanced_label_name ],
-          remove: [ project.enhance_issue_needs_input_label_name ])
-        return { applied: project.enhance_issue_enhanced_label_name, max_rounds_reached: false }
+        added = labels_added(client, project, issue, [ project.enhance_issue_enhanced_label_name ])
+        removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
+        merge_local_labels(issue, add: added, remove: removed)
+        return { applied: added.first, max_rounds_reached: false }
       end
 
       if max_rounds_reached?(project, issue)
-        remove_label(client, project, issue, project.enhance_issue_needs_input_label_name)
-        merge_local_labels(issue, remove: [ project.enhance_issue_needs_input_label_name ])
+        removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
+        merge_local_labels(issue, remove: removed)
         return { applied: nil, max_rounds_reached: true }
       end
 
-      add_label(client, project, issue, project.enhance_issue_needs_input_label_name)
-      remove_label(client, project, issue, project.enhance_issue_enhanced_label_name)
-      merge_local_labels(issue, add: [ project.enhance_issue_needs_input_label_name ],
-        remove: [ project.enhance_issue_enhanced_label_name ])
-      { applied: project.enhance_issue_needs_input_label_name, max_rounds_reached: false }
+      added = labels_added(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
+      removed = labels_removed(client, project, issue, [ project.enhance_issue_enhanced_label_name ])
+      merge_local_labels(issue, add: added, remove: removed)
+      { applied: added.first, max_rounds_reached: false }
     end
 
     def paid_state_for(parsed, project, issue)
@@ -346,6 +344,7 @@ module Activities
 
     def add_label(client, project, issue, label)
       client.add_labels_to_issue(project.full_name, issue.github_number, [ label ])
+      true
     rescue GithubClient::Error => e
       logger.warn(
         message: "agent_execution.enhance_issue_label_add_failed",
@@ -355,14 +354,16 @@ module Activities
         error_class: e.class.name,
         error: e.message
       )
+      false
     end
 
     def remove_label(client, project, issue, label)
-      return unless issue.has_label?(label)
+      return true unless issue.has_label?(label)
 
       client.remove_label_from_issue(project.full_name, issue.github_number, label)
+      true
     rescue GithubClient::NotFoundError
-      nil
+      true
     rescue GithubClient::Error => e
       logger.warn(
         message: "agent_execution.enhance_issue_label_remove_failed",
@@ -372,9 +373,20 @@ module Activities
         error_class: e.class.name,
         error: e.message
       )
+      false
+    end
+
+    def labels_added(client, project, issue, labels)
+      labels.select { |label| add_label(client, project, issue, label) }
+    end
+
+    def labels_removed(client, project, issue, labels)
+      labels.select { |label| remove_label(client, project, issue, label) }
     end
 
     def merge_local_labels(issue, add: [], remove: [])
+      return if add.empty? && remove.empty?
+
       labels = (Array(issue.labels) - remove) | add
       issue.update!(labels: labels)
     end

@@ -141,6 +141,21 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
     end
 
+    it "does not persist local labels when adding the GitHub label fails" do
+      allow(client).to receive(:add_labels_to_issue).and_raise(GithubClient::Error.new("GitHub unavailable"))
+      allow(llm_response).to receive(:output).and_return(
+        {
+          sufficient_context: false,
+          comment_body: "## Clarifying questions\n1. Which events should be recorded?"
+        }.to_json
+      )
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:label_applied]).to be_nil
+      expect(issue.reload.labels).not_to include(project.enhance_issue_needs_input_label_name)
+    end
+
     it "posts a manual-review stop comment instead of reapplying needs-input at the max round" do
       issue.update!(enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds)
       allow(llm_response).to receive(:output).and_return(
