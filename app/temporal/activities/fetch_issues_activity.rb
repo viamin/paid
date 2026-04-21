@@ -22,6 +22,7 @@ module Activities
       synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
       parse_issue_relationships(project, synced_issues) if synced_issues.any?
       closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
+      stale_pr_count = reconcile_open_pull_requests(project, client) if incremental && !truncated
 
       if truncated && incremental
         # Incremental fetches sort ascending (oldest-updated first), so a
@@ -93,6 +94,7 @@ module Activities
         project_id: project.id,
         issue_count: synced_issues.size,
         closed_count: closed_count,
+        stale_pr_count: stale_pr_count || 0,
         incremental: incremental,
         rescan_count: incremental ? open_issues.count { |si| si[:rescan] } : 0
       )
@@ -424,6 +426,79 @@ module Activities
           count: count
         )
       end
+
+      count
+    end
+
+    def reconcile_open_pull_requests(project, client)
+      open_pr_numbers, truncated = fetch_open_pull_request_numbers(client, project.full_name)
+      return 0 if truncated
+
+      backfill_open_pull_requests(project, client, open_pr_numbers)
+      close_stale_pull_requests(project, open_pr_numbers)
+    end
+
+    def fetch_open_pull_request_numbers(client, repo_full_name)
+      prs = []
+      page = 1
+      truncated = false
+
+      loop do
+        page_prs = client.pull_requests(repo_full_name, state: "open", per_page: DEFAULT_PER_PAGE, page: page)
+        break if page_prs.empty?
+
+        prs.concat(page_prs)
+        break if page_prs.size < DEFAULT_PER_PAGE
+
+        page += 1
+        next unless page > DEFAULT_MAX_PAGES
+
+        truncated = client.pull_requests(repo_full_name, state: "open", per_page: DEFAULT_PER_PAGE, page: page).any?
+        logger.warn(
+          message: "github_sync.fetch_pull_requests_page_limit",
+          repo: repo_full_name,
+          fetched_count: prs.size,
+          max_pages: DEFAULT_MAX_PAGES
+        ) if truncated
+        break
+      end
+
+      [ prs.map(&:number).uniq, truncated ]
+    end
+
+    def backfill_open_pull_requests(project, client, open_pr_numbers)
+      return if open_pr_numbers.empty?
+
+      existing_open_numbers = project.issues
+        .pull_requests_only
+        .where(github_state: "open", github_number: open_pr_numbers)
+        .pluck(:github_number)
+        .to_set
+
+      (open_pr_numbers - existing_open_numbers.to_a).each do |number|
+        github_issue = client.issue(project.full_name, number)
+        sync_issue(project, github_issue)
+      end
+    end
+
+    def close_stale_pull_requests(project, open_pr_numbers)
+      stale_prs = project.issues
+        .pull_requests_only
+        .where(github_state: "open", source: Issue::GITHUB_SOURCE)
+      stale_prs = stale_prs.where.not(github_number: open_pr_numbers) if open_pr_numbers.any?
+
+      count = stale_prs.count
+      return 0 if count.zero?
+
+      stale_prs.update_all(github_state: "closed", updated_at: Time.current)
+      project.broadcast_issues_update
+      project.broadcast_pull_requests_update
+
+      logger.info(
+        message: "github_sync.closed_stale_pull_requests",
+        project_id: project.id,
+        count: count
+      )
 
       count
     end

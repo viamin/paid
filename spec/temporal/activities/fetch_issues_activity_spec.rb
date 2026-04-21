@@ -12,6 +12,7 @@ RSpec.describe Activities::FetchIssuesActivity do
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(issue_comments: [], "rate_limit_remaining!": 100)
+    allow(github_client).to receive(:pull_requests).and_return([])
   end
 
   # Helper: route github_client.issues calls by label (or nil for unlabeled fetches)
@@ -20,6 +21,21 @@ RSpec.describe Activities::FetchIssuesActivity do
       label = Array(opts[:labels]).first
       mapping.fetch(label, [])
     end
+  end
+
+  def github_pr_issue(number)
+    OpenStruct.new(
+      id: 5000 + number,
+      number: number,
+      title: "Open PR",
+      body: "PR body",
+      state: "open",
+      labels: [ OpenStruct.new(name: "paid-generated") ],
+      pull_request: OpenStruct.new(html_url: "https://github.com/owner/repo/pull/#{number}"),
+      user: OpenStruct.new(login: "viamin"),
+      created_at: 2.days.ago,
+      updated_at: 5.minutes.ago
+    )
   end
 
   describe "#execute" do
@@ -1024,6 +1040,57 @@ RSpec.describe Activities::FetchIssuesActivity do
         activity.execute(project_id: project.id)
 
         expect(stale.reload.github_state).to eq("open")
+      end
+
+      it "marks locally-open pull requests closed when GitHub no longer reports them open" do
+        stale_pr = create(:issue, :pull_request, project: project, github_issue_id: 5000,
+                          github_number: 50, github_state: "open")
+        open_pr = create(:issue, :pull_request, project: project, github_issue_id: 5001,
+                         github_number: 51, github_state: "open")
+
+        allow(github_client).to receive(:pull_requests).and_return([
+          OpenStruct.new(number: open_pr.github_number)
+        ])
+
+        activity.execute(project_id: project.id)
+
+        expect(stale_pr.reload.github_state).to eq("closed")
+        expect(open_pr.reload.github_state).to eq("open")
+      end
+
+      it "backfills open pull requests missing from the local cache" do
+        allow(github_client).to receive(:pull_requests).and_return([
+          OpenStruct.new(number: 52)
+        ])
+        allow(github_client).to receive(:issue).with(project.full_name, 52).and_return(github_pr_issue(52))
+
+        activity.execute(project_id: project.id)
+
+        pr = project.issues.find_by!(github_issue_id: 5052)
+        expect(pr.github_number).to eq(52)
+        expect(pr.github_state).to eq("open")
+        expect(pr.is_pull_request).to be true
+      end
+
+      it "does not close local pull requests when the open PR reconciliation is truncated" do
+        stub_const("#{described_class}::DEFAULT_PER_PAGE", 2)
+        stub_const("#{described_class}::DEFAULT_MAX_PAGES", 1)
+        stale_pr = create(:issue, :pull_request, project: project, github_issue_id: 5000,
+                          github_number: 50, github_state: "open")
+
+        allow(github_client).to receive(:pull_requests) do |_repo, **opts|
+          page = opts[:page] || 1
+          if page == 1
+            [ OpenStruct.new(number: 1), OpenStruct.new(number: 2) ]
+          else
+            [ OpenStruct.new(number: 3) ]
+          end
+        end
+        allow(Rails.logger).to receive(:warn)
+
+        activity.execute(project_id: project.id)
+
+        expect(stale_pr.reload.github_state).to eq("open")
       end
 
       it "includes re-scannable open issues not in the incremental fetch results" do
