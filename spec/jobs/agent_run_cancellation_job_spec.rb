@@ -55,6 +55,15 @@ RSpec.describe AgentRunCancellationJob, type: :job do
       expect(agent_run).to have_received(:cleanup_container).with(force: true)
     end
 
+    it "re-raises Docker cleanup errors for retry_on to handle" do
+      error = Docker::Error::DockerError.new("daemon unavailable")
+      agent_run.update!(container_id: "container-123")
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(agent_run).to receive(:cleanup_container).and_raise(error)
+
+      expect { described_class.new.perform(agent_run.id) }.to raise_error(error)
+    end
+
     it "does not raise when agent run is not found" do
       expect { described_class.perform_now(-1) }.not_to raise_error
     end

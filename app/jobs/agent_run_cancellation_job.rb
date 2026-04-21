@@ -4,6 +4,7 @@ class AgentRunCancellationJob < ApplicationJob
   queue_as :default
 
   retry_on Temporalio::Error::RPCError, wait: :polynomially_longer, attempts: 5
+  retry_on Docker::Error::DockerError, wait: :polynomially_longer, attempts: 3
   discard_on ActiveRecord::RecordNotFound
 
   def perform(agent_run_id)
