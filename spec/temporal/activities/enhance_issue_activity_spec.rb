@@ -215,6 +215,39 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.reload.paid_state).to eq("completed")
     end
 
+    it "keeps an existing clarifying-question enhancement in needs_input" do
+      issue.update!(labels: [ project.enhance_issue_needs_input_label_name ])
+      existing_comment = OpenStruct.new(
+        body: "#{described_class::COMMENT_MARKER}\n## Clarifying questions\n1. Which events should be recorded?",
+        html_url: "https://github.com/owner/repo/issues/42#issuecomment-0"
+      )
+      allow(client).to receive(:issue_comments).and_return([ existing_comment ])
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:already_enhanced]).to be true
+      expect(client).not_to have_received(:add_comment)
+      expect(AgentHarness).not_to have_received(:send_message)
+      expect(agent_run.reload.status).to eq("completed")
+      expect(issue.reload.paid_state).to eq("needs_input")
+    end
+
+    it "keeps an existing max-round stop comment completed" do
+      existing_comment = OpenStruct.new(
+        body: "#{described_class::COMMENT_MARKER}\n## Auto-enhancement stopped\n\n## Latest context\n## Clarifying questions",
+        html_url: "https://github.com/owner/repo/issues/42#issuecomment-0"
+      )
+      allow(client).to receive(:issue_comments).and_return([ existing_comment ])
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:already_enhanced]).to be true
+      expect(client).not_to have_received(:add_comment)
+      expect(AgentHarness).not_to have_received(:send_message)
+      expect(agent_run.reload.status).to eq("completed")
+      expect(issue.reload.paid_state).to eq("completed")
+    end
+
     it "raises a non-retryable activity error when the LLM output is invalid JSON" do
       allow(llm_response).to receive(:output).and_return("not json")
 

@@ -80,17 +80,26 @@ module Activities
     end
 
     def complete_existing(agent_run, existing_comment)
-      complete_run!(agent_run)
+      issue = agent_run.issue
+      complete_run!(agent_run, existing_paid_state(issue, existing_comment))
       agent_run.log!("system", "Enhancement comment already exists: #{existing_comment.html_url}")
       ProcessRunQueueJob.perform_later
 
       {
         agent_run_id: agent_run.id,
-        issue_number: agent_run.issue.github_number,
+        issue_number: issue.github_number,
         comment_url: existing_comment.html_url,
         sufficient_context: nil,
         already_enhanced: true
       }
+    end
+
+    def existing_paid_state(issue, existing_comment)
+      return "completed" if existing_comment.body.to_s.include?("## Auto-enhancement stopped")
+      return "needs_input" if issue.has_label?(issue.project.enhance_issue_needs_input_label_name)
+      return "needs_input" if existing_comment.body.to_s.include?("## Clarifying questions")
+
+      "completed"
     end
 
     def complete_run!(agent_run, paid_state = "completed")
