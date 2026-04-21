@@ -1807,15 +1807,33 @@ module Activities
     end
 
     def maybe_assign_ab_test_variant(agent_run, slug, rendered, vars)
-      prompt = Prompt.resolve(slug, project: agent_run.project)
-      ab_test = prompt&.ab_tests&.running&.first
-      return rendered unless ab_test
+      assignment = existing_ab_test_assignment(agent_run, slug)
+      assignment ||= assign_running_ab_test(agent_run, slug)
+      return rendered unless assignment
 
-      assignment = AbTests::Assign.call(ab_test: ab_test, agent_run: agent_run)
       variant_version = assignment.ab_test_variant.prompt_version
       agent_run.update!(prompt_version: variant_version)
 
       variant_version.render(vars)
+    end
+
+    def existing_ab_test_assignment(agent_run, slug)
+      AbTestAssignment
+        .joins(ab_test: :prompt)
+        .includes(ab_test_variant: :prompt_version)
+        .where(agent_run: agent_run, prompts: { slug: slug })
+        .order(:id)
+        .first
+    end
+
+    def assign_running_ab_test(agent_run, slug)
+      prompt = Prompt.resolve(slug, project: agent_run.project)
+      return nil unless prompt
+
+      ab_test = prompt.ab_tests.running.first
+      return nil unless ab_test
+
+      AbTests::Assign.call(ab_test: ab_test, agent_run: agent_run)
     end
 
     def inject_knowledge_into_prompt(prompt, issue, project)
