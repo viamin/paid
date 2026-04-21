@@ -32,6 +32,19 @@ RSpec.describe AgentRunCancellationJob, type: :job do
       expect { described_class.perform_now(agent_run.id) }.not_to raise_error
     end
 
+    it "re-raises transient Temporal workflow errors for retry_on to handle" do
+      error = Temporalio::Error::RPCError.allocate
+      allow(error).to receive(:code).and_return(Temporalio::Error::RPCError::Code::UNAVAILABLE)
+      agent_run.update!(temporal_workflow_id: "workflow-123")
+
+      handle = double
+      allow(handle).to receive(:cancel).and_raise(error)
+      temporal_client = double(workflow_handle: handle)
+      allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+
+      expect { described_class.new.perform(agent_run.id) }.to raise_error(Temporalio::Error::RPCError)
+    end
+
     it "cleans up the container when present" do
       agent_run.update!(container_id: "container-123")
       allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)

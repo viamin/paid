@@ -64,6 +64,18 @@ RSpec.describe Activities::MarkAgentRunCompleteActivity do
       expect(issue.reload.paid_state).to eq("in_progress")
     end
 
+    it "does not overwrite or complete issue state for cancelled runs" do
+      issue = create(:issue, :in_progress, project: project)
+      agent_run = create(:agent_run, :cancelled, :create_issue_goal, project: project, issue: issue)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.not_to have_enqueued_job(ProcessRunQueueJob)
+
+      expect(agent_run.reload.status).to eq("cancelled")
+      expect(issue.reload.paid_state).to eq("in_progress")
+    end
+
     it "enqueues ProcessRunQueueJob" do
       agent_run = create(:agent_run, :running, project: project)
 

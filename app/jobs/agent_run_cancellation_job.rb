@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 class AgentRunCancellationJob < ApplicationJob
+  queue_as :default
+
+  retry_on Temporalio::Error::RPCError, wait: :polynomially_longer, attempts: 5
   discard_on ActiveRecord::RecordNotFound
 
   def perform(agent_run_id)

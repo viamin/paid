@@ -99,6 +99,16 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(agent_run.pull_request_number).to eq(42)
     end
 
+    it "does not create a pull request for cancelled runs" do
+      agent_run = create(:agent_run, :cancelled, :with_git_context, project: project, issue: issue)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).not_to have_received(:create_pull_request)
+      expect(result[:agent_run_id]).to eq(agent_run.id)
+      expect(agent_run.reload.status).to eq("cancelled")
+    end
+
     it "syncs a local pull request row immediately after PR creation" do
       expect {
         activity.execute(agent_run_id: agent_run.id)

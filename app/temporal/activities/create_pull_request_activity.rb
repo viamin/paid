@@ -7,6 +7,8 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
+      return completion_result(agent_run) if agent_run.finished?
+
       track_phase(agent_run_id: agent_run_id, phase_key: "create_pull_request", phase_group: "post", agent_run: agent_run) do
         project = agent_run.project
         issue = agent_run.issue
@@ -41,31 +43,42 @@ module Activities
         # Persist completion as the very first step after obtaining the PR,
         # before any best-effort post-processing. This ensures a retry
         # cannot overwrite status via MarkAgentRunFailedActivity.
-        agent_run.complete!(
+        completed = agent_run.complete!(
           result_commit: agent_run.result_commit_sha,
           pr_url: pr.html_url,
           pr_number: pr.number
         )
+        if completed
+          # Best-effort post-processing — failures here must not cause the
+          # activity to be retried now that the run is already completed.
+          best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
+          best_effort(agent_run_id, context: "add_pr_labels") { add_pr_labels(client, project, pr.number, agent_run_id, issue: issue) }
+          best_effort(agent_run_id, context: "log_pr_action") { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
 
-        # Best-effort post-processing — failures here must not cause the
-        # activity to be retried now that the run is already completed.
-        best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
-        best_effort(agent_run_id, context: "add_pr_labels") { add_pr_labels(client, project, pr.number, agent_run_id, issue: issue) }
-        best_effort(agent_run_id, context: "log_pr_action") { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
+          best_effort(agent_run_id, context: "structured_log") do
+            logger.info(
+              message: "agent_execution.pull_request_#{pr_action}",
+              agent_run_id: agent_run_id,
+              pull_request_url: pr.html_url
+            )
+          end
 
-        best_effort(agent_run_id, context: "structured_log") do
-          logger.info(
-            message: "agent_execution.pull_request_#{pr_action}",
-            agent_run_id: agent_run_id,
-            pull_request_url: pr.html_url
-          )
+          { agent_run_id: agent_run_id, pull_request_url: pr.html_url, pull_request_number: pr.number }
+        else
+          completion_result(agent_run.reload)
         end
-
-        { agent_run_id: agent_run_id, pull_request_url: pr.html_url, pull_request_number: pr.number }
       end
     end
 
     private
+
+    def completion_result(agent_run)
+      {
+        agent_run_id: agent_run.id,
+        pull_request_url: agent_run.pull_request_url,
+        pull_request_number: agent_run.pull_request_number
+      }
+    end
 
     # Checks whether the branch exists on GitHub via the refs API.
     # Returns true when confirmed or when the check fails transiently

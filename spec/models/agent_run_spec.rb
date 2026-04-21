@@ -739,6 +739,18 @@ RSpec.describe AgentRun do
           expect(agent_run.duration_seconds).to eq((Time.current - started_time).to_i)
         end
       end
+
+      it "does not overwrite a cancelled run" do
+        agent_run = create(:agent_run, :cancelled, pull_request_url: nil, pull_request_number: nil)
+
+        expect(
+          agent_run.complete!(pr_url: "https://github.com/example/repo/pull/42", pr_number: 42)
+        ).to be false
+
+        expect(agent_run.reload.status).to eq("cancelled")
+        expect(agent_run.pull_request_url).to be_nil
+        expect(agent_run.pull_request_number).to be_nil
+      end
     end
 
     describe "#complete! with issue details" do
@@ -756,6 +768,17 @@ RSpec.describe AgentRun do
           expect(agent_run.created_issue_number).to eq(10)
           expect(agent_run.pull_request_url).to be_nil
         end
+      end
+    end
+
+    describe "#complete_no_output!" do
+      it "does not overwrite a cancelled run" do
+        agent_run = create(:agent_run, :cancelled, error_message: nil)
+
+        expect(agent_run.complete_no_output!(reason: "no_changes")).to be false
+
+        expect(agent_run.reload.status).to eq("cancelled")
+        expect(agent_run.error_message).to be_nil
       end
     end
 
