@@ -100,6 +100,32 @@ RSpec.describe Activities::CheckQualityGateActivity do
     expect(regular_result).to include(allowed: false, blocked: true, reason: "quality_gate_breached")
   end
 
+  it "clears the previous agent run when the activity instance is reused without one" do
+    agent_run = create(:agent_run, :manual, project: project)
+    create_metric(0.1)
+    create_metric(0.1)
+    create_metric(0.1)
+
+    manual_result = activity.execute(project_id: project.id, agent_run_id: agent_run.id)
+    automatic_result = activity.execute(project_id: project.id)
+
+    expect(manual_result).to include(allowed: true, bypassed: true, reason: "manual_run")
+    expect(automatic_result).to include(allowed: false, blocked: true, reason: "quality_gate_breached")
+  end
+
+  it "clears the previous issue when the activity instance is reused without one" do
+    issue = create(:issue, project: project, labels: [ "P1" ])
+    create_metric(0.1)
+    create_metric(0.1)
+    create_metric(0.1)
+
+    priority_result = activity.execute(project_id: project.id, issue_id: issue.id)
+    automatic_result = activity.execute(project_id: project.id)
+
+    expect(priority_result).to include(allowed: true, bypassed: true, reason: "priority_run")
+    expect(automatic_result).to include(allowed: false, blocked: true, reason: "quality_gate_breached")
+  end
+
   it "records the gate result in workflow state" do
     create_metric(0.9)
     create_metric(0.8)
