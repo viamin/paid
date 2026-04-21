@@ -133,3 +133,67 @@ jobs:
 
       - name: Run tests
         run: bin/rspec
+
+  performance:
+    runs-on: ubuntu-latest
+    if: vars.PAID_PERFORMANCE_BENCHMARKS == 'true'
+
+    services:
+      postgres:
+        image: postgres:16.13
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      qdrant:
+        image: qdrant/qdrant:v1.13.2
+        ports:
+          - 6333:6333
+
+    env:
+      BUNDLE_FROZEN: "true"
+      RAILS_ENV: test
+      DB_HOST: localhost
+      QDRANT_URL: http://localhost:6333
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@7372622e62b60b3cb750dcd2b9e32c247ffec26a
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version-file: .tool-versions
+          cache: 'yarn'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install JavaScript dependencies
+        run: yarn install --frozen-lockfile && bin/yarn-postinstall
+
+      - name: Set up database
+        run: bin/rails db:prepare
+
+      - name: Run performance benchmarks
+        run: >
+          scripts/performance/benchmark.rb
+          --seed-ci-data
+          --require-metrics container_startup_time,workflow_latency,dashboard_load_time,search_latency
+          --baseline docs/performance/baseline.json
+          --fail-on-regression
+
+      - name: Print performance report
+        run: cat tmp/performance/report.md
