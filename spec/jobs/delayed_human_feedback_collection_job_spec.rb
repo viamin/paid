@@ -145,5 +145,14 @@ RSpec.describe DelayedHumanFeedbackCollectionJob do
         described_class.new.perform
       }.to have_enqueued_job(HumanFeedbackCollectionJob).with(run.id)
     end
+
+    it "enqueues recently completed enhance_issue runs" do
+      run = create(:agent_run, :enhance_issue_goal, :completed, pull_request_number: nil)
+      run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
+
+      expect {
+        described_class.new.perform
+      }.to have_enqueued_job(HumanFeedbackCollectionJob).with(run.id)
+    end
   end
 end

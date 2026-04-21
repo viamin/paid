@@ -130,6 +130,20 @@ RSpec.describe QualityMetric do
       expect(score).to eq(0.88)
     end
 
+    it "uses enhance_issue weights for enhancement goals" do
+      agent_run = build(:agent_run, :enhance_issue_goal)
+      metric = build(:quality_metric, agent_run: agent_run, scores: {
+        "comment_posted" => 1.0,
+        "reaction_score" => 0.5,
+        "author_replied" => 1.0,
+        "question_count" => 0.3333
+      })
+
+      score = metric.calculate_composite_score
+
+      expect(score).to eq(0.7583)
+    end
+
     it "handles partial scores" do
       metric = build(:quality_metric, scores: { "pr_created" => 1.0 })
 

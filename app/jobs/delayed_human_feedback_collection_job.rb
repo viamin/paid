@@ -36,6 +36,7 @@ class DelayedHumanFeedbackCollectionJob < ApplicationJob
               .and(AgentRun.arel_table[:updated_at].gteq(LOOKBACK_WINDOW.ago))
           )
       )
+      .where(goal: QualityMetric::GOAL_WEIGHTS.keys)
       .where.not(
         id: recently_polled_agent_run_ids
       )
