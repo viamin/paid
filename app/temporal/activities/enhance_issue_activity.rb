@@ -50,7 +50,7 @@ module Activities
 
       track_tokens(agent_run, response)
       agent_run.log!("stdout", comment_body)
-      agent_run.complete!
+      complete_run!(agent_run)
       ProcessRunQueueJob.perform_later
 
       logger.info(
@@ -73,7 +73,7 @@ module Activities
     end
 
     def complete_existing(agent_run, existing_comment)
-      agent_run.complete!
+      complete_run!(agent_run)
       agent_run.log!("system", "Enhancement comment already exists: #{existing_comment.html_url}")
       ProcessRunQueueJob.perform_later
 
@@ -84,6 +84,11 @@ module Activities
         sufficient_context: nil,
         already_enhanced: true
       }
+    end
+
+    def complete_run!(agent_run)
+      agent_run.complete!
+      agent_run.issue.update!(paid_state: "completed") if agent_run.issue
     end
 
     def build_context(project, issue)

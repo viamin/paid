@@ -7,7 +7,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
   let(:issue) do
-    create(:issue,
+    create(:issue, :in_progress,
       project: project,
       github_number: 42,
       title: "Add audit log",
@@ -89,6 +89,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
         a_string_including(described_class::COMMENT_MARKER, "## Implementation context")
       )
       expect(agent_run.reload.status).to eq("completed")
+      expect(issue.reload.paid_state).to eq("completed")
       expect(agent_run.token_usages.last).to have_attributes(
         request_type: "agent",
         metadata: include("operation" => "enhance_issue")
@@ -137,6 +138,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(client).not_to have_received(:add_comment)
       expect(AgentHarness).not_to have_received(:send_message)
       expect(agent_run.reload.status).to eq("completed")
+      expect(issue.reload.paid_state).to eq("completed")
     end
 
     it "raises a non-retryable activity error when the LLM output is invalid JSON" do
