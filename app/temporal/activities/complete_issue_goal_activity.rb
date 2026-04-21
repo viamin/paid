@@ -44,7 +44,14 @@ module Activities
     private
 
     def result(agent_run)
-      { agent_run_id: agent_run.id, success: agent_run.successful?, issue_created: agent_run.created_issue_url.present? }
+      {
+        agent_run_id: agent_run.id,
+        success: agent_run.successful?,
+        issue_created: agent_run.created_issue_url.present?,
+        skipped: true,
+        finished: true,
+        cancelled: agent_run.status == "cancelled"
+      }
     end
   end
 end

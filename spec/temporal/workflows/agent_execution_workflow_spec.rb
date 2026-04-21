@@ -108,6 +108,28 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
               timeout: anything, retry_policy: anything)
     end
 
+    it "skips fallback issue creation when CompleteIssueGoalActivity reports a finished run" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: true }
+        when "Activities::CompleteIssueGoalActivity"
+          { agent_run_id: 42, success: false, issue_created: false, skipped: true, finished: true, cancelled: true }
+        else {}
+        end
+      end
+
+      result = workflow.execute(input)
+
+      expect(result[:success]).to be true
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ParseCrossRepoIssuePlanActivity, anything,
+          timeout: anything, retry_policy: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CreateGithubIssueActivity, anything,
+          timeout: anything, retry_policy: anything)
+    end
+
     it "marks the run failed when fallback issue creation is rejected" do
       stub_issue_creation_rejected
 

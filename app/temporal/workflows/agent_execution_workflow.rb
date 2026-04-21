@@ -226,7 +226,7 @@ module Workflows
 
           # Fallback: if the agent didn't create an issue directly, create one
           # from the agent's output using the platform's GitHub integration.
-          if issue_result[:issue_created] == false
+          if issue_result[:issue_created] == false && !issue_result[:skipped]
             # Check for cross-repo issue plan before falling back to single-issue creation
             cross_repo_result = run_activity(Activities::ParseCrossRepoIssuePlanActivity,
               { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)

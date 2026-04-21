@@ -56,6 +56,22 @@ RSpec.describe Activities::CompleteIssueGoalActivity do
           }.not_to change(AgentRunLog, :count)
         }.not_to have_enqueued_job(ProcessRunQueueJob)
       end
+
+      it "reports finished runs as skipped" do
+        agent_run = create(:agent_run, :cancelled, project: project,
+          created_issue_url: "https://github.com/example/repo/issues/42",
+          created_issue_number: 42)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result).to include(
+          success: false,
+          issue_created: true,
+          skipped: true,
+          finished: true,
+          cancelled: true
+        )
+      end
     end
 
     context "when the agent did not create an issue" do
@@ -86,6 +102,20 @@ RSpec.describe Activities::CompleteIssueGoalActivity do
         expect {
           activity.execute(agent_run_id: agent_run.id)
         }.not_to have_enqueued_job(ProcessRunQueueJob)
+      end
+
+      it "reports cancelled runs as skipped instead of fallback candidates" do
+        agent_run = create(:agent_run, :cancelled, project: project)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result).to include(
+          success: false,
+          issue_created: false,
+          skipped: true,
+          finished: true,
+          cancelled: true
+        )
       end
     end
 
