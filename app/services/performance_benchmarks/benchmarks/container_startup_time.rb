@@ -34,7 +34,11 @@ module PerformanceBenchmarks
       attr_reader :now
 
       def skipped
-        Measurement.skipped(key: KEY, reason: "No completed provision_container phases found in the last 30 days.", metadata: metadata)
+        Measurement.skipped(
+          key: KEY,
+          reason: "No completed provision_container phases found in the last 30 days.",
+          metadata: metadata
+        )
       end
 
       def metadata

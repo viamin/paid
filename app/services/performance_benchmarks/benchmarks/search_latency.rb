@@ -20,7 +20,9 @@ module PerformanceBenchmarks
         return skipped("No project exists to benchmark knowledge search.") if project.nil?
 
         benchmark_query = query.presence || default_query
-        return skipped("No active knowledge artifact exists to provide a repeatable search query.") if benchmark_query.blank?
+        if benchmark_query.blank?
+          return skipped("No active knowledge artifact exists to provide a repeatable search query.")
+        end
 
         samples = ITERATIONS.times.map { measure_search(benchmark_query) }
         Measurement.from_samples(key: KEY, samples: samples, metadata: metadata(benchmark_query))
@@ -57,7 +59,13 @@ module PerformanceBenchmarks
       end
 
       def metadata(benchmark_query)
-        { iterations: ITERATIONS, source: "knowledge_search", mode: mode, project_id: project&.id, query: benchmark_query }
+        {
+          iterations: ITERATIONS,
+          source: "knowledge_search",
+          mode: mode,
+          project_id: project&.id,
+          query: benchmark_query
+        }
       end
 
       def monotonic_ms

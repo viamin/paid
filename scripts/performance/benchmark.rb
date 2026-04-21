@@ -35,9 +35,15 @@ OptionParser.new do |parser|
   parser.on("--output PATH", "Write JSON report to PATH.") { |value| options[:output] = value }
   parser.on("--markdown PATH", "Write Markdown report to PATH.") { |value| options[:markdown] = value }
   parser.on("--baseline PATH", "Compare against a previous JSON baseline.") { |value| options[:baseline] = value }
-  parser.on("--fail-on-regression", "Exit non-zero when budgets or baseline thresholds fail.") { options[:fail_on_regression] = true }
-  parser.on("--seed-ci-data", "Create deterministic test records required by CI benchmarks.") { options[:seed_ci_data] = true }
-  parser.on("--require-metrics x,y,z", Array, "Fail when any listed metric is skipped.") { |value| options[:required_metrics] = value }
+  parser.on("--fail-on-regression", "Exit non-zero when budgets or baseline thresholds fail.") do
+    options[:fail_on_regression] = true
+  end
+  parser.on("--seed-ci-data", "Create deterministic test records required by CI benchmarks.") do
+    options[:seed_ci_data] = true
+  end
+  parser.on("--require-metrics x,y,z", Array, "Fail when any listed metric is skipped.") do |value|
+    options[:required_metrics] = value
+  end
 end.parse!
 
 report = if options[:seed_ci_data]

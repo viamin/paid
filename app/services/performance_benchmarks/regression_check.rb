@@ -81,7 +81,9 @@ module PerformanceBenchmarks
     end
 
     def baseline_metrics
-      @baseline_metrics ||= baseline.fetch(:metrics, baseline.fetch("metrics", [])).index_by { |metric| metric_key(metric) }
+      @baseline_metrics ||= baseline
+        .fetch(:metrics, baseline.fetch("metrics", []))
+        .index_by { |metric| metric_key(metric) }
     end
 
     def metric_key(metric)

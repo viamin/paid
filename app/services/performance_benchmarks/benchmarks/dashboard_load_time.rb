@@ -37,7 +37,11 @@ module PerformanceBenchmarks
       end
 
       def skipped
-        Measurement.skipped(key: KEY, reason: "No account exists to benchmark dashboard service calls.", metadata: metadata)
+        Measurement.skipped(
+          key: KEY,
+          reason: "No account exists to benchmark dashboard service calls.",
+          metadata: metadata
+        )
       end
 
       def metadata

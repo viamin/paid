@@ -32,7 +32,14 @@ module PerformanceBenchmarks
 
       measurements.each do |measurement|
         data = measurement.to_h
-        lines << "| #{data.fetch(:name)} | #{data.fetch(:sample_count)} | #{format_ms(data[:p50_ms])} | #{format_ms(data[:p95_ms])} | #{format_ms(data[:budget_ms])} | #{data.fetch(:status)} |"
+        lines << [
+          "| #{data.fetch(:name)}",
+          data.fetch(:sample_count).to_s,
+          format_ms(data[:p50_ms]),
+          format_ms(data[:p95_ms]),
+          format_ms(data[:budget_ms]),
+          "#{data.fetch(:status)} |"
+        ].join(" | ")
       end
 
       skipped = measurements.select(&:skipped?)
