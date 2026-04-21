@@ -338,6 +338,9 @@ RSpec.describe Activities::RunAgentActivity do
       env = activity.send(:command_env_for, context, "ping")
 
       expect(command[0..1]).to eq(%w[sh -c])
+      expect(command[2]).to include('ANTHROPIC_BASE_URL="$PAID_PROXY_URL/api/proxy/anthropic"')
+      expect(command[2]).to include('ANTHROPIC_HEADER_X_AGENT_RUN_ID="$AGENT_RUN_ID"')
+      expect(command[2]).to include('ANTHROPIC_HEADER_X_PROXY_TOKEN="$PROXY_TOKEN"')
       expect(command[2]).to include('ANTHROPIC_HEADER_X_PAID_PROVIDER_ID="$PAID_PROVIDER_ID"')
       expect(command[2]).to include('ANTHROPIC_API_KEY="paid-run:$AGENT_RUN_ID:$PROXY_TOKEN"')
       expect(command[2]).not_to include("sk-anthropic-secret")
@@ -556,6 +559,9 @@ RSpec.describe Activities::RunAgentActivity do
         rate_limit_failure
       else
         expect(command[0..1]).to eq(%w[sh -c])
+        expect(command[2]).to include('ANTHROPIC_BASE_URL="$PAID_PROXY_URL/api/proxy/anthropic"')
+        expect(command[2]).to include('ANTHROPIC_HEADER_X_AGENT_RUN_ID="$AGENT_RUN_ID"')
+        expect(command[2]).to include('ANTHROPIC_HEADER_X_PROXY_TOKEN="$PROXY_TOKEN"')
         expect(command[2]).to include('ANTHROPIC_API_KEY="paid-run:$AGENT_RUN_ID:$PROXY_TOKEN"')
         expect(command[2]).not_to include("sk-fallback-secret")
         expect(opts[:env]).to include("PAID_PROVIDER_ID" => fallback_provider.id.to_s)
