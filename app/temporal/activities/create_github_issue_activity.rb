@@ -84,22 +84,11 @@ module Activities
             status: agent_run.reload.status,
             issue_url: gh_issue.html_url
           )
-
-          return result(agent_run)
         end
 
-        sync_issue_record(project, gh_issue)
-        record_cross_repo_issue(agent_run, project.full_name, gh_issue, role: "downstream") if upstream_issue
+        reconcile_created_issue(agent_run, project, gh_issue, upstream_issue: upstream_issue)
 
-        agent_run.log!("system", "Issue created: #{gh_issue.html_url}")
-
-        logger.info(
-          message: "agent_execution.github_issue_created",
-          agent_run_id: agent_run_id,
-          issue_url: gh_issue.html_url
-        )
-
-        ProcessRunQueueJob.perform_later
+        ProcessRunQueueJob.perform_later if completed
 
         { agent_run_id: agent_run_id, issue_url: gh_issue.html_url, issue_number: gh_issue.number }
       end
@@ -313,6 +302,21 @@ module Activities
     def append_dependency_text(body, upstream_issue)
       dep_line = "Blocked by #{upstream_issue[:target_repo]}##{upstream_issue[:issue_number]}"
       "#{body}\n\n## Dependencies\n\n- #{dep_line}"
+    end
+
+    def reconcile_created_issue(agent_run, project, gh_issue, upstream_issue:)
+      # Reconcile even when cancellation wins the complete! lock, because the
+      # GitHub issue already exists and should not be left orphaned.
+      sync_issue_record(project, gh_issue)
+      record_cross_repo_issue(agent_run, project.full_name, gh_issue, role: "downstream") if upstream_issue
+
+      agent_run.log!("system", "Issue created: #{gh_issue.html_url}")
+
+      logger.info(
+        message: "agent_execution.github_issue_created",
+        agent_run_id: agent_run.id,
+        issue_url: gh_issue.html_url
+      )
     end
 
     def sync_issue_record(project, gh_issue)

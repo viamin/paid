@@ -48,25 +48,18 @@ module Activities
           pr_url: pr.html_url,
           pr_number: pr.number
         )
-        if completed
-          # Best-effort post-processing — failures here must not cause the
-          # activity to be retried now that the run is already completed.
-          best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
-          best_effort(agent_run_id, context: "add_pr_labels") { add_pr_labels(client, project, pr.number, agent_run_id, issue: issue) }
-          best_effort(agent_run_id, context: "log_pr_action") { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
+        reconcile_pull_request(agent_run, client, project, pr, pr_action, issue: issue)
 
-          best_effort(agent_run_id, context: "structured_log") do
-            logger.info(
-              message: "agent_execution.pull_request_#{pr_action}",
-              agent_run_id: agent_run_id,
-              pull_request_url: pr.html_url
-            )
-          end
-
-          { agent_run_id: agent_run_id, pull_request_url: pr.html_url, pull_request_number: pr.number }
-        else
-          completion_result(agent_run.reload)
+        unless completed
+          logger.info(
+            message: "agent_execution.pull_request_completion_skipped",
+            agent_run_id: agent_run_id,
+            status: agent_run.reload.status,
+            pull_request_url: pr.html_url
+          )
         end
+
+        { agent_run_id: agent_run_id, pull_request_url: pr.html_url, pull_request_number: pr.number }
       end
     end
 
@@ -135,6 +128,24 @@ module Activities
         error_class: e.class.name,
         error: e.message
       )
+    end
+
+    def reconcile_pull_request(agent_run, client, project, pr, pr_action, issue:)
+      agent_run_id = agent_run.id
+
+      # Best-effort post-processing runs even when cancellation wins the
+      # complete! lock, because the GitHub PR already exists at this point.
+      best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
+      best_effort(agent_run_id, context: "add_pr_labels") { add_pr_labels(client, project, pr.number, agent_run_id, issue: issue) }
+      best_effort(agent_run_id, context: "log_pr_action") { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
+
+      best_effort(agent_run_id, context: "structured_log") do
+        logger.info(
+          message: "agent_execution.pull_request_#{pr_action}",
+          agent_run_id: agent_run_id,
+          pull_request_url: pr.html_url
+        )
+      end
     end
 
     def pr_title(issue)

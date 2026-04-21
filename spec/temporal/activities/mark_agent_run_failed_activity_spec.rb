@@ -46,7 +46,7 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       expect(issue.reload.paid_state).to eq("completed")
     end
 
-    it "does not overwrite timeout status or update issue" do
+    it "does not overwrite timeout status but updates issue state" do
       issue = create(:issue, :in_progress, project: project)
       agent_run = create(:agent_run, :running, project: project, issue: issue)
       agent_run.timeout!(error: "startup_timeout: No output received")
@@ -56,7 +56,7 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       agent_run.reload
       expect(agent_run.status).to eq("timeout")
       expect(agent_run.error_message).to eq("startup_timeout: No output received")
-      expect(issue.reload.paid_state).to eq("in_progress")
+      expect(issue.reload.paid_state).to eq("failed")
     end
 
     it "does not overwrite completed status or update issue" do

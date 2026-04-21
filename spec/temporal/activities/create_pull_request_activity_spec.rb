@@ -119,6 +119,27 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(pull_request.labels).to include("paid-generated", "paid-automation")
     end
 
+    it "reconciles a created pull request when cancellation wins the completion lock" do
+      allow(github_client).to receive(:create_pull_request) do
+        agent_run.cancel!
+        pr_response
+      end
+
+      expect {
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+        expect(result[:pull_request_number]).to eq(42)
+      }.to change { project.issues.pull_requests_only.where(github_number: 42).count }.by(1)
+
+      agent_run.reload
+      expect(agent_run.status).to eq("cancelled")
+      expect(agent_run.pull_request_url).to be_nil
+      expect(github_client).to have_received(:add_labels_to_issue).with(
+        project.full_name, 42, [ "paid-generated", "paid-automation" ]
+      )
+    end
+
     it "adds the generated and automation labels to the PR" do
       expect(github_client).to receive(:add_labels_to_issue).with(
         project.full_name, 42, [ "paid-generated", "paid-automation" ]

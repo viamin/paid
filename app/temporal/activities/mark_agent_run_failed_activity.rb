@@ -25,12 +25,13 @@ module Activities
       # RunAgentActivity would skip queue processing entirely.
       ProcessRunQueueJob.perform_later
 
-      # Always update issue state so it doesn't stay stuck in "in_progress".
+      # Update issue state for failure statuses so it doesn't stay stuck in
+      # "in_progress". Preserve cancellation and successful terminal states.
       # Review-goal failures restore the issue to "completed" rather than
       # marking it "failed" — the underlying PR work succeeded; only the
       # follow-up review run failed. Using "completed" keeps auto-pick
       # unblocked and lets the scanner re-evaluate the PR on the next cycle.
-      if agent_run.issue && !finished_before_failure
+      if agent_run.issue && agent_run.status.in?(AgentRun::FAILURE_STATUSES)
         target_state = agent_run.review_goal? ? "completed" : "failed"
         if agent_run.issue.paid_state != target_state
           agent_run.issue.update!(paid_state: target_state)
