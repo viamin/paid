@@ -91,11 +91,10 @@ RSpec.describe Containers::ServiceProvisioner do
               "Networks" => { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ "test-postgres" ] } }
             }
           })
-        network = instance_double(Docker::Network)
+        network = instance_double(Docker::Network, connect: nil, disconnect: nil)
 
         allow(Docker::Container).to receive(:get).with("alive123").and_return(alive_container)
-        allow(Docker::Network).to receive(:get).with(NetworkPolicy::INFRA_NETWORK_NAME).and_return(network)
-        allow(network).to receive(:connect)
+        allow(Docker::Network).to receive(:get).and_return(network)
         allow(alive_container).to receive(:exec).and_return([ [ "(0 rows)" ], [], 0 ])
 
         provisioner.provision(agent_run, network: NetworkPolicy::INFRA_NETWORK_NAME)
@@ -105,6 +104,31 @@ RSpec.describe Containers::ServiceProvisioner do
           {},
           "EndpointConfig" => { "Aliases" => [ "test-postgres" ] }
         )
+      end
+
+      it "disconnects reused running containers from the non-selected Paid network" do
+        service_container.update!(status: "running", docker_container_id: "alive123")
+        alive_container = instance_double(Docker::Container,
+          id: "alive123",
+          info: {
+            "State" => { "Running" => true },
+            "NetworkSettings" => {
+              "Networks" => {
+                NetworkPolicy::NETWORK_NAME => { "Aliases" => [ "test-postgres" ] },
+                NetworkPolicy::INFRA_NETWORK_NAME => { "Aliases" => [ "test-postgres" ] }
+              }
+            }
+          })
+        infra_network = instance_double(Docker::Network)
+
+        allow(Docker::Container).to receive(:get).with("alive123").and_return(alive_container)
+        allow(Docker::Network).to receive(:get).with(NetworkPolicy::INFRA_NETWORK_NAME).and_return(infra_network)
+        allow(infra_network).to receive(:disconnect)
+        allow(alive_container).to receive(:exec).and_return([ [ "(0 rows)" ], [], 0 ])
+
+        provisioner.provision(agent_run)
+
+        expect(infra_network).to have_received(:disconnect).with("alive123")
       end
 
       it "reconnects reused containers when the requested network is missing the service alias" do
@@ -338,6 +362,8 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(running_container)
         allow(Docker::Container).to receive(:get).with("running789").and_return(running_container)
         allow(Docker::Network).to receive(:get).with(NetworkPolicy::INFRA_NETWORK_NAME).and_return(network)
+        allow(Docker::Network).to receive(:get).with(NetworkPolicy::NETWORK_NAME)
+          .and_return(instance_double(Docker::Network, disconnect: nil))
         allow(network).to receive(:connect)
         allow(running_container).to receive_messages(json: running_json, stop: nil, delete: nil)
         allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
