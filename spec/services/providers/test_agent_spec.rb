@@ -1058,4 +1058,22 @@ RSpec.describe Providers::TestAgent do
       end
     end
   end
+
+  describe "#rate_limit_reset_at" do
+    before do
+      allow(ProviderSupport).to receive(:harness_provider_key_for).with("claude").and_return("claude")
+    end
+
+    it "falls back when agent-harness parses a stale reset time" do
+      harness_provider = double(parse_rate_limit_reset: 1.hour.ago)
+      allow(AgentHarness).to receive(:provider).with(:claude).and_return(harness_provider)
+
+      freeze_time do
+        service = described_class.new(provider: provider)
+        reset_at = service.send(:rate_limit_reset_at, "Rate limit exceeded. Reset at: 1")
+
+        expect(reset_at).to eq(1.hour.from_now)
+      end
+    end
+  end
 end
