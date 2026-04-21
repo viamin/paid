@@ -108,6 +108,42 @@ RSpec.describe "Api::SecretsProxy" do
           .with(headers: { "x-api-key" => "sk-stored-anthropic-key" })
       end
 
+      it "uses a fallback-only provider API key when a provider id header is present" do
+        provider = create_anthropic_api_key_provider(
+          :rate_limit_fallback,
+          api_key: "sk-fallback-anthropic-key",
+          enabled_for_agent_runs: false,
+          enabled_for_fallback: true
+        )
+
+        post "/api/proxy/anthropic/v1/messages",
+          params: { model: "claude-3-5-sonnet-20241022" }.to_json,
+          headers: valid_headers.merge(
+            "X-Paid-Provider-Id" => provider.id.to_s,
+            "x-api-key" => "paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
+          )
+
+        expect(WebMock).to have_requested(:post, target_url)
+          .with(headers: { "x-api-key" => "sk-fallback-anthropic-key" })
+      end
+
+      it "rejects provider ids that are disabled for agent runs and fallback" do
+        provider = create_anthropic_api_key_provider(
+          enabled_for_agent_runs: false,
+          enabled_for_fallback: false
+        )
+
+        post "/api/proxy/anthropic/v1/messages",
+          params: { model: "claude-3-5-sonnet-20241022" }.to_json,
+          headers: valid_headers.merge(
+            "X-Paid-Provider-Id" => provider.id.to_s,
+            "x-api-key" => "paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
+          )
+
+        expect(response).to have_http_status(:forbidden)
+        expect(WebMock).not_to have_requested(:post, target_url)
+      end
+
       it "rejects provider ids that are not available to the agent run owner" do
         other_user = create(:user)
         api_key = create(:provider_api_key, user: other_user, api_service_type: "anthropic")
@@ -767,5 +803,24 @@ RSpec.describe "Api::SecretsProxy" do
         expect(knowledge_run.reload.token_limit_status).to eq("exceeded")
       end
     end
+  end
+
+  def create_anthropic_api_key_provider(*traits, api_key: "sk-stored-anthropic-key", **attributes)
+    provider_api_key = create(
+      :provider_api_key,
+      user: project.effective_owner,
+      api_service_type: "anthropic",
+      api_key: api_key
+    )
+
+    create(
+      :provider,
+      :api_key,
+      *traits,
+      user: project.effective_owner,
+      provider_key: "claude",
+      provider_api_key: provider_api_key,
+      **attributes
+    )
   end
 end

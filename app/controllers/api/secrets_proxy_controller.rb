@@ -198,12 +198,18 @@ module Api
       provider_id = request.headers["X-Paid-Provider-Id"].presence
       return unless provider_id
 
-      @agent_run.project.effective_owner
+      provider_entries = @agent_run.project.effective_owner
         &.providers
         &.api_key
-        &.for_agent_runs
         &.joins(:provider_api_key)
-        &.find_by(id: provider_id, provider_api_keys: { api_service_type: provider.to_s })
+      return unless provider_entries
+
+      available_provider_entries(provider_entries)
+        .find_by(id: provider_id, provider_api_keys: { api_service_type: provider.to_s })
+    end
+
+    def available_provider_entries(provider_entries)
+      provider_entries.for_agent_runs.or(provider_entries.for_fallback)
     end
 
     def resolve_max_tokens_per_run
