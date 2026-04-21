@@ -348,6 +348,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_110831) do
     t.index ["recorded_at"], name: "index_container_metrics_on_recorded_at"
   end
 
+  create_table "container_pool_entries", force: :cascade do |t|
+    t.bigint "agent_run_id"
+    t.datetime "claimed_at", precision: nil
+    t.string "container_id", limit: 128
+    t.datetime "created_at", null: false
+    t.string "image", null: false
+    t.text "last_error"
+    t.string "network", limit: 64, null: false
+    t.bigint "project_id", null: false
+    t.string "status", limit: 20, null: false
+    t.datetime "updated_at", null: false
+    t.datetime "warmed_at", precision: nil
+    t.string "workspace_volume", limit: 128, null: false
+    t.index ["agent_run_id"], name: "index_container_pool_entries_on_agent_run_id"
+    t.index ["container_id"], name: "index_container_pool_entries_on_container_id", unique: true, where: "(container_id IS NOT NULL)"
+    t.index ["project_id", "status", "warmed_at"], name: "idx_on_project_id_status_warmed_at_d791387888"
+    t.index ["project_id"], name: "index_container_pool_entries_on_project_id"
+    t.index ["workspace_volume"], name: "index_container_pool_entries_on_workspace_volume", unique: true
+  end
+
   create_table "context_intake_responses", force: :cascade do |t|
     t.jsonb "answer_data", default: {}
     t.text "answer_text"
@@ -1476,6 +1496,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_110831) do
   add_foreign_key "billing_plans", "accounts"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
+  add_foreign_key "container_pool_entries", "agent_runs", on_delete: :nullify
+  add_foreign_key "container_pool_entries", "projects", on_delete: :cascade
   add_foreign_key "context_intake_responses", "context_intake_responses", column: "parent_response_id"
   add_foreign_key "context_intake_responses", "context_intake_sessions"
   add_foreign_key "context_intake_sessions", "projects"

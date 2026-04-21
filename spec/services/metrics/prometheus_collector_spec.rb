@@ -28,6 +28,11 @@ RSpec.describe Metrics::PrometheusCollector do
       expect(output).to include("paid_containers_active")
     end
 
+    it "includes container pool metrics" do
+      expect(output).to include("paid_container_pool_entries_total")
+      expect(output).to include("paid_container_pool_target")
+    end
+
     it "includes service container metrics" do
       expect(output).to include("paid_service_containers_total")
     end

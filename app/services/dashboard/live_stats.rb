@@ -13,6 +13,7 @@ module Dashboard
     def call
       today = Time.current.beginning_of_day
       base = agent_runs
+      pool_metrics = Containers::PoolManager.metrics(projects: account.projects)
 
       # Separate queries instead of a single CASE/FILTER aggregate to avoid
       # raw SQL interpolation that triggers Brakeman SQL-injection warnings.
@@ -24,6 +25,8 @@ module Dashboard
         completed_today: base.where(status: "completed").where(completed_at: today..).count,
         failed_today: base.where(status: AgentRun::FAILURE_STATUSES).where(completed_at: today..).count,
         active_containers: base.where(status: "running").where.not(container_id: nil).distinct.count(:container_id),
+        warm_containers: pool_metrics[:warm],
+        pool_target: pool_metrics[:target],
         total_projects: account.projects.count,
         active_projects: account.projects.active.count
       }
