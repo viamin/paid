@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_21_050706) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_21_080223) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -1217,6 +1217,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_050706) do
     t.index ["status"], name: "index_quality_recovery_actions_on_status"
   end
 
+  create_table "quality_thresholds", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: true, null: false
+    t.string "goal_type", limit: 50, null: false
+    t.string "metric_type", limit: 50, null: false
+    t.decimal "min_value", precision: 5, scale: 4, null: false
+    t.bigint "project_id"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "metric_type", "goal_type"], name: "index_quality_thresholds_on_account_defaults", unique: true, where: "(project_id IS NULL)"
+    t.index ["account_id"], name: "index_quality_thresholds_on_account_id"
+    t.index ["project_id", "metric_type", "goal_type"], name: "index_quality_thresholds_on_project_overrides", unique: true, where: "(project_id IS NOT NULL)"
+    t.index ["project_id"], name: "index_quality_thresholds_on_project_id"
+  end
+
   create_table "service_container_metrics", force: :cascade do |t|
     t.string "container_id", limit: 128, null: false
     t.float "cpu_percent", default: 0.0, null: false
@@ -1519,6 +1534,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_050706) do
   add_foreign_key "quality_recovery_actions", "agent_runs", on_delete: :nullify
   add_foreign_key "quality_recovery_actions", "projects", on_delete: :cascade
   add_foreign_key "quality_recovery_actions", "prompt_versions", on_delete: :nullify
+  add_foreign_key "quality_thresholds", "accounts"
+  add_foreign_key "quality_thresholds", "projects"
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
   add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
