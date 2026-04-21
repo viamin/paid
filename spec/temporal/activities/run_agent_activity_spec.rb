@@ -388,6 +388,39 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
+  describe "#augment_prompt_for_enhance_issue_goal" do
+    before do
+      allow(Prompt).to receive(:resolve).and_return(nil)
+    end
+
+    it "includes knowledge context when artifacts are available" do
+      base_prompt = "Enhance this issue with implementation context."
+      allow(Knowledge::ContextBundle::Build).to receive(:call)
+        .with(issue: issue, project: project)
+        .and_return(content: "## Codebase Context\n\n- Hunt#last_active uses prey.updated_at")
+
+      prompt = activity.send(:augment_prompt_for_enhance_issue_goal, agent_run, base_prompt)
+
+      expect(prompt).to include(base_prompt)
+      expect(prompt).to include("## Codebase Context")
+      expect(prompt).to include("Hunt#last_active uses prey.updated_at")
+      expect(prompt).to include("Read issue ##{issue.github_number} in #{project.full_name}")
+    end
+
+    it "renders without knowledge context when no artifacts are available" do
+      base_prompt = "Enhance this issue with implementation context."
+      allow(Knowledge::ContextBundle::Build).to receive(:call)
+        .with(issue: issue, project: project)
+        .and_return(content: "")
+
+      prompt = activity.send(:augment_prompt_for_enhance_issue_goal, agent_run, base_prompt)
+
+      expect(prompt).to include(base_prompt)
+      expect(prompt).not_to include("## Codebase Context")
+      expect(prompt).to include("Only add a comment to issue ##{issue.github_number}")
+    end
+  end
+
   describe "#build_provider_order" do
     it "preserves routing-key fallback entries for agent-type runs" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
