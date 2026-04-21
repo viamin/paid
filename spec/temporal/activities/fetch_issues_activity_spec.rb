@@ -13,6 +13,7 @@ RSpec.describe Activities::FetchIssuesActivity do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(issue_comments: [], "rate_limit_remaining!": 100)
     allow(github_client).to receive(:pull_requests).and_return([])
+    allow(github_client).to receive(:add_comment)
   end
 
   # Helper: route github_client.issues calls by label (or nil for unlabeled fetches)
@@ -172,6 +173,138 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         expect(result[:issues]).to eq([])
         expect(project.issues.count).to eq(0)
+      end
+    end
+
+    context "when the enhance_issue needs-input label is removed" do
+      let!(:issue) do
+        create(:issue, :needs_input,
+          project: project,
+          github_issue_id: 9101,
+          github_number: 91,
+          labels: [ project.enhance_issue_needs_input_label_name, "paid-build" ],
+          enhance_issue_rounds: 0)
+      end
+
+      let(:github_issue) do
+        OpenStruct.new(
+          id: issue.github_issue_id,
+          number: issue.github_number,
+          title: issue.title,
+          body: issue.body,
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: issue.github_created_at,
+          updated_at: Time.current
+        )
+      end
+
+      before do
+        stub_issues_by_label(nil => [ github_issue ])
+      end
+
+      it "returns a recheck request and suppresses normal label evaluation" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:enhance_issue_rechecks]).to contain_exactly(
+          hash_including(issue_id: issue.id, issue_number: issue.github_number, enhance_issue_rounds: 1)
+        )
+        expect(issue.reload.enhance_issue_rounds).to eq(1)
+        expect(issue.paid_state).to eq("in_progress")
+        expect(result[:issues]).not_to include(hash_including(id: issue.id))
+      end
+
+      it "does not request a recheck for closed issues" do
+        github_issue.state = "closed"
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:enhance_issue_rechecks]).to be_empty
+        expect(issue.reload.enhance_issue_rounds).to eq(0)
+        expect(issue.paid_state).to eq("needs_input")
+        expect(result[:issues]).not_to include(hash_including(id: issue.id))
+      end
+
+      it "does not request a recheck unless the issue is waiting for enhance_issue input" do
+        issue.update!(paid_state: "completed")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:enhance_issue_rechecks]).to be_empty
+        expect(issue.reload.enhance_issue_rounds).to eq(0)
+        expect(issue.paid_state).to eq("completed")
+      end
+
+      it "posts a stop comment instead of rechecking after the max round" do
+        project.update!(max_enhance_issue_reevaluation_rounds: 1)
+        issue.update!(enhance_issue_rounds: 1)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:enhance_issue_rechecks]).to be_empty
+        expect(github_client).to have_received(:add_comment).with(
+          project.full_name,
+          issue.github_number,
+          a_string_including("## Auto-enhancement stopped", "Manual review is needed")
+        )
+        expect(issue.reload.enhance_issue_rounds).to eq(1)
+        expect(issue.paid_state).to eq("completed")
+      end
+
+      it "keeps the max-round stop retryable when posting the stop comment fails" do
+        project.update!(max_enhance_issue_reevaluation_rounds: 1)
+        issue.update!(enhance_issue_rounds: 1)
+        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error.new("GitHub unavailable"))
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.to raise_error(GithubClient::Error, "GitHub unavailable")
+
+        issue.reload
+        expect(issue.enhance_issue_rounds).to eq(1)
+        expect(issue.paid_state).to eq("needs_input")
+        expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
+      end
+    end
+
+    context "when the enhance_issue needs-input label is still present" do
+      let!(:issue) do
+        create(:issue, :needs_input,
+          project: project,
+          github_issue_id: 9102,
+          github_number: 92,
+          labels: [ project.enhance_issue_needs_input_label_name, "paid-build" ])
+      end
+
+      let(:github_issue) do
+        OpenStruct.new(
+          id: issue.github_issue_id,
+          number: issue.github_number,
+          title: issue.title,
+          body: issue.body,
+          state: "open",
+          labels: [
+            OpenStruct.new(name: project.enhance_issue_needs_input_label_name),
+            OpenStruct.new(name: "paid-build")
+          ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: issue.github_created_at,
+          updated_at: Time.current
+        )
+      end
+
+      before do
+        stub_issues_by_label(nil => [ github_issue ])
+      end
+
+      it "suppresses normal label evaluation while waiting for answers" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:enhance_issue_rechecks]).to be_empty
+        expect(result[:issues]).not_to include(hash_including(id: issue.id))
       end
     end
 
@@ -1132,6 +1265,20 @@ RSpec.describe Activities::FetchIssuesActivity do
         returned_ids = result[:issues].map { |i| i[:id] }
         expect(returned_ids).to include(blocked.id)
         expect(returned_ids).not_to include(in_progress.id)
+      end
+
+      it "excludes re-scannable issues still waiting for enhance_issue input" do
+        waiting_for_answers = create(:issue, :needs_input,
+          project: project,
+          github_issue_id: 5002,
+          github_number: 52,
+          github_state: "open",
+          labels: [ project.enhance_issue_needs_input_label_name, "paid-build" ])
+
+        result = activity.execute(project_id: project.id)
+
+        returned_ids = result[:issues].map { |i| i[:id] }
+        expect(returned_ids).not_to include(waiting_for_answers.id)
       end
 
       it "does not duplicate issues already in the incremental fetch results" do

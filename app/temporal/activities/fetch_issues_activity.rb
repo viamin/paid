@@ -21,6 +21,7 @@ module Activities
 
       synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
       parse_issue_relationships(project, synced_issues) if synced_issues.any?
+      enhance_issue_rechecks = detect_enhance_issue_rechecks(project, synced_issues)
       closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
       stale_pr_count = reconcile_open_pull_requests(project, client) if incremental && !truncated
 
@@ -62,12 +63,22 @@ module Activities
         project.touch_last_issue_sync_at(sync_started_at - 1.second)
       end
 
-      # Exclude closed issues from downstream processing (DetectLabelsActivity).
+      recheck_issue_ids = enhance_issue_rechecks.map { |recheck| recheck[:issue_id] }.to_set
+
+      # Exclude closed issues and enhance_issue waits/rechecks from downstream
+      # processing (DetectLabelsActivity). Rechecks are returned separately for
+      # the workflow to queue, and needs-input issues are still waiting on
+      # human answers, so evaluating their automation labels in this poll can
+      # incorrectly start a create_pr run before enhancement completes.
       # sync_issue already persisted their github_state to the DB, but passing
       # them downstream could incorrectly trigger agent runs for closed work.
       # Note: parse_issue_relationships receives all synced_issues (including
-      # closed), but filters to github_state: "open" internally (line 227).
-      open_issues = synced_issues.reject { |si| si[:github_state] == "closed" }
+      # closed), but filters to github_state: "open" internally.
+      open_issues = synced_issues.reject do |si|
+        si[:github_state] == "closed" ||
+          recheck_issue_ids.include?(si[:id]) ||
+          enhance_issue_needs_input?(project, si)
+      end
 
       # During incremental fetches, issues whose `updated_at` did not change
       # on GitHub are not returned by the API. However, those issues may still
@@ -79,6 +90,7 @@ module Activities
         fetched_ids = open_issues.map { |si| si[:id] }.to_set
         rescannable = project.issues
           .where(github_state: "open", paid_state: %w[new needs_input recommend_close])
+          .where.not("labels @> ?::jsonb", [ project.enhance_issue_needs_input_label_name ].to_json)
           .where.not(id: fetched_ids.to_a)
           .limit(200)
           .pluck(:id, :github_number, :github_state)
@@ -96,10 +108,11 @@ module Activities
         closed_count: closed_count,
         stale_pr_count: stale_pr_count || 0,
         incremental: incremental,
+        enhance_issue_recheck_count: enhance_issue_rechecks.size,
         rescan_count: incremental ? open_issues.count { |si| si[:rescan] } : 0
       )
 
-      { issues: open_issues, project_id: project_id }
+      { issues: open_issues, project_id: project_id, enhance_issue_rechecks: enhance_issue_rechecks }
     rescue GithubClient::RateLimitError => e
       raise Temporalio::Error::ApplicationError.new(
         e.message,
@@ -200,6 +213,8 @@ module Activities
     def sync_issue(project, github_issue)
       creator_login = github_issue.user&.login || "unknown"
       trusted = project.trusted_github_user?(creator_login)
+      existing_issue = project.issues.find_by(github_issue_id: github_issue.id)
+      previous_labels = Array(existing_issue&.labels)
 
       unless trusted
         logger.warn(
@@ -217,7 +232,90 @@ module Activities
       )
 
       { id: issue.id, github_number: issue.github_number, labels: issue.labels,
-        github_state: issue.github_state, trusted: trusted }
+        github_state: issue.github_state, trusted: trusted, removed_labels: previous_labels - issue.labels }
+    end
+
+    def detect_enhance_issue_rechecks(project, synced_issues)
+      label = project.enhance_issue_needs_input_label_name
+      synced_issues.filter_map do |issue_data|
+        next unless Array(issue_data[:removed_labels]).include?(label)
+
+        issue = project.issues.find(issue_data[:id])
+        next if issue.is_pull_request? || issue.github_state == "closed" || issue.paid_state != "needs_input"
+
+        enqueue_enhance_issue_recheck(project, issue)
+      end
+    end
+
+    def enhance_issue_needs_input?(project, issue_data)
+      Array(issue_data[:labels]).include?(project.enhance_issue_needs_input_label_name)
+    end
+
+    def enqueue_enhance_issue_recheck(project, issue)
+      max_rounds = project.max_enhance_issue_reevaluation_rounds
+      limit_reached = false
+
+      issue.with_lock do
+        if issue.enhance_issue_rounds >= max_rounds
+          limit_reached = true
+        else
+          issue.update!(enhance_issue_rounds: issue.enhance_issue_rounds + 1, paid_state: "in_progress")
+        end
+      end
+
+      return stop_enhance_issue_recheck(project, issue, max_rounds) if limit_reached
+
+      logger.info(
+        message: "agent_execution.enhance_issue_recheck_requested",
+        project_id: project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        enhance_issue_rounds: issue.enhance_issue_rounds,
+        max_rounds: max_rounds
+      )
+
+      { issue_id: issue.id, issue_number: issue.github_number, enhance_issue_rounds: issue.enhance_issue_rounds }
+    end
+
+    def stop_enhance_issue_recheck(project, issue, max_rounds)
+      post_enhance_issue_limit_comment(project, issue, max_rounds)
+      issue.update!(paid_state: "completed")
+
+      logger.info(
+        message: "agent_execution.enhance_issue_recheck_limit_reached",
+        project_id: project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        enhance_issue_rounds: issue.enhance_issue_rounds,
+        max_rounds: max_rounds
+      )
+      nil
+    rescue GithubClient::Error
+      restore_enhance_issue_recheck_signal(project, issue)
+      raise
+    end
+
+    def post_enhance_issue_limit_comment(project, issue, max_rounds)
+      project.github_token.client.add_comment(
+        project.full_name,
+        issue.github_number,
+        <<~COMMENT
+          ## Auto-enhancement stopped
+
+          Paid has reached the configured limit of #{max_rounds} enhancement re-evaluation rounds for this issue.
+
+          Manual review is needed before enhancement can continue.
+        COMMENT
+      )
+    end
+
+    def restore_enhance_issue_recheck_signal(project, issue)
+      issue.with_lock do
+        issue.update!(
+          labels: Array(issue.labels) | [ project.enhance_issue_needs_input_label_name ],
+          paid_state: "needs_input"
+        )
+      end
     end
 
     # Parses dependency and parent/child relationships from issue comments.
