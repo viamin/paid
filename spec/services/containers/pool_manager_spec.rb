@@ -19,7 +19,8 @@ RSpec.describe Containers::PoolManager do
   describe "#acquire" do
     let(:agent_run) { create(:agent_run, project: project) }
     let(:service) { instance_double(Containers::Provision) }
-    let(:container) { instance_double(Docker::Container, info: { "State" => { "Running" => true } }) }
+    let(:container) { instance_double(Docker::Container, info: { "State" => { "Running" => true } }, stop: true, delete: true) }
+    let(:volume) { instance_double(Docker::Volume, remove: true) }
 
     before do
       network_probe = instance_double(Containers::Provision, network_name: "paid_agent")
@@ -28,6 +29,7 @@ RSpec.describe Containers::PoolManager do
       allow(Containers::Provision).to receive(:new).with(project: project).and_return(network_probe)
       allow(Containers::Provision).to receive(:new).with(agent_run: agent_run).and_return(run_network_probe)
       allow(Docker::Container).to receive(:get).and_return(container)
+      allow(Docker::Volume).to receive(:get).and_return(volume)
       allow(Containers::Provision).to receive(:reconnect).and_return(service)
       allow(PoolReplenishmentJob).to receive(:perform_later)
     end
@@ -104,18 +106,17 @@ RSpec.describe Containers::PoolManager do
       expect(Containers::Provision).not_to have_received(:reconnect)
     end
 
-    it "marks a stale warm entry as errored" do
+    it "removes a stale warm entry" do
       entry = create(:container_pool_entry, project: project)
       allow(container).to receive(:info).and_return({ "State" => { "Running" => false } })
 
       result = described_class.new(project: project, target_size: 1).acquire(agent_run: agent_run)
 
       expect(result).to be_nil
-      expect(entry.reload.status).to eq("error")
-      expect(entry.last_error).to include("not running")
+      expect(ContainerPoolEntry.exists?(entry.id)).to be(false)
     end
 
-    it "marks reconnect failures as errored so cold provisioning can continue" do
+    it "removes reconnect failures so cold provisioning can continue" do
       entry = create(:container_pool_entry, project: project)
       allow(Containers::Provision).to receive(:reconnect)
         .and_raise(Containers::Provision::ProvisionError, "Container #{entry.container_id} not found")
@@ -123,8 +124,7 @@ RSpec.describe Containers::PoolManager do
       result = described_class.new(project: project, target_size: 1).acquire(agent_run: agent_run)
 
       expect(result).to be_nil
-      expect(entry.reload.status).to eq("error")
-      expect(entry.last_error).to include("not found")
+      expect(ContainerPoolEntry.exists?(entry.id)).to be(false)
     end
   end
 
@@ -132,15 +132,19 @@ RSpec.describe Containers::PoolManager do
     it "serializes replenishment per project with an advisory lock" do
       create(:container_pool_entry, :warming, project: project)
       connection = ActiveRecord::Base.connection
+      raw_connection = instance_double(PG::Connection, exec_params: true)
+      lock_key = project.id % 2_147_483_647
       network_probe = instance_double(Containers::Provision, network_name: "paid_agent")
-      allow(connection).to receive(:execute).and_call_original
+      allow(connection).to receive(:raw_connection).and_return(raw_connection)
       allow(Containers::Provision).to receive(:new).with(project: project).and_return(network_probe)
 
       described_class.new(project: project, target_size: 0).replenish
       described_class.new(project: project, target_size: 1).replenish
 
-      expect(connection).to have_received(:execute).with(/pg_advisory_lock/).once
-      expect(connection).to have_received(:execute).with(/pg_advisory_unlock/).once
+      expect(raw_connection).to have_received(:exec_params)
+        .with("SELECT pg_advisory_lock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+      expect(raw_connection).to have_received(:exec_params)
+        .with("SELECT pg_advisory_unlock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
     end
 
     it "provisions missing warm entries up to the target size" do
@@ -158,12 +162,14 @@ RSpec.describe Containers::PoolManager do
       expect(entry.container_id).to eq("warm-1")
     end
 
-    it "marks stopped warm entries as errored before counting pool capacity" do
+    it "removes stopped warm entries before counting pool capacity" do
       stale_entry = create(:container_pool_entry, project: project)
-      stopped_container = instance_double(Docker::Container, info: { "State" => { "Running" => false } })
+      stopped_container = instance_double(Docker::Container, info: { "State" => { "Running" => false } }, delete: true)
+      volume = instance_double(Docker::Volume, remove: true)
       provision = instance_double(Containers::Provision)
 
       allow(Docker::Container).to receive(:get).with(stale_entry.container_id).and_return(stopped_container)
+      allow(Docker::Volume).to receive(:get).with(stale_entry.workspace_volume).and_return(volume)
       allow(Containers::Provision).to receive(:new).and_return(provision)
       allow(provision).to receive_messages(
         network_name: "paid_agent",
@@ -172,8 +178,23 @@ RSpec.describe Containers::PoolManager do
 
       described_class.new(project: project, target_size: 1).replenish
 
-      expect(stale_entry.reload.status).to eq("error")
+      expect(ContainerPoolEntry.exists?(stale_entry.id)).to be(false)
       expect(project.container_pool_entries.warm.sole.container_id).to eq("warm-2")
+    end
+
+    it "removes entries when provisioning fails" do
+      provision = instance_double(Containers::Provision)
+      volume = instance_double(Docker::Volume, remove: true)
+
+      allow(Docker::Volume).to receive(:get).and_return(volume)
+      allow(Containers::Provision).to receive(:new).and_return(provision)
+      allow(provision).to receive_messages(network_name: "paid_agent", cleanup: nil)
+      allow(provision).to receive(:provision).and_raise(Containers::Provision::ProvisionError, "image unavailable")
+
+      described_class.new(project: project, target_size: 1).replenish
+
+      expect(project.container_pool_entries.reload.count).to eq(0)
+      expect(provision).to have_received(:cleanup).with(force: true)
     end
   end
 end

@@ -3,6 +3,8 @@
 module Containers
   class PoolManager
     DEFAULT_TARGET_SIZE = 0
+    ADVISORY_LOCK_SQL = "SELECT pg_advisory_lock($1, $2)".freeze
+    ADVISORY_UNLOCK_SQL = "SELECT pg_advisory_unlock($1, $2)".freeze
     LOCK_NAMESPACE = 1_357_180_001
     RECONNECT_OPTIONS = %i[timeout_seconds].freeze
     SUPPORTED_ACQUIRE_OPTIONS = (RECONNECT_OPTIONS + %i[image]).freeze
@@ -51,7 +53,7 @@ module Containers
       return unless entry
 
       unless container_running?(entry.container_id)
-        mark_error(entry, "warm container is not running")
+        remove_error_entry(entry, "warm container is not running")
         return
       end
 
@@ -65,7 +67,7 @@ module Containers
       PoolReplenishmentJob.perform_later(project.id)
       Provision::Result.success(container_id: entry.container_id, service: service, pool_entry_id: entry.id)
     rescue Provision::ProvisionError => e
-      mark_error(entry, e.message) if entry
+      remove_error_entry(entry, e.message) if entry
       nil
     end
 
@@ -146,12 +148,7 @@ module Containers
       entry.update!(container_id: result[:container_id], status: "warm", warmed_at: Time.current, last_error: nil)
       entry
     rescue StandardError => e
-      mark_error(entry, e.message)
-      begin
-        service&.cleanup(force: true)
-      rescue StandardError
-        nil
-      end
+      remove_failed_provision(entry, service, e.message)
       nil
     end
 
@@ -165,7 +162,7 @@ module Containers
 
     def cleanup_stale_warm_entries
       current_pool_entries.warm.find_each do |entry|
-        mark_error(entry, "warm container is not running") unless container_running?(entry.container_id)
+        remove_error_entry(entry, "warm container is not running") unless container_running?(entry.container_id)
       end
     end
 
@@ -175,14 +172,18 @@ module Containers
     end
 
     def with_project_replenishment_lock
-      ActiveRecord::Base.connection.execute("SELECT pg_advisory_lock(#{LOCK_NAMESPACE}, #{project_lock_key})")
+      execute_lock_sql(ADVISORY_LOCK_SQL)
       yield
     ensure
-      ActiveRecord::Base.connection.execute("SELECT pg_advisory_unlock(#{LOCK_NAMESPACE}, #{project_lock_key})")
+      execute_lock_sql(ADVISORY_UNLOCK_SQL)
     end
 
     def project_lock_key
       project.id % 2_147_483_647
+    end
+
+    def execute_lock_sql(sql)
+      ActiveRecord::Base.connection.raw_connection.exec_params(sql, [ LOCK_NAMESPACE, project_lock_key ])
     end
 
     def container_running?(container_id)
@@ -220,6 +221,23 @@ module Containers
         container_pool_entry_id: entry.id,
         error: message
       )
+    end
+
+    def remove_error_entry(entry, message)
+      mark_error(entry, message)
+      remove_entry(entry, force: true)
+    end
+
+    def remove_failed_provision(entry, service, message)
+      mark_error(entry, message)
+      cleanup_service(service)
+      remove_entry(entry, force: true)
+    end
+
+    def cleanup_service(service)
+      service&.cleanup(force: true)
+    rescue StandardError
+      nil
     end
 
     def pool_network_name
