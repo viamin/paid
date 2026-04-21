@@ -24,8 +24,8 @@ module Database
       def install!
         return if @installed
 
-        ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
-          current&.record(payload)
+        ActiveSupport::Notifications.subscribe("sql.active_record") do |_name, started, finished, _id, payload|
+          current&.record(payload.merge(duration: (finished - started) * 1000))
         end
         @installed = true
       end
