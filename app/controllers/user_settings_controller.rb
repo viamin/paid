@@ -37,6 +37,7 @@ class UserSettingsController < ApplicationController
       :container_memory_gb,
       :max_concurrent_runs,
       :max_auto_pick_open_prs,
+      :fair_queue_across_projects,
       :container_timeout_seconds,
       :default_branch,
       :default_project_active,

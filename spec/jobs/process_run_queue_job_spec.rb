@@ -319,13 +319,13 @@ RSpec.describe ProcessRunQueueJob do
 
         4.times { create(:issue, project: project) }
 
-        expect(temporal_client).to receive(:start_workflow).exactly(3).times.and_return(workflow_handle)
+        expect(temporal_client).to receive(:start_workflow).exactly(4).times.and_return(workflow_handle)
 
         described_class.new.perform
 
         expect(project.agent_runs.where(trigger_type: "automatic").count).to eq(4)
-        expect(project.agent_runs.pending.count).to eq(3)
-        expect(project.agent_runs.queued.count).to eq(1)
+        expect(project.agent_runs.pending.count).to eq(4)
+        expect(project.agent_runs.queued.count).to eq(0)
       end
 
       it "round robins auto-pick runs across projects before giving one project extra capacity" do
@@ -347,13 +347,13 @@ RSpec.describe ProcessRunQueueJob do
 
         described_class.new.perform
 
-        expected_order = [ first_project, second_project, first_project ].map(&:id)
+        expected_order = [ first_project, second_project, first_project, second_project ].map(&:id)
         expect(started_projects).to eq(expected_order)
         expect(first_project.agent_runs.pending.count).to eq(2)
-        expect(second_project.agent_runs.pending.count).to eq(1)
+        expect(second_project.agent_runs.pending.count).to eq(2)
       end
 
-      it "reserves one active slot from being consumed by auto-pick runs" do
+      it "starts auto-pick runs up to the full user capacity" do
         project = create(:project, auto_pick_enabled: true)
         user = project.created_by
         user.settings.update!(max_concurrent_runs: 4)
@@ -362,8 +362,8 @@ RSpec.describe ProcessRunQueueJob do
 
         described_class.new.perform
 
-        expect(project.agent_runs.pending.count).to eq(3)
-        expect(project.agent_runs.queued.count).to eq(1)
+        expect(project.agent_runs.pending.count).to eq(4)
+        expect(project.agent_runs.queued.count).to eq(0)
       end
 
       it "caps seeded auto-pick runs at the owner's max_concurrent_runs" do

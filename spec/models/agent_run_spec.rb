@@ -1472,6 +1472,10 @@ RSpec.describe AgentRun do
   end
 
   describe ".peek_next_queued_run" do
+    def claim_peeked_run
+      described_class.claim_next_queued_run(target_id: described_class.peek_next_queued_run.id)
+    end
+
     it "returns the highest-priority queued run without changing status" do
       create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
       manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
@@ -1495,6 +1499,80 @@ RSpec.describe AgentRun do
       peeked = described_class.peek_next_queued_run(exclude_ids: [ manual.id ])
 
       expect(peeked).to eq(auto)
+    end
+
+    it "round robins same-tier runs across projects when fair queueing is enabled" do
+      account = create(:account)
+      user = create(:user, account: account)
+      user.settings.update!(fair_queue_across_projects: true)
+      first_project = create(:project, account: account, created_by: user)
+      second_project = create(:project, account: account, created_by: user)
+      first_run = create(:agent_run, :queued, :manual, project: first_project, created_at: 4.minutes.ago)
+      second_run = create(:agent_run, :queued, :manual, project: first_project, created_at: 3.minutes.ago)
+      third_run = create(:agent_run, :queued, :manual, project: second_project, created_at: 2.minutes.ago)
+      fourth_run = create(:agent_run, :queued, :manual, project: second_project, created_at: 1.minute.ago)
+
+      peeked_ids = 4.times.map { claim_peeked_run.id }
+
+      expect(peeked_ids).to eq([ first_run.id, third_run.id, second_run.id, fourth_run.id ])
+    end
+
+    it "preserves cross-user FIFO while applying project fairness within an owner" do
+      first_account = create(:account)
+      first_user = create(:user, account: first_account)
+      first_user.settings.update!(fair_queue_across_projects: true, max_concurrent_runs: 2)
+      active_project = create(:project, account: first_account, created_by: first_user)
+      create(:agent_run, :running, project: active_project)
+      older_run = create(:agent_run, :queued, :manual, project: active_project, created_at: 2.minutes.ago)
+
+      second_account = create(:account)
+      second_user = create(:user, account: second_account)
+      second_user.settings.update!(fair_queue_across_projects: true, max_concurrent_runs: 2)
+      idle_project = create(:project, account: second_account, created_by: second_user)
+      create(:agent_run, :queued, :manual, project: idle_project, created_at: 1.minute.ago)
+
+      expect(described_class.peek_next_queued_run).to eq(older_run)
+    end
+
+    it "preserves FIFO within tier when fair queueing is disabled" do
+      account = create(:account)
+      user = create(:user, account: account)
+      user.settings.update!(fair_queue_across_projects: false)
+      first_project = create(:project, account: account, created_by: user)
+      second_project = create(:project, account: account, created_by: user)
+      first_run = create(:agent_run, :queued, :manual, project: first_project, created_at: 4.minutes.ago)
+      second_run = create(:agent_run, :queued, :manual, project: first_project, created_at: 3.minutes.ago)
+      third_run = create(:agent_run, :queued, :manual, project: second_project, created_at: 2.minutes.ago)
+      fourth_run = create(:agent_run, :queued, :manual, project: second_project, created_at: 1.minute.ago)
+
+      peeked_ids = 4.times.map { claim_peeked_run.id }
+
+      expect(peeked_ids).to eq([ first_run.id, second_run.id, third_run.id, fourth_run.id ])
+    end
+
+    it "lets a single active project keep FIFO order while using capacity" do
+      project = create(:project)
+      first_run = create(:agent_run, :queued, :manual, project: project, created_at: 3.minutes.ago)
+      second_run = create(:agent_run, :queued, :manual, project: project, created_at: 2.minutes.ago)
+      third_run = create(:agent_run, :queued, :manual, project: project, created_at: 1.minute.ago)
+
+      peeked_ids = 3.times.map { claim_peeked_run.id }
+
+      expect(peeked_ids).to eq([ first_run.id, second_run.id, third_run.id ])
+    end
+
+    it "excludes paused runs from the project stride count" do
+      account = create(:account)
+      user = create(:user, account: account)
+      first_project = create(:project, account: account, created_by: user)
+      second_project = create(:project, account: account, created_by: user)
+      first_run = create(:agent_run, :queued, :manual, project: first_project, created_at: 2.minutes.ago)
+      second_run = create(:agent_run, :queued, :manual, project: second_project, created_at: 1.minute.ago)
+      create(:agent_run, :paused, project: first_project)
+
+      expect(described_class.peek_next_queued_run).to eq(first_run)
+      described_class.claim_next_queued_run(target_id: first_run.id)
+      expect(described_class.peek_next_queued_run).to eq(second_run)
     end
   end
 

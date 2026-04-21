@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_18_233122) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_21_050706) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -1339,6 +1339,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_233122) do
     t.string "default_branch", default: "main", null: false
     t.integer "default_poll_interval_seconds", default: 60, null: false
     t.boolean "default_project_active", default: true, null: false
+    t.boolean "fair_queue_across_projects", default: true, null: false
     t.boolean "fallback_enabled", default: false, null: false
     t.jsonb "fallback_providers", default: [], null: false
     t.integer "git_clone_timeout_seconds", default: 600, null: false

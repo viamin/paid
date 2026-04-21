@@ -39,6 +39,7 @@ RSpec.describe "UserSettings" do
         expect(response.body).to include("Polling & Timing")
         expect(response.body).to include("Agent Execution")
         expect(response.body).to include("Container Resources")
+        expect(response.body).to include("Fair Queue Across Projects")
         expect(response.body).to include("Project Defaults")
         expect(response.body).to include("Advanced Settings")
       end
@@ -83,6 +84,7 @@ RSpec.describe "UserSettings" do
           user_setting: {
             container_memory_gb: 8,
             max_concurrent_runs: 4,
+            fair_queue_across_projects: false,
             container_timeout_seconds: 3600
           }
         }
@@ -90,6 +92,7 @@ RSpec.describe "UserSettings" do
         settings = user.reload.settings
         expect(settings.container_memory_bytes).to eq(8 * 1024 * 1024 * 1024)
         expect(settings.max_concurrent_runs).to eq(4)
+        expect(settings.fair_queue_across_projects).to be(false)
         expect(settings.container_timeout_seconds).to eq(3600)
       end
 
