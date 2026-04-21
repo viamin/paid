@@ -1,8 +1,9 @@
 # frozen_string_literal: true
 
 # Shared cancellation logic for controllers that cancel agent runs.
-# Handles external cleanup, row-level pessimistic locking to prevent race conditions,
-# and redirect with appropriate flash messaging.
+# Sets the cancelled status immediately and enqueues a background job
+# for the slow cleanup (Temporal workflow cancellation + container teardown),
+# so the web UI responds without blocking.
 #
 # Used by Projects::AgentRunsController and DashboardController.
 module AgentRunCancellable
@@ -16,24 +17,8 @@ module AgentRunCancellable
       return
     end
 
-    begin
-      AgentRuns::Cancel.call(agent_run: agent_run, skip_status_update: true)
-    rescue StandardError => e
-      Rails.logger.error(
-        message: "agent_execution.cancel_failed",
-        agent_run_id: agent_run.id,
-        error_class: e.class.name,
-        error_message: e.message
-      )
-      redirect_to redirect_path, status: :see_other, alert: "Unable to cancel agent run. Please try again."
-      return
-    end
-
     cancelled = false
 
-    # with_lock calls reload(lock: true), so agent_run is freshly
-    # loaded inside the block — safe against races where the run
-    # finishes between the external cancellation and this status update.
     agent_run.with_lock do
       if agent_run.active?
         agent_run.cancel!
@@ -42,6 +27,7 @@ module AgentRunCancellable
     end
 
     if cancelled
+      AgentRunCancellationJob.perform_later(agent_run.id)
       redirect_to redirect_path, status: :see_other, notice: "Agent run cancelled."
     else
       redirect_to redirect_path, status: :see_other, notice: "Agent run finished before it could be cancelled."

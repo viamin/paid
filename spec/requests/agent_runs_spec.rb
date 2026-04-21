@@ -1504,13 +1504,13 @@ RSpec.describe "AgentRuns" do
     context "when authenticated" do
       before { sign_in user }
 
-      it "cancels an active run" do
+      it "cancels an active run and enqueues background cleanup" do
         agent_run = create(:agent_run, :running, project: project)
-        allow(AgentRuns::Cancel).to receive(:call)
 
-        post cancel_project_agent_run_path(project, agent_run)
+        expect {
+          post cancel_project_agent_run_path(project, agent_run)
+        }.to have_enqueued_job(AgentRunCancellationJob).with(agent_run.id)
 
-        expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
         expect(agent_run.reload.status).to eq("cancelled")
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         expect(flash[:notice]).to eq("Agent run cancelled.")
@@ -1525,22 +1525,15 @@ RSpec.describe "AgentRuns" do
         expect(flash[:notice]).to eq("Agent run is no longer active.")
       end
 
-      it "redirects with alert when external cancellation fails" do
-        agent_run = create(:agent_run, :running, project: project)
-        allow(AgentRuns::Cancel).to receive(:call).and_raise(StandardError, "Temporal unavailable")
-
-        post cancel_project_agent_run_path(project, agent_run)
-
-        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
-        expect(flash[:alert]).to eq("Unable to cancel agent run. Please try again.")
-      end
-
       it "shows finished message when run completes during cancellation" do
         agent_run = create(:agent_run, :running, project: project)
-        allow(AgentRuns::Cancel).to receive(:call) do
-          # Simulate the run finishing between the external cancel and the lock
-          agent_run.update_columns(status: "completed", completed_at: Time.current)
+
+        # rubocop:disable RSpec/AnyInstance
+        allow_any_instance_of(AgentRun).to receive(:with_lock) do |instance, &block|
+          instance.assign_attributes(status: "completed", completed_at: Time.current)
+          block.call
         end
+        # rubocop:enable RSpec/AnyInstance
 
         post cancel_project_agent_run_path(project, agent_run)
 
