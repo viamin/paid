@@ -27,6 +27,12 @@ module Projects
     end
 
     def upsert_threshold(row)
+      return unless QualityThreshold.configurable?(
+        project: @project,
+        metric_type: row.fetch("metric_type"),
+        goal_type: row.fetch("goal_type")
+      )
+
       existing = QualityThreshold.override_for(
         project: @project,
         metric_type: row.fetch("metric_type"),

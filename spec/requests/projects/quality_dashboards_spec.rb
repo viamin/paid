@@ -29,9 +29,10 @@ RSpec.describe "Projects::QualityDashboards" do
         get project_quality_dashboard_path(project)
 
         expect(response.body).to include("Quality Thresholds")
-        expect(response.body).to include("CI Passed")
         expect(response.body).to include("Lint Clean")
-        expect(response.body).to include("PR Merged")
+        expect(response.body).to include("Review Comment Count")
+        expect(response.body).not_to include("CI Passed")
+        expect(response.body).not_to include("PR Merged")
       end
 
       it "shows empty state when no metrics exist" do
@@ -108,7 +109,7 @@ RSpec.describe "Projects::QualityDashboards" do
         expect(threshold.min_value).to eq(0.75)
       end
 
-      it "creates a CI pass-rate project override" do
+      it "ignores a non-configurable CI pass-rate project override" do
         patch project_quality_thresholds_path(project), params: {
           quality_thresholds: {
             "0" => {
@@ -122,11 +123,10 @@ RSpec.describe "Projects::QualityDashboards" do
         }
 
         expect(response).to redirect_to(project_quality_dashboard_path(project))
-        threshold = project.quality_thresholds.find_by!(metric_type: "ci_passed", goal_type: "create_pr")
-        expect(threshold.min_value).to eq(0.8)
+        expect(project.quality_thresholds.where(metric_type: "ci_passed", goal_type: "create_pr")).to be_empty
       end
 
-      it "creates a test pass-rate project override" do
+      it "ignores a non-configurable test pass-rate project override" do
         patch project_quality_thresholds_path(project), params: {
           quality_thresholds: {
             "0" => {
@@ -140,8 +140,7 @@ RSpec.describe "Projects::QualityDashboards" do
         }
 
         expect(response).to redirect_to(project_quality_dashboard_path(project))
-        threshold = project.quality_thresholds.find_by!(metric_type: "tests_pass", goal_type: "create_pr")
-        expect(threshold.min_value).to eq(0.8)
+        expect(project.quality_thresholds.where(metric_type: "tests_pass", goal_type: "create_pr")).to be_empty
       end
 
       it "removes a project override when inheritance is selected" do

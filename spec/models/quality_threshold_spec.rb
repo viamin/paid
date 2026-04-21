@@ -123,8 +123,8 @@ RSpec.describe QualityThreshold do
       expect(thresholds.map { |threshold| [ threshold.metric_type, threshold.goal_type ] }).to include(
         [ "issue_created", "create_issue" ],
         [ "reaction_score", "create_issue" ],
-        [ "ci_passed", "create_pr" ],
-        [ "tests_pass", "create_pr" ],
+        [ "lint_clean", "create_pr" ],
+        [ "review_comment_count", "create_pr" ],
         [ "review_posted", "review" ],
         [ "reaction_score", "review" ],
         [ "comment_posted", "enhance_issue" ],
@@ -134,7 +134,20 @@ RSpec.describe QualityThreshold do
       )
     end
 
-    it "marks only collected built-in create_pr defaults as enabled" do
+    it "omits valid metrics that do not yet collect pass and fail samples" do
+      project = create(:project)
+
+      thresholds = described_class.configurable_for(project: project)
+      metric_keys = thresholds.map { |threshold| [ threshold.metric_type, threshold.goal_type ] }
+
+      expect(metric_keys).not_to include(
+        [ "ci_passed", "create_pr" ],
+        [ "tests_pass", "create_pr" ],
+        [ "pr_merged", "create_pr" ]
+      )
+    end
+
+    it "marks only built-in defaults as enabled" do
       project = create(:project)
 
       thresholds = described_class.configurable_for(project: project)
@@ -145,9 +158,8 @@ RSpec.describe QualityThreshold do
         [ "composite_score", "create_pr", true ]
       )
       expect(disabled_supported.map { |threshold| [ threshold.metric_type, threshold.goal_type ] }).to include(
-        [ "ci_passed", "create_pr" ],
-        [ "tests_pass", "create_pr" ],
-        [ "pr_merged", "create_pr" ]
+        [ "lint_clean", "create_pr" ],
+        [ "review_comment_count", "create_pr" ]
       )
     end
 
@@ -172,6 +184,20 @@ RSpec.describe QualityThreshold do
       expect(account_threshold.source_scope).to eq("account")
       expect(project_threshold.min_value).to eq(0.8)
       expect(project_threshold.source_scope).to eq("project")
+    end
+
+    it "does not expose stored thresholds for unsupported metric and goal pairs" do
+      project = create(:project)
+      create(:quality_threshold,
+        account: project.account,
+        metric_type: "lint_clean",
+        goal_type: "review")
+
+      thresholds = described_class.configurable_for(project: project)
+
+      expect(thresholds.map { |threshold| [ threshold.metric_type, threshold.goal_type ] }).not_to include(
+        [ "lint_clean", "review" ]
+      )
     end
   end
 
