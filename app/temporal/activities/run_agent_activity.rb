@@ -692,7 +692,7 @@ module Activities
 
       # Check if this is a rate limit error
       if rate_limit_error?(rate_limit_output)
-        reset_at = parse_rate_limit_reset(rate_limit_output)
+        reset_at = rate_limit_reset_at(provider, rate_limit_output)
         raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
       end
 
@@ -704,7 +704,7 @@ module Activities
       # short-circuits on blank.
       timeout_output = recent_timeout_output(agent_run, since: execution_started_at, prompt: prompt)
       if timeout_rate_limit_error?(timeout_output)
-        reset_at = parse_rate_limit_reset(timeout_output)
+        reset_at = rate_limit_reset_at(provider, timeout_output)
         raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
       end
 
@@ -719,7 +719,7 @@ module Activities
       # provider quota pattern (e.g. KiloCode "Free tier limit reached").
       # Classify as rate-limited so dashboards and retry logic see the
       # real root cause instead of a generic timeout.
-      reset_at = parse_rate_limit_reset(e.matched_output.to_s)
+      reset_at = rate_limit_reset_at(provider, e.matched_output.to_s)
       raise ProviderRateLimitError.new(
         "Rate limited by #{provider}: #{e.matched_output.to_s.truncate(200)}",
         reset_at: reset_at
@@ -854,55 +854,26 @@ module Activities
       end.join("\n").strip
     end
 
-    # Attempts to parse a rate limit reset time from the output.
-    # Falls back to 1 hour from now if not parseable.
-    #
-    # Supported patterns:
-    #   - "retry after 60" (seconds)
-    #   - "reset at 1234567890" (unix timestamp)
-    #   - "resets 5am (UTC)" or "resets 5:00am (UTC)"
-    def parse_rate_limit_reset(output)
-      if (match = output.match(/retry.?after:?\s*(\d+)/i))
-        match[1].to_i.seconds.from_now
-      elsif (match = output.match(/reset.?at:?\s*(\d+)/i))
-        reset_time = Time.at(match[1].to_i)
-        reset_time > Time.current ? reset_time : 1.hour.from_now
-      elsif (match = output.match(/resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(?\s*UTC\s*\)?/i))
-        hour = match[1].to_i
-        minute = (match[2] || "0").to_i
-        period = match[3].downcase
-
-        hour = if period == "am"
-          hour == 12 ? 0 : hour
-        else
-          hour == 12 ? 12 : hour + 12
-        end
-
-        reset_time = Time.current.utc.change(hour: hour, min: minute, sec: 0)
-        reset_time += 1.day if reset_time <= Time.current.utc
-        reset_time
-      elsif (match = output.match(/resets?\s+([A-Za-z]{3})\s+(\d{1,2}),\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(?\s*UTC\s*\)?/i))
-        month = Date::ABBR_MONTHNAMES.index(match[1].capitalize)
-        day = match[2].to_i
-        hour = match[3].to_i
-        minute = (match[4] || "0").to_i
-        period = match[5].downcase
-
-        hour = if period == "am"
-          hour == 12 ? 0 : hour
-        else
-          hour == 12 ? 12 : hour + 12
-        end
-
-        year = Time.current.utc.year
-        reset_time = Time.utc(year, month, day, hour, minute, 0)
-        reset_time = Time.utc(year + 1, month, day, hour, minute, 0) if reset_time <= Time.current.utc
-        reset_time
-      else
+    def rate_limit_reset_at(provider_key, output)
+      harness_provider = harness_provider_for(provider_key)
+      parsed_reset = harness_provider.parse_rate_limit_reset(output.to_s) ||
+        harness_provider.parse_rate_limit_reset(normalized_rate_limit_reset_text(output)) ||
         1.hour.from_now
-      end
-    rescue StandardError
+      parsed_reset > Time.current ? parsed_reset : 1.hour.from_now
+    rescue AgentHarness::ConfigurationError, KeyError
       1.hour.from_now
+    end
+
+    def harness_provider_for(provider_key)
+      app_provider_key = ProviderSupport.provider_key_for_agent_type(provider_key)
+      harness_key = ProviderSupport.harness_provider_key_for(app_provider_key).to_sym
+      AgentHarness.provider(harness_key)
+    end
+
+    def normalized_rate_limit_reset_text(output)
+      output.to_s
+        .gsub(/retry.?after:?\s*(\d+)(?!\s*s)/i, 'retry after \1s')
+        .gsub(/reset.?at:?\s*(\d+)/i, 'reset at \1')
     end
 
     def review_threads_already_addressed?(stdout:, stderr:, prompt:)
