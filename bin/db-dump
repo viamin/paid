@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BACKUPS_DIR="${APP_ROOT}/backups"
+
+read_rails_db_config() {
+  bin/rails runner "
+    cfg = ActiveRecord::Base.connection_db_config.configuration_hash
+    puts [cfg[:host].to_s, cfg[:username].to_s, cfg[:password].to_s, cfg[:database].to_s].join(' ')
+  " 2>/dev/null
+}
+
+RAILS_CONFIG="$(read_rails_db_config)"
+RAILS_DB_HOST="$(echo "$RAILS_CONFIG" | cut -d' ' -f1)"
+RAILS_DB_USER="$(echo "$RAILS_CONFIG" | cut -d' ' -f2)"
+RAILS_DB_PASSWORD="$(echo "$RAILS_CONFIG" | cut -d' ' -f3)"
+RAILS_DB_NAME="$(echo "$RAILS_CONFIG" | cut -d' ' -f4)"
+
+DB_HOST="${DB_HOST:-${RAILS_DB_HOST}}"
+DB_NAME="${DB_NAME:-${RAILS_DB_NAME}}"
+DB_USER="${DB_USER:-${RAILS_DB_USER}}"
+DB_PASSWORD="${DB_PASSWORD:-${RAILS_DB_PASSWORD}}"
+
+usage() {
+  echo "Usage: bin/db-dump [BACKUP_FILENAME]"
+  echo ""
+  echo "Dump database data to a custom-format archive in backups/."
+  echo ""
+  echo "Defaults are read from the Rails database config."
+  echo ""
+  echo "Environment variables:"
+  echo "  DB_HOST      Database host (default: from config/database.yml)"
+  echo "  DB_NAME      Database name (default: from config/database.yml)"
+  echo "  DB_USER      Database user (default: from config/database.yml)"
+  echo "  DB_PASSWORD  Database password (default: from config/database.yml)"
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+mkdir -p "$BACKUPS_DIR"
+
+if [[ -n "${1:-}" ]]; then
+  BACKUP_FILE="${1}"
+else
+  BACKUP_FILE="${DB_NAME}_dataonly_$(date +%Y%m%d_%H%M%S).dump"
+fi
+
+if [[ "$BACKUP_FILE" != /* ]]; then
+  BACKUP_PATH="${BACKUPS_DIR}/${BACKUP_FILE}"
+else
+  BACKUP_PATH="$BACKUP_FILE"
+fi
+
+PG_DUMP_ARGS=(--data-only --no-owner --no-privileges -Fc -U "$DB_USER" "$DB_NAME")
+
+COMPOSE_CONTAINER="$(docker compose ${COMPOSE_FILE:+-f "$COMPOSE_FILE"} ps -q postgres 2>/dev/null | head -1)"
+if [[ -n "$COMPOSE_CONTAINER" ]]; then
+  docker exec "$COMPOSE_CONTAINER" pg_dump "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
+elif [[ -n "$DB_HOST" ]]; then
+  PGPASSWORD="$DB_PASSWORD" pg_dump -h "$DB_HOST" "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
+else
+  echo "Error: No running postgres container found and DB_HOST not set. Start services with 'bin/dev' or set DB_HOST." >&2
+  exit 1
+fi
+
+FILESIZE=$(du -h "$BACKUP_PATH" | cut -f1)
+echo "Dumped ${DB_NAME} data to ${BACKUP_PATH} (${FILESIZE})"
