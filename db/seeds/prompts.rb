@@ -726,3 +726,58 @@ upsert_global_prompt.call(
     var.call("pr_number", "Pull request number")
   ]
 )
+
+# ----------------------------------------------------------------------------
+# goal.enhance_issue — Augment a base prompt for the enhance-issue goal
+# Used by: Activities::RunAgentActivity#augment_prompt_for_enhance_issue_goal
+# ----------------------------------------------------------------------------
+upsert_global_prompt.call(
+  slug: "goal.enhance_issue",
+  name: "Goal: Enhance Issue",
+  description: "Augments a base prompt with instructions to enhance an existing GitHub issue by adding implementation context or asking clarifying questions.",
+  category: "planning",
+  template: <<~'TEMPLATE',
+    {{base_prompt}}
+
+    ---
+    IMPORTANT: Your goal is to ENHANCE AN EXISTING ISSUE by adding context or asking clarifying questions.
+    Do NOT write code, create PRs, or create new issues.
+
+    Read issue #{{issue_number}} in {{repo}} — its description and all comments — then add a SINGLE comment that either:
+
+    1. **Provides implementation context** — relevant files, architecture notes, suggested approach,
+       related patterns — if the issue has enough information to be implemented.
+    2. **Asks specific clarifying questions** — if the issue is ambiguous, missing acceptance criteria,
+       or has unstated constraints that need answers before implementation can begin.
+
+    Use curl to interact with the GitHub API via the proxy. Write JSON payloads to a temp file to avoid
+    shell quoting issues:
+
+    ```bash
+    tmpfile=$(mktemp)
+    cat > "$tmpfile" <<'COMMENT_JSON'
+    {
+      "body": "Your comment in markdown"
+    }
+    COMMENT_JSON
+    curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}/comments" \
+      -H "Content-Type: application/json" \
+      -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+      -H "X-Proxy-Token: $PROXY_TOKEN" \
+      --data-binary @"$tmpfile"
+    rm -f "$tmpfile"
+    ```
+
+    Available endpoints:
+    - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}} — get issue details
+    - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}/comments — list comments
+    - POST $GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}/comments — add comment
+
+    Do NOT push code, create issues, or create pull requests. Only add a comment to issue #{{issue_number}}.
+  TEMPLATE
+  variables: [
+    var.call("base_prompt", "The base prompt this augmentation extends"),
+    var.call("repo", "Repository full_name (owner/repo)"),
+    var.call("issue_number", "GitHub issue number")
+  ]
+)
