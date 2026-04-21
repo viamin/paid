@@ -109,10 +109,8 @@ module Dashboard
       now = Time.current
 
       agent_runs.pick(
-        Arel.sql("COUNT(*) FILTER (WHERE agent_runs.created_at BETWEEN #{quoted_time(now - 7.days)} AND #{quoted_time(now)})"),
-        Arel.sql(
-          "COUNT(*) FILTER (WHERE agent_runs.created_at BETWEEN #{quoted_time(now - 30.days)} AND #{quoted_time(now)})"
-        )
+        Arel.sql(trailing_count_sql(now - 7.days, now)),
+        Arel.sql(trailing_count_sql(now - 30.days, now))
       )
     end
 
@@ -488,8 +486,12 @@ module Dashboard
       ActiveRecord::Base.connection.select_one(sql)
     end
 
-    def quoted_time(time)
-      ActiveRecord::Base.connection.quote(time)
+    def trailing_count_sql(start_time, end_time)
+      ActiveRecord::Base.sanitize_sql_array([
+        "COUNT(*) FILTER (WHERE agent_runs.created_at BETWEEN ? AND ?)",
+        start_time,
+        end_time
+      ])
     end
 
     def counts_by_provider_label(counts_by_identifier)
