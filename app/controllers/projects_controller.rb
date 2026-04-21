@@ -243,6 +243,8 @@ class ProjectsController < ApplicationController
       :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled, :auto_merge_mode,
       :auto_fix_merge_conflicts, :auto_scan_security,
       :generated_label_name, :automation_label_name,
+      :enhance_issue_needs_input_label_name, :enhance_issue_enhanced_label_name,
+      :max_enhance_issue_reevaluation_rounds,
       :auto_add_labels_enabled, :automation_on_label_enabled, :pr_aggregation_enabled,
       :inherit_priority_labels,
       :auto_release_granularity,

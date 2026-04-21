@@ -8,6 +8,8 @@ module Projects
   # Standard labels include:
   # - generated_label_name  (e.g. "paid-generated")
   # - automation_label_name (e.g. "paid-automation")
+  # - enhance_issue_needs_input_label_name (e.g. "paid-needs-input")
+  # - enhance_issue_enhanced_label_name    (e.g. "paid-enhanced")
   # - Priority labels       (P1, P2, P3 by default)
   #
   # @example
@@ -20,6 +22,8 @@ module Projects
     LABEL_DEFINITIONS = {
       generated: { color: "0e8a16", description: "Created by Paid" },
       automation: { color: "1d76db", description: "Triggers Paid automation" },
+      enhance_issue_needs_input: { color: "d876e3", description: "Paid needs answers before enhancing this issue again" },
+      enhance_issue_enhanced: { color: "0e8a16", description: "Paid has added implementation context to this issue" },
       priority: {
         "P1" => { color: "d93f0b", description: "High priority" },
         "P2" => { color: "ff9800", description: "Medium priority" },
@@ -82,6 +86,18 @@ module Projects
         name: project.automation_label_name,
         color: LABEL_DEFINITIONS[:automation][:color],
         description: LABEL_DEFINITIONS[:automation][:description]
+      }
+
+      labels << {
+        name: project.enhance_issue_needs_input_label_name,
+        color: LABEL_DEFINITIONS[:enhance_issue_needs_input][:color],
+        description: LABEL_DEFINITIONS[:enhance_issue_needs_input][:description]
+      }
+
+      labels << {
+        name: project.enhance_issue_enhanced_label_name,
+        color: LABEL_DEFINITIONS[:enhance_issue_enhanced][:color],
+        description: LABEL_DEFINITIONS[:enhance_issue_enhanced][:description]
       }
 
       project.effective_priority_labels.each do |tier, label_name|

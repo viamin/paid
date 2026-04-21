@@ -37,6 +37,8 @@ module Workflows
 
         record_poll_heartbeat(project_id)
 
+        queue_enhance_issue_rechecks(project_id, result[:enhance_issue_rechecks])
+
         if Temporalio::Workflow.patched("batch-evaluate-issues-v1")
           evaluate_issues_batch(project_id, result[:issues])
         else
@@ -85,6 +87,16 @@ module Workflows
     def record_poll_heartbeat(project_id)
       run_activity(Activities::RecordPollHeartbeatActivity,
         { project_id: project_id }, timeout: 10)
+    end
+
+    def queue_enhance_issue_rechecks(project_id, rechecks)
+      Array(rechecks).each do |recheck|
+        run_activity(Activities::QueueAgentRunActivity, {
+          project_id: project_id,
+          issue_id: recheck[:issue_id],
+          goal: "enhance_issue"
+        }, timeout: 30)
+      end
     end
 
     def interruptible_sleep(duration)

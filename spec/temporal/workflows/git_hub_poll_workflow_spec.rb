@@ -234,6 +234,24 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
   end
 
+  describe "#queue_enhance_issue_rechecks" do
+    let(:workflow) { described_class.new }
+
+    before do
+      allow(workflow).to receive(:run_activity)
+    end
+
+    it "queues enhance_issue runs for recheck requests" do
+      workflow.send(:queue_enhance_issue_rechecks, 1, [ { issue_id: 42 } ])
+
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::QueueAgentRunActivity,
+        { project_id: 1, issue_id: 42, goal: "enhance_issue" },
+        timeout: 30
+      )
+    end
+  end
+
   describe "#handle_pr_trigger" do
     let(:workflow) { described_class.new }
     let(:project_id) { 1 }

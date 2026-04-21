@@ -55,6 +55,7 @@ class Issue < ApplicationRecord
   before_validation { self.source ||= GITHUB_SOURCE }
   validates :source, presence: true, inclusion: { in: VALID_SOURCES }
   validates :pr_review_phase, inclusion: { in: PR_REVIEW_PHASES }, if: :is_pull_request?
+  validates :enhance_issue_rounds, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :parent_issue_belongs_to_same_project, if: -> { parent_issue.present? }
 
   after_commit :broadcast_current_section, on: [ :create, :destroy ]

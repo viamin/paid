@@ -40,17 +40,19 @@ module Activities
       gh_issue = client.issue(project.full_name, issue.github_number)
       comments = client.issue_comments(project.full_name, issue.github_number)
       existing_comment = enhancement_comment(comments)
-      return complete_existing(agent_run, existing_comment) if existing_comment
+      return complete_existing(agent_run, existing_comment) if existing_comment && issue.enhance_issue_rounds.zero?
 
       context = build_context(project, issue)
       response = call_llm(agent_run, prompt_for(project, gh_issue, comments, context))
       parsed = parse_response!(agent_run, response)
+      parsed = stop_after_max_rounds(parsed, project, issue)
+      label_result = apply_label_state(client, project, issue, parsed)
       comment_body = comment_body_for(parsed)
       gh_comment = client.add_comment(project.full_name, issue.github_number, comment_body)
 
       track_tokens(agent_run, response)
       agent_run.log!("stdout", comment_body)
-      complete_run!(agent_run)
+      complete_run!(agent_run, paid_state_for(parsed, project, issue))
       ProcessRunQueueJob.perform_later
 
       logger.info(
@@ -59,6 +61,9 @@ module Activities
         issue_id: issue.id,
         issue_number: issue.github_number,
         sufficient_context: parsed[:sufficient_context],
+        label_applied: label_result[:applied],
+        max_rounds_reached: label_result[:max_rounds_reached],
+        enhance_issue_rounds: issue.enhance_issue_rounds,
         comment_url: gh_comment.html_url,
         knowledge_results: context[:knowledge_results_count],
         knowledge_sections: context[:bundle_sections]
@@ -68,27 +73,38 @@ module Activities
         agent_run_id: agent_run.id,
         issue_number: issue.github_number,
         comment_url: gh_comment.html_url,
-        sufficient_context: parsed[:sufficient_context]
+        sufficient_context: parsed[:sufficient_context],
+        label_applied: label_result[:applied],
+        max_rounds_reached: label_result[:max_rounds_reached]
       }
     end
 
     def complete_existing(agent_run, existing_comment)
-      complete_run!(agent_run)
+      issue = agent_run.issue
+      complete_run!(agent_run, existing_paid_state(issue, existing_comment))
       agent_run.log!("system", "Enhancement comment already exists: #{existing_comment.html_url}")
       ProcessRunQueueJob.perform_later
 
       {
         agent_run_id: agent_run.id,
-        issue_number: agent_run.issue.github_number,
+        issue_number: issue.github_number,
         comment_url: existing_comment.html_url,
         sufficient_context: nil,
         already_enhanced: true
       }
     end
 
-    def complete_run!(agent_run)
+    def existing_paid_state(issue, existing_comment)
+      return "completed" if existing_comment.body.to_s.include?("## Auto-enhancement stopped")
+      return "needs_input" if issue.has_label?(issue.project.enhance_issue_needs_input_label_name)
+      return "needs_input" if existing_comment.body.to_s.include?("## Clarifying questions")
+
+      "completed"
+    end
+
+    def complete_run!(agent_run, paid_state = "completed")
       agent_run.complete!
-      agent_run.issue.update!(paid_state: "completed") if agent_run.issue
+      agent_run.issue.update!(paid_state: paid_state) if agent_run.issue
     end
 
     def build_context(project, issue)
@@ -282,8 +298,117 @@ module Activities
       [ COMMENT_MARKER, parsed[:comment_body].to_s.truncate(MAX_COMMENT_BODY) ].join("\n")
     end
 
+    def stop_after_max_rounds(parsed, project, issue)
+      return parsed if parsed[:sufficient_context]
+      return parsed unless max_rounds_reached?(project, issue)
+
+      parsed.merge(
+        comment_body: <<~COMMENT
+          ## Auto-enhancement stopped
+
+          Paid has reached the configured limit of #{project.max_enhance_issue_reevaluation_rounds} enhancement re-evaluation rounds for this issue.
+
+          Manual review is needed before enhancement can continue.
+
+          ## Latest context
+          #{parsed[:comment_body]}
+        COMMENT
+      )
+    end
+
     def enhancement_comment(comments)
       comments.find { |comment| comment.body.to_s.include?(COMMENT_MARKER) }
+    end
+
+    def apply_label_state(client, project, issue, parsed)
+      if parsed[:sufficient_context]
+        added = labels_added(client, project, issue, [ project.enhance_issue_enhanced_label_name ])
+        require_label_added!(project.enhance_issue_enhanced_label_name, added)
+        removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
+        merge_local_labels(issue, add: added, remove: removed)
+        return { applied: added.first, max_rounds_reached: false }
+      end
+
+      if max_rounds_reached?(project, issue)
+        removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
+        merge_local_labels(issue, remove: removed)
+        return { applied: nil, max_rounds_reached: true }
+      end
+
+      added = labels_added(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
+      require_label_added!(project.enhance_issue_needs_input_label_name, added)
+      removed = labels_removed(client, project, issue, [ project.enhance_issue_enhanced_label_name ])
+      merge_local_labels(issue, add: added, remove: removed)
+      { applied: added.first, max_rounds_reached: false }
+    end
+
+    def paid_state_for(parsed, project, issue)
+      return "completed" if parsed[:sufficient_context]
+      return "completed" if max_rounds_reached?(project, issue)
+
+      "needs_input"
+    end
+
+    def max_rounds_reached?(project, issue)
+      issue.enhance_issue_rounds >= project.max_enhance_issue_reevaluation_rounds
+    end
+
+    def add_label(client, project, issue, label)
+      client.add_labels_to_issue(project.full_name, issue.github_number, [ label ])
+      true
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "agent_execution.enhance_issue_label_add_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        label: label,
+        error_class: e.class.name,
+        error: e.message
+      )
+      false
+    end
+
+    def remove_label(client, project, issue, label)
+      return true unless issue.has_label?(label)
+
+      client.remove_label_from_issue(project.full_name, issue.github_number, label)
+      true
+    rescue GithubClient::NotFoundError
+      true
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "agent_execution.enhance_issue_label_remove_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        label: label,
+        error_class: e.class.name,
+        error: e.message
+      )
+      false
+    end
+
+    def labels_added(client, project, issue, labels)
+      labels.select { |label| add_label(client, project, issue, label) }
+    end
+
+    def require_label_added!(label, added)
+      return if added.include?(label)
+
+      raise Temporalio::Error::ApplicationError.new(
+        "Failed to apply enhance_issue control label #{label}",
+        type: "EnhanceIssueLabelAddFailed"
+      )
+    end
+
+    def labels_removed(client, project, issue, labels)
+      labels.select { |label| remove_label(client, project, issue, label) }
+    end
+
+    def merge_local_labels(issue, add: [], remove: [])
+      return if add.empty? && remove.empty?
+
+      labels = (Array(issue.labels) - remove) | add
+      issue.update!(labels: labels)
     end
 
     def track_tokens(agent_run, response)
