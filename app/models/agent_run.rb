@@ -1174,7 +1174,9 @@ class AgentRun < ApplicationRecord
 
   def extract_item_text(item)
     return nil unless item.is_a?(Hash)
-    return nil unless item["role"].nil? || item["role"] == "assistant"
+    return nil unless item["role"] == "assistant" ||
+      item["type"] == "agent_message" ||
+      item["item_type"] == "assistant_message"
 
     text = item["text"]
     return text if text.is_a?(String) && !text.empty?

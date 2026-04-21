@@ -2157,8 +2157,8 @@ RSpec.describe AgentRun do
 
     it "extracts text from Codex-style JSONL item.completed events" do
       events = [
-        { "type" => "item.completed", "item" => { "role" => "assistant", "content" => [ { "type" => "output_text", "text" => "Here is my analysis of the codebase." } ] } },
-        { "type" => "item.completed", "item" => { "role" => "assistant", "content" => [ { "type" => "output_text", "text" => "Done. Here's a summary:\n- Fixed the bug\n- Added tests" } ] } }
+        { "type" => "item.completed", "item" => { "type" => "agent_message", "content" => [ { "type" => "output_text", "text" => "Here is my analysis of the codebase." } ] } },
+        { "type" => "item.completed", "item" => { "type" => "agent_message", "content" => [ { "type" => "output_text", "text" => "Done. Here's a summary:\n- Fixed the bug\n- Added tests" } ] } }
       ].map(&:to_json).join("\n")
 
       agent_run.log!("stdout", events)
@@ -2180,7 +2180,7 @@ RSpec.describe AgentRun do
     it "extracts text from JSONL agent_message events" do
       events = [
         { "type" => "message.delta", "delta" => {} },
-        { "type" => "agent_message", "role" => "assistant", "item_type" => "assistant_message", "content" => [ { "type" => "output_text", "text" => "Agent response text" } ] }
+        { "type" => "agent_message", "item_type" => "assistant_message", "content" => [ { "type" => "output_text", "text" => "Agent response text" } ] }
       ].map(&:to_json).join("\n")
 
       agent_run.log!("stdout", events)
@@ -2258,6 +2258,17 @@ RSpec.describe AgentRun do
       agent_run.log!("stdout", events)
 
       expect(agent_run.agent_summary).to eq("Item text field")
+    end
+
+    it "ignores nil-role JSONL items that are not assistant messages" do
+      events = [
+        { "type" => "item.completed", "item" => { "type" => "reasoning", "text" => "Private reasoning output" } },
+        { "type" => "turn.completed" }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq(events)
     end
   end
 
