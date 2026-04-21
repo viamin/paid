@@ -59,12 +59,16 @@ module Containers
       )
       PoolReplenishmentJob.perform_later(project.id)
       Provision::Result.success(container_id: entry.container_id, service: service, pool_entry_id: entry.id)
+    rescue Provision::ProvisionError => e
+      mark_error(entry, e.message) if entry
+      nil
     end
 
     def replenish
       return unless target_size.positive?
 
       cleanup_claimed_finished_runs
+      cleanup_stale_warm_entries
       missing_count.times { warm_one }
     end
 
@@ -106,9 +110,7 @@ module Containers
     end
 
     def current_pool_count
-      project.container_pool_entries
-        .where(status: %w[warm warming], image: Provision::DEFAULTS[:image], network: pool_network_name)
-        .count
+      current_pool_entries.count
     end
 
     def warm_one
@@ -147,6 +149,17 @@ module Containers
 
         remove_entry(entry, force: true)
       end
+    end
+
+    def cleanup_stale_warm_entries
+      current_pool_entries.warm.find_each do |entry|
+        mark_error(entry, "warm container is not running") unless container_running?(entry.container_id)
+      end
+    end
+
+    def current_pool_entries
+      project.container_pool_entries
+        .where(status: %w[warm warming], image: Provision::DEFAULTS[:image], network: pool_network_name)
     end
 
     def container_running?(container_id)

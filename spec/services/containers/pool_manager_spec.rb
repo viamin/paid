@@ -80,6 +80,18 @@ RSpec.describe Containers::PoolManager do
       expect(entry.reload.status).to eq("error")
       expect(entry.last_error).to include("not running")
     end
+
+    it "marks reconnect failures as errored so cold provisioning can continue" do
+      entry = create(:container_pool_entry, project: project)
+      allow(Containers::Provision).to receive(:reconnect)
+        .and_raise(Containers::Provision::ProvisionError, "Container #{entry.container_id} not found")
+
+      result = described_class.new(project: project, target_size: 1).acquire(agent_run: agent_run)
+
+      expect(result).to be_nil
+      expect(entry.reload.status).to eq("error")
+      expect(entry.last_error).to include("not found")
+    end
   end
 
   describe "#replenish" do
@@ -96,6 +108,24 @@ RSpec.describe Containers::PoolManager do
       entry = project.container_pool_entries.sole
       expect(entry.status).to eq("warm")
       expect(entry.container_id).to eq("warm-1")
+    end
+
+    it "marks stopped warm entries as errored before counting pool capacity" do
+      stale_entry = create(:container_pool_entry, project: project)
+      stopped_container = instance_double(Docker::Container, info: { "State" => { "Running" => false } })
+      provision = instance_double(Containers::Provision)
+
+      allow(Docker::Container).to receive(:get).with(stale_entry.container_id).and_return(stopped_container)
+      allow(Containers::Provision).to receive(:new).and_return(provision)
+      allow(provision).to receive_messages(
+        network_name: "paid_agent",
+        provision: Containers::Provision::Result.success(container_id: "warm-2")
+      )
+
+      described_class.new(project: project, target_size: 1).replenish
+
+      expect(stale_entry.reload.status).to eq("error")
+      expect(project.container_pool_entries.warm.sole.container_id).to eq("warm-2")
     end
   end
 end
