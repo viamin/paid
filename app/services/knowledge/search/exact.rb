@@ -23,11 +23,14 @@ module Knowledge
 
         artifacts = artifacts.by_type(artifact_type) if artifact_type.present?
 
-        exact_matches = artifacts.where(identifier: query)
-
-        unless exact_matches.exists?
-          exact_matches = artifacts.identifier_like(query)
-        end
+        quoted_query = KnowledgeArtifact.connection.quote(query)
+        exact_matches = artifacts
+          .where("identifier = :query OR identifier % :query", query: query)
+          .order(
+            Arel.sql("CASE WHEN identifier = #{quoted_query} THEN 0 ELSE 1 END"),
+            Arel.sql("similarity(identifier, #{quoted_query}) DESC"),
+            :id
+          )
 
         results = exact_matches
           .limit(limit)

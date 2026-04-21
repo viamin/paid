@@ -88,27 +88,32 @@ module Dashboard
     end
 
     def run_volume
-      scope = time_filtered_runs
-      now = Time.current
+      status_counts = time_filtered_runs.group(:status).count
+      total = status_counts.values.sum
+      trailing_counts = trailing_run_counts
+      completed = status_counts.fetch("completed", 0)
+      failed = status_counts.fetch("failed", 0)
+      finished = completed + failed
+
       {
-        total: scope.count,
-        # Trailing windows always use unfiltered runs so labels stay accurate
-        last_7_days: agent_runs.where(created_at: (now - 7.days)..now).count,
-        last_30_days: agent_runs.where(created_at: (now - 30.days)..now).count,
-        active: scope.where(status: AgentRun::UNFINISHED_STATUSES).count,
-        by_status: scope.group(:status).count,
-        failure_rate: failure_rate
+        total: total,
+        last_7_days: trailing_counts[0].to_i,
+        last_30_days: trailing_counts[1].to_i,
+        active: AgentRun::UNFINISHED_STATUSES.sum { |status| status_counts.fetch(status, 0) },
+        by_status: status_counts,
+        failure_rate: finished.zero? ? 0.0 : (failed.to_f / finished * 100).round(1)
       }
     end
 
-    def failure_rate
-      scope = time_filtered_runs
-      completed = scope.where(status: "completed").count
-      failed = scope.where(status: "failed").count
-      total = completed + failed
-      return 0.0 if total.zero?
+    def trailing_run_counts
+      now = Time.current
 
-      (failed.to_f / total * 100).round(1)
+      agent_runs.pick(
+        Arel.sql("COUNT(*) FILTER (WHERE agent_runs.created_at BETWEEN #{quoted_time(now - 7.days)} AND #{quoted_time(now)})"),
+        Arel.sql(
+          "COUNT(*) FILTER (WHERE agent_runs.created_at BETWEEN #{quoted_time(now - 30.days)} AND #{quoted_time(now)})"
+        )
+      )
     end
 
     def duration_percentiles
@@ -130,36 +135,31 @@ module Dashboard
     end
 
     def cost_and_tokens
-      scope = time_filtered_runs
       now = Time.current
-      # Trailing windows always use unfiltered runs so labels stay accurate
-      trailing_30 = agent_runs.where(created_at: (now - 30.days)..now)
-      completed_runs = scope.where(status: "completed")
-      completed_count = completed_runs.count
-
-      totals = scope.pick(
+      totals = time_filtered_runs.pick(
+        Arel.sql("COALESCE(SUM(cost_cents), 0)"),
+        Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"),
+        Arel.sql("COALESCE(SUM(cost_cents) FILTER (WHERE status = 'completed'), 0)"),
+        Arel.sql(
+          "COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)) FILTER (WHERE status = 'completed'), 0)"
+        ),
+        Arel.sql("COUNT(*) FILTER (WHERE status = 'completed')"),
+        Arel.sql("COALESCE(AVG(iterations) FILTER (WHERE status = 'completed' AND iterations > 0), 0)")
+      )
+      trailing_totals = agent_runs.where(created_at: (now - 30.days)..now).pick(
         Arel.sql("COALESCE(SUM(cost_cents), 0)"),
         Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)")
       )
-
-      trailing_totals = trailing_30.pick(
-        Arel.sql("COALESCE(SUM(cost_cents), 0)"),
-        Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)")
-      )
-
-      completed_totals = completed_runs.pick(
-        Arel.sql("COALESCE(SUM(cost_cents), 0)"),
-        Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)")
-      )
+      completed_count = totals[4].to_i
 
       {
         total_cost_cents: totals[0].to_i,
         total_tokens: totals[1].to_i,
         trailing_30d_cost_cents: trailing_totals[0].to_i,
         trailing_30d_tokens: trailing_totals[1].to_i,
-        avg_cost_per_run_cents: completed_count.zero? ? 0 : (completed_totals[0].to_f / completed_count).round,
-        avg_tokens_per_run: completed_count.zero? ? 0 : (completed_totals[1].to_f / completed_count).round,
-        avg_iterations_per_run: avg_iterations_per_run
+        avg_cost_per_run_cents: completed_count.zero? ? 0 : (totals[2].to_f / completed_count).round,
+        avg_tokens_per_run: completed_count.zero? ? 0 : (totals[3].to_f / completed_count).round,
+        avg_iterations_per_run: totals[5].to_f.round(1)
       }
     end
 
@@ -197,13 +197,6 @@ module Dashboard
         .limit(PHASE_BREAKDOWN_RUN_LIMIT)
         .includes(:agent_run_phases)
         .to_a
-    end
-
-    def avg_iterations_per_run
-      result = time_filtered_runs.where(status: "completed")
-        .where("iterations > 0")
-        .pick(Arel.sql("AVG(iterations)"))
-      result&.to_f&.round(1) || 0.0
     end
 
     def performance_by_outcome
@@ -493,6 +486,10 @@ module Dashboard
       SQL
 
       ActiveRecord::Base.connection.select_one(sql)
+    end
+
+    def quoted_time(time)
+      ActiveRecord::Base.connection.quote(time)
     end
 
     def counts_by_provider_label(counts_by_identifier)
