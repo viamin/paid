@@ -584,6 +584,19 @@ upsert_global_prompt.call(
       (replace `main` with the PR's actual base branch if different).
     You also have access to the GitHub API via a proxy for posting review comments.
 
+    You can search the project's knowledge base to look up existing code,
+    symbols, routes, and patterns before deciding whether a finding is valid:
+
+    ```bash
+    curl -s --connect-timeout 10 --max-time 30 "$KNOWLEDGE_SEARCH_URL?q=review+pattern" \
+      -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+      -H "X-Proxy-Token: $PROXY_TOKEN"
+    ```
+
+    Use this when the PR diff or linked issue raises a question that existing
+    code patterns can answer. Do not ask for clarification or report a finding
+    until you have checked whether the knowledge base answers it.
+
     You may run targeted validation when it is useful for review confidence.
     Before running Ruby/Rails commands such as `bin/rspec`, run
     `BUNDLE_PATH=/tmp/bundle BUNDLE_APP_CONFIG=/tmp/bundle-config BUNDLE_FROZEN=true bundle check || BUNDLE_PATH=/tmp/bundle BUNDLE_APP_CONFIG=/tmp/bundle-config BUNDLE_FROZEN=true bundle install --jobs 4 --retry 3`
@@ -743,12 +756,25 @@ upsert_global_prompt.call(
     IMPORTANT: Your goal is to ENHANCE AN EXISTING ISSUE by adding context or asking clarifying questions.
     Do NOT write code, create PRs, or create new issues.
 
-    Read issue #{{issue_number}} in {{repo}} — its description and all comments — then add a SINGLE comment that either:
+    Read issue #{{issue_number}} in {{repo}} -- its description and all comments -- then add a SINGLE comment that either:
 
-    1. **Provides implementation context** — relevant files, architecture notes, suggested approach,
-       related patterns — if the issue has enough information to be implemented.
-    2. **Asks specific clarifying questions** — if the issue is ambiguous, missing acceptance criteria,
+    1. **Provides implementation context** -- relevant files, architecture notes, suggested approach,
+       related patterns -- if the issue has enough information to be implemented.
+    2. **Asks specific clarifying questions** -- if the issue is ambiguous, missing acceptance criteria,
        or has unstated constraints that need answers before implementation can begin.
+
+    You can search the project's knowledge base to look up existing code,
+    symbols, routes, and patterns before asking questions:
+
+    ```bash
+    curl -s --connect-timeout 10 --max-time 30 "$KNOWLEDGE_SEARCH_URL?q=sortable+column+dashboard" \
+      -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+      -H "X-Proxy-Token: $PROXY_TOKEN"
+    ```
+
+    Use this to check whether something already exists in the codebase before
+    asking a clarifying question. If the knowledge base answers your question,
+    provide the answer as implementation context instead.
 
     Use curl to interact with the GitHub API via the proxy. Write JSON payloads to a temp file to avoid
     shell quoting issues:
@@ -769,9 +795,9 @@ upsert_global_prompt.call(
     ```
 
     Available endpoints:
-    - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}} — get issue details
-    - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}/comments — list comments
-    - POST $GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}/comments — add comment
+    - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}} -- get issue details
+    - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}/comments -- list comments
+    - POST $GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}/comments -- add comment
 
     Do NOT push code, create issues, or create pull requests. Only add a comment to issue #{{issue_number}}.
   TEMPLATE
