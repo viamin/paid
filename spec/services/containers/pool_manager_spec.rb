@@ -142,9 +142,9 @@ RSpec.describe Containers::PoolManager do
       described_class.new(project: project, target_size: 1).replenish
 
       expect(raw_connection).to have_received(:exec_params)
-        .with("SELECT pg_advisory_lock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+        .with("SELECT pg_advisory_lock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).twice
       expect(raw_connection).to have_received(:exec_params)
-        .with("SELECT pg_advisory_unlock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+        .with("SELECT pg_advisory_unlock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).twice
     end
 
     it "provisions missing warm entries up to the target size" do
@@ -198,6 +198,43 @@ RSpec.describe Containers::PoolManager do
 
       expect(ContainerPoolEntry.exists?(stale_entry.id)).to be(false)
       expect(project.container_pool_entries.warm.sole.container_id).to eq("warm-3")
+    end
+
+    it "removes warm entries when the target size is zero" do
+      entry = create(:container_pool_entry, project: project)
+      container = instance_double(Docker::Container, info: { "State" => { "Running" => true } }, stop: true, delete: true)
+      volume = instance_double(Docker::Volume, remove: true)
+      network_probe = instance_double(Containers::Provision, network_name: "paid_agent")
+
+      allow(Docker::Container).to receive(:get).with(entry.container_id).and_return(container)
+      allow(Docker::Volume).to receive(:get).with(entry.workspace_volume).and_return(volume)
+      allow(Containers::Provision).to receive(:new).with(project: project).and_return(network_probe)
+
+      described_class.new(project: project, target_size: 0).replenish
+
+      expect(ContainerPoolEntry.exists?(entry.id)).to be(false)
+      expect(container).to have_received(:delete).with(force: true, v: true)
+      expect(volume).to have_received(:remove)
+    end
+
+    it "trims excess warm entries when the target size is reduced" do
+      older_entry = create(:container_pool_entry, project: project, warmed_at: 2.hours.ago)
+      newer_entry = create(:container_pool_entry, project: project, warmed_at: 1.hour.ago)
+      older_container = instance_double(Docker::Container, info: { "State" => { "Running" => true } }, stop: true, delete: true)
+      newer_container = instance_double(Docker::Container, info: { "State" => { "Running" => true } })
+      volume = instance_double(Docker::Volume, remove: true)
+      network_probe = instance_double(Containers::Provision, network_name: "paid_agent")
+
+      allow(Docker::Container).to receive(:get).with(older_entry.container_id).and_return(older_container)
+      allow(Docker::Container).to receive(:get).with(newer_entry.container_id).and_return(newer_container)
+      allow(Docker::Volume).to receive(:get).with(older_entry.workspace_volume).and_return(volume)
+      allow(Containers::Provision).to receive(:new).with(project: project).and_return(network_probe)
+
+      described_class.new(project: project, target_size: 1).replenish
+
+      expect(ContainerPoolEntry.exists?(older_entry.id)).to be(false)
+      expect(ContainerPoolEntry.exists?(newer_entry.id)).to be(true)
+      expect(older_container).to have_received(:delete).with(force: true, v: true)
     end
 
     it "removes entries when provisioning fails" do

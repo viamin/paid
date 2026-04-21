@@ -72,11 +72,10 @@ module Containers
     end
 
     def replenish
-      return unless target_size.positive?
-
       with_project_replenishment_lock do
         cleanup_claimed_finished_runs
         cleanup_stale_pool_entries
+        trim_excess_warm_entries
         missing_count.times { warm_one }
       end
     end
@@ -167,6 +166,15 @@ module Containers
 
       current_pool_entries.warm.find_each do |entry|
         remove_error_entry(entry, "warm container is not running") unless container_running?(entry.container_id)
+      end
+    end
+
+    def trim_excess_warm_entries
+      excess_count = [ current_pool_count - target_size, 0 ].max
+      return unless excess_count.positive?
+
+      current_pool_entries.warm.order(:warmed_at, :id).limit(excess_count).each do |entry|
+        remove_entry(entry, force: true)
       end
     end
 
