@@ -12,9 +12,8 @@ require Rails.root.join("db/migrate/20260416050235_move_co_author_trailer_from_p
 # before_validation callback that reads `agent_co_author_trailer`. Keep the
 # provider column present because current model callbacks read it during factory
 # setup and after-commit broadcasts elsewhere in the suite. The legacy projects
-# column is added once for this spec file and the destructive removal is stubbed
-# while asserting the migration calls it, avoiding repeated schema locks in the
-# full randomized suite.
+# column is added for each example and the destructive removal is stubbed while
+# asserting the migration calls it.
 RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures do
   # This spec writes outside transactional fixtures so the temporary legacy
   # column remains available for every example.
@@ -46,6 +45,9 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
     %w[projects providers provider_states account_memberships github_tokens users accounts].each do |table|
       connection.execute("DELETE FROM #{table}")
     end
+    connection.remove_column(:projects, :agent_co_author_trailer, if_exists: true)
+    Project.reset_column_information
+    Provider.reset_column_information
   end
 
   it "copies a project trailer onto the creator's default subscription provider" do
