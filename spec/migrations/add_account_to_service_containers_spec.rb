@@ -1,0 +1,178 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+require Rails.root.join("db/migrate/20260421162135_add_account_to_service_containers")
+
+RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
+  self.use_transactional_tests = false
+
+  let(:migration) { described_class.new }
+
+  before do
+    migration.down
+    ServiceContainer.reset_column_information
+  end
+
+  after do
+    connection = ActiveRecord::Base.connection
+    connection.execute("DELETE FROM project_service_containers")
+    connection.execute("DELETE FROM service_container_metrics")
+    connection.execute("DELETE FROM service_containers")
+    connection.execute("DELETE FROM projects")
+    connection.execute("DELETE FROM providers")
+    connection.execute("DELETE FROM provider_states")
+    connection.execute("DELETE FROM account_memberships")
+    connection.execute("DELETE FROM github_tokens")
+    connection.execute("DELETE FROM users")
+    connection.execute("DELETE FROM accounts")
+
+    migration.up unless connection.column_exists?(:service_containers, :account_id)
+    ServiceContainer.reset_column_information
+  end
+
+  it "duplicates shared service containers per account and rewires project joins" do
+    first_project, second_project, service_container = create_shared_service_container
+
+    migration.up
+    ServiceContainer.reset_column_information
+
+    first_project_service_container = project_service_container_for(first_project)
+    second_project_service_container = project_service_container_for(second_project)
+
+    expect(first_project_service_container.account_id).to eq(first_project.account_id)
+    expect(second_project_service_container.account_id).to eq(second_project.account_id)
+    expect(first_project_service_container.name).to eq(service_container["name"])
+    expect(second_project_service_container.name).to eq(service_container["name"])
+    expect(first_project_service_container.id).not_to eq(second_project_service_container.id)
+    expect(metric_count_for(first_project_service_container)).to eq(1)
+    expect(metric_count_for(second_project_service_container)).to eq(1)
+  end
+
+  it "collapses per-account copies before restoring the global name index on rollback" do
+    create_shared_service_container
+
+    migration.up
+
+    expect { migration.down }.not_to raise_error
+    ServiceContainer.reset_column_information
+
+    expect(service_container_count).to eq(1)
+    expect(service_container_metric_count).to eq(1)
+    expect(project_service_container_count).to eq(2)
+    expect(distinct_joined_service_container_count).to eq(1)
+  end
+
+  private
+
+  def create_shared_service_container
+    first_project = create(:project)
+    second_project = create(:project)
+    service_container = create_service_container_without_account
+
+    create_project_service_container(first_project, service_container)
+    create_project_service_container(second_project, service_container)
+    create_service_container_metric(service_container)
+
+    [ first_project, second_project, service_container ]
+  end
+
+  def create_service_container_without_account
+    result = ActiveRecord::Base.connection.exec_query(<<~SQL.squish)
+      INSERT INTO service_containers (
+        image,
+        name,
+        port,
+        env,
+        status,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        'postgres:16',
+        'shared-postgres',
+        5432,
+        '{"POSTGRES_USER":"agent"}',
+        'stopped',
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+      RETURNING id, name
+    SQL
+
+    result.first
+  end
+
+  def create_project_service_container(project, service_container)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO project_service_containers (
+        project_id,
+        service_container_id,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        #{project.id},
+        #{service_container["id"]},
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def create_service_container_metric(service_container)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO service_container_metrics (
+        service_container_id,
+        container_id,
+        cpu_percent,
+        memory_bytes,
+        memory_limit_bytes,
+        memory_percent,
+        recorded_at,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        #{service_container["id"]},
+        'container-1',
+        1.5,
+        1024,
+        2048,
+        50.0,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def project_service_container_for(project)
+    project.service_containers.reload.sole
+  end
+
+  def metric_count_for(service_container)
+    ActiveRecord::Base.connection.select_value(<<~SQL.squish)
+      SELECT COUNT(*)
+      FROM service_container_metrics
+      WHERE service_container_id = #{service_container.id}
+    SQL
+  end
+
+  def service_container_count
+    ActiveRecord::Base.connection.select_value("SELECT COUNT(*) FROM service_containers")
+  end
+
+  def service_container_metric_count
+    ActiveRecord::Base.connection.select_value("SELECT COUNT(*) FROM service_container_metrics")
+  end
+
+  def project_service_container_count
+    ActiveRecord::Base.connection.select_value("SELECT COUNT(*) FROM project_service_containers")
+  end
+
+  def distinct_joined_service_container_count
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(DISTINCT service_container_id) FROM project_service_containers"
+    )
+  end
+end
