@@ -286,6 +286,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:patched)
         .with("pause-followup-during-review-v1")
         .and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("pause-review-bot-followup-during-review-v1")
+        .and_return(true)
     end
 
     it "routes ready_for_owner to MarkPrReadyActivity and RequestReviewActivity" do
@@ -685,6 +688,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RequestReviewActivity,
           hash_including(reviewers: array_including(Activities::RequestReviewActivity::COPILOT_LOGIN)), timeout: anything)
       expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "create_pr"), timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RecordPrFollowupActivity, anything, timeout: anything)
     end
 
@@ -706,6 +711,49 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::QueueAgentRunActivity, hash_including(goal: "create_pr"), timeout: anything)
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RecordPrFollowupActivity, anything, timeout: anything)
+    end
+
+    it "keeps ready-phase followup for posted bot feedback while review_bot_review_pending is outstanding" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        current_followup_count: 0,
+        triggers: [
+          { type: "review_bot_review_pending", request_login: Activities::RequestReviewActivity::COPILOT_LOGIN },
+          { type: "review_bot_threads", details: [ "Address review thread" ] }
+        ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: array_including(Activities::RequestReviewActivity::COPILOT_LOGIN)), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "create_pr"), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordPrFollowupActivity, hash_including(issue_id: 10), timeout: anything)
+    end
+
+    it "preserves ready-phase replay order before the review pending hard gate patch" do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("pause-review-bot-followup-during-review-v1")
+        .and_return(false)
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        current_followup_count: 0,
+        triggers: [
+          { type: "review_bot_review_pending", request_login: Activities::RequestReviewActivity::COPILOT_LOGIN },
+          { type: "ci_failure", details: [ "rspec" ] }
+        ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, anything, timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordPrFollowupActivity, hash_including(issue_id: 10), timeout: anything)
     end
 
     it "triggers dev environment update after successful merge" do
@@ -1008,6 +1056,28 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "human-reviewer" ]), timeout: anything)
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RecordPrFollowupActivity, anything, timeout: anything)
+    end
+
+    it "dispatches bot review and keeps followup when retry includes posted bot feedback" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "review_bot_review_pending", request_login: "copilot-bot" },
+          { type: "review_bot_comments", details: [ "Address bot feedback" ] }
+        ],
+        current_review_goal_retry_count: 1,
+        current_followup_count: 0
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "copilot-bot" ]), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "create_pr"), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordPrFollowupActivity, hash_including(issue_id: 10), timeout: anything)
     end
 
     it "processes ready_for_owner alongside review_goal_retry" do
@@ -1378,6 +1448,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:patched)
         .with("pause-followup-during-review-v1").and_return(true)
       allow(Temporalio::Workflow).to receive(:patched)
+        .with("pause-review-bot-followup-during-review-v1").and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
         .with("batch-evaluate-issues-v1").and_return(true)
       allow(workflow).to receive(:interruptible_sleep)
       allow(workflow).to receive(:run_activity)
@@ -1472,6 +1544,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with("queue-paid-agent-review-run-v1").and_return(true)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("pause-followup-during-review-v1").and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("pause-review-bot-followup-during-review-v1").and_return(true)
       allow(workflow).to receive(:run_activity).and_return({})
     end
 
