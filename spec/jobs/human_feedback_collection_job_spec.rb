@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe HumanFeedbackCollectionJob do
   describe "#perform" do
@@ -132,6 +133,42 @@ RSpec.describe HumanFeedbackCollectionJob do
         expect(metric).to be_present
         expect(metric.scores).to include("reaction_score")
         expect(metric.metadata["feedback_sources"]).to include("review_reaction")
+      end
+    end
+
+    context "with enhance_issue goal" do
+      let(:agent_run) { create(:agent_run, :enhance_issue_goal, :completed, pull_request_number: nil) }
+      let(:enhancement_comment) do
+        OpenStruct.new(
+          id: 123,
+          body: Activities::EnhanceIssueActivity::COMMENT_MARKER,
+          created_at: 2.hours.ago,
+          user: OpenStruct.new(login: "paid-agent")
+        )
+      end
+      let(:author_reply) do
+        OpenStruct.new(
+          id: 124,
+          body: "Thanks.",
+          created_at: 1.hour.ago,
+          user: OpenStruct.new(login: agent_run.issue.github_creator_login)
+        )
+      end
+
+      it "collects reactions and author replies for completed issue enhancement" do
+        allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+        allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+        allow(github_client).to receive_messages(
+          issue_comments: [ enhancement_comment, author_reply ],
+          issue_comment_reactions: [ { user_login: "alice", content: "+1", created_at: 1.hour.ago } ]
+        )
+
+        described_class.new.perform(agent_run.id)
+
+        metric = agent_run.quality_metrics.human.first
+        expect(metric).to be_present
+        expect(metric.scores).to include("reaction_score" => 1.0, "author_replied" => 1.0)
+        expect(metric.metadata["feedback_sources"]).to include("enhance_issue_feedback")
       end
     end
 
