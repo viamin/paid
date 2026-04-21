@@ -194,6 +194,66 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "quality gate" do
+    let(:input) { { project_id: 1, issue_id: 1 } }
+
+    before do
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::CheckQualityGateActivity"
+          { allowed: false, reason: "quality_gate_breached", breaches: [ { metric: "composite_score" } ] }
+        when "Activities::MarkAgentRunFailedActivity",
+          "Activities::CleanupContainerActivity",
+          "Activities::CleanupServicesActivity",
+          "Activities::CleanupWorktreeActivity",
+          "Activities::EnqueueJanitorActivity"
+          {}
+        else
+          raise "unexpected activity #{activity_class.name}"
+        end
+      end
+    end
+
+    it "stops before provisioning when the gate is blocked" do
+      result = workflow.execute(input)
+
+      expect(result).to eq(success: false, quality_gate_blocked: true, agent_run_id: 42)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkAgentRunFailedActivity,
+          { agent_run_id: 42, error: "Quality gate blocked this run: composite_score" },
+          timeout: 30)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ProvisionContainerActivity, anything, any_args)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RunAgentActivity, anything, any_args)
+    end
+
+    it "skips quality gate activity before the Temporal patch" do
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: false)
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::EnhanceIssueActivity" then { agent_run_id: 42, success: true }
+        when "Activities::CleanupContainerActivity",
+          "Activities::CleanupServicesActivity",
+          "Activities::CleanupWorktreeActivity",
+          "Activities::EnqueueJanitorActivity"
+          {}
+        else
+          raise "unexpected activity #{activity_class.name}"
+        end
+      end
+
+      result = workflow.execute(input.merge(goal: "enhance_issue"))
+
+      expect(result).to eq(success: true, agent_run_id: 42)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CheckQualityGateActivity, anything, any_args)
+    end
+  end
+
   describe "review goal" do
     let(:input) { { project_id: 1, issue_id: 1, goal: "review", source_pull_request_number: 42 } }
 

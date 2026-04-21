@@ -219,6 +219,8 @@ module Workflows
     end
 
     def queue_create_pr_run(project_id, decision)
+      return unless quality_gate_allows_run?(project_id, decision, goal: "create_pr")
+
       queue_input = {
         project_id: project_id,
         issue_id: decision[:issue_id],
@@ -233,6 +235,8 @@ module Workflows
     end
 
     def queue_review_run(project_id, decision)
+      return unless quality_gate_allows_run?(project_id, decision, goal: "review")
+
       run_activity(Activities::QueueAgentRunActivity, {
         project_id: project_id,
         issue_id: decision[:issue_id],
@@ -413,6 +417,7 @@ module Workflows
 
       pending_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "paid_agent_review_pending" }
       return if pending_trigger&.dig(:active_run)
+      return unless quality_gate_allows_run?(project_id, pr_data, goal: "review")
 
       run_activity(Activities::QueueAgentRunActivity,
         { project_id: project_id, issue_id: pr_data[:issue_id],
@@ -623,6 +628,7 @@ module Workflows
     def start_draft_followup_workflow(project_id, pr_data)
       issue_id = pr_data[:issue_id]
       pr_number = pr_data[:pr_number]
+      return unless quality_gate_allows_run?(project_id, pr_data, goal: "create_pr")
 
       # TODO(#220): Remove patch guard after all long-running GitHubPollWorkflows
       # have continued-as-new past this point (i.e. no workflow history contains
@@ -654,6 +660,7 @@ module Workflows
     def start_pr_followup_workflow(project_id, pr_data)
       issue_id = pr_data[:issue_id]
       pr_number = pr_data[:pr_number]
+      return unless quality_gate_allows_run?(project_id, pr_data, goal: "create_pr")
 
       followup_input = {
         project_id: project_id,
@@ -667,6 +674,39 @@ module Workflows
       followup_queue_input[:goal] = "create_pr" if Temporalio::Workflow.patched("queue-agent-run-goal-v1")
       run_activity(Activities::QueueAgentRunActivity, followup_queue_input, timeout: 30)
       run_activity(Activities::RecordPrFollowupActivity, followup_input, timeout: 30)
+    end
+
+    def quality_gate_allows_run?(project_id, data, goal:)
+      return true unless Temporalio::Workflow.patched("github-poll-quality-gate-v1")
+
+      result = run_activity(Activities::CheckQualityGateActivity,
+        {
+          project_id: project_id,
+          issue_id: data[:issue_id],
+          source_pull_request_number: data[:source_pull_request_number] || data[:pr_number],
+          goal: goal,
+          workflow_id: current_workflow_id(project_id),
+          workflow_type: "GitHubPollWorkflow"
+        }.compact,
+        timeout: 30)
+      return true if result.fetch(:allowed, true)
+
+      Temporalio::Workflow.logger.info(
+        message: "quality_gate.queue_skipped",
+        project_id: project_id,
+        issue_id: data[:issue_id],
+        pr_number: data[:source_pull_request_number] || data[:pr_number],
+        goal: goal,
+        reason: result[:reason],
+        breach_count: Array(result[:breaches]).size
+      )
+      false
+    end
+
+    def current_workflow_id(project_id)
+      Temporalio::Workflow.info.workflow_id
+    rescue StandardError
+      "github-poll-#{project_id}"
     end
   end
 end
