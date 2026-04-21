@@ -27,7 +27,7 @@ module Containers
   # - Containers are shared across concurrent agent runs in the same project
   #   to avoid duplicate instances and reduce startup latency.
   # - Each agent run gets its own isolated database within the shared PostgreSQL
-  #   container, preventing schema.rb drift from cross-branch contamination.
+  #   container, preventing schema drift from cross-branch contamination.
   # - Reference counting (via AgentRun.service_container_ids JSONB) prevents
   #   premature cleanup while other runs still need the service.
   # - Row-level locking (with_lock) prevents race conditions during concurrent
@@ -521,9 +521,8 @@ module Containers
     end
 
     # Creates an isolated database for this agent run inside the shared
-    # PostgreSQL container. This prevents schema.rb drift caused by
-    # cross-branch migration contamination when multiple agent runs
-    # share the same database.
+    # PostgreSQL container. This prevents schema drift caused by cross-branch
+    # migration contamination when multiple agent runs share the same database.
     def create_per_run_database(service_container, db_name)
       return unless service_container.docker_container_id.present?
 

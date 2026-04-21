@@ -2,13 +2,17 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20260421162135_add_account_to_service_containers")
+require Rails.root.join("db/migrate/20260421162139_enable_tenant_row_level_security")
 
 RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   self.use_transactional_tests = false
 
   let(:migration) { described_class.new }
+  let(:rls_migration) { EnableTenantRowLevelSecurity.new }
 
   before do
+    rls_migration.down if tenant_policy_count.positive?
+    restore_service_container_account_reference unless service_containers_have_account_reference?
     migration.down
     ServiceContainer.reset_column_information
   end
@@ -26,7 +30,8 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     connection.execute("DELETE FROM users")
     connection.execute("DELETE FROM accounts")
 
-    migration.up unless connection.column_exists?(:service_containers, :account_id)
+    restore_service_container_account_reference unless service_containers_have_account_reference?
+    rls_migration.up if tenant_policy_count.zero?
     ServiceContainer.reset_column_information
   end
 
@@ -174,5 +179,24 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(DISTINCT service_container_id) FROM project_service_containers"
     )
+  end
+
+  def tenant_policy_count
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE policyname = 'tenant_isolation'"
+    ).to_i
+  end
+
+  def service_containers_have_account_reference?
+    connection = ActiveRecord::Base.connection
+    connection.column_exists?(:service_containers, :account_id) &&
+      connection.foreign_key_exists?(:service_containers, :accounts)
+  end
+
+  def restore_service_container_account_reference
+    connection = ActiveRecord::Base.connection
+    connection.remove_index(:service_containers, column: [ :account_id, :name ], if_exists: true)
+    connection.remove_column(:service_containers, :account_id) if connection.column_exists?(:service_containers, :account_id)
+    migration.up
   end
 end

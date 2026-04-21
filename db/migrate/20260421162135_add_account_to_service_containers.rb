@@ -160,6 +160,8 @@ class AddAccountToServiceContainers < ActiveRecord::Migration[8.1]
   end
 
   def down
+    drop_service_container_tenant_policies
+
     execute <<~SQL.squish
       WITH primary_service_containers AS (
         SELECT DISTINCT ON (name)
@@ -193,5 +195,19 @@ class AddAccountToServiceContainers < ActiveRecord::Migration[8.1]
     remove_index :service_containers, [ :account_id, :name ], if_exists: true
     add_index :service_containers, :name, unique: true unless index_exists?(:service_containers, :name, unique: true)
     remove_reference :service_containers, :account, foreign_key: true
+  end
+
+  private
+
+  def drop_service_container_tenant_policies
+    %w[
+      project_service_containers
+      service_container_metrics
+      service_containers
+    ].each do |table|
+      execute "DROP POLICY IF EXISTS tenant_isolation ON #{quote_table_name(table)}"
+      execute "ALTER TABLE #{quote_table_name(table)} NO FORCE ROW LEVEL SECURITY"
+      execute "ALTER TABLE #{quote_table_name(table)} DISABLE ROW LEVEL SECURITY"
+    end
   end
 end

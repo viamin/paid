@@ -179,7 +179,7 @@ Paid follows `rubocop-rails-omakase` and the repo style guides. A few convention
 - Use Yarn commands for JavaScript dependencies.
 - Use `rails generate migration` to create migrations; do not create migration files manually.
 - Add foreign keys and indexes for new relational data.
-- Never edit `db/schema.rb` directly.
+- Never edit schema dump files directly.
 
 When adding orchestration or automation code, keep the mechanics in code and delegate semantic judgment to AI systems where appropriate. See [docs/LLM_STYLE_GUIDE.md](docs/LLM_STYLE_GUIDE.md) for the project-specific rules.
 

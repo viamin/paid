@@ -40,6 +40,7 @@ module Paid
 
     # Don't generate system test files.
     config.generators.system_tests = nil
+    config.active_record.schema_format = :sql
 
     # App-level configurable settings (ENV fallbacks for deployment flexibility)
     config.x.workspace_root = ENV.fetch("WORKSPACE_ROOT", "/var/paid/workspaces")
