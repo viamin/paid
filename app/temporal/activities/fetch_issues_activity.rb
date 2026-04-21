@@ -249,7 +249,6 @@ module Activities
 
       issue.with_lock do
         if issue.enhance_issue_rounds >= max_rounds
-          issue.update!(paid_state: "completed")
           limit_reached = true
         else
           issue.update!(enhance_issue_rounds: issue.enhance_issue_rounds + 1, paid_state: "in_progress")
@@ -272,6 +271,8 @@ module Activities
 
     def stop_enhance_issue_recheck(project, issue, max_rounds)
       post_enhance_issue_limit_comment(project, issue, max_rounds)
+      issue.update!(paid_state: "completed")
+
       logger.info(
         message: "agent_execution.enhance_issue_recheck_limit_reached",
         project_id: project.id,
@@ -281,6 +282,9 @@ module Activities
         max_rounds: max_rounds
       )
       nil
+    rescue GithubClient::Error
+      restore_enhance_issue_recheck_signal(project, issue)
+      raise
     end
 
     def post_enhance_issue_limit_comment(project, issue, max_rounds)
@@ -295,6 +299,15 @@ module Activities
           Manual review is needed before enhancement can continue.
         COMMENT
       )
+    end
+
+    def restore_enhance_issue_recheck_signal(project, issue)
+      issue.with_lock do
+        issue.update!(
+          labels: Array(issue.labels) | [ project.enhance_issue_needs_input_label_name ],
+          paid_state: "needs_input"
+        )
+      end
     end
 
     # Parses dependency and parent/child relationships from issue comments.

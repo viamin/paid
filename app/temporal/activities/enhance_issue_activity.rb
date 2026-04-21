@@ -314,6 +314,7 @@ module Activities
     def apply_label_state(client, project, issue, parsed)
       if parsed[:sufficient_context]
         added = labels_added(client, project, issue, [ project.enhance_issue_enhanced_label_name ])
+        require_label_added!(project.enhance_issue_enhanced_label_name, added)
         removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
         merge_local_labels(issue, add: added, remove: removed)
         return { applied: added.first, max_rounds_reached: false }

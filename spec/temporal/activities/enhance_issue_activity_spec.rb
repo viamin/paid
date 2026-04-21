@@ -162,6 +162,21 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.reload.labels).not_to include(project.enhance_issue_needs_input_label_name)
     end
 
+    it "fails before completing when adding the enhanced GitHub label fails" do
+      allow(client).to receive(:add_labels_to_issue).and_raise(GithubClient::Error.new("GitHub unavailable"))
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(
+        Temporalio::Error::ApplicationError,
+        "Failed to apply enhance_issue control label #{project.enhance_issue_enhanced_label_name}"
+      )
+
+      expect(client).not_to have_received(:add_comment)
+      expect(issue.reload.paid_state).to eq("in_progress")
+      expect(issue.reload.labels).not_to include(project.enhance_issue_enhanced_label_name)
+    end
+
     it "posts a manual-review stop comment instead of reapplying needs-input at the max round" do
       issue.update!(enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds)
       allow(llm_response).to receive(:output).and_return(

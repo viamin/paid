@@ -252,6 +252,21 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(issue.reload.enhance_issue_rounds).to eq(1)
         expect(issue.paid_state).to eq("completed")
       end
+
+      it "keeps the max-round stop retryable when posting the stop comment fails" do
+        project.update!(max_enhance_issue_reevaluation_rounds: 1)
+        issue.update!(enhance_issue_rounds: 1)
+        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error.new("GitHub unavailable"))
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.to raise_error(GithubClient::Error, "GitHub unavailable")
+
+        issue.reload
+        expect(issue.enhance_issue_rounds).to eq(1)
+        expect(issue.paid_state).to eq("needs_input")
+        expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
+      end
     end
 
     context "when rate limited" do
