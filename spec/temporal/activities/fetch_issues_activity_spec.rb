@@ -1072,6 +1072,29 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(pr.is_pull_request).to be true
       end
 
+      it "promotes external dependencies after backfilling open pull requests" do
+        issue = create(:issue, project: project, github_number: 53)
+        dependency = issue.issue_dependencies.create!(
+          depends_on_owner: project.owner.downcase,
+          depends_on_repo: project.repo.downcase,
+          depends_on_number: 52
+        )
+
+        allow(github_client).to receive(:pull_requests).and_return([
+          OpenStruct.new(number: 52)
+        ])
+        allow(github_client).to receive(:issue).with(project.full_name, 52).and_return(github_pr_issue(52))
+
+        activity.execute(project_id: project.id)
+
+        pr = project.issues.find_by!(github_issue_id: 5052)
+        dependency.reload
+        expect(dependency.depends_on_issue_id).to eq(pr.id)
+        expect(dependency.depends_on_owner).to be_nil
+        expect(dependency.depends_on_repo).to be_nil
+        expect(dependency.depends_on_number).to be_nil
+      end
+
       it "does not close local pull requests when the open PR reconciliation is truncated" do
         stub_const("#{described_class}::DEFAULT_PER_PAGE", 2)
         stub_const("#{described_class}::DEFAULT_MAX_PAGES", 1)

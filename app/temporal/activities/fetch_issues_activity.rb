@@ -435,6 +435,7 @@ module Activities
       return 0 if truncated
 
       backfill_open_pull_requests(project, client, open_pr_numbers)
+      resolve_external_dependencies(project, open_pr_numbers) if open_pr_numbers.any?
       close_stale_pull_requests(project, open_pr_numbers)
     end
 
