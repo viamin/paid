@@ -12,6 +12,7 @@ module Activities
       @agent_run = input[:agent_run_id] ? AgentRun.find_by(id: input[:agent_run_id]) : nil
       @issue = input[:issue_id] ? Issue.find_by(id: input[:issue_id]) : nil
       @source_pull_request_number = input[:source_pull_request_number]
+      @settings = nil
 
       result = evaluate(input)
       record_workflow_state(input, result)

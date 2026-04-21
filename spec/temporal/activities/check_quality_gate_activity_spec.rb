@@ -126,6 +126,19 @@ RSpec.describe Activities::CheckQualityGateActivity do
     expect(automatic_result).to include(allowed: false, blocked: true, reason: "quality_gate_breached")
   end
 
+  it "reloads quality gate settings when the activity instance is reused" do
+    create_metric(0.1)
+    create_metric(0.1)
+    create_metric(0.1)
+
+    blocked_result = activity.execute(project_id: project.id)
+    project.update!(quality_gate_settings: project.quality_gate_settings.merge("composite_score_threshold" => 0.05))
+    passing_result = activity.execute(project_id: project.id)
+
+    expect(blocked_result).to include(allowed: false, blocked: true, reason: "quality_gate_breached")
+    expect(passing_result).to include(allowed: true, blocked: false, reason: "quality_gate_passed")
+  end
+
   it "records the gate result in workflow state" do
     create_metric(0.9)
     create_metric(0.8)
