@@ -486,9 +486,9 @@ module Containers
     # @param worktree_path [String, nil] Path to the git worktree (optional)
     # @return [Provision] The reconnected service instance
     # @raise [ProvisionError] When container cannot be found
-    def self.reconnect(agent_run:, container_id:, worktree_path: nil, workspace_volume: nil, pool_entry: nil)
+    def self.reconnect(agent_run:, container_id:, worktree_path: nil, workspace_volume: nil, pool_entry: nil, **options)
       container = Docker::Container.get(container_id)
-      new(agent_run: agent_run, worktree_path: worktree_path, workspace_volume: workspace_volume, pool_entry: pool_entry)
+      new(agent_run: agent_run, worktree_path: worktree_path, workspace_volume: workspace_volume, pool_entry: pool_entry, **options)
         .with_existing_container(container, workspace_volume: workspace_volume, pool_entry: pool_entry)
     rescue Docker::Error::NotFoundError
       raise ProvisionError, "Container #{container_id} not found"

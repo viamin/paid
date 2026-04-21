@@ -3,6 +3,9 @@
 module Containers
   class PoolManager
     DEFAULT_TARGET_SIZE = 0
+    LOCK_NAMESPACE = 1_357_180_001
+    RECONNECT_OPTIONS = %i[timeout_seconds].freeze
+    SUPPORTED_ACQUIRE_OPTIONS = (RECONNECT_OPTIONS + %i[image]).freeze
 
     def self.enabled?
       target_size.positive?
@@ -42,6 +45,7 @@ module Containers
 
     def acquire(agent_run:, **options)
       return unless enabled_for?(agent_run)
+      return unless pool_compatible_options?(options)
 
       entry = claim_entry(agent_run, options: options)
       return unless entry
@@ -55,7 +59,8 @@ module Containers
         agent_run: agent_run,
         container_id: entry.container_id,
         workspace_volume: entry.workspace_volume,
-        pool_entry: entry
+        pool_entry: entry,
+        **options.slice(*RECONNECT_OPTIONS)
       )
       PoolReplenishmentJob.perform_later(project.id)
       Provision::Result.success(container_id: entry.container_id, service: service, pool_entry_id: entry.id)
@@ -67,9 +72,11 @@ module Containers
     def replenish
       return unless target_size.positive?
 
-      cleanup_claimed_finished_runs
-      cleanup_stale_warm_entries
-      missing_count.times { warm_one }
+      with_project_replenishment_lock do
+        cleanup_claimed_finished_runs
+        cleanup_stale_warm_entries
+        missing_count.times { warm_one }
+      end
     end
 
     def remove_entry(entry, force: false)
@@ -87,6 +94,10 @@ module Containers
         agent_run.worktree_path.blank? &&
         agent_run.service_container_ids.blank? &&
         run_network_name(agent_run) == pool_network_name
+    end
+
+    def pool_compatible_options?(options)
+      (options.keys - SUPPORTED_ACQUIRE_OPTIONS).empty?
     end
 
     def claim_entry(agent_run, options:)
@@ -161,6 +172,17 @@ module Containers
     def current_pool_entries
       project.container_pool_entries
         .where(status: %w[warm warming], image: Provision::DEFAULTS[:image], network: pool_network_name)
+    end
+
+    def with_project_replenishment_lock
+      ActiveRecord::Base.connection.execute("SELECT pg_advisory_lock(#{LOCK_NAMESPACE}, #{project_lock_key})")
+      yield
+    ensure
+      ActiveRecord::Base.connection.execute("SELECT pg_advisory_unlock(#{LOCK_NAMESPACE}, #{project_lock_key})")
+    end
+
+    def project_lock_key
+      project.id % 2_147_483_647
     end
 
     def container_running?(container_id)

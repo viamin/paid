@@ -50,6 +50,30 @@ RSpec.describe Containers::PoolManager do
       expect(PoolReplenishmentJob).to have_received(:perform_later).with(project.id)
     end
 
+    it "carries reconnect-safe options into the claimed warm container" do
+      entry = create(:container_pool_entry, project: project)
+
+      described_class.new(project: project, target_size: 1).acquire(agent_run: agent_run, timeout_seconds: 120)
+
+      expect(Containers::Provision).to have_received(:reconnect).with(
+        agent_run: agent_run,
+        container_id: entry.container_id,
+        workspace_volume: entry.workspace_volume,
+        pool_entry: entry,
+        timeout_seconds: 120
+      )
+    end
+
+    it "bypasses the pool when caller options require a different container shape" do
+      entry = create(:container_pool_entry, project: project)
+
+      result = described_class.new(project: project, target_size: 1).acquire(agent_run: agent_run, memory_bytes: 8.gigabytes)
+
+      expect(result).to be_nil
+      expect(entry.reload.status).to eq("warm")
+      expect(Containers::Provision).not_to have_received(:reconnect)
+    end
+
     it "returns nil when the warm pool is disabled" do
       create(:container_pool_entry, project: project)
 
@@ -105,6 +129,20 @@ RSpec.describe Containers::PoolManager do
   end
 
   describe "#replenish" do
+    it "serializes replenishment per project with an advisory lock" do
+      create(:container_pool_entry, :warming, project: project)
+      connection = ActiveRecord::Base.connection
+      network_probe = instance_double(Containers::Provision, network_name: "paid_agent")
+      allow(connection).to receive(:execute).and_call_original
+      allow(Containers::Provision).to receive(:new).with(project: project).and_return(network_probe)
+
+      described_class.new(project: project, target_size: 0).replenish
+      described_class.new(project: project, target_size: 1).replenish
+
+      expect(connection).to have_received(:execute).with(/pg_advisory_lock/).once
+      expect(connection).to have_received(:execute).with(/pg_advisory_unlock/).once
+    end
+
     it "provisions missing warm entries up to the target size" do
       provision = instance_double(Containers::Provision)
       allow(Containers::Provision).to receive(:new).and_return(provision)
