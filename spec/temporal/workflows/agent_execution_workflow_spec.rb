@@ -165,6 +165,35 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "enhance_issue goal" do
+    let(:input) { { project_id: 1, issue_id: 1, goal: "enhance_issue" } }
+
+    before do
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
+    end
+
+    it "runs EnhanceIssueActivity without provisioning or running an agent container" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::EnhanceIssueActivity" then { agent_run_id: 42, success: true }
+        else {}
+        end
+      end
+
+      result = workflow.execute(input)
+
+      expect(result).to eq(success: true, agent_run_id: 42)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::EnhanceIssueActivity, { agent_run_id: 42 },
+          start_to_close_timeout: 300, retry_policy: described_class::NO_RETRY)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ProvisionContainerActivity, anything, any_args)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RunAgentActivity, anything, any_args)
+    end
+  end
+
   describe "review goal" do
     let(:input) { { project_id: 1, issue_id: 1, goal: "review", source_pull_request_number: 42 } }
 
