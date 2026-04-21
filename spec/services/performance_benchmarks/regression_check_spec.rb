@@ -56,6 +56,19 @@ RSpec.describe PerformanceBenchmarks::RegressionCheck do
     )
   end
 
+  it "fails when a required metric is missing" do
+    result = described_class.new(
+      report: report_for(comparison_value_ms: 100),
+      baseline: baseline_for(comparison_value_ms: 100),
+      required_metrics: [ "search_latency", "dashboard_load_time" ]
+    ).call
+
+    expect(result[:passed]).to be(false)
+    expect(result[:failures]).to contain_exactly(
+      "dashboard_load_time is required but missing from the benchmark report"
+    )
+  end
+
   def report_for(comparison_value_ms:, budget_ms: 500, regression_threshold: 1.25)
     {
       metrics: [

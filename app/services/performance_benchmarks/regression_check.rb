@@ -22,7 +22,17 @@ module PerformanceBenchmarks
     attr_reader :required_metrics
 
     def failures
-      @failures ||= report.fetch(:metrics).filter_map do |metric|
+      @failures ||= missing_required_metric_failures + metric_failures
+    end
+
+    def missing_required_metric_failures
+      (required_metrics - report_metric_keys).map do |metric|
+        "#{metric} is required but missing from the benchmark report"
+      end
+    end
+
+    def metric_failures
+      report_metrics.filter_map do |metric|
         if metric.fetch(:status) == "skipped"
           next required_metric_failure(metric) if required_metrics.include?(metric_key(metric))
 
@@ -31,6 +41,14 @@ module PerformanceBenchmarks
 
         budget_failure(metric) || baseline_failure(metric)
       end
+    end
+
+    def report_metrics
+      @report_metrics ||= report.fetch(:metrics)
+    end
+
+    def report_metric_keys
+      @report_metric_keys ||= report_metrics.map { |metric| metric_key(metric) }
     end
 
     def required_metric_failure(metric)
