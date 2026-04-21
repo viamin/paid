@@ -66,7 +66,28 @@ RSpec.describe AgentRuns::CleanupStale do
       described_class.call(project: project)
 
       expect(container_service).to have_received(:cleanup).with(force: true)
-      expect(provisioner).to have_received(:cleanup).with(stale_run)
+      expect(provisioner).to have_received(:cleanup).with(stale_run, stale_requeue_count: 0)
+    end
+
+    it "passes captured service environment to service cleanup when requeuing pending runs" do
+      service_container = create(:service_container)
+      old_environment = { "DATABASE_URL" => "postgres://agent:agent@pg:5432/agent_run_old_attempt_0" }
+      stale_run = create(:agent_run, status: "pending", project: project,
+        service_container_ids: [ service_container.id ],
+        service_environment: old_environment)
+      stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+      provisioner = instance_double(Containers::ServiceProvisioner)
+
+      allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+      allow(provisioner).to receive(:cleanup) do |run, stale_requeue_count:|
+        expect(run.service_container_ids).to eq([ service_container.id ])
+        expect(run.service_environment).to eq(old_environment)
+        expect(stale_requeue_count).to eq(0)
+      end
+
+      described_class.call(project: project)
+
+      expect(provisioner).to have_received(:cleanup)
     end
 
     it "updates the issue paid state and re-enqueues the run queue" do

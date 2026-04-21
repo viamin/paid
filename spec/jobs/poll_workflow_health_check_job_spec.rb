@@ -221,6 +221,8 @@ RSpec.describe PollWorkflowHealthCheckJob do
     end
 
     it "does nothing when no projects have polling enabled" do
+      Project.update_all(poll_interval_seconds: 0)
+
       described_class.perform_now
 
       expect(temporal_client).not_to have_received(:start_workflow)

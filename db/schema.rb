@@ -1428,6 +1428,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_233122) do
     t.index ["status"], name: "index_worktrees_on_status"
   end
 
+  add_foreign_key "ab_test_assignments", "ab_test_variants", on_delete: :cascade
+  add_foreign_key "ab_test_assignments", "ab_tests", on_delete: :cascade
+  add_foreign_key "ab_test_assignments", "agent_runs", on_delete: :cascade
+  add_foreign_key "ab_test_variants", "ab_tests", on_delete: :cascade
+  add_foreign_key "ab_test_variants", "prompt_versions", on_delete: :restrict
+  add_foreign_key "ab_tests", "ab_test_variants", column: "winner_variant_id", on_delete: :nullify
+  add_foreign_key "ab_tests", "prompt_versions", column: "control_version_id", on_delete: :restrict
+  add_foreign_key "ab_tests", "prompts", on_delete: :cascade
+  add_foreign_key "account_memberships", "accounts"
+  add_foreign_key "account_memberships", "users"
+  add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"
+  add_foreign_key "agent_coordination_signals", "agent_runs", column: "target_agent_run_id"
+  add_foreign_key "agent_run_anomalies", "agent_runs"
+  add_foreign_key "agent_run_anomalies", "projects"
+  add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
+  add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
@@ -1465,8 +1481,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_233122) do
   add_foreign_key "linear_tokens", "users", column: "created_by_id"
   add_foreign_key "model_selections", "llm_models"
   add_foreign_key "notifications", "users", on_delete: :nullify
+  add_foreign_key "onboarding_steps", "accounts"
+  add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
   add_foreign_key "pr_templates", "users", on_delete: :cascade
+  add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
   add_foreign_key "project_baselines", "projects"
@@ -1477,4 +1496,34 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_233122) do
   add_foreign_key "project_service_containers", "projects", on_delete: :cascade
   add_foreign_key "project_service_containers", "service_containers", on_delete: :cascade
   add_foreign_key "project_versions", "projects"
+  add_foreign_key "projects", "github_tokens"
+  add_foreign_key "projects", "users", column: "created_by_id"
+  add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify
+  add_foreign_key "prompt_versions", "prompts", on_delete: :cascade
+  add_foreign_key "prompt_versions", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "prompt_versions", "users", column: "reviewed_by_user_id", on_delete: :nullify
+  add_foreign_key "prompts", "projects", on_delete: :cascade
+  add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
+  add_foreign_key "provider_api_keys", "users", on_delete: :cascade
+  add_foreign_key "provider_states", "users", on_delete: :cascade
+  add_foreign_key "providers", "provider_api_keys", on_delete: :restrict
+  add_foreign_key "providers", "users", on_delete: :cascade
+  add_foreign_key "quality_gate_events", "projects"
+  add_foreign_key "quality_gate_events", "quality_gate_thresholds"
+  add_foreign_key "quality_gate_events", "quality_metrics"
+  add_foreign_key "quality_gate_thresholds", "projects"
+  add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
+  add_foreign_key "quality_pause_events", "agent_runs"
+  add_foreign_key "quality_pause_events", "projects"
+  add_foreign_key "quality_recovery_actions", "agent_runs", on_delete: :nullify
+  add_foreign_key "quality_recovery_actions", "projects", on_delete: :cascade
+  add_foreign_key "quality_recovery_actions", "prompt_versions", on_delete: :nullify
+  add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
+  add_foreign_key "style_guides", "projects", on_delete: :cascade
+  add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
+  add_foreign_key "tracker_configurations", "integration_credentials"
+  add_foreign_key "tracker_configurations", "users", column: "created_by_id"
+  add_foreign_key "user_settings", "users"
+  add_foreign_key "workflow_states", "projects"
+  add_foreign_key "worktrees", "projects", on_delete: :cascade
 end

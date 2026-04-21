@@ -150,8 +150,7 @@ class StaleRunDetectorJob < ApplicationJob
   end
 
   def requeue_stale_unfinished_run(agent_run, policy)
-    old_container_id = nil
-    old_service_container_ids = nil
+    old_resources = {}
 
     agent_run.with_lock do
       agent_run.reload
@@ -161,8 +160,7 @@ class StaleRunDetectorJob < ApplicationJob
       return :exhausted if timeout_before_requeue?(agent_run, policy)
       return :exhausted if agent_run.stale_requeue_count >= MAX_STALE_REQUEUES
 
-      old_container_id = agent_run.container_id
-      old_service_container_ids = agent_run.service_container_ids.dup
+      old_resources = captured_resources(agent_run)
 
       unless cancel_temporal_workflow(agent_run, agent_run.temporal_workflow_id)
         return :skip
@@ -179,9 +177,18 @@ class StaleRunDetectorJob < ApplicationJob
       )
     end
 
-    cleanup_docker_resources_by_id(agent_run, old_container_id, old_service_container_ids)
+    cleanup_docker_resources_by_id(agent_run, old_resources)
 
     :requeued
+  end
+
+  def captured_resources(agent_run)
+    {
+      container_id: agent_run.container_id,
+      service_container_ids: agent_run.service_container_ids.dup,
+      service_environment: agent_run.service_environment&.dup,
+      stale_requeue_count: agent_run.stale_requeue_count
+    }
   end
 
   def pending_requeue_policy
@@ -246,15 +253,13 @@ class StaleRunDetectorJob < ApplicationJob
   end
 
   def resolve_stale_run(agent_run)
-    old_container_id = nil
-    old_service_container_ids = nil
+    old_resources = {}
 
     agent_run.with_lock do
       agent_run.reload
       return false if agent_run.finished?
 
-      old_container_id = agent_run.container_id
-      old_service_container_ids = agent_run.service_container_ids.dup
+      old_resources = captured_resources(agent_run)
 
       agent_run.timeout!(error: "Stale run detected: stuck in '#{agent_run.status}' beyond timeout threshold")
       agent_run.log!("system", "Run marked as timed out by stale run detector")
@@ -276,7 +281,7 @@ class StaleRunDetectorJob < ApplicationJob
       )
     end
 
-    cleanup_docker_resources_by_id(agent_run, old_container_id, old_service_container_ids)
+    cleanup_docker_resources_by_id(agent_run, old_resources)
 
     true
   end
@@ -320,7 +325,9 @@ class StaleRunDetectorJob < ApplicationJob
   #
   # Service containers are cleaned up using the captured old_service_container_ids
   # rather than reading from agent_run, which may have been cleared under the lock.
-  def cleanup_docker_resources_by_id(agent_run, old_container_id, old_service_container_ids = nil)
+  def cleanup_docker_resources_by_id(agent_run, old_resources = {})
+    old_container_id = old_resources[:container_id]
+
     if old_container_id.present?
       begin
         service = Containers::Provision.reconnect(
@@ -342,20 +349,26 @@ class StaleRunDetectorJob < ApplicationJob
               .update_all(container_id: nil)
     end
 
-    cleanup_service_containers(agent_run, old_service_container_ids)
+    cleanup_service_containers(agent_run, old_resources)
   end
 
   # Cleans up service containers using IDs captured under the row lock.
-  # Assigns the captured IDs back onto the in-memory agent_run so
-  # ServiceProvisioner#cleanup can read them (the DB record was already
-  # cleared inside the lock). The provisioner's final update! to clear
-  # service_container_ids is harmless since they're already empty in the DB.
-  def cleanup_service_containers(agent_run, old_service_container_ids)
+  # Assigns the captured state back onto the in-memory agent_run so
+  # ServiceProvisioner#cleanup can read the exact services and database name
+  # provisioned for the old attempt (the DB record was already cleared inside
+  # the lock). The provisioner clears only the service_container_ids column
+  # so the restored service_environment is not persisted back to the DB.
+  def cleanup_service_containers(agent_run, old_resources)
     begin
+      service_container_ids = old_resources[:service_container_ids]
+      service_environment = old_resources[:service_environment]
+
       # Restore captured IDs in memory so the provisioner can read them;
       # the DB record was already cleared inside the lock.
-      agent_run.service_container_ids = old_service_container_ids if old_service_container_ids.present?
-      Containers::ServiceProvisioner.new.cleanup(agent_run)
+      agent_run.service_container_ids = service_container_ids if service_container_ids.present?
+      agent_run.service_environment = service_environment if service_environment.present?
+      Containers::ServiceProvisioner.new.cleanup(agent_run,
+        stale_requeue_count: old_resources[:stale_requeue_count])
     rescue => e
       Rails.logger.warn(
         message: "stale_run_detector.service_cleanup_failed",

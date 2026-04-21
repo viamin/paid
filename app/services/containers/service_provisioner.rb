@@ -2,6 +2,7 @@
 
 require "docker-api"
 require "socket"
+require "uri"
 
 module Containers
   # Manages Docker lifecycle for service containers (PostgreSQL, Redis, etc.)
@@ -18,12 +19,15 @@ module Containers
   # 5. The agent container receives these env vars and can connect to services
   #    by hostname (containers register DNS aliases on the shared network).
   # 6. When the agent run completes, CleanupServicesActivity calls #cleanup,
-  #    which only stops containers with zero remaining active runs.
+  #    which drops per-run databases and only stops containers with zero
+  #    remaining active runs.
   #
   # == Key Design Decisions
   #
   # - Containers are shared across concurrent agent runs in the same project
   #   to avoid duplicate instances and reduce startup latency.
+  # - Each agent run gets its own isolated database within the shared PostgreSQL
+  #   container, preventing schema.rb drift from cross-branch contamination.
   # - Reference counting (via AgentRun.service_container_ids JSONB) prevents
   #   premature cleanup while other runs still need the service.
   # - Row-level locking (with_lock) prevents race conditions during concurrent
@@ -42,6 +46,7 @@ module Containers
   #   provisioner.cleanup(agent_run)
   class ServiceProvisioner
     class Error < StandardError; end
+    class DatabaseError < Error; end
 
     POSTGRES_DEFAULT_ENV = {
       "POSTGRES_USER" => "agent",
@@ -50,20 +55,20 @@ module Containers
     }.freeze
 
     ENV_MAPPINGS = {
-      "postgres" => ->(sc) {
+      "postgres" => ->(sc, db_override: nil) {
         defaults = POSTGRES_DEFAULT_ENV
         user = sc.env["POSTGRES_USER"].to_s.strip.presence || defaults["POSTGRES_USER"]
         pass = sc.env["POSTGRES_PASSWORD"].to_s.strip.presence || defaults["POSTGRES_PASSWORD"]
-        db = sc.env["POSTGRES_DB"].to_s.strip.presence || defaults["POSTGRES_DB"]
+        db = db_override || sc.env["POSTGRES_DB"].to_s.strip.presence || defaults["POSTGRES_DB"]
         { "DATABASE_URL" => "postgres://#{user}:#{pass}@#{sc.name}:#{sc.port}/#{db}" }
       },
-      "redis" => ->(sc) {
+      "redis" => ->(sc, **) {
         { "REDIS_URL" => "redis://#{sc.name}:#{sc.port}" }
       },
-      "selenium" => ->(sc) {
+      "selenium" => ->(sc, **) {
         { "SELENIUM_URL" => "http://#{sc.name}:#{sc.port}" }
       },
-      "chromium" => ->(sc) {
+      "chromium" => ->(sc, **) {
         { "SELENIUM_URL" => "http://#{sc.name}:#{sc.port}" }
       }
     }.freeze
@@ -111,8 +116,21 @@ module Containers
         begin
           sc.with_lock do
             ensure_running!(sc)
+          end
+
+          if sc.image.include?("postgres")
+            db_name = per_run_db_name(agent_run)
+            create_per_run_database(sc, db_name)
+            env_vars.merge!(generate_env_vars(sc, db_override: db_name))
+          else
             env_vars.merge!(generate_env_vars(sc))
           end
+        rescue DatabaseError => e
+          log_error("service_provisioner.database_error",
+            name: sc.name,
+            image: sc.image,
+            error: e.message)
+          raise
         rescue Error => e
           sc.update!(status: "error", docker_container_id: nil)
           log_error("service_provisioner.container_error",
@@ -140,17 +158,22 @@ module Containers
     # Only stops containers with no active agent runs still using them.
     #
     # @param agent_run [AgentRun] The agent run to clean up services for
-    def cleanup(agent_run)
+    def cleanup(agent_run, stale_requeue_count: nil)
       container_ids = agent_run.service_container_ids
       return if container_ids.blank?
 
       ServiceContainer.where(id: container_ids).find_each do |sc|
+        if sc.image.include?("postgres")
+          db_name = database_name_for_cleanup(agent_run, stale_requeue_count: stale_requeue_count)
+          drop_per_run_database(sc, db_name) if droppable_per_run_database?(agent_run, sc, db_name)
+        end
+
         if sc.active_agent_run_count == 0
           stop_container!(sc)
         end
       end
 
-      agent_run.update!(service_container_ids: [])
+      agent_run.update_columns(service_container_ids: [])
     end
 
     private
@@ -446,10 +469,10 @@ module Containers
       false
     end
 
-    def generate_env_vars(service_container)
+    def generate_env_vars(service_container, db_override: nil)
       ENV_MAPPINGS.each do |pattern, generator|
         if service_container.image.include?(pattern)
-          return generator.call(service_container)
+          return generator.call(service_container, db_override: db_override)
         end
       end
 
@@ -459,6 +482,152 @@ module Containers
         "SERVICE_#{key}_HOST" => service_container.name,
         "SERVICE_#{key}_PORT" => service_container.port.to_s
       }
+    end
+
+    # Generates a unique, safe database name for each agent run attempt.
+    # Uses a sanitized ID to ensure valid PostgreSQL identifier.
+    def per_run_db_name(agent_run, stale_requeue_count: agent_run.stale_requeue_count)
+      "agent_run_#{agent_run.id.to_s.tr('-', '_')}_attempt_#{stale_requeue_count.to_i}"
+    end
+
+    # Creates an isolated database for this agent run inside the shared
+    # PostgreSQL container. This prevents schema.rb drift caused by
+    # cross-branch migration contamination when multiple agent runs
+    # share the same database.
+    def create_per_run_database(service_container, db_name)
+      return unless service_container.docker_container_id.present?
+
+      env = container_env_for(service_container)
+      user = env.fetch("POSTGRES_USER", POSTGRES_DEFAULT_ENV["POSTGRES_USER"])
+      admin_db = env.fetch("POSTGRES_DB", POSTGRES_DEFAULT_ENV["POSTGRES_DB"])
+
+      container = Docker::Container.get(service_container.docker_container_id)
+      stdout, stderr, status = container.exec([
+        "psql", "-U", user, "-d", admin_db, "-c",
+        "SELECT 1 FROM pg_database WHERE datname = #{postgres_string_literal(db_name)}"
+      ])
+
+      if status != 0
+        raise DatabaseError, "Failed to check for existing database #{db_name}: #{stderr.join}"
+      end
+
+      # Create only if it doesn't already exist (idempotent for retries)
+      if stdout.join.exclude?("1 row")
+        stdout, stderr, status = container.exec([
+          "psql", "-U", user, "-d", admin_db, "-c",
+          "CREATE DATABASE #{postgres_identifier(db_name)} OWNER #{postgres_identifier(user)}"
+        ])
+
+        if status != 0
+          raise DatabaseError, "Failed to create per-run database #{db_name}: #{stderr.join}"
+        end
+
+        log_info("service_provisioner.database_created",
+          db_name: db_name,
+          service_container: service_container.name)
+      end
+    rescue Docker::Error::DockerError, Excon::Error => e
+      raise DatabaseError, "Failed to create per-run database #{db_name}: #{e.message}"
+    end
+
+    # Drops the per-run database during cleanup. Best-effort: logs
+    # failures instead of raising so cleanup can continue.
+    def database_name_for_cleanup(agent_run, stale_requeue_count: nil)
+      database_url = agent_run.service_environment&.fetch("DATABASE_URL", nil)
+      database_name_from_url(database_url) || per_run_db_name(
+        agent_run,
+        stale_requeue_count: stale_requeue_count || agent_run.stale_requeue_count
+      )
+    end
+
+    def database_name_from_url(database_url)
+      return if database_url.blank?
+
+      path = URI.parse(database_url).path
+      return if path.blank?
+
+      URI.decode_www_form_component(path.delete_prefix("/")).presence
+    rescue URI::InvalidURIError
+      nil
+    end
+
+    def droppable_per_run_database?(agent_run, service_container, db_name)
+      return false if db_name.blank?
+
+      if configured_postgres_database_names(service_container).include?(db_name)
+        log_info("service_provisioner.database_drop_skipped",
+          db_name: db_name,
+          service_container: service_container.name,
+          reason: "configured_database")
+        return false
+      end
+
+      return true if per_run_database_name_for?(agent_run, db_name)
+
+      log_info("service_provisioner.database_drop_skipped",
+        db_name: db_name,
+        service_container: service_container.name,
+        reason: "non_matching_database_name")
+      false
+    end
+
+    def configured_postgres_database_names(service_container)
+      env = container_env_for(service_container)
+      [
+        POSTGRES_DEFAULT_ENV["POSTGRES_DB"],
+        env["POSTGRES_DB"]
+      ].compact.uniq
+    end
+
+    def per_run_database_name_for?(agent_run, db_name)
+      run_id = Regexp.escape(agent_run.id.to_s.tr("-", "_"))
+      db_name.match?(/\Aagent_run_#{run_id}_attempt_\d+\z/)
+    end
+
+    def drop_per_run_database(service_container, db_name)
+      return unless service_container.docker_container_id.present?
+      return unless service_container.running?
+
+      env = container_env_for(service_container)
+      user = env.fetch("POSTGRES_USER", POSTGRES_DEFAULT_ENV["POSTGRES_USER"])
+      admin_db = env.fetch("POSTGRES_DB", POSTGRES_DEFAULT_ENV["POSTGRES_DB"])
+
+      container = Docker::Container.get(service_container.docker_container_id)
+
+      # Terminate active connections before dropping
+      container.exec([
+        "psql", "-U", user, "-d", admin_db, "-c",
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = #{postgres_string_literal(db_name)} AND pid <> pg_backend_pid()"
+      ])
+
+      _stdout, stderr, status = container.exec([
+        "psql", "-U", user, "-d", admin_db, "-c",
+        "DROP DATABASE IF EXISTS #{postgres_identifier(db_name)}"
+      ])
+
+      if status != 0
+        log_warn("service_provisioner.database_drop_failed",
+          db_name: db_name,
+          service_container: service_container.name,
+          error: stderr.join)
+      else
+        log_info("service_provisioner.database_dropped",
+          db_name: db_name,
+          service_container: service_container.name)
+      end
+    rescue Docker::Error::DockerError, Excon::Error => e
+      log_warn("service_provisioner.database_drop_error",
+        db_name: db_name,
+        service_container: service_container.name,
+        error: e.message)
+    end
+
+    def postgres_identifier(value)
+      %("#{value.to_s.gsub('"', '""')}")
+    end
+
+    def postgres_string_literal(value)
+      "'#{value.to_s.gsub("'", "''")}'"
     end
 
     def schedule_metrics_collection(service_container)
