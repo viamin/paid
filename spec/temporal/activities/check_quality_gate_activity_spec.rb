@@ -64,6 +64,22 @@ RSpec.describe Activities::CheckQualityGateActivity do
     expect(result).to include(allowed: true, bypassed: true, reason: "priority_run")
   end
 
+  it "bypasses priority pull request runs" do
+    issue = create(:issue, project: project, labels: [ "bug" ])
+    pull_request = create(:issue, :pull_request, project: project, github_number: 42, labels: [ "P2" ])
+    create_metric(0.1)
+    create_metric(0.1)
+    create_metric(0.1)
+
+    result = activity.execute(
+      project_id: project.id,
+      issue_id: issue.id,
+      source_pull_request_number: pull_request.github_number
+    )
+
+    expect(result).to include(allowed: true, bypassed: true, reason: "priority_run")
+  end
+
   it "records the gate result in workflow state" do
     create_metric(0.9)
     create_metric(0.8)
