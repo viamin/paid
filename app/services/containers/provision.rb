@@ -1419,6 +1419,7 @@ module Containers
       env = [
         "PAID_PROXY_URL=#{proxy_base}",
         "GITHUB_API_URL=#{proxy_base}/api/proxy/github",
+        "KNOWLEDGE_SEARCH_URL=#{proxy_base}/api/proxy/knowledge/search",
         "PROJECT_ID=#{project.id}",
         "HOME=/home/agent"
       ]

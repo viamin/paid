@@ -425,6 +425,7 @@ RSpec.describe Containers::Provision do
           env = config["Env"]
           expect(env).to include(
             "PAID_PROXY_URL=http://paid-proxy:3000",
+            "KNOWLEDGE_SEARCH_URL=http://paid-proxy:3000/api/proxy/knowledge/search",
             "PROJECT_ID=#{project.id}", "AGENT_RUN_ID=#{agent_run.id}",
             "ANTHROPIC_BASE_URL=http://paid-proxy:3000/api/proxy/anthropic",
             "OPENAI_BASE_URL=http://paid-proxy:3000/api/proxy/openai",

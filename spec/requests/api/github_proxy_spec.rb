@@ -138,6 +138,24 @@ RSpec.describe "Api::GithubProxy" do
     end
   end
 
+  describe "GET /api/proxy/github/repos/:owner/:repo/issues/:number/comments" do
+    let(:target_url) { "https://api.github.com/repos/testowner/testrepo/issues/42/comments" }
+
+    before do
+      stub_request(:get, target_url)
+        .to_return(status: 200, body: [ { id: 1, body: "Prior discussion" } ].to_json,
+                   headers: { "Content-Type" => "application/json" })
+    end
+
+    it "proxies comment listing" do
+      get "/api/proxy/github/repos/testowner/testrepo/issues/42/comments",
+        headers: valid_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body).first["body"]).to eq("Prior discussion")
+    end
+  end
+
   describe "POST /api/proxy/github/repos/:owner/:repo/issues/:number/labels" do
     let(:target_url) { "https://api.github.com/repos/testowner/testrepo/issues/42/labels" }
 

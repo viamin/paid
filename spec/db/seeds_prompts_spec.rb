@@ -25,6 +25,7 @@ module SeedsPromptsSpec
     knowledge.draft_decision
     goal.create_github_issue
     goal.review_pull_request
+    goal.enhance_issue
   ].freeze
 end
 
