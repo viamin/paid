@@ -53,6 +53,19 @@ RSpec.describe "Notifications" do
       expect(response.body).to include("Dropdown alert")
     end
 
+    it "targets action links at the top frame in dropdown content" do
+      notification = create(:notification, :with_action_url, account: account, title: "Linked alert")
+
+      get notifications_path(dropdown: "true")
+
+      link = Nokogiri::HTML(response.body)
+        .css("a")
+        .find { |anchor| anchor.text == notification.title }
+
+      expect(link["href"]).to eq(notification.action_url)
+      expect(link["data-turbo-frame"]).to eq("_top")
+    end
+
     it "excludes dismissed notifications" do
       create(:notification, account: account, title: "Active alert")
       create(:notification, :dismissed, account: account, title: "Dismissed alert")
