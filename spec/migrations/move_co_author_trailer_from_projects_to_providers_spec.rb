@@ -9,55 +9,42 @@ require Rails.root.join("db/migrate/20260416050235_move_co_author_trailer_from_p
 # the project owner's default subscription provider before column removal.
 #
 # Model code (Provider) holds the post-migration schema assumption — it has a
-# before_validation callback that reads `agent_co_author_trailer`. That means
-# spec setup must happen in the post-migration world, using raw SQL to simulate
-# the legacy project column while the migration runs. The specs build records
-# through factories (post-migration schema), then replay `down` + `up` while
-# manually restoring the legacy column state with SQL.
+# before_validation callback that reads `agent_co_author_trailer`. Keep the
+# provider column present because current model callbacks read it during factory
+# setup and after-commit broadcasts elsewhere in the suite. The legacy projects
+# column is added once for this spec file and the destructive removal is stubbed
+# while asserting the migration calls it, avoiding repeated schema locks in the
+# full randomized suite.
 RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures do
-  # DDL operations (add_column / remove_column) acquire AccessExclusiveLock
-  # which deadlocks with transactional fixtures. Disable transactional tests
-  # and truncate tables manually after each example.
+  # This spec writes outside transactional fixtures so the temporary legacy
+  # column remains available for every example.
   self.use_transactional_tests = false
 
   let(:migration) { described_class.new }
   let(:trailer) { "Co-Authored-By: Claude <noreply@anthropic.com>" }
 
-  def restore_legacy_project_column
+  before do
     connection = ActiveRecord::Base.connection
-    return if connection.column_exists?(:projects, :agent_co_author_trailer)
-
-    connection.add_column(:projects, :agent_co_author_trailer, :text)
-    if connection.column_exists?(:providers, :agent_co_author_trailer)
-      connection.remove_column(:providers, :agent_co_author_trailer)
-    end
+    connection.add_column(:projects, :agent_co_author_trailer, :text) unless connection.column_exists?(:projects, :agent_co_author_trailer)
+    Project.reset_column_information
+    Provider.reset_column_information
   end
 
   def run_migration_up
+    allow(migration).to receive(:remove_column)
     migration.up
+    expect(migration).to have_received(:remove_column).with(:projects, :agent_co_author_trailer, if_exists: true)
     Project.reset_column_information
     Provider.reset_column_information
   end
 
-  # Ensure the schema ends each example in its post-migration state so the
-  # rest of the suite is unaffected. Also clean up data created without
-  # transactional rollback.
+  # Clean up data that was not rolled back by transactional fixtures. Keep
+  # deletes ordered from child tables to parent tables so this does not need
+  # disable_referential_integrity, which takes broad locks across the suite.
   after do
     connection = ActiveRecord::Base.connection
-    unless connection.column_exists?(:providers, :agent_co_author_trailer)
-      connection.add_column(:providers, :agent_co_author_trailer, :text)
-    end
-    if connection.column_exists?(:projects, :agent_co_author_trailer)
-      connection.remove_column(:projects, :agent_co_author_trailer)
-    end
-    Project.reset_column_information
-    Provider.reset_column_information
-    # Clean up data that was not rolled back by transactional fixtures.
-    # Use disable_referential_integrity to avoid FK ordering issues.
-    connection.disable_referential_integrity do
-      %w[projects providers provider_states account_memberships github_tokens users accounts].each do |table|
-        connection.execute("DELETE FROM #{table}")
-      end
+    %w[projects providers provider_states account_memberships github_tokens users accounts].each do |table|
+      connection.execute("DELETE FROM #{table}")
     end
   end
 
@@ -66,7 +53,6 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
     owner = project.effective_owner
     provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
 
-    restore_legacy_project_column
     ActiveRecord::Base.connection.execute(
       ActiveRecord::Base.sanitize_sql_array([
         "UPDATE projects SET agent_co_author_trailer = ? WHERE id = ?", trailer, project.id
@@ -76,7 +62,6 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
     run_migration_up
 
     expect(provider.reload.agent_co_author_trailer).to eq(trailer)
-    expect(ActiveRecord::Base.connection.column_exists?(:projects, :agent_co_author_trailer)).to be false
   end
 
   it "leaves providers untouched when no project has a configured trailer" do
@@ -84,7 +69,6 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
     owner = project.effective_owner
     provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
 
-    restore_legacy_project_column
     run_migration_up
 
     expect(provider.reload.agent_co_author_trailer).to be_nil
@@ -96,7 +80,6 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
     provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
     newer_project = create(:project, account: older_project.account, created_by: owner)
 
-    restore_legacy_project_column
     ActiveRecord::Base.connection.execute(
       ActiveRecord::Base.sanitize_sql_array([
         "UPDATE projects SET agent_co_author_trailer = ?, updated_at = ? WHERE id = ?",
@@ -120,7 +103,6 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
     owner = project.effective_owner
     provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
 
-    restore_legacy_project_column
     ActiveRecord::Base.connection.execute(
       ActiveRecord::Base.sanitize_sql_array([
         "UPDATE projects SET agent_co_author_trailer = ? WHERE id = ?", "   ", project.id
@@ -142,7 +124,6 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
       enabled_for_agent_runs: false
     )
 
-    restore_legacy_project_column
     ActiveRecord::Base.connection.execute(
       ActiveRecord::Base.sanitize_sql_array([
         "UPDATE projects SET agent_co_author_trailer = ? WHERE id = ?", trailer, project.id

@@ -2,6 +2,8 @@
 
 module Billing
   class GenerateInvoice
+    PeriodNotClosedError = Class.new(StandardError)
+
     attr_reader :billing_period
 
     def initialize(billing_period:)
@@ -20,9 +22,11 @@ module Billing
         billing_period.lock!
         invoice = if billing_period.invoiced?
           existing_invoice
-        else
+        elsif billing_period.closed?
           GeneratePeriodSummary.call(billing_period: billing_period)
           create_invoice(CalculateCharges.call(billing_period: billing_period))
+        else
+          raise PeriodNotClosedError, "Billing period must be closed before invoicing"
         end
       end
 

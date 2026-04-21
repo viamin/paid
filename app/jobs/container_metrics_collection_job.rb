@@ -3,7 +3,7 @@
 # Periodically collects CPU and memory metrics from running agent containers.
 #
 # Enqueued for each running agent run and re-enqueues itself until the run
-# finishes. Collection interval defaults to 15 seconds to balance granularity
+# finishes. Collection interval defaults to 30 seconds to balance granularity
 # with overhead. On consecutive failures the interval backs off (doubled per
 # failure, capped at 5 minutes) so metrics resume automatically when Docker
 # recovers, rather than permanently stopping collection.
@@ -12,7 +12,7 @@ class ContainerMetricsCollectionJob < ApplicationJob
 
   queue_as :metrics
 
-  COLLECTION_INTERVAL = 15.seconds
+  COLLECTION_INTERVAL = 30.seconds
   MAX_BACKOFF_INTERVAL = 5.minutes
 
   good_job_control_concurrency_with(
@@ -40,7 +40,7 @@ class ContainerMetricsCollectionJob < ApplicationJob
   private
 
   # Exponential backoff: 30s, 60s, 120s, 240s, then capped at 5 minutes.
-  # Resets to 15s on success (consecutive_failures == 0).
+  # Resets to 30s on success (consecutive_failures == 0).
   def backoff_interval(consecutive_failures)
     return COLLECTION_INTERVAL if consecutive_failures.zero?
 

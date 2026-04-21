@@ -12,7 +12,7 @@ RSpec.describe Billing::GenerateInvoice do
   end
   let(:billing_period) do
     create(:billing_period, account: account, billing_plan: plan,
-           starts_at: 1.month.ago, ends_at: Time.current)
+           starts_at: 1.month.ago, ends_at: Time.current, status: "closed")
   end
 
   before do
@@ -57,6 +57,15 @@ RSpec.describe Billing::GenerateInvoice do
       expect(billing_period.total_input_tokens).to eq(200_000)
       expect(billing_period.total_output_tokens).to eq(50_000)
       expect(billing_period.total_runs).to eq(1)
+    end
+
+    it "rejects open billing periods" do
+      billing_period.update!(status: "open")
+
+      expect { described_class.call(billing_period: billing_period) }
+        .to raise_error(described_class::PeriodNotClosedError, "Billing period must be closed before invoicing")
+      expect(billing_period.billing_invoices).to be_empty
+      expect(billing_period.reload).to be_open
     end
   end
 end
