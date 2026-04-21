@@ -26,6 +26,69 @@
     </div>
   </div>
 
+  <div class="mt-8 overflow-hidden rounded-lg bg-white shadow">
+    <div class="px-4 py-5 sm:p-6">
+      <div class="sm:flex sm:items-center sm:justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-gray-900">Quality Thresholds</h2>
+          <p class="mt-1 text-sm text-gray-500">Minimum rolling averages that pause automatic runs when quality drops.</p>
+        </div>
+      </div>
+
+      <%= form_with url: project_quality_thresholds_path(@project), method: :patch, class: "mt-4" do %>
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead>
+              <tr>
+                <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 sm:pl-0">Goal</th>
+                <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Metric</th>
+                <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Minimum</th>
+                <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Project Override</th>
+                <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Enabled</th>
+                <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Source</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              <% @quality_thresholds.each_with_index do |threshold, index| %>
+                <tr>
+                  <td class="whitespace-nowrap py-3 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0">
+                    <%= threshold.goal_type.humanize %>
+                    <input type="hidden" name="quality_thresholds[<%= index %>][goal_type]" value="<%= threshold.goal_type %>" />
+                    <input type="hidden" name="quality_thresholds[<%= index %>][metric_type]" value="<%= threshold.metric_type %>" />
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3 text-sm text-gray-700"><%= QualityThreshold.metric_label(threshold.metric_type) %></td>
+                  <td class="whitespace-nowrap px-3 py-3">
+                    <input type="number" name="quality_thresholds[<%= index %>][min_value]"
+                      value="<%= format('%.2f', threshold.min_value) %>" min="0" max="1" step="0.01"
+                      class="block w-24 rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3">
+                    <input type="hidden" name="quality_thresholds[<%= index %>][override]" value="0" />
+                    <input type="checkbox" name="quality_thresholds[<%= index %>][override]" value="1"
+                      <%= "checked" unless threshold.inherited? %>
+                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3">
+                    <input type="hidden" name="quality_thresholds[<%= index %>][enabled]" value="0" />
+                    <input type="checkbox" name="quality_thresholds[<%= index %>][enabled]" value="1"
+                      <%= "checked" if threshold.enabled? %>
+                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3 text-sm text-gray-500"><%= threshold.source_scope.humanize %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+        <div class="mt-4 flex justify-end">
+          <button type="submit" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+            Save thresholds
+          </button>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
   <% overview = @stats[:overview] %>
   <% if overview[:total_metrics] > 0 %>
 

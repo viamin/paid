@@ -15,6 +15,7 @@ module Projects
         .recent
         .limit(10)
       @quality_gate_settings = @project.effective_quality_gate_settings
+      @quality_thresholds = QualityThreshold.configurable_for(project: @project)
     end
 
     def export
