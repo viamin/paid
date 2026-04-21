@@ -740,6 +740,72 @@ RSpec.describe Containers::ServiceProvisioner do
       expect(commands.last.last).to eq("DROP DATABASE IF EXISTS \"#{original_db_name}\"")
     end
 
+    it "skips legacy shared database URLs during cleanup" do
+      sc = create(:service_container, :running)
+      docker_container = instance_double(Docker::Container)
+
+      agent_run.update!(
+        service_environment: { "DATABASE_URL" => "postgres://agent:agent@pg:5432/agent_test" }
+      )
+
+      allow(Docker::Container).to receive(:get)
+        .with(sc.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive(:exec)
+      allow(docker_container).to receive(:stop)
+      allow(docker_container).to receive(:delete)
+
+      provisioner.cleanup(agent_run.tap { |run| run.service_container_ids = [ sc.id ] })
+
+      expect(docker_container).not_to have_received(:exec)
+      expect(docker_container).to have_received(:delete).with(force: true, v: true)
+    end
+
+    it "skips configured postgres database URLs during cleanup" do
+      sc = create(:service_container, :running, env: {
+        "POSTGRES_USER" => "agent",
+        "POSTGRES_PASSWORD" => "agent",
+        "POSTGRES_DB" => "app_test"
+      })
+      docker_container = instance_double(Docker::Container)
+
+      agent_run.update!(
+        service_environment: { "DATABASE_URL" => "postgres://agent:agent@pg:5432/app_test" }
+      )
+
+      allow(Docker::Container).to receive(:get)
+        .with(sc.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive(:exec)
+      allow(docker_container).to receive(:stop)
+      allow(docker_container).to receive(:delete)
+
+      provisioner.cleanup(agent_run.tap { |run| run.service_container_ids = [ sc.id ] })
+
+      expect(docker_container).not_to have_received(:exec)
+      expect(docker_container).to have_received(:delete).with(force: true, v: true)
+    end
+
+    it "skips per-run database URLs for a different agent run" do
+      sc = create(:service_container, :running)
+      docker_container = instance_double(Docker::Container)
+      other_run = create(:agent_run, project: project, issue: create(:issue, project: project))
+      other_db_name = provisioner.send(:per_run_db_name, other_run)
+
+      agent_run.update!(
+        service_environment: { "DATABASE_URL" => "postgres://agent:agent@pg:5432/#{other_db_name}" }
+      )
+
+      allow(Docker::Container).to receive(:get)
+        .with(sc.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive(:exec)
+      allow(docker_container).to receive(:stop)
+      allow(docker_container).to receive(:delete)
+
+      provisioner.cleanup(agent_run.tap { |run| run.service_container_ids = [ sc.id ] })
+
+      expect(docker_container).not_to have_received(:exec)
+      expect(docker_container).to have_received(:delete).with(force: true, v: true)
+    end
+
     it "logs and continues when Docker transport fails during drop" do
       sc = create(:service_container, :running)
       allow(Docker::Container).to receive(:get)

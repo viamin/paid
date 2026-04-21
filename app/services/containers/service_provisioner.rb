@@ -163,7 +163,10 @@ module Containers
       return if container_ids.blank?
 
       ServiceContainer.where(id: container_ids).find_each do |sc|
-        drop_per_run_database(sc, database_name_for_cleanup(agent_run)) if sc.image.include?("postgres")
+        if sc.image.include?("postgres")
+          db_name = database_name_for_cleanup(agent_run)
+          drop_per_run_database(sc, db_name) if droppable_per_run_database?(agent_run, sc, db_name)
+        end
 
         if sc.active_agent_run_count == 0
           stop_container!(sc)
@@ -543,6 +546,39 @@ module Containers
       URI.decode_www_form_component(path.delete_prefix("/")).presence
     rescue URI::InvalidURIError
       nil
+    end
+
+    def droppable_per_run_database?(agent_run, service_container, db_name)
+      return false if db_name.blank?
+
+      if configured_postgres_database_names(service_container).include?(db_name)
+        log_info("service_provisioner.database_drop_skipped",
+          db_name: db_name,
+          service_container: service_container.name,
+          reason: "configured_database")
+        return false
+      end
+
+      return true if per_run_database_name_for?(agent_run, db_name)
+
+      log_info("service_provisioner.database_drop_skipped",
+        db_name: db_name,
+        service_container: service_container.name,
+        reason: "non_matching_database_name")
+      false
+    end
+
+    def configured_postgres_database_names(service_container)
+      env = container_env_for(service_container)
+      [
+        POSTGRES_DEFAULT_ENV["POSTGRES_DB"],
+        env["POSTGRES_DB"]
+      ].compact.uniq
+    end
+
+    def per_run_database_name_for?(agent_run, db_name)
+      run_id = Regexp.escape(agent_run.id.to_s.tr("-", "_"))
+      db_name.match?(/\Aagent_run_#{run_id}_attempt_\d+\z/)
     end
 
     def drop_per_run_database(service_container, db_name)
