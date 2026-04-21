@@ -21,6 +21,7 @@ module Activities
 
       synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
       parse_issue_relationships(project, synced_issues) if synced_issues.any?
+      enhance_issue_rechecks = detect_enhance_issue_rechecks(project, synced_issues)
       closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
       stale_pr_count = reconcile_open_pull_requests(project, client) if incremental && !truncated
 
@@ -96,10 +97,11 @@ module Activities
         closed_count: closed_count,
         stale_pr_count: stale_pr_count || 0,
         incremental: incremental,
+        enhance_issue_recheck_count: enhance_issue_rechecks.size,
         rescan_count: incremental ? open_issues.count { |si| si[:rescan] } : 0
       )
 
-      { issues: open_issues, project_id: project_id }
+      { issues: open_issues, project_id: project_id, enhance_issue_rechecks: enhance_issue_rechecks }
     rescue GithubClient::RateLimitError => e
       raise Temporalio::Error::ApplicationError.new(
         e.message,
@@ -200,6 +202,8 @@ module Activities
     def sync_issue(project, github_issue)
       creator_login = github_issue.user&.login || "unknown"
       trusted = project.trusted_github_user?(creator_login)
+      existing_issue = project.issues.find_by(github_issue_id: github_issue.id)
+      previous_labels = Array(existing_issue&.labels)
 
       unless trusted
         logger.warn(
@@ -217,7 +221,73 @@ module Activities
       )
 
       { id: issue.id, github_number: issue.github_number, labels: issue.labels,
-        github_state: issue.github_state, trusted: trusted }
+        github_state: issue.github_state, trusted: trusted, removed_labels: previous_labels - issue.labels }
+    end
+
+    def detect_enhance_issue_rechecks(project, synced_issues)
+      label = project.enhance_issue_needs_input_label_name
+      synced_issues.filter_map do |issue_data|
+        next unless Array(issue_data[:removed_labels]).include?(label)
+
+        issue = project.issues.find(issue_data[:id])
+        next if issue.is_pull_request?
+
+        enqueue_enhance_issue_recheck(project, issue)
+      end
+    end
+
+    def enqueue_enhance_issue_recheck(project, issue)
+      max_rounds = project.max_enhance_issue_reevaluation_rounds
+      limit_reached = false
+
+      issue.with_lock do
+        if issue.enhance_issue_rounds >= max_rounds
+          issue.update!(paid_state: "completed")
+          limit_reached = true
+        else
+          issue.update!(enhance_issue_rounds: issue.enhance_issue_rounds + 1, paid_state: "new")
+        end
+      end
+
+      return stop_enhance_issue_recheck(project, issue, max_rounds) if limit_reached
+
+      logger.info(
+        message: "agent_execution.enhance_issue_recheck_requested",
+        project_id: project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        enhance_issue_rounds: issue.enhance_issue_rounds,
+        max_rounds: max_rounds
+      )
+
+      { issue_id: issue.id, issue_number: issue.github_number, enhance_issue_rounds: issue.enhance_issue_rounds }
+    end
+
+    def stop_enhance_issue_recheck(project, issue, max_rounds)
+      post_enhance_issue_limit_comment(project, issue, max_rounds)
+      logger.info(
+        message: "agent_execution.enhance_issue_recheck_limit_reached",
+        project_id: project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        enhance_issue_rounds: issue.enhance_issue_rounds,
+        max_rounds: max_rounds
+      )
+      nil
+    end
+
+    def post_enhance_issue_limit_comment(project, issue, max_rounds)
+      project.github_token.client.add_comment(
+        project.full_name,
+        issue.github_number,
+        <<~COMMENT
+          ## Auto-enhancement stopped
+
+          Paid has reached the configured limit of #{max_rounds} enhancement re-evaluation rounds for this issue.
+
+          Manual review is needed before enhancement can continue.
+        COMMENT
+      )
     end
 
     # Parses dependency and parent/child relationships from issue comments.

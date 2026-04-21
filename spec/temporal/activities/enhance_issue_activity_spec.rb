@@ -56,6 +56,8 @@ RSpec.describe Activities::EnhanceIssueActivity do
     allow(client).to receive(:issue).with(project.full_name, issue.github_number).and_return(gh_issue)
     allow(client).to receive(:issue_comments).with(project.full_name, issue.github_number).and_return(comments)
     allow(client).to receive(:add_comment).and_return(posted_comment)
+    allow(client).to receive(:add_labels_to_issue)
+    allow(client).to receive(:remove_label_from_issue)
     allow(Knowledge::Search).to receive(:call).and_return(
       results: [
         { title: "AuditLog", content: "app/models/audit_log.rb tracks user actions", path: "app/models/audit_log.rb" }
@@ -71,6 +73,22 @@ RSpec.describe Activities::EnhanceIssueActivity do
     allow(ProcessRunQueueJob).to receive(:perform_later)
   end
 
+  def expect_label_added(label)
+    expect(client).to have_received(:add_labels_to_issue).with(
+      project.full_name,
+      issue.github_number,
+      [ label ]
+    )
+  end
+
+  def expect_comment_including(*parts)
+    expect(client).to have_received(:add_comment).with(
+      project.full_name,
+      issue.github_number,
+      a_string_including(*parts)
+    )
+  end
+
   describe "#execute" do
     it "posts an implementation context comment" do
       result = activity.execute(agent_run_id: agent_run.id)
@@ -83,13 +101,11 @@ RSpec.describe Activities::EnhanceIssueActivity do
       )
       expect(client).to have_received(:issue).with(project.full_name, issue.github_number)
       expect(client).to have_received(:issue_comments).with(project.full_name, issue.github_number)
-      expect(client).to have_received(:add_comment).with(
-        project.full_name,
-        issue.github_number,
-        a_string_including(described_class::COMMENT_MARKER, "## Implementation context")
-      )
+      expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
       expect(agent_run.reload.status).to eq("completed")
       expect(issue.reload.paid_state).to eq("completed")
+      expect(issue.labels).to include(project.enhance_issue_enhanced_label_name)
+      expect_label_added(project.enhance_issue_enhanced_label_name)
       expect(agent_run.token_usages.last).to have_attributes(
         request_type: "agent",
         metadata: include("operation" => "enhance_issue")
@@ -118,11 +134,33 @@ RSpec.describe Activities::EnhanceIssueActivity do
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(result[:sufficient_context]).to be false
-      expect(client).to have_received(:add_comment).with(
+      expect(result[:label_applied]).to eq(project.enhance_issue_needs_input_label_name)
+      expect_comment_including("## Clarifying questions", "Which events")
+      expect_label_added(project.enhance_issue_needs_input_label_name)
+      expect(issue.reload.paid_state).to eq("needs_input")
+      expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
+    end
+
+    it "posts a manual-review stop comment instead of reapplying needs-input at the max round" do
+      issue.update!(enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds)
+      allow(llm_response).to receive(:output).and_return(
+        {
+          sufficient_context: false,
+          comment_body: "## Clarifying questions\n1. Which events should be recorded?"
+        }.to_json
+      )
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:max_rounds_reached]).to be true
+      expect(result[:label_applied]).to be_nil
+      expect_comment_including("## Auto-enhancement stopped", "Manual review is needed")
+      expect(client).not_to have_received(:add_labels_to_issue).with(
         project.full_name,
         issue.github_number,
-        a_string_including("## Clarifying questions", "Which events")
+        [ project.enhance_issue_needs_input_label_name ]
       )
+      expect(issue.reload.paid_state).to eq("completed")
     end
 
     it "does not post a duplicate enhancement comment when one already exists" do

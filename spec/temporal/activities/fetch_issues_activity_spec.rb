@@ -13,6 +13,7 @@ RSpec.describe Activities::FetchIssuesActivity do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(issue_comments: [], "rate_limit_remaining!": 100)
     allow(github_client).to receive(:pull_requests).and_return([])
+    allow(github_client).to receive(:add_comment)
   end
 
   # Helper: route github_client.issues calls by label (or nil for unlabeled fetches)
@@ -172,6 +173,62 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         expect(result[:issues]).to eq([])
         expect(project.issues.count).to eq(0)
+      end
+    end
+
+    context "when the enhance_issue needs-input label is removed" do
+      let!(:issue) do
+        create(:issue, :needs_input,
+          project: project,
+          github_issue_id: 9101,
+          github_number: 91,
+          labels: [ project.enhance_issue_needs_input_label_name ],
+          enhance_issue_rounds: 0)
+      end
+
+      let(:github_issue) do
+        OpenStruct.new(
+          id: issue.github_issue_id,
+          number: issue.github_number,
+          title: issue.title,
+          body: issue.body,
+          state: "open",
+          labels: [],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: issue.github_created_at,
+          updated_at: Time.current
+        )
+      end
+
+      before do
+        stub_issues_by_label(nil => [ github_issue ])
+      end
+
+      it "returns a recheck request and increments the issue round" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:enhance_issue_rechecks]).to contain_exactly(
+          hash_including(issue_id: issue.id, issue_number: issue.github_number, enhance_issue_rounds: 1)
+        )
+        expect(issue.reload.enhance_issue_rounds).to eq(1)
+        expect(issue.paid_state).to eq("new")
+      end
+
+      it "posts a stop comment instead of rechecking after the max round" do
+        project.update!(max_enhance_issue_reevaluation_rounds: 1)
+        issue.update!(enhance_issue_rounds: 1)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:enhance_issue_rechecks]).to be_empty
+        expect(github_client).to have_received(:add_comment).with(
+          project.full_name,
+          issue.github_number,
+          a_string_including("## Auto-enhancement stopped", "Manual review is needed")
+        )
+        expect(issue.reload.enhance_issue_rounds).to eq(1)
+        expect(issue.paid_state).to eq("completed")
       end
     end
 
