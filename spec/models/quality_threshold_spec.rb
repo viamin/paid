@@ -58,19 +58,20 @@ RSpec.describe QualityThreshold do
 
       thresholds = described_class.effective_for(project: project, goal_type: "create_pr")
 
-      expect(thresholds.map(&:metric_type)).to include("ci_passed", "pr_merged")
+      expect(thresholds.map(&:metric_type)).to include("composite_score", "pr_merged")
+      expect(thresholds.map(&:metric_type)).not_to include("ci_passed")
     end
 
     it "lets account thresholds override built-in defaults" do
       project = create(:project)
       create(:quality_threshold,
         account: project.account,
-        metric_type: "ci_passed",
+        metric_type: "pr_merged",
         goal_type: "create_pr",
         min_value: 0.7)
 
       threshold = described_class.effective_for(project: project, goal_type: "create_pr")
-        .find { |t| t.metric_type == "ci_passed" }
+        .find { |t| t.metric_type == "pr_merged" }
 
       expect(threshold.min_value).to eq(0.7)
       expect(threshold.source_scope).to eq("account")
@@ -80,17 +81,17 @@ RSpec.describe QualityThreshold do
       project = create(:project)
       create(:quality_threshold,
         account: project.account,
-        metric_type: "ci_passed",
+        metric_type: "pr_merged",
         goal_type: "create_pr",
         min_value: 0.7)
       create(:quality_threshold, :project_override,
         project: project,
-        metric_type: "ci_passed",
+        metric_type: "pr_merged",
         goal_type: "create_pr",
         min_value: 0.8)
 
       threshold = described_class.effective_for(project: project, goal_type: "create_pr")
-        .find { |t| t.metric_type == "ci_passed" }
+        .find { |t| t.metric_type == "pr_merged" }
 
       expect(threshold.min_value).to eq(0.8)
       expect(threshold.source_scope).to eq("project")
@@ -100,12 +101,52 @@ RSpec.describe QualityThreshold do
       project = create(:project)
       create(:quality_threshold, :project_override, :disabled,
         project: project,
-        metric_type: "ci_passed",
+        metric_type: "pr_merged",
         goal_type: "create_pr")
 
       thresholds = described_class.effective_for(project: project, goal_type: "create_pr")
 
-      expect(thresholds.map(&:metric_type)).not_to include("ci_passed")
+      expect(thresholds.map(&:metric_type)).not_to include("pr_merged")
+    end
+  end
+
+  describe ".configurable_for" do
+    it "returns rows for every collected metric and goal on a fresh project" do
+      project = create(:project)
+
+      thresholds = described_class.configurable_for(project: project)
+
+      expect(thresholds.map { |threshold| [ threshold.metric_type, threshold.goal_type ] }).to include(
+        [ "ci_passed", "create_pr" ],
+        [ "issue_created", "create_issue" ],
+        [ "reaction_score", "create_issue" ],
+        [ "review_posted", "review" ],
+        [ "reaction_score", "review" ],
+        [ "composite_score", "enhance_issue" ]
+      )
+    end
+
+    it "overlays account defaults and project overrides on configurable rows" do
+      project = create(:project)
+      create(:quality_threshold,
+        account: project.account,
+        metric_type: "issue_created",
+        goal_type: "create_issue",
+        min_value: 0.6)
+      create(:quality_threshold, :project_override,
+        project: project,
+        metric_type: "review_posted",
+        goal_type: "review",
+        min_value: 0.8)
+
+      thresholds = described_class.configurable_for(project: project)
+      account_threshold = thresholds.find { |threshold| threshold.metric_type == "issue_created" }
+      project_threshold = thresholds.find { |threshold| threshold.metric_type == "review_posted" }
+
+      expect(account_threshold.min_value).to eq(0.6)
+      expect(account_threshold.source_scope).to eq("account")
+      expect(project_threshold.min_value).to eq(0.8)
+      expect(project_threshold.source_scope).to eq("project")
     end
   end
 

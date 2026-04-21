@@ -9,7 +9,6 @@ class QualityThreshold < ApplicationRecord
   GOAL_TYPES = AgentRun::GOALS.freeze
   DEFAULT_DEFINITIONS = [
     { "metric_type" => "composite_score", "goal_type" => "create_pr", "min_value" => 0.5 },
-    { "metric_type" => "ci_passed", "goal_type" => "create_pr", "min_value" => 0.5 },
     { "metric_type" => "pr_merged", "goal_type" => "create_pr", "min_value" => 0.3 }
   ].freeze
 
@@ -40,7 +39,10 @@ class QualityThreshold < ApplicationRecord
   end
 
   def self.configurable_for(project:)
-    effective_for(project: project, include_disabled: true).sort_by { |threshold| [ threshold.goal_type, threshold.metric_type ] }
+    thresholds = configurable_thresholds(project.account)
+    apply_overrides(thresholds, account_thresholds(project.account), "account")
+    apply_overrides(thresholds, project_thresholds(project), "project")
+    thresholds.values.sort_by { |threshold| [ threshold.goal_type, threshold.metric_type ] }
   end
 
   def self.override_for(project:, metric_type:, goal_type:)
@@ -69,6 +71,31 @@ class QualityThreshold < ApplicationRecord
         threshold.source_scope = "default"
       end
     end.transform_keys { |definition| key_for(definition.fetch("metric_type"), definition.fetch("goal_type")) }
+  end
+
+  private_class_method def self.configurable_thresholds(account)
+    (DEFAULT_DEFINITIONS + composite_score_definitions + supported_metric_definitions)
+      .uniq { |definition| key_for(definition.fetch("metric_type"), definition.fetch("goal_type")) }
+      .index_with do |definition|
+        built_in = DEFAULT_DEFINITIONS.include?(definition)
+        new(definition.merge("account" => account, "enabled" => built_in)).tap do |threshold|
+          threshold.source_scope = built_in ? "default" : "supported"
+        end
+      end.transform_keys { |definition| key_for(definition.fetch("metric_type"), definition.fetch("goal_type")) }
+  end
+
+  private_class_method def self.composite_score_definitions
+    GOAL_TYPES.map do |goal_type|
+      { "metric_type" => "composite_score", "goal_type" => goal_type, "min_value" => 0.5 }
+    end
+  end
+
+  private_class_method def self.supported_metric_definitions
+    QualityMetrics::DashboardStats::METRIC_DISPLAY.flat_map do |metric_type, display|
+      display.fetch(:collected_for).map do |goal_type|
+        { "metric_type" => metric_type, "goal_type" => goal_type, "min_value" => 0.5 }
+      end
+    end
   end
 
   private_class_method def self.account_thresholds(account)

@@ -48,6 +48,7 @@ RSpec.describe QualityPause::Check do
     end
 
     it "pauses the project when a metric-specific threshold is breached" do
+      create(:quality_threshold, account: project.account, metric_type: "ci_passed", goal_type: "create_pr")
       create_ci_metrics(project, scores: [ 0.0, 1.0, 0.0, 0.0, 0.0 ])
 
       described_class.call(agent_run: agent_run)
