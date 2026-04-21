@@ -18,7 +18,7 @@
 
   <div class="flex-1 min-w-0">
     <% if notification.action_url.present? %>
-      <%= link_to notification.title, notification.action_url, class: "block text-sm font-medium text-gray-900 truncate hover:text-indigo-600" %>
+      <%= link_to notification.title, notification.action_url, class: "block text-sm font-medium text-gray-900 truncate hover:text-indigo-600", data: { turbo_frame: "_top" } %>
     <% else %>
       <p class="text-sm font-medium text-gray-900 truncate"><%= notification.title %></p>
     <% end %>
