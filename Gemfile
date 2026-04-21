@@ -46,9 +46,7 @@ gem "docker-api"
 gem "qdrant-ruby"
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
-gem "agent-harness",
-  git: "https://github.com/viamin/agent-harness.git",
-  ref: "5de7133af1481f8a13e9c66ca2e5a231bafe776c"
+gem "agent-harness", "~> 0.10.0"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
 gem "ruby-maat"
