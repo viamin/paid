@@ -35,7 +35,7 @@ module PerformanceBenchmarks
       def default_project
         Project
           .joins(:knowledge_artifacts)
-          .merge(KnowledgeArtifact.active)
+          .merge(KnowledgeArtifact.active.where.not(identifier: [ nil, "" ]))
           .order(:id)
           .first || Project.order(:id).first
       end
@@ -43,7 +43,7 @@ module PerformanceBenchmarks
       def default_query
         KnowledgeArtifact.active
           .for_project(project)
-          .where.not(identifier: nil)
+          .where.not(identifier: [ nil, "" ])
           .order(:id)
           .pick(:identifier)
       end
