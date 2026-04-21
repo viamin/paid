@@ -665,6 +665,8 @@ module Workflows
     end
 
     def quality_gate_allows_run?(project_id, data, goal:)
+      return true unless Temporalio::Workflow.patched("github-poll-quality-gate-v1")
+
       result = run_activity(Activities::CheckQualityGateActivity,
         {
           project_id: project_id,

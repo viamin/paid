@@ -108,17 +108,19 @@ module Workflows
       workflow_error = nil
 
       begin
-        gate_result = check_quality_gate(
-          project_id: project_id,
-          issue_id: issue_id,
-          agent_run_id: agent_run_id,
-          source_pull_request_number: source_pull_request_number
-        )
-        unless gate_result.fetch(:allowed, true)
-          run_activity(Activities::MarkAgentRunFailedActivity,
-            { agent_run_id: agent_run_id, error: quality_gate_error(gate_result) }, timeout: 30)
+        if Temporalio::Workflow.patched("agent-execution-quality-gate-v1")
+          gate_result = check_quality_gate(
+            project_id: project_id,
+            issue_id: issue_id,
+            agent_run_id: agent_run_id,
+            source_pull_request_number: source_pull_request_number
+          )
+          unless gate_result.fetch(:allowed, true)
+            run_activity(Activities::MarkAgentRunFailedActivity,
+              { agent_run_id: agent_run_id, error: quality_gate_error(gate_result) }, timeout: 30)
 
-          return { success: false, quality_gate_blocked: true, agent_run_id: agent_run_id }
+            return { success: false, quality_gate_blocked: true, agent_run_id: agent_run_id }
+          end
         end
 
         if goal == "enhance_issue"

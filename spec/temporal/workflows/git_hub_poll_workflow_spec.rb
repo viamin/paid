@@ -1330,6 +1330,43 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
   end
 
+  describe "#quality_gate_allows_run?" do
+    let(:project_id) { 1 }
+
+    before do
+      allow(workflow).to receive(:quality_gate_allows_run?).and_call_original
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger)
+    end
+
+    it "allows queueing without running the quality gate activity before the Temporal patch" do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("github-poll-quality-gate-v1")
+        .and_return(false)
+      allow(workflow).to receive(:run_activity)
+
+      result = workflow.send(:quality_gate_allows_run?, project_id, { issue_id: 10 }, goal: "create_pr")
+
+      expect(result).to be(true)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CheckQualityGateActivity, anything, timeout: anything)
+    end
+
+    it "runs the quality gate activity after the Temporal patch" do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("github-poll-quality-gate-v1")
+        .and_return(true)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckQualityGateActivity, anything, timeout: anything)
+        .and_return({ allowed: false, reason: "quality_gate_breached", breaches: [ { metric: "composite_score" } ] })
+
+      result = workflow.send(:quality_gate_allows_run?, project_id, { issue_id: 10 }, goal: "create_pr")
+
+      expect(result).to be(false)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CheckQualityGateActivity, hash_including(issue_id: 10, goal: "create_pr"), timeout: 30)
+    end
+  end
+
   describe "#evaluate_issues_batch" do
     let(:workflow) { described_class.new }
     let(:project_id) { 1 }

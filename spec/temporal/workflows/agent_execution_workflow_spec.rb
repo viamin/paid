@@ -229,6 +229,29 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RunAgentActivity, anything, any_args)
     end
+
+    it "skips quality gate activity before the Temporal patch" do
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: false)
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::EnhanceIssueActivity" then { agent_run_id: 42, success: true }
+        when "Activities::CleanupContainerActivity",
+          "Activities::CleanupServicesActivity",
+          "Activities::CleanupWorktreeActivity",
+          "Activities::EnqueueJanitorActivity"
+          {}
+        else
+          raise "unexpected activity #{activity_class.name}"
+        end
+      end
+
+      result = workflow.execute(input.merge(goal: "enhance_issue"))
+
+      expect(result).to eq(success: true, agent_run_id: 42)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CheckQualityGateActivity, anything, any_args)
+    end
   end
 
   describe "review goal" do
