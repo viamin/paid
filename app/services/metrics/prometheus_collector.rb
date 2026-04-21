@@ -15,6 +15,7 @@ module Metrics
       collect_agent_run_metrics(lines)
       collect_good_job_metrics(lines)
       collect_container_metrics(lines)
+      collect_container_pool_metrics(lines)
       collect_service_container_metrics(lines)
       collect_temporal_config_metrics(lines)
       lines.join("\n") + "\n"
@@ -101,6 +102,21 @@ module Metrics
         lines << "# TYPE paid_containers_total_memory_bytes gauge"
         lines << "paid_containers_total_memory_bytes #{total_memory_bytes}"
       end
+    end
+
+    def collect_container_pool_metrics(lines)
+      status_counts = ContainerPoolEntry.group(:status).count
+
+      lines << "# HELP paid_container_pool_entries_total Warm container pool entries by status."
+      lines << "# TYPE paid_container_pool_entries_total gauge"
+      ContainerPoolEntry::STATUSES.each do |status|
+        lines << "paid_container_pool_entries_total{status=\"#{status}\"} #{status_counts.fetch(status, 0)}"
+      end
+
+      target = Containers::PoolManager.target_size * Project.active.count
+      lines << "# HELP paid_container_pool_target Target warm container pool size."
+      lines << "# TYPE paid_container_pool_target gauge"
+      lines << "paid_container_pool_target #{target}"
     end
 
     def collect_service_container_metrics(lines)

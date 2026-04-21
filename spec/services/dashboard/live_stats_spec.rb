@@ -17,6 +17,7 @@ RSpec.describe Dashboard::LiveStats do
       create(:agent_run, project: project, status: "queued")
       create(:agent_run, project: project, status: "completed", completed_at: 2.hours.ago)
       create(:agent_run, project: project, status: "failed", completed_at: 1.hour.ago)
+      create(:container_pool_entry, project: project)
 
       stats = described_class.call(account: account)
 
@@ -26,6 +27,8 @@ RSpec.describe Dashboard::LiveStats do
         completed_today: 1,
         failed_today: 1,
         active_containers: 1,
+        warm_containers: 1,
+        pool_target: 0,
         total_projects: 1,
         active_projects: 1
       )

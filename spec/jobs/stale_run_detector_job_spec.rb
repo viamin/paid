@@ -196,6 +196,31 @@ RSpec.describe StaleRunDetectorJob do
         expect(container_service).to have_received(:cleanup).with(force: true)
       end
 
+      it "destroys a claimed pool entry when requeue cleanup reconnects directly" do
+        stale_run = create(:agent_run, status: "pending", container_id: "pooled-container")
+        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        entry = create(:container_pool_entry, :claimed,
+          project: stale_run.project,
+          agent_run: stale_run,
+          container_id: stale_run.container_id)
+        container = instance_double(Docker::Container,
+          id: entry.container_id,
+          refresh!: true,
+          info: { "State" => { "Running" => true } },
+          stop: true,
+          delete: true)
+        volume = instance_double(Docker::Volume, remove: true)
+
+        allow(Docker::Container).to receive(:get).with(entry.container_id).and_return(container)
+        allow(Docker::Volume).to receive(:get).with(entry.workspace_volume).and_return(volume)
+        allow(Containers::ServiceProvisioner).to receive(:new)
+          .and_return(instance_double(Containers::ServiceProvisioner, cleanup: nil))
+
+        described_class.perform_now
+
+        expect(ContainerPoolEntry.exists?(entry.id)).to be(false)
+      end
+
       it "clears container_id and service_container_ids inside the lock on requeue" do
         stale_run = create(:agent_run, status: "pending",
           container_id: "orphaned-container",

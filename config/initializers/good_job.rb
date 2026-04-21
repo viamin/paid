@@ -127,6 +127,11 @@ Rails.application.configure do
       class: "ServiceContainerReconciliationJob",
       description: "Reconcile service container DB records against Docker state"
     },
+    container_pool_replenishment: {
+      cron: "*/5 * * * *",
+      class: "PoolReplenishmentJob",
+      description: "Maintain warm agent container pool"
+    },
     knowledge_audit_retention: {
       cron: "0 3 * * *",
       class: "KnowledgeAuditRetentionJob",
@@ -167,4 +172,5 @@ Rails.application.config.after_initialize do
   next unless defined?(Rails::Server) || ENV["GOOD_JOB_EXECUTION_MODE"] == "async_server"
 
   DockerOrphanCleanupJob.perform_later
+  PoolReplenishmentJob.perform_later if Containers::PoolManager.enabled?
 end
