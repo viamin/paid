@@ -856,9 +856,10 @@ module Activities
 
     def rate_limit_reset_at(provider_key, output)
       harness_provider = harness_provider_for(provider_key)
-      harness_provider.parse_rate_limit_reset(output.to_s) ||
+      parsed_reset = harness_provider.parse_rate_limit_reset(output.to_s) ||
         harness_provider.parse_rate_limit_reset(normalized_rate_limit_reset_text(output)) ||
         1.hour.from_now
+      parsed_reset > Time.current ? parsed_reset : 1.hour.from_now
     rescue AgentHarness::ConfigurationError, KeyError
       1.hour.from_now
     end
