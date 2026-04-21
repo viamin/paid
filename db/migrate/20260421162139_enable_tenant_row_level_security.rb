@@ -36,9 +36,6 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
     knowledge_chunks
     knowledge_runs
     project_baselines
-    project_mcp_servers
-    project_memberships
-    project_service_containers
     project_versions
     quality_gate_events
     quality_gate_thresholds
@@ -106,6 +103,9 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
     enable_policy("decision_record_links", decision_record_link_condition)
     enable_policy("issue_dependencies", issue_dependency_condition)
     enable_policy("knowledge_links", knowledge_link_condition)
+    enable_policy("project_mcp_servers", project_mcp_server_condition)
+    enable_policy("project_memberships", project_membership_condition)
+    enable_policy("project_service_containers", project_service_container_condition)
     enable_policy("service_container_metrics", service_container_metric_condition)
     enable_policy("token_usages", token_usage_condition)
     enable_policy("tracker_configurations", tracker_configuration_condition)
@@ -321,6 +321,39 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
     SQL
   end
 
+  def project_mcp_server_condition
+    <<~SQL.squish
+      #{project_condition("project_mcp_servers")}
+      AND EXISTS (
+        SELECT 1 FROM mcp_server_definitions
+        WHERE mcp_server_definitions.id = project_mcp_servers.mcp_server_definition_id
+          AND mcp_server_definitions.account_id = paid_current_account_id()
+      )
+    SQL
+  end
+
+  def project_membership_condition
+    <<~SQL.squish
+      #{project_condition("project_memberships")}
+      AND EXISTS (
+        SELECT 1 FROM users
+        WHERE users.id = project_memberships.user_id
+          AND users.account_id = paid_current_account_id()
+      )
+    SQL
+  end
+
+  def project_service_container_condition
+    <<~SQL.squish
+      #{project_condition("project_service_containers")}
+      AND EXISTS (
+        SELECT 1 FROM service_containers
+        WHERE service_containers.id = project_service_containers.service_container_id
+          AND service_containers.account_id = paid_current_account_id()
+      )
+    SQL
+  end
+
   def service_container_metric_condition
     <<~SQL.squish
       EXISTS (
@@ -384,6 +417,9 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
       "decision_record_links",
       "issue_dependencies",
       "knowledge_links",
+      "project_mcp_servers",
+      "project_memberships",
+      "project_service_containers",
       "service_container_metrics",
       "token_usages",
       "tracker_configurations"

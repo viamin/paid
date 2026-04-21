@@ -79,8 +79,7 @@ class ApplicationJob < ActiveJob::Base
       EnqueueKnowledgeCollectionJob,
       PoolReplenishmentJob,
       RunCollectorsJob,
-      StyleGuideExtractionJob,
-      QualityAlerts::CheckGateJob
+      StyleGuideExtractionJob
     ].any? { |job_class| is_a?(job_class) }
   end
 

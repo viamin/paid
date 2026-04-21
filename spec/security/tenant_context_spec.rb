@@ -55,6 +55,21 @@ RSpec.describe TenantContext, :tenant_isolation do
       .to eq("account_#{account_b.id}_project_#{project_b.id}")
   end
 
+  it "rejects cross-tenant project join rows at the database policy" do
+    project_a = described_class.with_system_access { create(:project, account: account_a) }
+    user_b = described_class.with_system_access { create(:user, account: account_b) }
+    mcp_server_b = described_class.with_system_access { create(:mcp_server_definition, account: account_b) }
+    service_container_b = described_class.with_system_access { create(:service_container, account: account_b) }
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        expect_rls_rejection { insert_project_membership(project_a, user_b) }
+        expect_rls_rejection { insert_project_mcp_server(project_a, mcp_server_b) }
+        expect_rls_rejection { insert_project_service_container(project_a, service_container_b) }
+      end
+    end
+  end
+
   def as_restricted_role
     ActiveRecord::Base.connection.execute("SET ROLE paid_rls_spec")
     yield
@@ -88,5 +103,34 @@ RSpec.describe TenantContext, :tenant_isolation do
 
     ActiveRecord::Base.connection.execute("DROP OWNED BY paid_rls_spec")
     ActiveRecord::Base.connection.execute("DROP ROLE IF EXISTS paid_rls_spec")
+  end
+
+  def expect_rls_rejection
+    ActiveRecord::Base.connection.execute("SAVEPOINT rls_rejection")
+    expect { yield }.to raise_error(ActiveRecord::StatementInvalid, /row-level security policy/)
+  ensure
+    ActiveRecord::Base.connection.execute("ROLLBACK TO SAVEPOINT rls_rejection")
+    ActiveRecord::Base.connection.execute("RELEASE SAVEPOINT rls_rejection")
+  end
+
+  def insert_project_membership(project, user)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO project_memberships (project_id, user_id, role, created_at, updated_at)
+      VALUES (#{project.id}, #{user.id}, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    SQL
+  end
+
+  def insert_project_mcp_server(project, mcp_server)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO project_mcp_servers (project_id, mcp_server_definition_id, created_at, updated_at)
+      VALUES (#{project.id}, #{mcp_server.id}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    SQL
+  end
+
+  def insert_project_service_container(project, service_container)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO project_service_containers (project_id, service_container_id, created_at, updated_at)
+      VALUES (#{project.id}, #{service_container.id}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    SQL
   end
 end
