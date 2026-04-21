@@ -2199,6 +2199,17 @@ RSpec.describe AgentRun do
       expect(agent_run.agent_summary).to eq("Wrapped response")
     end
 
+    it "extracts text from JSONL event_msg wrapped task_complete events" do
+      events = [
+        { "type" => "message.delta", "delta" => {} },
+        { "type" => "event_msg", "payload" => { "type" => "task_complete", "last_agent_message" => "Wrapped final response" } }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("Wrapped final response")
+    end
+
     it "extracts text from JSONL response_item events" do
       events = [
         { "type" => "message.delta", "delta" => {} },

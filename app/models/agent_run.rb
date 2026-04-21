@@ -1166,7 +1166,7 @@ class AgentRun < ApplicationRecord
       extract_item_text(event["item"])
     when "agent_message"
       extract_item_text(event)
-    when "turn.completed"
+    when "turn.completed", "task_complete", "turn_complete"
       extract_turn_result(event) || extract_item_text(event)
     when "response_item"
       extract_item_text(event["payload"])
