@@ -9,8 +9,10 @@ module Activities
 
     def execute(input)
       @project = Project.find(input[:project_id])
-      @agent_run = AgentRun.find_by(id: input[:agent_run_id]) if input[:agent_run_id]
-      @issue = Issue.find_by(id: input[:issue_id]) if input[:issue_id]
+      @agent_run = input[:agent_run_id] ? AgentRun.find_by(id: input[:agent_run_id]) : nil
+      @issue = input[:issue_id] ? Issue.find_by(id: input[:issue_id]) : nil
+      @source_pull_request_number = input[:source_pull_request_number]
+      @settings = nil
 
       result = evaluate(input)
       record_workflow_state(input, result)
@@ -21,7 +23,7 @@ module Activities
 
     private
 
-    attr_reader :project, :agent_run, :issue
+    attr_reader :project, :agent_run, :issue, :source_pull_request_number
 
     def evaluate(input)
       bypass_reason = bypass_reason(input)
@@ -52,12 +54,29 @@ module Activities
     end
 
     def priority_run?
-      agent_run&.priority_tier.present? || priority_issue?
+      agent_run&.priority_tier.present? ||
+        agent_run&.label_priority_tier.present? ||
+        priority_issue? ||
+        priority_pr?
     end
 
     def priority_issue?
       labels = Array(issue&.labels)
       labels.intersect?(project.priority_label_names)
+    end
+
+    def priority_pr?
+      return false if source_pull_request_number.blank?
+
+      labels = Array(source_pull_request&.labels)
+      labels.intersect?(project.priority_label_names)
+    end
+
+    def source_pull_request
+      project.issues.find_by(
+        github_number: source_pull_request_number,
+        is_pull_request: true
+      )
     end
 
     def recent_metrics
