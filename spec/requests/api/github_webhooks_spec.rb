@@ -36,6 +36,8 @@ RSpec.describe "Api::GithubWebhooks" do
       it "records review feedback for matching agent run" do
         body, signature = sign_payload(payload, project.webhook_secret)
 
+        expect(QualityPause::Check).to receive(:call).with(agent_run: agent_run)
+
         expect {
           post webhook_url,
             params: body,
@@ -217,6 +219,8 @@ RSpec.describe "Api::GithubWebhooks" do
 
       it "records pr_merged feedback when PR is merged" do
         body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect(QualityPause::Check).to receive(:call).with(agent_run: agent_run)
 
         expect {
           post webhook_url,
