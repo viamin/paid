@@ -2,6 +2,7 @@
 
 require "docker-api"
 require "socket"
+require "uri"
 
 module Containers
   # Manages Docker lifecycle for service containers (PostgreSQL, Redis, etc.)
@@ -162,7 +163,7 @@ module Containers
       return if container_ids.blank?
 
       ServiceContainer.where(id: container_ids).find_each do |sc|
-        drop_per_run_database(sc, agent_run) if sc.image.include?("postgres")
+        drop_per_run_database(sc, database_name_for_cleanup(agent_run)) if sc.image.include?("postgres")
 
         if sc.active_agent_run_count == 0
           stop_container!(sc)
@@ -528,11 +529,26 @@ module Containers
 
     # Drops the per-run database during cleanup. Best-effort: logs
     # failures instead of raising so cleanup can continue.
-    def drop_per_run_database(service_container, agent_run)
+    def database_name_for_cleanup(agent_run)
+      database_url = agent_run.service_environment&.fetch("DATABASE_URL", nil)
+      database_name_from_url(database_url) || per_run_db_name(agent_run)
+    end
+
+    def database_name_from_url(database_url)
+      return if database_url.blank?
+
+      path = URI.parse(database_url).path
+      return if path.blank?
+
+      URI.decode_www_form_component(path.delete_prefix("/")).presence
+    rescue URI::InvalidURIError
+      nil
+    end
+
+    def drop_per_run_database(service_container, db_name)
       return unless service_container.docker_container_id.present?
       return unless service_container.running?
 
-      db_name = per_run_db_name(agent_run)
       env = container_env_for(service_container)
       user = env.fetch("POSTGRES_USER", POSTGRES_DEFAULT_ENV["POSTGRES_USER"])
       admin_db = env.fetch("POSTGRES_DB", POSTGRES_DEFAULT_ENV["POSTGRES_DB"])
@@ -562,7 +578,7 @@ module Containers
       end
     rescue Docker::Error::DockerError, Excon::Error => e
       log_warn("service_provisioner.database_drop_error",
-        db_name: per_run_db_name(agent_run),
+        db_name: db_name,
         service_container: service_container.name,
         error: e.message)
     end

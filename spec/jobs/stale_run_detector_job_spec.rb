@@ -292,6 +292,26 @@ RSpec.describe StaleRunDetectorJob do
         expect(stale_run.service_environment).to be_nil
       end
 
+      it "passes captured service environment to service cleanup when requeuing" do
+        service_container = create(:service_container)
+        old_environment = { "DATABASE_URL" => "postgres://agent:agent@pg:5432/agent_run_old_attempt_0" }
+        stale_run = create(:agent_run, status: "pending",
+          service_container_ids: [ service_container.id ],
+          service_environment: old_environment)
+        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        provisioner = instance_double(Containers::ServiceProvisioner)
+
+        allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+        allow(provisioner).to receive(:cleanup) do |run|
+          expect(run.service_container_ids).to eq([ service_container.id ])
+          expect(run.service_environment).to eq(old_environment)
+        end
+
+        described_class.perform_now
+
+        expect(provisioner).to have_received(:cleanup)
+      end
+
       it "skips requeue when Temporal workflow cancel fails with non-NOT_FOUND error" do
         stale_run = create(:agent_run, status: "pending", temporal_workflow_id: "queued-1-2-123456")
         stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)

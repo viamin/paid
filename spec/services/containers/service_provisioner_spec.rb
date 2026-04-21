@@ -709,10 +709,35 @@ RSpec.describe Containers::ServiceProvisioner do
       end
 
       db_name = provisioner.send(:per_run_db_name, agent_run)
-      provisioner.send(:drop_per_run_database, sc, agent_run)
+      provisioner.send(:drop_per_run_database, sc, db_name)
 
       expect(commands).to all(include("-d", "agent_test"))
       expect(commands.last.last).to eq("DROP DATABASE IF EXISTS \"#{db_name}\"")
+    end
+
+    it "drops the database from the stored DATABASE_URL instead of mutable run state" do
+      sc = create(:service_container, :running)
+      docker_container = instance_double(Docker::Container)
+      commands = []
+      original_db_name = provisioner.send(:per_run_db_name, agent_run)
+
+      agent_run.update!(
+        stale_requeue_count: 1,
+        service_environment: { "DATABASE_URL" => "postgres://agent:agent@pg:5432/#{original_db_name}" }
+      )
+
+      allow(Docker::Container).to receive(:get)
+        .with(sc.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive(:exec) do |cmd|
+        commands << cmd
+        [ [], [], 0 ]
+      end
+      allow(docker_container).to receive(:stop)
+      allow(docker_container).to receive(:delete)
+
+      provisioner.cleanup(agent_run.tap { |run| run.service_container_ids = [ sc.id ] })
+
+      expect(commands.last.last).to eq("DROP DATABASE IF EXISTS \"#{original_db_name}\"")
     end
 
     it "logs and continues when Docker transport fails during drop" do
@@ -729,7 +754,8 @@ RSpec.describe Containers::ServiceProvisioner do
         )
       )
 
-      expect { provisioner.send(:drop_per_run_database, sc, agent_run) }.not_to raise_error
+      db_name = provisioner.send(:per_run_db_name, agent_run)
+      expect { provisioner.send(:drop_per_run_database, sc, db_name) }.not_to raise_error
     end
 
     it "connects psql commands to the configured postgres database" do

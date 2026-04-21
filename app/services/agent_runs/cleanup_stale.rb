@@ -39,6 +39,7 @@ module AgentRuns
     def cleanup_run(agent_run)
       old_container_id = nil
       old_service_container_ids = nil
+      old_service_environment = nil
       should_cleanup_resources = false
 
       agent_run.with_lock do
@@ -47,10 +48,13 @@ module AgentRuns
 
         old_container_id = agent_run.container_id
         old_service_container_ids = agent_run.service_container_ids.dup
+        old_service_environment = agent_run.service_environment&.dup
         should_cleanup_resources = resolve_stale_run(agent_run)
       end
 
-      cleanup_resources(agent_run, old_container_id, old_service_container_ids) if should_cleanup_resources
+      if should_cleanup_resources
+        cleanup_resources(agent_run, old_container_id, old_service_container_ids, old_service_environment)
+      end
       should_cleanup_resources
     end
 
@@ -141,9 +145,9 @@ module AgentRuns
       false
     end
 
-    def cleanup_resources(agent_run, old_container_id, old_service_container_ids)
+    def cleanup_resources(agent_run, old_container_id, old_service_container_ids, old_service_environment)
       cleanup_container(agent_run, old_container_id)
-      cleanup_service_containers(agent_run, old_service_container_ids)
+      cleanup_service_containers(agent_run, old_service_container_ids, old_service_environment)
     end
 
     def cleanup_container(agent_run, old_container_id)
@@ -167,8 +171,9 @@ module AgentRuns
       )
     end
 
-    def cleanup_service_containers(agent_run, old_service_container_ids)
+    def cleanup_service_containers(agent_run, old_service_container_ids, old_service_environment)
       agent_run.service_container_ids = old_service_container_ids if old_service_container_ids.present?
+      agent_run.service_environment = old_service_environment if old_service_environment.present?
       Containers::ServiceProvisioner.new.cleanup(agent_run)
     rescue => e
       Rails.logger.warn(
