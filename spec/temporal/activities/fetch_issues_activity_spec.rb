@@ -269,6 +269,45 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
+    context "when the enhance_issue needs-input label is still present" do
+      let!(:issue) do
+        create(:issue, :needs_input,
+          project: project,
+          github_issue_id: 9102,
+          github_number: 92,
+          labels: [ project.enhance_issue_needs_input_label_name, "paid-build" ])
+      end
+
+      let(:github_issue) do
+        OpenStruct.new(
+          id: issue.github_issue_id,
+          number: issue.github_number,
+          title: issue.title,
+          body: issue.body,
+          state: "open",
+          labels: [
+            OpenStruct.new(name: project.enhance_issue_needs_input_label_name),
+            OpenStruct.new(name: "paid-build")
+          ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: issue.github_created_at,
+          updated_at: Time.current
+        )
+      end
+
+      before do
+        stub_issues_by_label(nil => [ github_issue ])
+      end
+
+      it "suppresses normal label evaluation while waiting for answers" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:enhance_issue_rechecks]).to be_empty
+        expect(result[:issues]).not_to include(hash_including(id: issue.id))
+      end
+    end
+
     context "when rate limited" do
       before do
         allow(github_client).to receive(:issues).and_raise(
@@ -1226,6 +1265,20 @@ RSpec.describe Activities::FetchIssuesActivity do
         returned_ids = result[:issues].map { |i| i[:id] }
         expect(returned_ids).to include(blocked.id)
         expect(returned_ids).not_to include(in_progress.id)
+      end
+
+      it "excludes re-scannable issues still waiting for enhance_issue input" do
+        waiting_for_answers = create(:issue, :needs_input,
+          project: project,
+          github_issue_id: 5002,
+          github_number: 52,
+          github_state: "open",
+          labels: [ project.enhance_issue_needs_input_label_name, "paid-build" ])
+
+        result = activity.execute(project_id: project.id)
+
+        returned_ids = result[:issues].map { |i| i[:id] }
+        expect(returned_ids).not_to include(waiting_for_answers.id)
       end
 
       it "does not duplicate issues already in the incremental fetch results" do

@@ -65,16 +65,19 @@ module Activities
 
       recheck_issue_ids = enhance_issue_rechecks.map { |recheck| recheck[:issue_id] }.to_set
 
-      # Exclude closed issues and enhance_issue rechecks from downstream
+      # Exclude closed issues and enhance_issue waits/rechecks from downstream
       # processing (DetectLabelsActivity). Rechecks are returned separately for
-      # the workflow to queue, so evaluating their automation labels in this
-      # poll can incorrectly start a create_pr run before enhancement completes.
+      # the workflow to queue, and needs-input issues are still waiting on
+      # human answers, so evaluating their automation labels in this poll can
+      # incorrectly start a create_pr run before enhancement completes.
       # sync_issue already persisted their github_state to the DB, but passing
       # them downstream could incorrectly trigger agent runs for closed work.
       # Note: parse_issue_relationships receives all synced_issues (including
       # closed), but filters to github_state: "open" internally.
       open_issues = synced_issues.reject do |si|
-        si[:github_state] == "closed" || recheck_issue_ids.include?(si[:id])
+        si[:github_state] == "closed" ||
+          recheck_issue_ids.include?(si[:id]) ||
+          enhance_issue_needs_input?(project, si)
       end
 
       # During incremental fetches, issues whose `updated_at` did not change
@@ -87,6 +90,7 @@ module Activities
         fetched_ids = open_issues.map { |si| si[:id] }.to_set
         rescannable = project.issues
           .where(github_state: "open", paid_state: %w[new needs_input recommend_close])
+          .where.not("labels @> ?::jsonb", [ project.enhance_issue_needs_input_label_name ].to_json)
           .where.not(id: fetched_ids.to_a)
           .limit(200)
           .pluck(:id, :github_number, :github_state)
@@ -241,6 +245,10 @@ module Activities
 
         enqueue_enhance_issue_recheck(project, issue)
       end
+    end
+
+    def enhance_issue_needs_input?(project, issue_data)
+      Array(issue_data[:labels]).include?(project.enhance_issue_needs_input_label_name)
     end
 
     def enqueue_enhance_issue_recheck(project, issue)
