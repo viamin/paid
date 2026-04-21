@@ -87,7 +87,6 @@ module Containers
     }.freeze
 
     DEFAULT_RESOURCE_LIMITS = { memory: 1 * 1024 * 1024 * 1024, cpu_quota: 100_000, pids_limit: 200 }.freeze
-    PAID_SERVICE_NETWORKS = [ NetworkPolicy::NETWORK_NAME, NetworkPolicy::INFRA_NETWORK_NAME ].freeze
 
     # Provisions all service containers needed by an agent run's project.
     #
@@ -478,7 +477,6 @@ module Containers
       endpoint = networks.fetch(@network, nil)
 
       if network_alias?(endpoint, service_container.name)
-        disconnect_unselected_paid_networks!(container.id, networks)
         return
       end
 
@@ -493,20 +491,8 @@ module Containers
         name: service_container.name,
         network: @network,
         container_id: container.id)
-      disconnect_unselected_paid_networks!(container.id, networks)
     rescue Docker::Error::DockerError, Excon::Error => e
       raise Error, "Failed to attach service container #{service_container.name} to network #{@network}: #{e.message}"
-    end
-
-    def disconnect_unselected_paid_networks!(container_id, networks)
-      (PAID_SERVICE_NETWORKS - [ @network ]).each do |network_name|
-        next unless networks.key?(network_name)
-
-        Docker::Network.get(network_name).disconnect(container_id)
-        log_info("service_provisioner.network_disconnected",
-          network: network_name,
-          container_id: container_id)
-      end
     end
 
     def network_alias?(endpoint, name)
