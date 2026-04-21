@@ -286,6 +286,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:patched)
         .with("pause-followup-during-review-v1")
         .and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("pause-review-bot-followup-during-review-v1")
+        .and_return(true)
     end
 
     it "routes ready_for_owner to MarkPrReadyActivity and RequestReviewActivity" do
@@ -690,7 +693,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     it "preserves ready-phase replay order before the review pending hard gate patch" do
       allow(Temporalio::Workflow).to receive(:patched)
-        .with("pause-followup-during-review-v1")
+        .with("pause-review-bot-followup-during-review-v1")
         .and_return(false)
 
       pr_data = {
@@ -1380,6 +1383,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:patched)
         .with("pause-followup-during-review-v1").and_return(true)
       allow(Temporalio::Workflow).to receive(:patched)
+        .with("pause-review-bot-followup-during-review-v1").and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
         .with("batch-evaluate-issues-v1").and_return(true)
       allow(workflow).to receive(:interruptible_sleep)
       allow(workflow).to receive(:run_activity)
@@ -1474,6 +1479,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with("queue-paid-agent-review-run-v1").and_return(true)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("pause-followup-during-review-v1").and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("pause-review-bot-followup-during-review-v1").and_return(true)
       allow(workflow).to receive(:run_activity).and_return({})
     end
 

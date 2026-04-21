@@ -406,7 +406,7 @@ module Workflows
     end
 
     def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
-      if Temporalio::Workflow.patched("pause-followup-during-review-v1")
+      if Temporalio::Workflow.patched("pause-review-bot-followup-during-review-v1")
         dispatch_review_bot_review_request(project_id, pr_data)
 
         # review_bot_review_pending is a hard gate: suppress all create_pr
