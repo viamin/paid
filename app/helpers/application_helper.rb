@@ -23,6 +23,20 @@ module ApplicationHelper
     )
   end
 
+  def agent_harness_auth_url(provider)
+    return nil if provider.blank? || !AgentHarness.respond_to?(:auth_url)
+
+    AgentHarness.auth_url(provider.to_sym)
+  rescue NotImplementedError, AgentHarness::Error => e
+    Rails.logger.info(
+      message: "agent_execution.auth_url_unavailable",
+      provider: provider,
+      error_class: e.class.name,
+      error_message: e.message
+    )
+    nil
+  end
+
   def safe_stylesheet_link_tag(source, **options)
     safe_asset_tag { stylesheet_link_tag(source, **options) }
   end
