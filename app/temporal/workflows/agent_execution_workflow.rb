@@ -279,15 +279,17 @@ module Workflows
             pr_result = run_activity(Activities::CreatePullRequestActivity,
               { agent_run_id: agent_run_id }, timeout: 60)
 
-            # Step 7: Update issue with PR link
-            run_activity(Activities::UpdateIssueWithPrActivity,
-              { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
+            unless pr_result[:skipped] || pr_result[:pull_request_url].blank?
+              # Step 7: Update issue with PR link
+              run_activity(Activities::UpdateIssueWithPrActivity,
+                { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
 
-            # Step 8: Request review-bot review on the new draft PR (best-effort)
-            request_review_bot_review(project_id, pr_result[:pull_request_number])
+              # Step 8: Request review-bot review on the new draft PR (best-effort)
+              request_review_bot_review(project_id, pr_result[:pull_request_number])
 
-            # Step 9: Draft a decision record (best-effort)
-            draft_decision_record(agent_run_id)
+              # Step 9: Draft a decision record (best-effort)
+              draft_decision_record(agent_run_id)
+            end
           end
         else
           # No changes produced by agent

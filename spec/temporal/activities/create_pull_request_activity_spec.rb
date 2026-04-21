@@ -106,6 +106,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       expect(github_client).not_to have_received(:create_pull_request)
       expect(result[:agent_run_id]).to eq(agent_run.id)
+      expect(result[:skipped]).to be true
+      expect(result[:cancelled]).to be true
       expect(agent_run.reload.status).to eq("cancelled")
     end
 

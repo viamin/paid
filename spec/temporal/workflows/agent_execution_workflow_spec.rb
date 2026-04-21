@@ -852,6 +852,27 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RequestReviewActivity, any_args)
     end
+
+    it "skips PR post-processing when PR creation reports a finished run without a PR" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: true }
+        when "Activities::CreatePullRequestActivity"
+          { agent_run_id: 42, pull_request_url: nil, pull_request_number: nil, skipped: true, cancelled: true }
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::UpdateIssueWithPrActivity, any_args)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, any_args)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::DraftDecisionRecordActivity, any_args)
+    end
   end
 
   describe "ensure block cleanup and janitor enqueue" do

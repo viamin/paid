@@ -69,7 +69,9 @@ module Activities
       {
         agent_run_id: agent_run.id,
         pull_request_url: agent_run.pull_request_url,
-        pull_request_number: agent_run.pull_request_number
+        pull_request_number: agent_run.pull_request_number,
+        skipped: agent_run.pull_request_url.blank?,
+        cancelled: agent_run.status == "cancelled"
       }
     end
 
