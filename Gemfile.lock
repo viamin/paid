@@ -518,7 +518,7 @@ PLATFORMS
   x86_64-linux-musl
 
 DEPENDENCIES
-  agent-harness (~> 0.10.0)
+  agent-harness (~> 0.10.0, >= 0.10.0)
   bootsnap
   brakeman
   bundler-audit

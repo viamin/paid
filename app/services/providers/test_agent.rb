@@ -359,7 +359,7 @@ module Providers
     end
 
     def persist_rate_limited_state!(message)
-      reset_at = parse_rate_limit_reset(message)
+      reset_at = rate_limit_reset_at(message)
 
       provider_state_names.each do |provider_name|
         provider.user.provider_states.find_or_create_by!(provider_name: provider_name).mark_rate_limited!(reset_at: reset_at)
@@ -379,48 +379,23 @@ module Providers
       names.uniq
     end
 
-    def parse_rate_limit_reset(message)
-      if (match = message.to_s.match(/retry.?after:?\s*(\d+)/i))
-        match[1].to_i.seconds.from_now
-      elsif (match = message.to_s.match(/reset.?at:?\s*(\d+)/i))
-        reset_time = Time.at(match[1].to_i)
-        reset_time > Time.current ? reset_time : 1.hour.from_now
-      elsif (match = message.to_s.match(/resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(?\s*UTC\s*\)?/i))
-        hour = match[1].to_i
-        minute = (match[2] || "0").to_i
-        period = match[3].downcase
-
-        hour = if period == "am"
-          hour == 12 ? 0 : hour
-        else
-          hour == 12 ? 12 : hour + 12
-        end
-
-        reset_time = Time.current.utc.change(hour: hour, min: minute, sec: 0)
-        reset_time += 1.day if reset_time <= Time.current.utc
-        reset_time
-      elsif (match = message.to_s.match(/resets?\s+([A-Za-z]{3})\s+(\d{1,2}),\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(?\s*UTC\s*\)?/i))
-        month = Date::ABBR_MONTHNAMES.index(match[1].capitalize)
-        day = match[2].to_i
-        hour = match[3].to_i
-        minute = (match[4] || "0").to_i
-        period = match[5].downcase
-
-        hour = if period == "am"
-          hour == 12 ? 0 : hour
-        else
-          hour == 12 ? 12 : hour + 12
-        end
-
-        year = Time.current.utc.year
-        reset_time = Time.utc(year, month, day, hour, minute, 0)
-        reset_time = Time.utc(year + 1, month, day, hour, minute, 0) if reset_time <= Time.current.utc
-        reset_time
-      else
+    def rate_limit_reset_at(message)
+      agent_harness_provider = harness_provider
+      agent_harness_provider.parse_rate_limit_reset(message.to_s) ||
+        agent_harness_provider.parse_rate_limit_reset(normalized_rate_limit_reset_text(message)) ||
         1.hour.from_now
-      end
-    rescue StandardError
+    rescue AgentHarness::ConfigurationError, KeyError
       1.hour.from_now
+    end
+
+    def harness_provider
+      AgentHarness.provider(harness_provider_name)
+    end
+
+    def normalized_rate_limit_reset_text(message)
+      message.to_s
+        .gsub(/retry.?after:?\s*(\d+)(?!\s*s)/i, 'retry after \1s')
+        .gsub(/reset.?at:?\s*(\d+)/i, 'reset at \1')
     end
 
     def container_test_context
