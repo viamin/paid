@@ -777,6 +777,27 @@ RSpec.describe "AgentRuns" do
 
         expect(selected_option["value"]).to eq(codex.routing_key)
       end
+
+      it "renders enhance_issue as a selectable goal with the issue picker active" do
+        issue = create(:issue, project: project, github_number: 44, title: "Needs context", github_state: "open")
+        create(:issue, :pull_request, project: project, github_number: 45, title: "Open PR")
+
+        get new_project_agent_run_path(project, goal: "enhance_issue")
+
+        doc = Nokogiri::HTML(response.body)
+        enhance_goal = doc.at_css("input[type='radio'][name='goal'][value='enhance_issue']")
+        issue_table = doc.at_css('[data-goal-toggle-target="issueTable"]')
+        issue_dropdown = doc.at_css('[data-goal-toggle-target="issueDropdown"]')
+        pr_section = doc.at_css('[data-goal-toggle-target="prSection"]')
+
+        expect(enhance_goal).to be_present
+        expect(enhance_goal["checked"]).to eq("checked")
+        expect(issue_table["hidden"]).to be_nil
+        expect(issue_table.text).to include("Needs context")
+        expect(issue_table.at_css("input[type='checkbox'][name='issue_ids[]'][value='#{issue.id}']")).to be_present
+        expect(issue_dropdown.attribute("hidden")).to be_present
+        expect(pr_section.attribute("hidden")).to be_present
+      end
     end
   end
 

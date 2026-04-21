@@ -85,6 +85,29 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "enhance_issue goal requires issue" do
+      it "is valid when an associated issue is present" do
+        project = create(:project)
+        issue = create(:issue, project: project)
+        agent_run = build(:agent_run, :enhance_issue_goal, project: project, issue: issue)
+
+        expect(agent_run).to be_valid
+      end
+
+      it "is invalid without an associated issue" do
+        agent_run = build(:agent_run, :enhance_issue_goal, issue: nil, custom_prompt: "Enhance this issue")
+
+        expect(agent_run).not_to be_valid
+        expect(agent_run.errors[:issue]).to include("is required for enhance_issue goals")
+      end
+
+      it "does not require an issue for create_issue goals" do
+        agent_run = build(:agent_run, :create_issue_goal)
+
+        expect(agent_run).to be_valid
+      end
+    end
+
     describe "provider ownership validation" do
       it "allows provider from the project owner" do
         agent_run = build(:agent_run)

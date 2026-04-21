@@ -46,9 +46,9 @@ module Activities
       response = call_llm(agent_run, prompt_for(project, gh_issue, comments, context))
       parsed = parse_response!(agent_run, response)
       parsed = stop_after_max_rounds(parsed, project, issue)
-      label_result = apply_label_state(client, project, issue, parsed)
       comment_body = comment_body_for(parsed)
       gh_comment = client.add_comment(project.full_name, issue.github_number, comment_body)
+      label_result = apply_label_state(client, project, issue, parsed)
 
       track_tokens(agent_run, response)
       agent_run.log!("stdout", comment_body)

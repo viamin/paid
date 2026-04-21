@@ -52,7 +52,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
   end
 
   before do
-    allow(activity).to receive(:github_client).and_return(client)
+    allow(GithubClient).to receive(:new).and_return(client)
     allow(client).to receive(:issue).with(project.full_name, issue.github_number).and_return(gh_issue)
     allow(client).to receive(:issue_comments).with(project.full_name, issue.github_number).and_return(comments)
     allow(client).to receive(:add_comment).and_return(posted_comment)
@@ -87,6 +87,21 @@ RSpec.describe Activities::EnhanceIssueActivity do
       issue.github_number,
       a_string_including(*parts)
     )
+  end
+
+  def answered_reevaluation_comments
+    [
+      OpenStruct.new(
+        body: "#{described_class::COMMENT_MARKER}\n## Clarifying questions\n1. Which events should be recorded?",
+        user: OpenStruct.new(login: "paid-code-reviewer[bot]"),
+        created_at: Time.zone.parse("2026-04-20 12:00:00 UTC")
+      ),
+      OpenStruct.new(
+        body: "Record sign-in, permission, and billing events.",
+        user: OpenStruct.new(login: "viamin"),
+        created_at: Time.zone.parse("2026-04-20 13:00:00 UTC")
+      )
+    ]
   end
 
   describe "#execute" do
@@ -157,7 +172,11 @@ RSpec.describe Activities::EnhanceIssueActivity do
         "Failed to apply enhance_issue control label #{project.enhance_issue_needs_input_label_name}"
       )
 
-      expect(client).not_to have_received(:add_comment)
+      expect(client).to have_received(:add_comment).with(
+        project.full_name,
+        issue.github_number,
+        a_string_including("## Clarifying questions")
+      )
       expect(issue.reload.paid_state).to eq("in_progress")
       expect(issue.reload.labels).not_to include(project.enhance_issue_needs_input_label_name)
     end
@@ -172,9 +191,25 @@ RSpec.describe Activities::EnhanceIssueActivity do
         "Failed to apply enhance_issue control label #{project.enhance_issue_enhanced_label_name}"
       )
 
-      expect(client).not_to have_received(:add_comment)
+      expect(client).to have_received(:add_comment).with(
+        project.full_name,
+        issue.github_number,
+        a_string_including("## Implementation context")
+      )
       expect(issue.reload.paid_state).to eq("in_progress")
       expect(issue.reload.labels).not_to include(project.enhance_issue_enhanced_label_name)
+    end
+
+    it "does not apply labels when posting the enhancement comment fails" do
+      allow(client).to receive(:add_comment).and_raise(GithubClient::Error.new("GitHub unavailable"))
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(GithubClient::Error, "GitHub unavailable")
+
+      expect(client).not_to have_received(:add_labels_to_issue)
+      expect(issue.reload.paid_state).to eq("in_progress")
+      expect(issue.labels).not_to include(project.enhance_issue_enhanced_label_name)
     end
 
     it "posts a manual-review stop comment instead of reapplying needs-input at the max round" do
@@ -254,6 +289,46 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect {
         activity.execute(agent_run_id: agent_run.id)
       }.to raise_error(Temporalio::Error::ApplicationError, "LLM returned invalid enhancement JSON")
+    end
+
+    it "raises GitHub API failures before calling the LLM" do
+      allow(client).to receive(:issue).and_raise(GithubClient::Error.new("GitHub unavailable"))
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(GithubClient::Error, "GitHub unavailable")
+
+      expect(AgentHarness).not_to have_received(:send_message)
+    end
+
+    it "continues with fallback context when the knowledge base is unavailable" do
+      allow(Knowledge::Search).to receive(:call).and_raise(StandardError, "index unavailable")
+      allow(Knowledge::ContextBundle::Build).to receive(:call).and_raise(StandardError, "bundle unavailable")
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:sufficient_context]).to be true
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_including("No retrieval results.", "No context bundle entries were available."),
+        hash_including(provider: :claude)
+      )
+    end
+
+    it "re-evaluates using all comments including the user's answers" do
+      issue.update!(enhance_issue_rounds: 1)
+      allow(client).to receive(:issue_comments).and_return(answered_reevaluation_comments)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_including(
+          "Which events should be recorded?",
+          "Record sign-in, permission, and billing events."
+        ),
+        hash_including(provider: :claude)
+      )
+      expect_comment_including("## Implementation context")
+      expect(issue.reload.enhance_issue_rounds).to eq(1)
     end
   end
 end
