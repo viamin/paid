@@ -135,4 +135,4 @@ jobs:
         run: bin/rspec --exclude-pattern "spec/performance/**/*_spec.rb"
 
       - name: Run query performance benchmarks
-        run: bin/rspec spec/performance
+        run: COVERAGE=false bin/rspec spec/performance
