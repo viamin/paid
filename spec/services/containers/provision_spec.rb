@@ -148,6 +148,41 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  describe ".reconnect" do
+    let(:container_id) { "claimed-pool-container" }
+
+    before do
+      allow(Docker::Container).to receive(:get).with(container_id).and_return(mock_container)
+    end
+
+    it "recovers claimed pool context when pool metadata is not supplied" do
+      entry = create(
+        :container_pool_entry,
+        :claimed,
+        agent_run: agent_run,
+        container_id: container_id,
+        workspace_volume: "paid-pool-workspace-recovered"
+      )
+
+      reconnected = described_class.reconnect(agent_run: agent_run, container_id: container_id)
+
+      expect(reconnected.pool_entry).to eq(entry)
+      expect(reconnected.workspace_volume).to eq(entry.workspace_volume)
+    end
+
+    it "cleans up the recovered pool workspace volume" do
+      entry = create(:container_pool_entry, :claimed, agent_run: agent_run, container_id: container_id)
+      pool_volume = instance_double(Docker::Volume, remove: true)
+      allow(Docker::Volume).to receive(:get).with(entry.workspace_volume).and_return(pool_volume)
+
+      reconnected = described_class.reconnect(agent_run: agent_run, container_id: container_id)
+      reconnected.cleanup(force: true)
+
+      expect(Docker::Volume).to have_received(:get).with(entry.workspace_volume)
+      expect(Docker::Volume).not_to have_received(:get).with("paid-workspace-#{agent_run.id}")
+    end
+  end
+
   describe "#provision" do
     context "when successful" do
       it "creates and starts a container" do
@@ -1254,7 +1289,7 @@ RSpec.describe Containers::Provision do
         allow(agent_run).to receive(:log!)
         expect(mock_container).to receive(:exec).with(
           [ "printenv", "SECRET_TOKEN" ],
-          hash_including(wait: anything, Env: [ "SECRET_TOKEN=super-secret" ])
+          hash_including(wait: anything, Env: array_including("SECRET_TOKEN=super-secret"))
         )
 
         service.execute([ "printenv", "SECRET_TOKEN" ], env: { "SECRET_TOKEN" => "super-secret" })

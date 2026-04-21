@@ -118,7 +118,7 @@ module Containers
       workspace_mount: "/workspace"
     }.freeze
 
-    attr_reader :agent_run, :worktree_path, :container, :options, :workspace_volume
+    attr_reader :agent_run, :project, :worktree_path, :container, :options, :workspace_volume, :pool_entry
 
     def self.network_for(agent_run:)
       new(agent_run: agent_run).network_name
@@ -133,19 +133,24 @@ module Containers
     # @option options [Integer] :pids_limit Maximum number of processes
     # @option options [Integer] :timeout_seconds Default command timeout
     # @option options [String] :image Docker image to use
-    def initialize(agent_run:, worktree_path: nil, **options)
+    def initialize(agent_run: nil, project: nil, worktree_path: nil, pool_entry: nil, workspace_volume: nil, **options)
+      raise ArgumentError, "agent_run or project is required" if agent_run.nil? && project.nil?
+
       if options.key?(:network)
         Rails.logger.warn(
           message: "container_manager.container.network_option_ignored",
-          agent_run_id: agent_run.id,
+          agent_run_id: agent_run&.id,
           hint: "The :network option is ignored; containers use the network selected by provider auth mode"
         )
         options.delete(:network)
       end
       @agent_run = agent_run
+      @project = project || agent_run.project
       @worktree_path = worktree_path
-      @workspace_volume = nil
-      @options = DEFAULTS.merge(resolve_user_setting_overrides(agent_run)).merge(options)
+      @pool_entry = pool_entry
+      @workspace_volume = workspace_volume
+      @pool_mode = options.delete(:pool_mode) { false }
+      @options = DEFAULTS.merge(resolve_user_setting_overrides).merge(options)
       @container = nil
     end
 
@@ -221,8 +226,7 @@ module Containers
     private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil)
       timeout ||= options[:timeout_seconds]
       cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
-      exec_options = { wait: timeout }
-      exec_options[:Env] = env.map { |key, value| "#{key}=#{value}" } if env.present?
+      exec_options = { wait: timeout, Env: exec_environment(env) }
       cleanup_steps = apply_execution_preparation(preparation, env: env)
 
       log_system("container.execute.start", command: command.to_s.encode("UTF-8", invalid: :replace).truncate(200))
@@ -447,6 +451,7 @@ module Containers
       ensure
         @container = nil
         cleanup_workspace_volume
+        cleanup_claimed_pool_entry
       end
     end
 
@@ -467,8 +472,10 @@ module Containers
     #
     # @param container [Docker::Container] The existing container
     # @return [self]
-    def with_existing_container(container)
+    def with_existing_container(container, workspace_volume: nil, pool_entry: nil)
       @container = container
+      @workspace_volume = workspace_volume if workspace_volume.present?
+      @pool_entry = pool_entry if pool_entry.present?
       self
     end
 
@@ -480,9 +487,13 @@ module Containers
     # @param worktree_path [String, nil] Path to the git worktree (optional)
     # @return [Provision] The reconnected service instance
     # @raise [ProvisionError] When container cannot be found
-    def self.reconnect(agent_run:, container_id:, worktree_path: nil)
+    def self.reconnect(agent_run:, container_id:, worktree_path: nil, workspace_volume: nil, pool_entry: nil, **options)
       container = Docker::Container.get(container_id)
-      new(agent_run: agent_run, worktree_path: worktree_path).with_existing_container(container)
+      pool_entry ||= ContainerPoolEntry.claimed.find_by(agent_run: agent_run, container_id: container_id)
+      workspace_volume ||= pool_entry&.workspace_volume
+
+      new(agent_run: agent_run, worktree_path: worktree_path, workspace_volume: workspace_volume, pool_entry: pool_entry, **options)
+        .with_existing_container(container, workspace_volume: workspace_volume, pool_entry: pool_entry)
     rescue Docker::Error::NotFoundError
       raise ProvisionError, "Container #{container_id} not found"
     rescue Docker::Error::DockerError => e
@@ -675,9 +686,9 @@ module Containers
 
     # Resolves user-configurable container settings from the project's UserSetting.
     # Returns a hash of overrides that sit between DEFAULTS and caller-supplied options.
-    def resolve_user_setting_overrides(agent_run)
+    def resolve_user_setting_overrides
       settings = AgentRuns::UserSettingsResolver.call(
-        project: agent_run.project, strict: false
+        project: project, strict: false
       )
       return {} unless settings
 
@@ -1125,7 +1136,7 @@ module Containers
       if worktree_path.present?
         raise ProvisionError, "Worktree path does not exist: #{worktree_path}" unless File.directory?(worktree_path)
       else
-        @workspace_volume = "paid-workspace-#{agent_run.id}"
+        @workspace_volume ||= pooled_container? ? "paid-pool-workspace-#{pool_entry.id}" : "paid-workspace-#{agent_run.id}"
         begin
           Docker::Volume.get(@workspace_volume)
         rescue Docker::Error::NotFoundError
@@ -1142,7 +1153,7 @@ module Containers
 
     def cleanup_workspace_volume
       volume_name = @workspace_volume
-      volume_name ||= "paid-workspace-#{agent_run.id}" if worktree_path.blank?
+      volume_name ||= "paid-workspace-#{agent_run.id}" if worktree_path.blank? && agent_run.present? && !pooled_container?
       return unless volume_name
 
       Docker::Volume.get(volume_name).remove
@@ -1151,22 +1162,48 @@ module Containers
     rescue => e
       Rails.logger.warn(
         message: "container_manager.workspace_cleanup_failed",
-        agent_run_id: agent_run.id,
+        agent_run_id: agent_run&.id,
+        project_id: project.id,
         error: e.message
       )
     ensure
       @workspace_volume = nil
     end
 
+    def cleanup_claimed_pool_entry
+      return unless pool_entry&.status == "claimed"
+
+      pool_entry.destroy!
+      @pool_entry = nil
+    end
+
     def volume_options
-      {
-        "Labels" => {
-          "paid.managed" => "true",
-          "paid.resource" => "workspace_volume",
-          "paid.agent_run_id" => agent_run.id.to_s,
-          "paid.project_id" => agent_run.project_id.to_s
-        }
+      labels = {
+        "paid.managed" => "true",
+        "paid.resource" => pooled_container? ? "container_pool_workspace" : "workspace_volume",
+        "paid.project_id" => project.id.to_s
       }
+      labels["paid.agent_run_id"] = agent_run.id.to_s if agent_run
+      labels["paid.container_pool_entry_id"] = pool_entry.id.to_s if pool_entry
+
+      {
+        "Labels" => labels
+      }
+    end
+
+    def container_labels
+      labels = {
+        "paid.project_id" => project.id.to_s
+      }
+
+      if pooled_container?
+        labels["paid.container_pool"] = "true"
+        labels["paid.container_pool_entry_id"] = pool_entry.id.to_s
+      else
+        labels["paid.agent_run_id"] = agent_run.id.to_s
+      end
+
+      labels
     end
 
     def create_container
@@ -1203,10 +1240,7 @@ module Containers
         "HostConfig" => host_config,
         "Env" => environment_variables,
         "WorkingDir" => options[:workspace_mount],
-        "Labels" => {
-          "paid.agent_run_id" => agent_run.id.to_s,
-          "paid.project_id" => agent_run.project_id.to_s
-        },
+        "Labels" => container_labels,
         "Tty" => false,
         "OpenStdin" => false,
         # Keep container running so we can exec commands into it.
@@ -1340,6 +1374,8 @@ module Containers
     end
 
     def compute_direct_outbound_provider?
+      return false if agent_run.nil?
+
       return true if agent_run.agent_type.to_s == "kilocode"
       return true if agent_run.provider&.requires_direct_outbound?
 
@@ -1374,41 +1410,20 @@ module Containers
     end
 
     def resolved_user_settings
-      @resolved_user_settings ||= AgentRuns::UserSettingsResolver.call(project: agent_run.project, strict: false)
+      @resolved_user_settings ||= AgentRuns::UserSettingsResolver.call(project: project, strict: false)
     end
 
     def environment_variables
-      project = agent_run.project
       proxy_base = proxy_base_url
 
       env = [
         "PAID_PROXY_URL=#{proxy_base}",
         "GITHUB_API_URL=#{proxy_base}/api/proxy/github",
         "PROJECT_ID=#{project.id}",
-        "AGENT_RUN_ID=#{agent_run.id}",
-        "PROXY_TOKEN=#{agent_run.proxy_token}",
         "HOME=/home/agent"
       ]
 
-      env.concat([
-        "OPENAI_BASE_URL=#{proxy_base}/api/proxy/openai",
-        "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
-        "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
-        "OPENAI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
-        "PAID_CODEX_SUBSCRIPTION_AUTH=#{codex_subscription_auth? ? 1 : 0}"
-      ])
-
-      env.concat([
-        "GOOGLE_GEMINI_BASE_URL=#{proxy_base}/api/proxy/google",
-        "GOOGLE_GENAI_BASE_URL=#{proxy_base}/api/proxy/google",
-        "GOOGLE_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
-        "GOOGLE_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
-        "GEMINI_CLI_CUSTOM_HEADERS=X-Agent-Run-Id: #{agent_run.id}, X-Proxy-Token: #{agent_run.proxy_token}",
-        "GEMINI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
-        "GEMINI_SANDBOX=false",
-        "GEMINI_CLI_DISABLE_RETRIES=true",
-        "PAID_GEMINI_SUBSCRIPTION_AUTH=#{gemini_subscription_auth? ? 1 : 0}"
-      ])
+      env.concat(run_scoped_environment(proxy_base)) if agent_run.present?
 
       env << "PAID_COPILOT_SUBSCRIPTION_AUTH=#{copilot_subscription_auth? ? 1 : 0}"
 
@@ -1418,7 +1433,7 @@ module Containers
         # Claude subscription mode: let Claude Code use its native auth from
         # ~/.claude while other providers can still use proxy credentials.
         log_system("container.auth_mode", mode: "subscription")
-      else
+      elsif agent_run.present?
         # Route Anthropic calls through the secrets proxy when Claude host auth
         # is not available, even if other providers have subscription auth.
         env.concat([
@@ -1429,11 +1444,42 @@ module Containers
       end
 
       # Append service container environment variables (DATABASE_URL, REDIS_URL, etc.)
-      if agent_run.service_environment.present?
+      if agent_run&.service_environment.present?
         env.concat(agent_run.service_environment.map { |k, v| "#{k}=#{v}" })
       end
 
       env
+    end
+
+    def run_scoped_environment(proxy_base)
+      [
+        "AGENT_RUN_ID=#{agent_run.id}",
+        "PROXY_TOKEN=#{agent_run.proxy_token}",
+        "OPENAI_BASE_URL=#{proxy_base}/api/proxy/openai",
+        "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
+        "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
+        "OPENAI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
+        "PAID_CODEX_SUBSCRIPTION_AUTH=#{codex_subscription_auth? ? 1 : 0}",
+        "GOOGLE_GEMINI_BASE_URL=#{proxy_base}/api/proxy/google",
+        "GOOGLE_GENAI_BASE_URL=#{proxy_base}/api/proxy/google",
+        "GOOGLE_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
+        "GOOGLE_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
+        "GEMINI_CLI_CUSTOM_HEADERS=X-Agent-Run-Id: #{agent_run.id}, X-Proxy-Token: #{agent_run.proxy_token}",
+        "GEMINI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
+        "GEMINI_SANDBOX=false",
+        "GEMINI_CLI_DISABLE_RETRIES=true",
+        "PAID_GEMINI_SUBSCRIPTION_AUTH=#{gemini_subscription_auth? ? 1 : 0}"
+      ]
+    end
+
+    def exec_environment(env)
+      values = environment_variables.to_h { |value| value.split("=", 2) }
+      values.merge!(env.transform_keys(&:to_s))
+      values.map { |key, value| "#{key}=#{value}" }
+    end
+
+    def pooled_container?
+      pool_entry.present?
     end
 
     # Returns true when any provider CLI config is available for
@@ -1556,6 +1602,8 @@ module Containers
 
     # Resolves running service container IPs for firewall rules.
     def resolve_service_destinations
+      return [] unless agent_run
+
       container_ids = agent_run.service_container_ids
       return [] if container_ids.blank?
 
@@ -1579,7 +1627,8 @@ module Containers
     end
 
     def container_name
-      "paid-#{agent_run.project_id}-#{agent_run.id}-#{SecureRandom.hex(4)}"
+      run_part = agent_run ? agent_run.id : "pool-#{pool_entry.id}"
+      "paid-#{project.id}-#{run_part}-#{SecureRandom.hex(4)}"
     end
 
     def ensure_network!
@@ -1614,17 +1663,18 @@ module Containers
     def log_system(message, **metadata)
       Rails.logger.info(
         message: "container_manager.#{message}",
-        agent_run_id: agent_run.id,
+        agent_run_id: agent_run&.id,
+        project_id: project.id,
         **metadata
       )
 
-      agent_run.log!("system", message, metadata: metadata)
+      agent_run&.log!("system", message, metadata: metadata)
     end
 
     def log_output(type, content)
       return if content.blank?
 
-      agent_run.log!(type.to_s, content)
+      agent_run&.log!(type.to_s, content)
     end
 
     def normalize_output_chunk(chunk)

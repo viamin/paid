@@ -23,15 +23,18 @@ class DockerOrphanCleanupJob < ApplicationJob
   )
 
   VOLUME_PREFIX = "paid-workspace-"
+  POOL_VOLUME_PREFIX = "paid-pool-workspace-"
 
   def perform
     agent_removed = cleanup_agent_containers
+    pool_removed = cleanup_pool_containers
     service_removed = cleanup_service_containers
     volume_result = cleanup_volumes
 
     Rails.logger.info(
       message: "container_manager.orphan_cleanup_complete",
       agent_containers_removed: agent_removed,
+      pool_containers_removed: pool_removed,
       service_containers_removed: service_removed,
       volumes_found: volume_result[:found],
       volumes_removed: volume_result[:removed],
@@ -67,7 +70,24 @@ class DockerOrphanCleanupJob < ApplicationJob
     removed
   end
 
-  # Phase 2: Remove service containers with zero active agent runs.
+  # Phase 2: Remove stale warm-pool containers no longer tracked in the DB.
+  def cleanup_pool_containers
+    containers = list_containers_by_label("paid.container_pool=true")
+    return 0 if containers.empty?
+
+    removed = 0
+    containers.each do |container|
+      entry_id = container.info.dig("Labels", "paid.container_pool_entry_id")
+      entry = ContainerPoolEntry.find_by(id: entry_id) if entry_id.present?
+      next if entry&.status.in?(%w[warm warming claimed]) && pool_entry_active?(entry)
+
+      removed += 1 if stop_and_remove_container(container, "pool", entry_id)
+      entry&.destroy!
+    end
+    removed
+  end
+
+  # Phase 3: Remove service containers with zero active agent runs.
   def cleanup_service_containers
     containers = list_containers_by_label("paid.service_container=true")
     return 0 if containers.empty?
@@ -96,7 +116,7 @@ class DockerOrphanCleanupJob < ApplicationJob
     removed
   end
 
-  # Phase 3: Remove orphaned workspace volumes.
+  # Phase 4: Remove orphaned workspace volumes.
   # Skips volumes for runs with an unexpired retention TTL.
   def cleanup_volumes
     volumes = list_paid_volumes
@@ -115,6 +135,20 @@ class DockerOrphanCleanupJob < ApplicationJob
     active = 0
     retained = 0
     volumes.each do |volume|
+      if volume.id.start_with?(POOL_VOLUME_PREFIX)
+        if active_pool_volume_names.include?(volume.id)
+          active += 1
+          next
+        end
+
+        if remove_volume(volume, nil)
+          removed += 1
+        else
+          failed += 1
+        end
+        next
+      end
+
       agent_run_id = volume.id.delete_prefix(VOLUME_PREFIX)
       if active_ids.include?(agent_run_id)
         active += 1
@@ -168,7 +202,7 @@ class DockerOrphanCleanupJob < ApplicationJob
   end
 
   def list_paid_volumes
-    Docker::Volume.all.select { |v| v.id.start_with?(VOLUME_PREFIX) }
+    Docker::Volume.all.select { |v| v.id.start_with?(VOLUME_PREFIX) || v.id.start_with?(POOL_VOLUME_PREFIX) }
   rescue Docker::Error::DockerError => e
     Rails.logger.error(
       message: "container_manager.volume_list_failed",
@@ -190,5 +224,37 @@ class DockerOrphanCleanupJob < ApplicationJob
       error: e.message
     )
     false
+  end
+
+  def pool_entry_active?(entry)
+    return true if entry.status == "warm"
+    return entry.created_at >= ContainerPoolEntry::WARMING_STALE_AFTER.ago if entry.status == "warming"
+
+    claimed_pool_entry_active?(entry)
+  end
+
+  def active_pool_volume_names
+    @active_pool_volume_names ||= begin
+      warm_names = ContainerPoolEntry.warm.pluck(:workspace_volume)
+      warming_names = ContainerPoolEntry.active_warming.pluck(:workspace_volume)
+      claimed_names = active_claimed_pool_entries.pluck(:workspace_volume)
+
+      (warm_names + warming_names + claimed_names).to_set
+    end
+  end
+
+  def claimed_pool_entry_active?(entry)
+    agent_run = entry.agent_run
+    agent_run&.status.in?(AgentRun::UNFINISHED_STATUSES) || agent_run&.container_retained?
+  end
+
+  def active_claimed_pool_entries
+    ContainerPoolEntry.claimed
+      .joins(:agent_run)
+      .where(
+        AgentRun.arel_table[:status].in(AgentRun::UNFINISHED_STATUSES).or(
+          AgentRun.arel_table[:container_retained_until].gt(Time.current)
+        )
+      )
   end
 end

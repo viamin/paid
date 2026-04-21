@@ -5,6 +5,7 @@ require "rails_helper"
 RSpec.describe DockerOrphanCleanupJob do
   let(:job) { described_class.new }
   let(:agent_filter) { { label: [ "paid.agent_run_id" ] }.to_json }
+  let(:pool_filter) { { label: [ "paid.container_pool=true" ] }.to_json }
   let(:service_filter) { { label: [ "paid.service_container=true" ] }.to_json }
 
   def stub_no_containers
@@ -18,6 +19,12 @@ RSpec.describe DockerOrphanCleanupJob do
   def stub_agent_containers(*containers)
     allow(Docker::Container).to receive(:all)
       .with(all: true, filters: agent_filter)
+      .and_return(containers)
+  end
+
+  def stub_pool_containers(*containers)
+    allow(Docker::Container).to receive(:all)
+      .with(all: true, filters: pool_filter)
       .and_return(containers)
   end
 
@@ -39,6 +46,7 @@ RSpec.describe DockerOrphanCleanupJob do
       before do
         stub_no_volumes
         stub_service_containers
+        stub_pool_containers
       end
 
       it "removes containers for finished agent runs" do
@@ -148,6 +156,7 @@ RSpec.describe DockerOrphanCleanupJob do
       before do
         stub_no_volumes
         stub_agent_containers
+        stub_pool_containers
       end
 
       it "removes service containers with zero active agent runs" do
@@ -194,6 +203,55 @@ RSpec.describe DockerOrphanCleanupJob do
       end
     end
 
+    context "with pool containers" do
+      before do
+        stub_no_volumes
+        stub_agent_containers
+        stub_service_containers
+      end
+
+      it "skips fresh warming pool containers" do
+        entry = create(:container_pool_entry, :warming)
+        container = make_container(labels: {
+          "paid.container_pool" => "true",
+          "paid.container_pool_entry_id" => entry.id.to_s
+        })
+        stub_pool_containers(container)
+
+        job.perform
+
+        expect(container).not_to have_received(:delete)
+      end
+
+      it "removes stale warming pool containers" do
+        entry = create(:container_pool_entry, :warming, created_at: 1.hour.ago)
+        container = make_container(labels: {
+          "paid.container_pool" => "true",
+          "paid.container_pool_entry_id" => entry.id.to_s
+        })
+        stub_pool_containers(container)
+
+        job.perform
+
+        expect(container).to have_received(:delete).with(force: true, v: true)
+        expect(ContainerPoolEntry.exists?(entry.id)).to be(false)
+      end
+
+      it "skips claimed pool containers for retained agent runs" do
+        retained_run = create(:agent_run, :failed, container_retained_until: 2.hours.from_now)
+        entry = create(:container_pool_entry, :claimed, agent_run: retained_run)
+        container = make_container(labels: {
+          "paid.container_pool" => "true",
+          "paid.container_pool_entry_id" => entry.id.to_s
+        })
+        stub_pool_containers(container)
+
+        job.perform
+
+        expect(container).not_to have_received(:delete)
+      end
+    end
+
     context "with volumes" do
       before { stub_no_containers }
 
@@ -215,6 +273,49 @@ RSpec.describe DockerOrphanCleanupJob do
         job.perform
 
         expect(volume).not_to have_received(:remove)
+      end
+
+      it "skips claimed pool volumes for active agent runs" do
+        running_run = create(:agent_run, status: "running")
+        entry = create(:container_pool_entry, :claimed, agent_run: running_run)
+        volume = instance_double(Docker::Volume, id: entry.workspace_volume, remove: true)
+        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+
+        job.perform
+
+        expect(volume).not_to have_received(:remove)
+      end
+
+      it "removes claimed pool volumes for finished agent runs" do
+        completed_run = create(:agent_run, :completed)
+        entry = create(:container_pool_entry, :claimed, agent_run: completed_run)
+        volume = instance_double(Docker::Volume, id: entry.workspace_volume, remove: true)
+        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+
+        job.perform
+
+        expect(volume).to have_received(:remove)
+      end
+
+      it "skips claimed pool volumes for retained agent runs" do
+        retained_run = create(:agent_run, :failed, container_retained_until: 2.hours.from_now)
+        entry = create(:container_pool_entry, :claimed, agent_run: retained_run)
+        volume = instance_double(Docker::Volume, id: entry.workspace_volume, remove: true)
+        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+
+        job.perform
+
+        expect(volume).not_to have_received(:remove)
+      end
+
+      it "removes stale warming pool volumes" do
+        entry = create(:container_pool_entry, :warming, created_at: 1.hour.ago)
+        volume = instance_double(Docker::Volume, id: entry.workspace_volume, remove: true)
+        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+
+        job.perform
+
+        expect(volume).to have_received(:remove)
       end
 
       it "removes volumes with no matching agent run" do
