@@ -203,6 +203,41 @@ RSpec.describe DockerOrphanCleanupJob do
       end
     end
 
+    context "with pool containers" do
+      before do
+        stub_no_volumes
+        stub_agent_containers
+        stub_service_containers
+      end
+
+      it "skips fresh warming pool containers" do
+        entry = create(:container_pool_entry, :warming)
+        container = make_container(labels: {
+          "paid.container_pool" => "true",
+          "paid.container_pool_entry_id" => entry.id.to_s
+        })
+        stub_pool_containers(container)
+
+        job.perform
+
+        expect(container).not_to have_received(:delete)
+      end
+
+      it "removes stale warming pool containers" do
+        entry = create(:container_pool_entry, :warming, created_at: 1.hour.ago)
+        container = make_container(labels: {
+          "paid.container_pool" => "true",
+          "paid.container_pool_entry_id" => entry.id.to_s
+        })
+        stub_pool_containers(container)
+
+        job.perform
+
+        expect(container).to have_received(:delete).with(force: true, v: true)
+        expect(ContainerPoolEntry.exists?(entry.id)).to be(false)
+      end
+    end
+
     context "with volumes" do
       before { stub_no_containers }
 
@@ -240,6 +275,16 @@ RSpec.describe DockerOrphanCleanupJob do
       it "removes claimed pool volumes for finished agent runs" do
         completed_run = create(:agent_run, :completed)
         entry = create(:container_pool_entry, :claimed, agent_run: completed_run)
+        volume = instance_double(Docker::Volume, id: entry.workspace_volume, remove: true)
+        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+
+        job.perform
+
+        expect(volume).to have_received(:remove)
+      end
+
+      it "removes stale warming pool volumes" do
+        entry = create(:container_pool_entry, :warming, created_at: 1.hour.ago)
         volume = instance_double(Docker::Volume, id: entry.workspace_volume, remove: true)
         allow(Docker::Volume).to receive(:all).and_return([ volume ])
 

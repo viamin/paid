@@ -76,7 +76,7 @@ module Containers
 
       with_project_replenishment_lock do
         cleanup_claimed_finished_runs
-        cleanup_stale_warm_entries
+        cleanup_stale_pool_entries
         missing_count.times { warm_one }
       end
     end
@@ -160,15 +160,27 @@ module Containers
       end
     end
 
-    def cleanup_stale_warm_entries
+    def cleanup_stale_pool_entries
+      project.container_pool_entries.stale_warming.find_each do |entry|
+        remove_error_entry(entry, "warming container did not finish before stale threshold")
+      end
+
       current_pool_entries.warm.find_each do |entry|
         remove_error_entry(entry, "warm container is not running") unless container_running?(entry.container_id)
       end
     end
 
     def current_pool_entries
-      project.container_pool_entries
-        .where(status: %w[warm warming], image: Provision::DEFAULTS[:image], network: pool_network_name)
+      project.container_pool_entries.where(
+        image: Provision::DEFAULTS[:image],
+        network: pool_network_name
+      ).where(
+        ContainerPoolEntry.arel_table[:status].eq("warm").or(
+          ContainerPoolEntry.arel_table[:status].eq("warming").and(
+            ContainerPoolEntry.arel_table[:created_at].gteq(ContainerPoolEntry::WARMING_STALE_AFTER.ago)
+          )
+        )
+      )
     end
 
     def with_project_replenishment_lock

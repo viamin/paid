@@ -182,6 +182,24 @@ RSpec.describe Containers::PoolManager do
       expect(project.container_pool_entries.warm.sole.container_id).to eq("warm-2")
     end
 
+    it "removes stale warming entries before counting pool capacity" do
+      stale_entry = create(:container_pool_entry, :warming, project: project, created_at: 1.hour.ago)
+      volume = instance_double(Docker::Volume, remove: true)
+      provision = instance_double(Containers::Provision)
+
+      allow(Docker::Volume).to receive(:get).with(stale_entry.workspace_volume).and_return(volume)
+      allow(Containers::Provision).to receive(:new).and_return(provision)
+      allow(provision).to receive_messages(
+        network_name: "paid_agent",
+        provision: Containers::Provision::Result.success(container_id: "warm-3")
+      )
+
+      described_class.new(project: project, target_size: 1).replenish
+
+      expect(ContainerPoolEntry.exists?(stale_entry.id)).to be(false)
+      expect(project.container_pool_entries.warm.sole.container_id).to eq("warm-3")
+    end
+
     it "removes entries when provisioning fails" do
       provision = instance_double(Containers::Provision)
       volume = instance_double(Docker::Volume, remove: true)

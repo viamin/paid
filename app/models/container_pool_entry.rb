@@ -2,6 +2,7 @@
 
 class ContainerPoolEntry < ApplicationRecord
   STATUSES = %w[warming warm claimed error].freeze
+  WARMING_STALE_AFTER = 15.minutes
 
   belongs_to :project
   belongs_to :agent_run, optional: true
@@ -15,5 +16,7 @@ class ContainerPoolEntry < ApplicationRecord
   scope :warm, -> { where(status: "warm") }
   scope :claimed, -> { where(status: "claimed") }
   scope :warming, -> { where(status: "warming") }
+  scope :active_warming, -> { warming.where(created_at: WARMING_STALE_AFTER.ago..) }
+  scope :stale_warming, -> { warming.where(created_at: ...WARMING_STALE_AFTER.ago) }
   scope :errored, -> { where(status: "error") }
 end
