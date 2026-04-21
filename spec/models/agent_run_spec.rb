@@ -2154,6 +2154,111 @@ RSpec.describe AgentRun do
     it "returns empty string when no stdout logs exist" do
       expect(agent_run.agent_summary).to eq("")
     end
+
+    it "extracts text from Codex-style JSONL item.completed events" do
+      events = [
+        { "type" => "item.completed", "item" => { "role" => "assistant", "content" => [ { "type" => "output_text", "text" => "Here is my analysis of the codebase." } ] } },
+        { "type" => "item.completed", "item" => { "role" => "assistant", "content" => [ { "type" => "output_text", "text" => "Done. Here's a summary:\n- Fixed the bug\n- Added tests" } ] } }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("Done. Here's a summary:\n- Fixed the bug\n- Added tests")
+    end
+
+    it "extracts text from JSONL turn.completed with result" do
+      events = [
+        { "type" => "message.delta", "delta" => { "content" => [ { "type" => "output_text_delta", "text" => "Working" } ] } },
+        { "type" => "turn.completed", "result" => "Final answer from the agent" }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("Final answer from the agent")
+    end
+
+    it "extracts text from JSONL agent_message events" do
+      events = [
+        { "type" => "message.delta", "delta" => {} },
+        { "type" => "agent_message", "role" => "assistant", "item_type" => "assistant_message", "content" => [ { "type" => "output_text", "text" => "Agent response text" } ] }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("Agent response text")
+    end
+
+    it "extracts text from JSONL event_msg wrapped events" do
+      events = [
+        { "type" => "message.delta", "delta" => {} },
+        { "type" => "event_msg", "payload" => { "type" => "agent_message", "role" => "assistant", "item_type" => "assistant_message", "content" => [ { "type" => "output_text", "text" => "Wrapped response" } ] } }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("Wrapped response")
+    end
+
+    it "extracts text from JSONL response_item events" do
+      events = [
+        { "type" => "message.delta", "delta" => {} },
+        { "type" => "response_item", "payload" => { "role" => "assistant", "item_type" => "assistant_message", "content" => [ { "type" => "output_text", "text" => "Response item text" } ] } }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("Response item text")
+    end
+
+    it "handles JSONL split across multiple log chunks" do
+      chunk1 = { "type" => "message.delta", "delta" => {} }.to_json
+      chunk2 = { "type" => "item.completed", "item" => { "role" => "assistant", "content" => [ { "type" => "output_text", "text" => "Chunked output" } ] } }.to_json
+
+      agent_run.log!("stdout", chunk1)
+      agent_run.log!("stdout", chunk2)
+
+      expect(agent_run.agent_summary).to eq("Chunked output")
+    end
+
+    it "returns raw stdout when JSONL has fewer than 2 JSON lines" do
+      agent_run.log!("stdout", '{"type":"single","data":"value"}')
+
+      expect(agent_run.agent_summary).to eq('{"type":"single","data":"value"}')
+    end
+
+    it "prefers Anthropic envelope when stdout is a single JSON object" do
+      envelope = {
+        type: "result",
+        is_error: false,
+        result: "Anthropic result"
+      }.to_json
+
+      agent_run.log!("stdout", envelope)
+
+      expect(agent_run.agent_summary).to eq("Anthropic result")
+    end
+
+    it "extracts text from JSONL turn.completed with last_agent_message string" do
+      events = [
+        { "type" => "message.delta", "delta" => {} },
+        { "type" => "turn.completed", "last_agent_message" => "Direct string message" }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("Direct string message")
+    end
+
+    it "extracts text from JSONL item with text field directly" do
+      events = [
+        { "type" => "agent_message", "role" => "assistant", "text" => "Direct text field" },
+        { "type" => "item.completed", "item" => { "role" => "assistant", "text" => "Item text field" } }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("Item text field")
+    end
   end
 
   describe "#phase_summary" do
