@@ -53,6 +53,8 @@ module Activities
       upstream_issue = input[:upstream_issue]
       body_override = input[:body_override]
       agent_run = AgentRun.find(agent_run_id)
+      return result(agent_run) if agent_run.finished?
+
       track_phase(agent_run_id: agent_run_id, phase_key: "create_github_issue", phase_group: "post", agent_run: agent_run) do
         project = agent_run.project
 
@@ -74,13 +76,20 @@ module Activities
           labels: issue_labels
         )
 
-        sync_issue_record(project, gh_issue)
+        completed = agent_run.complete!(issue_url: gh_issue.html_url, issue_number: gh_issue.number)
+        unless completed
+          logger.info(
+            message: "agent_execution.github_issue_completion_skipped",
+            agent_run_id: agent_run_id,
+            status: agent_run.reload.status,
+            issue_url: gh_issue.html_url
+          )
 
-        if upstream_issue
-          record_cross_repo_issue(agent_run, project.full_name, gh_issue, role: "downstream")
+          return result(agent_run)
         end
 
-        agent_run.complete!(issue_url: gh_issue.html_url, issue_number: gh_issue.number)
+        sync_issue_record(project, gh_issue)
+        record_cross_repo_issue(agent_run, project.full_name, gh_issue, role: "downstream") if upstream_issue
 
         agent_run.log!("system", "Issue created: #{gh_issue.html_url}")
 
@@ -97,6 +106,14 @@ module Activities
     end
 
     private
+
+    def result(agent_run)
+      {
+        agent_run_id: agent_run.id,
+        issue_url: agent_run.created_issue_url,
+        issue_number: agent_run.created_issue_number
+      }
+    end
 
     def extract_title(summary, _custom_prompt = nil)
       # Try first markdown heading (any level) from agent output

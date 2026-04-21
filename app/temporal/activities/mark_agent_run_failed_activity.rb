@@ -8,10 +8,11 @@ module Activities
       agent_run_id = input[:agent_run_id]
       error = input[:error]
       agent_run = AgentRun.find(agent_run_id)
+      finished_before_failure = agent_run.finished?
 
       # Don't overwrite a more specific terminal status (e.g. "timeout")
       # that was already set by the activity that detected the failure.
-      if agent_run.finished?
+      if finished_before_failure
         agent_run.log!("system", "Agent run already #{agent_run.status}, skipping fail! (error: #{error})")
       else
         agent_run.fail!(error: error)
@@ -29,7 +30,7 @@ module Activities
       # marking it "failed" — the underlying PR work succeeded; only the
       # follow-up review run failed. Using "completed" keeps auto-pick
       # unblocked and lets the scanner re-evaluate the PR on the next cycle.
-      if agent_run.issue
+      if agent_run.issue && !finished_before_failure
         target_state = agent_run.review_goal? ? "completed" : "failed"
         if agent_run.issue.paid_state != target_state
           agent_run.issue.update!(paid_state: target_state)

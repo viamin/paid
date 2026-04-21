@@ -31,19 +31,22 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
+      return result(agent_run) if agent_run.finished?
+
       track_phase(agent_run_id: agent_run_id, phase_key: "complete_existing_pr_run", phase_group: "post", agent_run: agent_run) do
         project = agent_run.project
         client = project.github_token.client
 
         pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
 
-        agent_run.complete!(
+        completed = agent_run.complete!(
           result_commit: agent_run.result_commit_sha,
           pr_url: pr.html_url,
           pr_number: pr.number
         )
-        record_draft_review_round_if_needed(agent_run)
+        return result(agent_run.reload) unless completed
 
+        record_draft_review_round_if_needed(agent_run)
         post_update_comment(client, project, pr.number, agent_run)
 
         agent_run.log!("system", "Pushed updates to existing PR: #{pr.html_url}")
@@ -61,12 +64,20 @@ module Activities
 
         ProcessRunQueueJob.perform_later
 
-        { agent_run_id: agent_run_id, pull_request_url: pr.html_url, pull_request_number: pr.number,
-          pr_review_phase: agent_run.issue&.pr_review_phase }
+        result(agent_run)
       end
     end
 
     private
+
+    def result(agent_run)
+      {
+        agent_run_id: agent_run.id,
+        pull_request_url: agent_run.pull_request_url,
+        pull_request_number: agent_run.pull_request_number,
+        pr_review_phase: agent_run.issue&.pr_review_phase
+      }
+    end
 
     def post_update_comment(client, project, pr_number, agent_run)
       body = build_comment_body(agent_run)

@@ -165,6 +165,18 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
+    it "does not create an issue when the run is already cancelled" do
+      agent_run.cancel!
+
+      expect(github_client).not_to receive(:create_issue)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:agent_run_id]).to eq(agent_run.id)
+      expect(result[:issue_url]).to be_nil
+      expect(agent_run.reload.status).to eq("cancelled")
+    end
+
     it "uses first markdown heading as title when agent output has one" do
       agent_run.log!("stdout", "# Authentication System Analysis\n\nThe auth system uses JWT tokens.")
 

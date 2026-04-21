@@ -44,6 +44,18 @@ RSpec.describe Activities::CompleteIssueGoalActivity do
         expect { activity.execute(agent_run_id: agent_run.id) }
           .to have_enqueued_job(ProcessRunQueueJob)
       end
+
+      it "does not log or enqueue when the run is already cancelled" do
+        agent_run = create(:agent_run, :cancelled, project: project,
+          created_issue_url: "https://github.com/example/repo/issues/42",
+          created_issue_number: 42)
+
+        expect {
+          expect {
+            activity.execute(agent_run_id: agent_run.id)
+          }.not_to change(AgentRunLog, :count)
+        }.not_to have_enqueued_job(ProcessRunQueueJob)
+      end
     end
 
     context "when the agent did not create an issue" do
