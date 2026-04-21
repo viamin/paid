@@ -40,7 +40,7 @@ module Activities
       gh_issue = client.issue(project.full_name, issue.github_number)
       comments = client.issue_comments(project.full_name, issue.github_number)
       existing_comment = enhancement_comment(comments)
-      return complete_existing(agent_run, existing_comment) if existing_comment && issue.enhance_issue_rounds.zero?
+      return complete_existing(agent_run, client, project, issue, existing_comment) if existing_comment && issue.enhance_issue_rounds.zero?
 
       context = build_context(project, issue)
       response = call_llm(agent_run, prompt_for(project, gh_issue, comments, context))
@@ -79,8 +79,8 @@ module Activities
       }
     end
 
-    def complete_existing(agent_run, existing_comment)
-      issue = agent_run.issue
+    def complete_existing(agent_run, client, project, issue, existing_comment)
+      label_result = reconcile_existing_label_state(client, project, issue, existing_comment)
       complete_run!(agent_run, existing_paid_state(issue, existing_comment))
       agent_run.log!("system", "Enhancement comment already exists: #{existing_comment.html_url}")
       ProcessRunQueueJob.perform_later
@@ -89,9 +89,23 @@ module Activities
         agent_run_id: agent_run.id,
         issue_number: issue.github_number,
         comment_url: existing_comment.html_url,
-        sufficient_context: nil,
+        sufficient_context: label_result[:sufficient_context],
+        label_applied: label_result[:applied],
+        max_rounds_reached: label_result[:max_rounds_reached],
         already_enhanced: true
       }
+    end
+
+    def reconcile_existing_label_state(client, project, issue, existing_comment)
+      if existing_comment.body.to_s.include?("## Auto-enhancement stopped")
+        removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
+        merge_local_labels(issue, remove: removed)
+        return { applied: nil, max_rounds_reached: true, sufficient_context: false }
+      end
+
+      sufficient_context = !existing_comment.body.to_s.include?("## Clarifying questions")
+      result = apply_label_state(client, project, issue, sufficient_context: sufficient_context)
+      result.merge(sufficient_context: sufficient_context)
     end
 
     def existing_paid_state(issue, existing_comment)

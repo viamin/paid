@@ -248,6 +248,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(AgentHarness).not_to have_received(:send_message)
       expect(agent_run.reload.status).to eq("completed")
       expect(issue.reload.paid_state).to eq("completed")
+      expect(issue.labels).to include(project.enhance_issue_enhanced_label_name)
     end
 
     it "keeps an existing clarifying-question enhancement in needs_input" do
@@ -265,6 +266,68 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(AgentHarness).not_to have_received(:send_message)
       expect(agent_run.reload.status).to eq("completed")
       expect(issue.reload.paid_state).to eq("needs_input")
+    end
+
+    it "reconciles the needs-input label after a prior comment-only retry" do
+      existing_comment = OpenStruct.new(
+        body: "#{described_class::COMMENT_MARKER}\n## Clarifying questions\n1. Which events should be recorded?",
+        html_url: "https://github.com/owner/repo/issues/42#issuecomment-0"
+      )
+      allow(client).to receive(:issue_comments).and_return([ existing_comment ])
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:already_enhanced]).to be true
+      expect(result[:sufficient_context]).to be false
+      expect(result[:label_applied]).to eq(project.enhance_issue_needs_input_label_name)
+      expect(client).not_to have_received(:add_comment)
+      expect(AgentHarness).not_to have_received(:send_message)
+      expect_label_added(project.enhance_issue_needs_input_label_name)
+      expect(agent_run.reload.status).to eq("completed")
+      expect(issue.reload.paid_state).to eq("needs_input")
+      expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
+    end
+
+    it "reconciles the enhanced label after a prior comment-only retry" do
+      existing_comment = OpenStruct.new(
+        body: "#{described_class::COMMENT_MARKER}\n## Implementation context\n### Relevant files and symbols\n- `app/models/audit_log.rb`",
+        html_url: "https://github.com/owner/repo/issues/42#issuecomment-0"
+      )
+      allow(client).to receive(:issue_comments).and_return([ existing_comment ])
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:already_enhanced]).to be true
+      expect(result[:sufficient_context]).to be true
+      expect(result[:label_applied]).to eq(project.enhance_issue_enhanced_label_name)
+      expect(client).not_to have_received(:add_comment)
+      expect(AgentHarness).not_to have_received(:send_message)
+      expect_label_added(project.enhance_issue_enhanced_label_name)
+      expect(agent_run.reload.status).to eq("completed")
+      expect(issue.reload.paid_state).to eq("completed")
+      expect(issue.labels).to include(project.enhance_issue_enhanced_label_name)
+    end
+
+    it "keeps retrying an existing clarifying-question enhancement when label reconciliation fails" do
+      existing_comment = OpenStruct.new(
+        body: "#{described_class::COMMENT_MARKER}\n## Clarifying questions\n1. Which events should be recorded?",
+        html_url: "https://github.com/owner/repo/issues/42#issuecomment-0"
+      )
+      allow(client).to receive(:issue_comments).and_return([ existing_comment ])
+      allow(client).to receive(:add_labels_to_issue).and_raise(GithubClient::Error.new("GitHub unavailable"))
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(
+        Temporalio::Error::ApplicationError,
+        "Failed to apply enhance_issue control label #{project.enhance_issue_needs_input_label_name}"
+      )
+
+      expect(client).not_to have_received(:add_comment)
+      expect(AgentHarness).not_to have_received(:send_message)
+      expect(agent_run.reload.status).to eq("running")
+      expect(issue.reload.paid_state).to eq("in_progress")
+      expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
     end
 
     it "keeps an existing max-round stop comment completed" do
