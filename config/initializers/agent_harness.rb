@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "agent_harness"
+require Rails.root.join("lib/agent_harness/providers/codex_jsonl_transcript").to_s
 require Rails.root.join("lib/provider_support").to_s
 
 # Default agent timeout used for AgentHarness boot-time config and as a

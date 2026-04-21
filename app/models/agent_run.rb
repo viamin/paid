@@ -1120,94 +1120,26 @@ class AgentRun < ApplicationRecord
       end
     end
 
-    jsonl_text = extract_text_from_jsonl(raw_stdout)
+    jsonl_text = extract_text_from_jsonl_transcript(raw_stdout)
     jsonl_text || raw_stdout
   end
 
-  def extract_text_from_jsonl(raw_stdout)
-    return nil if raw_stdout.blank?
-
-    lines = []
-    raw_stdout.each_line do |line|
-      line = line.strip
-      next if line.empty?
-
-      lines.shift if lines.size >= 500
-      lines << line
-    end
-
+  def extract_text_from_jsonl_transcript(raw_stdout)
+    lines = tail_nonempty_lines(raw_stdout, limit: 500)
     return nil unless lines.size >= 2
 
-    last_assistant_text = nil
-    event_count = 0
-
-    lines.reverse_each do |line|
-      event = JSON.parse(line)
-      return nil unless event.is_a?(Hash)
-
-      event_count += 1
-      text = extract_jsonl_event_text(event)
-      last_assistant_text ||= text
-      break if last_assistant_text && event_count >= 2
-    rescue JSON::ParserError
-      next
-    end
-
-    return nil unless event_count >= 2
-
-    last_assistant_text
+    parsed = AgentHarness::Providers::Codex.parse_cli_jsonl_transcript(lines.join("\n"))
+    parsed[:text].presence if parsed
   end
 
-  def extract_jsonl_event_text(event)
-    type = event["type"]
+  def tail_nonempty_lines(text, limit:)
+    text.each_line.each_with_object([]) do |line, lines|
+      stripped = line.strip
+      next if stripped.empty?
 
-    case type
-    when "item.completed"
-      extract_item_text(event["item"])
-    when "agent_message"
-      extract_item_text(event)
-    when "turn.completed", "task_complete", "turn_complete"
-      extract_turn_result(event) || extract_item_text(event)
-    when "response_item"
-      extract_item_text(event["payload"])
-    when "event_msg"
-      extract_jsonl_event_text(event["payload"]) if event["payload"].is_a?(Hash)
+      lines.shift if lines.size >= limit
+      lines << stripped
     end
-  end
-
-  def extract_item_text(item)
-    return nil unless item.is_a?(Hash)
-    return nil unless item["role"] == "assistant" ||
-      item["type"] == "agent_message" ||
-      item["item_type"] == "assistant_message"
-
-    text = item["text"]
-    return text if text.is_a?(String) && !text.empty?
-
-    message = item["message"]
-    return message if message.is_a?(String) && !message.empty?
-
-    content = item["content"]
-    return nil unless content.is_a?(Array)
-
-    parts = content.filter_map do |block|
-      next unless block.is_a?(Hash)
-      block_type = block["type"]
-      next unless block_type.nil? || block_type == "output_text" || block_type == "output_text_delta"
-      block["text"] if block["text"].is_a?(String) && !block["text"].empty?
-    end
-
-    parts.empty? ? nil : parts.join
-  end
-
-  def extract_turn_result(event)
-    result = event["result"]
-    return result if result.is_a?(String) && !result.empty?
-
-    last_msg = event["last_agent_message"]
-    return last_msg if last_msg.is_a?(String) && !last_msg.empty?
-    return extract_item_text(last_msg) if last_msg.is_a?(Hash)
-    nil
   end
 
   def normalize_log_content(content)
