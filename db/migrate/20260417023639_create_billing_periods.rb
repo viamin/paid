@@ -1,7 +1,24 @@
 # frozen_string_literal: true
 
 class CreateBillingPeriods < ActiveRecord::Migration[8.1]
-  def change
+  def up
+    create_billing_periods unless table_exists?(:billing_periods)
+
+    add_foreign_key :billing_periods, :accounts unless foreign_key_exists?(:billing_periods, :accounts)
+    add_foreign_key :billing_periods, :billing_plans unless foreign_key_exists?(:billing_periods, :billing_plans)
+    add_index :billing_periods, :account_id unless index_exists?(:billing_periods, :account_id)
+    add_index :billing_periods, :billing_plan_id unless index_exists?(:billing_periods, :billing_plan_id)
+    add_index :billing_periods, [ :account_id, :status ] unless index_exists?(:billing_periods, [ :account_id, :status ])
+    add_index :billing_periods, [ :account_id, :starts_at, :ends_at ] unless index_exists?(:billing_periods, [ :account_id, :starts_at, :ends_at ])
+  end
+
+  def down
+    drop_table :billing_periods, if_exists: true
+  end
+
+  private
+
+  def create_billing_periods
     create_table :billing_periods do |t|
       t.references :account, null: false, foreign_key: true
       t.references :billing_plan, null: false, foreign_key: true
@@ -18,8 +35,5 @@ class CreateBillingPeriods < ActiveRecord::Migration[8.1]
 
       t.timestamps
     end
-
-    add_index :billing_periods, [ :account_id, :status ]
-    add_index :billing_periods, [ :account_id, :starts_at, :ends_at ]
   end
 end

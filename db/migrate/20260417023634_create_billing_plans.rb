@@ -1,7 +1,21 @@
 # frozen_string_literal: true
 
 class CreateBillingPlans < ActiveRecord::Migration[8.1]
-  def change
+  def up
+    create_billing_plans unless table_exists?(:billing_plans)
+
+    add_foreign_key :billing_plans, :accounts unless foreign_key_exists?(:billing_plans, :accounts)
+    add_index :billing_plans, :account_id unless index_exists?(:billing_plans, :account_id)
+    add_index :billing_plans, [ :account_id, :active ] unless index_exists?(:billing_plans, [ :account_id, :active ])
+  end
+
+  def down
+    drop_table :billing_plans, if_exists: true
+  end
+
+  private
+
+  def create_billing_plans
     create_table :billing_plans do |t|
       t.references :account, null: false, foreign_key: true
       t.string :name, null: false, limit: 100
@@ -19,7 +33,5 @@ class CreateBillingPlans < ActiveRecord::Migration[8.1]
 
       t.timestamps
     end
-
-    add_index :billing_plans, [ :account_id, :active ]
   end
 end

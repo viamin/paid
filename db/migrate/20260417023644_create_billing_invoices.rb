@@ -1,7 +1,24 @@
 # frozen_string_literal: true
 
 class CreateBillingInvoices < ActiveRecord::Migration[8.1]
-  def change
+  def up
+    create_billing_invoices unless table_exists?(:billing_invoices)
+
+    add_foreign_key :billing_invoices, :accounts unless foreign_key_exists?(:billing_invoices, :accounts)
+    add_foreign_key :billing_invoices, :billing_periods unless foreign_key_exists?(:billing_invoices, :billing_periods)
+    add_index :billing_invoices, :account_id unless index_exists?(:billing_invoices, :account_id)
+    add_index :billing_invoices, :billing_period_id unless index_exists?(:billing_invoices, :billing_period_id)
+    add_external_id_index unless index_exists?(:billing_invoices, :external_id, name: "index_billing_invoices_on_external_id")
+    add_index :billing_invoices, [ :account_id, :status ] unless index_exists?(:billing_invoices, [ :account_id, :status ])
+  end
+
+  def down
+    drop_table :billing_invoices, if_exists: true
+  end
+
+  private
+
+  def create_billing_invoices
     create_table :billing_invoices do |t|
       t.references :account, null: false
       t.references :billing_period, null: false, foreign_key: true
@@ -17,9 +34,9 @@ class CreateBillingInvoices < ActiveRecord::Migration[8.1]
 
       t.timestamps
     end
+  end
 
-    add_foreign_key :billing_invoices, :accounts
+  def add_external_id_index
     add_index :billing_invoices, :external_id, unique: true, where: "external_id IS NOT NULL"
-    add_index :billing_invoices, [ :account_id, :status ]
   end
 end
