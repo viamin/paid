@@ -173,7 +173,7 @@ module Containers
         end
       end
 
-      agent_run.update!(service_container_ids: [])
+      agent_run.update_columns(service_container_ids: [])
     end
 
     private

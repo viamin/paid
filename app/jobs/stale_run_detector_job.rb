@@ -353,8 +353,8 @@ class StaleRunDetectorJob < ApplicationJob
   # Assigns the captured state back onto the in-memory agent_run so
   # ServiceProvisioner#cleanup can read the exact services and database name
   # provisioned for the old attempt (the DB record was already cleared inside
-  # the lock). The provisioner's final update! to clear service_container_ids
-  # is harmless since they're already empty in the DB.
+  # the lock). The provisioner clears only the service_container_ids column
+  # so the restored service_environment is not persisted back to the DB.
   def cleanup_service_containers(agent_run, old_service_container_ids, old_service_environment)
     begin
       # Restore captured IDs in memory so the provisioner can read them;

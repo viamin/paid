@@ -568,6 +568,26 @@ RSpec.describe Containers::ServiceProvisioner do
       expect(agent_run.reload.service_container_ids).to eq([])
     end
 
+    it "does not persist other dirty attributes while clearing service containers" do
+      agent_run = create(:agent_run, :completed, project: project, issue: issue,
+        service_container_ids: [ service_container.id ],
+        service_environment: nil)
+      old_environment = { "DATABASE_URL" => "postgres://agent:agent@pg:5432/old_attempt" }
+      docker_container = instance_double(Docker::Container)
+
+      allow(Docker::Container).to receive(:get)
+        .with(service_container.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive(:exec).and_return([ [], [], 0 ])
+      allow(docker_container).to receive(:stop)
+      allow(docker_container).to receive(:delete)
+
+      agent_run.service_environment = old_environment
+      provisioner.cleanup(agent_run)
+
+      expect(agent_run.reload.service_environment).to be_nil
+      expect(agent_run.service_container_ids).to eq([])
+    end
+
     it "leaves containers running when other runs still need them" do
       agent_run = create(:agent_run, :completed, project: project, issue: issue,
         service_container_ids: [ service_container.id ])
