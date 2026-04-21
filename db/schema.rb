@@ -630,6 +630,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_083918) do
     t.datetime "created_at", null: false
     t.datetime "deployed_at"
     t.integer "draft_review_count", default: 0, null: false
+    t.integer "enhance_issue_rounds", default: 0, null: false
     t.datetime "github_created_at", null: false
     t.string "github_creator_login"
     t.bigint "github_issue_id", null: false
@@ -1002,6 +1003,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_083918) do
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
+    t.string "enhance_issue_enhanced_label_name", default: "paid-enhanced", null: false
+    t.string "enhance_issue_needs_input_label_name", default: "paid-needs-input", null: false
     t.jsonb "fitness_settings", default: {}, null: false
     t.jsonb "fitness_weights", default: {}, null: false
     t.string "generated_label_name", default: "paid-generated", null: false
@@ -1016,6 +1019,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_083918) do
     t.datetime "last_issue_sync_at"
     t.datetime "last_polled_at"
     t.integer "max_draft_review_rounds", default: 10, null: false
+    t.integer "max_enhance_issue_reevaluation_rounds", default: 3, null: false
     t.integer "max_execution_seconds", default: 3600, null: false
     t.integer "max_pr_followup_runs", default: 8, null: false
     t.integer "max_tokens_per_run"

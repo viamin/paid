@@ -423,6 +423,30 @@
               <p class="mt-1 text-xs text-gray-500">Label that triggers automatic agent runs when added to issues or PRs.</p>
             </div>
 
+            <div>
+              <%= form.label :enhance_issue_needs_input_label_name, "Enhance Issue Needs Input Label", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.text_field :enhance_issue_needs_input_label_name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Label added when issue enhancement needs answers before re-evaluation.</p>
+            </div>
+
+            <div>
+              <%= form.label :enhance_issue_enhanced_label_name, "Enhanced Issue Label", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.text_field :enhance_issue_enhanced_label_name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Label added when issue enhancement has enough implementation context.</p>
+            </div>
+
+            <div>
+              <%= form.label :max_enhance_issue_reevaluation_rounds, "Max Enhance Issue Re-evaluation Rounds", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.number_field :max_enhance_issue_reevaluation_rounds, min: 0, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Maximum automatic re-evaluation rounds after users answer clarifying questions.</p>
+            </div>
+
             <% %w[P1 P2 P3].each do |tier| %>
               <div>
                 <%= form.label "priority_labels_#{tier}", "Priority Label (#{tier})", class: "block text-sm font-medium leading-6 text-gray-900" %>

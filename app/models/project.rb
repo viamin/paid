@@ -156,6 +156,10 @@ class Project < ApplicationRecord
   validates :max_draft_review_rounds, numericality: { greater_than_or_equal_to: 0 }
   validates :generated_label_name, presence: true
   validates :automation_label_name, presence: true
+  validates :enhance_issue_needs_input_label_name, presence: true
+  validates :enhance_issue_enhanced_label_name, presence: true
+  validates :max_enhance_issue_reevaluation_rounds,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0 }
 
   validates :code_scanning_interval_hours, numericality: { greater_than_or_equal_to: 24 }
   validates :knowledge_status, inclusion: { in: KNOWLEDGE_STATUSES }

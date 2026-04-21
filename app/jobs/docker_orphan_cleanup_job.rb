@@ -233,6 +233,14 @@ class DockerOrphanCleanupJob < ApplicationJob
   end
 
   def active_pool_volume_names
-    @active_pool_volume_names ||= ContainerPoolEntry.where(status: %w[warm warming claimed]).pluck(:workspace_volume).to_set
+    @active_pool_volume_names ||= begin
+      warm_names = ContainerPoolEntry.where(status: %w[warm warming]).pluck(:workspace_volume)
+      claimed_names = ContainerPoolEntry.claimed
+        .joins(:agent_run)
+        .where(agent_runs: { status: AgentRun::UNFINISHED_STATUSES })
+        .pluck(:workspace_volume)
+
+      (warm_names + claimed_names).to_set
+    end
   end
 end

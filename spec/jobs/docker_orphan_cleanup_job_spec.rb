@@ -226,6 +226,28 @@ RSpec.describe DockerOrphanCleanupJob do
         expect(volume).not_to have_received(:remove)
       end
 
+      it "skips claimed pool volumes for active agent runs" do
+        running_run = create(:agent_run, status: "running")
+        entry = create(:container_pool_entry, :claimed, agent_run: running_run)
+        volume = instance_double(Docker::Volume, id: entry.workspace_volume, remove: true)
+        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+
+        job.perform
+
+        expect(volume).not_to have_received(:remove)
+      end
+
+      it "removes claimed pool volumes for finished agent runs" do
+        completed_run = create(:agent_run, :completed)
+        entry = create(:container_pool_entry, :claimed, agent_run: completed_run)
+        volume = instance_double(Docker::Volume, id: entry.workspace_volume, remove: true)
+        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+
+        job.perform
+
+        expect(volume).to have_received(:remove)
+      end
+
       it "removes volumes with no matching agent run" do
         volume = instance_double(Docker::Volume, id: "paid-workspace-nonexistent-id", remove: true)
         allow(Docker::Volume).to receive(:all).and_return([ volume ])
