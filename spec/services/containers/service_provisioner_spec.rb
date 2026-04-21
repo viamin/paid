@@ -64,7 +64,13 @@ RSpec.describe Containers::ServiceProvisioner do
       it "reuses running containers when Docker container is alive" do
         service_container.update!(status: "running", docker_container_id: "alive123")
         alive_container = instance_double(Docker::Container,
-          info: { "State" => { "Running" => true } })
+          id: "alive123",
+          info: {
+            "State" => { "Running" => true },
+            "NetworkSettings" => {
+              "Networks" => { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ "test-postgres" ] } }
+            }
+          })
         allow(Docker::Container).to receive(:get).with("alive123").and_return(alive_container)
         allow(alive_container).to receive(:exec).and_return([ [ "(0 rows)" ], [], 0 ])
         allow(Docker::Container).to receive(:create).and_call_original
@@ -73,6 +79,57 @@ RSpec.describe Containers::ServiceProvisioner do
 
         expect(result).to include("DATABASE_URL")
         expect(Docker::Container).not_to have_received(:create)
+      end
+
+      it "connects reused running containers to the requested network with the service alias" do
+        service_container.update!(status: "running", docker_container_id: "alive123")
+        alive_container = instance_double(Docker::Container,
+          id: "alive123",
+          info: {
+            "State" => { "Running" => true },
+            "NetworkSettings" => {
+              "Networks" => { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ "test-postgres" ] } }
+            }
+          })
+        network = instance_double(Docker::Network)
+
+        allow(Docker::Container).to receive(:get).with("alive123").and_return(alive_container)
+        allow(Docker::Network).to receive(:get).with(NetworkPolicy::INFRA_NETWORK_NAME).and_return(network)
+        allow(network).to receive(:connect)
+        allow(alive_container).to receive(:exec).and_return([ [ "(0 rows)" ], [], 0 ])
+
+        provisioner.provision(agent_run, network: NetworkPolicy::INFRA_NETWORK_NAME)
+
+        expect(network).to have_received(:connect).with(
+          "alive123",
+          {},
+          "EndpointConfig" => { "Aliases" => [ "test-postgres" ] }
+        )
+      end
+
+      it "reconnects reused containers when the requested network is missing the service alias" do
+        service_container.update!(status: "running", docker_container_id: "alive123")
+        alive_container = instance_double(Docker::Container,
+          id: "alive123",
+          info: {
+            "State" => { "Running" => true },
+            "NetworkSettings" => { "Networks" => { NetworkPolicy::NETWORK_NAME => { "Aliases" => [] } } }
+          })
+        network = instance_double(Docker::Network)
+
+        allow(Docker::Container).to receive(:get).with("alive123").and_return(alive_container)
+        allow(Docker::Network).to receive(:get).with(NetworkPolicy::NETWORK_NAME).and_return(network)
+        allow(network).to receive_messages(disconnect: nil, connect: nil)
+        allow(alive_container).to receive(:exec).and_return([ [ "(0 rows)" ], [], 0 ])
+
+        provisioner.provision(agent_run)
+
+        expect(network).to have_received(:disconnect).with("alive123")
+        expect(network).to have_received(:connect).with(
+          "alive123",
+          {},
+          "EndpointConfig" => { "Aliases" => [ "test-postgres" ] }
+        )
       end
 
       it "re-provisions when Docker container is dead" do
@@ -173,7 +230,13 @@ RSpec.describe Containers::ServiceProvisioner do
 
       it "leaves the shared container record intact" do
         docker_container = instance_double(Docker::Container,
-          info: { "State" => { "Running" => true } })
+          id: "shared123",
+          info: {
+            "State" => { "Running" => true },
+            "NetworkSettings" => {
+              "Networks" => { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ "db-fail-postgres" ] } }
+            }
+          })
         allow(Docker::Container).to receive(:get).with("shared123").and_return(docker_container)
         allow(docker_container).to receive(:exec)
           .and_return([ [], [ "psql: connection refused" ], 2 ])
@@ -200,11 +263,23 @@ RSpec.describe Containers::ServiceProvisioner do
       let(:stale_json) do
         { "Config" => { "Labels" => managed_labels }, "State" => { "Running" => false } }
       end
+      let(:running_json) do
+        { "Config" => { "Labels" => managed_labels }, "State" => { "Running" => true } }
+      end
+      let(:running_container) do
+        instance_double(Docker::Container,
+          id: "running789",
+          info: {
+            "State" => { "Running" => true },
+            "NetworkSettings" => {
+              "Networks" => { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ "conflict-postgres" ] } }
+            }
+          })
+      end
 
       before do
         create(:project_service_container, project: project, service_container: service_container)
       end
-
 
       it "removes stale stopped container and retries" do
         stale = instance_double(Docker::Container, id: "stale789")
@@ -235,26 +310,46 @@ RSpec.describe Containers::ServiceProvisioner do
       end
 
       it "adopts a running container instead of deleting it" do
-        existing = instance_double(Docker::Container, id: "running789")
-        running_json = { "Config" => { "Labels" => managed_labels }, "State" => { "Running" => true } }
+        allow(Docker::Image).to receive(:create)
+        allow(Docker::Container).to receive(:create)
+          .and_raise(Docker::Error::ConflictError, "Conflict. The container name is already in use")
+        allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(running_container)
+        allow(running_container).to receive_messages(json: running_json, stop: nil, delete: nil)
+        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
+
+        # Stub per-run database creation
+        allow(Docker::Container).to receive(:get).with("running789").and_return(running_container)
+        allow(running_container).to receive(:exec).and_return([ [ "(0 rows)" ], [], 0 ])
+
+        result = provisioner.provision(agent_run)
+
+        expect(running_container).not_to have_received(:stop)
+        expect(running_container).not_to have_received(:delete)
+        expect(service_container.reload.docker_container_id).to eq("running789")
+        expect(result).to include("DATABASE_URL")
+      end
+
+      it "connects adopted running containers to the requested network with the service alias" do
+        network = instance_double(Docker::Network)
 
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create)
           .and_raise(Docker::Error::ConflictError, "Conflict. The container name is already in use")
-        allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(existing)
-        allow(existing).to receive_messages(json: running_json, stop: nil, delete: nil)
+        allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(running_container)
+        allow(Docker::Container).to receive(:get).with("running789").and_return(running_container)
+        allow(Docker::Network).to receive(:get).with(NetworkPolicy::INFRA_NETWORK_NAME).and_return(network)
+        allow(network).to receive(:connect)
+        allow(running_container).to receive_messages(json: running_json, stop: nil, delete: nil)
         allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
+        allow(running_container).to receive(:exec).and_return([ [ "(0 rows)" ], [], 0 ])
 
-        # Stub per-run database creation
-        allow(Docker::Container).to receive(:get).with("running789").and_return(existing)
-        allow(existing).to receive(:exec).and_return([ [ "(0 rows)" ], [], 0 ])
+        provisioner.provision(agent_run, network: NetworkPolicy::INFRA_NETWORK_NAME)
 
-        result = provisioner.provision(agent_run)
-
-        expect(existing).not_to have_received(:stop)
-        expect(existing).not_to have_received(:delete)
-        expect(service_container.reload.docker_container_id).to eq("running789")
-        expect(result).to include("DATABASE_URL")
+        expect(network).to have_received(:connect).with(
+          "running789",
+          {},
+          "EndpointConfig" => { "Aliases" => [ "conflict-postgres" ] }
+        )
       end
 
       it "raises when stale container is not managed by Paid" do
