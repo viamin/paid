@@ -10,6 +10,9 @@ RSpec.describe Account do
     it { is_expected.to have_many(:projects).dependent(:destroy) }
     it { is_expected.to have_many(:github_tokens).dependent(:destroy) }
     it { is_expected.to have_one(:tenant_setting).dependent(:destroy) }
+    it { is_expected.to have_many(:billing_invoices).dependent(:destroy) }
+    it { is_expected.to have_many(:billing_periods).dependent(:destroy) }
+    it { is_expected.to have_many(:billing_plans).dependent(:destroy) }
   end
 
   describe "validations" do
@@ -156,6 +159,20 @@ RSpec.describe Account do
 
     it "is true when scheduler_paused_at is set" do
       expect(create(:account, scheduler_paused_at: Time.current).scheduler_paused?).to be true
+    end
+  end
+
+  describe "dependent billing records" do
+    it "destroys invoices, periods, and plans with the account" do
+      account = create(:account)
+      plan = create(:billing_plan, account: account)
+      period = create(:billing_period, account: account, billing_plan: plan)
+      create(:billing_invoice, account: account, billing_period: period)
+
+      expect { account.destroy! }
+        .to change(BillingInvoice, :count).by(-1)
+        .and change(BillingPeriod, :count).by(-1)
+        .and change(BillingPlan, :count).by(-1)
     end
   end
 end
