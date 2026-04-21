@@ -9,7 +9,7 @@ class ServiceContainer < ApplicationRecord
   has_many :service_container_metrics, dependent: :delete_all
 
   validates :image, presence: true
-  validates :name, presence: true, uniqueness: true
+  validates :name, presence: true, uniqueness: { scope: :account_id }
   validates :port, presence: true, numericality: { only_integer: true, greater_than: 0, less_than: 65_536 }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :docker_container_id, length: { maximum: 128 }, allow_blank: true

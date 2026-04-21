@@ -23,9 +23,13 @@ class AddAccountToServiceContainers < ActiveRecord::Migration[8.1]
     SQL
 
     change_column_null :service_containers, :account_id, false
+    remove_index :service_containers, name: "index_service_containers_on_name"
+    add_index :service_containers, [ :account_id, :name ], unique: true
   end
 
   def down
+    remove_index :service_containers, [ :account_id, :name ], if_exists: true
+    add_index :service_containers, :name, unique: true unless index_exists?(:service_containers, :name, unique: true)
     remove_reference :service_containers, :account, foreign_key: true
   end
 end

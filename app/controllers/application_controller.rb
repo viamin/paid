@@ -8,8 +8,7 @@ class ApplicationController < ActionController::Base
   allow_browser versions: :modern
 
   before_action :authenticate_user!
-  before_action :set_current_attributes
-  after_action :clear_tenant_context
+  around_action :with_current_attributes
   after_action :verify_authorized, unless: :skip_pundit?
   after_action :verify_policy_scoped, if: :verify_policy_scoped?
 
@@ -17,14 +16,14 @@ class ApplicationController < ActionController::Base
 
   private
 
-  def set_current_attributes
+  def with_current_attributes
     Current.user = current_user
     Current.request_id = request.uuid
     TenantContext.apply!(current_user&.account)
-  end
-
-  def clear_tenant_context
+    yield
+  ensure
     TenantContext.clear!
+    Current.reset
   end
 
   def current_account

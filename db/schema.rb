@@ -1273,8 +1273,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_162139) do
     t.integer "port", null: false
     t.string "status", default: "stopped", null: false
     t.datetime "updated_at", null: false
+    t.index ["account_id", "name"], name: "index_service_containers_on_account_id_and_name", unique: true
     t.index ["account_id"], name: "index_service_containers_on_account_id"
-    t.index ["name"], name: "index_service_containers_on_name", unique: true
   end
 
   create_table "style_guides", force: :cascade do |t|
