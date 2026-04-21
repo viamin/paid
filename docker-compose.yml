@@ -3,11 +3,14 @@
 
 # Networks:
 #   paid_internal - For Paid infrastructure services (Rails, Temporal, Postgres)
-#   paid_agent    - Restricted network for agent containers (no default internet access)
+#                   and agent runs that require direct provider egress
+#   paid_agent    - Restricted network for proxy-mode agent containers
+#                   (no default internet access)
 #
-# Agent containers use paid_agent network with internal: true to prevent
-# default outbound access. Allowed egress (secrets proxy, GitHub) is
-# enforced via iptables rules applied by scripts/setup-agent-network.sh.
+# Proxy-mode agent containers use paid_agent with internal: true to prevent
+# default outbound access. Subscription-auth and direct-outbound provider
+# runs use paid_internal so provider CLIs can reach upstream APIs directly.
+# Allowed egress on paid_agent is enforced by NetworkPolicy iptables rules.
 
 services:
   postgres:
@@ -228,7 +231,7 @@ networks:
     name: paid_internal
     driver: bridge
 
-  # Restricted network for agent containers (API key mode).
+  # Restricted network for proxy-mode agent containers.
   # internal: true disables default internet access.
   # Explicit name: ensures NetworkPolicy::NETWORK_NAME matches.
   paid_agent:

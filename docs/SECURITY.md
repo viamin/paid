@@ -14,7 +14,7 @@ Multiple layers of protection ensure that a breach in one layer doesn't compromi
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
 │  │ Layer 1: Network Isolation                                              ││
-│  │ Containers can only reach allowlisted domains                           ││
+│  │ Proxy-mode containers can only reach allowlisted destinations           ││
 │  └─────────────────────────────────────────────────────────────────────────┘│
 │                                    │                                         │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
@@ -42,9 +42,9 @@ Agents receive only the permissions they need:
 |----------|--------------|-----------|
 | Source code | Read/Write (worktree only) | Needed for implementation |
 | GitHub API | Via proxy only | Prevents token exfiltration |
-| LLM APIs | Via proxy only | Prevents key exfiltration |
+| LLM APIs | Via proxy in proxy mode; direct HTTPS in subscription-auth and direct-outbound modes | Proxy mode prevents key exfiltration; direct modes are explicit exceptions for provider CLIs that require native upstream access |
 | File system | Worktree + temp only | No access to host |
-| Network | Allowlisted domains | Prevents data exfiltration |
+| Network | Restricted in proxy mode; provider egress allowed in subscription-auth and direct-outbound modes | Keeps the no-default-internet boundary scoped to runs that can use the secrets proxy |
 | Other containers | None | No lateral movement |
 
 ### 3. No Implicit Trust
@@ -145,7 +145,17 @@ end
 
 ### Network Isolation
 
-Containers use a dedicated network with strict egress rules:
+Paid chooses the agent Docker network from the provider auth mode:
+
+| Mode | Docker network | Default internet access | Firewall policy |
+|------|----------------|-------------------------|-----------------|
+| Proxy mode API-key auth | `paid_agent` | No | Apply in-container iptables allowlist for DNS, secrets proxy, GitHub, and service containers |
+| Subscription auth | `paid_internal` | Yes | Do not apply the restrictive firewall because the provider CLI must reach upstream provider APIs directly |
+| Direct-outbound provider auth | `paid_internal` | Yes | Do not apply the restrictive firewall because the provider runtime intentionally bypasses Paid's secrets proxy |
+
+Service containers are attached to the same Docker network selected for the agent run so database, Redis, or browser endpoints remain reachable in every mode.
+
+Proxy-mode containers use a dedicated network with strict egress rules:
 
 ```ruby
 class FirewallService

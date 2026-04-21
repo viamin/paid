@@ -672,10 +672,10 @@ Service containers are provisioned as part of the agent execution workflow via `
 
 ### Network Setup
 
-Service containers are placed on the same Docker network as the agent container. The network is selected by `NetworkPolicy.agent_network`:
+Service containers are placed on the same Docker network as the agent container. The network is selected from the same per-run contract used by `Containers::Provision`:
 
-- **`paid_agent`** — Restricted network for API-key mode. Outbound traffic is limited to the secrets proxy, GitHub, DNS, and service containers via iptables rules.
-- **`paid_internal`** — Infrastructure network for subscription-auth mode (e.g., `claude login`). Allows outbound HTTPS for direct provider API access.
+- **`paid_agent`** — Restricted network for proxy-mode API-key auth. Outbound traffic is limited to the secrets proxy, GitHub, DNS, and service containers via iptables rules.
+- **`paid_internal`** — Infrastructure network for subscription-auth mode (e.g., `claude login`) and direct-outbound provider runs. Allows outbound HTTPS for direct provider API access.
 
 Service containers register a DNS alias matching their name, so agents can reach them by hostname (e.g., `proj-postgres`, `proj-redis`).
 
