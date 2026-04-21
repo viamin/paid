@@ -451,6 +451,7 @@ module Containers
       ensure
         @container = nil
         cleanup_workspace_volume
+        cleanup_claimed_pool_entry
       end
     end
 
@@ -1167,6 +1168,13 @@ module Containers
       )
     ensure
       @workspace_volume = nil
+    end
+
+    def cleanup_claimed_pool_entry
+      return unless pool_entry&.status == "claimed"
+
+      pool_entry.destroy!
+      @pool_entry = nil
     end
 
     def volume_options
