@@ -85,6 +85,7 @@ module Containers
     def enabled_for?(agent_run)
       target_size.positive? &&
         agent_run.worktree_path.blank? &&
+        agent_run.service_container_ids.blank? &&
         run_network_name(agent_run) == pool_network_name
     end
 

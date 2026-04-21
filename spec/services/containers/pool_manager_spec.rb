@@ -70,6 +70,16 @@ RSpec.describe Containers::PoolManager do
       expect(Containers::Provision).not_to have_received(:reconnect)
     end
 
+    it "returns nil when the run has service containers" do
+      agent_run.update!(service_container_ids: [ 123 ])
+      create(:container_pool_entry, project: project)
+
+      result = described_class.new(project: project, target_size: 1).acquire(agent_run: agent_run)
+
+      expect(result).to be_nil
+      expect(Containers::Provision).not_to have_received(:reconnect)
+    end
+
     it "marks a stale warm entry as errored" do
       entry = create(:container_pool_entry, project: project)
       allow(container).to receive(:info).and_return({ "State" => { "Running" => false } })
