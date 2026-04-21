@@ -1811,6 +1811,8 @@ module Activities
         non_retryable: true
       ) unless issue
 
+      prompt = inject_knowledge_into_prompt(prompt, issue, agent_run.project)
+
       vars = {
         base_prompt: prompt,
         repo: validated_repo_name(agent_run),
@@ -1822,6 +1824,13 @@ module Activities
         variables: vars,
         fallback: -> { Prompts::Render.interpolate(FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT, vars) }
       )
+    end
+
+    def inject_knowledge_into_prompt(prompt, issue, project)
+      bundle = Knowledge::ContextBundle::Build.call(issue: issue, project: project)
+      return prompt if bundle[:content].blank?
+
+      "#{prompt}\n#{bundle[:content]}\n"
     end
 
     def validated_repo_name(agent_run)
