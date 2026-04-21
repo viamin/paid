@@ -211,6 +211,11 @@ module Automation
 
         decisions.concat(manual_request_decisions(plugins))
 
+        if trigger_types.include?(Automation::ReviewMethods::Copilot::TRIGGER_TYPE)
+          decisions.concat(review_bot_request_decisions(plugins))
+          return decisions
+        end
+
         if signals.triggers.any? { |t| FOLLOWUP_TRIGGER_TYPES.include?(t[:type].to_s) }
           decisions.concat(followup_decisions(signals))
         else

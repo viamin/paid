@@ -480,6 +480,11 @@ module Workflows
 
       dispatch_manual_review_request(project_id, pr_data)
 
+      if trigger_types.include?("review_bot_review_pending")
+        dispatch_bot_review_request(project_id, pr_data)
+        return
+      end
+
       followup_trigger_types = %w[
         ci_failure review_threads conversation_comments changes_requested
         actionable_labels merge_conflicts review_bot_comments review_bot_threads

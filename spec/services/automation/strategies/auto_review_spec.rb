@@ -206,6 +206,25 @@ RSpec.describe Automation::Strategies::AutoReview do
       expect(types).to include("record_review_goal_retry", "queue_review_run")
     end
 
+    it "suppresses retry follow-up decisions while review_bot_review_pending is outstanding" do
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        current_review_goal_retry_count: 1,
+        current_followup_count: 0,
+        triggers: [
+          { type: "review_goal_retry" },
+          { type: "review_bot_review_pending", request_login: "copilot" },
+          { type: "ci_failure", details: [ "test-suite" ] }
+        ]
+      })
+
+      types = result.to_h[:decisions].map { |d| d[:type] }
+      expect(types).to include("record_review_goal_retry", "queue_review_run", "request_review")
+      expect(types).not_to include("queue_create_pr_run", "record_pr_followup")
+    end
+
     it "marks ready on ready_for_owner triggers" do
       result = evaluate(scan: {
         issue_id: pull_request.id,

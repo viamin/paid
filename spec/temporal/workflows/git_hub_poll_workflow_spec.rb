@@ -986,7 +986,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           hash_including(reviewers: [ "human-reviewer" ]), timeout: anything)
     end
 
-    it "defers bot review but dispatches manual review when followup triggers coexist" do
+    it "dispatches bot review and suppresses followup when bot pending coexists with retry followup triggers" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "ready",
         triggers: [
@@ -1002,11 +1002,11 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity, hash_including(goal: "review"), timeout: anything)
-      expect(workflow).not_to have_received(:run_activity)
+      expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "copilot-bot" ]), timeout: anything)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "human-reviewer" ]), timeout: anything)
-      expect(workflow).to have_received(:run_activity)
+      expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RecordPrFollowupActivity, anything, timeout: anything)
     end
 
