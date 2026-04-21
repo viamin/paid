@@ -72,7 +72,7 @@ module Activities
     end
 
     def source_pull_request
-      @source_pull_request ||= project.issues.find_by(
+      project.issues.find_by(
         github_number: source_pull_request_number,
         is_pull_request: true
       )
