@@ -488,6 +488,9 @@ module Containers
     # @raise [ProvisionError] When container cannot be found
     def self.reconnect(agent_run:, container_id:, worktree_path: nil, workspace_volume: nil, pool_entry: nil, **options)
       container = Docker::Container.get(container_id)
+      pool_entry ||= ContainerPoolEntry.claimed.find_by(agent_run: agent_run, container_id: container_id)
+      workspace_volume ||= pool_entry&.workspace_volume
+
       new(agent_run: agent_run, worktree_path: worktree_path, workspace_volume: workspace_volume, pool_entry: pool_entry, **options)
         .with_existing_container(container, workspace_volume: workspace_volume, pool_entry: pool_entry)
     rescue Docker::Error::NotFoundError
