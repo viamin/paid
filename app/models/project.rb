@@ -710,7 +710,7 @@ class Project < ApplicationRecord
   end
 
   def cleanup_qdrant_collection
-    QdrantCollectionCleanupJob.perform_later(id)
+    QdrantCollectionCleanupJob.perform_later(id, account_id)
   end
 
   def toggle_github_polling

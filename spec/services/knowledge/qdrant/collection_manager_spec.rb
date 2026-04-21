@@ -7,7 +7,7 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
   let(:qdrant_client) { instance_double(QdrantClient) }
   let(:collections) { instance_double(Qdrant::Collections) }
   let(:points) { instance_double(Qdrant::Points) }
-  let(:collection_name) { "project_#{project.id}" }
+  let(:collection_name) { "account_#{project.account_id}_project_#{project.id}" }
   let(:manager) { described_class.new(project: project, client: qdrant_client) }
 
   before do
@@ -16,8 +16,8 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
   end
 
   describe ".collection_name" do
-    it "returns project_<id>" do
-      expect(described_class.collection_name(project)).to eq("project_#{project.id}")
+    it "returns an account and project scoped name" do
+      expect(described_class.collection_name(project)).to eq("account_#{project.account_id}_project_#{project.id}")
     end
   end
 
@@ -56,21 +56,18 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
       it "creates payload indexes with correct field schemas" do
         manager.ensure_collection!
 
-        expect(collections).to have_received(:create_index).with(
-          collection_name: collection_name,
-          field_name: "project_version_id",
-          field_schema: "integer"
-        )
-        expect(collections).to have_received(:create_index).with(
-          collection_name: collection_name,
-          field_name: "artifact_type",
-          field_schema: "keyword"
-        )
-        expect(collections).to have_received(:create_index).with(
-          collection_name: collection_name,
-          field_name: "status",
-          field_schema: "keyword"
-        )
+        {
+          "account_id" => "integer",
+          "project_version_id" => "integer",
+          "artifact_type" => "keyword",
+          "status" => "keyword"
+        }.each do |field_name, field_schema|
+          expect(collections).to have_received(:create_index).with(
+            collection_name: collection_name,
+            field_name: field_name,
+            field_schema: field_schema
+          )
+        end
       end
     end
 

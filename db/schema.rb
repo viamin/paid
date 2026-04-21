@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_21_083918) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_21_162139) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -1259,6 +1259,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_083918) do
   end
 
   create_table "service_containers", force: :cascade do |t|
+    t.bigint "account_id", null: false
     t.float "avg_cpu_percent"
     t.decimal "avg_memory_bytes", precision: 20, scale: 4
     t.integer "container_metrics_count", default: 0, null: false
@@ -1272,6 +1273,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_083918) do
     t.integer "port", null: false
     t.string "status", default: "stopped", null: false
     t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_service_containers_on_account_id"
     t.index ["name"], name: "index_service_containers_on_name", unique: true
   end
 
@@ -1546,6 +1548,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_083918) do
   add_foreign_key "quality_recovery_actions", "projects", on_delete: :cascade
   add_foreign_key "quality_recovery_actions", "prompt_versions", on_delete: :nullify
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
+  add_foreign_key "service_containers", "accounts"
   add_foreign_key "style_guides", "projects", on_delete: :cascade
   add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "tracker_configurations", "integration_credentials"

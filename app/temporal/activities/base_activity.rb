@@ -17,12 +17,52 @@ module Activities
 
         with_rails_executor do
           with_connection_cleanup do
-            super(normalized_input)
+            with_tenant_context(normalized_input) do
+              super(normalized_input)
+            end
           end
         end
       end
 
       private
+
+      def with_tenant_context(input, &block)
+        account = TenantContext.with_system_access { tenant_account_from(input) }
+        return TenantContext.with(account, &block) if account
+
+        TenantContext.with_system_access(&block)
+      ensure
+        TenantContext.clear!
+      end
+
+      def tenant_account_from(input)
+        return unless input.is_a?(Hash)
+
+        return account_from_id(input[:account_id]) if input[:account_id]
+        return project_from_id(input[:project_id])&.account if input[:project_id]
+        return agent_run_from_id(input[:agent_run_id])&.project&.account if input[:agent_run_id]
+        issue_from_id(input[:issue_id])&.project&.account if input[:issue_id]
+      end
+
+      def account_from_id(account_id)
+        Account.find_by(id: account_id) if defined?(Account) && Account.respond_to?(:find_by)
+      end
+
+      def project_from_id(project_id)
+        Project.find_by(id: project_id) if defined?(Project) && Project.respond_to?(:find_by)
+      end
+
+      def agent_run_from_id(agent_run_id)
+        return unless defined?(AgentRun) && AgentRun.respond_to?(:includes)
+
+        AgentRun.includes(:project).find_by(id: agent_run_id)
+      end
+
+      def issue_from_id(issue_id)
+        return unless defined?(Issue) && Issue.respond_to?(:includes)
+
+        Issue.includes(project: :account).find_by(id: issue_id)
+      end
 
       def with_rails_executor(&block)
         executor = Rails.application.executor if defined?(Rails) && Rails.respond_to?(:application) &&

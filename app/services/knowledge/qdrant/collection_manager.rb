@@ -4,6 +4,7 @@ module Knowledge
   module Qdrant
     class CollectionManager
       PAYLOAD_INDEX_SCHEMAS = {
+        "account_id" => "integer",
         "project_version_id" => "integer",
         "artifact_type" => "keyword",
         "status" => "keyword"
@@ -68,7 +69,7 @@ module Knowledge
       end
 
       def self.collection_name(project)
-        "project_#{project.id}"
+        "account_#{project.account_id}_project_#{project.id}"
       end
 
       private

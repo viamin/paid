@@ -3,6 +3,7 @@
 class ServiceContainer < ApplicationRecord
   STATUSES = %w[stopped starting running error].freeze
 
+  belongs_to :account
   has_many :project_service_containers, dependent: :destroy
   has_many :projects, through: :project_service_containers
   has_many :service_container_metrics, dependent: :delete_all
@@ -74,7 +75,11 @@ class ServiceContainer < ApplicationRecord
   # belongs to projects (i.e. on image update). On create the record is
   # not yet persisted, so falls back to all admin/owner settings.
   def allowed_images_from_settings
-    admin_user_ids = if persisted? && project_service_containers.any?
+    admin_user_ids = if account_id.present?
+      AccountMembership
+        .where(account_id: account_id, role: [ :admin, :owner ])
+        .select(:user_id)
+    elsif persisted? && project_service_containers.any?
       account_ids = projects.select(:account_id)
       AccountMembership
         .where(account_id: account_ids, role: [ :admin, :owner ])

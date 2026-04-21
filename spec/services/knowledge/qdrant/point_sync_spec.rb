@@ -10,7 +10,7 @@ RSpec.describe Knowledge::Qdrant::PointSync do
   let(:chunk) { create(:knowledge_chunk, knowledge_artifact: artifact, project: project) }
   let(:qdrant_client) { instance_double(QdrantClient) }
   let(:points) { instance_double(Qdrant::Points) }
-  let(:collection_name) { "project_#{project.id}" }
+  let(:collection_name) { "account_#{project.account_id}_project_#{project.id}" }
   let(:vector) { Array.new(3072, 0.1) }
 
   before do
@@ -32,6 +32,7 @@ RSpec.describe Knowledge::Qdrant::PointSync do
             id: chunk.id,
             vector: vector,
             payload: {
+              account_id: project.account_id,
               project_id: project.id,
               project_version_id: project_version.id,
               artifact_type: "route",
@@ -92,6 +93,7 @@ RSpec.describe Knowledge::Qdrant::PointSync do
         collection_name: collection_name,
         filter: {
           must: [
+            { key: "account_id", match: { value: project.account_id } },
             { key: "project_id", match: { value: project.id } }
           ]
         },
@@ -110,6 +112,7 @@ RSpec.describe Knowledge::Qdrant::PointSync do
         collection_name: collection_name,
         filter: {
           must: [
+            { key: "account_id", match: { value: project.account_id } },
             { key: "project_id", match: { value: project.id } },
             { key: "artifact_type", match: { value: "route" } },
             { key: "status", match: { value: "stale" } }
