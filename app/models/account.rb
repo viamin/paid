@@ -24,6 +24,9 @@ class Account < ApplicationRecord
   has_one :tenant_setting, dependent: :destroy
   has_many :pr_templates, dependent: :destroy
   has_many :onboarding_steps, dependent: :destroy
+  has_many :billing_invoices, dependent: :destroy
+  has_many :billing_periods, dependent: :destroy
+  has_many :billing_plans, dependent: :destroy
 
   validates :name, presence: true
   validates :plan, presence: true, inclusion: { in: PLANS }
