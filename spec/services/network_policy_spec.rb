@@ -108,6 +108,21 @@ RSpec.describe NetworkPolicy do
           .to raise_error(described_class::Error, /Failed to create agent network/)
       end
     end
+
+    context "when the infrastructure network is missing" do
+      before do
+        allow(Docker::Network).to receive(:get)
+          .with(described_class::INFRA_NETWORK_NAME)
+          .and_raise(Docker::Error::NotFoundError)
+      end
+
+      it "raises instead of creating the infrastructure network" do
+        expect(Docker::Network).not_to receive(:create)
+
+        expect { described_class.ensure_network!(network: described_class::INFRA_NETWORK_NAME) }
+          .to raise_error(described_class::Error, /paid_internal does not exist/)
+      end
+    end
   end
 
   describe ".network_exists?" do
@@ -294,12 +309,13 @@ RSpec.describe NetworkPolicy do
     around do |example|
       # Isolate env vars used by config dir detection
       original_env = ENV.to_h.slice(
-        "CLAUDE_CONFIG_DIR", "CODEX_CONFIG_DIR", "CODEX_HOME", "GEMINI_CONFIG_DIR"
+        "CLAUDE_CONFIG_DIR", "CODEX_CONFIG_DIR", "CODEX_HOME", "GEMINI_CONFIG_DIR", "COPILOT_CONFIG_DIR"
       )
       ENV.delete("CLAUDE_CONFIG_DIR")
       ENV.delete("CODEX_CONFIG_DIR")
       ENV.delete("CODEX_HOME")
       ENV.delete("GEMINI_CONFIG_DIR")
+      ENV.delete("COPILOT_CONFIG_DIR")
       example.run
     ensure
       original_env.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
@@ -375,6 +391,54 @@ RSpec.describe NetworkPolicy do
       it "selects the infrastructure network" do
         expect(described_class.agent_network).to eq(described_class::INFRA_NETWORK_NAME)
       end
+    end
+
+    context "when only Copilot credentials exist" do
+      before do
+        allow(Dir).to receive(:exist?).and_return(false)
+        allow(Dir).to receive(:exist?).with("/tmp/copilot-test").and_return(true)
+        ENV["COPILOT_CONFIG_DIR"] = "/tmp/copilot-test"
+        allow(File).to receive(:file?).and_return(false)
+        allow(File).to receive(:file?)
+          .with("/tmp/copilot-test/hosts.json").and_return(true)
+      end
+
+      it "returns true" do
+        expect(described_class.subscription_auth?).to be true
+      end
+
+      it "selects the infrastructure network" do
+        expect(described_class.agent_network).to eq(described_class::INFRA_NETWORK_NAME)
+      end
+    end
+  end
+
+  describe ".contract" do
+    it "returns the restricted proxy-mode contract by default" do
+      contract = described_class.contract(subscription_auth: false)
+
+      expect(contract.mode).to eq("proxy")
+      expect(contract.network).to eq(described_class::NETWORK_NAME)
+      expect(contract).to be_restricted
+      expect(contract).to be_firewall
+    end
+
+    it "returns the infrastructure contract for subscription auth" do
+      contract = described_class.contract(subscription_auth: true)
+
+      expect(contract.mode).to eq("subscription_auth")
+      expect(contract.network).to eq(described_class::INFRA_NETWORK_NAME)
+      expect(contract).not_to be_restricted
+      expect(contract).not_to be_firewall
+    end
+
+    it "returns the infrastructure contract for direct outbound providers" do
+      contract = described_class.contract(subscription_auth: false, direct_outbound: true)
+
+      expect(contract.mode).to eq("direct_outbound")
+      expect(contract.network).to eq(described_class::INFRA_NETWORK_NAME)
+      expect(contract).not_to be_restricted
+      expect(contract).not_to be_firewall
     end
   end
 

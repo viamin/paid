@@ -13,7 +13,7 @@ module Activities
       agent_run = AgentRun.find(agent_run_id)
       track_phase(agent_run_id: agent_run_id, phase_key: "provision_services", phase_group: "setup", agent_run: agent_run) do
         provisioner = Containers::ServiceProvisioner.new
-        env_vars = provisioner.provision(agent_run, network: NetworkPolicy.agent_network)
+        env_vars = provisioner.provision(agent_run, network: Containers::Provision.network_for(agent_run: agent_run))
 
         logger.info(
           message: "agent_execution.services_provisioned",

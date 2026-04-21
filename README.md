@@ -12,8 +12,7 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 
 - **GitHub Integration**: Add projects via PAT, watch for labeled issues
 - **Temporal Workflows**: Durable, observable orchestration of agent activities
-- **Container Isolation**: Agents run in sandboxed Docker containers; proxy-mode runs use the restricted `paid_agent` network with no default internet access
-  - Gap: subscription-auth and direct-outbound provider runs use the internal network for provider access; tracked by [#1284](https://github.com/viamin/paid/issues/1284).
+- **Container Isolation**: Agents run in sandboxed Docker containers. Proxy-mode runs use the restricted `paid_agent` network with no default internet access; subscription-auth and direct-outbound provider runs use `paid_internal` so provider CLIs can reach upstream APIs directly.
 - **Multiple Agents and Providers**: Support for Claude Code, Codex, Cursor, Gemini, Aider, OpenCode, Kilocode, and Copilot when the runtime is both supported by `agent-harness` and installed in `paid-agent`
   - Gap: broader runtime parity is tracked by provider metadata and smoke-test refactors ([#798](https://github.com/viamin/paid/issues/798), [#796](https://github.com/viamin/paid/issues/796)) plus agent-image install delegation work ([#789](https://github.com/viamin/paid/issues/789)-[#795](https://github.com/viamin/paid/issues/795)).
 - **Secrets Proxy**: Git credentials and default platform LLM keys are proxied through authenticated endpoints
@@ -27,8 +26,7 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 - **Live Dashboards**: Track active runs, performance, quality, cost, and knowledge-collection health from the UI
 - **Provider and Integration Management**: Test provider auth from the UI and manage GitHub, Linear, and provider API keys
   - Gap: generic integration credentials exist in the data model but are hidden from the main integrations hub pending RBAC/admin-role work; tracked by [#1283](https://github.com/viamin/paid/issues/1283).
-- **Service Containers**: Attach approved supporting services like Postgres, Redis, or Selenium to project runs when agents need dependencies beyond the app code
-  - Gap: direct-outbound provider runs can select a different Docker network than service provisioning expects; tracked by [#1282](https://github.com/viamin/paid/issues/1282). Shared-database isolation fallout is tracked separately by [#1280](https://github.com/viamin/paid/issues/1280).
+- **Service Containers**: Attach approved supporting services like Postgres, Redis, or Selenium to project runs when agents need dependencies beyond the app code. Service containers are attached to the same Docker network selected for the agent run. Shared-database isolation fallout is tracked separately by [#1280](https://github.com/viamin/paid/issues/1280).
 
 ## How It Works
 
@@ -37,7 +35,7 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 3. An `AgentExecutionWorkflow` starts in Temporal, orchestrating:
    - Prompt resolution, provider selection, and project policy checks
    - Knowledge-base retrieval and style-guide injection when available
-   - Docker container provisioning on a restricted network
+   - Docker container provisioning on the network selected for the provider auth mode
    - Repository clone and branch creation inside the container
    - Agent execution (e.g., Claude Code) with the issue as prompt
    - Branch push, PR creation, issue update, and optional review follow-up
@@ -252,8 +250,8 @@ By default, provider tests and real agent runs use the same containerized auth p
 
 ### Networks
 
-- **paid_internal**: Infrastructure services (Rails, Temporal, Postgres)
-- **paid_agent**: Restricted network for agent containers (`internal: true`, no default internet access). Allowed egress enforced via iptables.
+- **paid_internal**: Infrastructure services (Rails, Temporal, Postgres) and agent runs that require direct provider egress, including subscription-auth and direct-outbound provider modes.
+- **paid_agent**: Restricted network for proxy-mode agent containers (`internal: true`, no default internet access). Allowed egress is enforced via iptables.
 
 ### Temporal CLI Access
 
@@ -326,12 +324,13 @@ bin/ci                       # Runs setup, lint, and security audit
 └────────────────────────────┬────────────────────────────────────┘
                              │
 ┌────────────────────────────▼────────────────────────────────────┐
-│                  Docker Containers (paid_agent network)          │
+│        Docker Containers (paid_agent or paid_internal)           │
 │   Agent CLI (Claude, Codex, Cursor, Gemini, Aider, ...)         │
-│   ── Secrets Proxy ──► Anthropic/OpenAI APIs                    │
+│   ── Proxy mode: Secrets Proxy ──► Provider APIs                │
+│   ── Subscription/direct outbound: HTTPS to Provider APIs        │
 │   ── Git Credential Proxy ──► GitHub                            │
 │   ── Optional service containers (Postgres/Redis/Selenium)      │
-│   ── No default internet access                                 │
+│   ── No default internet access only on paid_agent              │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

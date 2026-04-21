@@ -5,10 +5,10 @@ require "ipaddr"
 require "net/http"
 require "json"
 
-# Manages Docker network isolation for agent containers.
+# Manages Docker network selection and isolation for agent containers.
 #
-# Ensures the restricted agent network exists and applies firewall rules
-# to limit outbound traffic to only allowed destinations (secrets proxy, GitHub).
+# Ensures the selected Docker network exists and applies firewall rules for
+# proxy-mode runs on the restricted agent network.
 #
 # @example Ensure network is ready before provisioning
 #   NetworkPolicy.ensure_network!
@@ -23,10 +23,21 @@ class NetworkPolicy
   # Raised when network operations fail
   class Error < StandardError; end
 
+  NetworkContract = Struct.new(:mode, :network, :restricted, :firewall, keyword_init: true) do
+    def restricted?
+      restricted
+    end
+
+    def firewall?
+      firewall
+    end
+  end
+
   NETWORK_NAME = "paid_agent"
 
   # Infrastructure network with outbound routing.
-  # Used by subscription-auth containers that need to reach Anthropic directly.
+  # Used by subscription-auth and direct-outbound containers that need to
+  # reach provider APIs directly.
   INFRA_NETWORK_NAME = "paid_internal"
 
   NETWORK_SUBNET = "172.28.0.0/16"
@@ -45,18 +56,36 @@ class NetworkPolicy
   SECRETS_PROXY_PORT = Rails.application.config.x.paid_proxy_port
 
   class << self
-    # Returns the network name that agent containers should use.
-    # Subscription-auth containers use the infrastructure network (paid_internal)
-    # for outbound HTTPS access; API-key containers use the restricted network.
+    # Returns the intended network contract for an agent container.
     #
+    # Proxy mode uses the restricted paid_agent network plus in-container
+    # firewall rules. Subscription-auth and direct-outbound runs use
+    # paid_internal because provider CLIs must reach upstream provider APIs.
+    #
+    # @param subscription_auth [Boolean] whether host-backed provider auth is present
+    # @param direct_outbound [Boolean] whether this run uses a provider that bypasses Paid's proxy
+    # @return [NetworkContract]
+    def contract(subscription_auth: subscription_auth?, direct_outbound: false)
+      if subscription_auth
+        unrestricted_contract("subscription_auth")
+      elsif direct_outbound
+        unrestricted_contract("direct_outbound")
+      else
+        restricted_contract
+      end
+    end
+
+    # Returns the network name that agent containers should use.
+    #
+    # @param direct_outbound [Boolean] whether this run uses a provider that bypasses Paid's proxy
     # @return [String] Docker network name
-    def agent_network
-      subscription_auth? ? INFRA_NETWORK_NAME : NETWORK_NAME
+    def agent_network(direct_outbound: false)
+      contract(direct_outbound: direct_outbound).network
     end
 
     # Returns true when any provider CLI config is available for
     # subscription-based authentication (e.g. from `claude login`,
-    # `gemini auth login`, or Codex `auth.json`).
+    # `gemini auth login`, Codex `auth.json`, or Copilot `hosts.json`).
     #
     # Mirrors the detection logic in Containers::Provision#subscription_auth?
     # so that service containers are always placed on the same network as the
@@ -64,16 +93,18 @@ class NetworkPolicy
     #
     # @return [Boolean]
     def subscription_auth?
-      claude_subscription_auth? || codex_subscription_auth? || gemini_subscription_auth?
+      claude_subscription_auth? || codex_subscription_auth? || gemini_subscription_auth? || copilot_subscription_auth?
     end
 
     # Ensures the agent Docker network exists. Creates it if missing.
     #
     # @return [Docker::Network] the agent network
     # @raise [Error] if network creation fails
-    def ensure_network!
-      Docker::Network.get(NETWORK_NAME)
+    def ensure_network!(network: NETWORK_NAME)
+      Docker::Network.get(network)
     rescue Docker::Error::NotFoundError
+      raise Error, "Docker network #{network} does not exist" unless network == NETWORK_NAME
+
       create_network
     end
 
@@ -148,6 +179,24 @@ class NetworkPolicy
 
     private
 
+    def restricted_contract
+      NetworkContract.new(
+        mode: "proxy",
+        network: NETWORK_NAME,
+        restricted: true,
+        firewall: true
+      )
+    end
+
+    def unrestricted_contract(mode)
+      NetworkContract.new(
+        mode: mode,
+        network: INFRA_NETWORK_NAME,
+        restricted: false,
+        firewall: false
+      )
+    end
+
     # Per-provider subscription auth checks mirror
     # Containers::Provision#claude_subscription_auth? etc.
     # Each looks for the specific credential file that proves a real login.
@@ -165,6 +214,11 @@ class NetworkPolicy
     def gemini_subscription_auth?
       dir = gemini_config_dir
       dir.present? && File.file?(File.join(dir, "oauth_creds.json"))
+    end
+
+    def copilot_subscription_auth?
+      dir = copilot_config_dir
+      dir.present? && File.file?(File.join(dir, "hosts.json"))
     end
 
     # Returns the Claude config directory path, checking the explicit
@@ -214,6 +268,21 @@ class NetworkPolicy
       end
 
       "/.gemini" if credential_present?("/.gemini", "oauth_creds.json")
+    end
+
+    # Returns the GitHub Copilot config directory path.
+    def copilot_config_dir
+      if ENV["COPILOT_CONFIG_DIR"].present?
+        return ENV["COPILOT_CONFIG_DIR"] if credential_present?(ENV["COPILOT_CONFIG_DIR"], "hosts.json")
+      end
+
+      home = home_dir
+      if home.present?
+        config_copilot = File.join(home, ".config", "github-copilot")
+        return config_copilot if credential_present?(config_copilot, "hosts.json")
+      end
+
+      "/.config/github-copilot" if credential_present?("/.config/github-copilot", "hosts.json")
     end
 
     # Returns true when the directory exists and contains the given credential file.
