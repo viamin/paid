@@ -75,7 +75,9 @@ module Activities
         agent_run_id: agent_run.id,
         pull_request_url: agent_run.pull_request_url,
         pull_request_number: agent_run.pull_request_number,
-        pr_review_phase: agent_run.issue&.pr_review_phase
+        pr_review_phase: agent_run.issue&.pr_review_phase,
+        skipped: agent_run.pull_request_url.blank?,
+        cancelled: agent_run.status == "cancelled"
       }
     end
 

@@ -64,16 +64,49 @@ RSpec.describe Activities::MarkAgentRunCompleteActivity do
       expect(issue.reload.paid_state).to eq("in_progress")
     end
 
-    it "does not overwrite or complete issue state for cancelled runs" do
+    it "reports cancellation without completing issue state for cancelled runs" do
       issue = create(:issue, :in_progress, project: project)
       agent_run = create(:agent_run, :cancelled, :create_issue_goal, project: project, issue: issue)
 
+      result = nil
       expect {
-        activity.execute(agent_run_id: agent_run.id)
+        result = activity.execute(agent_run_id: agent_run.id)
       }.not_to have_enqueued_job(ProcessRunQueueJob)
 
+      expect(result).to include(skipped: true, cancelled: true)
       expect(agent_run.reload.status).to eq("cancelled")
       expect(issue.reload.paid_state).to eq("in_progress")
+    end
+
+    it "reports cancellation when completion loses a cancellation race" do
+      issue = create(:issue, :in_progress, project: project)
+      agent_run = create(:agent_run, :running, :create_issue_goal, project: project, issue: issue)
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(agent_run).to receive(:complete!) do
+        agent_run.cancel!
+        false
+      end
+
+      result = nil
+      expect {
+        result = activity.execute(agent_run_id: agent_run.id)
+      }.not_to have_enqueued_job(ProcessRunQueueJob)
+
+      expect(result).to include(skipped: true, cancelled: true)
+      expect(agent_run.reload.status).to eq("cancelled")
+      expect(issue.reload.paid_state).to eq("in_progress")
+    end
+
+    it "reports active completion for completed runs" do
+      agent_run = create(:agent_run, :running, :create_issue_goal, project: project)
+
+      result = nil
+      expect {
+        result = activity.execute(agent_run_id: agent_run.id)
+      }.to have_enqueued_job(ProcessRunQueueJob).once
+
+      expect(result).to include(skipped: false, cancelled: false)
+      expect(agent_run.reload.status).to eq("completed")
     end
 
     it "enqueues ProcessRunQueueJob" do

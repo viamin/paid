@@ -268,12 +268,14 @@ module Workflows
 
             # New commits invalidate prior bot feedback, so request a fresh
             # review-bot review for any still-active PR phase.
-            if complete_result[:pr_review_phase].in?(%w[draft restarted ready escalated])
-              request_review_bot_review(project_id, source_pull_request_number)
-            end
+            unless complete_result[:skipped]
+              if complete_result[:pr_review_phase].in?(%w[draft restarted ready escalated])
+                request_review_bot_review(project_id, source_pull_request_number)
+              end
 
-            # Draft a decision record for existing PR changes (best-effort)
-            draft_decision_record(agent_run_id)
+              # Draft a decision record for existing PR changes (best-effort)
+              draft_decision_record(agent_run_id)
+            end
           else
             # Step 6: Create PR
             pr_result = run_activity(Activities::CreatePullRequestActivity,
@@ -307,13 +309,13 @@ module Workflows
                 output_present: agent_result.fetch(:output_present, false) }, timeout: 30)
           else
             # Non-issue run or existing-PR run: mark completed
-            run_activity(Activities::MarkAgentRunCompleteActivity,
+            complete_result = run_activity(Activities::MarkAgentRunCompleteActivity,
               { agent_run_id: agent_run_id, reason: "no_changes" }, timeout: 30)
           end
 
           # Still request a review-bot review for existing PR runs: the
           # previous run may have pushed a fix the bot has not reviewed yet.
-          if source_pull_request_number
+          if source_pull_request_number && !complete_result[:skipped]
             request_review_bot_review(project_id, source_pull_request_number)
           end
         end
