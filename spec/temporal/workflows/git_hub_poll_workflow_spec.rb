@@ -688,6 +688,28 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RecordPrFollowupActivity, anything, timeout: anything)
     end
 
+    it "preserves ready-phase replay order before the review pending hard gate patch" do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("pause-followup-during-review-v1")
+        .and_return(false)
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        current_followup_count: 0,
+        triggers: [
+          { type: "review_bot_review_pending", request_login: Activities::RequestReviewActivity::COPILOT_LOGIN },
+          { type: "ci_failure", details: [ "rspec" ] }
+        ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, anything, timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordPrFollowupActivity, hash_including(issue_id: 10), timeout: anything)
+    end
+
     it "triggers dev environment update after successful merge" do
       allow(Temporalio::Workflow).to receive(:patched).with("add-dev-environment-update-v1").and_return(true)
 

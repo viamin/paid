@@ -406,9 +406,9 @@ module Workflows
     end
 
     def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
-      dispatch_review_bot_review_request(project_id, pr_data)
-
       if Temporalio::Workflow.patched("pause-followup-during-review-v1")
+        dispatch_review_bot_review_request(project_id, pr_data)
+
         # review_bot_review_pending is a hard gate: suppress all create_pr
         # follow-up runs while a bot review is outstanding, mirroring the
         # paid_agent_review_pending hard gate from #1135. Other triggers
@@ -421,13 +421,14 @@ module Workflows
       other_triggers = trigger_types - [ "review_bot_review_pending" ]
 
       if pr_data[:phase].in?(%w[draft restarted])
+        dispatch_review_bot_review_request(project_id, pr_data)
         return if other_triggers.empty?
 
         start_draft_followup_workflow(project_id, pr_data)
         return
       end
 
-      return if other_triggers.empty?
+      return dispatch_review_bot_review_request(project_id, pr_data) if other_triggers.empty?
 
       start_pr_followup_workflow(project_id, pr_data)
     end
