@@ -23,12 +23,13 @@ module PromptEvolution
     MIN_RUNS_FOR_EVALUATION = 5
     MAX_RUNS_TO_FETCH = 10_000
 
-    attr_reader :sample_size, :days, :project_id
+    attr_reader :sample_size, :days, :project_id, :random
 
-    def initialize(sample_size: DEFAULT_SAMPLE_SIZE, days: DEFAULT_DAYS, project_id: nil)
+    def initialize(sample_size: DEFAULT_SAMPLE_SIZE, days: DEFAULT_DAYS, project_id: nil, random: Random.new)
       @sample_size = sample_size
       @days = days
       @project_id = project_id
+      @random = random
     end
 
     def self.call(...)
@@ -69,21 +70,21 @@ module PromptEvolution
       end
       return AgentRun.none if grouped.empty?
 
-      strata = grouped.to_a.shuffle
+      strata = grouped.to_a.shuffle(random: random)
       base_allocation, remainder = sample_size.divmod(strata.size)
       sampled_ids = []
       leftover_ids = []
 
       strata.each_with_index do |(_key, stratum_runs), index|
         allocation = [ base_allocation + (index < remainder ? 1 : 0), 1 ].max
-        shuffled_runs = stratum_runs.shuffle
+        shuffled_runs = stratum_runs.shuffle(random: random)
 
         sampled_ids.concat(shuffled_runs.first(allocation).map(&:first))
         leftover_ids.concat(shuffled_runs.drop(allocation).map(&:first))
       end
 
       if sampled_ids.size < sample_size
-        sampled_ids.concat(leftover_ids.shuffle.first(sample_size - sampled_ids.size))
+        sampled_ids.concat(leftover_ids.shuffle(random: random).first(sample_size - sampled_ids.size))
       end
 
       AgentRun.where(id: sampled_ids.first(sample_size))
