@@ -760,6 +760,30 @@ RSpec.describe Containers::ServiceProvisioner do
       expect(commands.last.last).to eq("DROP DATABASE IF EXISTS \"#{original_db_name}\"")
     end
 
+    it "uses the captured stale requeue count when DATABASE_URL is unavailable" do
+      sc = create(:service_container, :running)
+      docker_container = instance_double(Docker::Container)
+      commands = []
+      original_db_name = provisioner.send(:per_run_db_name, agent_run, stale_requeue_count: 0)
+
+      agent_run.update!(stale_requeue_count: 1, service_environment: nil)
+
+      allow(Docker::Container).to receive(:get)
+        .with(sc.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive(:exec) do |cmd|
+        commands << cmd
+        [ [], [], 0 ]
+      end
+      allow(docker_container).to receive_messages(stop: true, delete: true)
+
+      provisioner.cleanup(
+        agent_run.tap { |run| run.service_container_ids = [ sc.id ] },
+        stale_requeue_count: 0
+      )
+
+      expect(commands.last.last).to eq("DROP DATABASE IF EXISTS \"#{original_db_name}\"")
+    end
+
     it "skips legacy shared database URLs during cleanup" do
       sc = create(:service_container, :running)
       docker_container = instance_double(Docker::Container)

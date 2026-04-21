@@ -302,9 +302,10 @@ RSpec.describe StaleRunDetectorJob do
         provisioner = instance_double(Containers::ServiceProvisioner)
 
         allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
-        allow(provisioner).to receive(:cleanup) do |run|
+        allow(provisioner).to receive(:cleanup) do |run, stale_requeue_count:|
           expect(run.service_container_ids).to eq([ service_container.id ])
           expect(run.service_environment).to eq(old_environment)
+          expect(stale_requeue_count).to eq(0)
         end
 
         described_class.perform_now

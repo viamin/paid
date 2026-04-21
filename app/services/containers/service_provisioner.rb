@@ -158,13 +158,13 @@ module Containers
     # Only stops containers with no active agent runs still using them.
     #
     # @param agent_run [AgentRun] The agent run to clean up services for
-    def cleanup(agent_run)
+    def cleanup(agent_run, stale_requeue_count: nil)
       container_ids = agent_run.service_container_ids
       return if container_ids.blank?
 
       ServiceContainer.where(id: container_ids).find_each do |sc|
         if sc.image.include?("postgres")
-          db_name = database_name_for_cleanup(agent_run)
+          db_name = database_name_for_cleanup(agent_run, stale_requeue_count: stale_requeue_count)
           drop_per_run_database(sc, db_name) if droppable_per_run_database?(agent_run, sc, db_name)
         end
 
@@ -486,8 +486,8 @@ module Containers
 
     # Generates a unique, safe database name for each agent run attempt.
     # Uses a sanitized ID to ensure valid PostgreSQL identifier.
-    def per_run_db_name(agent_run)
-      "agent_run_#{agent_run.id.to_s.tr('-', '_')}_attempt_#{agent_run.stale_requeue_count.to_i}"
+    def per_run_db_name(agent_run, stale_requeue_count: agent_run.stale_requeue_count)
+      "agent_run_#{agent_run.id.to_s.tr('-', '_')}_attempt_#{stale_requeue_count.to_i}"
     end
 
     # Creates an isolated database for this agent run inside the shared
@@ -532,9 +532,12 @@ module Containers
 
     # Drops the per-run database during cleanup. Best-effort: logs
     # failures instead of raising so cleanup can continue.
-    def database_name_for_cleanup(agent_run)
+    def database_name_for_cleanup(agent_run, stale_requeue_count: nil)
       database_url = agent_run.service_environment&.fetch("DATABASE_URL", nil)
-      database_name_from_url(database_url) || per_run_db_name(agent_run)
+      database_name_from_url(database_url) || per_run_db_name(
+        agent_run,
+        stale_requeue_count: stale_requeue_count || agent_run.stale_requeue_count
+      )
     end
 
     def database_name_from_url(database_url)

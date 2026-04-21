@@ -66,7 +66,7 @@ RSpec.describe AgentRuns::CleanupStale do
       described_class.call(project: project)
 
       expect(container_service).to have_received(:cleanup).with(force: true)
-      expect(provisioner).to have_received(:cleanup).with(stale_run)
+      expect(provisioner).to have_received(:cleanup).with(stale_run, stale_requeue_count: 0)
     end
 
     it "passes captured service environment to service cleanup when requeuing pending runs" do
@@ -79,9 +79,10 @@ RSpec.describe AgentRuns::CleanupStale do
       provisioner = instance_double(Containers::ServiceProvisioner)
 
       allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
-      allow(provisioner).to receive(:cleanup) do |run|
+      allow(provisioner).to receive(:cleanup) do |run, stale_requeue_count:|
         expect(run.service_container_ids).to eq([ service_container.id ])
         expect(run.service_environment).to eq(old_environment)
+        expect(stale_requeue_count).to eq(0)
       end
 
       described_class.call(project: project)
