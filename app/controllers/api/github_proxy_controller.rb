@@ -179,21 +179,25 @@ module Api
 
       body = parse_response_body(response.body)
       return unless body.is_a?(Hash) && body["id"].present?
-      return unless body["html_url"].present?
       return if @agent_run.review_posted_at.present? && @agent_run.review_url.present?
 
+      review_url = body["html_url"].presence || review_url_for(match[:number], body["id"])
       @agent_run.update!(
         review_posted_at: @agent_run.review_posted_at || Time.current,
-        review_url: body["html_url"]
+        review_url: review_url
       )
 
       log_info("github_proxy.review_created",
         review_id: body["id"],
-        review_url: body["html_url"])
+        review_url: review_url)
 
       warn_if_missing_inline_comments(body)
     rescue => e
       log_error("github_proxy.track_review_failed", e.message)
+    end
+
+    def review_url_for(pr_number, review_id)
+      "https://github.com/#{@agent_run.project.full_name}/pull/#{pr_number}#pullrequestreview-#{review_id}"
     end
 
     def warn_if_missing_inline_comments(response_body)
