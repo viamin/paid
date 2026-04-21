@@ -53,9 +53,9 @@
           <div class="mt-4 rounded-lg border border-gray-200 p-4">
             <% if @issues.any? %>
               <%# Single-select dropdown for create_pr goal %>
-              <div data-goal-toggle-target="issueDropdown">
+              <div data-goal-toggle-target="issueDropdown" <%= "hidden" if selected_goal == "enhance_issue" %>>
                 <label for="issue_id" class="block text-sm font-medium text-gray-700">Choose from synced issues:</label>
-                <select name="issue_id" id="issue_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                <select name="issue_id" id="issue_id" <%= "disabled" if selected_goal == "enhance_issue" %> class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                   <option value="">-- Select an issue --</option>
                   <% @issues.each do |issue| %>
                     <% paid_pr = @paid_prs_by_issue_id[issue.id] %>
@@ -69,14 +69,14 @@
                 </select>
               </div>
 
-              <%= render "shared/issue_enhance_table", issues: @issues, issues_with_active_runs: @issues_with_active_runs, issue_enhancement_rounds: @issue_enhancement_rounds %>
+              <%= render "shared/issue_enhance_table", issues: @issues, issues_with_active_runs: @issues_with_active_runs, issue_enhancement_rounds: @issue_enhancement_rounds, initially_visible: selected_goal == "enhance_issue" %>
             <% else %>
               <p class="mt-1 text-sm text-gray-500">No actionable open issues found. Sync issues first.</p>
             <% end %>
           </div>
         </div>
 
-        <div data-goal-toggle-target="prSection">
+        <div data-goal-toggle-target="prSection" <%= "hidden" if selected_goal == "enhance_issue" %>>
           <h2 class="text-base font-semibold text-gray-900" data-goal-toggle-target="prHeading">Or Work on an Existing PR</h2>
           <p class="mt-1 text-sm text-gray-500" data-goal-toggle-target="prDescription">Push changes to an existing pull request's branch instead of creating a new one.</p>
 
