@@ -5,6 +5,10 @@ require "rails_helper"
 RSpec.describe Workflows::GitHubPollWorkflow do
   let(:workflow) { described_class.new }
 
+  before do
+    allow(workflow).to receive(:quality_gate_allows_run?).and_return(true)
+  end
+
   describe "#execute" do
     it "is defined as a Temporal workflow" do
       expect(described_class).to be < Workflows::BaseWorkflow
@@ -231,6 +235,16 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         issue_id: 20
       ))
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+    end
+
+    it "skips queueing when the quality gate blocks the run" do
+      allow(workflow).to receive(:quality_gate_allows_run?).and_return(false)
+
+      evaluation = { decisions: [ { type: "queue_create_pr_run", issue_id: 10 } ] }
+      workflow.send(:handle_automation_result, evaluation, project_id)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
     end
   end
 

@@ -108,6 +108,19 @@ module Workflows
       workflow_error = nil
 
       begin
+        gate_result = check_quality_gate(
+          project_id: project_id,
+          issue_id: issue_id,
+          agent_run_id: agent_run_id,
+          source_pull_request_number: source_pull_request_number
+        )
+        unless gate_result.fetch(:allowed, true)
+          run_activity(Activities::MarkAgentRunFailedActivity,
+            { agent_run_id: agent_run_id, error: quality_gate_error(gate_result) }, timeout: 30)
+
+          return { success: false, quality_gate_blocked: true, agent_run_id: agent_run_id }
+        end
+
         if goal == "enhance_issue"
           run_activity(Activities::EnhanceIssueActivity,
             { agent_run_id: agent_run_id },
@@ -442,6 +455,33 @@ module Workflows
     def stale_pull_request_error?(error)
       cause = error.respond_to?(:cause) ? error.cause : nil
       cause.is_a?(Temporalio::Error::ApplicationError) && cause.type == "StalePullRequest"
+    end
+
+    def check_quality_gate(project_id:, issue_id:, agent_run_id:, source_pull_request_number:)
+      run_activity(Activities::CheckQualityGateActivity,
+        {
+          project_id: project_id,
+          issue_id: issue_id,
+          agent_run_id: agent_run_id,
+          source_pull_request_number: source_pull_request_number,
+          workflow_id: current_workflow_id,
+          workflow_type: "AgentExecutionWorkflow"
+        }.compact,
+        timeout: 30,
+        retry_policy: NO_RETRY)
+    end
+
+    def quality_gate_error(gate_result)
+      metrics = Array(gate_result[:breaches]).map { |breach| breach[:metric] }.join(", ")
+      return "Quality gate blocked this run" if metrics.blank?
+
+      "Quality gate blocked this run: #{metrics}"
+    end
+
+    def current_workflow_id
+      Temporalio::Workflow.info.workflow_id
+    rescue StandardError
+      nil
     end
 
     # Requests a review from the project's configured review bot (Copilot,
