@@ -315,6 +315,7 @@ class ProjectsController < ApplicationController
     @project.name = @project.name.presence || @project.repo
 
     if @project.save
+      TenantConfigurations::ApplyProjectDefaults.call(@project)
       ensure_labels_best_effort(@project)
       redirect_to @project, notice: "Project was successfully added."
     else
@@ -331,6 +332,7 @@ class ProjectsController < ApplicationController
     @project.default_branch = repo_data.default_branch
 
     if @project.save
+      TenantConfigurations::ApplyProjectDefaults.call(@project)
       ensure_labels_best_effort(@project)
       redirect_to @project, notice: "Project was successfully added."
     else

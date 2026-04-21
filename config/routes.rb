@@ -58,6 +58,9 @@ Rails.application.routes.draw do
   # User settings (singleton resource — one per user)
   resource :user_settings, only: [ :edit, :update ]
 
+  # Account tenant configuration
+  resource :tenant_configuration, only: [ :edit, :update ]
+
   # Account-level pre-commit requirements (defaults inherited by all projects)
   resources :account_pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ]
 

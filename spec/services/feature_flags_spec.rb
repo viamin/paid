@@ -39,6 +39,12 @@ RSpec.describe FeatureFlags do
       expect(described_class.enabled?(:explicit_pr_automation_decisions, project:)).to be(true)
       expect(described_class.enabled?(:explicit_pr_automation_decisions)).to be(false)
     end
+
+    it "uses tenant feature overrides before flipper gates" do
+      create(:tenant_setting, account: project.account, features: { "explicit_pr_automation_decisions" => true })
+
+      expect(described_class.enabled?(:explicit_pr_automation_decisions, project:)).to be(true)
+    end
   end
 
   describe ".disable!" do
