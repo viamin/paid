@@ -13,6 +13,7 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
     pr_templates
     pre_commit_requirements
     projects
+    quality_thresholds
     service_containers
     tenant_settings
     users

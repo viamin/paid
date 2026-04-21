@@ -2429,6 +2429,44 @@ ALTER SEQUENCE public.quality_gate_thresholds_id_seq OWNED BY public.quality_gat
 
 
 --
+-- Name: quality_thresholds; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.quality_thresholds (
+    id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    project_id bigint,
+    metric_type character varying(50) NOT NULL,
+    goal_type character varying(50) NOT NULL,
+    min_value numeric(5,4) NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.quality_thresholds FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: quality_thresholds_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.quality_thresholds_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: quality_thresholds_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.quality_thresholds_id_seq OWNED BY public.quality_thresholds.id;
+
+
+--
 -- Name: quality_metrics; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3379,6 +3417,13 @@ ALTER TABLE ONLY public.quality_gate_thresholds ALTER COLUMN id SET DEFAULT next
 
 
 --
+-- Name: quality_thresholds id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quality_thresholds ALTER COLUMN id SET DEFAULT nextval('public.quality_thresholds_id_seq'::regclass);
+
+
+--
 -- Name: quality_metrics id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3947,6 +3992,14 @@ ALTER TABLE ONLY public.quality_gate_events
 
 ALTER TABLE ONLY public.quality_gate_thresholds
     ADD CONSTRAINT quality_gate_thresholds_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: quality_thresholds quality_thresholds_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quality_thresholds
+    ADD CONSTRAINT quality_thresholds_pkey PRIMARY KEY (id);
 
 
 --
@@ -5917,6 +5970,34 @@ CREATE UNIQUE INDEX index_quality_gate_thresholds_on_project_id_and_metric_key O
 
 
 --
+-- Name: index_quality_thresholds_on_account_defaults; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_quality_thresholds_on_account_defaults ON public.quality_thresholds USING btree (account_id, metric_type, goal_type) WHERE (project_id IS NULL);
+
+
+--
+-- Name: index_quality_thresholds_on_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_quality_thresholds_on_account_id ON public.quality_thresholds USING btree (account_id);
+
+
+--
+-- Name: index_quality_thresholds_on_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_quality_thresholds_on_project_id ON public.quality_thresholds USING btree (project_id);
+
+
+--
+-- Name: index_quality_thresholds_on_project_overrides; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_quality_thresholds_on_project_overrides ON public.quality_thresholds USING btree (project_id, metric_type, goal_type) WHERE (project_id IS NOT NULL);
+
+
+--
 -- Name: index_quality_metrics_on_agent_run_and_type; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6494,6 +6575,14 @@ ALTER TABLE ONLY public.linear_tokens
 
 ALTER TABLE ONLY public.quality_gate_thresholds
     ADD CONSTRAINT fk_rails_3c6afbb230 FOREIGN KEY (project_id) REFERENCES public.projects(id);
+
+
+--
+-- Name: quality_thresholds fk_rails_9bcd1f06cc; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quality_thresholds
+    ADD CONSTRAINT fk_rails_9bcd1f06cc FOREIGN KEY (project_id) REFERENCES public.projects(id);
 
 
 --
@@ -7081,6 +7170,14 @@ ALTER TABLE ONLY public.context_intake_sessions
 
 
 --
+-- Name: quality_thresholds fk_rails_db28dabccd; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quality_thresholds
+    ADD CONSTRAINT fk_rails_db28dabccd FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
 -- Name: issue_dependencies fk_rails_dd269fd4f1; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7521,6 +7618,12 @@ ALTER TABLE public.quality_gate_events ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.quality_gate_thresholds ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: quality_thresholds; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.quality_thresholds ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: quality_metrics; Type: ROW SECURITY; Schema: public; Owner: -
@@ -8120,6 +8223,13 @@ CREATE POLICY tenant_isolation ON public.quality_gate_thresholds USING ((public.
 
 
 --
+-- Name: quality_thresholds tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.quality_thresholds USING ((public.paid_tenant_bypass() OR (quality_thresholds.account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (quality_thresholds.account_id = public.paid_current_account_id())));
+
+
+--
 -- Name: quality_metrics tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -8307,8 +8417,10 @@ SET search_path TO "$user", public;
 INSERT INTO "schema_migrations" (version) VALUES
 ('20260421162139'),
 ('20260421162135'),
+('20260421110831'),
 ('20260421083918'),
 ('20260421082052'),
+('20260421080223'),
 ('20260421050706'),
 ('20260418233122'),
 ('20260418175716'),

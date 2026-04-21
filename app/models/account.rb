@@ -28,6 +28,7 @@ class Account < ApplicationRecord
   has_many :billing_periods, dependent: :destroy
   has_many :billing_plans, dependent: :destroy
   has_many :service_containers, dependent: :destroy
+  has_many :quality_thresholds, dependent: :destroy
 
   validates :name, presence: true
   validates :plan, presence: true, inclusion: { in: PLANS }
