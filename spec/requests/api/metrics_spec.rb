@@ -28,6 +28,7 @@ RSpec.describe "Api::Metrics" do
       expect(body).to include("paid_agent_runs_active")
       expect(body).to include("paid_goodjob_queue_depth")
       expect(body).to include("paid_containers_active")
+      expect(body).to include("paid_container_pool_entries_total")
       expect(body).to include("paid_service_containers_total")
       expect(body).to include("paid_temporal_workflow_slots_total")
     end

@@ -5,6 +5,7 @@ require "rails_helper"
 RSpec.describe DockerOrphanCleanupJob do
   let(:job) { described_class.new }
   let(:agent_filter) { { label: [ "paid.agent_run_id" ] }.to_json }
+  let(:pool_filter) { { label: [ "paid.container_pool=true" ] }.to_json }
   let(:service_filter) { { label: [ "paid.service_container=true" ] }.to_json }
 
   def stub_no_containers
@@ -18,6 +19,12 @@ RSpec.describe DockerOrphanCleanupJob do
   def stub_agent_containers(*containers)
     allow(Docker::Container).to receive(:all)
       .with(all: true, filters: agent_filter)
+      .and_return(containers)
+  end
+
+  def stub_pool_containers(*containers)
+    allow(Docker::Container).to receive(:all)
+      .with(all: true, filters: pool_filter)
       .and_return(containers)
   end
 
@@ -39,6 +46,7 @@ RSpec.describe DockerOrphanCleanupJob do
       before do
         stub_no_volumes
         stub_service_containers
+        stub_pool_containers
       end
 
       it "removes containers for finished agent runs" do
@@ -148,6 +156,7 @@ RSpec.describe DockerOrphanCleanupJob do
       before do
         stub_no_volumes
         stub_agent_containers
+        stub_pool_containers
       end
 
       it "removes service containers with zero active agent runs" do

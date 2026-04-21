@@ -34,6 +34,7 @@ class AgentRun < ApplicationRecord
 
   has_many :agent_run_logs, dependent: :destroy
   has_many :agent_run_phases, -> { order(:started_at, :id) }, dependent: :destroy
+  has_many :container_pool_entries, dependent: :nullify
   has_many :token_usages, dependent: :destroy
   has_many :ab_test_assignments, dependent: :destroy
   has_many :container_metrics, dependent: :delete_all
@@ -1093,13 +1094,23 @@ class AgentRun < ApplicationRecord
   # @return [Containers::Provision::Result] Result with container_id on success
   # @raise [Containers::Provision::ProvisionError] When container creation fails
   def provision_container(**options)
+    pooled_result = Containers::PoolManager.new(project: project).acquire(agent_run: self, **options)
+    if pooled_result&.success?
+      @container_service = pooled_result[:service]
+      update!(container_id: pooled_result[:container_id])
+      return pooled_result
+    end
+
     @container_service = Containers::Provision.new(
       agent_run: self,
       worktree_path: worktree_path.presence,
       **options
     )
     result = @container_service.provision
-    update!(container_id: result[:container_id]) if result.success?
+    if result.success?
+      update!(container_id: result[:container_id])
+      PoolReplenishmentJob.perform_later(project_id)
+    end
     result
   end
 
@@ -1122,6 +1133,12 @@ class AgentRun < ApplicationRecord
   # @return [void]
   def cleanup_container(force: false)
     return if container_id.blank? && @container_service.nil?
+
+    if Containers::PoolManager.cleanup_claimed_container(agent_run: self, force: force)
+      @container_service = nil
+      update!(container_id: nil)
+      return
+    end
 
     ensure_container_service!
     @container_service.cleanup(force: force)
