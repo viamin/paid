@@ -54,7 +54,7 @@ RSpec.describe Containers::ServiceProvisioner do
 
         result = provisioner.provision(agent_run)
 
-        expected_db = "agent_run_#{agent_run.id.to_s.tr('-', '_')}"
+        expected_db = provisioner.send(:per_run_db_name, agent_run)
         expect(result).to include("DATABASE_URL")
         expect(result["DATABASE_URL"]).to eq("postgres://agent:agent@test-postgres:5432/#{expected_db}")
         expect(agent_run.reload.service_container_ids).to eq([ service_container.id ])
@@ -306,7 +306,7 @@ RSpec.describe Containers::ServiceProvisioner do
         create(:project_service_container, project: project, service_container: sc)
 
         result = provisioner.provision(agent_run)
-        expected_db = "agent_run_#{agent_run.id.to_s.tr('-', '_')}"
+        expected_db = provisioner.send(:per_run_db_name, agent_run)
         expect(result["DATABASE_URL"]).to eq("postgres://u:p@pg:5432/#{expected_db}")
       end
 
@@ -346,7 +346,7 @@ RSpec.describe Containers::ServiceProvisioner do
             )
           )
         )
-        expected_db = "agent_run_#{agent_run.id.to_s.tr('-', '_')}"
+        expected_db = provisioner.send(:per_run_db_name, agent_run)
         expect(result["DATABASE_URL"]).to eq("postgres://agent:agent@pg-blank:5432/#{expected_db}")
       end
 
@@ -635,6 +635,17 @@ RSpec.describe Containers::ServiceProvisioner do
       db_name = provisioner.send(:per_run_db_name, agent_run)
       expect(db_name).to start_with("agent_run_")
       expect(db_name).not_to include("-")
+    end
+
+    it "generates distinct database names for stale requeue attempts" do
+      first_attempt = provisioner.send(:per_run_db_name, agent_run)
+
+      agent_run.update!(stale_requeue_count: 1)
+      second_attempt = provisioner.send(:per_run_db_name, agent_run)
+
+      expect(first_attempt).to end_with("_attempt_0")
+      expect(second_attempt).to end_with("_attempt_1")
+      expect(second_attempt).not_to eq(first_attempt)
     end
 
     it "creates a new database when it does not exist" do

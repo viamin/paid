@@ -480,10 +480,10 @@ module Containers
       }
     end
 
-    # Generates a unique, safe database name for each agent run.
+    # Generates a unique, safe database name for each agent run attempt.
     # Uses a sanitized ID to ensure valid PostgreSQL identifier.
     def per_run_db_name(agent_run)
-      "agent_run_#{agent_run.id.to_s.tr('-', '_')}"
+      "agent_run_#{agent_run.id.to_s.tr('-', '_')}_attempt_#{agent_run.stale_requeue_count.to_i}"
     end
 
     # Creates an isolated database for this agent run inside the shared
