@@ -141,7 +141,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
     end
 
-    it "does not persist local labels when adding the GitHub label fails" do
+    it "fails before moving to needs_input when adding the GitHub label fails" do
       allow(client).to receive(:add_labels_to_issue).and_raise(GithubClient::Error.new("GitHub unavailable"))
       allow(llm_response).to receive(:output).and_return(
         {
@@ -150,9 +150,15 @@ RSpec.describe Activities::EnhanceIssueActivity do
         }.to_json
       )
 
-      result = activity.execute(agent_run_id: agent_run.id)
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(
+        Temporalio::Error::ApplicationError,
+        "Failed to apply enhance_issue control label #{project.enhance_issue_needs_input_label_name}"
+      )
 
-      expect(result[:label_applied]).to be_nil
+      expect(client).not_to have_received(:add_comment)
+      expect(issue.reload.paid_state).to eq("in_progress")
       expect(issue.reload.labels).not_to include(project.enhance_issue_needs_input_label_name)
     end
 

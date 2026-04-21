@@ -46,9 +46,9 @@ module Activities
       response = call_llm(agent_run, prompt_for(project, gh_issue, comments, context))
       parsed = parse_response!(agent_run, response)
       parsed = stop_after_max_rounds(parsed, project, issue)
+      label_result = apply_label_state(client, project, issue, parsed)
       comment_body = comment_body_for(parsed)
       gh_comment = client.add_comment(project.full_name, issue.github_number, comment_body)
-      label_result = apply_label_state(client, project, issue, parsed)
 
       track_tokens(agent_run, response)
       agent_run.log!("stdout", comment_body)
@@ -326,6 +326,7 @@ module Activities
       end
 
       added = labels_added(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
+      require_label_added!(project.enhance_issue_needs_input_label_name, added)
       removed = labels_removed(client, project, issue, [ project.enhance_issue_enhanced_label_name ])
       merge_local_labels(issue, add: added, remove: removed)
       { applied: added.first, max_rounds_reached: false }
@@ -378,6 +379,15 @@ module Activities
 
     def labels_added(client, project, issue, labels)
       labels.select { |label| add_label(client, project, issue, label) }
+    end
+
+    def require_label_added!(label, added)
+      return if added.include?(label)
+
+      raise Temporalio::Error::ApplicationError.new(
+        "Failed to apply enhance_issue control label #{label}",
+        type: "EnhanceIssueLabelAddFailed"
+      )
     end
 
     def labels_removed(client, project, issue, labels)
