@@ -1287,19 +1287,18 @@ module Activities
 
     def api_key_auth_command(provider_entry, command_prefix, prompt)
       base = command_prefix.shelljoin
-      unset_flags = api_key_unset_vars_for(provider_entry)
-        .map { |var| "-u #{var}" }
-        .join(" ")
       env_assignments = api_key_env_var_names_for(provider_entry)
-        .map { |var| %(#{var}="$PAID_PROVIDER_API_KEY") }
+        .map { |var| %(#{var}="paid-run:$AGENT_RUN_ID:$PROXY_TOKEN") }
+        .join(" ")
+      header_assignments = api_key_proxy_header_assignments_for(provider_entry)
         .join(" ")
 
-      script = "env #{unset_flags} #{env_assignments} #{base} \"$1\""
+      script = "env #{header_assignments} #{env_assignments} #{base} \"$1\""
       [ "sh", "-c", script, "--", prompt ]
     end
 
     def api_key_command_env(provider_entry)
-      { "PAID_PROVIDER_API_KEY" => provider_entry.provider_api_key&.api_key.to_s }
+      { "PAID_PROVIDER_ID" => provider_entry.id.to_s }
     end
 
     def api_key_env_var_names_for(provider_entry)
@@ -1315,17 +1314,21 @@ module Activities
       end
     end
 
-    def api_key_unset_vars_for(provider_entry)
+    def api_key_proxy_header_assignments_for(provider_entry)
       case provider_entry.provider_key
       when "gemini"
-        ProviderSupport.subscription_auth_unset_vars_for("gemini")
+        [
+          %(GOOGLE_HEADER_X_PAID_PROVIDER_ID="$PAID_PROVIDER_ID"),
+          %(GEMINI_CLI_CUSTOM_HEADERS="X-Agent-Run-Id: $AGENT_RUN_ID, X-Proxy-Token: $PROXY_TOKEN, X-Paid-Provider-Id: $PAID_PROVIDER_ID")
+        ]
       when "codex"
-        ProviderSupport.subscription_auth_unset_vars_for("codex")
+        [ %(OPENAI_HEADER_X_PAID_PROVIDER_ID="$PAID_PROVIDER_ID") ]
       when "claude", "cursor", "aider"
-        %w[
-          ANTHROPIC_BASE_URL
-          ANTHROPIC_HEADER_X_AGENT_RUN_ID
-          ANTHROPIC_HEADER_X_PROXY_TOKEN
+        [
+          %(ANTHROPIC_BASE_URL="$PAID_PROXY_URL/api/proxy/anthropic"),
+          %(ANTHROPIC_HEADER_X_AGENT_RUN_ID="$AGENT_RUN_ID"),
+          %(ANTHROPIC_HEADER_X_PROXY_TOKEN="$PROXY_TOKEN"),
+          %(ANTHROPIC_HEADER_X_PAID_PROVIDER_ID="$PAID_PROVIDER_ID")
         ]
       else
         []

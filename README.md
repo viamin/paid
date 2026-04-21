@@ -16,8 +16,8 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
   - Gap: subscription-auth and direct-outbound provider runs use the internal network for provider access; tracked by [#1284](https://github.com/viamin/paid/issues/1284).
 - **Multiple Agents and Providers**: Support for Claude Code, Codex, Cursor, Gemini, Aider, OpenCode, Kilocode, and Copilot when the runtime is both supported by `agent-harness` and installed in `paid-agent`
   - Gap: broader runtime parity is tracked by provider metadata and smoke-test refactors ([#798](https://github.com/viamin/paid/issues/798), [#796](https://github.com/viamin/paid/issues/796)) plus agent-image install delegation work ([#789](https://github.com/viamin/paid/issues/789)-[#795](https://github.com/viamin/paid/issues/795)).
-- **Secrets Proxy**: Git credentials and default platform LLM keys are proxied through authenticated endpoints
-  - Gap: stored provider API-key auth and subscription auth can still place provider credentials inside the agent runtime; agent-run cleanup is tracked by [#1281](https://github.com/viamin/paid/issues/1281), and knowledge-side direct key usage is tracked by [#1043](https://github.com/viamin/paid/issues/1043) and [#1044](https://github.com/viamin/paid/issues/1044).
+- **Secrets Proxy**: Git credentials, default platform LLM keys, and stored provider API-key auth for proxy-compatible agent CLIs are proxied through authenticated endpoints
+  - Caveat: subscription auth intentionally copies CLI login state into the agent runtime, and direct-outbound OpenCode/KiloCode API-key providers still place provider credentials in runtime config because they can target non-proxied upstream APIs. Knowledge-side direct key usage is tracked by [#1043](https://github.com/viamin/paid/issues/1043) and [#1044](https://github.com/viamin/paid/issues/1044).
 - **Human-in-the-Loop**: All changes go through PRs; humans approve merges (can be automated if desired)
 - **Full Automation or Manual Control**: Auto-pick next issue or trigger runs manually from the UI
 - **Prompt Management**: Version prompts as data, diff versions, and manage A/B tests before promoting prompt changes
@@ -205,7 +205,10 @@ bin/dev                 # Start Rails, JS/CSS watchers, and the Temporal worker
 By default, provider tests and real agent runs use the same containerized auth path. For Codex and Gemini, when a Paid-managed proxy key is configured on the `web` service, Test Agent can instead use the agent-harness auth path for faster validation. Each provider can usually be configured in one of two ways:
 
 1. Paid-managed proxy auth using an API key on the `web` service.
-2. Subscription auth using local CLI login state that Paid copies into the agent container.
+2. Stored provider API-key auth using an API key saved in Paid. For Claude, Codex, Gemini, Cursor, and Aider agent runs, Paid keeps the stored key server-side and routes provider calls through the secrets proxy.
+3. Subscription auth using local CLI login state that Paid copies into the agent container.
+
+OpenCode and KiloCode direct-outbound API-key entries are the exception: Paid writes their runtime provider config inside the agent container because those tools can target upstream APIs that the secrets proxy does not cover.
 
 ### Claude
 

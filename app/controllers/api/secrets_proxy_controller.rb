@@ -164,7 +164,10 @@ module Api
     end
 
     def fetch_api_key(provider)
-      key = knowledge_run_api_key(provider)
+      key = agent_run_api_key(provider)
+      return if performed?
+
+      key ||= knowledge_run_api_key(provider)
       key ||= Rails.application.credentials.dig(:llm, :"#{provider}_api_key")
       key ||= ENV["#{provider.to_s.upcase}_API_KEY"]
 
@@ -175,6 +178,38 @@ module Api
       end
 
       key
+    end
+
+    def agent_run_api_key(provider)
+      return unless @agent_run
+      return unless request.headers["X-Paid-Provider-Id"].present?
+
+      provider_entry = agent_run_provider_entry(provider)
+      unless provider_entry
+        log_error("secrets_proxy.invalid_provider_key", "Provider key is not available for #{provider}")
+        render json: { error: "Provider key is not available for this agent run" }, status: :forbidden
+        return nil
+      end
+
+      provider_entry.provider_api_key.api_key
+    end
+
+    def agent_run_provider_entry(provider)
+      provider_id = request.headers["X-Paid-Provider-Id"].presence
+      return unless provider_id
+
+      provider_entries = @agent_run.project.effective_owner
+        &.providers
+        &.api_key
+        &.joins(:provider_api_key)
+      return unless provider_entries
+
+      available_provider_entries(provider_entries)
+        .find_by(id: provider_id, provider_api_keys: { api_service_type: provider.to_s })
+    end
+
+    def available_provider_entries(provider_entries)
+      provider_entries.for_agent_runs.or(provider_entries.for_fallback)
     end
 
     def resolve_max_tokens_per_run
