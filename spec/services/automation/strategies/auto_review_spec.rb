@@ -97,6 +97,25 @@ RSpec.describe Automation::Strategies::AutoReview do
       )
     end
 
+    it "suppresses create_pr follow-up when review_bot_review_pending is bundled with other triggers (#1336)" do
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        current_followup_count: 0,
+        labels_to_remove: [],
+        triggers: [
+          { type: "review_bot_review_pending", request_login: "copilot" },
+          { type: "ci_failure", details: "test-suite" }
+        ]
+      })
+
+      types = result.to_h[:decisions].map { |d| d[:type] }
+      expect(types).to include("request_review")
+      expect(types).not_to include("queue_create_pr_run")
+      expect(types).not_to include("record_pr_followup")
+    end
+
     it "emits the trigger's reviewer for manual_review_pending" do
       result = evaluate(scan: {
         issue_id: pull_request.id,

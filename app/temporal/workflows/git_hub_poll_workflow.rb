@@ -406,21 +406,28 @@ module Workflows
     end
 
     def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
+      dispatch_review_bot_review_request(project_id, pr_data)
+
+      if Temporalio::Workflow.patched("pause-followup-during-review-v1")
+        # review_bot_review_pending is a hard gate: suppress all create_pr
+        # follow-up runs while a bot review is outstanding, mirroring the
+        # paid_agent_review_pending hard gate from #1135. Other triggers
+        # (CI failures, merge conflicts, conversation comments) will be
+        # re-detected on the next scan cycle after the review completes
+        # and any resulting code changes are made. (#1336)
+        return nil
+      end
+
       other_triggers = trigger_types - [ "review_bot_review_pending" ]
 
-      # review_bot_review_pending is only a draft-phase gate when it is the
-      # sole trigger. Mixed trigger sets still need a follow-up run to address
-      # actionable feedback or CI failures, even if that same head is also
-      # waiting on a bot review.
       if pr_data[:phase].in?(%w[draft restarted])
-        dispatch_review_bot_review_request(project_id, pr_data)
         return if other_triggers.empty?
 
         start_draft_followup_workflow(project_id, pr_data)
         return
       end
 
-      return dispatch_review_bot_review_request(project_id, pr_data) if other_triggers.empty?
+      return if other_triggers.empty?
 
       start_pr_followup_workflow(project_id, pr_data)
     end

@@ -153,11 +153,11 @@ module Automation
       end
 
       def review_bot_pending_decisions(plugins, signals, trigger_types)
-        decisions = review_bot_request_decisions(plugins)
-
-        other_triggers = trigger_types - [ Automation::ReviewMethods::Copilot::TRIGGER_TYPE ]
-        decisions.concat(followup_decisions(signals)) if other_triggers.any?
-        decisions.compact
+        # review_bot_review_pending is a hard gate: emit only review
+        # request decisions and suppress create_pr follow-up runs while
+        # the bot review is outstanding, mirroring the
+        # paid_agent_review_pending hard gate from #1135. (#1336)
+        review_bot_request_decisions(plugins).compact
       end
 
       def non_bot_pending_decisions(plugins, signals, trigger_types)

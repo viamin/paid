@@ -637,7 +637,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RequestReviewActivity, hash_including(reviewers: chain), timeout: anything)
     end
 
-    it "requests review and dispatches draft followup when other triggers are present in draft" do
+    it "requests review but suppresses draft followup when other triggers are present (hard gate #1336)" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
         current_draft_review_count: 1,
@@ -652,8 +652,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
           hash_including(reviewers: array_including(Activities::RequestReviewActivity::COPILOT_LOGIN)), timeout: anything)
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::QueueAgentRunActivity, expected_draft_queue_input(count: 1), timeout: 30)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
     end
 
     it "does not start followup workflow when review_bot_review_pending is the only trigger" do
@@ -670,7 +670,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
-    it "still dispatches ready-phase followup when review_bot_review_pending is bundled with actionable triggers" do
+    it "suppresses ready-phase followup when review_bot_review_pending is bundled with actionable triggers (hard gate #1336)" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "ready",
         triggers: [
@@ -681,10 +681,10 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
-      expect(workflow).not_to have_received(:run_activity)
+      expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
           hash_including(reviewers: array_including(Activities::RequestReviewActivity::COPILOT_LOGIN)), timeout: anything)
-      expect(workflow).to have_received(:run_activity)
+      expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RecordPrFollowupActivity, anything, timeout: anything)
     end
 
