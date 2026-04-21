@@ -29,6 +29,7 @@ RSpec.describe "Projects::QualityDashboards" do
         get project_quality_dashboard_path(project)
 
         expect(response.body).to include("Quality Thresholds")
+        expect(response.body).to include("CI Passed")
         expect(response.body).to include("Lint Clean")
         expect(response.body).to include("PR Merged")
       end
@@ -105,6 +106,42 @@ RSpec.describe "Projects::QualityDashboards" do
         expect(response).to redirect_to(project_quality_dashboard_path(project))
         threshold = project.quality_thresholds.find_by!(metric_type: "lint_clean", goal_type: "create_pr")
         expect(threshold.min_value).to eq(0.75)
+      end
+
+      it "creates a CI pass-rate project override" do
+        patch project_quality_thresholds_path(project), params: {
+          quality_thresholds: {
+            "0" => {
+              metric_type: "ci_passed",
+              goal_type: "create_pr",
+              min_value: "0.8",
+              override: "1",
+              enabled: "1"
+            }
+          }
+        }
+
+        expect(response).to redirect_to(project_quality_dashboard_path(project))
+        threshold = project.quality_thresholds.find_by!(metric_type: "ci_passed", goal_type: "create_pr")
+        expect(threshold.min_value).to eq(0.8)
+      end
+
+      it "creates a test pass-rate project override" do
+        patch project_quality_thresholds_path(project), params: {
+          quality_thresholds: {
+            "0" => {
+              metric_type: "tests_pass",
+              goal_type: "create_pr",
+              min_value: "0.8",
+              override: "1",
+              enabled: "1"
+            }
+          }
+        }
+
+        expect(response).to redirect_to(project_quality_dashboard_path(project))
+        threshold = project.quality_thresholds.find_by!(metric_type: "tests_pass", goal_type: "create_pr")
+        expect(threshold.min_value).to eq(0.8)
       end
 
       it "removes a project override when inheritance is selected" do

@@ -3,13 +3,16 @@
 class QualityThreshold < ApplicationRecord
   DEFAULT_WINDOW_SIZE = 5
   DEFAULT_MIN_SAMPLE_SIZE = 3
-  METRIC_TYPES = %w[composite_score pr_created pr_merged iterations lint_clean
+  METRIC_TYPES = %w[composite_score pr_created ci_passed pr_merged iterations lint_clean
+                    tests_pass
                     review_comment_count agent_rerun_count issue_created
                     reaction_score review_posted review_score comment_posted
                     author_replied question_count].freeze
   GOAL_TYPES = AgentRun::GOALS.freeze
   DEFAULT_DEFINITIONS = [
     { "metric_type" => "composite_score", "goal_type" => "create_pr", "min_value" => 0.5 },
+    { "metric_type" => "ci_passed", "goal_type" => "create_pr", "min_value" => 0.5 },
+    { "metric_type" => "tests_pass", "goal_type" => "create_pr", "min_value" => 0.5 },
     { "metric_type" => "pr_merged", "goal_type" => "create_pr", "min_value" => 0.3 }
   ].freeze
 

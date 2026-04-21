@@ -31,6 +31,11 @@ RSpec.describe QualityThreshold do
       expect(threshold).not_to be_valid
     end
 
+    it "accepts CI and test pass-rate thresholds" do
+      expect(build(:quality_threshold, metric_type: "ci_passed")).to be_valid
+      expect(build(:quality_threshold, metric_type: "tests_pass")).to be_valid
+    end
+
     it "enforces one threshold per account metric and goal" do
       existing = create(:quality_threshold)
       duplicate = build(:quality_threshold,
@@ -58,8 +63,7 @@ RSpec.describe QualityThreshold do
 
       thresholds = described_class.effective_for(project: project, goal_type: "create_pr")
 
-      expect(thresholds.map(&:metric_type)).to include("composite_score", "pr_merged")
-      expect(thresholds.map(&:metric_type)).not_to include("ci_passed")
+      expect(thresholds.map(&:metric_type)).to include("composite_score", "ci_passed", "tests_pass", "pr_merged")
     end
 
     it "lets account thresholds override built-in defaults" do
@@ -119,6 +123,8 @@ RSpec.describe QualityThreshold do
       expect(thresholds.map { |threshold| [ threshold.metric_type, threshold.goal_type ] }).to include(
         [ "issue_created", "create_issue" ],
         [ "reaction_score", "create_issue" ],
+        [ "ci_passed", "create_pr" ],
+        [ "tests_pass", "create_pr" ],
         [ "review_posted", "review" ],
         [ "reaction_score", "review" ],
         [ "comment_posted", "enhance_issue" ],
@@ -128,12 +134,16 @@ RSpec.describe QualityThreshold do
       )
     end
 
-    it "omits metrics that are displayed but not collected as score samples" do
+    it "marks built-in create_pr defaults as enabled" do
       project = create(:project)
 
       thresholds = described_class.configurable_for(project: project)
+      defaults = thresholds.select(&:default?)
 
-      expect(thresholds.map(&:metric_type)).not_to include("ci_passed", "tests_pass")
+      expect(defaults.map { |threshold| [ threshold.metric_type, threshold.goal_type, threshold.enabled? ] }).to include(
+        [ "ci_passed", "create_pr", true ],
+        [ "tests_pass", "create_pr", true ]
+      )
     end
 
     it "overlays account defaults and project overrides on configurable rows" do
