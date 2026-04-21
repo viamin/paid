@@ -15,9 +15,9 @@
   "dependencies": {
     "@hotwired/stimulus": "3.2.2",
     "@hotwired/turbo-rails": "8.0.23",
-    "@tailwindcss/cli": "4.2.2",
+    "@tailwindcss/cli": "4.2.3",
     "sortablejs": "1.15.7",
-    "tailwindcss": "4.2.2"
+    "tailwindcss": "4.2.3"
   },
   "resolutions": {
     "minimatch": ">=10.2.3"
