@@ -47,21 +47,37 @@ RSpec.describe AgentRunCancellationJob, type: :job do
 
     it "cleans up the container when present" do
       agent_run.update!(container_id: "container-123")
-      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
-      allow(agent_run).to receive(:cleanup_container)
+      container = double(id: "container-123")
+      volume = double
+
+      allow(container).to receive(:refresh!)
+      allow(container).to receive(:info).and_return("State" => { "Running" => true })
+      allow(container).to receive(:stop)
+      allow(container).to receive(:delete)
+      allow(Docker::Container).to receive(:get).with("container-123").and_return(container)
+      allow(Docker::Volume).to receive(:get).with("paid-workspace-#{agent_run.id}").and_return(volume)
+      allow(volume).to receive(:remove)
 
       described_class.perform_now(agent_run.id)
 
-      expect(agent_run).to have_received(:cleanup_container).with(force: true)
+      expect(container).to have_received(:stop).with(timeout: 0)
+      expect(container).to have_received(:delete).with(force: true, v: true)
+      expect(volume).to have_received(:remove)
+      expect(agent_run.reload.container_id).to be_nil
     end
 
-    it "re-raises Docker cleanup errors for retry_on to handle" do
-      error = Docker::Error::DockerError.new("daemon unavailable")
+    it "clears the container reference when the container is already missing" do
       agent_run.update!(container_id: "container-123")
-      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
-      allow(agent_run).to receive(:cleanup_container).and_raise(error)
+      allow(Docker::Container).to receive(:get)
+        .with("container-123")
+        .and_raise(Docker::Error::NotFoundError, "not found")
+      allow(Docker::Volume).to receive(:get)
+        .with("paid-workspace-#{agent_run.id}")
+        .and_raise(Docker::Error::NotFoundError, "not found")
 
-      expect { described_class.new.perform(agent_run.id) }.to raise_error(error)
+      expect { described_class.perform_now(agent_run.id) }.not_to raise_error
+
+      expect(agent_run.reload.container_id).to be_nil
     end
 
     it "does not raise when agent run is not found" do

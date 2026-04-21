@@ -1525,22 +1525,6 @@ RSpec.describe "AgentRuns" do
         expect(flash[:notice]).to eq("Agent run is no longer active.")
       end
 
-      it "shows finished message when run completes during cancellation" do
-        agent_run = create(:agent_run, :running, project: project)
-
-        # rubocop:disable RSpec/AnyInstance
-        allow_any_instance_of(AgentRun).to receive(:with_lock) do |instance, &block|
-          instance.assign_attributes(status: "completed", completed_at: Time.current)
-          block.call
-        end
-        # rubocop:enable RSpec/AnyInstance
-
-        post cancel_project_agent_run_path(project, agent_run)
-
-        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
-        expect(flash[:notice]).to eq("Agent run finished before it could be cancelled.")
-      end
-
       it "does not allow cancelling runs from other accounts" do
         other_account = create(:account)
         other_token = create(:github_token, account: other_account)

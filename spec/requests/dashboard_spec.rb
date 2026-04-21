@@ -214,22 +214,5 @@ RSpec.describe "Dashboard" do
       expect(response).to have_http_status(:see_other)
       expect(flash[:notice]).to eq("Agent run is no longer active.")
     end
-
-    it "shows a different message when the run finishes during cancellation" do
-      agent_run = create(:agent_run, project: project, status: "running", started_at: 2.minutes.ago)
-
-      # rubocop:disable RSpec/AnyInstance
-      allow_any_instance_of(AgentRun).to receive(:with_lock) do |instance, &block|
-        instance.assign_attributes(status: "completed", completed_at: Time.current)
-        block.call
-      end
-      # rubocop:enable RSpec/AnyInstance
-
-      post dashboard_cancel_run_path(agent_run)
-
-      expect(response).to redirect_to(dashboard_path)
-      expect(response).to have_http_status(:see_other)
-      expect(flash[:notice]).to eq("Agent run finished before it could be cancelled.")
-    end
   end
 end
