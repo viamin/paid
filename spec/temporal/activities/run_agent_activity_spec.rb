@@ -338,11 +338,50 @@ RSpec.describe Activities::RunAgentActivity do
       env = activity.send(:command_env_for, context, "ping")
 
       expect(command[0..1]).to eq(%w[sh -c])
-      expect(command[2]).to include('env -u ANTHROPIC_BASE_URL -u ANTHROPIC_HEADER_X_AGENT_RUN_ID -u ANTHROPIC_HEADER_X_PROXY_TOKEN')
-      expect(command[2]).to include('ANTHROPIC_API_KEY="$PAID_PROVIDER_API_KEY"')
+      expect(command[2]).to include('ANTHROPIC_HEADER_X_PAID_PROVIDER_ID="$PAID_PROVIDER_ID"')
+      expect(command[2]).to include('ANTHROPIC_API_KEY="paid-run:$AGENT_RUN_ID:$PROXY_TOKEN"')
+      expect(command[2]).not_to include("sk-anthropic-secret")
       expect(command[3]).to eq("--")
       expect(command[4]).to eq("ping")
-      expect(env).to eq("PAID_PROVIDER_API_KEY" => "sk-anthropic-secret")
+      expect(env).to eq("PAID_PROVIDER_ID" => provider.id.to_s)
+    end
+
+    it "builds an API-key wrapper for OpenAI-backed fallback entries without injecting the provider key" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openai", api_key: "sk-openai-secret")
+      provider = create(:provider, :api_key, user: user, provider_key: "codex", provider_api_key: api_key)
+      context = described_class::CommandContext.new(
+        provider_candidate: provider.routing_key,
+        provider: "codex",
+        user: user
+      )
+
+      command = activity.send(:build_command, context, "ping")
+      env = activity.send(:command_env_for, context, "ping")
+
+      expect(command[2]).to include('OPENAI_HEADER_X_PAID_PROVIDER_ID="$PAID_PROVIDER_ID"')
+      expect(command[2]).to include('OPENAI_API_KEY="paid-run:$AGENT_RUN_ID:$PROXY_TOKEN"')
+      expect(command[2]).not_to include("sk-openai-secret")
+      expect(env).to eq("PAID_PROVIDER_ID" => provider.id.to_s)
+    end
+
+    it "builds an API-key wrapper for Google-backed fallback entries without injecting the provider key" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "google", api_key: "google-secret")
+      provider = create(:provider, :api_key, user: user, provider_key: "gemini", provider_api_key: api_key)
+      context = described_class::CommandContext.new(
+        provider_candidate: provider.routing_key,
+        provider: "gemini",
+        user: user
+      )
+
+      command = activity.send(:build_command, context, "ping")
+      env = activity.send(:command_env_for, context, "ping")
+
+      expect(command[2]).to include('GOOGLE_HEADER_X_PAID_PROVIDER_ID="$PAID_PROVIDER_ID"')
+      expect(command[2]).to include("X-Paid-Provider-Id: $PAID_PROVIDER_ID")
+      expect(command[2]).to include('GEMINI_API_KEY="paid-run:$AGENT_RUN_ID:$PROXY_TOKEN"')
+      expect(command[2]).to include('GOOGLE_API_KEY="paid-run:$AGENT_RUN_ID:$PROXY_TOKEN"')
+      expect(command[2]).not_to include("google-secret")
+      expect(env).to eq("PAID_PROVIDER_ID" => provider.id.to_s)
     end
 
     it "uses canonical provider state keys for subscription entries" do
@@ -517,8 +556,9 @@ RSpec.describe Activities::RunAgentActivity do
         rate_limit_failure
       else
         expect(command[0..1]).to eq(%w[sh -c])
-        expect(command[2]).to include('ANTHROPIC_API_KEY="$PAID_PROVIDER_API_KEY"')
-        expect(opts[:env]).to include("PAID_PROVIDER_API_KEY" => "sk-fallback-secret")
+        expect(command[2]).to include('ANTHROPIC_API_KEY="paid-run:$AGENT_RUN_ID:$PROXY_TOKEN"')
+        expect(command[2]).not_to include("sk-fallback-secret")
+        expect(opts[:env]).to include("PAID_PROVIDER_ID" => fallback_provider.id.to_s)
         exec_success
       end
     end
@@ -1806,7 +1846,7 @@ RSpec.describe Activities::RunAgentActivity do
           include("provider" => "claude_code", "error_type" => "rate_limited"),
           include("provider" => fallback_provider.routing_key, "error_type" => "rate_limited")
         )
-        expect(execute_calls.any? { |command, opts| command.first == "sh" && opts[:env] == { "PAID_PROVIDER_API_KEY" => "sk-fallback-secret" } }).to be(false)
+        expect(execute_calls.any? { |_command, opts| opts[:env].value?("sk-fallback-secret") }).to be(false)
       end
 
       it "uses provider display names in exhausted-provider labels" do

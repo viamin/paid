@@ -78,6 +78,7 @@ module Api
 
     def extract_embedded_proxy_credentials
       parse_proxy_credential(request.headers["Authorization"]&.delete_prefix("Bearer ")) ||
+        parse_proxy_credential(request.headers["X-Api-Key"]) ||
         parse_proxy_credential(request.headers["X-Goog-Api-Key"])
     end
 
