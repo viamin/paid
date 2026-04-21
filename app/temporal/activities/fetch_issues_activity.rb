@@ -237,7 +237,7 @@ module Activities
         next unless Array(issue_data[:removed_labels]).include?(label)
 
         issue = project.issues.find(issue_data[:id])
-        next if issue.is_pull_request?
+        next if issue.is_pull_request? || issue.github_state == "closed"
 
         enqueue_enhance_issue_recheck(project, issue)
       end

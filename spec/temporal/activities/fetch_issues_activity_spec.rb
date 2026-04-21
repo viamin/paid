@@ -216,6 +216,17 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(result[:issues]).not_to include(hash_including(id: issue.id))
       end
 
+      it "does not request a recheck for closed issues" do
+        github_issue.state = "closed"
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:enhance_issue_rechecks]).to be_empty
+        expect(issue.reload.enhance_issue_rounds).to eq(0)
+        expect(issue.paid_state).to eq("needs_input")
+        expect(result[:issues]).not_to include(hash_including(id: issue.id))
+      end
+
       it "posts a stop comment instead of rechecking after the max round" do
         project.update!(max_enhance_issue_reevaluation_rounds: 1)
         issue.update!(enhance_issue_rounds: 1)
