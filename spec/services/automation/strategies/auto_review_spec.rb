@@ -97,7 +97,41 @@ RSpec.describe Automation::Strategies::AutoReview do
       )
     end
 
-    it "suppresses create_pr follow-up when review_bot_review_pending is bundled with other triggers (#1336)" do
+    it "suppresses follow-up decisions while review_bot_review_pending is outstanding (#1336)" do
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        current_followup_count: 0,
+        triggers: [
+          { type: "review_bot_review_pending", request_login: "copilot" },
+          { type: "ci_failure", details: [ "test-suite" ] }
+        ]
+      })
+
+      expect(result.to_h).to eq(
+        decisions: [
+          { type: "request_review", pr_number: 42, reviewers: [ "copilot" ] }
+        ]
+      )
+    end
+
+    it "suppresses follow-up decisions for auto-review bot pending triggers with no request login" do
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        current_followup_count: 0,
+        triggers: [
+          { type: "review_bot_review_pending", request_login: nil },
+          { type: "merge_conflicts", details: "PR has merge conflicts" }
+        ]
+      })
+
+      expect(result.to_h).to eq(decisions: [ { type: "noop" } ])
+    end
+
+    it "keeps follow-up decisions for posted bot feedback while review_bot_review_pending is outstanding" do
       result = evaluate(scan: {
         issue_id: pull_request.id,
         pr_number: 42,
@@ -106,14 +140,17 @@ RSpec.describe Automation::Strategies::AutoReview do
         labels_to_remove: [],
         triggers: [
           { type: "review_bot_review_pending", request_login: "copilot" },
-          { type: "ci_failure", details: "test-suite" }
+          { type: "review_bot_comments", details: [ "Please update the tests" ] }
         ]
       })
 
-      types = result.to_h[:decisions].map { |d| d[:type] }
-      expect(types).to include("request_review")
-      expect(types).not_to include("queue_create_pr_run")
-      expect(types).not_to include("record_pr_followup")
+      expect(result.to_h).to eq(
+        decisions: [
+          { type: "request_review", pr_number: 42, reviewers: [ "copilot" ] },
+          { type: "queue_create_pr_run", issue_id: pull_request.id, source_pull_request_number: 42 },
+          { type: "record_pr_followup", issue_id: pull_request.id, labels_to_remove: [], expected_followup_count: 0 }
+        ]
+      )
     end
 
     it "emits the trigger's reviewer for manual_review_pending" do
@@ -189,6 +226,45 @@ RSpec.describe Automation::Strategies::AutoReview do
 
       types = result.to_h[:decisions].map { |d| d[:type] }
       expect(types).to include("record_review_goal_retry", "queue_review_run")
+    end
+
+    it "suppresses retry follow-up decisions while review_bot_review_pending is outstanding" do
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        current_review_goal_retry_count: 1,
+        current_followup_count: 0,
+        triggers: [
+          { type: "review_goal_retry" },
+          { type: "review_bot_review_pending", request_login: "copilot" },
+          { type: "ci_failure", details: [ "test-suite" ] }
+        ]
+      })
+
+      types = result.to_h[:decisions].map { |d| d[:type] }
+      expect(types).to include("record_review_goal_retry", "queue_review_run", "request_review")
+      expect(types).not_to include("queue_create_pr_run", "record_pr_followup")
+    end
+
+    it "keeps retry follow-up decisions for posted bot feedback while review_bot_review_pending is outstanding" do
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        current_review_goal_retry_count: 1,
+        current_followup_count: 0,
+        labels_to_remove: [],
+        triggers: [
+          { type: "review_goal_retry" },
+          { type: "review_bot_review_pending", request_login: "copilot" },
+          { type: "review_bot_threads", details: [ "Please update the tests" ] }
+        ]
+      })
+
+      types = result.to_h[:decisions].map { |d| d[:type] }
+      expect(types).to include("record_review_goal_retry", "queue_review_run", "request_review")
+      expect(types).to include("queue_create_pr_run", "record_pr_followup")
     end
 
     it "marks ready on ready_for_owner triggers" do

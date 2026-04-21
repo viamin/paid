@@ -13,6 +13,9 @@ module Workflows
   class GitHubPollWorkflow < BaseWorkflow
     include Automation::ReviewBotTrigger
     MAX_ITERATIONS = 100
+    POSTED_BOT_FEEDBACK_TRIGGER_TYPES = %w[
+      review_bot_comments review_bot_threads
+    ].freeze
 
     workflow_signal
     def request_sync
@@ -409,12 +412,17 @@ module Workflows
       if Temporalio::Workflow.patched("pause-review-bot-followup-during-review-v1")
         dispatch_review_bot_review_request(project_id, pr_data)
 
-        # review_bot_review_pending is a hard gate: suppress all create_pr
-        # follow-up runs while a bot review is outstanding, mirroring the
-        # paid_agent_review_pending hard gate from #1135. Other triggers
-        # (CI failures, merge conflicts, conversation comments) will be
-        # re-detected on the next scan cycle after the review completes
-        # and any resulting code changes are made. (#1336)
+        # Posted bot feedback is already actionable; keep the hard gate for
+        # outstanding review requests, but let the agent resolve existing bot
+        # comments/threads.
+        if posted_bot_feedback_trigger?(trigger_types)
+          if pr_data[:phase].in?(%w[draft restarted])
+            start_draft_followup_workflow(project_id, pr_data)
+          else
+            start_pr_followup_workflow(project_id, pr_data)
+          end
+        end
+
         return nil
       end
 
@@ -448,6 +456,10 @@ module Workflows
         log_key: "pr_review.request_review_bot_review_failed")
     end
 
+    def posted_bot_feedback_trigger?(trigger_types)
+      POSTED_BOT_FEEDBACK_TRIGGER_TYPES.any? { |type| trigger_types.include?(type) }
+    end
+
     def handle_review_goal_retry(project_id, pr_data)
       trigger_types = (pr_data[:triggers] || []).map { |t| t[:type] }
 
@@ -478,6 +490,11 @@ module Workflows
       end
 
       dispatch_manual_review_request(project_id, pr_data)
+
+      if trigger_types.include?("review_bot_review_pending")
+        dispatch_bot_review_request(project_id, pr_data)
+        return unless posted_bot_feedback_trigger?(trigger_types)
+      end
 
       followup_trigger_types = %w[
         ci_failure review_threads conversation_comments changes_requested

@@ -640,7 +640,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RequestReviewActivity, hash_including(reviewers: chain), timeout: anything)
     end
 
-    it "requests review but suppresses draft followup when other triggers are present (hard gate #1336)" do
+    it "requests review and suppresses draft followup when other triggers are present in draft" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
         current_draft_review_count: 1,
@@ -656,7 +656,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RequestReviewActivity,
           hash_including(reviewers: array_including(Activities::RequestReviewActivity::COPILOT_LOGIN)), timeout: anything)
       expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "create_pr"), timeout: anything)
     end
 
     it "does not start followup workflow when review_bot_review_pending is the only trigger" do
@@ -673,7 +673,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
-    it "suppresses ready-phase followup when review_bot_review_pending is bundled with actionable triggers (hard gate #1336)" do
+    it "requests review and suppresses ready-phase followup when review_bot_review_pending is bundled with actionable triggers" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "ready",
         triggers: [
@@ -688,7 +688,50 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RequestReviewActivity,
           hash_including(reviewers: array_including(Activities::RequestReviewActivity::COPILOT_LOGIN)), timeout: anything)
       expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "create_pr"), timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RecordPrFollowupActivity, anything, timeout: anything)
+    end
+
+    it "suppresses create_pr followup for stale auto-review bot signals with no request login" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        current_followup_count: 0,
+        triggers: [
+          { type: "review_bot_review_pending", request_login: nil },
+          { type: "ci_failure", details: [ "rspec" ] }
+        ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, anything, timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "create_pr"), timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RecordPrFollowupActivity, anything, timeout: anything)
+    end
+
+    it "keeps ready-phase followup for posted bot feedback while review_bot_review_pending is outstanding" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        current_followup_count: 0,
+        triggers: [
+          { type: "review_bot_review_pending", request_login: Activities::RequestReviewActivity::COPILOT_LOGIN },
+          { type: "review_bot_threads", details: [ "Address review thread" ] }
+        ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: array_including(Activities::RequestReviewActivity::COPILOT_LOGIN)), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "create_pr"), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordPrFollowupActivity, hash_including(issue_id: 10), timeout: anything)
     end
 
     it "preserves ready-phase replay order before the review pending hard gate patch" do
@@ -991,7 +1034,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           hash_including(reviewers: [ "human-reviewer" ]), timeout: anything)
     end
 
-    it "defers bot review but dispatches manual review when followup triggers coexist" do
+    it "dispatches bot review and suppresses followup when bot pending coexists with retry followup triggers" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "ready",
         triggers: [
@@ -1007,12 +1050,34 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity, hash_including(goal: "review"), timeout: anything)
-      expect(workflow).not_to have_received(:run_activity)
+      expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "copilot-bot" ]), timeout: anything)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "human-reviewer" ]), timeout: anything)
-      expect(workflow).to have_received(:run_activity)
+      expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RecordPrFollowupActivity, anything, timeout: anything)
+    end
+
+    it "dispatches bot review and keeps followup when retry includes posted bot feedback" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        triggers: [
+          { type: "review_goal_retry", details: "Retrying failed review-goal run" },
+          { type: "review_bot_review_pending", request_login: "copilot-bot" },
+          { type: "review_bot_comments", details: [ "Address bot feedback" ] }
+        ],
+        current_review_goal_retry_count: 1,
+        current_followup_count: 0
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "copilot-bot" ]), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "create_pr"), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordPrFollowupActivity, hash_including(issue_id: 10), timeout: anything)
     end
 
     it "processes ready_for_owner alongside review_goal_retry" do

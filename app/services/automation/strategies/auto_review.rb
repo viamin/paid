@@ -49,6 +49,9 @@ module Automation
         ci_failure review_threads conversation_comments changes_requested
         actionable_labels merge_conflicts review_bot_comments review_bot_threads
       ].freeze
+      POSTED_BOT_FEEDBACK_TRIGGER_TYPES = %w[
+        review_bot_comments review_bot_threads
+      ].freeze
 
       # Scan may be provided via +context.metadata[:scan]+; when absent,
       # the strategy emits a noop result (this mirrors the behavior of
@@ -153,11 +156,16 @@ module Automation
       end
 
       def review_bot_pending_decisions(plugins, signals, trigger_types)
-        # review_bot_review_pending is a hard gate: emit only review
-        # request decisions and suppress create_pr follow-up runs while
-        # the bot review is outstanding, mirroring the
-        # paid_agent_review_pending hard gate from #1135. (#1336)
-        review_bot_request_decisions(plugins).compact
+        decisions = review_bot_request_decisions(plugins)
+
+        # Posted bot feedback is already actionable; keep the hard gate for
+        # outstanding review requests, but let the agent resolve existing bot
+        # comments/threads.
+        if posted_bot_feedback_trigger?(trigger_types)
+          decisions.concat(followup_decisions(signals))
+        end
+
+        decisions
       end
 
       def non_bot_pending_decisions(plugins, signals, trigger_types)
@@ -212,6 +220,12 @@ module Automation
 
         decisions.concat(manual_request_decisions(plugins))
 
+        if trigger_types.include?(Automation::ReviewMethods::Copilot::TRIGGER_TYPE)
+          decisions.concat(review_bot_request_decisions(plugins))
+          decisions.concat(followup_decisions(signals)) if posted_bot_feedback_trigger?(trigger_types)
+          return decisions
+        end
+
         if signals.triggers.any? { |t| FOLLOWUP_TRIGGER_TYPES.include?(t[:type].to_s) }
           decisions.concat(followup_decisions(signals))
         else
@@ -224,6 +238,10 @@ module Automation
       def review_bot_request_decisions(plugins)
         bot_plugins = plugins.select { |p| p.kind == :bot || p.kind == :comment_bot }
         bot_plugins.filter_map(&:decision)
+      end
+
+      def posted_bot_feedback_trigger?(trigger_types)
+        POSTED_BOT_FEEDBACK_TRIGGER_TYPES.any? { |type| trigger_types.include?(type) }
       end
 
       def manual_request_decisions(plugins)
