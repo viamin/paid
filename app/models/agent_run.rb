@@ -478,7 +478,7 @@ class AgentRun < ApplicationRecord
   #
   # NOTE: This SQL contains no interpolated values — the tier names are
   # hardcoded literals — so it is not a SQL injection vector.
-  QUEUE_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
+  QUEUE_PRIORITY_CASE_SQL = <<~SQL.squish.freeze
     CASE
       WHEN issue_labels.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P1', ''), 'P1')) THEN 0
       WHEN trigger_type = 'manual' THEN 1
@@ -488,20 +488,24 @@ class AgentRun < ApplicationRecord
       ELSE 5
     END
   SQL
-  GOAL_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
+  QUEUE_PRIORITY_SQL = Arel.sql(QUEUE_PRIORITY_CASE_SQL).freeze
+  GOAL_PRIORITY_CASE_SQL = <<~SQL.squish.freeze
     CASE
       WHEN goal IN ('create_issue', 'enhance_issue') THEN 0
       ELSE 1
     END
   SQL
-  PROJECT_ACTIVE_COUNT_SQL = Arel.sql(<<~SQL.squish).freeze
+  GOAL_PRIORITY_SQL = Arel.sql(GOAL_PRIORITY_CASE_SQL).freeze
+  PROJECT_ACTIVE_COUNT_CASE_SQL = <<~SQL.squish.freeze
     CASE
       WHEN COALESCE(user_settings.fair_queue_across_projects, TRUE)
         THEN COALESCE(project_active_counts.project_active_count, 0)
       ELSE 0
-    END ASC
+    END
   SQL
-  QUEUE_ORDER = [ QUEUE_PRIORITY_SQL, PROJECT_ACTIVE_COUNT_SQL, GOAL_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
+  PROJECT_ACTIVE_COUNT_SQL = Arel.sql("#{PROJECT_ACTIVE_COUNT_CASE_SQL} ASC").freeze
+  QUEUE_ORDER = [ QUEUE_PRIORITY_SQL, GOAL_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
+  WITHIN_OWNER_QUEUE_ORDER = [ PROJECT_ACTIVE_COUNT_SQL, GOAL_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
 
   # Scope that adds the CTE and joins required by QUEUE_ORDER.
   # All queue-ordering methods use this instead of bare `queued`.
@@ -511,7 +515,14 @@ class AgentRun < ApplicationRecord
       .joins(QUEUE_LATERAL_JOIN)
       .joins("LEFT JOIN project_active_counts ON project_active_counts.project_id = agent_runs.project_id")
       .joins("LEFT JOIN user_settings ON user_settings.user_id = project_owner.user_id")
-      .select("agent_runs.*")
+      .select(
+        "agent_runs.*",
+        "#{QUEUE_PRIORITY_CASE_SQL} AS queue_priority",
+        "#{GOAL_PRIORITY_CASE_SQL} AS goal_priority",
+        "#{PROJECT_ACTIVE_COUNT_CASE_SQL} AS project_active_count",
+        "project_owner.user_id AS project_owner_user_id",
+        "COALESCE(user_settings.fair_queue_across_projects, TRUE) AS fair_queue_across_projects"
+      )
   }
 
   def self.project_active_counts_cte
@@ -521,7 +532,7 @@ class AgentRun < ApplicationRecord
   end
 
   def self.next_queued_run
-    queued_with_priority.order(QUEUE_ORDER).first
+    next_queued_run_from(queued_with_priority)
   end
 
   # Returns the next queued run without claiming it.
@@ -531,14 +542,52 @@ class AgentRun < ApplicationRecord
   # excluded so a "pause all" toggle can hold new starts while still
   # accepting new queue entries from the project trigger button.
   def self.peek_next_queued_run(exclude_ids: [])
-    scope = queued_with_priority.order(QUEUE_ORDER)
+    scope = queued_with_priority
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     scope = scope.joins(project: :account).where(accounts: { scheduler_paused_at: nil })
     scope = scope.where(
       "agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL"
     )
-    scope.first
+    next_queued_run_from(scope)
   end
+
+  def self.next_queued_run_from(scope)
+    first = scope.reorder(QUEUE_ORDER).first
+    return unless first
+    return first unless first.project_owner_user_id
+    return first unless truthy_queue_attribute?(first.fair_queue_across_projects)
+
+    boundary = first_different_owner_run(scope, first)
+    same_owner_scope = same_owner_priority_scope(scope, first)
+    same_owner_scope = same_owner_scope.where(
+      "(#{GOAL_PRIORITY_CASE_SQL}, agent_runs.created_at, agent_runs.id) < (?, ?, ?)",
+      boundary.goal_priority.to_i, boundary.created_at, boundary.id
+    ) if boundary
+
+    same_owner_scope.reorder(WITHIN_OWNER_QUEUE_ORDER).first || first
+  end
+  private_class_method :next_queued_run_from
+
+  def self.first_different_owner_run(scope, first)
+    scope
+      .where("#{QUEUE_PRIORITY_CASE_SQL} = ?", first.queue_priority.to_i)
+      .where("project_owner.user_id IS DISTINCT FROM ?", first.project_owner_user_id)
+      .reorder(QUEUE_ORDER)
+      .first
+  end
+  private_class_method :first_different_owner_run
+
+  def self.same_owner_priority_scope(scope, first)
+    scope
+      .where("project_owner.user_id = ?", first.project_owner_user_id)
+      .where("#{QUEUE_PRIORITY_CASE_SQL} = ?", first.queue_priority.to_i)
+  end
+  private_class_method :same_owner_priority_scope
+
+  def self.truthy_queue_attribute?(value)
+    value == true || %w[1 t true].include?(value.to_s)
+  end
+  private_class_method :truthy_queue_attribute?
 
   def provider_belongs_to_project_owner
     owner = project&.effective_owner

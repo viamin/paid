@@ -1517,6 +1517,23 @@ RSpec.describe AgentRun do
       expect(peeked_ids).to eq([ first_run.id, third_run.id, second_run.id, fourth_run.id ])
     end
 
+    it "preserves cross-user FIFO while applying project fairness within an owner" do
+      first_account = create(:account)
+      first_user = create(:user, account: first_account)
+      first_user.settings.update!(fair_queue_across_projects: true, max_concurrent_runs: 2)
+      active_project = create(:project, account: first_account, created_by: first_user)
+      create(:agent_run, :running, project: active_project)
+      older_run = create(:agent_run, :queued, :manual, project: active_project, created_at: 2.minutes.ago)
+
+      second_account = create(:account)
+      second_user = create(:user, account: second_account)
+      second_user.settings.update!(fair_queue_across_projects: true, max_concurrent_runs: 2)
+      idle_project = create(:project, account: second_account, created_by: second_user)
+      create(:agent_run, :queued, :manual, project: idle_project, created_at: 1.minute.ago)
+
+      expect(described_class.peek_next_queued_run).to eq(older_run)
+    end
+
     it "preserves FIFO within tier when fair queueing is disabled" do
       account = create(:account)
       user = create(:user, account: account)
