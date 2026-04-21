@@ -188,7 +188,12 @@ jobs:
         run: bin/rails db:prepare
 
       - name: Run performance benchmarks
-        run: scripts/performance/benchmark.rb --baseline docs/performance/baseline.json --fail-on-regression
+        run: >
+          scripts/performance/benchmark.rb
+          --seed-ci-data
+          --require-metrics container_startup_time,workflow_latency,dashboard_load_time,search_latency
+          --baseline docs/performance/baseline.json
+          --fail-on-regression
 
       - name: Print performance report
         run: cat tmp/performance/report.md

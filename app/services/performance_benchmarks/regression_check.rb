@@ -4,9 +4,10 @@ module PerformanceBenchmarks
   class RegressionCheck
     attr_reader :report, :baseline
 
-    def initialize(report:, baseline:)
+    def initialize(report:, baseline:, required_metrics: [])
       @report = report
       @baseline = baseline
+      @required_metrics = required_metrics.map(&:to_s)
     end
 
     def call
@@ -18,12 +19,24 @@ module PerformanceBenchmarks
 
     private
 
+    attr_reader :required_metrics
+
     def failures
       @failures ||= report.fetch(:metrics).filter_map do |metric|
-        next if metric.fetch(:status) == "skipped"
+        if metric.fetch(:status) == "skipped"
+          next required_metric_failure(metric) if required_metrics.include?(metric_key(metric))
+
+          next
+        end
 
         budget_failure(metric) || baseline_failure(metric)
       end
+    end
+
+    def required_metric_failure(metric)
+      reason = metric[:skipped_reason] || metric["skipped_reason"]
+
+      "#{metric_name(metric)} is required but skipped: #{reason}"
     end
 
     def budget_failure(metric)

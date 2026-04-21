@@ -32,6 +32,30 @@ RSpec.describe PerformanceBenchmarks::RegressionCheck do
     expect(result[:failures]).to contain_exactly("Search latency regressed: 140 ms > 125.0 ms baseline threshold")
   end
 
+  it "fails when a required metric is skipped" do
+    report = {
+      metrics: [
+        {
+          key: "search_latency",
+          name: "Search latency",
+          status: "skipped",
+          skipped_reason: "No active knowledge artifact exists."
+        }
+      ]
+    }
+
+    result = described_class.new(
+      report: report,
+      baseline: baseline_for(comparison_value_ms: 100),
+      required_metrics: [ "search_latency" ]
+    ).call
+
+    expect(result[:passed]).to be(false)
+    expect(result[:failures]).to contain_exactly(
+      "Search latency is required but skipped: No active knowledge artifact exists."
+    )
+  end
+
   def report_for(comparison_value_ms:, budget_ms: 500, regression_threshold: 1.25)
     {
       metrics: [

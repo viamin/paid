@@ -10,8 +10,8 @@ module PerformanceBenchmarks
         new(...).call
       end
 
-      def initialize(project: Project.order(:id).first, query: nil, mode: "exact")
-        @project = project
+      def initialize(project: nil, query: nil, mode: "exact")
+        @project = project || default_project
         @query = query
         @mode = mode
       end
@@ -29,6 +29,14 @@ module PerformanceBenchmarks
       private
 
       attr_reader :project, :query, :mode
+
+      def default_project
+        Project
+          .joins(:knowledge_artifacts)
+          .merge(KnowledgeArtifact.active)
+          .order(:id)
+          .first || Project.order(:id).first
+      end
 
       def default_query
         KnowledgeArtifact.active
