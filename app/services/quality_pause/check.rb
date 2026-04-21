@@ -71,18 +71,28 @@ module QualityPause
     end
 
     def recent_scores_for(metric_type)
-      recent_metrics.filter_map do |metric|
+      recent_metrics_for(metric_type).filter_map do |metric|
         score_for(metric, metric_type)
-      end.first(QualityThreshold::DEFAULT_WINDOW_SIZE)
+      end
     end
 
-    def recent_metrics
-      @recent_metrics ||= QualityMetric.by_project(project.id)
-        .joins(:agent_run)
+    def recent_metrics_for(metric_type)
+      @recent_metrics_by_type ||= {}
+      @recent_metrics_by_type[metric_type] ||= metrics_for(metric_type)
+        .limit(QualityThreshold::DEFAULT_WINDOW_SIZE)
+        .to_a
+    end
+
+    def metrics_for(metric_type)
+      scope = QualityMetric.by_project(project.id)
         .where(agent_runs: { goal: agent_run.goal })
         .order(created_at: :desc)
-        .limit(QualityThreshold::DEFAULT_WINDOW_SIZE * 3)
-        .to_a
+
+      if metric_type == "composite_score"
+        scope.where.not(composite_score: nil)
+      else
+        scope.where("jsonb_exists(quality_metrics.scores, ?)", metric_type)
+      end
     end
 
     def score_for(metric, metric_type)

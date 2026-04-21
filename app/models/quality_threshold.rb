@@ -3,9 +3,10 @@
 class QualityThreshold < ApplicationRecord
   DEFAULT_WINDOW_SIZE = 5
   DEFAULT_MIN_SAMPLE_SIZE = 3
-  METRIC_TYPES = %w[composite_score pr_created ci_passed pr_merged iterations lint_clean
-                    tests_pass review_comment_count agent_rerun_count issue_created
-                    reaction_score review_posted review_score].freeze
+  METRIC_TYPES = %w[composite_score pr_created pr_merged iterations lint_clean
+                    review_comment_count agent_rerun_count issue_created
+                    reaction_score review_posted review_score comment_posted
+                    author_replied question_count].freeze
   GOAL_TYPES = AgentRun::GOALS.freeze
   DEFAULT_DEFINITIONS = [
     { "metric_type" => "composite_score", "goal_type" => "create_pr", "min_value" => 0.5 },
@@ -92,6 +93,8 @@ class QualityThreshold < ApplicationRecord
 
   private_class_method def self.supported_metric_definitions
     QualityMetrics::DashboardStats::METRIC_DISPLAY.flat_map do |metric_type, display|
+      next [] unless METRIC_TYPES.include?(metric_type)
+
       display.fetch(:collected_for).map do |goal_type|
         { "metric_type" => metric_type, "goal_type" => goal_type, "min_value" => 0.5 }
       end
@@ -99,11 +102,11 @@ class QualityThreshold < ApplicationRecord
   end
 
   private_class_method def self.account_thresholds(account)
-    account.quality_thresholds.account_defaults
+    account.quality_thresholds.account_defaults.where(metric_type: METRIC_TYPES)
   end
 
   private_class_method def self.project_thresholds(project)
-    project.quality_thresholds
+    project.quality_thresholds.where(metric_type: METRIC_TYPES)
   end
 
   private_class_method def self.apply_overrides(thresholds, overrides, source_scope)

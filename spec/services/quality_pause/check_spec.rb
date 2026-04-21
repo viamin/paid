@@ -48,14 +48,30 @@ RSpec.describe QualityPause::Check do
     end
 
     it "pauses the project when a metric-specific threshold is breached" do
-      create(:quality_threshold, account: project.account, metric_type: "ci_passed", goal_type: "create_pr")
-      create_ci_metrics(project, scores: [ 0.0, 1.0, 0.0, 0.0, 0.0 ])
+      create(:quality_threshold, account: project.account, metric_type: "lint_clean", goal_type: "create_pr")
+      create_metric_scores(project, metric_type: "lint_clean", scores: [ 0.0, 1.0, 0.0, 0.0, 0.0 ])
 
       described_class.call(agent_run: agent_run)
 
       project.reload
       expect(project.quality_paused?).to be true
-      expect(project.quality_pause_metadata["metric_type"]).to eq("ci_passed")
+      expect(project.quality_pause_metadata["metric_type"]).to eq("lint_clean")
+    end
+
+    it "evaluates each metric threshold against its own latest samples" do
+      create(:quality_threshold,
+        account: project.account,
+        metric_type: "reaction_score",
+        goal_type: "create_pr",
+        min_value: 0.5)
+      create_metric_scores(project, metric_type: "reaction_score", scores: [ 0.0, 0.1, 0.2 ])
+      create_quality_metrics(project, scores: Array.new(15, 0.8))
+
+      described_class.call(agent_run: agent_run)
+
+      project.reload
+      expect(project.quality_paused?).to be true
+      expect(project.quality_pause_metadata["metric_type"]).to eq("reaction_score")
     end
 
     it "logs a warning when pausing" do
@@ -79,10 +95,10 @@ RSpec.describe QualityPause::Check do
     end
   end
 
-  def create_ci_metrics(project, scores:)
+  def create_metric_scores(project, metric_type:, scores:)
     scores.each do |score|
       run = create(:agent_run, :completed, project: project)
-      create(:quality_metric, agent_run: run, composite_score: 0.8, scores: { "ci_passed" => score })
+      create(:quality_metric, agent_run: run, composite_score: 0.8, scores: { metric_type => score })
     end
   end
 end

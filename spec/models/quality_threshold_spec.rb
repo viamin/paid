@@ -117,13 +117,23 @@ RSpec.describe QualityThreshold do
       thresholds = described_class.configurable_for(project: project)
 
       expect(thresholds.map { |threshold| [ threshold.metric_type, threshold.goal_type ] }).to include(
-        [ "ci_passed", "create_pr" ],
         [ "issue_created", "create_issue" ],
         [ "reaction_score", "create_issue" ],
         [ "review_posted", "review" ],
         [ "reaction_score", "review" ],
+        [ "comment_posted", "enhance_issue" ],
+        [ "author_replied", "enhance_issue" ],
+        [ "question_count", "enhance_issue" ],
         [ "composite_score", "enhance_issue" ]
       )
+    end
+
+    it "omits metrics that are displayed but not collected as score samples" do
+      project = create(:project)
+
+      thresholds = described_class.configurable_for(project: project)
+
+      expect(thresholds.map(&:metric_type)).not_to include("ci_passed", "tests_pass")
     end
 
     it "overlays account defaults and project overrides on configurable rows" do
