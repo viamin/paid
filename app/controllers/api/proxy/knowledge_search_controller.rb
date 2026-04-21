@@ -14,12 +14,17 @@ module Api
       before_action :check_rate_limit
 
       def search
+        project = @agent_run.project
+        provider_config = project.knowledge_embedding_provider_configuration
+
         result = Knowledge::Search.call(
-          project: @agent_run.project,
+          project: project,
           query: params[:q].to_s,
           mode: "semantic",
           artifact_type: params[:type],
-          limit: limit
+          limit: limit,
+          api_key: provider_config&.api_key,
+          api_base_url: provider_config&.api_base_url
         )
 
         render json: { results: serialize_results(result[:results]) }

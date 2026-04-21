@@ -68,6 +68,20 @@ RSpec.describe "Api::Proxy::KnowledgeSearch" do
       expect(identifiers).to eq([ "POST /hunts" ])
     end
 
+    it "passes the project knowledge provider credentials to Knowledge::Search" do
+      owner = project.effective_owner
+      owner.settings.update!(kb_embedding_provider: "openrouter", kb_embedding_fallback_providers: [ "openai" ])
+      api_key = create(:provider_api_key, user: owner, api_service_type: "openrouter", api_key: "sk-test-api")
+
+      allow(Knowledge::Search).to receive(:call).and_return({ results: [] })
+
+      get "/api/proxy/knowledge/search", params: { q: "project docs" }, headers: headers
+
+      expect(Knowledge::Search).to have_received(:call).with(
+        hash_including(api_key: api_key.api_key, api_base_url: "https://openrouter.ai/api/v1")
+      )
+    end
+
     it "returns 429 when the agent run exceeds the search limit" do
       allow(Rails.cache).to receive(:increment)
         .and_return(Api::Proxy::KnowledgeSearchController::RATE_LIMIT_MAX_REQUESTS + 1)
