@@ -2270,6 +2270,26 @@ RSpec.describe AgentRun do
 
       expect(agent_run.agent_summary).to eq(events)
     end
+
+    it "only scans the most recent 500 JSONL events" do
+      stale_line = { "type" => "agent_message", "role" => "assistant", "text" => "Stale output" }.to_json
+      events = [
+        stale_line,
+        *500.times.map { |i| { "type" => "message.delta", "delta" => { "index" => i } }.to_json }
+      ].join("\n")
+
+      agent_run.log!("stdout", events)
+
+      parsed_inputs = []
+      original_parse = JSON.method(:parse)
+      allow(JSON).to receive(:parse) do |input, *args|
+        parsed_inputs << input
+        original_parse.call(input, *args)
+      end
+
+      expect(agent_run.agent_summary).to eq(events)
+      expect(parsed_inputs).not_to include(stale_line)
+    end
   end
 
   describe "#phase_summary" do

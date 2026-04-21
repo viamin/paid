@@ -1127,30 +1127,33 @@ class AgentRun < ApplicationRecord
   def extract_text_from_jsonl(raw_stdout)
     return nil if raw_stdout.blank?
 
-    lines = raw_stdout.lines.map(&:strip).reject(&:empty?)
+    lines = []
+    raw_stdout.each_line do |line|
+      line = line.strip
+      next if line.empty?
+
+      lines.shift if lines.size >= 500
+      lines << line
+    end
+
     return nil unless lines.size >= 2
 
-    json_lines = lines.filter_map do |line|
-      JSON.parse(line)
-    rescue JSON::ParserError
-      nil
-    end
-    return nil unless json_lines.size >= 2
-    return nil unless json_lines.all? { |j| j.is_a?(Hash) }
-
     last_assistant_text = nil
-    parsed_count = 0
+    event_count = 0
 
-    json_lines.reverse_each do |event|
-      parsed_count += 1
+    lines.reverse_each do |line|
+      event = JSON.parse(line)
+      return nil unless event.is_a?(Hash)
+
+      event_count += 1
       text = extract_jsonl_event_text(event)
-      if text
-        last_assistant_text = text
-        break
-      end
-
-      break if parsed_count >= 500
+      last_assistant_text ||= text
+      break if last_assistant_text && event_count >= 2
+    rescue JSON::ParserError
+      next
     end
+
+    return nil unless event_count >= 2
 
     last_assistant_text
   end
