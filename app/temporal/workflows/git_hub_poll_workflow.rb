@@ -406,6 +406,15 @@ module Workflows
     end
 
     def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
+      if Temporalio::Workflow.patched("pause-followup-during-review-v1")
+        # review_bot_review_pending is also a hard gate: suppress create_pr
+        # follow-up runs while any bot review for the current head is
+        # outstanding. This keeps stale bot-review signals from looping
+        # follow-up runs when bundled with other actionable triggers. (#1336)
+        dispatch_review_bot_review_request(project_id, pr_data)
+        return nil
+      end
+
       other_triggers = trigger_types - [ "review_bot_review_pending" ]
 
       # review_bot_review_pending is only a draft-phase gate when it is the
