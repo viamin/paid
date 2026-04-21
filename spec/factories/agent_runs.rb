@@ -195,5 +195,9 @@ FactoryBot.define do
       review_url { "https://github.com/example/repo/pull/10#pullrequestreview-123456" }
       review_posted_at { Time.current }
     end
+
+    trait :enhance_issue_goal do
+      goal { "enhance_issue" }
+    end
   end
 end

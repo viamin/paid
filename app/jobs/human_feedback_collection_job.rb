@@ -7,6 +7,7 @@
 #   - create_pr: PR reactions, review outcomes, and review comment count
 #   - create_issue: Emoji reactions on the created issue
 #   - review: Emoji reactions on the code review comments
+#   - enhance_issue: Emoji reactions and author replies on the enhancement comment
 class HumanFeedbackCollectionJob < ApplicationJob
   queue_as :default
 
@@ -26,6 +27,8 @@ class HumanFeedbackCollectionJob < ApplicationJob
       collect_issue_feedback(agent_run)
     when "review"
       collect_review_reaction_feedback(agent_run)
+    when "enhance_issue"
+      collect_enhance_issue_feedback(agent_run)
     end
 
     stamp_last_polled_at(agent_run)
@@ -150,5 +153,9 @@ class HumanFeedbackCollectionJob < ApplicationJob
 
   def collect_review_reaction_feedback(agent_run)
     QualityMetrics::CollectReviewReactionFeedback.call(agent_run: agent_run)
+  end
+
+  def collect_enhance_issue_feedback(agent_run)
+    QualityMetrics::CollectEnhanceIssueFeedback.call(agent_run: agent_run)
   end
 end

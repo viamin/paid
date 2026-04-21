@@ -906,6 +906,29 @@ class GithubClient
     pull_request_reactions(repo, number)
   end
 
+  # Fetches reactions on a specific issue comment.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param comment_id [Integer] The issue comment ID
+  # @return [Array<Hash>] Reactions with :user_login, :content keys
+  def issue_comment_reactions(repo, comment_id)
+    handle_errors do
+      reactions = with_auto_paginate do
+        client.issue_comment_reactions(
+          repo, comment_id,
+          accept: "application/vnd.github.squirrel-girl-preview+json"
+        )
+      end
+      reactions.map do |r|
+        {
+          user_login: r.user&.login,
+          content: r.content,
+          created_at: parse_timestamp(r.created_at)
+        }
+      end
+    end
+  end
+
   # Fetches review comments (line-level comments) on a pull request.
   #
   # @param repo [String] Repository in "owner/name" format

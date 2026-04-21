@@ -50,9 +50,12 @@ module QualityMetrics
       "review_comment_count" => { name: "Review Comment Count", description: "Fewer review comments = higher quality output. Degrades by 0.1 per comment.", signal_type: "human", collected_for: %w[create_pr] },
       "agent_rerun_count" => { name: "Agent Rerun Count", description: "Fewer reruns per issue = higher quality agent run. Degrades by 0.15 per extra rerun.", signal_type: "automated", collected_for: %w[create_pr] },
       "issue_created" => { name: "Issue Created", description: "Whether the agent successfully created an issue.", signal_type: "automated", collected_for: %w[create_issue] },
-      "reaction_score" => { name: "Reaction Score", description: "Ratio of positive to total emoji reactions. Positive: +1, heart, hooray, rocket. Negative: -1, confused.", signal_type: "human", collected_for: %w[create_pr create_issue review] },
+      "reaction_score" => { name: "Reaction Score", description: "Ratio of positive to total emoji reactions. Positive: +1, heart, hooray, rocket. Negative: -1, confused.", signal_type: "human", collected_for: %w[create_pr create_issue review enhance_issue] },
       "review_posted" => { name: "Review Posted", description: "Whether the agent successfully posted a code review.", signal_type: "automated", collected_for: %w[review] },
-      "review_score" => { name: "Review Score", description: "Average score from PR review outcomes. Approved=1.0, commented=0.5, changes_requested=0.0.", signal_type: "human", collected_for: %w[create_pr] }
+      "review_score" => { name: "Review Score", description: "Average score from PR review outcomes. Approved=1.0, commented=0.5, changes_requested=0.0.", signal_type: "human", collected_for: %w[create_pr] },
+      "comment_posted" => { name: "Comment Posted", description: "Whether the agent successfully posted an issue enhancement comment.", signal_type: "automated", collected_for: %w[enhance_issue] },
+      "author_replied" => { name: "Author Replied", description: "Whether the original issue author replied after the enhancement comment.", signal_type: "human", collected_for: %w[enhance_issue] },
+      "question_count" => { name: "Question Count", description: "Normalized score for clarifying questions asked in the enhancement comment.", signal_type: "automated", collected_for: %w[enhance_issue] }
     }.freeze
 
     # Returns a structured reference of all quality metrics with their

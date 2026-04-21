@@ -15,12 +15,14 @@ module QualityMetrics
         agent_run: agent_run,
         metric_type: "automated"
       )
+      @score_metadata = {}
       scores = build_scores
       weights = QualityMetric::GOAL_WEIGHTS.fetch(agent_run.goal, QualityMetric::SCORE_WEIGHTS)
       automated_metric.assign_attributes(
         prompt_version: agent_run.prompt_version,
         feedback_source: "system",
         scores: scores,
+        metadata: (automated_metric.metadata || {}).merge(score_metadata),
         composite_score: QualityMetric.weighted_average(scores, weights: weights)
       )
       automated_metric.save!
@@ -33,7 +35,7 @@ module QualityMetrics
 
     private
 
-    attr_reader :agent_run, :automated_metric
+    attr_reader :agent_run, :automated_metric, :score_metadata
 
     def enqueue_quality_gate_check
       return unless agent_run.project.quality_gates_enabled?
@@ -50,6 +52,7 @@ module QualityMetrics
       when "create_pr" then build_pr_scores
       when "create_issue" then build_issue_scores
       when "review" then build_review_scores
+      when "enhance_issue" then build_enhance_issue_scores
       else build_pr_scores
       end
     end
@@ -80,6 +83,19 @@ module QualityMetrics
       scores = {}
       scores["review_posted"] = agent_run.review_posted_at.present? ? 1.0 : 0.0
       scores
+    end
+
+    def build_enhance_issue_scores
+      comment_body = enhancement_comment_body
+      scores = { "comment_posted" => enhancement_comment_recorded?(comment_body) ? 1.0 : 0.0 }
+      return scores if comment_body.blank?
+
+      question_count = count_questions(comment_body)
+      score_metadata.merge!(
+        "comment_length" => comment_body.length,
+        "question_count" => question_count
+      )
+      scores.merge("question_count" => question_count_score(question_count))
     end
 
     def pr_merged_score
@@ -134,6 +150,36 @@ module QualityMetrics
         .exists?
 
       has_lint_errors ? 0.0 : 1.0
+    end
+
+    def enhancement_comment_body
+      agent_run.agent_run_logs
+        .stdout
+        .where("content LIKE ?", "%#{Activities::EnhanceIssueActivity::COMMENT_MARKER}%")
+        .recent
+        .pick(:content)
+        .to_s
+    end
+
+    def enhancement_comment_recorded?(comment_body)
+      return true if comment_body.present?
+
+      agent_run.agent_run_logs.system
+        .where("content LIKE ?", "Enhancement comment already exists:%")
+        .exists?
+    end
+
+    def count_questions(comment_body)
+      question_marks = comment_body.scan("?").size
+      numbered_questions = comment_body.lines.count { |line| line.match?(/^\s*\d+[.)]\s+.+\?\s*$/) }
+
+      [ question_marks, numbered_questions ].max
+    end
+
+    def question_count_score(question_count)
+      return 0.0 if question_count.zero?
+
+      [ question_count / 3.0, 1.0 ].min.round(4)
     end
 
     def update_ab_test_variant_stats(metric)

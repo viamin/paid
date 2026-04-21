@@ -106,6 +106,46 @@ RSpec.describe QualityMetrics::Collect do
       end
     end
 
+    context "with enhance_issue goal" do
+      let(:agent_run) { create(:agent_run, :enhance_issue_goal, :completed, pull_request_number: nil) }
+
+      it "includes comment and question scores from the enhancement comment log" do
+        agent_run.agent_run_logs.create!(
+          log_type: "stdout",
+          content: "#{Activities::EnhanceIssueActivity::COMMENT_MARKER}\n## Clarifying questions\n1. What should happen?\n2. Who owns rollout?"
+        )
+
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(metric.scores).to include(
+          "comment_posted" => 1.0,
+          "question_count" => 0.6667
+        )
+        expect(metric.metadata).to include(
+          "comment_length" => be_positive,
+          "question_count" => 2
+        )
+      end
+
+      it "does not include PR-specific scores" do
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(metric.scores).not_to include("pr_created", "pr_merged", "iterations")
+      end
+
+      it "scores an already-recorded enhancement comment without question data" do
+        agent_run.agent_run_logs.create!(
+          log_type: "system",
+          content: "Enhancement comment already exists: https://github.com/example/repo/issues/1#issuecomment-123"
+        )
+
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(metric.scores).to eq("comment_posted" => 1.0)
+        expect(metric.metadata).to eq({})
+      end
+    end
+
     context "with A/B test assignment" do
       let(:prompt) { create(:prompt, :with_version) }
       let(:ab_test) { create(:ab_test, prompt: prompt, status: "running", started_at: Time.current) }
