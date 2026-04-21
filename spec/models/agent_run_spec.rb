@@ -2231,10 +2231,18 @@ RSpec.describe AgentRun do
       expect(agent_run.agent_summary).to eq("Chunked output")
     end
 
-    it "returns raw stdout when JSONL has fewer than 2 JSON lines" do
+    it "returns raw stdout when single-event JSONL has no assistant text" do
       agent_run.log!("stdout", '{"type":"single","data":"value"}')
 
       expect(agent_run.agent_summary).to eq('{"type":"single","data":"value"}')
+    end
+
+    it "extracts text from single-event JSONL turn.completed output" do
+      event = { "type" => "turn.completed", "result" => "Single event final answer" }.to_json
+
+      agent_run.log!("stdout", event)
+
+      expect(agent_run.agent_summary).to eq("Single event final answer")
     end
 
     it "prefers Anthropic envelope when stdout is a single JSON object" do

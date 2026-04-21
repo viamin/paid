@@ -1125,21 +1125,8 @@ class AgentRun < ApplicationRecord
   end
 
   def extract_text_from_jsonl_transcript(raw_stdout)
-    lines = tail_nonempty_lines(raw_stdout, limit: 500)
-    return nil unless lines.size >= 2
-
-    parsed = AgentHarness::Providers::Codex.parse_cli_jsonl_transcript(lines.join("\n"))
+    parsed = AgentHarness::Providers::Codex.parse_cli_jsonl_transcript(raw_stdout, max_events: 500)
     parsed[:text].presence if parsed
-  end
-
-  def tail_nonempty_lines(text, limit:)
-    text.each_line.each_with_object([]) do |line, lines|
-      stripped = line.strip
-      next if stripped.empty?
-
-      lines.shift if lines.size >= limit
-      lines << stripped
-    end
   end
 
   def normalize_log_content(content)
