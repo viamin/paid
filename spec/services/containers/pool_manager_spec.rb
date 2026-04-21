@@ -23,8 +23,10 @@ RSpec.describe Containers::PoolManager do
 
     before do
       network_probe = instance_double(Containers::Provision, network_name: "paid_agent")
+      run_network_probe = instance_double(Containers::Provision, network_name: "paid_agent")
       allow(Containers::Provision).to receive(:new).and_call_original
       allow(Containers::Provision).to receive(:new).with(project: project).and_return(network_probe)
+      allow(Containers::Provision).to receive(:new).with(agent_run: agent_run).and_return(run_network_probe)
       allow(Docker::Container).to receive(:get).and_return(container)
       allow(Containers::Provision).to receive(:reconnect).and_return(service)
       allow(PoolReplenishmentJob).to receive(:perform_later)
@@ -54,6 +56,18 @@ RSpec.describe Containers::PoolManager do
       result = described_class.new(project: project, target_size: 0).acquire(agent_run: agent_run)
 
       expect(result).to be_nil
+    end
+
+    it "returns nil when the run requires a different network contract" do
+      run_network_probe = instance_double(Containers::Provision, network_name: "paid_internal")
+      allow(Containers::Provision).to receive(:new).with(agent_run: agent_run).and_return(run_network_probe)
+      agent_run.update!(agent_type: "kilocode")
+      create(:container_pool_entry, project: project)
+
+      result = described_class.new(project: project, target_size: 1).acquire(agent_run: agent_run)
+
+      expect(result).to be_nil
+      expect(Containers::Provision).not_to have_received(:reconnect)
     end
 
     it "marks a stale warm entry as errored" do

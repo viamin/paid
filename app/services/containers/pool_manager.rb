@@ -79,7 +79,9 @@ module Containers
     attr_reader :project, :target_size
 
     def enabled_for?(agent_run)
-      target_size.positive? && agent_run.worktree_path.blank?
+      target_size.positive? &&
+        agent_run.worktree_path.blank? &&
+        run_network_name(agent_run) == pool_network_name
     end
 
     def claim_entry(agent_run, options:)
@@ -186,6 +188,10 @@ module Containers
 
     def pool_network_name
       @pool_network_name ||= Provision.new(project: project).network_name
+    end
+
+    def run_network_name(agent_run)
+      Provision.new(agent_run: agent_run).network_name
     end
   end
 end
