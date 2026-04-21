@@ -7,6 +7,12 @@ RSpec.describe GithubClient do
   let(:client) { described_class.new(token: token) }
   let(:api_base) { "https://api.github.com" }
 
+  before do
+    stub_const("GithubClient::RETRY_INTERVAL", 0)
+    stub_const("GithubClient::RETRY_INTERVAL_RANDOMNESS", 0)
+    stub_const("GithubClient::RETRY_BACKOFF_FACTOR", 1)
+  end
+
   describe "#validate_token" do
     context "when token is valid" do
       before do

@@ -5,6 +5,7 @@ require "rails_helper"
 RSpec.describe PromptEvolution::Select do
   let(:prompt) { create(:prompt, :global, :with_version) }
   let(:v1) { prompt.current_version }
+  let(:metric_project) { create(:project) }
 
   def add_version(parent: nil)
     next_version = (prompt.prompt_versions.maximum(:version) || 0) + 1
@@ -17,14 +18,56 @@ RSpec.describe PromptEvolution::Select do
   end
 
   def add_metrics(version, scores:)
-    Array(scores).each do |score|
-      run = create(:agent_run, project: create(:project))
-      create(:quality_metric, :automated,
-        agent_run: run,
-        prompt_version: version,
-        composite_score: score
-      )
+    now = Time.current
+    score_list = Array(scores)
+    run_ids = insert_metric_runs(version, score_list.size, now: now)
+    metric_rows = run_ids.zip(score_list).map do |run_id, score|
+      metric_row(run_id: run_id, version: version, score: score, metric_type: "automated", now: now)
     end
+    return if metric_rows.empty?
+
+    QualityMetric.insert_all!(metric_rows)
+  end
+
+  def add_metric(version, score:, metric_type:)
+    now = Time.current
+    run_id = insert_metric_runs(version, 1, now: now).first
+    QualityMetric.insert_all!([
+      metric_row(run_id: run_id, version: version, score: score, metric_type: metric_type, now: now)
+    ])
+  end
+
+  def insert_metric_runs(version, count, now:)
+    return [] if count.zero?
+
+    rows = Array.new(count) do
+      {
+        agent_type: "claude_code",
+        custom_prompt: "Metric run",
+        project_id: metric_project.id,
+        prompt_version_id: version.id,
+        status: "pending",
+        goal: "create_pr",
+        trigger_type: "automatic",
+        proxy_token: SecureRandom.hex(32),
+        created_at: now,
+        updated_at: now
+      }
+    end
+
+    AgentRun.insert_all!(rows, returning: %w[id]).rows.flatten
+  end
+
+  def metric_row(run_id:, version:, score:, metric_type:, now:)
+    {
+      agent_run_id: run_id,
+      prompt_version_id: version.id,
+      metric_type: metric_type,
+      feedback_source: metric_type == "human" ? "pr_merge" : "system",
+      composite_score: score,
+      created_at: now,
+      updated_at: now
+    }
   end
 
   describe ".call" do
@@ -85,8 +128,7 @@ RSpec.describe PromptEvolution::Select do
 
       add_metrics(v1, scores: [ 0.5, 0.5, 0.5 ])
       3.times do
-        run = create(:agent_run, project: create(:project))
-        create(:quality_metric, :human, agent_run: run, prompt_version: v2, composite_score: 1.0)
+        add_metric(v2, score: 1.0, metric_type: "human")
       end
       add_metrics(v2, scores: [ 0.8, 0.82, 0.81 ])
 

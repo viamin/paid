@@ -17,6 +17,10 @@ require "faraday/retry"
 class GithubClient
   DEFAULT_CHECK_RUNS_PER_PAGE = 100
   DEFAULT_CHECK_RUNS_MAX_PAGES = 10
+  RETRY_MAX = 3
+  RETRY_INTERVAL = 0.5
+  RETRY_INTERVAL_RANDOMNESS = 0.5
+  RETRY_BACKOFF_FACTOR = 2
 
   # Base error for all GitHub client errors
   class Error < StandardError; end
@@ -1124,10 +1128,10 @@ class GithubClient
   def configure_middleware
     client.middleware = Faraday::RackBuilder.new do |builder|
       builder.use Faraday::Retry::Middleware,
-        max: 3,
-        interval: 0.5,
-        interval_randomness: 0.5,
-        backoff_factor: 2,
+        max: RETRY_MAX,
+        interval: RETRY_INTERVAL,
+        interval_randomness: RETRY_INTERVAL_RANDOMNESS,
+        backoff_factor: RETRY_BACKOFF_FACTOR,
         retry_statuses: [ 429, 500, 502, 503, 504 ],
         exceptions: Faraday::Retry::Middleware::DEFAULT_EXCEPTIONS +
           [ Octokit::ServerError ],
@@ -1195,10 +1199,10 @@ class GithubClient
       f.request :json
       if with_retry
         f.request :retry,
-          max: 3,
-          interval: 0.5,
-          interval_randomness: 0.5,
-          backoff_factor: 2,
+          max: RETRY_MAX,
+          interval: RETRY_INTERVAL,
+          interval_randomness: RETRY_INTERVAL_RANDOMNESS,
+          backoff_factor: RETRY_BACKOFF_FACTOR,
           methods: %i[post],
           retry_statuses: [ 429, 500, 502, 503, 504 ],
           exceptions: Faraday::Retry::Middleware::DEFAULT_EXCEPTIONS +
