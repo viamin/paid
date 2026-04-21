@@ -236,6 +236,20 @@ RSpec.describe DockerOrphanCleanupJob do
         expect(container).to have_received(:delete).with(force: true, v: true)
         expect(ContainerPoolEntry.exists?(entry.id)).to be(false)
       end
+
+      it "skips claimed pool containers for retained agent runs" do
+        retained_run = create(:agent_run, :failed, container_retained_until: 2.hours.from_now)
+        entry = create(:container_pool_entry, :claimed, agent_run: retained_run)
+        container = make_container(labels: {
+          "paid.container_pool" => "true",
+          "paid.container_pool_entry_id" => entry.id.to_s
+        })
+        stub_pool_containers(container)
+
+        job.perform
+
+        expect(container).not_to have_received(:delete)
+      end
     end
 
     context "with volumes" do
@@ -281,6 +295,17 @@ RSpec.describe DockerOrphanCleanupJob do
         job.perform
 
         expect(volume).to have_received(:remove)
+      end
+
+      it "skips claimed pool volumes for retained agent runs" do
+        retained_run = create(:agent_run, :failed, container_retained_until: 2.hours.from_now)
+        entry = create(:container_pool_entry, :claimed, agent_run: retained_run)
+        volume = instance_double(Docker::Volume, id: entry.workspace_volume, remove: true)
+        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+
+        job.perform
+
+        expect(volume).not_to have_received(:remove)
       end
 
       it "removes stale warming pool volumes" do

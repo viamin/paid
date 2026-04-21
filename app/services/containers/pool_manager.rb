@@ -153,6 +153,7 @@ module Containers
 
     def cleanup_claimed_finished_runs
       project.container_pool_entries.claimed.includes(:agent_run).find_each do |entry|
+        next if entry.agent_run&.container_retained?
         next if entry.agent_run&.status.in?(AgentRun::UNFINISHED_STATUSES)
 
         remove_entry(entry, force: true)

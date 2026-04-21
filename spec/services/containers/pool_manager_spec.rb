@@ -200,6 +200,18 @@ RSpec.describe Containers::PoolManager do
       expect(project.container_pool_entries.warm.sole.container_id).to eq("warm-3")
     end
 
+    it "keeps claimed entries for retained agent runs" do
+      agent_run = create(:agent_run, :failed, project: project, container_retained_until: 2.hours.from_now)
+      entry = create(:container_pool_entry, :claimed, project: project, agent_run: agent_run)
+      network_probe = instance_double(Containers::Provision, network_name: "paid_agent")
+
+      allow(Containers::Provision).to receive(:new).with(project: project).and_return(network_probe)
+
+      described_class.new(project: project, target_size: 0).replenish
+
+      expect(ContainerPoolEntry.exists?(entry.id)).to be(true)
+    end
+
     it "removes warm entries with an old network" do
       stale_entry = create(:container_pool_entry, project: project, network: "paid_internal")
 
