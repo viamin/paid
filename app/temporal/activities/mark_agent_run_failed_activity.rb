@@ -8,15 +8,18 @@ module Activities
       agent_run_id = input[:agent_run_id]
       error = input[:error]
       agent_run = AgentRun.find(agent_run_id)
-      finished_before_failure = agent_run.finished?
 
-      # Don't overwrite a more specific terminal status (e.g. "timeout")
-      # that was already set by the activity that detected the failure.
-      if finished_before_failure
-        agent_run.log!("system", "Agent run already #{agent_run.status}, skipping fail! (error: #{error})")
-      else
-        agent_run.fail!(error: error)
-        agent_run.log!("system", "Agent run failed: #{error}")
+      agent_run.with_lock do
+        agent_run.reload
+
+        # Don't overwrite a more specific terminal status (e.g. "timeout")
+        # that was already set by the activity that detected the failure.
+        if agent_run.finished?
+          agent_run.log!("system", "Agent run already #{agent_run.status}, skipping fail! (error: #{error})")
+        else
+          agent_run.fail!(error: error)
+          agent_run.log!("system", "Agent run failed: #{error}")
+        end
       end
 
       # Always trigger queue processing so remaining queued runs get claimed.

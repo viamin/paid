@@ -81,6 +81,23 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       expect(issue.reload.paid_state).to eq("in_progress")
     end
 
+    it "does not overwrite cancellation that becomes visible after taking the lock" do
+      issue = create(:issue, :in_progress, project: project)
+      agent_run = create(:agent_run, :running, project: project, issue: issue)
+      allow(agent_run).to receive(:reload) do
+        agent_run.status = "cancelled"
+        agent_run.completed_at = Time.current
+        agent_run
+      end
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      expect(agent_run).not_to receive(:fail!)
+
+      activity.execute(agent_run_id: agent_run.id, error: "Activity task failed")
+
+      expect(agent_run.reload.status).to eq("cancelled")
+      expect(issue.reload.paid_state).to eq("in_progress")
+    end
+
     it "enqueues ProcessRunQueueJob when status transitions to failed" do
       agent_run = create(:agent_run, :running, project: project)
 
