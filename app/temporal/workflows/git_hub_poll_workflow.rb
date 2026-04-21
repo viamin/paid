@@ -13,6 +13,9 @@ module Workflows
   class GitHubPollWorkflow < BaseWorkflow
     include Automation::ReviewBotTrigger
     MAX_ITERATIONS = 100
+    POSTED_BOT_FEEDBACK_TRIGGER_TYPES = %w[
+      review_bot_comments review_bot_threads
+    ].freeze
 
     workflow_signal
     def request_sync
@@ -406,21 +409,25 @@ module Workflows
     end
 
     def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
-      if Temporalio::Workflow.patched("pause-followup-during-review-v1")
-        # review_bot_review_pending is also a hard gate: suppress create_pr
-        # follow-up runs while any bot review for the current head is
-        # outstanding. This keeps stale bot-review signals from looping
-        # follow-up runs when bundled with other actionable triggers. (#1336)
+      if Temporalio::Workflow.patched("pause-review-bot-followup-during-review-v1")
         dispatch_review_bot_review_request(project_id, pr_data)
+
+        # Posted bot feedback is already actionable; keep the hard gate for
+        # outstanding review requests, but let the agent resolve existing bot
+        # comments/threads.
+        if posted_bot_feedback_trigger?(trigger_types)
+          if pr_data[:phase].in?(%w[draft restarted])
+            start_draft_followup_workflow(project_id, pr_data)
+          else
+            start_pr_followup_workflow(project_id, pr_data)
+          end
+        end
+
         return nil
       end
 
       other_triggers = trigger_types - [ "review_bot_review_pending" ]
 
-      # review_bot_review_pending is only a draft-phase gate when it is the
-      # sole trigger. Mixed trigger sets still need a follow-up run to address
-      # actionable feedback or CI failures, even if that same head is also
-      # waiting on a bot review.
       if pr_data[:phase].in?(%w[draft restarted])
         dispatch_review_bot_review_request(project_id, pr_data)
         return if other_triggers.empty?
@@ -447,6 +454,10 @@ module Workflows
       request_review(project_id, pr_data[:pr_number],
         reviewers,
         log_key: "pr_review.request_review_bot_review_failed")
+    end
+
+    def posted_bot_feedback_trigger?(trigger_types)
+      POSTED_BOT_FEEDBACK_TRIGGER_TYPES.any? { |type| trigger_types.include?(type) }
     end
 
     def handle_review_goal_retry(project_id, pr_data)
@@ -482,7 +493,7 @@ module Workflows
 
       if trigger_types.include?("review_bot_review_pending")
         dispatch_bot_review_request(project_id, pr_data)
-        return
+        return unless posted_bot_feedback_trigger?(trigger_types)
       end
 
       followup_trigger_types = %w[

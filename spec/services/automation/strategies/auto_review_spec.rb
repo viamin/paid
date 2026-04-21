@@ -131,6 +131,28 @@ RSpec.describe Automation::Strategies::AutoReview do
       expect(result.to_h).to eq(decisions: [ { type: "noop" } ])
     end
 
+    it "keeps follow-up decisions for posted bot feedback while review_bot_review_pending is outstanding" do
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        current_followup_count: 0,
+        labels_to_remove: [],
+        triggers: [
+          { type: "review_bot_review_pending", request_login: "copilot" },
+          { type: "review_bot_comments", details: [ "Please update the tests" ] }
+        ]
+      })
+
+      expect(result.to_h).to eq(
+        decisions: [
+          { type: "request_review", pr_number: 42, reviewers: [ "copilot" ] },
+          { type: "queue_create_pr_run", issue_id: pull_request.id, source_pull_request_number: 42 },
+          { type: "record_pr_followup", issue_id: pull_request.id, labels_to_remove: [], expected_followup_count: 0 }
+        ]
+      )
+    end
+
     it "emits the trigger's reviewer for manual_review_pending" do
       result = evaluate(scan: {
         issue_id: pull_request.id,
@@ -223,6 +245,26 @@ RSpec.describe Automation::Strategies::AutoReview do
       types = result.to_h[:decisions].map { |d| d[:type] }
       expect(types).to include("record_review_goal_retry", "queue_review_run", "request_review")
       expect(types).not_to include("queue_create_pr_run", "record_pr_followup")
+    end
+
+    it "keeps retry follow-up decisions for posted bot feedback while review_bot_review_pending is outstanding" do
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        current_review_goal_retry_count: 1,
+        current_followup_count: 0,
+        labels_to_remove: [],
+        triggers: [
+          { type: "review_goal_retry" },
+          { type: "review_bot_review_pending", request_login: "copilot" },
+          { type: "review_bot_threads", details: [ "Please update the tests" ] }
+        ]
+      })
+
+      types = result.to_h[:decisions].map { |d| d[:type] }
+      expect(types).to include("record_review_goal_retry", "queue_review_run", "request_review")
+      expect(types).to include("queue_create_pr_run", "record_pr_followup")
     end
 
     it "marks ready on ready_for_owner triggers" do
