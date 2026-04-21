@@ -2154,6 +2154,161 @@ RSpec.describe AgentRun do
     it "returns empty string when no stdout logs exist" do
       expect(agent_run.agent_summary).to eq("")
     end
+
+    it "extracts text from Codex-style JSONL item.completed events" do
+      events = [
+        { "type" => "item.completed", "item" => { "type" => "agent_message", "content" => [ { "type" => "output_text", "text" => "Here is my analysis of the codebase." } ] } },
+        { "type" => "item.completed", "item" => { "type" => "agent_message", "content" => [ { "type" => "output_text", "text" => "Done. Here's a summary:\n- Fixed the bug\n- Added tests" } ] } }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("Done. Here's a summary:\n- Fixed the bug\n- Added tests")
+    end
+
+    it "extracts text from JSONL turn.completed with result" do
+      events = [
+        { "type" => "message.delta", "delta" => { "content" => [ { "type" => "output_text_delta", "text" => "Working" } ] } },
+        { "type" => "turn.completed", "result" => "Final answer from the agent" }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("Final answer from the agent")
+    end
+
+    it "extracts text from JSONL agent_message events" do
+      events = [
+        { "type" => "message.delta", "delta" => {} },
+        { "type" => "agent_message", "item_type" => "assistant_message", "content" => [ { "type" => "output_text", "text" => "Agent response text" } ] }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("Agent response text")
+    end
+
+    it "extracts text from JSONL event_msg wrapped events" do
+      events = [
+        { "type" => "message.delta", "delta" => {} },
+        { "type" => "event_msg", "payload" => { "type" => "agent_message", "role" => "assistant", "item_type" => "assistant_message", "content" => [ { "type" => "output_text", "text" => "Wrapped response" } ] } }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("Wrapped response")
+    end
+
+    it "extracts text from JSONL event_msg wrapped task_complete events" do
+      events = [
+        { "type" => "message.delta", "delta" => {} },
+        { "type" => "event_msg", "payload" => { "type" => "task_complete", "last_agent_message" => "Wrapped final response" } }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("Wrapped final response")
+    end
+
+    it "extracts text from JSONL response_item events" do
+      events = [
+        { "type" => "message.delta", "delta" => {} },
+        { "type" => "response_item", "payload" => { "role" => "assistant", "item_type" => "assistant_message", "content" => [ { "type" => "output_text", "text" => "Response item text" } ] } }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("Response item text")
+    end
+
+    it "handles JSONL split across multiple log chunks" do
+      chunk1 = { "type" => "message.delta", "delta" => {} }.to_json
+      chunk2 = { "type" => "item.completed", "item" => { "role" => "assistant", "content" => [ { "type" => "output_text", "text" => "Chunked output" } ] } }.to_json
+
+      agent_run.log!("stdout", chunk1)
+      agent_run.log!("stdout", chunk2)
+
+      expect(agent_run.agent_summary).to eq("Chunked output")
+    end
+
+    it "returns raw stdout when single-event JSONL has no assistant text" do
+      agent_run.log!("stdout", '{"type":"single","data":"value"}')
+
+      expect(agent_run.agent_summary).to eq('{"type":"single","data":"value"}')
+    end
+
+    it "extracts text from single-event JSONL turn.completed output" do
+      event = { "type" => "turn.completed", "result" => "Single event final answer" }.to_json
+
+      agent_run.log!("stdout", event)
+
+      expect(agent_run.agent_summary).to eq("Single event final answer")
+    end
+
+    it "prefers Anthropic envelope when stdout is a single JSON object" do
+      envelope = {
+        type: "result",
+        is_error: false,
+        result: "Anthropic result"
+      }.to_json
+
+      agent_run.log!("stdout", envelope)
+
+      expect(agent_run.agent_summary).to eq("Anthropic result")
+    end
+
+    it "extracts text from JSONL turn.completed with last_agent_message string" do
+      events = [
+        { "type" => "message.delta", "delta" => {} },
+        { "type" => "turn.completed", "last_agent_message" => "Direct string message" }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("Direct string message")
+    end
+
+    it "extracts text from JSONL item with text field directly" do
+      events = [
+        { "type" => "agent_message", "role" => "assistant", "text" => "Direct text field" },
+        { "type" => "item.completed", "item" => { "role" => "assistant", "text" => "Item text field" } }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("Item text field")
+    end
+
+    it "ignores nil-role JSONL items that are not assistant messages" do
+      events = [
+        { "type" => "item.completed", "item" => { "type" => "reasoning", "text" => "Private reasoning output" } },
+        { "type" => "turn.completed" }
+      ].map(&:to_json).join("\n")
+
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq(events)
+    end
+
+    it "only scans the most recent 500 JSONL events" do
+      stale_line = { "type" => "agent_message", "role" => "assistant", "text" => "Stale output" }.to_json
+      events = [
+        stale_line,
+        *500.times.map { |i| { "type" => "message.delta", "delta" => { "index" => i } }.to_json }
+      ].join("\n")
+
+      agent_run.log!("stdout", events)
+
+      parsed_inputs = []
+      original_parse = JSON.method(:parse)
+      allow(JSON).to receive(:parse) do |input, *args|
+        parsed_inputs << input
+        original_parse.call(input, *args)
+      end
+
+      expect(agent_run.agent_summary).to eq(events)
+      expect(parsed_inputs).not_to include(stale_line)
+    end
   end
 
   describe "#phase_summary" do

@@ -1112,13 +1112,21 @@ class AgentRun < ApplicationRecord
     return raw_stdout if raw_stdout.blank?
 
     parsed = AgentHarness::Providers::Anthropic.parse_cli_json_envelope(raw_stdout)
-    return raw_stdout unless parsed
-
-    if parsed[:error].present?
-      "Agent encountered an error: #{parsed[:error]}"
-    else
-      parsed[:output].presence || raw_stdout
+    if parsed
+      if parsed[:error].present?
+        return "Agent encountered an error: #{parsed[:error]}"
+      else
+        return parsed[:output].presence || raw_stdout
+      end
     end
+
+    jsonl_text = extract_text_from_jsonl_transcript(raw_stdout)
+    jsonl_text || raw_stdout
+  end
+
+  def extract_text_from_jsonl_transcript(raw_stdout)
+    parsed = AgentHarness::Providers::Codex.parse_cli_jsonl_transcript(raw_stdout, max_events: 500)
+    parsed[:text].presence if parsed
   end
 
   def normalize_log_content(content)
