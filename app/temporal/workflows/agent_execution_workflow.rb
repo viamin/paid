@@ -108,6 +108,16 @@ module Workflows
       workflow_error = nil
 
       begin
+        if goal == "enhance_issue"
+          run_activity(Activities::EnhanceIssueActivity,
+            { agent_run_id: agent_run_id },
+            start_to_close_timeout: 300,
+            retry_policy: NO_RETRY)
+
+          agent_step_succeeded = true
+          return { success: true, agent_run_id: agent_run_id }
+        end
+
         # Step 1.5: Provision service containers (database, redis, etc.)
         # Always run unconditionally — the activity returns {} when no services
         # are configured. Avoids DB queries inside the workflow, which would
@@ -217,10 +227,6 @@ module Workflows
                 { agent_run_id: agent_run_id }, timeout: 120, retry_policy: NO_RETRY)
             end
           end
-        elsif goal == "enhance_issue"
-          # Enhance-issue goal: the agent reads the issue and posts a comment
-          # via the GitHub API proxy during execution. No post-processing needed;
-          # label management and re-evaluation will be added in a follow-up.
         elsif goal == "review"
           # Review goal: complete the run — all output is PR comments posted
           # by the agent via the GitHub API proxy during execution.
