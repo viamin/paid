@@ -10,10 +10,7 @@ class QualityThreshold < ApplicationRecord
                     author_replied question_count].freeze
   GOAL_TYPES = AgentRun::GOALS.freeze
   DEFAULT_DEFINITIONS = [
-    { "metric_type" => "composite_score", "goal_type" => "create_pr", "min_value" => 0.5 },
-    { "metric_type" => "ci_passed", "goal_type" => "create_pr", "min_value" => 0.5 },
-    { "metric_type" => "tests_pass", "goal_type" => "create_pr", "min_value" => 0.5 },
-    { "metric_type" => "pr_merged", "goal_type" => "create_pr", "min_value" => 0.3 }
+    { "metric_type" => "composite_score", "goal_type" => "create_pr", "min_value" => 0.5 }
   ].freeze
 
   attr_accessor :source_scope

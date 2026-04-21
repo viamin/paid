@@ -63,10 +63,10 @@ RSpec.describe QualityThreshold do
 
       thresholds = described_class.effective_for(project: project, goal_type: "create_pr")
 
-      expect(thresholds.map(&:metric_type)).to include("composite_score", "ci_passed", "tests_pass", "pr_merged")
+      expect(thresholds.map(&:metric_type)).to eq([ "composite_score" ])
     end
 
-    it "lets account thresholds override built-in defaults" do
+    it "lets account thresholds enable supported metrics" do
       project = create(:project)
       create(:quality_threshold,
         account: project.account,
@@ -134,15 +134,20 @@ RSpec.describe QualityThreshold do
       )
     end
 
-    it "marks built-in create_pr defaults as enabled" do
+    it "marks only collected built-in create_pr defaults as enabled" do
       project = create(:project)
 
       thresholds = described_class.configurable_for(project: project)
       defaults = thresholds.select(&:default?)
+      disabled_supported = thresholds.reject(&:enabled?)
 
       expect(defaults.map { |threshold| [ threshold.metric_type, threshold.goal_type, threshold.enabled? ] }).to include(
-        [ "ci_passed", "create_pr", true ],
-        [ "tests_pass", "create_pr", true ]
+        [ "composite_score", "create_pr", true ]
+      )
+      expect(disabled_supported.map { |threshold| [ threshold.metric_type, threshold.goal_type ] }).to include(
+        [ "ci_passed", "create_pr" ],
+        [ "tests_pass", "create_pr" ],
+        [ "pr_merged", "create_pr" ]
       )
     end
 
