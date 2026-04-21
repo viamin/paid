@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "rails_helper"
-require "set"
 
 RSpec.describe PromptEvolution::SampleRuns do
   let(:project) { create(:project) }
@@ -9,7 +8,20 @@ RSpec.describe PromptEvolution::SampleRuns do
   let(:prompt_version) { prompt.current_version }
 
   def create_completed_run(composite_score: 0.85, **attrs)
-    run_attrs = {
+    run = insert_completed_run(**attrs)
+    insert_quality_metric(run: run, composite_score: composite_score)
+    run
+  end
+
+  def insert_completed_run(**attrs)
+    run_attrs = default_run_attrs.merge(attrs)
+    run_attrs[:source_pull_request_number] = 1 if run_attrs[:goal] == "review"
+
+    AgentRun.find(AgentRun.insert_all!([ agent_run_row(run_attrs) ], returning: %w[id]).rows.first.first)
+  end
+
+  def default_run_attrs
+    {
       project: project,
       prompt_version: prompt_version,
       goal: "create_pr",
@@ -18,12 +30,48 @@ RSpec.describe PromptEvolution::SampleRuns do
       tokens_output: 500,
       duration_seconds: 120,
       completed_at: 1.day.ago
-    }.merge(attrs)
-    run_attrs[:source_pull_request_number] = 1 if run_attrs[:goal] == "review"
-    run = create(:agent_run, :completed, run_attrs)
-    create(:quality_metric, :automated, agent_run: run, prompt_version: prompt_version,
-      composite_score: composite_score)
-    run
+    }
+  end
+
+  def agent_run_row(attrs)
+    now = Time.current
+    {
+      agent_type: "claude_code",
+      custom_prompt: "Sample run",
+      project_id: attrs[:project].id,
+      prompt_version_id: attrs[:prompt_version]&.id,
+      source_pull_request_number: attrs[:source_pull_request_number],
+      status: "completed",
+      goal: attrs[:goal],
+      trigger_type: "automatic",
+      proxy_token: SecureRandom.hex(32),
+      cost_cents: attrs[:cost_cents],
+      tokens_input: attrs[:tokens_input],
+      tokens_output: attrs[:tokens_output],
+      duration_seconds: attrs[:duration_seconds],
+      started_at: attrs[:completed_at] - attrs[:duration_seconds].seconds,
+      completed_at: attrs[:completed_at],
+      result_commit_sha: "abc123def456789012345678901234567890abcd",
+      pull_request_url: "https://github.com/example/repo/pull/1",
+      pull_request_number: 1,
+      created_at: now,
+      updated_at: now
+    }
+  end
+
+  def insert_quality_metric(run:, composite_score:, metric_type: "automated", version: prompt_version)
+    now = Time.current
+    QualityMetric.insert_all!([
+      {
+        agent_run_id: run.id,
+        prompt_version_id: version&.id,
+        metric_type: metric_type,
+        feedback_source: metric_type == "human" ? "pr_merge" : "system",
+        composite_score: composite_score,
+        created_at: now,
+        updated_at: now
+      }
+    ])
   end
 
   describe ".call" do
@@ -47,7 +95,7 @@ RSpec.describe PromptEvolution::SampleRuns do
     end
 
     it "excludes runs without prompt versions" do
-      create(:agent_run, :completed, project: project, prompt_version: nil, completed_at: 1.day.ago)
+      insert_completed_run(prompt_version: nil, completed_at: 1.day.ago)
 
       result = described_class.call(sample_size: 10, days: 7)
 
@@ -55,9 +103,8 @@ RSpec.describe PromptEvolution::SampleRuns do
     end
 
     it "excludes runs with only human metrics" do
-      run = create(:agent_run, :completed, project: project, prompt_version: prompt_version,
-        completed_at: 1.day.ago)
-      create(:quality_metric, :human, agent_run: run, prompt_version: prompt_version)
+      run = insert_completed_run(project: project, prompt_version: prompt_version, completed_at: 1.day.ago)
+      insert_quality_metric(run: run, metric_type: "human", composite_score: 1.0)
 
       result = described_class.call(sample_size: 10, days: 7)
 
@@ -66,10 +113,8 @@ RSpec.describe PromptEvolution::SampleRuns do
     end
 
     it "excludes runs with nil automated composite scores" do
-      run = create(:agent_run, :completed, project: project, prompt_version: prompt_version,
-        completed_at: 1.day.ago)
-      create(:quality_metric, :automated, agent_run: run, prompt_version: prompt_version,
-        composite_score: nil)
+      run = insert_completed_run(project: project, prompt_version: prompt_version, completed_at: 1.day.ago)
+      insert_quality_metric(run: run, composite_score: nil)
 
       result = described_class.call(sample_size: 10, days: 7)
 
@@ -78,9 +123,8 @@ RSpec.describe PromptEvolution::SampleRuns do
     end
 
     it "excludes runs outside the time window" do
-      run = create(:agent_run, :completed, project: project, prompt_version: prompt_version,
-        completed_at: 30.days.ago)
-      create(:quality_metric, :automated, agent_run: run)
+      run = insert_completed_run(project: project, prompt_version: prompt_version, completed_at: 30.days.ago)
+      insert_quality_metric(run: run, composite_score: 0.85)
 
       result = described_class.call(sample_size: 10, days: 7)
 
@@ -90,9 +134,8 @@ RSpec.describe PromptEvolution::SampleRuns do
     it "filters by project_id when provided" do
       other_project = create(:project)
       create_completed_run
-      other_run = create(:agent_run, :completed, project: other_project,
-        prompt_version: prompt_version, completed_at: 1.day.ago)
-      create(:quality_metric, :automated, agent_run: other_run)
+      other_run = insert_completed_run(project: other_project, prompt_version: prompt_version, completed_at: 1.day.ago)
+      insert_quality_metric(run: other_run, composite_score: 0.85)
 
       result = described_class.call(sample_size: 10, days: 7, project_id: project.id)
 
@@ -106,10 +149,10 @@ RSpec.describe PromptEvolution::SampleRuns do
       project2 = create(:project)
       create_completed_run(goal: "create_pr")
       create_completed_run(goal: "create_issue")
-      run3 = create(:agent_run, :completed, project: project2,
+      run3 = insert_completed_run(project: project2,
         prompt_version: prompt_version, goal: "review", completed_at: 1.day.ago,
         source_pull_request_number: 1)
-      create(:quality_metric, :automated, agent_run: run3)
+      insert_quality_metric(run: run3, composite_score: 0.85)
 
       result = described_class.call(sample_size: 10, days: 7)
 
@@ -118,7 +161,7 @@ RSpec.describe PromptEvolution::SampleRuns do
     end
 
     it "does not bias selection toward the first strata when strata exceed sample size" do
-      strata_projects = Array.new(10) { create(:project) }
+      strata_projects = Array.new(5) { create(:project) }
 
       strata_projects.each_with_index do |strata_project, index|
         create_completed_run(
@@ -128,16 +171,12 @@ RSpec.describe PromptEvolution::SampleRuns do
         )
       end
 
-      # Run multiple times to verify later strata can be selected
-      all_selected_project_ids = Set.new
-      10.times do
-        result = described_class.call(sample_size: 3, days: 14)
-        result.samples.each { |s| all_selected_project_ids << s[:project].id }
-      end
+      result = described_class.call(sample_size: 3, days: 14, random: Random.new(1))
+      selected_project_ids = result.samples.map { |s| s[:project].id }
 
-      # With shuffling, projects beyond the first 3 must appear at least once.
-      # Without randomization, only the first 3 strata would ever be selected.
-      expect(all_selected_project_ids.size).to be > 3
+      # With shuffling, projects beyond the first 3 can be selected.
+      # Without randomization, only the first 3 strata would be selected.
+      expect(selected_project_ids & strata_projects.drop(3).map(&:id)).not_to be_empty
     end
 
     it "returns exactly sample_size when enough runs exist and strata don't divide evenly" do

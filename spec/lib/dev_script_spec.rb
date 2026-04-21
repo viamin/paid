@@ -22,12 +22,18 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
   # inherits the parent process env by default, so exporting here propagates
   # into each child bin/dev process.
   around do |example|
-    prior = ENV.to_h.slice("DEV_SUPERVISOR_FAST_DIAGNOSTICS", "DEV_SUPERVISOR_QUIT_GRACE_SECONDS")
+    prior = ENV.to_h.slice(
+      "DEV_SUPERVISOR_FAST_DIAGNOSTICS",
+      "DEV_SUPERVISOR_MONITOR_INTERVAL",
+      "DEV_SUPERVISOR_QUIT_GRACE_SECONDS"
+    )
     ENV["DEV_SUPERVISOR_FAST_DIAGNOSTICS"] = "1"
+    ENV["DEV_SUPERVISOR_MONITOR_INTERVAL"] = "0.01"
     ENV["DEV_SUPERVISOR_QUIT_GRACE_SECONDS"] = "0"
     example.run
   ensure
     ENV["DEV_SUPERVISOR_FAST_DIAGNOSTICS"] = prior["DEV_SUPERVISOR_FAST_DIAGNOSTICS"]
+    ENV["DEV_SUPERVISOR_MONITOR_INTERVAL"] = prior["DEV_SUPERVISOR_MONITOR_INTERVAL"]
     ENV["DEV_SUPERVISOR_QUIT_GRACE_SECONDS"] = prior["DEV_SUPERVISOR_QUIT_GRACE_SECONDS"]
   end
 
@@ -196,20 +202,20 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
 
   it "warns and exits when the overmind socket never appears after --detach" do
     Dir.mktmpdir("dev", exec_tmpdir) do |dir|
-      script_path = prepare_script_fixture(dir, overmind: { create_socket_on_start: false, start_sleep: 10 })
+      script_path = prepare_script_fixture(dir, overmind: { create_socket_on_start: false })
 
       env = {
         "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
         "SKIP_DEV_CLEANUP" => "1",
         "OVERMIND_SOCKET" => File.join(dir, ".overmind.sock"),
-        "DEV_DETACH_READY_TIMEOUT" => "2"
+        "DEV_DETACH_READY_TIMEOUT" => "0"
       }
       stdout, stderr, status = Open3.capture3(env, script_path, "--detach", chdir: dir)
       wait_for_detached_child(dir)
 
       expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
       expect(stdout).to include("Detaching bin/dev")
-      expect(stderr).to include("overmind socket did not appear within 2s")
+      expect(stderr).to include("overmind socket did not appear within 0s")
     end
   end
 
