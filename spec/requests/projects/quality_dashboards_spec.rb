@@ -25,6 +25,16 @@ RSpec.describe "Projects::QualityDashboards" do
         expect(response.body).to include("Quality Metrics")
       end
 
+      it "renders configurable quality thresholds" do
+        get project_quality_dashboard_path(project)
+
+        expect(response.body).to include("Quality Thresholds")
+        expect(response.body).to include("Lint Clean")
+        expect(response.body).to include("Review Comment Count")
+        expect(response.body).not_to include("CI Passed")
+        expect(response.body).not_to include("PR Merged")
+      end
+
       it "shows empty state when no metrics exist" do
         get project_quality_dashboard_path(project)
 
@@ -73,6 +83,85 @@ RSpec.describe "Projects::QualityDashboards" do
         get project_quality_dashboard_path(project)
 
         expect(response.body).to include("Export CSV")
+      end
+    end
+  end
+
+  describe "PATCH /projects/:project_id/quality_thresholds" do
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "creates a project override" do
+        patch project_quality_thresholds_path(project), params: {
+          quality_thresholds: {
+            "0" => {
+              metric_type: "lint_clean",
+              goal_type: "create_pr",
+              min_value: "0.75",
+              override: "1",
+              enabled: "1"
+            }
+          }
+        }
+
+        expect(response).to redirect_to(project_quality_dashboard_path(project))
+        threshold = project.quality_thresholds.find_by!(metric_type: "lint_clean", goal_type: "create_pr")
+        expect(threshold.min_value).to eq(0.75)
+      end
+
+      it "ignores a non-configurable CI pass-rate project override" do
+        patch project_quality_thresholds_path(project), params: {
+          quality_thresholds: {
+            "0" => {
+              metric_type: "ci_passed",
+              goal_type: "create_pr",
+              min_value: "0.8",
+              override: "1",
+              enabled: "1"
+            }
+          }
+        }
+
+        expect(response).to redirect_to(project_quality_dashboard_path(project))
+        expect(project.quality_thresholds.where(metric_type: "ci_passed", goal_type: "create_pr")).to be_empty
+      end
+
+      it "ignores a non-configurable test pass-rate project override" do
+        patch project_quality_thresholds_path(project), params: {
+          quality_thresholds: {
+            "0" => {
+              metric_type: "tests_pass",
+              goal_type: "create_pr",
+              min_value: "0.8",
+              override: "1",
+              enabled: "1"
+            }
+          }
+        }
+
+        expect(response).to redirect_to(project_quality_dashboard_path(project))
+        expect(project.quality_thresholds.where(metric_type: "tests_pass", goal_type: "create_pr")).to be_empty
+      end
+
+      it "removes a project override when inheritance is selected" do
+        create(:quality_threshold, :project_override,
+          project: project,
+          metric_type: "lint_clean",
+          goal_type: "create_pr")
+
+        patch project_quality_thresholds_path(project), params: {
+          quality_thresholds: {
+            "0" => {
+              metric_type: "lint_clean",
+              goal_type: "create_pr",
+              min_value: "0.75",
+              override: "0",
+              enabled: "1"
+            }
+          }
+        }
+
+        expect(project.quality_thresholds.where(metric_type: "lint_clean", goal_type: "create_pr")).to be_empty
       end
     end
   end

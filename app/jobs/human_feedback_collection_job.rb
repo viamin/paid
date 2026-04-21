@@ -32,6 +32,7 @@ class HumanFeedbackCollectionJob < ApplicationJob
     end
 
     stamp_last_polled_at(agent_run)
+    check_quality_pause(agent_run)
   end
 
   private
@@ -157,5 +158,9 @@ class HumanFeedbackCollectionJob < ApplicationJob
 
   def collect_enhance_issue_feedback(agent_run)
     QualityMetrics::CollectEnhanceIssueFeedback.call(agent_run: agent_run)
+  end
+
+  def check_quality_pause(agent_run)
+    QualityPause::Check.call(agent_run: agent_run)
   end
 end

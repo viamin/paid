@@ -52,6 +52,7 @@ module Api
         reviewer: review.dig("user", "login"),
         review_body: review["body"].to_s
       )
+      check_quality_pause(agent_run)
 
       head :ok
     end
@@ -90,6 +91,7 @@ module Api
         pr_merged: true,
         feedback_source: "pr_merge"
       )
+      check_quality_pause(agent_run)
 
       head :ok
     end
@@ -126,6 +128,7 @@ module Api
         commenter: comment.dig("user", "login"),
         comment_id: comment["id"]
       )
+      check_quality_pause(agent_run)
 
       head :ok
     end
@@ -257,6 +260,10 @@ module Api
         event: event,
         error: e.message
       )
+    end
+
+    def check_quality_pause(agent_run)
+      QualityPause::Check.call(agent_run: agent_run)
     end
 
     def payload

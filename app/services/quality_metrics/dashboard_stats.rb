@@ -42,7 +42,7 @@ module QualityMetrics
     # carry a scoring weight.
     METRIC_DISPLAY = {
       "pr_created" => { name: "PR Created", description: "Whether the agent successfully created a pull request.", signal_type: "automated", collected_for: %w[create_pr] },
-      "pr_merged" => { name: "PR Merged", description: "Whether the pull request was merged.", signal_type: "automated", collected_for: %w[create_pr] },
+      "pr_merged" => { name: "PR Merged", description: "Whether the pull request was merged.", signal_type: "human", collected_for: %w[create_pr] },
       "ci_passed" => { name: "CI Passed", description: "Whether CI checks passed on the pull request.", signal_type: "automated", collected_for: %w[create_pr] },
       "iterations" => { name: "Iterations", description: "Fewer iterations to complete = higher quality. Degrades by 0.1 per extra iteration.", signal_type: "automated", collected_for: %w[create_pr] },
       "lint_clean" => { name: "Lint Clean", description: "Whether the agent produced code with no lint offenses.", signal_type: "automated", collected_for: %w[create_pr] },

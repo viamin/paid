@@ -25,6 +25,8 @@ RSpec.describe HumanFeedbackCollectionJob do
           pull_request: { review_comments: 1 }
         )
 
+        expect(QualityPause::Check).to receive(:call).with(agent_run: agent_run)
+
         described_class.new.perform(agent_run.id)
 
         metric = agent_run.quality_metrics.human.first

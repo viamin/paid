@@ -36,6 +36,14 @@ RSpec.describe QualityMetrics::Collect do
         expect(metric.scores).not_to include("review_comment_count")
       end
 
+      it "omits merge status until finalized human feedback is collected" do
+        agent_run.issue.update!(pr_review_phase: "ready")
+
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(metric.scores).not_to include("pr_merged")
+      end
+
       it "includes review_comment_count when metadata is populated" do
         # First create metric, then populate metadata as HumanFeedbackCollectionJob would
         metric = described_class.call(agent_run: agent_run)
