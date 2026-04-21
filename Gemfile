@@ -46,7 +46,8 @@ gem "docker-api"
 gem "qdrant-ruby"
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
-gem "agent-harness", "~> 0.10.0", ">= 0.10.0"
+# Provider#parse_rate_limit_reset landed in agent-harness 0.8.0; ~> 0.10.0 includes it.
+gem "agent-harness", "~> 0.10.0"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
 gem "ruby-maat"
