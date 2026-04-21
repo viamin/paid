@@ -549,7 +549,7 @@ RSpec.describe Containers::Provision do
 
     context "with network integration" do
       it "ensures the agent network exists before provisioning" do
-        expect(NetworkPolicy).to receive(:ensure_network!).ordered
+        expect(NetworkPolicy).to receive(:ensure_network!).with(network: NetworkPolicy::NETWORK_NAME).ordered
         expect(Docker::Container).to receive(:create).ordered.and_return(mock_container)
 
         service.provision
@@ -692,8 +692,8 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "skips network creation" do
-        expect(NetworkPolicy).not_to receive(:ensure_network!)
+      it "ensures the infrastructure network exists" do
+        expect(NetworkPolicy).to receive(:ensure_network!).with(network: NetworkPolicy::INFRA_NETWORK_NAME)
 
         service.provision
       end

@@ -120,6 +120,10 @@ module Containers
 
     attr_reader :agent_run, :worktree_path, :container, :options, :workspace_volume
 
+    def self.network_for(agent_run:)
+      new(agent_run: agent_run).network_name
+    end
+
     # @param agent_run [AgentRun] The agent run to associate logs with
     # @param worktree_path [String, nil] Path to an existing worktree to bind-mount.
     #   When nil, a Docker named volume is created for in-container git clone.
@@ -134,7 +138,7 @@ module Containers
         Rails.logger.warn(
           message: "container_manager.container.network_option_ignored",
           agent_run_id: agent_run.id,
-          hint: "The :network option is ignored; containers always use #{NetworkPolicy::NETWORK_NAME}"
+          hint: "The :network option is ignored; containers use the network selected by provider auth mode"
         )
         options.delete(:network)
       end
@@ -146,8 +150,8 @@ module Containers
     end
 
     # Provisions a new container with security hardening.
-    # Ensures the agent network exists before creating the container,
-    # and applies firewall rules after start to restrict outbound traffic.
+    # Ensures the selected network exists before creating the container,
+    # and applies firewall rules for restricted proxy-mode runs after start.
     #
     # @return [Result] Result object with success/failure status
     def provision
@@ -208,6 +212,10 @@ module Containers
       raise ProvisionError, "Container not provisioned" unless container
 
       with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:, preparation:, heartbeat_path:, abort_patterns:) }
+    end
+
+    def network_name
+      network_contract.network
     end
 
     private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil)
@@ -1311,12 +1319,18 @@ module Containers
       }
     end
 
-    # Subscription auth requires outbound HTTPS to reach Anthropic's servers.
-    # The paid_agent network is internal-only and blocks this, so subscription
-    # mode uses the infrastructure network which has outbound routing.
-    # API key mode continues to use the restricted paid_agent network.
+    # Proxy-mode API key auth uses the restricted paid_agent network.
+    # Subscription auth and direct-outbound providers use paid_internal so
+    # provider CLIs can reach their upstream APIs directly.
     def container_network
-      direct_outbound_provider? || subscription_auth? ? NetworkPolicy::INFRA_NETWORK_NAME : NetworkPolicy::NETWORK_NAME
+      network_name
+    end
+
+    def network_contract
+      @network_contract ||= NetworkPolicy.contract(
+        subscription_auth: subscription_auth?,
+        direct_outbound: direct_outbound_provider?
+      )
     end
 
     def direct_outbound_provider?
@@ -1430,7 +1444,7 @@ module Containers
 
     def proxy_base_url
       proxy_port = Rails.application.config.x.paid_proxy_port
-      proxy_host = subscription_auth? || direct_outbound_provider? ? "web" : "paid-proxy"
+      proxy_host = network_contract.restricted? ? "paid-proxy" : "web"
       "http://#{proxy_host}:#{proxy_port}"
     end
 
@@ -1569,20 +1583,14 @@ module Containers
     end
 
     def ensure_network!
-      # Subscription auth uses the infrastructure network (already managed by compose).
-      # Only the restricted agent network needs explicit creation.
-      return if subscription_auth? || direct_outbound_provider?
-
-      NetworkPolicy.ensure_network!
-      log_system("container.network.ready", network: NetworkPolicy::NETWORK_NAME)
+      NetworkPolicy.ensure_network!(network: network_name)
+      log_system("container.network.ready", network: network_name, mode: network_contract.mode)
     rescue NetworkPolicy::Error => e
       raise ProvisionError, "Network setup failed: #{e.message}"
     end
 
     def apply_network_restrictions!
-      # Subscription auth containers are on the infrastructure network and need
-      # outbound access to Anthropic. Firewall rules would block this.
-      return if subscription_auth? || direct_outbound_provider?
+      return unless network_contract.firewall?
 
       NetworkPolicy.apply_firewall_rules(
         container,

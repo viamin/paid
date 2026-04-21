@@ -16,7 +16,7 @@ RSpec.describe Activities::ProvisionServicesActivity do
         .and_return({ "DATABASE_URL" => "postgres://agent:agent@pg:5432/agent_test" })
       allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
       allow(agent_run).to receive(:service_container_ids).and_return([ 1 ])
-      allow(NetworkPolicy).to receive(:agent_network).and_return(NetworkPolicy::NETWORK_NAME)
+      allow(Containers::Provision).to receive(:network_for).with(agent_run: agent_run).and_return(NetworkPolicy::NETWORK_NAME)
 
       result = activity.execute(agent_run_id: agent_run.id)
 
@@ -29,7 +29,21 @@ RSpec.describe Activities::ProvisionServicesActivity do
       allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
       allow(provisioner).to receive(:provision)
         .with(agent_run, network: NetworkPolicy::NETWORK_NAME).and_return({})
-      allow(NetworkPolicy).to receive(:agent_network).and_return(NetworkPolicy::NETWORK_NAME)
+      allow(Containers::Provision).to receive(:network_for).with(agent_run: agent_run).and_return(NetworkPolicy::NETWORK_NAME)
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(agent_run).to receive(:service_container_ids).and_return([])
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:service_environment]).to eq({})
+    end
+
+    it "uses the same network selected for the agent container" do
+      provisioner = instance_double(Containers::ServiceProvisioner)
+      allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+      allow(Containers::Provision).to receive(:network_for).with(agent_run: agent_run).and_return(NetworkPolicy::INFRA_NETWORK_NAME)
+      allow(provisioner).to receive(:provision)
+        .with(agent_run, network: NetworkPolicy::INFRA_NETWORK_NAME).and_return({})
       allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
       allow(agent_run).to receive(:service_container_ids).and_return([])
 

@@ -104,7 +104,7 @@ module Containers
       return {} if service_containers.empty?
 
       @network = network
-      NetworkPolicy.ensure_network!
+      NetworkPolicy.ensure_network!(network: @network)
 
       # Record association early so concurrent cleanup counts this run.
       container_ids = service_containers.map(&:id)
@@ -181,6 +181,7 @@ module Containers
     def ensure_running!(service_container)
       if service_container.running?
         if docker_container_alive?(service_container.docker_container_id)
+          ensure_connected_to_network!(service_container)
           schedule_metrics_collection(service_container)
           return
         else
@@ -203,6 +204,7 @@ module Containers
       # updating status to "running" before returning. Skip start if so.
       if service_container.reload.running?
         adopted = true
+        ensure_connected_to_network!(service_container)
       else
         docker_container.start
         service_container.update!(docker_container_id: docker_container.id, status: "running")
@@ -467,6 +469,34 @@ module Containers
       container.info.dig("State", "Running") == true
     rescue Docker::Error::DockerError, Excon::Error
       false
+    end
+
+    def ensure_connected_to_network!(service_container)
+      container = Docker::Container.get(service_container.docker_container_id)
+      networks = container.info.dig("NetworkSettings", "Networks") || {}
+      endpoint = networks.fetch(@network, nil)
+
+      if network_alias?(endpoint, service_container.name)
+        return
+      end
+
+      network = Docker::Network.get(@network)
+      network.disconnect(container.id) if endpoint
+      network.connect(
+        container.id,
+        {},
+        "EndpointConfig" => { "Aliases" => [ service_container.name ] }
+      )
+      log_info("service_provisioner.network_connected",
+        name: service_container.name,
+        network: @network,
+        container_id: container.id)
+    rescue Docker::Error::DockerError, Excon::Error => e
+      raise Error, "Failed to attach service container #{service_container.name} to network #{@network}: #{e.message}"
+    end
+
+    def network_alias?(endpoint, name)
+      Array(endpoint&.fetch("Aliases", nil)).include?(name)
     end
 
     def generate_env_vars(service_container, db_override: nil)

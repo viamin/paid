@@ -421,8 +421,11 @@ Paid uses two Docker networks to isolate agent traffic:
 
 | Network | Purpose | Internet Access |
 |---------|---------|-----------------|
-| `paid_internal` | Rails, Temporal, PostgreSQL, Qdrant | Yes |
-| `paid_agent` | Agent container execution | No (internal only) |
+| `paid_internal` | Rails, Temporal, PostgreSQL, Qdrant, subscription-auth agent runs, direct-outbound provider runs | Yes |
+| `paid_agent` | Proxy-mode agent container execution | No (internal only) |
 
-Agent containers communicate with external services only through the secrets proxy
-on the internal network. This prevents credential leakage and controls API access.
+Proxy-mode agent containers communicate with external services through the secrets
+proxy and the Git credential proxy. Subscription-auth and direct-outbound provider
+runs are explicit exceptions: they use `paid_internal` so their provider CLIs can
+reach upstream APIs directly. Service containers are placed on the same network
+as the agent run that needs them.
