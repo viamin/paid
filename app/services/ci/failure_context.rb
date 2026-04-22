@@ -62,7 +62,12 @@ module Ci
       raw = raw_check_output(check)
       return "" if raw.blank?
 
-      LogExtractor.call(raw, max_chars: remaining)
+      LogExtractor.call(redact(raw), max_chars: remaining)
+    end
+
+    def redact(text)
+      normalized = text.to_s.encode("UTF-8", invalid: :replace, undef: :replace, replace: "")
+      Knowledge::Redaction::Redactor.call(text: normalized).clean_text
     end
 
     def raw_check_output(check)

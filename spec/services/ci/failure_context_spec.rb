@@ -35,6 +35,26 @@ RSpec.describe Ci::FailureContext do
     expect(context.output).to include("database \"app_test\" does not exist")
   end
 
+  it "redacts secrets before extracting check output for prompts" do
+    check = {
+      id: 1,
+      name: "rspec",
+      conclusion: "failure",
+      output_text: "api_key=#{'a' * 24}\nFailure: request failed"
+    }
+    token = "ghp_#{'b' * 36}"
+    allow(github_client).to receive(:check_run_log)
+      .with(repo, check)
+      .and_return("GITHUB_TOKEN=#{token}")
+
+    context = described_class.call(repo: repo, checks: [ check ], github_client: github_client)
+
+    expect(context.output).to include("[REDACTED:api_key]")
+    expect(context.output).to include("[REDACTED:github_token]")
+    expect(context.output).not_to include("api_key=#{'a' * 24}")
+    expect(context.output).not_to include(token)
+  end
+
   it "does not treat pending checks as failing" do
     context = described_class.call(
       repo: repo,
