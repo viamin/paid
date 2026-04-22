@@ -39,9 +39,14 @@ class AgentRun < ApplicationRecord
   def self.quality_scoreable_sql
     excluded_status = arel_table[:status].not_in(QUALITY_EXCLUDED_STATUSES)
 
+    error_message = Arel::Nodes::NamedFunction.new(
+      "COALESCE",
+      [ arel_table[:error_message], Arel::Nodes.build_quoted("") ]
+    )
+
     failed_operational = OPERATIONAL_FAILURE_KEYWORDS.map { |keyword|
       arel_table[:status].eq("failed").and(
-        arel_table[:error_message].matches("%#{keyword}%")
+        error_message.matches("%#{keyword}%")
       )
     }.reduce(:or)
 

@@ -192,6 +192,15 @@ RSpec.describe QualityMetrics::Collect do
         expect(metric.composite_score).to be_nil
       end
 
+      it "records a composite_score for failed runs with nil error_message" do
+        run = create(:agent_run, status: "failed", error_message: nil)
+
+        metric = described_class.call(agent_run: run)
+
+        expect(metric.composite_score).not_to be_nil
+        expect(metric.scores).not_to include("excluded_status")
+      end
+
       it "records a composite_score for failed runs with agent-level errors" do
         run = create(:agent_run, status: "failed", error_message: "Agent exited with code 1")
 
