@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ProjectsController < ApplicationController
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :detect_services, :ensure_labels, :cleanup_stale_runs ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :quality_resume, :detect_services, :ensure_labels, :cleanup_stale_runs ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -143,6 +143,28 @@ class ProjectsController < ApplicationController
         )
       end
       format.html { redirect_to @project }
+    end
+  end
+
+  def quality_resume
+    authorize @project, :update?
+
+    resumed = @project.quality_resume!(
+      metadata: {
+        resumed_by_user_id: current_user.id,
+        resumed_by_user_email: current_user.email
+      }
+    )
+
+    respond_to do |format|
+      format.html do
+        if resumed
+          redirect_to edit_project_path(@project), notice: "Quality pause was resumed."
+        else
+          redirect_to edit_project_path(@project), notice: "Project is not quality-paused."
+        end
+      end
+      format.json { render json: { resumed: resumed, quality_paused: @project.reload.quality_paused? } }
     end
   end
 
