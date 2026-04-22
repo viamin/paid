@@ -7,20 +7,12 @@ BACKUPS_DIR="${APP_ROOT}/backups"
 read_rails_db_config() {
   bin/rails runner "
     cfg = ActiveRecord::Base.connection_db_config.configuration_hash
-    puts [cfg[:host].to_s, cfg[:username].to_s, cfg[:password].to_s, cfg[:database].to_s].join(' ')
+    puts cfg[:host].to_s
+    puts cfg[:username].to_s
+    puts cfg[:password].to_s
+    puts cfg[:database].to_s
   " 2>/dev/null
 }
-
-RAILS_CONFIG="$(read_rails_db_config)"
-RAILS_DB_HOST="$(echo "$RAILS_CONFIG" | cut -d' ' -f1)"
-RAILS_DB_USER="$(echo "$RAILS_CONFIG" | cut -d' ' -f2)"
-RAILS_DB_PASSWORD="$(echo "$RAILS_CONFIG" | cut -d' ' -f3)"
-RAILS_DB_NAME="$(echo "$RAILS_CONFIG" | cut -d' ' -f4)"
-
-DB_HOST="${DB_HOST:-${RAILS_DB_HOST}}"
-DB_NAME="${DB_NAME:-${RAILS_DB_NAME}}"
-DB_USER="${DB_USER:-${RAILS_DB_USER}}"
-DB_PASSWORD="${DB_PASSWORD:-${RAILS_DB_PASSWORD}}"
 
 usage() {
   echo "Usage: bin/db-restore BACKUP_FILENAME"
@@ -38,10 +30,25 @@ usage() {
   echo "  DB_PASSWORD  Database password (default: from config/database.yml)"
 }
 
-if [[ -z "${1:-}" || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ -z "${1:-}" ]]; then
   usage
   exit 1
 fi
+
+if [[ -z "${DB_HOST+x}" || -z "${DB_NAME+x}" || -z "${DB_USER+x}" || -z "${DB_PASSWORD+x}" ]]; then
+  RAILS_CONFIG_OUTPUT="$(read_rails_db_config)"
+  mapfile -t RAILS_CONFIG <<< "$RAILS_CONFIG_OUTPUT"
+fi
+
+DB_HOST="${DB_HOST-${RAILS_CONFIG[0]:-}}"
+DB_USER="${DB_USER-${RAILS_CONFIG[1]:-}}"
+DB_PASSWORD="${DB_PASSWORD-${RAILS_CONFIG[2]:-}}"
+DB_NAME="${DB_NAME-${RAILS_CONFIG[3]:-}}"
 
 BACKUP_FILE="${1}"
 
@@ -57,6 +64,10 @@ if [[ ! -f "$BACKUP_PATH" ]]; then
 fi
 
 PG_RESTORE_ARGS=(--data-only --disable-triggers --no-owner --no-privileges -U "$DB_USER" -d "$DB_NAME")
+COMPOSE_ARGS=(compose)
+if [[ -n "${COMPOSE_FILE:-}" ]]; then
+  COMPOSE_ARGS+=(-f "$COMPOSE_FILE")
+fi
 
 echo "Restoring ${BACKUP_PATH} into ${DB_NAME}..."
 echo "Truncating existing data..."
@@ -81,7 +92,7 @@ END;
 SET session_replication_role = 'origin';
 "
 
-COMPOSE_CONTAINER="$(docker compose ${COMPOSE_FILE:+-f "$COMPOSE_FILE"} ps -q postgres 2>/dev/null | head -1)"
+COMPOSE_CONTAINER="$(docker "${COMPOSE_ARGS[@]}" ps -q postgres 2>/dev/null | head -1)"
 if [[ -n "$COMPOSE_CONTAINER" ]]; then
   docker exec -i "$COMPOSE_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "$TRUNCATE_SQL"
   docker exec -i "$COMPOSE_CONTAINER" pg_restore "${PG_RESTORE_ARGS[@]}" < "$BACKUP_PATH"
