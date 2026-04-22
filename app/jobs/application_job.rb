@@ -91,6 +91,7 @@ class ApplicationJob < ActiveJob::Base
 
   def agent_run_id_first?
     [
+      AgentRunCancellationJob,
       AgentRunResourceJanitorJob,
       AnomalyDetectionJob,
       ContainerMetricsCollectionJob,

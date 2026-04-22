@@ -70,6 +70,23 @@ RSpec.describe TenantContext, :tenant_isolation do
     end
   end
 
+  it "rejects direct account rows with cross-tenant references at the database policy" do
+    account = account_a
+    project_b = described_class.with_system_access { create(:project, account: account_b) }
+    user_b = described_class.with_system_access { create(:user, account: account_b) }
+
+    as_restricted_role do
+      described_class.with(account) do
+        expect_rls_rejection { insert_account_membership(account, user_b) }
+        expect_rls_rejection { insert_pr_template(account, project_id: project_b.id) }
+        expect_rls_rejection { insert_pre_commit_requirement(account, user_id: user_b.id) }
+        expect_rls_rejection { insert_quality_threshold(account, project_b) }
+        expect_rls_rejection { insert_notification(account, user_b) }
+        expect_rls_rejection { insert_github_token(account, user_b) }
+      end
+    end
+  end
+
   it "allows tenant reads but blocks tenant writes for global prompts and style guides" do
     global_prompt = described_class.with_system_access { create(:prompt, :global, :with_version) }
     tenant_prompt = described_class.with_system_access { create(:prompt, :for_account, account: account_a) }
@@ -173,6 +190,95 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.execute(<<~SQL.squish)
       INSERT INTO project_service_containers (project_id, service_container_id, created_at, updated_at)
       VALUES (#{project.id}, #{service_container.id}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    SQL
+  end
+
+  def insert_account_membership(account, user)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO account_memberships (account_id, user_id, role, created_at, updated_at)
+      VALUES (#{account.id}, #{user.id}, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    SQL
+  end
+
+  def insert_pr_template(account, project_id: nil, user_id: nil)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO pr_templates (account_id, project_id, user_id, name, body, created_at, updated_at)
+      VALUES (
+        #{account.id},
+        #{sql_value(project_id)},
+        #{sql_value(user_id)},
+        #{quote("RLS PR Template #{SecureRandom.hex(4)}")},
+        'Body',
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def insert_pre_commit_requirement(account, project_id: nil, user_id: nil)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO pre_commit_requirements (account_id, project_id, user_id, name, command, created_at, updated_at)
+      VALUES (
+        #{account.id},
+        #{sql_value(project_id)},
+        #{sql_value(user_id)},
+        #{quote("RLS Requirement #{SecureRandom.hex(4)}")},
+        'bin/ci',
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def insert_quality_threshold(account, project)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO quality_thresholds (
+        account_id,
+        project_id,
+        metric_type,
+        goal_type,
+        min_value,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        #{account.id},
+        #{project.id},
+        #{quote("rls_metric_#{SecureRandom.hex(4)}")},
+        'issue',
+        0.75,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def insert_notification(account, user)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO notifications (account_id, user_id, source, severity, title, created_at, updated_at)
+      VALUES (
+        #{account.id},
+        #{user.id},
+        'rls',
+        0,
+        #{quote("RLS Notification #{SecureRandom.hex(4)}")},
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def insert_github_token(account, user)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO github_tokens (account_id, created_by_id, name, token, created_at, updated_at)
+      VALUES (
+        #{account.id},
+        #{user.id},
+        #{quote("RLS Token #{SecureRandom.hex(4)}")},
+        'ghp_test',
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
     SQL
   end
 

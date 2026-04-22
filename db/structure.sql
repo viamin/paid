@@ -7735,7 +7735,11 @@ ALTER TABLE public.style_guides ENABLE ROW LEVEL SECURITY;
 -- Name: account_memberships tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.account_memberships USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+CREATE POLICY tenant_isolation ON public.account_memberships USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = account_memberships.user_id) AND (users.account_id = public.paid_current_account_id()))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = account_memberships.user_id) AND (users.account_id = public.paid_current_account_id())))))));
 
 
 --
@@ -7816,7 +7820,11 @@ CREATE POLICY tenant_isolation ON public.agent_runs USING ((public.paid_tenant_b
 -- Name: billing_invoices tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.billing_invoices USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+CREATE POLICY tenant_isolation ON public.billing_invoices USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND (EXISTS ( SELECT 1
+   FROM public.billing_periods
+  WHERE ((billing_periods.id = billing_invoices.billing_period_id) AND (billing_periods.account_id = public.paid_current_account_id()))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND (EXISTS ( SELECT 1
+   FROM public.billing_periods
+  WHERE ((billing_periods.id = billing_invoices.billing_period_id) AND (billing_periods.account_id = public.paid_current_account_id())))))));
 
 
 --
@@ -7834,7 +7842,11 @@ CREATE POLICY tenant_isolation ON public.billing_line_items USING ((public.paid_
 -- Name: billing_periods tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.billing_periods USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+CREATE POLICY tenant_isolation ON public.billing_periods USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND (EXISTS ( SELECT 1
+   FROM public.billing_plans
+  WHERE ((billing_plans.id = billing_periods.billing_plan_id) AND (billing_plans.account_id = public.paid_current_account_id()))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND (EXISTS ( SELECT 1
+   FROM public.billing_plans
+  WHERE ((billing_plans.id = billing_periods.billing_plan_id) AND (billing_plans.account_id = public.paid_current_account_id())))))));
 
 
 --
@@ -7944,14 +7956,22 @@ CREATE POLICY tenant_isolation ON public.decision_records USING ((public.paid_te
 -- Name: github_tokens tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.github_tokens USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+CREATE POLICY tenant_isolation ON public.github_tokens USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = github_tokens.created_by_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = github_tokens.created_by_id) AND (users.account_id = public.paid_current_account_id()))))))));
 
 
 --
 -- Name: integration_credentials tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.integration_credentials USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+CREATE POLICY tenant_isolation ON public.integration_credentials USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = integration_credentials.created_by_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = integration_credentials.created_by_id) AND (users.account_id = public.paid_current_account_id()))))))));
 
 
 --
@@ -8051,7 +8071,11 @@ CREATE POLICY tenant_isolation ON public.knowledge_runs USING ((public.paid_tena
 -- Name: linear_tokens tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.linear_tokens USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+CREATE POLICY tenant_isolation ON public.linear_tokens USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = linear_tokens.created_by_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = linear_tokens.created_by_id) AND (users.account_id = public.paid_current_account_id()))))))));
 
 
 --
@@ -8078,7 +8102,11 @@ CREATE POLICY tenant_isolation ON public.model_selections USING ((public.paid_te
 -- Name: notifications tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.notifications USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+CREATE POLICY tenant_isolation ON public.notifications USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((user_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = notifications.user_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((user_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = notifications.user_id) AND (users.account_id = public.paid_current_account_id()))))))));
 
 
 --
@@ -8092,14 +8120,30 @@ CREATE POLICY tenant_isolation ON public.onboarding_steps USING ((public.paid_te
 -- Name: pr_templates tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.pr_templates USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+CREATE POLICY tenant_isolation ON public.pr_templates USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = pr_templates.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((user_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = pr_templates.user_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = pr_templates.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((user_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = pr_templates.user_id) AND (users.account_id = public.paid_current_account_id()))))))));
 
 
 --
 -- Name: pre_commit_requirements tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.pre_commit_requirements USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+CREATE POLICY tenant_isolation ON public.pre_commit_requirements USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = pre_commit_requirements.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((user_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = pre_commit_requirements.user_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = pre_commit_requirements.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((user_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = pre_commit_requirements.user_id) AND (users.account_id = public.paid_current_account_id()))))))));
 
 
 --
@@ -8173,7 +8217,15 @@ CREATE POLICY tenant_isolation ON public.project_versions USING ((public.paid_te
 -- Name: projects tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.projects USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+CREATE POLICY tenant_isolation ON public.projects USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND (EXISTS ( SELECT 1
+   FROM public.github_tokens
+  WHERE ((github_tokens.id = projects.github_token_id) AND (github_tokens.account_id = public.paid_current_account_id())))) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = projects.created_by_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND (EXISTS ( SELECT 1
+   FROM public.github_tokens
+  WHERE ((github_tokens.id = projects.github_token_id) AND (github_tokens.account_id = public.paid_current_account_id())))) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = projects.created_by_id) AND (users.account_id = public.paid_current_account_id()))))))));
 
 
 --
@@ -8270,7 +8322,11 @@ CREATE POLICY tenant_isolation ON public.quality_recovery_actions USING ((public
 -- Name: quality_thresholds tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.quality_thresholds USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+CREATE POLICY tenant_isolation ON public.quality_thresholds USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = quality_thresholds.project_id) AND (projects.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = quality_thresholds.project_id) AND (projects.account_id = public.paid_current_account_id()))))))));
 
 
 --

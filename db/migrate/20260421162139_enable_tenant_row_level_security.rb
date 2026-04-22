@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
   DIRECT_ACCOUNT_TABLES = %w[
     account_memberships
@@ -72,7 +74,7 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
     enable_policy("accounts", "id = paid_current_account_id()", insert_allows_missing_tenant: true)
 
     DIRECT_ACCOUNT_TABLES.each do |table|
-      enable_policy(table, "#{table}.account_id = paid_current_account_id()")
+      enable_policy(table, direct_account_condition(table))
     end
 
     OPTIONAL_ACCOUNT_TABLES.each do |table|
@@ -225,6 +227,78 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
           WHERE projects.id = #{table}.project_id
             AND projects.account_id = paid_current_account_id()
         )
+      )
+    SQL
+  end
+
+  def direct_account_condition(table)
+    ([ account_condition(table) ] + direct_account_reference_conditions(table)).join(" AND ")
+  end
+
+  def account_condition(table)
+    "#{table}.account_id = paid_current_account_id()"
+  end
+
+  def direct_account_reference_conditions(table)
+    case table
+    when "account_memberships"
+      [ user_reference_condition(table) ]
+    when "billing_invoices"
+      [ account_owned_reference_condition(table, "billing_periods", "billing_period_id") ]
+    when "billing_periods"
+      [ account_owned_reference_condition(table, "billing_plans", "billing_plan_id") ]
+    when "github_tokens", "integration_credentials", "linear_tokens"
+      [ optional_user_reference_condition(table, "created_by_id") ]
+    when "notifications"
+      [ optional_user_reference_condition(table) ]
+    when "pr_templates", "pre_commit_requirements"
+      [ optional_project_reference_condition(table), optional_user_reference_condition(table) ]
+    when "projects"
+      [
+        account_owned_reference_condition(table, "github_tokens", "github_token_id"),
+        optional_user_reference_condition(table, "created_by_id")
+      ]
+    when "quality_thresholds"
+      [ optional_project_reference_condition(table) ]
+    else
+      []
+    end
+  end
+
+  def account_owned_reference_condition(table, referenced_table, foreign_key)
+    <<~SQL.squish
+      EXISTS (
+        SELECT 1 FROM #{referenced_table}
+        WHERE #{referenced_table}.id = #{table}.#{foreign_key}
+          AND #{referenced_table}.account_id = paid_current_account_id()
+      )
+    SQL
+  end
+
+  def optional_project_reference_condition(table)
+    <<~SQL.squish
+      (
+        #{table}.project_id IS NULL
+        OR #{project_condition(table)}
+      )
+    SQL
+  end
+
+  def user_reference_condition(table, column = "user_id")
+    <<~SQL.squish
+      EXISTS (
+        SELECT 1 FROM users
+        WHERE users.id = #{table}.#{column}
+          AND users.account_id = paid_current_account_id()
+      )
+    SQL
+  end
+
+  def optional_user_reference_condition(table, column = "user_id")
+    <<~SQL.squish
+      (
+        #{table}.#{column} IS NULL
+        OR #{user_reference_condition(table, column)}
       )
     SQL
   end
