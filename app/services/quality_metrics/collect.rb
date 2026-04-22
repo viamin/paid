@@ -239,11 +239,10 @@ module QualityMetrics
     def update_prompt_version_stats
       pv = agent_run.prompt_version
 
-      # Scope to automated metrics only so human feedback doesn't inflate
-      # usage_count (which represents distinct runs, not total metric rows).
       stats = QualityMetric.where(prompt_version: pv)
         .automated
         .with_composite_score
+        .joins(:agent_run).where(AgentRun.quality_scoreable_sql)
         .pick(Arel.sql("COUNT(DISTINCT agent_run_id), AVG(composite_score)"))
 
       count, avg = stats
