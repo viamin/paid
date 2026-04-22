@@ -24,5 +24,21 @@ RSpec.describe AgentRuns::ProviderResolver do
         provider_api_key: api_key
       )
     end
+
+    it "ignores requested provider ids from another account" do
+      project = create(:project)
+      other_owner = create(:user, :owner)
+      other_provider = create(:provider, user: other_owner, provider_key: "codex")
+
+      provider_id, agent_type = described_class.call(
+        project: project,
+        goal: "create_pr",
+        requested_provider_id: other_provider.id
+      )
+
+      expect(provider_id).not_to eq(other_provider.id)
+      expect(Provider.find(provider_id)).to eq(project.created_by.providers.find_by!(provider_key: "claude"))
+      expect(agent_type).to eq("claude_code")
+    end
   end
 end

@@ -28,7 +28,8 @@ module Activities
         project: project,
         requested_agent_type: input[:agent_type],
         requested_provider_id: provider_id,
-        goal: goal
+        goal: goal,
+        respect_requested: input.key?(:agent_type) || input.key?(:provider_id)
       )
 
       # Resolve and render prompt version if no custom prompt is provided.
@@ -129,12 +130,13 @@ module Activities
 
     private
 
-    def resolve_provider_selection(project:, requested_agent_type:, requested_provider_id:, goal:)
+    def resolve_provider_selection(project:, requested_agent_type:, requested_provider_id:, goal:, respect_requested: true)
       AgentRuns::ProviderResolver.call(
         project: project,
         goal: goal,
         requested_agent_type: requested_agent_type,
         requested_provider_id: requested_provider_id,
+        respect_requested: respect_requested,
         logger: logger
       )
     end
@@ -146,7 +148,8 @@ module Activities
         project: agent_run.project,
         requested_agent_type: nil,
         requested_provider_id: nil,
-        goal: agent_run.goal
+        goal: agent_run.goal,
+        respect_requested: false
       )
       provider = Provider.find_by(id: provider_id) if provider_id
       return unless provider

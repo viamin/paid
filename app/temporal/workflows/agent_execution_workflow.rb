@@ -73,7 +73,7 @@ module Workflows
     def execute(input)
       project_id = input[:project_id]
       issue_id = input[:issue_id]
-      agent_type = input.fetch(:agent_type, "claude_code")
+      agent_type = input[:agent_type]
       custom_prompt = input[:custom_prompt]
       source_pull_request_number = input[:source_pull_request_number]
       agent_run_id = input[:agent_run_id]

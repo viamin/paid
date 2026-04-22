@@ -81,7 +81,7 @@ module AgentRuns
     def provider_for_id(provider_id)
       return if provider_id.blank?
 
-      Provider.find_by(id: provider_id)
+      project.effective_owner&.providers&.find_by(id: provider_id)
     end
 
     def provider_runnable?(provider)
