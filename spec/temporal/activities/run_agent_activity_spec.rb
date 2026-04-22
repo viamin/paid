@@ -47,6 +47,20 @@ RSpec.describe Activities::RunAgentActivity do
     variant_version
   end
 
+  def create_running_ab_test(slug:)
+    prompt = create(:prompt, :global, slug: slug)
+    control_version = prompt.create_version!(template: "control {{base_prompt}} {{repo}}")
+    variant_version = create(:prompt_version, prompt: prompt,
+      version: control_version.version + 1,
+      template: "variant {{base_prompt}} {{repo}}")
+    ab_test = create(:ab_test, prompt: prompt, control_version: control_version,
+      status: "running", started_at: Time.current)
+    create(:ab_test_variant, ab_test: ab_test, prompt_version: control_version, is_control: true)
+    create(:ab_test_variant, ab_test: ab_test, prompt_version: variant_version)
+
+    ab_test
+  end
+
   describe "#with_periodic_heartbeat" do
     let(:mock_context) { instance_double(Temporalio::Activity::Context) }
 
@@ -479,6 +493,19 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   describe "A/B test goal prompt assignment" do
+    it "assigns a running test before rendering the issue-goal prompt" do
+      run = create(:agent_run, :create_issue_goal, project: project)
+      ab_test = create_running_ab_test(slug: described_class::ISSUE_GOAL_PROMPT_SLUG)
+
+      prompt = activity.send(:augment_prompt_for_issue_goal, run, "Create a roadmap issue")
+
+      assignment = AbTestAssignment.find_by!(ab_test: ab_test, agent_run: run)
+      assigned_version = assignment.ab_test_variant.prompt_version
+
+      expect(prompt).to eq(assigned_version.render(base_prompt: "Create a roadmap issue", repo: project.full_name))
+      expect(run.reload.prompt_version).to eq(assigned_version)
+    end
+
     it "uses an assigned issue-goal variant prompt version" do
       run = create(:agent_run, :create_issue_goal, project: project)
       variant_version = create_ab_test_assignment(
