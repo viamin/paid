@@ -13,7 +13,10 @@ module Users
 
       ActiveRecord::Base.transaction do
         account.save!
-        resource.save!
+
+        TenantContext.with(account) do
+          resource.save!
+        end
 
         yield resource if block_given?
         if resource.active_for_authentication?

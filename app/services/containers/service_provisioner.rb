@@ -55,21 +55,21 @@ module Containers
     }.freeze
 
     ENV_MAPPINGS = {
-      "postgres" => ->(sc, db_override: nil) {
+      "postgres" => ->(sc, host:, db_override: nil) {
         defaults = POSTGRES_DEFAULT_ENV
         user = sc.env["POSTGRES_USER"].to_s.strip.presence || defaults["POSTGRES_USER"]
         pass = sc.env["POSTGRES_PASSWORD"].to_s.strip.presence || defaults["POSTGRES_PASSWORD"]
         db = db_override || sc.env["POSTGRES_DB"].to_s.strip.presence || defaults["POSTGRES_DB"]
-        { "DATABASE_URL" => "postgres://#{user}:#{pass}@#{sc.name}:#{sc.port}/#{db}" }
+        { "DATABASE_URL" => "postgres://#{user}:#{pass}@#{host}:#{sc.port}/#{db}" }
       },
-      "redis" => ->(sc, **) {
-        { "REDIS_URL" => "redis://#{sc.name}:#{sc.port}" }
+      "redis" => ->(sc, host:, **) {
+        { "REDIS_URL" => "redis://#{host}:#{sc.port}" }
       },
-      "selenium" => ->(sc, **) {
-        { "SELENIUM_URL" => "http://#{sc.name}:#{sc.port}" }
+      "selenium" => ->(sc, host:, **) {
+        { "SELENIUM_URL" => "http://#{host}:#{sc.port}" }
       },
-      "chromium" => ->(sc, **) {
-        { "SELENIUM_URL" => "http://#{sc.name}:#{sc.port}" }
+      "chromium" => ->(sc, host:, **) {
+        { "SELENIUM_URL" => "http://#{host}:#{sc.port}" }
       }
     }.freeze
 
@@ -87,6 +87,8 @@ module Containers
     }.freeze
 
     DEFAULT_RESOURCE_LIMITS = { memory: 1 * 1024 * 1024 * 1024, cpu_quota: 100_000, pids_limit: 200 }.freeze
+    RUNTIME_NAME_PREFIX = "paid-svc"
+    MAX_NETWORK_ALIAS_LENGTH = 63
 
     # Provisions all service containers needed by an agent run's project.
     #
@@ -279,16 +281,16 @@ module Containers
     end
 
     def resolve_name_conflict!(service_container)
-      existing = Docker::Container.get(service_container.name)
+      existing = Docker::Container.get(runtime_name(service_container))
       info = existing.json
       labels = info.dig("Config", "Labels") || {}
 
       unless labels["paid.service_container"] == "true"
-        raise Error, "Container named '#{service_container.name}' exists but is not managed by Paid"
+        raise Error, "Container named '#{runtime_name(service_container)}' exists but is not managed by Paid"
       end
 
       if labels["paid.service_container_id"] != service_container.id.to_s
-        raise Error, "Container named '#{service_container.name}' belongs to service_container " \
+        raise Error, "Container named '#{runtime_name(service_container)}' belongs to service_container " \
           "#{labels['paid.service_container_id']}, expected #{service_container.id}"
       end
 
@@ -299,7 +301,7 @@ module Containers
         return existing
       end
 
-      remove_stale_container!(existing, service_container.name)
+      remove_stale_container!(existing, runtime_name(service_container))
       create_docker_container(service_container)
     rescue Docker::Error::NotFoundError
       # Container disappeared between conflict detection and lookup; retry create.
@@ -324,10 +326,11 @@ module Containers
     def create_docker_container(service_container)
       limits = resource_limits_for(service_container.image)
       env = container_env_for(service_container)
+      host = runtime_name(service_container)
 
       options = {
         "Image" => service_container.image,
-        "name" => service_container.name,
+        "name" => host,
         "Env" => env.map { |k, v| "#{k}=#{v}" },
         "HostConfig" => {
           "NetworkMode" => @network,
@@ -340,7 +343,7 @@ module Containers
         "NetworkingConfig" => {
           "EndpointsConfig" => {
             @network => {
-              "Aliases" => [ service_container.name ]
+              "Aliases" => [ host ]
             }
           }
         },
@@ -424,7 +427,7 @@ module Containers
         end
 
         # Fall back to TCP probe when no Docker HEALTHCHECK is configured.
-        if has_healthcheck == false && tcp_port_open?(service_container.name, service_container.port)
+        if has_healthcheck == false && tcp_port_open?(runtime_name(service_container), service_container.port)
           log_info("service_provisioner.healthy", name: service_container.name)
           return
         end
@@ -475,8 +478,9 @@ module Containers
       container = Docker::Container.get(service_container.docker_container_id)
       networks = container.info.dig("NetworkSettings", "Networks") || {}
       endpoint = networks.fetch(@network, nil)
+      host = runtime_name(service_container)
 
-      if network_alias?(endpoint, service_container.name)
+      if network_alias?(endpoint, host)
         return
       end
 
@@ -485,7 +489,7 @@ module Containers
       network.connect(
         container.id,
         {},
-        "EndpointConfig" => { "Aliases" => [ service_container.name ] }
+        "EndpointConfig" => { "Aliases" => [ host ] }
       )
       log_info("service_provisioner.network_connected",
         name: service_container.name,
@@ -500,18 +504,37 @@ module Containers
     end
 
     def generate_env_vars(service_container, db_override: nil)
+      host = runtime_name(service_container)
+
       ENV_MAPPINGS.each do |pattern, generator|
         if service_container.image.include?(pattern)
-          return generator.call(service_container, db_override: db_override)
+          return generator.call(service_container, host: host, db_override: db_override)
         end
       end
 
       # Fallback: generic SERVICE_<NAME>_HOST and SERVICE_<NAME>_PORT
       key = service_container.name.upcase.tr("-", "_")
       {
-        "SERVICE_#{key}_HOST" => service_container.name,
+        "SERVICE_#{key}_HOST" => host,
         "SERVICE_#{key}_PORT" => service_container.port.to_s
       }
+    end
+
+    def runtime_name(service_container)
+      suffix = "a#{service_container.account_id}-s#{service_container.id}"
+      budget = [ MAX_NETWORK_ALIAS_LENGTH - RUNTIME_NAME_PREFIX.length - suffix.length - 2, 1 ].max
+      name = sanitized_runtime_segment(service_container.name)
+      segment = name.first(budget).delete_suffix("-").presence || "service"
+
+      [ RUNTIME_NAME_PREFIX, suffix, segment ].join("-")
+    end
+
+    def sanitized_runtime_segment(name)
+      name.to_s.downcase
+        .gsub(/[^a-z0-9-]/, "-")
+        .gsub(/-+/, "-")
+        .delete_prefix("-")
+        .presence || "service"
     end
 
     # Generates a unique, safe database name for each agent run attempt.

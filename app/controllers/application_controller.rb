@@ -7,8 +7,8 @@ class ApplicationController < ActionController::Base
   # Only allow modern browsers supporting webp images, web push, badges, import maps, CSS nesting, and CSS :has.
   allow_browser versions: :modern
 
+  around_action :with_current_attributes, prepend: true
   before_action :authenticate_user!
-  around_action :with_current_attributes
   after_action :verify_authorized, unless: :skip_pundit?
   after_action :verify_policy_scoped, if: :verify_policy_scoped?
 
@@ -17,13 +17,24 @@ class ApplicationController < ActionController::Base
   private
 
   def with_current_attributes
-    Current.user = current_user
+    Current.user = rls_safe_current_user
     Current.request_id = request.uuid
-    TenantContext.apply!(current_user&.account)
-    yield
+
+    if devise_controller?
+      TenantContext.with_system_access { yield }
+    else
+      TenantContext.apply!(Current.user&.account)
+      yield
+    end
   ensure
     TenantContext.clear!
     Current.reset
+  end
+
+  def rls_safe_current_user
+    TenantContext.with_system_access do
+      current_user.tap { |user| user&.account }
+    end
   end
 
   def current_account

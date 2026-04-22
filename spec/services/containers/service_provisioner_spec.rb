@@ -14,6 +14,18 @@ RSpec.describe Containers::ServiceProvisioner do
       })
   end
 
+  def stub_healthy_created_container(id)
+    instance_double(Docker::Container, id: id).tap do |container|
+      allow(container).to receive_messages(
+        start: nil,
+        exec: [ [ "(0 rows)" ], [], 0 ],
+        json: { "State" => { "Health" => { "Status" => "healthy" } } }
+      )
+      allow(Docker::Container).to receive(:create).and_return(container)
+      allow(Docker::Container).to receive(:get).with(id).and_return(container)
+    end
+  end
+
   describe "#provision" do
     let(:project) { create(:project) }
     let(:issue) { create(:issue, project: project) }
@@ -45,6 +57,7 @@ RSpec.describe Containers::ServiceProvisioner do
           port: 5432,
           env: { "POSTGRES_USER" => "agent", "POSTGRES_PASSWORD" => "agent", "POSTGRES_DB" => "agent_test" })
       end
+      let(:service_host) { provisioner.send(:runtime_name, service_container) }
 
       before do
         create(:project_service_container, project: project, service_container: service_container)
@@ -65,7 +78,7 @@ RSpec.describe Containers::ServiceProvisioner do
 
         expected_db = provisioner.send(:per_run_db_name, agent_run)
         expect(result).to include("DATABASE_URL")
-        expect(result["DATABASE_URL"]).to eq("postgres://agent:agent@test-postgres:5432/#{expected_db}")
+        expect(result["DATABASE_URL"]).to eq("postgres://agent:agent@#{service_host}:5432/#{expected_db}")
         expect(agent_run.reload.service_container_ids).to eq([ service_container.id ])
         expect(ServiceContainerMetricsCollectionJob).to have_been_enqueued.with(service_container.id)
       end
@@ -77,7 +90,7 @@ RSpec.describe Containers::ServiceProvisioner do
           info: {
             "State" => { "Running" => true },
             "NetworkSettings" => {
-              "Networks" => { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ "test-postgres" ] } }
+              "Networks" => { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ service_host ] } }
             }
           })
         allow(Docker::Container).to receive(:get).with("alive123").and_return(alive_container)
@@ -97,7 +110,7 @@ RSpec.describe Containers::ServiceProvisioner do
           info: {
             "State" => { "Running" => true },
             "NetworkSettings" => {
-              "Networks" => { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ "test-postgres" ] } }
+              "Networks" => { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ service_host ] } }
             }
           })
         network = instance_double(Docker::Network, connect: nil, disconnect: nil)
@@ -111,7 +124,7 @@ RSpec.describe Containers::ServiceProvisioner do
         expect(network).to have_received(:connect).with(
           "alive123",
           {},
-          "EndpointConfig" => { "Aliases" => [ "test-postgres" ] }
+          "EndpointConfig" => { "Aliases" => [ service_host ] }
         )
       end
 
@@ -121,7 +134,7 @@ RSpec.describe Containers::ServiceProvisioner do
           service_container_ids: [ service_container.id ])
         alive_container = running_docker_container(
           id: "alive123",
-          networks: { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ "test-postgres" ] } }
+          networks: { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ service_host ] } }
         )
         agent_network = instance_double(Docker::Network, disconnect: nil)
         infra_network = instance_double(Docker::Network, connect: nil, disconnect: nil)
@@ -136,7 +149,7 @@ RSpec.describe Containers::ServiceProvisioner do
         expect(infra_network).to have_received(:connect).with(
           "alive123",
           {},
-          "EndpointConfig" => { "Aliases" => [ "test-postgres" ] }
+          "EndpointConfig" => { "Aliases" => [ service_host ] }
         )
         expect(agent_network).not_to have_received(:disconnect)
       end
@@ -162,7 +175,7 @@ RSpec.describe Containers::ServiceProvisioner do
         expect(network).to have_received(:connect).with(
           "alive123",
           {},
-          "EndpointConfig" => { "Aliases" => [ "test-postgres" ] }
+          "EndpointConfig" => { "Aliases" => [ service_host ] }
         )
       end
 
@@ -263,12 +276,13 @@ RSpec.describe Containers::ServiceProvisioner do
       end
 
       it "leaves the shared container record intact" do
+        service_host = provisioner.send(:runtime_name, service_container)
         docker_container = instance_double(Docker::Container,
           id: "shared123",
           info: {
             "State" => { "Running" => true },
             "NetworkSettings" => {
-              "Networks" => { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ "db-fail-postgres" ] } }
+              "Networks" => { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ service_host ] } }
             }
           })
         allow(Docker::Container).to receive(:get).with("shared123").and_return(docker_container)
@@ -294,6 +308,7 @@ RSpec.describe Containers::ServiceProvisioner do
       let(:managed_labels) do
         { "paid.service_container" => "true", "paid.service_container_id" => service_container.id.to_s }
       end
+      let(:service_host) { provisioner.send(:runtime_name, service_container) }
       let(:stale_json) do
         { "Config" => { "Labels" => managed_labels }, "State" => { "Running" => false } }
       end
@@ -306,7 +321,7 @@ RSpec.describe Containers::ServiceProvisioner do
           info: {
             "State" => { "Running" => true },
             "NetworkSettings" => {
-              "Networks" => { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ "conflict-postgres" ] } }
+              "Networks" => { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ service_host ] } }
             }
           })
       end
@@ -326,7 +341,7 @@ RSpec.describe Containers::ServiceProvisioner do
           raise Docker::Error::ConflictError, "Conflict. The container name is already in use" if call_count == 1
           new_container
         end
-        allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(stale)
+        allow(Docker::Container).to receive(:get).with(service_host).and_return(stale)
         allow(stale).to receive(:json).and_return(stale_json)
         allow(stale).to receive(:stop)
         allow(stale).to receive(:delete)
@@ -347,7 +362,7 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create)
           .and_raise(Docker::Error::ConflictError, "Conflict. The container name is already in use")
-        allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(running_container)
+        allow(Docker::Container).to receive(:get).with(service_host).and_return(running_container)
         allow(running_container).to receive_messages(json: running_json, stop: nil, delete: nil)
         allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
 
@@ -369,7 +384,7 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create)
           .and_raise(Docker::Error::ConflictError, "Conflict. The container name is already in use")
-        allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(running_container)
+        allow(Docker::Container).to receive(:get).with(service_host).and_return(running_container)
         allow(Docker::Container).to receive(:get).with("running789").and_return(running_container)
         allow(Docker::Network).to receive(:get).with(NetworkPolicy::INFRA_NETWORK_NAME).and_return(network)
         allow(Docker::Network).to receive(:get).with(NetworkPolicy::NETWORK_NAME)
@@ -384,7 +399,7 @@ RSpec.describe Containers::ServiceProvisioner do
         expect(network).to have_received(:connect).with(
           "running789",
           {},
-          "EndpointConfig" => { "Aliases" => [ "conflict-postgres" ] }
+          "EndpointConfig" => { "Aliases" => [ service_host ] }
         )
       end
 
@@ -394,7 +409,7 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create)
           .and_raise(Docker::Error::ConflictError, "Conflict. The container name is already in use")
-        allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(stale)
+        allow(Docker::Container).to receive(:get).with(service_host).and_return(stale)
         allow(stale).to receive(:json).and_return({ "Config" => { "Labels" => {} } })
 
         expect { provisioner.provision(agent_run) }
@@ -408,7 +423,7 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create)
           .and_raise(Docker::Error::ConflictError, "Conflict. The container name is already in use")
-        allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(stale)
+        allow(Docker::Container).to receive(:get).with(service_host).and_return(stale)
         allow(stale).to receive(:json).and_return({ "Config" => { "Labels" => wrong_labels } })
 
         expect { provisioner.provision(agent_run) }
@@ -438,7 +453,9 @@ RSpec.describe Containers::ServiceProvisioner do
 
         result = provisioner.provision(agent_run)
         expected_db = provisioner.send(:per_run_db_name, agent_run)
-        expect(result["DATABASE_URL"]).to eq("postgres://u:p@pg:5432/#{expected_db}")
+        expect(result["DATABASE_URL"]).to eq(
+          "postgres://u:p@#{provisioner.send(:runtime_name, sc)}:5432/#{expected_db}"
+        )
       end
 
       it "injects default postgres env and healthcheck when env is empty" do
@@ -478,7 +495,9 @@ RSpec.describe Containers::ServiceProvisioner do
           )
         )
         expected_db = provisioner.send(:per_run_db_name, agent_run)
-        expect(result["DATABASE_URL"]).to eq("postgres://agent:agent@pg-blank:5432/#{expected_db}")
+        expect(result["DATABASE_URL"]).to eq(
+          "postgres://agent:agent@#{provisioner.send(:runtime_name, sc)}:5432/#{expected_db}"
+        )
       end
 
       it "generates REDIS_URL for redis images" do
@@ -486,7 +505,7 @@ RSpec.describe Containers::ServiceProvisioner do
         create(:project_service_container, project: project, service_container: sc)
 
         result = provisioner.provision(agent_run)
-        expect(result["REDIS_URL"]).to eq("redis://redis-test:6379")
+        expect(result["REDIS_URL"]).to eq("redis://#{provisioner.send(:runtime_name, sc)}:6379")
       end
 
       it "omits Healthcheck key for non-postgres containers" do
@@ -505,7 +524,7 @@ RSpec.describe Containers::ServiceProvisioner do
         create(:project_service_container, project: project, service_container: sc)
 
         result = provisioner.provision(agent_run)
-        expect(result["SELENIUM_URL"]).to eq("http://selenium-test:4444")
+        expect(result["SELENIUM_URL"]).to eq("http://#{provisioner.send(:runtime_name, sc)}:4444")
       end
 
       it "generates generic vars for unknown images" do
@@ -515,7 +534,7 @@ RSpec.describe Containers::ServiceProvisioner do
         create(:project_service_container, project: project, service_container: sc)
 
         result = provisioner.provision(agent_run)
-        expect(result["SERVICE_MY_SVC_HOST"]).to eq("my-svc")
+        expect(result["SERVICE_MY_SVC_HOST"]).to eq(provisioner.send(:runtime_name, sc))
         expect(result["SERVICE_MY_SVC_PORT"]).to eq("8080")
       end
     end
@@ -573,9 +592,7 @@ RSpec.describe Containers::ServiceProvisioner do
       allow(Docker::Image).to receive(:create)
       allow(Docker::Container).to receive(:create).and_return(docker_container)
       allow(docker_container).to receive_messages(
-        start: nil,
-        exec: [ [ "(0 rows)" ], [], 0 ],
-        json: { "State" => { "Health" => { "Status" => "healthy" } } }
+        start: nil, exec: [ [ "(0 rows)" ], [], 0 ], json: { "State" => { "Health" => { "Status" => "healthy" } } }
       )
       allow(Docker::Container).to receive(:get).with("abc123").and_return(docker_container)
       provisioner.provision(agent_run)
@@ -586,6 +603,26 @@ RSpec.describe Containers::ServiceProvisioner do
       }
       expect(Docker::Container).to have_received(:create)
         .with(hash_including("HostConfig" => hash_including(expected_limits)))
+    end
+
+    it "uses a tenant-specific Docker name and network alias" do
+      service_host = provisioner.send(:runtime_name, service_container)
+
+      allow(Docker::Image).to receive(:create)
+      stub_healthy_created_container("abc123")
+
+      provisioner.provision(agent_run)
+
+      expect(Docker::Container).to have_received(:create).with(
+        hash_including(
+          "name" => service_host,
+          "NetworkingConfig" => {
+            "EndpointsConfig" => {
+              NetworkPolicy::NETWORK_NAME => { "Aliases" => [ service_host ] }
+            }
+          }
+        )
+      )
     end
   end
 
