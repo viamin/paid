@@ -25,7 +25,7 @@ module QualityMetrics
       include_thresholds: false, include_gate_events: false,
       include_prediction: false)
       @scope = QualityMetric.with_composite_score
-        .joins(:agent_run).where.not(agent_runs: { status: AgentRun::QUALITY_EXCLUDED_STATUSES })
+        .joins(:agent_run).where(AgentRun.quality_scoreable_sql)
       @scope = @scope.by_prompt_version(prompt_version_id) if prompt_version_id
       @scope = @scope.by_project(project_id) if project_id
       @window_size = window_size

@@ -17,7 +17,7 @@ module QualityMetrics
       )
       @score_metadata = {}
 
-      if agent_run.status.in?(AgentRun::QUALITY_EXCLUDED_STATUSES)
+      if agent_run.operational_failure?
         record_excluded_metric
       else
         record_quality_metric
@@ -39,7 +39,10 @@ module QualityMetrics
         feedback_source: "system",
         scores: { "excluded_status" => agent_run.status },
         metadata: (automated_metric.metadata || {}).merge(
-          score_metadata.merge("exclusion_reason" => "non_quality_failure")
+          score_metadata.merge(
+            "exclusion_reason" => "operational_failure",
+            "error_message" => agent_run.error_message.to_s.truncate(200)
+          )
         ),
         composite_score: nil
       )

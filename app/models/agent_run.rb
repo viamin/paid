@@ -10,6 +10,23 @@ class AgentRun < ApplicationRecord
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
   TERMINAL_FAILURE_STATUSES = (FAILURE_STATUSES + %w[cancelled]).freeze
   QUALITY_EXCLUDED_STATUSES = %w[timeout auth_expired rate_limited].freeze
+
+  scope :quality_scoreable, -> {
+    where.not(status: QUALITY_EXCLUDED_STATUSES)
+      .where.not("status = ? AND error_message ILIKE ?", "failed", "%All providers exhausted%")
+  }
+
+  def self.quality_scoreable_sql
+    arel_table.grouping(
+      arel_table[:status].not_in(QUALITY_EXCLUDED_STATUSES).and(
+        Arel::Nodes::Not.new(
+          arel_table[:status].eq("failed").and(
+            arel_table[:error_message].matches("%All providers exhausted%")
+          )
+        )
+      )
+    )
+  end
   UNFINISHED_STATUSES = %w[queued pending running paused].freeze
   GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
