@@ -49,6 +49,10 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     expect(first_project_service_container.name).to eq(service_container["name"])
     expect(second_project_service_container.name).to eq(service_container["name"])
     expect(first_project_service_container.id).not_to eq(second_project_service_container.id)
+    expect(first_project_service_container.status).to eq("running")
+    expect(first_project_service_container.docker_container_id).to eq("container-1")
+    expect(second_project_service_container.status).to eq("stopped")
+    expect(second_project_service_container.docker_container_id).to be_nil
     expect(metric_count_for(first_project_service_container)).to eq(1)
     expect(metric_count_for(second_project_service_container)).to eq(1)
   end
@@ -88,6 +92,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
         name,
         port,
         env,
+        docker_container_id,
         status,
         created_at,
         updated_at
@@ -97,7 +102,8 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
         'shared-postgres',
         5432,
         '{"POSTGRES_USER":"agent"}',
-        'stopped',
+        'container-1',
+        'running',
         CURRENT_TIMESTAMP,
         CURRENT_TIMESTAMP
       )

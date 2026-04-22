@@ -8,6 +8,7 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
   let(:collections) { instance_double(Qdrant::Collections) }
   let(:points) { instance_double(Qdrant::Points) }
   let(:collection_name) { "account_#{project.account_id}_project_#{project.id}" }
+  let(:legacy_collection_name) { "project_#{project.id}" }
   let(:manager) { described_class.new(project: project, client: qdrant_client) }
 
   before do
@@ -41,6 +42,9 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
         allow(collections).to receive(:get)
           .with(collection_name: collection_name)
           .and_raise(Qdrant::Error.new("Not found"))
+        allow(collections).to receive(:get)
+          .with(collection_name: legacy_collection_name)
+          .and_raise(Qdrant::Error.new("Not found"))
         allow(collections).to receive_messages(create: { "result" => true }, create_index: { "result" => true })
       end
 
@@ -71,6 +75,35 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
       end
     end
 
+    context "when only the legacy project-scoped collection exists" do
+      before do
+        allow(collections).to receive(:get)
+          .with(collection_name: collection_name)
+          .and_raise(Qdrant::Error.new("Not found"))
+        allow(collections).to receive(:get)
+          .with(collection_name: legacy_collection_name)
+          .and_return({ "result" => { "status" => "green" } })
+        allow(collections).to receive(:update_aliases).and_return({ "result" => true })
+      end
+
+      it "aliases the tenant-scoped name to the legacy collection" do
+        expect(collections).not_to receive(:create)
+
+        manager.ensure_collection!
+
+        expect(collections).to have_received(:update_aliases).with(
+          actions: [
+            {
+              create_alias: {
+                collection_name: legacy_collection_name,
+                alias_name: collection_name
+              }
+            }
+          ]
+        )
+      end
+    end
+
     context "when the API returns a non-not-found error" do
       before do
         allow(collections).to receive(:get)
@@ -94,6 +127,9 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
             { "result" => { "status" => "green" } }
           end
         end
+        allow(collections).to receive(:get)
+          .with(collection_name: legacy_collection_name)
+          .and_raise(Qdrant::Error.new("Not found"))
         allow(collections).to receive_messages(create: { "result" => true }, create_index: { "result" => true })
       end
 
@@ -148,6 +184,9 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
           raise Qdrant::Error, "Not found"
         end
       end
+      allow(collections).to receive(:get)
+        .with(collection_name: legacy_collection_name)
+        .and_raise(Qdrant::Error.new("Not found"))
 
       allow(collections).to receive_messages(
         delete: { "result" => true },

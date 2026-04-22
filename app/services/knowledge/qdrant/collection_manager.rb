@@ -32,6 +32,11 @@ module Knowledge
       def ensure_collection!
         return if collection_exists?
 
+        if legacy_collection_exists?
+          alias_legacy_collection!
+          return
+        end
+
         create_collection!
         create_payload_indexes!
       end
@@ -74,18 +79,46 @@ module Knowledge
 
       private
 
-      def collection_exists?
-        result = client.collections.get(collection_name: collection_name)
+      def self.legacy_collection_name(project)
+        "project_#{project.id}"
+      end
+
+      def collection_exists?(name = collection_name)
+        result = client.collections.get(collection_name: name)
         result.dig("result", "status") == "green" || result.dig("result").present?
       rescue ::Qdrant::Error => e
         raise unless e.message.match?(/not found/i)
 
         Rails.logger.debug(
           message: "knowledge.qdrant.collection_not_found",
-          collection: collection_name,
+          collection: name,
           error: e.message
         )
         false
+      end
+
+      def legacy_collection_exists?
+        collection_exists?(legacy_collection_name)
+      end
+
+      def alias_legacy_collection!
+        client.collections.update_aliases(
+          actions: [
+            {
+              create_alias: {
+                collection_name: legacy_collection_name,
+                alias_name: collection_name
+              }
+            }
+          ]
+        )
+
+        Rails.logger.info(
+          message: "knowledge.qdrant.legacy_collection_aliased",
+          project_id: project.id,
+          legacy_collection: legacy_collection_name,
+          collection: collection_name
+        )
       end
 
       def create_collection!
@@ -110,6 +143,10 @@ module Knowledge
 
       def embedding_dimensions
         Paid.embedding_dimensions
+      end
+
+      def legacy_collection_name
+        self.class.legacy_collection_name(project)
       end
     end
   end
