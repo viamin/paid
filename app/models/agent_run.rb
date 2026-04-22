@@ -9,6 +9,19 @@ class AgentRun < ApplicationRecord
   FINISHED_STATUSES = %w[completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
   TERMINAL_FAILURE_STATUSES = (FAILURE_STATUSES + %w[cancelled]).freeze
+  QUALITY_EXCLUDED_STATUSES = %w[timeout auth_expired rate_limited].freeze
+
+  def self.quality_scoreable_sql
+    arel_table.grouping(
+      arel_table[:status].not_in(QUALITY_EXCLUDED_STATUSES).and(
+        Arel::Nodes::Not.new(
+          arel_table[:status].eq("failed").and(
+            arel_table[:error_message].matches("%All providers exhausted%")
+          )
+        )
+      )
+    )
+  end
   UNFINISHED_STATUSES = %w[queued pending running paused].freeze
   GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
@@ -560,10 +573,12 @@ class AgentRun < ApplicationRecord
 
     boundary = first_different_owner_run(scope, first)
     same_owner_scope = same_owner_priority_scope(scope, first)
-    same_owner_scope = same_owner_scope.where(
-      "(#{GOAL_PRIORITY_CASE_SQL}, agent_runs.created_at, agent_runs.id) < (?, ?, ?)",
-      boundary.goal_priority.to_i, boundary.created_at, boundary.id
-    ) if boundary
+    if boundary
+      same_owner_scope = same_owner_scope.where(
+        "(#{GOAL_PRIORITY_CASE_SQL}, agent_runs.created_at, agent_runs.id) < (?, ?, ?)",
+        boundary.goal_priority.to_i, boundary.created_at, boundary.id
+      )
+    end
 
     same_owner_scope.reorder(WITHIN_OWNER_QUEUE_ORDER).first || first
   end
@@ -778,25 +793,39 @@ class AgentRun < ApplicationRecord
   end
 
   def complete!(result_commit: nil, pr_url: nil, pr_number: nil, issue_url: nil, issue_number: nil)
-    update!(
-      status: "completed",
-      completed_at: Time.current,
-      result_commit_sha: result_commit,
-      pull_request_url: pr_url,
-      pull_request_number: pr_number,
-      created_issue_url: issue_url,
-      created_issue_number: issue_number,
-      duration_seconds: duration
-    )
+    with_lock do
+      reload
+      if finished?
+        false
+      else
+        update!(
+          status: "completed",
+          completed_at: Time.current,
+          result_commit_sha: result_commit,
+          pull_request_url: pr_url,
+          pull_request_number: pr_number,
+          created_issue_url: issue_url,
+          created_issue_number: issue_number,
+          duration_seconds: duration
+        )
+      end
+    end
   end
 
   def complete_no_output!(reason: "no_changes")
-    update!(
-      status: "no_output",
-      completed_at: Time.current,
-      error_message: reason,
-      duration_seconds: duration
-    )
+    with_lock do
+      reload
+      if finished?
+        false
+      else
+        update!(
+          status: "no_output",
+          completed_at: Time.current,
+          error_message: reason,
+          duration_seconds: duration
+        )
+      end
+    end
   end
 
   def result_url
@@ -1202,7 +1231,7 @@ class AgentRun < ApplicationRecord
   def draft_review_round_tracking_is_consistent
     return unless count_toward_draft_review_round?
     return unless will_save_change_to_count_toward_draft_review_round? ||
-                  will_save_change_to_expected_draft_review_count?
+      will_save_change_to_expected_draft_review_count?
 
     if expected_draft_review_count.blank?
       errors.add(:expected_draft_review_count, "is required when counting toward draft review rounds")

@@ -86,6 +86,7 @@ module QualityPause
     def metrics_for(metric_type)
       scope = QualityMetric.by_project(project.id)
         .where(agent_runs: { goal: agent_run.goal })
+        .where(AgentRun.quality_scoreable_sql)
         .order(created_at: :desc)
 
       if metric_type == "composite_score"

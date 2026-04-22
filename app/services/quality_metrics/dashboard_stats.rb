@@ -139,6 +139,7 @@ module QualityMetrics
 
     def metrics
       @metrics ||= QualityMetric.by_project(project.id).with_composite_score
+        .joins(:agent_run).where(AgentRun.quality_scoreable_sql)
     end
 
     def score_distribution
@@ -177,6 +178,7 @@ module QualityMetrics
     def score_breakdown
       valid_keys = QualityMetric::GOAL_WEIGHTS.values.flat_map(&:keys).uniq
       rows = QualityMetric.by_project(project.id).automated.with_composite_score
+        .joins(:agent_run).where(AgentRun.quality_scoreable_sql)
         .where("scores <> '{}'::jsonb")
         .joins("CROSS JOIN LATERAL jsonb_each_text(scores) AS kv(key, val)")
         .where("kv.key IN (?)", valid_keys)

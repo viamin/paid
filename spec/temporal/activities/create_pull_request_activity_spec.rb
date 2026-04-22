@@ -99,6 +99,18 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(agent_run.pull_request_number).to eq(42)
     end
 
+    it "does not create a pull request for cancelled runs" do
+      agent_run = create(:agent_run, :cancelled, :with_git_context, project: project, issue: issue)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).not_to have_received(:create_pull_request)
+      expect(result[:agent_run_id]).to eq(agent_run.id)
+      expect(result[:skipped]).to be true
+      expect(result[:cancelled]).to be true
+      expect(agent_run.reload.status).to eq("cancelled")
+    end
+
     it "syncs a local pull request row immediately after PR creation" do
       expect {
         activity.execute(agent_run_id: agent_run.id)
@@ -107,6 +119,27 @@ RSpec.describe Activities::CreatePullRequestActivity do
       pull_request = project.issues.pull_requests_only.find_by!(github_number: 42)
       expect(pull_request.github_issue_id).to eq(4242)
       expect(pull_request.labels).to include("paid-generated", "paid-automation")
+    end
+
+    it "reconciles a created pull request when cancellation wins the completion lock" do
+      allow(github_client).to receive(:create_pull_request) do
+        agent_run.cancel!
+        pr_response
+      end
+
+      expect {
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+        expect(result[:pull_request_number]).to eq(42)
+      }.to change { project.issues.pull_requests_only.where(github_number: 42).count }.by(1)
+
+      agent_run.reload
+      expect(agent_run.status).to eq("cancelled")
+      expect(agent_run.pull_request_url).to be_nil
+      expect(github_client).to have_received(:add_labels_to_issue).with(
+        project.full_name, 42, [ "paid-generated", "paid-automation" ]
+      )
     end
 
     it "adds the generated and automation labels to the PR" do

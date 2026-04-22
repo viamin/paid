@@ -57,6 +57,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-010](RDR-010-multi-tenancy-rbac.md) | Multi-Tenancy and RBAC | Final | Medium |
 | [RDR-011](RDR-011-observability.md) | Observability Stack | Final | Medium |
+| [RDR-026](RDR-026-admin-interface-strategy.md) | Admin Interface Strategy | Draft | Medium |
 
 ### External Integration
 

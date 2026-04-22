@@ -16,6 +16,40 @@ module QualityMetrics
         metric_type: "automated"
       )
       @score_metadata = {}
+
+      if agent_run.operational_failure?
+        record_excluded_metric
+      else
+        record_quality_metric
+        update_ab_test_variant_stats(automated_metric)
+        update_prompt_version_stats if agent_run.prompt_version.present?
+      end
+
+      enqueue_quality_gate_check
+      automated_metric
+    end
+
+    private
+
+    attr_reader :agent_run, :automated_metric, :score_metadata
+
+    def record_excluded_metric
+      automated_metric.assign_attributes(
+        prompt_version: agent_run.prompt_version,
+        feedback_source: "system",
+        scores: { "excluded_status" => agent_run.status },
+        metadata: (automated_metric.metadata || {}).merge(
+          score_metadata.merge(
+            "exclusion_reason" => "operational_failure",
+            "error_message" => agent_run.error_message.to_s.truncate(200)
+          )
+        ),
+        composite_score: nil
+      )
+      automated_metric.save!
+    end
+
+    def record_quality_metric
       scores = build_scores
       weights = QualityMetric::GOAL_WEIGHTS.fetch(agent_run.goal, QualityMetric::SCORE_WEIGHTS)
       automated_metric.assign_attributes(
@@ -26,16 +60,7 @@ module QualityMetrics
         composite_score: QualityMetric.weighted_average(scores, weights: weights)
       )
       automated_metric.save!
-
-      update_ab_test_variant_stats(automated_metric)
-      update_prompt_version_stats if agent_run.prompt_version.present?
-      enqueue_quality_gate_check
-      automated_metric
     end
-
-    private
-
-    attr_reader :agent_run, :automated_metric, :score_metadata
 
     def enqueue_quality_gate_check
       return unless agent_run.project.quality_gates_enabled?
@@ -198,7 +223,7 @@ module QualityMetrics
     def add_variant_score(variant, score)
       score_decimal = BigDecimal(score.to_s)
       variant.sample_count += 1
-      variant.total_quality_score = (variant.total_quality_score || BigDecimal("0")) + score_decimal
+      variant.total_quality_score = (variant.total_quality_score || BigDecimal(0)) + score_decimal
       variant.avg_quality_score = variant.total_quality_score / variant.sample_count
       variant.save!
     end
@@ -206,7 +231,7 @@ module QualityMetrics
     def adjust_variant_aggregates(variant, old_score:, new_score:)
       old_decimal = BigDecimal(old_score.to_s)
       new_decimal = BigDecimal(new_score.to_s)
-      variant.total_quality_score = (variant.total_quality_score || BigDecimal("0")) - old_decimal + new_decimal
+      variant.total_quality_score = (variant.total_quality_score || BigDecimal(0)) - old_decimal + new_decimal
       variant.avg_quality_score = variant.sample_count.positive? ? variant.total_quality_score / variant.sample_count : nil
       variant.save!
     end
@@ -214,12 +239,11 @@ module QualityMetrics
     def update_prompt_version_stats
       pv = agent_run.prompt_version
 
-      # Scope to automated metrics only so human feedback doesn't inflate
-      # usage_count (which represents distinct runs, not total metric rows).
       stats = QualityMetric.where(prompt_version: pv)
-                           .automated
-                           .with_composite_score
-                           .pick(Arel.sql("COUNT(DISTINCT agent_run_id), AVG(composite_score)"))
+        .automated
+        .with_composite_score
+        .joins(:agent_run).where(AgentRun.quality_scoreable_sql)
+        .pick(Arel.sql("COUNT(DISTINCT agent_run_id), AVG(composite_score)"))
 
       count, avg = stats
       pv.update_columns(

@@ -112,6 +112,22 @@ RSpec.describe Activities::CreateUpstreamIssueActivity do
       activity.execute(input)
     end
 
+    it "does not create an upstream issue when the run is already cancelled" do
+      agent_run.update!(status: "cancelled", completed_at: Time.current)
+
+      result = activity.execute(input)
+
+      expect(github_client).not_to have_received(:create_issue)
+      expect(result).to include(
+        issue_url: nil,
+        issue_number: nil,
+        target_repo: "upstream-owner/upstream-repo",
+        skipped: true,
+        finished: true,
+        cancelled: true
+      )
+    end
+
     context "when no GitHub token is available" do
       before do
         allow(project).to receive(:github_token).and_return(nil)

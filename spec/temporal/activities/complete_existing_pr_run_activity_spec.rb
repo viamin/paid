@@ -86,6 +86,19 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
         .to have_enqueued_job(ProcessRunQueueJob)
     end
 
+    it "reports cancellation when the run is already cancelled" do
+      agent_run.cancel!
+
+      expect(github_client).not_to receive(:pull_request)
+      expect(github_client).not_to receive(:add_comment)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(agent_run.reload.status).to eq("cancelled")
+      expect(issue.reload.paid_state).not_to eq("completed")
+      expect(result).to include(skipped: true, cancelled: true)
+    end
+
     it "increments draft_review_count for successful tracked draft followups" do
       issue.update!(pr_review_phase: "draft", draft_review_count: 2)
       agent_run.update!(

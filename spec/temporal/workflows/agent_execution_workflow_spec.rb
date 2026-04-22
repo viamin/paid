@@ -108,6 +108,28 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
               timeout: anything, retry_policy: anything)
     end
 
+    it "skips fallback issue creation when CompleteIssueGoalActivity reports a finished run" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: true }
+        when "Activities::CompleteIssueGoalActivity"
+          { agent_run_id: 42, success: false, issue_created: false, skipped: true, finished: true, cancelled: true }
+        else {}
+        end
+      end
+
+      result = workflow.execute(input)
+
+      expect(result[:success]).to be true
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ParseCrossRepoIssuePlanActivity, anything,
+          timeout: anything, retry_policy: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CreateGithubIssueActivity, anything,
+          timeout: anything, retry_policy: anything)
+    end
+
     it "marks the run failed when fallback issue creation is rejected" do
       stub_issue_creation_rejected
 
@@ -454,7 +476,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     end
 
-    def stub_existing_pr_followup(pr_review_phase:)
+    def stub_existing_pr_followup(pr_review_phase:, complete_result: nil)
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
         when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
@@ -466,7 +488,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         when "Activities::RunAgentActivity" then { success: true, has_changes: true }
         when "Activities::PushBranchActivity" then {}
         when "Activities::ResolveReviewThreadsActivity" then {}
-        when "Activities::CompleteExistingPrRunActivity" then { pr_review_phase: pr_review_phase }
+        when "Activities::CompleteExistingPrRunActivity" then complete_result || { pr_review_phase: pr_review_phase }
         when "Activities::RequestReviewActivity" then {}
         when "Activities::CleanupContainerActivity" then {}
         when "Activities::CleanupServicesActivity" then {}
@@ -537,6 +559,20 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RequestReviewActivity, any_args)
+    end
+
+    it "skips existing-PR post-processing when completion reports a finished run without a PR" do
+      stub_existing_pr_followup(
+        pr_review_phase: "ready",
+        complete_result: { pr_review_phase: "ready", skipped: true, cancelled: true }
+      )
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, any_args)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::DraftDecisionRecordActivity, any_args)
     end
 
     it "emits the pre-patch activity input shape when the workflow patch is not set" do
@@ -717,6 +753,18 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
           timeout: 60)
     end
 
+    it "skips review-bot review when no-change completion reports cancellation" do
+      stub_no_changes_followup
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MarkAgentRunCompleteActivity, any_args)
+        .and_return({ agent_run_id: 42, skipped: true, cancelled: true })
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, any_args)
+    end
+
     it "resolves review threads when a no-change PR follow-up reports they were already addressed" do
       stub_no_changes_followup_with_marker
 
@@ -851,6 +899,27 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RequestReviewActivity, any_args)
+    end
+
+    it "skips PR post-processing when PR creation reports a finished run without a PR" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: true }
+        when "Activities::CreatePullRequestActivity"
+          { agent_run_id: 42, pull_request_url: nil, pull_request_number: nil, skipped: true, cancelled: true }
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::UpdateIssueWithPrActivity, any_args)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, any_args)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::DraftDecisionRecordActivity, any_args)
     end
   end
 
