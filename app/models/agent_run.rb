@@ -72,6 +72,8 @@ class AgentRun < ApplicationRecord
   # circuit-breaker counters on its behalf.
   STALE_CLEANUP_ERROR_PREFIX = "Marked stale on startup"
 
+  STALE_DETECTOR_ERROR_PREFIX = "Stale run detected"
+
   belongs_to :project
   belongs_to :issue, optional: true
   belongs_to :prompt_version, optional: true
@@ -947,13 +949,14 @@ class AgentRun < ApplicationRecord
     )
   end
 
-  # True when this run was force-timed-out by `dev:cleanup` (typically because
-  # `bin/setup --skip-server` is restarting the host process and stopping the
-  # run's container out from under the in-flight Temporal activity). Used by
-  # RunAgentActivity to suppress provider circuit-breaker bookkeeping for
-  # failures that the cleanup itself induced.
+  # True when this run was force-timed-out externally (by `dev:cleanup` or
+  # `StaleRunDetectorJob`), not by the provider itself. The in-flight Temporal
+  # activity uses this to suppress provider circuit-breaker bookkeeping for
+  # failures that the external cleanup induced, not the provider.
   def cancelled_by_cleanup?
-    status == "timeout" && error_message.to_s.start_with?(STALE_CLEANUP_ERROR_PREFIX)
+    return false unless status == "timeout"
+
+    error_message.to_s.start_with?(STALE_CLEANUP_ERROR_PREFIX, STALE_DETECTOR_ERROR_PREFIX)
   end
 
   def retried?

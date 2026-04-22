@@ -562,14 +562,21 @@ RSpec.describe AgentRun do
     end
 
     describe "#cancelled_by_cleanup?" do
-      it "returns true when status is timeout and error_message starts with the sentinel prefix" do
+      it "returns true when status is timeout and error_message starts with the dev:cleanup sentinel prefix" do
         agent_run = build(:agent_run, status: "timeout",
           error_message: "#{AgentRun::STALE_CLEANUP_ERROR_PREFIX}: process was restarted")
 
         expect(agent_run.cancelled_by_cleanup?).to be true
       end
 
-      it "returns false when error_message lacks the sentinel prefix" do
+      it "returns true when status is timeout and error_message starts with the stale detector prefix" do
+        agent_run = build(:agent_run, status: "timeout",
+          error_message: "#{AgentRun::STALE_DETECTOR_ERROR_PREFIX}: stuck in 'running' beyond timeout threshold")
+
+        expect(agent_run.cancelled_by_cleanup?).to be true
+      end
+
+      it "returns false when error_message lacks both sentinel prefixes" do
         agent_run = build(:agent_run, status: "timeout", error_message: "Provider timed out")
 
         expect(agent_run.cancelled_by_cleanup?).to be false

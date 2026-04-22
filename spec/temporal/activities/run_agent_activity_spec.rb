@@ -750,6 +750,19 @@ RSpec.describe Activities::RunAgentActivity do
     wrapped
   end
 
+  def stub_reconnect_not_found_on_second_attempt
+    attempts = 0
+    allow(Containers::Provision).to receive(:reconnect) do
+      attempts += 1
+      if attempts == 2
+        raise wrap_error(
+          Containers::Provision::ProvisionError.new("Container #{agent_run.container_id} not found")
+        )
+      end
+      container_service
+    end
+  end
+
   describe "#execute" do
     context "when agent succeeds in container" do
       before do
@@ -874,9 +887,11 @@ RSpec.describe Activities::RunAgentActivity do
         allow(activity).to receive(:sleep)
         allow(git_ops).to receive(:commit_uncommitted_changes) do
           commit_attempts += 1
-          raise wrap_error(
-            Containers::Provision::ExecutionError.new("Docker exec error: Connection reset")
-          ) if commit_attempts == 1
+          if commit_attempts == 1
+            raise wrap_error(
+              Containers::Provision::ExecutionError.new("Docker exec error: Connection reset")
+            )
+          end
 
           true
         end
@@ -990,9 +1005,11 @@ RSpec.describe Activities::RunAgentActivity do
         allow(activity).to receive(:sleep)
         allow(Containers::Provision).to receive(:reconnect) do
           attempts += 1
-          raise wrap_error(
-            Containers::Provision::ProvisionError.new("Failed to reconnect to container: connection reset")
-          ) if attempts == 2
+          if attempts == 2
+            raise wrap_error(
+              Containers::Provision::ProvisionError.new("Failed to reconnect to container: connection reset")
+            )
+          end
 
           container_service
         end
@@ -1007,26 +1024,19 @@ RSpec.describe Activities::RunAgentActivity do
 
       it "does not retry permanent container-not-found reconnect failures" do
         allow(activity).to receive(:sleep)
-        attempts = 0
-        allow(Containers::Provision).to receive(:reconnect) do
-          attempts += 1
-          raise wrap_error(
-            Containers::Provision::ProvisionError.new("Container #{agent_run.container_id} not found")
-          ) if attempts == 2
-
-          container_service
-        end
+        stub_reconnect_not_found_on_second_attempt
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
         }.to raise_error(Temporalio::Error::ApplicationError) { |error|
-          expect(error.type).to eq("PostRunBookkeepingFailed")
-          expect(error.non_retryable).to be(true)
-          expect(error.message).to include("Post-run commit_uncommitted_changes failed after 1 attempts")
-          expect(error.message).to include("Containers::Provision::ProvisionError")
-          expect(error.message).to include("not found")
+          aggregate_failures do
+            expect(error.type).to eq("PostRunBookkeepingFailed")
+            expect(error.non_retryable).to be(true)
+            expect(error.message).to include("Post-run commit_uncommitted_changes failed after 1 attempts")
+            expect(error.message).to include("Containers::Provision::ProvisionError")
+            expect(error.message).to include("not found")
+          end
         }
-
         expect(activity).not_to have_received(:sleep)
         expect(Containers::Provision).to have_received(:reconnect).twice
       end
@@ -1108,19 +1118,13 @@ RSpec.describe Activities::RunAgentActivity do
       end
     end
 
-    context "when the run is cancelled by dev:cleanup mid-execution" do
+    shared_examples "externally cancelled run" do |prefix:, error_message:|
       before do
         allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
-        # Simulate dev:cleanup force-timing-out the run from a *different*
-        # process while the container call is in flight. We mutate via
-        # `update_columns` so the in-memory `agent_run` instance held by the
-        # activity stays stale — only the `reload` inside `cancelled_by_cleanup?`
-        # will surface the cleanup mark, which is what happens in production
-        # where the rake task and the Temporal worker are separate processes.
         allow(container_service).to receive(:execute) do
           AgentRun.where(id: agent_run.id).update_all(
             status: "timeout",
-            error_message: "#{AgentRun::STALE_CLEANUP_ERROR_PREFIX}: process was restarted",
+            error_message: error_message,
             completed_at: Time.current
           )
           exec_failure
@@ -1133,8 +1137,6 @@ RSpec.describe Activities::RunAgentActivity do
         begin
           activity.execute(agent_run_id: agent_run.id)
         rescue Temporalio::Error::ApplicationError
-          # Expected: AllProvidersExhausted is still raised (the run is dead),
-          # but the breaker must remain untouched.
         end
 
         expect(state.reload.failure_count).to eq(0)
@@ -1145,7 +1147,6 @@ RSpec.describe Activities::RunAgentActivity do
         begin
           activity.execute(agent_run_id: agent_run.id)
         rescue Temporalio::Error::ApplicationError
-          # expected
         end
 
         attempts = agent_run.reload.providers_attempted
@@ -1157,12 +1158,11 @@ RSpec.describe Activities::RunAgentActivity do
         begin
           activity.execute(agent_run_id: agent_run.id)
         rescue Temporalio::Error::ApplicationError
-          # expected
         end
 
         agent_run.reload
         expect(agent_run.status).to eq("timeout")
-        expect(agent_run.error_message).to start_with(AgentRun::STALE_CLEANUP_ERROR_PREFIX)
+        expect(agent_run.error_message).to start_with(prefix)
       end
 
       it "stops iterating providers instead of attempting fallbacks" do
@@ -1171,11 +1171,8 @@ RSpec.describe Activities::RunAgentActivity do
         begin
           activity.execute(agent_run_id: agent_run.id)
         rescue Temporalio::Error::ApplicationError
-          # expected
         end
 
-        # Exactly one provider attempt should be recorded (the one that was
-        # mid-flight when cleanup struck) — not one per configured fallback.
         expect(agent_run.reload.providers_attempted.size).to eq(1)
       end
 
@@ -1185,9 +1182,20 @@ RSpec.describe Activities::RunAgentActivity do
         begin
           activity.execute(agent_run_id: agent_run.id)
         rescue Temporalio::Error::ApplicationError
-          # expected
         end
       end
+    end
+
+    context "when the run is cancelled by dev:cleanup mid-execution" do
+      it_behaves_like "externally cancelled run",
+        prefix: AgentRun::STALE_CLEANUP_ERROR_PREFIX,
+        error_message: "#{AgentRun::STALE_CLEANUP_ERROR_PREFIX}: process was restarted"
+    end
+
+    context "when the run is cancelled by StaleRunDetectorJob mid-execution" do
+      it_behaves_like "externally cancelled run",
+        prefix: AgentRun::STALE_DETECTOR_ERROR_PREFIX,
+        error_message: "#{AgentRun::STALE_DETECTOR_ERROR_PREFIX}: stuck in 'running' beyond timeout threshold"
     end
 
     context "when agent hits rate limit (single provider)" do
