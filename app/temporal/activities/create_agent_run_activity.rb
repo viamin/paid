@@ -15,19 +15,21 @@ module Activities
       issue_id = input[:issue_id]
       custom_prompt = input[:custom_prompt]
       provider_id = input[:provider_id]
-      goal = input.fetch(:goal, "create_pr")
+      goal = input[:goal]
       source_pull_request_number = input[:source_pull_request_number]
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
       expected_draft_review_count = input[:expected_draft_review_count]
 
       project = Project.find(project_id)
+      goal ||= project.account.tenant_setting&.default_goal || "create_pr"
       issue = issue_id ? Issue.find(issue_id) : nil
       user_settings = resolve_user_settings(project)
       provider_id, agent_type = resolve_provider_selection(
         project: project,
         requested_agent_type: input[:agent_type],
         requested_provider_id: provider_id,
-        goal: goal
+        goal: goal,
+        respect_requested: input.key?(:agent_type) || input.key?(:provider_id)
       )
 
       # Resolve and render prompt version if no custom prompt is provided.
@@ -128,59 +130,33 @@ module Activities
 
     private
 
-    def resolve_agent_type(requested_agent_type, provider_id)
-      provider = Provider.find_by(id: provider_id) if provider_id.present?
-      return Provider.agent_type_for(provider.provider_key) if provider && provider_runnable?(provider)
-
-      agent_type_runnable?(requested_agent_type) ? requested_agent_type : "claude_code"
-    end
-
-    def resolve_provider_selection(project:, requested_agent_type:, requested_provider_id:, goal:)
-      requested_provider = Provider.find_by(id: requested_provider_id) if requested_provider_id.present?
-      if requested_provider && provider_runnable?(requested_provider)
-        return [ requested_provider.id, Provider.agent_type_for(requested_provider.provider_key) ]
-      end
-
-      return [ nil, requested_agent_type ] if agent_type_runnable?(requested_agent_type)
-
-      provider = default_provider_for(project, goal: goal)
-      return [ nil, "claude_code" ] unless provider
-
-      [ provider.id, Provider.agent_type_for(provider.provider_key) ]
-    end
-
-    def provider_runnable?(provider)
-      ProviderSupport.container_executable_provider_key?(provider.provider_key)
-    end
-
-    def agent_type_runnable?(agent_type)
-      return false if agent_type.blank?
-
-      AgentRun::AGENT_TYPES.include?(agent_type) &&
-        ProviderSupport.container_executable_provider_key?(Provider.provider_key_for_agent_type(agent_type))
-    end
-
-    def default_provider_for(project, goal:)
-      owner = project.effective_owner
-      return unless owner
-
-      settings = AgentRuns::UserSettingsResolver.call(project: project, strict: false)
-      return Provider.ensure_default_for(owner) unless settings
-
-      identifier = settings.select_automated_provider_identifier(goal: goal) ||
-        settings.default_provider_identifier_for_goal(goal)
-      Provider.for_identifier(settings.user, identifier) || Provider.ensure_default_for(settings.user)
+    def resolve_provider_selection(project:, requested_agent_type:, requested_provider_id:, goal:, respect_requested: true)
+      AgentRuns::ProviderResolver.call(
+        project: project,
+        goal: goal,
+        requested_agent_type: requested_agent_type,
+        requested_provider_id: requested_provider_id,
+        respect_requested: respect_requested,
+        logger: logger
+      )
     end
 
     def refresh_automatic_run_provider!(agent_run)
       return unless agent_run.automatic?
 
-      provider = default_provider_for(agent_run.project, goal: agent_run.goal)
+      provider_id, agent_type = resolve_provider_selection(
+        project: agent_run.project,
+        requested_agent_type: nil,
+        requested_provider_id: nil,
+        goal: agent_run.goal,
+        respect_requested: false
+      )
+      provider = Provider.find_by(id: provider_id) if provider_id
       return unless provider
 
       agent_run.update!(
         provider: provider,
-        agent_type: Provider.agent_type_for(provider.provider_key)
+        agent_type: agent_type
       )
     end
 

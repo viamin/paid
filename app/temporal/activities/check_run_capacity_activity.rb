@@ -9,7 +9,7 @@ module Activities
 
       if user
         user_active_count = AgentRun.active_count_for_user(user)
-        max_concurrent_runs = user.settings.max_concurrent_runs
+        max_concurrent_runs = user.account.tenant_max_concurrent_runs(user.settings.max_concurrent_runs)
         has_capacity = user_active_count < max_concurrent_runs
       else
         # Fail closed: if we can't resolve an owner, don't allow the run.

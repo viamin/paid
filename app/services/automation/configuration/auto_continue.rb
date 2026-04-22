@@ -14,7 +14,8 @@ module Automation
     # added without touching callers.
     class AutoContinue < ::Data.define(:enabled)
       def self.from_project(project)
-        new(enabled: project.auto_scan_prs == true)
+        tenant_allows = project.account.tenant_setting&.auto_continue?
+        new(enabled: project.auto_scan_prs == true && tenant_allows != false)
       end
 
       def enabled? = enabled == true

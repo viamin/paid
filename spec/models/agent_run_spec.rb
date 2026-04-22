@@ -730,6 +730,14 @@ RSpec.describe AgentRun do
 
         expect(agent_run.effective_max_tokens_per_run).to eq(AgentRun::DEFAULT_MAX_TOKENS_PER_RUN)
       end
+
+      it "caps the resolved token limit with the tenant guardrail" do
+        project = create(:project, max_tokens_per_run: 500_000)
+        create(:tenant_setting, account: project.account, guardrails: { "max_tokens_per_run" => 100_000 })
+        agent_run = build(:agent_run, project: project)
+
+        expect(agent_run.effective_max_tokens_per_run).to eq(100_000)
+      end
     end
 
     describe "#token_limit_usage_ratio" do
@@ -1345,6 +1353,14 @@ RSpec.describe AgentRun do
 
       it "returns false when user's active count reaches their max" do
         user.settings.update!(max_concurrent_runs: 1)
+        create(:agent_run, :running, project: project)
+
+        expect(described_class.has_run_capacity?(user: user)).to be false
+      end
+
+      it "caps user capacity with the tenant guardrail" do
+        user.settings.update!(max_concurrent_runs: 5)
+        create(:tenant_setting, account: user.account, guardrails: { "max_concurrent_runs" => 1 })
         create(:agent_run, :running, project: project)
 
         expect(described_class.has_run_capacity?(user: user)).to be false

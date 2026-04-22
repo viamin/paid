@@ -375,16 +375,16 @@ module Workflows
       child_futures = batch.map.with_index do |task, task_index|
         issue_id = task[:issue_id]
         workflow_id = "parallel-#{parent_wf_id}-#{batch_index}-#{task_index}-#{issue_id}-#{timestamp}"
-        agent_type = task.fetch(:agent_type, "claude_code")
+        agent_type = task[:agent_type]
         goal = task.fetch(:goal, "create_pr")
 
         child_input = {
           project_id: project_id,
           issue_id: issue_id,
-          agent_type: agent_type,
           goal: goal,
           parent_workflow_id: parent_wf_id
         }
+        child_input[:agent_type] = agent_type if task.key?(:agent_type)
         child_input[:custom_prompt] = task[:custom_prompt] if task[:custom_prompt]
 
         Temporalio::Workflow.logger.info(

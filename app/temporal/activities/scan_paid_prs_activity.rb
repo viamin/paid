@@ -45,6 +45,7 @@ module Activities
       project = Project.find_by(id: project_id)
       return { prs_to_trigger: [], automation_results: [], project_missing: true } unless project
       return { prs_to_trigger: [], automation_results: [] } unless project.auto_scan_prs
+      return { prs_to_trigger: [], automation_results: [] } if project.account.tenant_setting&.auto_continue? == false
 
       client = project.github_token.client
       paid_prs = find_paid_prs(project)

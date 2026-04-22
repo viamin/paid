@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_21_155244) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_21_161445) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -1320,14 +1320,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_155244) do
 
   create_table "tenant_settings", force: :cascade do |t|
     t.bigint "account_id", null: false
+    t.jsonb "agent_settings", default: {}, null: false
     t.text "allowed_provider_keys", default: [], array: true
     t.datetime "created_at", null: false
+    t.jsonb "default_budgets", default: {}, null: false
     t.jsonb "features", default: {}, null: false
+    t.jsonb "guardrails", default: {}, null: false
     t.integer "max_concurrent_runs", default: 10, null: false
     t.integer "max_monthly_cost_cents"
     t.integer "max_projects", default: 50, null: false
     t.integer "max_tokens_per_run", default: 10000000, null: false
     t.integer "max_users", default: 25, null: false
+    t.jsonb "provider_preferences", default: {}, null: false
+    t.jsonb "quality_thresholds", default: {}, null: false
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_tenant_settings_on_account_id", unique: true
   end

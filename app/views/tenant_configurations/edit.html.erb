@@ -1,0 +1,129 @@
+<% content_for :title, "Tenant Configuration" %>
+
+<div class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Tenant Configuration</h1>
+    <p class="mt-2 text-sm text-gray-600 dark:text-gray-300"><%= current_account.name %></p>
+  </div>
+
+  <% if @tenant_setting.errors.any? %>
+    <div class="mb-6 rounded-md bg-red-50 p-4 text-sm text-red-800 dark:bg-red-900/40 dark:text-red-200">
+      <%= @tenant_setting.errors.full_messages.to_sentence %>
+    </div>
+  <% end %>
+
+  <%= form_with model: @tenant_setting, url: tenant_configuration_path, method: :patch, class: "space-y-10" do |form| %>
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Provider Preferences</h2>
+      <div class="mt-4 grid gap-4 sm:grid-cols-2">
+        <% ProviderSupport.api_service_types.each do |service_type, label| %>
+          <% selected_id = @tenant_setting.effective_provider_preferences.dig("api_key_ids", service_type).to_s %>
+          <div>
+            <%= label_tag "tenant_setting_provider_preferences_api_key_ids_#{service_type}", "#{label} API key", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+            <%= select_tag "tenant_setting[provider_preferences][api_key_ids][#{service_type}]",
+              options_for_select([["Account fallback", ""]] + @provider_api_keys.select { |key| key.api_service_type == service_type }.map { |key| ["#{key.name} (#{key.user.email})", key.id] }, selected_id),
+              id: "tenant_setting_provider_preferences_api_key_ids_#{service_type}",
+              class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+          </div>
+        <% end %>
+      </div>
+
+      <div class="mt-6 grid gap-4 sm:grid-cols-2">
+        <% ProviderSupport.supported_provider_keys.each do |provider_key| %>
+          <% model_id = @tenant_setting.effective_provider_preferences.dig("model_preferences", provider_key).to_s %>
+          <div>
+            <%= label_tag "tenant_setting_provider_preferences_model_preferences_#{provider_key}", "#{Provider.display_name_for(provider_key)} model", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+            <%= text_field_tag "tenant_setting[provider_preferences][model_preferences][#{provider_key}]", model_id,
+              id: "tenant_setting_provider_preferences_model_preferences_#{provider_key}",
+              class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+          </div>
+        <% end %>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Default Budgets</h2>
+      <div class="mt-4 overflow-hidden rounded-md border border-gray-200 dark:border-gray-700">
+        <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
+          <thead class="bg-gray-50 dark:bg-gray-800">
+            <tr>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Type</th>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Enabled</th>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Limit cents</th>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Mode</th>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Alert %</th>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Grace %</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-900">
+            <% @tenant_setting.effective_default_budgets.each do |budget_type, settings| %>
+              <tr>
+                <td class="px-4 py-3 font-medium text-gray-900 dark:text-white"><%= budget_type.humanize %></td>
+                <td class="px-4 py-3"><%= check_box_tag "tenant_setting[default_budgets][#{budget_type}][enabled]", "1", settings["enabled"] %></td>
+                <td class="px-4 py-3"><%= number_field_tag "tenant_setting[default_budgets][#{budget_type}][limit_cents]", settings["limit_cents"], min: 1, class: "w-28 rounded-md border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %></td>
+                <td class="px-4 py-3"><%= select_tag "tenant_setting[default_budgets][#{budget_type}][enforcement_mode]", options_for_select(CostBudget::ENFORCEMENT_MODES.map { |mode| [mode.humanize, mode] }, settings["enforcement_mode"]), class: "rounded-md border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %></td>
+                <td class="px-4 py-3"><%= number_field_tag "tenant_setting[default_budgets][#{budget_type}][alert_threshold_percent]", settings["alert_threshold_percent"], min: 1, max: 100, class: "w-20 rounded-md border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %></td>
+                <td class="px-4 py-3"><%= number_field_tag "tenant_setting[default_budgets][#{budget_type}][grace_buffer_percent]", settings["grace_buffer_percent"], min: 0, max: 100, class: "w-20 rounded-md border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Guardrails and Quality</h2>
+      <div class="mt-4 grid gap-4 sm:grid-cols-3">
+        <% @tenant_setting.effective_guardrails.each do |key, value| %>
+          <div>
+            <%= label_tag "tenant_setting_guardrails_#{key}", key.humanize, class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+            <%= number_field_tag "tenant_setting[guardrails][#{key}]", value, min: 0, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+          </div>
+        <% end %>
+      </div>
+
+      <% quality = @tenant_setting.effective_quality_thresholds %>
+      <div class="mt-6 grid gap-4 sm:grid-cols-4">
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+          <%= check_box_tag "tenant_setting[quality_thresholds][enabled]", "1", quality["enabled"] %>
+          Quality gates
+        </label>
+        <%= number_field_tag "tenant_setting[quality_thresholds][composite_score_threshold]", quality["composite_score_threshold"], min: 0, max: 1, step: 0.01, class: "rounded-md border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        <%= number_field_tag "tenant_setting[quality_thresholds][min_recent_runs]", quality["min_recent_runs"], min: 1, class: "rounded-md border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        <%= number_field_tag "tenant_setting[quality_thresholds][lookback_window_hours]", quality["lookback_window_hours"], min: 1, class: "rounded-md border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Agent Settings and Features</h2>
+      <% agent_settings = @tenant_setting.effective_agent_settings %>
+      <div class="mt-4 grid gap-4 sm:grid-cols-2">
+        <div>
+          <%= label_tag "tenant_setting_agent_settings_default_goal", "Default goal", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= text_field_tag "tenant_setting[agent_settings][default_goal]", agent_settings["default_goal"], class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        </div>
+        <label class="flex items-center gap-2 pt-6 text-sm text-gray-700 dark:text-gray-200">
+          <%= hidden_field_tag "tenant_setting[agent_settings][auto_continue]", "0" %>
+          <%= check_box_tag "tenant_setting[agent_settings][auto_continue]", "1", agent_settings["auto_continue"] %>
+          Auto-continue follow-up runs
+        </label>
+      </div>
+
+      <div class="mt-6 space-y-3">
+        <% @feature_flags.each do |definition| %>
+          <label class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-200">
+            <%= check_box_tag "tenant_setting[features][#{definition.name}]", "1", @tenant_setting.features[definition.name.to_s] == true %>
+            <span>
+              <span class="font-medium"><%= definition.name %></span>
+              <span class="block text-gray-500 dark:text-gray-400"><%= definition.intent %></span>
+            </span>
+          </label>
+        <% end %>
+      </div>
+    </section>
+
+    <div class="flex justify-end">
+      <%= form.submit "Save configuration", class: "rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+    </div>
+  <% end %>
+</div>

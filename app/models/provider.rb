@@ -73,7 +73,7 @@ class Provider < ApplicationRecord
   validate :api_key_auth_requires_provider_api_key
   validate :subscription_auth_must_not_have_api_key
   validate :api_key_must_be_compatible
-  validate :api_key_must_belong_to_same_user
+  validate :api_key_must_belong_to_same_account
   validate :subscription_must_have_standard_fallback_role
   validate :api_key_entry_must_be_unique
   validate :opencode_api_key_config_must_be_valid
@@ -452,13 +452,13 @@ class Provider < ApplicationRecord
     errors.add(:provider_api_key, "must be an API key for #{ProviderSupport.api_service_type_label(required_service)}")
   end
 
-  def api_key_must_belong_to_same_user
+  def api_key_must_belong_to_same_account
     return unless api_key?
     return if provider_api_key_id.blank?
     return unless provider_api_key
-    return if provider_api_key.user_id == user_id
+    return if provider_api_key.user&.account_id == user&.account_id
 
-    errors.add(:provider_api_key, "must belong to the same user")
+    errors.add(:provider_api_key, "must belong to the same account")
   end
 
   def subscription_must_have_standard_fallback_role

@@ -224,7 +224,19 @@ RSpec.describe Provider do
       expect(duplicate.errors[:provider_key]).to include("already has an entry with this API key")
     end
 
-    it "rejects provider_api_key belonging to a different user" do
+    it "allows provider_api_key belonging to another user in the same account" do
+      account = create(:account)
+      provider.user = create(:user, account: account)
+      other_user = create(:user, account: account)
+      api_key = create(:provider_api_key, user: other_user, api_service_type: "anthropic")
+      provider.auth_type = "api_key"
+      provider.provider_api_key = api_key
+      provider.provider_key = "cursor"
+
+      expect(provider).to be_valid
+    end
+
+    it "rejects provider_api_key belonging to a different account" do
       other_user = create(:user)
       api_key = create(:provider_api_key, user: other_user, api_service_type: "anthropic")
       provider.auth_type = "api_key"
@@ -232,7 +244,7 @@ RSpec.describe Provider do
       provider.provider_key = "cursor"
 
       expect(provider).not_to be_valid
-      expect(provider.errors[:provider_api_key]).to include("must belong to the same user")
+      expect(provider.errors[:provider_api_key]).to include("must belong to the same account")
     end
 
     it "validates API key compatibility with provider_key" do

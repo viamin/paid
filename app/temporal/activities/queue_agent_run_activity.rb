@@ -11,11 +11,12 @@ module Activities
       requested_agent_type = input[:agent_type]
       provider_id = input[:provider_id]
       source_pull_request_number = input[:source_pull_request_number]
-      goal = input[:goal] || "create_pr"
+      goal = input[:goal]
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
       expected_draft_review_count = input[:expected_draft_review_count]
 
       project = Project.find(project_id)
+      goal ||= project.account.tenant_setting&.default_goal || "create_pr"
       issue = issue_id ? Issue.find(issue_id) : nil
       provider_id, agent_type = resolve_provider_selection(
         project: project,
@@ -93,52 +94,14 @@ module Activities
     private
 
     def resolve_provider_selection(project:, requested_agent_type:, requested_provider_id:, goal:, agent_type_provided:, provider_id_provided:)
-      if provider_id_provided || agent_type_provided
-        provider = provider_for_id(requested_provider_id)
-        return [ provider.id, Provider.agent_type_for(provider.provider_key) ] if provider && provider_runnable?(provider)
-        return [ nil, requested_agent_type ] if agent_type_runnable?(requested_agent_type)
-
-        logger.warn(
-          message: "agent_execution.requested_provider_not_runnable",
-          project_id: project.id,
-          requested_provider_id: requested_provider_id,
-          requested_agent_type: requested_agent_type
-        )
-      end
-
-      provider = default_provider_for(project, goal: goal)
-      return [ provider&.id, Provider.agent_type_for(provider.provider_key) ] if provider
-
-      [ nil, "claude_code" ]
-    end
-
-    def provider_runnable?(provider)
-      ProviderSupport.container_executable_provider_key?(provider.provider_key)
-    end
-
-    def agent_type_runnable?(agent_type)
-      return false if agent_type.blank?
-
-      AgentRun::AGENT_TYPES.include?(agent_type) &&
-        ProviderSupport.container_executable_provider_key?(Provider.provider_key_for_agent_type(agent_type))
-    end
-
-    def default_provider_for(project, goal:)
-      owner = project.effective_owner
-      return unless owner
-
-      settings = AgentRuns::UserSettingsResolver.call(project: project, strict: false)
-      return Provider.ensure_default_for(owner) unless settings
-
-      identifier = settings.select_automated_provider_identifier(goal: goal) ||
-        settings.default_provider_identifier_for_goal(goal)
-      Provider.for_identifier(settings.user, identifier) || Provider.ensure_default_for(settings.user)
-    end
-
-    def provider_for_id(provider_id)
-      return if provider_id.blank?
-
-      Provider.find_by(id: provider_id)
+      AgentRuns::ProviderResolver.call(
+        project: project,
+        goal: goal,
+        requested_agent_type: requested_agent_type,
+        requested_provider_id: requested_provider_id,
+        respect_requested: provider_id_provided || agent_type_provided,
+        logger: logger
+      )
     end
 
     # Returns nil for custom-prompt-only runs (no issue or PR) intentionally:

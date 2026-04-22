@@ -48,6 +48,9 @@ module Models
       preferred = preferred_model_result(project)
       return preferred if preferred
 
+      tenant_preferred = tenant_model_preference_result(project)
+      return tenant_preferred if tenant_preferred
+
       # Try meta-agent selection, fall back to rules-based
       Models::MetaAgentSelector.call(agent_run: agent_run) ||
         Models::RulesBasedSelector.call(agent_run: agent_run)
@@ -63,6 +66,16 @@ module Models
       return nil unless model
 
       override_result(model, "Project preferred model: #{model.display_name}")
+    end
+
+    def tenant_model_preference_result(project)
+      model_id = project.account.tenant_setting&.model_preference_for(agent_run.effective_provider)
+      return nil if model_id.blank?
+
+      model = LlmModel.active.find_by(model_id: model_id)
+      return nil unless model
+
+      override_result(model, "Tenant preferred model: #{model.display_name}")
     end
 
     def override_result(model, reason)

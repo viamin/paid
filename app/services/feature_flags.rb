@@ -28,6 +28,9 @@ class FeatureFlags
     end
 
     def enabled?(flag_name, project: nil, actor: nil)
+      tenant_value = tenant_override(flag_name, project:)
+      return tenant_value unless tenant_value.nil?
+
       resolved_actor = resolve_actor(project:, actor:)
       return feature(flag_name).enabled? unless resolved_actor
 
@@ -72,6 +75,19 @@ class FeatureFlags
 
     def feature(flag_name)
       flipper[definition(flag_name).name]
+    end
+
+    def tenant_override(flag_name, project:)
+      account = project&.account || Current.account
+      return nil unless account
+
+      features = account.tenant_setting&.features
+      return nil unless features.is_a?(Hash)
+
+      value = features[definition(flag_name).name.to_s]
+      return value if [ true, false ].include?(value)
+
+      nil
     end
 
     def resolve_actor(project:, actor:)

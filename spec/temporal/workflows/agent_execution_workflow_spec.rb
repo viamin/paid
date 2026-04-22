@@ -252,6 +252,13 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         .with(Activities::RunAgentActivity, anything, any_args)
     end
 
+    it "does not synthesize a requested agent type for direct workflows" do
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CreateAgentRunActivity, hash_excluding(:agent_type), timeout: 30)
+    end
+
     it "skips quality gate activity before the Temporal patch" do
       allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: false)
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|

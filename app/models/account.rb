@@ -10,6 +10,7 @@ class Account < ApplicationRecord
   has_many :users, dependent: :destroy
   has_many :account_memberships, dependent: :destroy
   has_many :members, through: :account_memberships, source: :user
+  has_many :provider_api_keys, through: :users
   has_many :projects, dependent: :destroy
   has_many :github_tokens, dependent: :destroy
   has_many :integration_credentials, dependent: :destroy
@@ -80,6 +81,14 @@ class Account < ApplicationRecord
     tenant_setting || create_tenant_setting!
   rescue ActiveRecord::RecordNotUnique
     reload_tenant_setting
+  end
+
+  def tenant_max_concurrent_runs(limit)
+    tenant_setting&.cap_max_concurrent_runs(limit) || limit
+  end
+
+  def tenant_max_tokens_per_run(limit)
+    tenant_setting&.cap_max_tokens_per_run(limit) || limit
   end
 
   def onboarding_completed?
