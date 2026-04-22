@@ -75,10 +75,10 @@ RSpec.describe "Dashboard" do
 
       it "includes merged pull requests in the recent activity stream" do
         merged_pr = create(:issue, :pull_request, project: project,
-                                                  pr_review_phase: "merged",
-                                                  github_number: 1234,
-                                                  title: "Ship the thing",
-                                                  github_updated_at: 3.minutes.ago)
+          pr_review_phase: "merged",
+          github_number: 1234,
+          title: "Ship the thing",
+          github_updated_at: 3.minutes.ago)
 
         get dashboard_path
 
@@ -185,30 +185,16 @@ RSpec.describe "Dashboard" do
 
     before { sign_in user }
 
-    it "cancels an active run through AgentRuns::Cancel" do
+    it "cancels an active run and enqueues background cleanup" do
       agent_run = create(:agent_run, project: project, status: "running", started_at: 2.minutes.ago)
 
-      allow(AgentRuns::Cancel).to receive(:call)
-
-      post dashboard_cancel_run_path(agent_run)
+      expect {
+        post dashboard_cancel_run_path(agent_run)
+      }.to have_enqueued_job(AgentRunCancellationJob).with(agent_run.id)
 
       expect(response).to redirect_to(dashboard_path)
       expect(response).to have_http_status(:see_other)
-      expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
       expect(agent_run.reload.status).to eq("cancelled")
-    end
-
-    it "redirects with an alert when external cancellation fails" do
-      agent_run = create(:agent_run, project: project, status: "running", started_at: 2.minutes.ago)
-
-      allow(AgentRuns::Cancel).to receive(:call).and_raise(StandardError, "Temporal unavailable")
-
-      post dashboard_cancel_run_path(agent_run)
-
-      expect(response).to redirect_to(dashboard_path)
-      expect(response).to have_http_status(:see_other)
-      expect(flash[:alert]).to eq("Unable to cancel agent run. Please try again.")
-      expect(agent_run.reload.status).to eq("running")
     end
 
     it "returns not found for a run in another account" do
@@ -227,23 +213,6 @@ RSpec.describe "Dashboard" do
       expect(response).to redirect_to(dashboard_path)
       expect(response).to have_http_status(:see_other)
       expect(flash[:notice]).to eq("Agent run is no longer active.")
-    end
-
-    it "shows a different message when the run finishes during external cancellation" do
-      agent_run = create(:agent_run, project: project, status: "running", started_at: 2.minutes.ago)
-
-      # Simulate the run finishing during external cleanup by updating the
-      # database record when Cancel is called.  The controller reloads
-      # @agent_run inside with_lock, so stubbing the instance wouldn't work.
-      allow(AgentRuns::Cancel).to receive(:call) do
-        agent_run.update_column(:status, "completed")
-      end
-
-      post dashboard_cancel_run_path(agent_run)
-
-      expect(response).to redirect_to(dashboard_path)
-      expect(response).to have_http_status(:see_other)
-      expect(flash[:notice]).to eq("Agent run finished before it could be cancelled.")
     end
   end
 end
