@@ -46,6 +46,24 @@ RSpec.describe QualityMetrics::TrendAnalysis do
       expect(result[:rolling_average]).to be_nil
       expect(result[:sample_size]).to eq(0)
     end
+
+    it "excludes operational failures from rolling average" do
+      project = create(:project)
+      good_run = create(:agent_run, project: project)
+      create(:quality_metric, agent_run: good_run, composite_score: 0.9)
+
+      timeout_run = create(:agent_run, status: "timeout", project: project)
+      create(:quality_metric, agent_run: timeout_run, composite_score: 0.0)
+
+      exhausted_run = create(:agent_run, status: "failed", project: project,
+        error_message: "All providers exhausted: claude_code")
+      create(:quality_metric, agent_run: exhausted_run, composite_score: 0.0)
+
+      result = described_class.call(project_id: project.id)
+
+      expect(result[:rolling_average]).to eq(0.9)
+      expect(result[:sample_size]).to eq(1)
+    end
   end
 
   describe "threshold integration" do
