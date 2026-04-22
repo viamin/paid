@@ -34,15 +34,18 @@ RSpec.describe QualityPause::Check do
       expect(project.reload.quality_paused?).to be false
     end
 
-    it "excludes timeout, auth_expired, and rate_limited runs from scoring" do
+    it "excludes operational failures (timeout, auth_expired, rate_limited, provider exhaustion) from scoring" do
       good_run = create(:agent_run, :completed, project: project)
       create(:quality_metric, agent_run: good_run, composite_score: 0.9)
 
-      excluded_statuses = %w[timeout auth_expired rate_limited]
-      excluded_statuses.each do |status|
+      AgentRun::QUALITY_EXCLUDED_STATUSES.each do |status|
         bad_run = create(:agent_run, status: status, project: project, goal: agent_run.goal)
         create(:quality_metric, agent_run: bad_run, composite_score: 0.0)
       end
+
+      exhausted_run = create(:agent_run, status: "failed", project: project, goal: agent_run.goal,
+        error_message: "All providers exhausted: claude_code")
+      create(:quality_metric, agent_run: exhausted_run, composite_score: 0.0)
 
       low_run = create(:agent_run, :completed, project: project)
       create(:quality_metric, agent_run: low_run, composite_score: 0.2)
@@ -50,6 +53,18 @@ RSpec.describe QualityPause::Check do
       described_class.call(agent_run: agent_run)
 
       expect(project.reload.quality_paused?).to be false
+    end
+
+    it "includes failed runs with agent-level errors in scoring" do
+      agent_error_run = create(:agent_run, status: "failed", project: project, goal: agent_run.goal,
+        error_message: "Agent exited with code 1")
+      create(:quality_metric, agent_run: agent_error_run, composite_score: 0.0)
+
+      create_quality_metrics(project, scores: [ 0.0, 0.1, 0.2 ])
+
+      described_class.call(agent_run: agent_run)
+
+      expect(project.reload.quality_paused?).to be true
     end
 
     it "pauses the project when rolling average falls below threshold" do
