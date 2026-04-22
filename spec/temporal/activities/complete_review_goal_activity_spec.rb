@@ -48,6 +48,18 @@ RSpec.describe Activities::CompleteReviewGoalActivity do
 
         expect(issue.reload.review_goal_retry_count).to eq(0)
       end
+
+      it "does not overwrite cancelled runs" do
+        issue = create(:issue, project: project, review_goal_retry_count: 2)
+        agent_run = create(:agent_run, :cancelled, :review_goal, project: project,
+          issue: issue, review_posted_at: 1.minute.ago)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be false
+        expect(agent_run.reload.status).to eq("cancelled")
+        expect(issue.reload.review_goal_retry_count).to eq(2)
+      end
     end
 
     context "when no review was posted" do

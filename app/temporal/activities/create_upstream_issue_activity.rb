@@ -20,6 +20,8 @@ module Activities
       labels = input[:labels] || []
 
       agent_run = AgentRun.find(agent_run_id)
+      return result(agent_run, target_repo) if agent_run.finished?
+
       track_phase(agent_run_id: agent_run_id, phase_key: "create_upstream_issue", phase_group: "post", agent_run: agent_run) do
         project = agent_run.project
         client = resolve_client(project, target_repo)
@@ -54,6 +56,18 @@ module Activities
     end
 
     private
+
+    def result(agent_run, target_repo)
+      {
+        agent_run_id: agent_run.id,
+        issue_url: nil,
+        issue_number: nil,
+        target_repo: target_repo,
+        skipped: true,
+        finished: true,
+        cancelled: agent_run.status == "cancelled"
+      }
+    end
 
     # Uses the current project's GitHub token. All projects in the same
     # account share a token pool, so cross-repo creation within an account

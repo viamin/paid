@@ -778,25 +778,39 @@ class AgentRun < ApplicationRecord
   end
 
   def complete!(result_commit: nil, pr_url: nil, pr_number: nil, issue_url: nil, issue_number: nil)
-    update!(
-      status: "completed",
-      completed_at: Time.current,
-      result_commit_sha: result_commit,
-      pull_request_url: pr_url,
-      pull_request_number: pr_number,
-      created_issue_url: issue_url,
-      created_issue_number: issue_number,
-      duration_seconds: duration
-    )
+    with_lock do
+      reload
+      if finished?
+        false
+      else
+        update!(
+          status: "completed",
+          completed_at: Time.current,
+          result_commit_sha: result_commit,
+          pull_request_url: pr_url,
+          pull_request_number: pr_number,
+          created_issue_url: issue_url,
+          created_issue_number: issue_number,
+          duration_seconds: duration
+        )
+      end
+    end
   end
 
   def complete_no_output!(reason: "no_changes")
-    update!(
-      status: "no_output",
-      completed_at: Time.current,
-      error_message: reason,
-      duration_seconds: duration
-    )
+    with_lock do
+      reload
+      if finished?
+        false
+      else
+        update!(
+          status: "no_output",
+          completed_at: Time.current,
+          error_message: reason,
+          duration_seconds: duration
+        )
+      end
+    end
   end
 
   def result_url

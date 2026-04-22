@@ -165,6 +165,18 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
+    it "does not create an issue when the run is already cancelled" do
+      agent_run.cancel!
+
+      expect(github_client).not_to receive(:create_issue)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:agent_run_id]).to eq(agent_run.id)
+      expect(result[:issue_url]).to be_nil
+      expect(agent_run.reload.status).to eq("cancelled")
+    end
+
     it "uses first markdown heading as title when agent output has one" do
       agent_run.log!("stdout", "# Authentication System Analysis\n\nThe auth system uses JWT tokens.")
 
@@ -291,6 +303,25 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       synced = project.issues.find_by(github_issue_id: 12345)
       expect(synced).to be_present
       expect(synced.github_number).to eq(10)
+    end
+
+    it "reconciles a created issue when cancellation wins the completion lock" do
+      allow(github_client).to receive(:create_issue) do
+        agent_run.cancel!
+        issue_response
+      end
+
+      expect {
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:issue_url]).to eq("https://github.com/owner/repo/issues/10")
+        expect(result[:issue_number]).to eq(10)
+      }.to change { project.issues.where(github_issue_id: 12345).count }.by(1)
+
+      agent_run.reload
+      expect(agent_run.status).to eq("cancelled")
+      expect(agent_run.created_issue_url).to be_nil
+      expect(agent_run.created_issue_number).to be_nil
     end
 
     it "refuses to create a fallback issue from issue-creation failure output" do
@@ -720,6 +751,24 @@ RSpec.describe Activities::CreateGithubIssueActivity do
         activity.execute(agent_run_id: agent_run.id, upstream_issue: upstream_ref)
 
         agent_run.reload
+        expect(agent_run.cross_repo_issues).to include(
+          a_hash_including(
+            "role" => "downstream",
+            "issue_number" => 10
+          )
+        )
+      end
+
+      it "records the downstream issue when cancellation wins the completion lock" do
+        allow(github_client).to receive(:create_issue) do
+          agent_run.cancel!
+          issue_response
+        end
+
+        activity.execute(agent_run_id: agent_run.id, upstream_issue: upstream_ref)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("cancelled")
         expect(agent_run.cross_repo_issues).to include(
           a_hash_including(
             "role" => "downstream",
