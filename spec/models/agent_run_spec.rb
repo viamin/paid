@@ -892,6 +892,22 @@ RSpec.describe AgentRun do
           expect(agent_run.duration_seconds).to eq((Time.current - started_time).to_i)
         end
       end
+
+      it "does not overwrite a finished run", :aggregate_failures do
+        completed_at = 10.minutes.ago
+        agent_run = create(:agent_run, :completed,
+          completed_at: completed_at,
+          duration_seconds: 25,
+          error_message: nil)
+
+        expect(agent_run.timeout!(error: "Stale run detected")).to be false
+
+        agent_run.reload
+        expect(agent_run.status).to eq("completed")
+        expect(agent_run.completed_at).to be_within(1.second).of(completed_at)
+        expect(agent_run.duration_seconds).to eq(25)
+        expect(agent_run.error_message).to be_nil
+      end
     end
 
     describe "#retry!" do

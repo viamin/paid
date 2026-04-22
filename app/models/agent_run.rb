@@ -941,12 +941,19 @@ class AgentRun < ApplicationRecord
   end
 
   def timeout!(error: nil)
-    update!(
-      status: "timeout",
-      completed_at: Time.current,
-      error_message: error,
-      duration_seconds: duration
-    )
+    with_lock do
+      reload
+      if finished?
+        false
+      else
+        update!(
+          status: "timeout",
+          completed_at: Time.current,
+          error_message: error,
+          duration_seconds: duration
+        )
+      end
+    end
   end
 
   # True when this run was force-timed-out externally (by `dev:cleanup` or
