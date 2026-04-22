@@ -7662,16 +7662,40 @@ ALTER TABLE public.service_containers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.style_guides ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: ab_test_assignments tenant_isolation; Type: POLICY; Schema: public; Owner: -
+-- Name: ab_test_assignments tenant_isolation_delete; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.ab_test_assignments USING ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+CREATE POLICY tenant_isolation_delete ON public.ab_test_assignments FOR DELETE USING ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
    FROM (public.ab_tests
      JOIN public.prompts ON ((prompts.id = ab_tests.prompt_id)))
-  WHERE ((ab_tests.id = ab_test_assignments.ab_test_id) AND ((prompts.account_id IS NULL) OR (prompts.account_id = public.paid_current_account_id()))))) AND (EXISTS ( SELECT 1
+  WHERE ((ab_tests.id = ab_test_assignments.ab_test_id) AND (prompts.account_id = public.paid_current_account_id()) AND ((prompts.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id())))))))) AND (EXISTS ( SELECT 1
    FROM (public.agent_runs
      JOIN public.projects ON ((projects.id = agent_runs.project_id)))
-  WHERE ((agent_runs.id = ab_test_assignments.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+  WHERE ((agent_runs.id = ab_test_assignments.agent_run_id) AND (projects.account_id = public.paid_current_account_id())))))));
+
+
+--
+-- Name: ab_test_assignments tenant_isolation_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_insert ON public.ab_test_assignments FOR INSERT WITH CHECK ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM (public.ab_tests
+     JOIN public.prompts ON ((prompts.id = ab_tests.prompt_id)))
+  WHERE ((ab_tests.id = ab_test_assignments.ab_test_id) AND (prompts.account_id = public.paid_current_account_id()) AND ((prompts.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id())))))))) AND (EXISTS ( SELECT 1
+   FROM (public.agent_runs
+     JOIN public.projects ON ((projects.id = agent_runs.project_id)))
+  WHERE ((agent_runs.id = ab_test_assignments.agent_run_id) AND (projects.account_id = public.paid_current_account_id())))))));
+
+
+--
+-- Name: ab_test_assignments tenant_isolation_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_select ON public.ab_test_assignments FOR SELECT USING ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
    FROM (public.ab_tests
      JOIN public.prompts ON ((prompts.id = ab_tests.prompt_id)))
   WHERE ((ab_tests.id = ab_test_assignments.ab_test_id) AND ((prompts.account_id IS NULL) OR (prompts.account_id = public.paid_current_account_id()))))) AND (EXISTS ( SELECT 1
@@ -7681,27 +7705,123 @@ CREATE POLICY tenant_isolation ON public.ab_test_assignments USING ((public.paid
 
 
 --
--- Name: ab_test_variants tenant_isolation; Type: POLICY; Schema: public; Owner: -
+-- Name: ab_test_assignments tenant_isolation_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.ab_test_variants USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+CREATE POLICY tenant_isolation_update ON public.ab_test_assignments FOR UPDATE USING ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
    FROM (public.ab_tests
      JOIN public.prompts ON ((prompts.id = ab_tests.prompt_id)))
-  WHERE ((ab_tests.id = ab_test_variants.ab_test_id) AND ((prompts.account_id IS NULL) OR (prompts.account_id = public.paid_current_account_id()))))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+  WHERE ((ab_tests.id = ab_test_assignments.ab_test_id) AND (prompts.account_id = public.paid_current_account_id()) AND ((prompts.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id())))))))) AND (EXISTS ( SELECT 1
+   FROM (public.agent_runs
+     JOIN public.projects ON ((projects.id = agent_runs.project_id)))
+  WHERE ((agent_runs.id = ab_test_assignments.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM (public.ab_tests
+     JOIN public.prompts ON ((prompts.id = ab_tests.prompt_id)))
+  WHERE ((ab_tests.id = ab_test_assignments.ab_test_id) AND (prompts.account_id = public.paid_current_account_id()) AND ((prompts.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id())))))))) AND (EXISTS ( SELECT 1
+   FROM (public.agent_runs
+     JOIN public.projects ON ((projects.id = agent_runs.project_id)))
+  WHERE ((agent_runs.id = ab_test_assignments.agent_run_id) AND (projects.account_id = public.paid_current_account_id())))))));
+
+
+--
+-- Name: ab_test_variants tenant_isolation_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_delete ON public.ab_test_variants FOR DELETE USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM (public.ab_tests
+     JOIN public.prompts ON ((prompts.id = ab_tests.prompt_id)))
+  WHERE ((ab_tests.id = ab_test_variants.ab_test_id) AND (prompts.account_id = public.paid_current_account_id()) AND ((prompts.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id()))))))))));
+
+
+--
+-- Name: ab_test_variants tenant_isolation_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_insert ON public.ab_test_variants FOR INSERT WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM (public.ab_tests
+     JOIN public.prompts ON ((prompts.id = ab_tests.prompt_id)))
+  WHERE ((ab_tests.id = ab_test_variants.ab_test_id) AND (prompts.account_id = public.paid_current_account_id()) AND ((prompts.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id()))))))))));
+
+
+--
+-- Name: ab_test_variants tenant_isolation_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_select ON public.ab_test_variants FOR SELECT USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
    FROM (public.ab_tests
      JOIN public.prompts ON ((prompts.id = ab_tests.prompt_id)))
   WHERE ((ab_tests.id = ab_test_variants.ab_test_id) AND ((prompts.account_id IS NULL) OR (prompts.account_id = public.paid_current_account_id())))))));
 
 
 --
--- Name: ab_tests tenant_isolation; Type: POLICY; Schema: public; Owner: -
+-- Name: ab_test_variants tenant_isolation_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.ab_tests USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+CREATE POLICY tenant_isolation_update ON public.ab_test_variants FOR UPDATE USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM (public.ab_tests
+     JOIN public.prompts ON ((prompts.id = ab_tests.prompt_id)))
+  WHERE ((ab_tests.id = ab_test_variants.ab_test_id) AND (prompts.account_id = public.paid_current_account_id()) AND ((prompts.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id())))))))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM (public.ab_tests
+     JOIN public.prompts ON ((prompts.id = ab_tests.prompt_id)))
+  WHERE ((ab_tests.id = ab_test_variants.ab_test_id) AND (prompts.account_id = public.paid_current_account_id()) AND ((prompts.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id()))))))))));
+
+
+--
+-- Name: ab_tests tenant_isolation_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_delete ON public.ab_tests FOR DELETE USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
    FROM public.prompts
-  WHERE ((prompts.id = ab_tests.prompt_id) AND ((prompts.account_id IS NULL) OR (prompts.account_id = public.paid_current_account_id()))))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+  WHERE ((prompts.id = ab_tests.prompt_id) AND (prompts.account_id = public.paid_current_account_id()) AND ((prompts.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id()))))))))));
+
+
+--
+-- Name: ab_tests tenant_isolation_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_insert ON public.ab_tests FOR INSERT WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.prompts
+  WHERE ((prompts.id = ab_tests.prompt_id) AND (prompts.account_id = public.paid_current_account_id()) AND ((prompts.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id()))))))))));
+
+
+--
+-- Name: ab_tests tenant_isolation_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_select ON public.ab_tests FOR SELECT USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
    FROM public.prompts
   WHERE ((prompts.id = ab_tests.prompt_id) AND ((prompts.account_id IS NULL) OR (prompts.account_id = public.paid_current_account_id())))))));
+
+
+--
+-- Name: ab_tests tenant_isolation_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_update ON public.ab_tests FOR UPDATE USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.prompts
+  WHERE ((prompts.id = ab_tests.prompt_id) AND (prompts.account_id = public.paid_current_account_id()) AND ((prompts.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id())))))))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.prompts
+  WHERE ((prompts.id = ab_tests.prompt_id) AND (prompts.account_id = public.paid_current_account_id()) AND ((prompts.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id()))))))))));
 
 
 --
@@ -8150,21 +8270,87 @@ CREATE POLICY tenant_isolation ON public.projects USING ((public.paid_tenant_byp
 
 
 --
--- Name: prompt_versions tenant_isolation; Type: POLICY; Schema: public; Owner: -
+-- Name: prompt_versions tenant_isolation_delete; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.prompt_versions USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+CREATE POLICY tenant_isolation_delete ON public.prompt_versions FOR DELETE USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
    FROM public.prompts
-  WHERE ((prompts.id = prompt_versions.prompt_id) AND ((prompts.account_id IS NULL) OR (prompts.account_id = public.paid_current_account_id()))))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+  WHERE ((prompts.id = prompt_versions.prompt_id) AND (prompts.account_id = public.paid_current_account_id()) AND ((prompts.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id()))))))))));
+
+
+--
+-- Name: prompt_versions tenant_isolation_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_insert ON public.prompt_versions FOR INSERT WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.prompts
+  WHERE ((prompts.id = prompt_versions.prompt_id) AND (prompts.account_id = public.paid_current_account_id()) AND ((prompts.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id()))))))))));
+
+
+--
+-- Name: prompt_versions tenant_isolation_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_select ON public.prompt_versions FOR SELECT USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
    FROM public.prompts
   WHERE ((prompts.id = prompt_versions.prompt_id) AND ((prompts.account_id IS NULL) OR (prompts.account_id = public.paid_current_account_id())))))));
 
 
 --
--- Name: prompts tenant_isolation; Type: POLICY; Schema: public; Owner: -
+-- Name: prompt_versions tenant_isolation_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.prompts USING ((public.paid_tenant_bypass() OR ((account_id IS NULL) OR (account_id = public.paid_current_account_id())))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id IS NULL) OR (account_id = public.paid_current_account_id()))));
+CREATE POLICY tenant_isolation_update ON public.prompt_versions FOR UPDATE USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.prompts
+  WHERE ((prompts.id = prompt_versions.prompt_id) AND (prompts.account_id = public.paid_current_account_id()) AND ((prompts.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id())))))))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.prompts
+  WHERE ((prompts.id = prompt_versions.prompt_id) AND (prompts.account_id = public.paid_current_account_id()) AND ((prompts.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id()))))))))));
+
+
+--
+-- Name: prompts tenant_isolation_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_delete ON public.prompts FOR DELETE USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id()))))))));
+
+
+--
+-- Name: prompts tenant_isolation_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_insert ON public.prompts FOR INSERT WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id()))))))));
+
+
+--
+-- Name: prompts tenant_isolation_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_select ON public.prompts FOR SELECT USING ((public.paid_tenant_bypass() OR ((account_id IS NULL) OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id())))))))));
+
+
+--
+-- Name: prompts tenant_isolation_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_update ON public.prompts FOR UPDATE USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id()))))))));
 
 
 --
@@ -8283,10 +8469,41 @@ CREATE POLICY tenant_isolation ON public.service_containers USING ((public.paid_
 
 
 --
--- Name: style_guides tenant_isolation; Type: POLICY; Schema: public; Owner: -
+-- Name: style_guides tenant_isolation_delete; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.style_guides USING ((public.paid_tenant_bypass() OR ((account_id IS NULL) OR (account_id = public.paid_current_account_id())))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id IS NULL) OR (account_id = public.paid_current_account_id()))));
+CREATE POLICY tenant_isolation_delete ON public.style_guides FOR DELETE USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = style_guides.project_id) AND (projects.account_id = public.paid_current_account_id()))))))));
+
+
+--
+-- Name: style_guides tenant_isolation_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_insert ON public.style_guides FOR INSERT WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = style_guides.project_id) AND (projects.account_id = public.paid_current_account_id()))))))));
+
+
+--
+-- Name: style_guides tenant_isolation_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_select ON public.style_guides FOR SELECT USING ((public.paid_tenant_bypass() OR ((account_id IS NULL) OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = style_guides.project_id) AND (projects.account_id = public.paid_current_account_id())))))))));
+
+
+--
+-- Name: style_guides tenant_isolation_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_update ON public.style_guides FOR UPDATE USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = style_guides.project_id) AND (projects.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = style_guides.project_id) AND (projects.account_id = public.paid_current_account_id()))))))));
 
 
 --

@@ -76,7 +76,7 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
     end
 
     OPTIONAL_ACCOUNT_TABLES.each do |table|
-      enable_policy(table, "#{table}.account_id IS NULL OR #{table}.account_id = paid_current_account_id()")
+      enable_optional_account_policy(table)
     end
 
     PROJECT_TABLES.each do |table|
@@ -92,11 +92,11 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
     end
 
     PROMPT_TABLES.each do |table|
-      enable_policy(table, prompt_condition(table))
+      enable_read_write_policy(table, prompt_condition(table), prompt_write_condition(table))
     end
 
-    enable_policy("ab_test_variants", ab_test_condition("ab_test_variants"))
-    enable_policy("ab_test_assignments", ab_test_assignment_condition)
+    enable_read_write_policy("ab_test_variants", ab_test_condition("ab_test_variants"), ab_test_write_condition("ab_test_variants"))
+    enable_read_write_policy("ab_test_assignments", ab_test_assignment_condition, ab_test_assignment_write_condition)
     enable_policy("agent_coordination_signals", coordination_signal_condition)
     enable_policy("billing_line_items", billing_line_item_condition)
     enable_policy("collector_runs", collector_run_condition)
@@ -114,7 +114,7 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
 
   def down
     tenant_tables.each do |table|
-      execute "DROP POLICY IF EXISTS tenant_isolation ON #{quote_table_name(table)}"
+      drop_policies(table)
       execute "ALTER TABLE #{quote_table_name(table)} NO FORCE ROW LEVEL SECURITY"
       execute "ALTER TABLE #{quote_table_name(table)} DISABLE ROW LEVEL SECURITY"
     end
@@ -162,6 +162,73 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
     SQL
   end
 
+  def enable_optional_account_policy(table)
+    read_condition = "#{table}.account_id IS NULL OR #{optional_account_write_condition(table)}"
+    write_condition = optional_account_write_condition(table)
+
+    enable_read_write_policy(table, read_condition, write_condition)
+  end
+
+  def enable_read_write_policy(table, read_condition, write_condition)
+    qualified_table = quote_table_name(table)
+
+    execute "ALTER TABLE #{qualified_table} ENABLE ROW LEVEL SECURITY"
+    execute "ALTER TABLE #{qualified_table} FORCE ROW LEVEL SECURITY"
+    execute <<~SQL
+      CREATE POLICY tenant_isolation_select ON #{qualified_table}
+      AS PERMISSIVE
+      FOR SELECT
+      USING (paid_tenant_bypass() OR (#{read_condition}))
+    SQL
+    execute <<~SQL
+      CREATE POLICY tenant_isolation_insert ON #{qualified_table}
+      AS PERMISSIVE
+      FOR INSERT
+      WITH CHECK (paid_tenant_bypass() OR (#{write_condition}))
+    SQL
+    execute <<~SQL
+      CREATE POLICY tenant_isolation_update ON #{qualified_table}
+      AS PERMISSIVE
+      FOR UPDATE
+      USING (paid_tenant_bypass() OR (#{write_condition}))
+      WITH CHECK (paid_tenant_bypass() OR (#{write_condition}))
+    SQL
+    execute <<~SQL
+      CREATE POLICY tenant_isolation_delete ON #{qualified_table}
+      AS PERMISSIVE
+      FOR DELETE
+      USING (paid_tenant_bypass() OR (#{write_condition}))
+    SQL
+  end
+
+  def drop_policies(table)
+    qualified_table = quote_table_name(table)
+
+    %w[
+      tenant_isolation
+      tenant_isolation_select
+      tenant_isolation_insert
+      tenant_isolation_update
+      tenant_isolation_delete
+    ].each do |policy|
+      execute "DROP POLICY IF EXISTS #{policy} ON #{qualified_table}"
+    end
+  end
+
+  def optional_account_write_condition(table)
+    <<~SQL.squish
+      #{table}.account_id = paid_current_account_id()
+      AND (
+        #{table}.project_id IS NULL
+        OR EXISTS (
+          SELECT 1 FROM projects
+          WHERE projects.id = #{table}.project_id
+            AND projects.account_id = paid_current_account_id()
+        )
+      )
+    SQL
+  end
+
   def project_condition(table)
     <<~SQL.squish
       EXISTS (
@@ -203,6 +270,16 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
     SQL
   end
 
+  def prompt_write_condition(table)
+    <<~SQL.squish
+      EXISTS (
+        SELECT 1 FROM prompts
+        WHERE prompts.id = #{table}.prompt_id
+          AND #{optional_account_write_condition("prompts")}
+      )
+    SQL
+  end
+
   def ab_test_condition(table)
     <<~SQL.squish
       EXISTS (
@@ -214,9 +291,27 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
     SQL
   end
 
+  def ab_test_write_condition(table)
+    <<~SQL.squish
+      EXISTS (
+        SELECT 1 FROM ab_tests
+        INNER JOIN prompts ON prompts.id = ab_tests.prompt_id
+        WHERE ab_tests.id = #{table}.ab_test_id
+          AND #{optional_account_write_condition("prompts")}
+      )
+    SQL
+  end
+
   def ab_test_assignment_condition
     <<~SQL.squish
       #{ab_test_condition("ab_test_assignments")}
+      AND #{agent_run_condition("ab_test_assignments")}
+    SQL
+  end
+
+  def ab_test_assignment_write_condition
+    <<~SQL.squish
+      #{ab_test_write_condition("ab_test_assignments")}
       AND #{agent_run_condition("ab_test_assignments")}
     SQL
   end
