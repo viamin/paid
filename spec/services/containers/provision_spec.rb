@@ -1031,7 +1031,7 @@ RSpec.describe Containers::Provision do
       end
     end
 
-    context "with Codex subscription auth from the devcontainer filesystem" do
+    context "with Codex subscription auth from the local filesystem" do
       let(:codex_local_dir) { Dir.mktmpdir("codex-local") }
 
       before do
@@ -1057,9 +1057,10 @@ RSpec.describe Containers::Provision do
         FileUtils.rm_rf(codex_local_dir)
       end
 
-      it "sets the subscription marker without bind-mounting the local path" do
+      it "bind-mounts local Codex auth as the shared writable auth source" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
+          expect(binds).to include("#{File.join(codex_local_dir, 'auth.json')}:/home/agent/.codex/auth.json:rw")
           expect(binds.none? { |bind| bind.include?(":/home/agent/.codex:rw") }).to be true
           expect(config["Env"]).to include("PAID_CODEX_SUBSCRIPTION_AUTH=1")
 
@@ -1071,14 +1072,10 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "copies local Codex auth and writes sanitized config into the writable tmpfs" do
+      it "uses shared Codex auth and writes sanitized config into the writable tmpfs" do
         service.provision
 
-        expect(mock_container).to have_received(:exec).with(
-          [ "chown", "-R", "agent:agent", "/home/agent/.codex" ],
-          user: "root"
-        )
-        expect(mock_container).to have_received(:exec).with(
+        expect(mock_container).not_to have_received(:exec).with(
           [ "sh", "-lc", satisfy { |cmd|
             cmd.include?("/home/agent/.codex/auth.json") &&
               !cmd.include?("/home/agent/.codex/config.toml")
@@ -1092,6 +1089,58 @@ RSpec.describe Containers::Provision do
           } ],
           user: "agent"
         )
+      end
+
+      it "translates a mounted local Codex path to the Docker host bind source" do
+        mount_source = Dir.mktmpdir("codex-host")
+        mount_destination = File.dirname(codex_local_dir)
+        current_container = instance_double(
+          Docker::Container,
+          info: { "Mounts" => [ { "Destination" => mount_destination, "Source" => mount_source } ] }
+        )
+        allow(Docker::Container).to receive(:get).with(Socket.gethostname).and_return(current_container)
+
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expected_source = File.join(mount_source, File.basename(codex_local_dir), "auth.json")
+          expect(binds).to include("#{expected_source}:/home/agent/.codex/auth.json:rw")
+          mock_container
+        end
+
+        service.provision
+      ensure
+        FileUtils.rm_rf(mount_source) if mount_source
+      end
+
+      it "fails clearly for a Codex subscription run when local auth is not bind-mountable" do
+        codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
+        project.created_by.settings.update!(default_agent_provider: codex_provider.routing_key)
+        agent_run.update!(agent_type: "codex")
+        current_container = instance_double(Docker::Container, info: { "Mounts" => [] })
+        allow(Docker::Container).to receive(:get).with(Socket.gethostname).and_return(current_container)
+
+        expect {
+          service.provision
+        }.to raise_error(
+          Containers::Provision::ProvisionError,
+          /Codex subscription auth was found at .*not available as a Docker bind mount/
+        )
+      end
+
+      it "does not fail for an API-key-backed Codex default when local auth is not bind-mountable" do
+        api_key = create(:provider_api_key, user: project.created_by, api_service_type: "openai")
+        codex_provider = create(:provider, :api_key, user: project.created_by, provider_key: "codex", provider_api_key: api_key)
+        project.created_by.settings.update!(default_agent_provider: codex_provider.routing_key)
+        agent_run.update!(agent_type: "codex")
+        current_container = instance_double(Docker::Container, info: { "Mounts" => [] })
+        allow(Docker::Container).to receive(:get).with(Socket.gethostname).and_return(current_container)
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["Env"]).to include("PAID_CODEX_SUBSCRIPTION_AUTH=0")
+          mock_container
+        end
+
+        expect { service.provision }.not_to raise_error
       end
     end
 
@@ -1477,8 +1526,9 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(codex_config_dir)
         # Clear memoized values so they pick up the new ENV stubs
-        service.remove_instance_variable(:@codex_subscription_auth_host_mount_path) if service.instance_variable_defined?(:@codex_subscription_auth_host_mount_path)
+        service.remove_instance_variable(:@codex_subscription_auth_mount) if service.instance_variable_defined?(:@codex_subscription_auth_mount)
         service.remove_instance_variable(:@codex_config_host_path) if service.instance_variable_defined?(:@codex_config_host_path)
+        service.remove_instance_variable(:@current_container_mounts) if service.instance_variable_defined?(:@current_container_mounts)
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stdout, "output\n") if block
           [ [ "output\n" ], [], 0 ]
