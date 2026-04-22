@@ -24,7 +24,7 @@
               <p class="mt-1 truncate text-sm text-red-600"><%= item.error_message %></p>
             <% end %>
           </li>
-        <% else %>
+        <% elsif item.is_a?(Issue) %>
           <li id="<%= dom_id(item, :activity) %>" class="px-4 py-3">
             <div class="flex items-center justify-between gap-4">
               <div class="flex min-w-0 items-center gap-3">
@@ -41,6 +41,32 @@
               </div>
               <div class="flex items-center gap-4 text-sm text-gray-500">
                 <span><%= time_ago_in_words(item.github_updated_at) %> ago</span>
+              </div>
+            </div>
+          </li>
+        <% elsif item.is_a?(QualityPauseEvent) %>
+          <li id="<%= dom_id(item, :activity) %>" class="px-4 py-3">
+            <div class="flex items-center justify-between gap-4">
+              <div class="flex min-w-0 items-center gap-3">
+                <% if item.event_type == "paused" %>
+                  <span class="inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">Paused</span>
+                <% else %>
+                  <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Resumed</span>
+                <% end %>
+                <span class="text-sm font-medium text-gray-900"><%= item.project.full_name %></span>
+                <% if item.event_type == "paused" %>
+                  <span class="truncate text-sm text-gray-500">Automatic work paused by quality gate</span>
+                <% else %>
+                  <span class="truncate text-sm text-gray-500">Quality pause resumed</span>
+                <% end %>
+              </div>
+              <div class="flex items-center gap-4 text-sm text-gray-500">
+                <% if item.event_type == "paused" && item.composite_score.present? && item.threshold.present? %>
+                  <span><%= format("%.1f%%", item.composite_score.to_f * 100) %> below <%= format("%.1f%%", item.threshold.to_f * 100) %></span>
+                <% elsif item.event_type == "resumed" && item.metadata["resumed_by_user_email"].present? %>
+                  <span><%= item.metadata["resumed_by_user_email"] %></span>
+                <% end %>
+                <span><%= time_ago_in_words(item.created_at) %> ago</span>
               </div>
             </div>
           </li>

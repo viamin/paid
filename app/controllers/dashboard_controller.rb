@@ -22,6 +22,10 @@ class DashboardController < ApplicationController
     @active_runs = live_agent_runs.active.includes(:project, :issue)
       .order("agent_runs.created_at DESC")
       .limit(20)
+    @quality_paused_projects = current_account.projects
+      .where.not(quality_paused_at: nil)
+      .order(quality_paused_at: :desc)
+      .limit(10)
     @recent_activity = Dashboard::RecentActivity.call(account: current_account)
   end
 
