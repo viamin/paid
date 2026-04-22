@@ -114,6 +114,23 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Merged")
       end
 
+      it "includes quality pause events in the recent activity stream" do
+        create(:quality_pause_event, :paused, project: project,
+          composite_score: 0.32,
+          threshold: 0.5,
+          created_at: 10.minutes.ago)
+        create(:quality_pause_event, :resumed, project: project,
+          metadata: { resumed_by_user_email: "operator@example.com" },
+          created_at: 5.minutes.ago)
+
+        get dashboard_path
+
+        expect(response.body).to include("Automatic work paused by quality gate")
+        expect(response.body).to include("32.0% below 50.0%")
+        expect(response.body).to include("Quality pause resumed")
+        expect(response.body).to include("operator@example.com")
+      end
+
       it "has collapsible sections" do
         get dashboard_path
 

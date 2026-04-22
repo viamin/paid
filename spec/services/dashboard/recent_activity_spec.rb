@@ -7,7 +7,7 @@ RSpec.describe Dashboard::RecentActivity do
     let(:account) { create(:account) }
     let(:project) { create(:project, account: account) }
 
-    it "returns finished agent runs and merged PRs for the account, sorted by recency" do
+    it "returns finished agent runs, merged PRs, and quality pause events for the account, sorted by recency" do
       older_run = create(:agent_run, project: project, status: "completed",
                                      completed_at: 2.hours.ago,
                                      duration_seconds: 30)
@@ -17,10 +17,12 @@ RSpec.describe Dashboard::RecentActivity do
       merged_pr = create(:issue, :pull_request, project: project,
                                                 pr_review_phase: "merged",
                                                 github_updated_at: 30.minutes.ago)
+      pause_event = create(:quality_pause_event, :paused, project: project, created_at: 10.minutes.ago)
+      resume_event = create(:quality_pause_event, :resumed, project: project, created_at: 45.minutes.ago)
 
       items = described_class.call(account: account)
 
-      expect(items).to eq([ newer_run, merged_pr, older_run ])
+      expect(items).to eq([ newer_run, pause_event, merged_pr, resume_event, older_run ])
     end
 
     it "excludes agent runs that are not finished" do
@@ -48,6 +50,7 @@ RSpec.describe Dashboard::RecentActivity do
       create(:agent_run, project: other_project, status: "completed", completed_at: 1.minute.ago)
       create(:issue, :pull_request, project: other_project, pr_review_phase: "merged",
                                     github_updated_at: 1.minute.ago)
+      create(:quality_pause_event, :paused, project: other_project, created_at: 1.minute.ago)
 
       expect(described_class.call(account: account)).to be_empty
     end

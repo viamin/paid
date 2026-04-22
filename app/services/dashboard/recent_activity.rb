@@ -14,7 +14,7 @@ module Dashboard
     end
 
     def call
-      (recent_agent_runs + recent_merged_prs)
+      (recent_agent_runs + recent_merged_prs + recent_quality_pause_events)
         .sort_by { |item| -item_timestamp(item).to_i }
         .first(limit)
     end
@@ -43,10 +43,20 @@ module Dashboard
         .to_a
     end
 
+    def recent_quality_pause_events
+      QualityPauseEvent.joins(:project)
+        .where(projects: { account_id: account.id })
+        .includes(:project)
+        .recent
+        .limit(limit)
+        .to_a
+    end
+
     def item_timestamp(item)
       case item
       when AgentRun then item.completed_at || item.created_at
       when Issue    then item.github_updated_at
+      when QualityPauseEvent then item.created_at
       end
     end
   end
