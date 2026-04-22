@@ -2736,7 +2736,12 @@ CREATE TABLE public.tenant_settings (
     allowed_provider_keys text[] DEFAULT '{}'::text[],
     features jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    provider_preferences jsonb DEFAULT '{}'::jsonb NOT NULL,
+    default_budgets jsonb DEFAULT '{}'::jsonb NOT NULL,
+    guardrails jsonb DEFAULT '{}'::jsonb NOT NULL,
+    quality_thresholds jsonb DEFAULT '{}'::jsonb NOT NULL,
+    agent_settings jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 ALTER TABLE ONLY public.tenant_settings FORCE ROW LEVEL SECURITY;
@@ -8760,6 +8765,7 @@ SET search_path TO "$user", public;
 INSERT INTO "schema_migrations" (version) VALUES
 ('20260421162139'),
 ('20260421162135'),
+('20260421161445'),
 ('20260421155244'),
 ('20260421110831'),
 ('20260421083918'),

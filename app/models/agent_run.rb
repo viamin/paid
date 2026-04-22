@@ -259,13 +259,14 @@ class AgentRun < ApplicationRecord
 
   # Checks whether the given user has capacity for another agent run.
   #
-  # Capacity is determined solely by the user's max_concurrent_runs setting.
+  # Capacity is determined by the user's max_concurrent_runs setting capped by
+  # the account tenant guardrail when one is configured.
   # Returns false (fail closed) when no user is provided, so orphaned
   # projects or unresolvable owners cannot bypass concurrency limits.
   def self.has_run_capacity?(user: nil)
     return false unless user
 
-    active_count_for_user(user) < user.settings.max_concurrent_runs
+    active_count_for_user(user) < user.account.tenant_max_concurrent_runs(user.settings.max_concurrent_runs)
   end
 
   # Returns the count of active runs attributable to the given user.
@@ -754,16 +755,19 @@ class AgentRun < ApplicationRecord
 
   # Resolves the effective max tokens per run for this agent run using the
   # full resolution chain: project override → user settings → account default
-  # → global default. Memoized per AgentRun instance so hot paths like token
-  # tracking and detail rendering do not repeat user-settings resolution.
+  # → global default, capped by the tenant guardrail. Memoized per AgentRun
+  # instance so hot paths like token tracking and detail rendering do not
+  # repeat user-settings resolution.
   def effective_max_tokens_per_run
     return @effective_max_tokens_per_run if defined?(@effective_max_tokens_per_run)
 
     @effective_max_tokens_per_run =
-      project.max_tokens_per_run ||
-      explicit_user_max_tokens_per_run ||
-      project.account.default_max_tokens_per_run ||
-      DEFAULT_MAX_TOKENS_PER_RUN
+      project.account.tenant_max_tokens_per_run(
+        project.max_tokens_per_run ||
+        explicit_user_max_tokens_per_run ||
+        project.account.default_max_tokens_per_run ||
+        DEFAULT_MAX_TOKENS_PER_RUN
+      )
   end
 
   # Returns the fraction of the token limit consumed (0.0–1.0+).

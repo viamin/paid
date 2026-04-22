@@ -172,13 +172,8 @@ module Issues
     end
 
     def resolve_provider
-      owner = @project.effective_owner
-      return unless owner
-
-      settings = AgentRuns::UserSettingsResolver.call(project: @project, strict: false)
-      return Provider.ensure_default_for(owner) unless settings
-
-      Provider.for_identifier(settings.user, settings.default_provider_identifier_for_goal("create_pr")) || Provider.ensure_default_for(settings.user)
+      provider_id, = AgentRuns::ProviderResolver.call(project: @project, goal: "create_pr")
+      Provider.find_by(id: provider_id) if provider_id
     end
   end
 end

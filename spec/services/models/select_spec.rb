@@ -101,6 +101,23 @@ RSpec.describe Models::Select do
       end
     end
 
+    context "with tenant model preference" do
+      let!(:tenant_model) { create(:llm_model, model_id: "claude-tenant-default", tier: "high") }
+
+      before do
+        create(:tenant_setting, account: project.account,
+          provider_preferences: { "model_preferences" => { "claude" => tenant_model.model_id } })
+      end
+
+      it "selects the tenant default model for the run provider" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection.llm_model).to eq(tenant_model)
+        expect(selection.selector_type).to eq("override")
+        expect(selection.reasoning).to include("Tenant preferred model")
+      end
+    end
+
     context "with meta-agent selection" do
       let!(:llm_model) { create(:llm_model, model_id: "claude-sonnet-4-6", capability_score: 9.0) }
 
