@@ -931,6 +931,38 @@ RSpec.describe "Projects" do
         expect(response.body).to include("octocat/hello")
         expect(response.body).to include("cannot be changed")
       end
+
+      it "shows quality pause details and resume action when paused" do
+        project = create(:project, account: account, github_token: github_token,
+          quality_paused_at: 1.hour.ago,
+          quality_pause_metadata: {
+            "composite_score" => 0.32,
+            "threshold" => 0.5,
+            "metric_type" => "composite_score",
+            "goal_type" => "create_pr",
+            "sample_size" => 3,
+            "recent_scores" => [ 0.2, 0.3, 0.46 ]
+          })
+
+        get edit_project_path(project)
+
+        expect(response.body).to include("Quality Pause")
+        expect(response.body).to include("Paused")
+        expect(response.body).to include("32.0%")
+        expect(response.body).to include("50.0%")
+        expect(response.body).to include("20.0%")
+        expect(response.body).to include(quality_resume_project_path(project))
+      end
+
+      it "shows running quality pause status when not paused" do
+        project = create(:project, account: account, github_token: github_token)
+
+        get edit_project_path(project)
+
+        expect(response.body).to include("Quality Pause")
+        expect(response.body).to include("Automatic work is not paused by quality gates.")
+        expect(response.body).not_to include(quality_resume_project_path(project))
+      end
     end
   end
 
@@ -1207,6 +1239,88 @@ RSpec.describe "Projects" do
         post toggle_auto_pick_project_path(project)
         expect(response).to redirect_to(root_path)
         expect(flash[:alert]).to include("not authorized")
+      end
+    end
+  end
+
+  describe "POST /projects/:id/quality_resume" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        project = create(:project, account: account, github_token: github_token, quality_paused_at: Time.current)
+
+        post quality_resume_project_path(project)
+
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated as owner" do
+      before { sign_in user }
+
+      it "resumes a quality-paused project and records an audit event" do
+        project = create(:project, account: account, github_token: github_token,
+          quality_paused_at: 1.hour.ago,
+          quality_pause_metadata: { "threshold" => 0.5 })
+
+        post quality_resume_project_path(project)
+
+        expect(response).to redirect_to(edit_project_path(project))
+        expect(flash[:notice]).to eq("Quality pause was resumed.")
+        expect(project.reload.quality_paused?).to be false
+
+        event = project.quality_pause_events.resumes.last
+        expect(event.metadata).to include(
+          "resumed_by_user_id" => user.id,
+          "resumed_by_user_email" => user.email
+        )
+      end
+
+      it "returns resume state as JSON" do
+        project = create(:project, account: account, github_token: github_token, quality_paused_at: Time.current)
+
+        post quality_resume_project_path(project, format: :json)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body).to eq("resumed" => true, "quality_paused" => false)
+      end
+
+      it "does not create an audit event when the project is not paused" do
+        project = create(:project, account: account, github_token: github_token)
+
+        expect {
+          post quality_resume_project_path(project)
+        }.not_to change(QualityPauseEvent, :count)
+
+        expect(response).to redirect_to(edit_project_path(project))
+        expect(flash[:notice]).to eq("Project is not quality-paused.")
+      end
+
+      it "does not resume projects from other accounts" do
+        other_account = create(:account)
+        other_project = create(:project, account: other_account, quality_paused_at: Time.current)
+
+        expect {
+          post quality_resume_project_path(other_project)
+        }.not_to change(QualityPauseEvent, :count)
+
+        expect(response).to have_http_status(:not_found)
+        expect(other_project.reload.quality_paused?).to be true
+      end
+    end
+
+    context "when authenticated as viewer" do
+      let(:viewer_user) { create(:user, :viewer, account: account) }
+
+      before { sign_in viewer_user }
+
+      it "redirects with authorization error" do
+        project = create(:project, account: account, github_token: github_token, quality_paused_at: Time.current)
+
+        post quality_resume_project_path(project)
+
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+        expect(project.reload.quality_paused?).to be true
       end
     end
   end
