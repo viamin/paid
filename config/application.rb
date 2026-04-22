@@ -19,6 +19,7 @@ require "action_cable/engine"
 # Require the gems listed in Gemfile, including any gems
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
+require_relative "../app/services/database/query_monitor"
 
 module Paid
   class Application < Rails::Application
@@ -48,5 +49,7 @@ module Paid
 
     # Use GoodJob for background jobs across environments.
     config.active_job.queue_adapter = :good_job
+
+    config.middleware.use Database::QueryMonitor::Middleware
   end
 end

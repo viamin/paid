@@ -28,6 +28,9 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
         allow(collections).to receive(:get)
           .with(collection_name: collection_name)
           .and_return({ "result" => { "status" => "green" } })
+        allow(collections).to receive(:get)
+          .with(collection_name: legacy_collection_name)
+          .and_raise(Qdrant::Error.new("Not found"))
       end
 
       it "does not create a new collection" do
@@ -83,14 +86,16 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
         allow(collections).to receive(:get)
           .with(collection_name: legacy_collection_name)
           .and_return({ "result" => { "status" => "green" } })
-        allow(collections).to receive(:update_aliases).and_return({ "result" => true })
+        allow(collections).to receive_messages(create_index: { "result" => true }, update_aliases: { "result" => true })
+        allow(points).to receive(:set_payload).and_return({ "result" => true })
       end
 
-      it "aliases the tenant-scoped name to the legacy collection" do
+      it "migrates the legacy collection before aliasing the tenant-scoped name" do
         expect(collections).not_to receive(:create)
 
         manager.ensure_collection!
 
+        expect_legacy_collection_migrated
         expect(collections).to have_received(:update_aliases).with(
           actions: [
             {
@@ -101,6 +106,27 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
             }
           ]
         )
+      end
+    end
+
+    context "when the tenant-scoped alias already points at the legacy collection" do
+      before do
+        allow(collections).to receive(:get)
+          .with(collection_name: collection_name)
+          .and_return({ "result" => { "status" => "green" } })
+        allow(collections).to receive(:get)
+          .with(collection_name: legacy_collection_name)
+          .and_return({ "result" => { "status" => "green" } })
+        allow(collections).to receive(:create_index).and_return({ "result" => true })
+        allow(points).to receive(:set_payload).and_return({ "result" => true })
+      end
+
+      it "migrates legacy payloads without recreating the alias" do
+        expect(collections).not_to receive(:update_aliases)
+
+        manager.ensure_collection!
+
+        expect_legacy_collection_migrated
       end
     end
 
@@ -217,5 +243,19 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
         hash_including(message: "knowledge.qdrant.rebuild_started")
       )
     end
+  end
+
+  def expect_legacy_collection_migrated
+    expect(collections).to have_received(:create_index).with(
+      collection_name: legacy_collection_name,
+      field_name: "account_id",
+      field_schema: "integer"
+    )
+    expect(points).to have_received(:set_payload).with(
+      collection_name: legacy_collection_name,
+      payload: { account_id: project.account_id },
+      filter: {},
+      wait: true
+    )
   end
 end

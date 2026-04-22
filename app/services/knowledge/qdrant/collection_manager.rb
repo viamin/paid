@@ -30,12 +30,15 @@ module Knowledge
       end
 
       def ensure_collection!
-        return if collection_exists?
+        existing_collection = collection_exists?
 
         if legacy_collection_exists?
-          alias_legacy_collection!
+          migrate_legacy_collection!
+          alias_legacy_collection! unless existing_collection
           return
         end
+
+        return if existing_collection
 
         create_collection!
         create_payload_indexes!
@@ -121,6 +124,27 @@ module Knowledge
         )
       end
 
+      def migrate_legacy_collection!
+        create_payload_index!(legacy_collection_name, "account_id", PAYLOAD_INDEX_SCHEMAS.fetch("account_id"))
+        backfill_legacy_account_payload!
+      end
+
+      def backfill_legacy_account_payload!
+        client.points.set_payload(
+          collection_name: legacy_collection_name,
+          payload: { account_id: project.account_id },
+          filter: {},
+          wait: true
+        )
+
+        Rails.logger.info(
+          message: "knowledge.qdrant.legacy_collection_payload_backfilled",
+          project_id: project.id,
+          account_id: project.account_id,
+          legacy_collection: legacy_collection_name
+        )
+      end
+
       def create_collection!
         client.collections.create(
           collection_name: collection_name,
@@ -133,12 +157,24 @@ module Knowledge
 
       def create_payload_indexes!
         PAYLOAD_INDEX_SCHEMAS.each do |field, schema|
-          client.collections.create_index(
-            collection_name: collection_name,
-            field_name: field,
-            field_schema: schema
-          )
+          create_payload_index!(collection_name, field, schema)
         end
+      end
+
+      def create_payload_index!(target_collection_name, field, schema)
+        client.collections.create_index(
+          collection_name: target_collection_name,
+          field_name: field,
+          field_schema: schema
+        )
+      rescue ::Qdrant::Error => e
+        raise unless e.message.match?(/already exists/i)
+
+        Rails.logger.debug(
+          message: "knowledge.qdrant.payload_index_exists",
+          collection: target_collection_name,
+          field_name: field
+        )
       end
 
       def embedding_dimensions

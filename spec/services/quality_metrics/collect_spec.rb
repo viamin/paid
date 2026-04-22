@@ -154,6 +154,29 @@ RSpec.describe QualityMetrics::Collect do
       end
     end
 
+    context "with excluded status (timeout, auth_expired, rate_limited)" do
+      AgentRun::QUALITY_EXCLUDED_STATUSES.each do |excluded_status|
+        it "records nil composite_score for #{excluded_status} runs" do
+          run = create(:agent_run, status: excluded_status)
+
+          metric = described_class.call(agent_run: run)
+
+          expect(metric.composite_score).to be_nil
+          expect(metric.scores).to eq({ "excluded_status" => excluded_status })
+          expect(metric.metadata["exclusion_reason"]).to eq("non_quality_failure")
+        end
+      end
+
+      it "still records a composite_score for failed (non-excluded) runs" do
+        run = create(:agent_run, :completed)
+
+        metric = described_class.call(agent_run: run)
+
+        expect(metric.composite_score).not_to be_nil
+        expect(metric.scores).not_to include("excluded_status")
+      end
+    end
+
     context "with A/B test assignment" do
       let(:prompt) { create(:prompt, :with_version) }
       let(:ab_test) { create(:ab_test, prompt: prompt, status: "running", started_at: Time.current) }

@@ -7,6 +7,7 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
+      return result(agent_run) if agent_run.finished?
 
       track_phase(agent_run_id: agent_run_id, phase_key: "complete_review_goal", phase_group: "post", agent_run: agent_run) do
         if agent_run.review_posted_at.blank?
@@ -27,21 +28,30 @@ module Activities
         # Don't set pull_request_number for review runs — that field represents
         # the PR produced by the run. Review runs use source_pull_request_number
         # to track which PR was reviewed, keeping the two semantics distinct.
-        agent_run.complete!
-        agent_run.issue&.update!(review_goal_retry_count: 0) if agent_run.issue&.review_goal_retry_count&.positive?
-        agent_run.log!("system", "Completed: review goal finished for PR ##{agent_run.source_pull_request_number}")
+        completed = agent_run.complete!
 
-        logger.info(
-          message: "agent_execution.review_goal_completed",
-          agent_run_id: agent_run_id,
-          pr_number: agent_run.source_pull_request_number,
-          review_posted: agent_run.review_posted_at.present?
-        )
+        if completed
+          agent_run.issue&.update!(review_goal_retry_count: 0) if agent_run.issue&.review_goal_retry_count&.positive?
+          agent_run.log!("system", "Completed: review goal finished for PR ##{agent_run.source_pull_request_number}")
 
-        ProcessRunQueueJob.perform_later
+          logger.info(
+            message: "agent_execution.review_goal_completed",
+            agent_run_id: agent_run_id,
+            pr_number: agent_run.source_pull_request_number,
+            review_posted: agent_run.review_posted_at.present?
+          )
 
-        { agent_run_id: agent_run_id, success: true }
+          ProcessRunQueueJob.perform_later
+        end
+
+        result(agent_run.reload)
       end
+    end
+
+    private
+
+    def result(agent_run)
+      { agent_run_id: agent_run.id, success: agent_run.successful? }
     end
   end
 end

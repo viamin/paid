@@ -34,6 +34,24 @@ RSpec.describe QualityPause::Check do
       expect(project.reload.quality_paused?).to be false
     end
 
+    it "excludes timeout, auth_expired, and rate_limited runs from scoring" do
+      good_run = create(:agent_run, :completed, project: project)
+      create(:quality_metric, agent_run: good_run, composite_score: 0.9)
+
+      excluded_statuses = %w[timeout auth_expired rate_limited]
+      excluded_statuses.each do |status|
+        bad_run = create(:agent_run, status: status, project: project, goal: agent_run.goal)
+        create(:quality_metric, agent_run: bad_run, composite_score: 0.0)
+      end
+
+      low_run = create(:agent_run, :completed, project: project)
+      create(:quality_metric, agent_run: low_run, composite_score: 0.2)
+
+      described_class.call(agent_run: agent_run)
+
+      expect(project.reload.quality_paused?).to be false
+    end
+
     it "pauses the project when rolling average falls below threshold" do
       create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ])
       described_class.call(agent_run: agent_run)
