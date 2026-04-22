@@ -504,9 +504,9 @@ module Activities
     end
 
     # True when the agent run we're executing has already been force-timed-out
-    # by `dev:cleanup` (e.g. `bin/setup --skip-server` killed our container).
-    # In that case the failure we just rescued was caused by the cleanup, not
-    # by the provider, so we must not penalize the provider's circuit breaker.
+    # by external cleanup (e.g. `dev:cleanup` or `StaleRunDetectorJob` killed
+    # our container). In that case the failure we just rescued was caused by
+    # cleanup, not by the provider, so we must not penalize the circuit breaker.
     def cancelled_by_cleanup?(agent_run)
       agent_run.reload
       agent_run.cancelled_by_cleanup?
@@ -514,7 +514,7 @@ module Activities
       false
     end
 
-    # Mirror of the failed-attempt bookkeeping for the cleanup-cancelled case:
+    # Mirror of the failed-attempt bookkeeping for externally-cancelled runs:
     # records the attempt with a distinct error_type so the UI can show what
     # happened, but skips both record_provider_failure and the standard warn
     # log (which would imply a real provider problem).
