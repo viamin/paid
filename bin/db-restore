@@ -50,6 +50,33 @@ DB_USER="${DB_USER-${RAILS_CONFIG[1]:-}}"
 DB_PASSWORD="${DB_PASSWORD-${RAILS_CONFIG[2]:-}}"
 DB_NAME="${DB_NAME-${RAILS_CONFIG[3]:-}}"
 
+read_container_env() {
+  local container="$1"
+  local name="$2"
+
+  docker exec "$container" printenv "$name" 2>/dev/null || true
+}
+
+pg_restore_args() {
+  local user="$1"
+
+  PG_RESTORE_ARGS=(--data-only --disable-triggers --no-owner --no-privileges)
+  if [[ -n "$user" ]]; then
+    PG_RESTORE_ARGS+=(-U "$user")
+  fi
+  PG_RESTORE_ARGS+=(-d "$DB_NAME")
+}
+
+psql_args() {
+  local user="$1"
+
+  PSQL_ARGS=()
+  if [[ -n "$user" ]]; then
+    PSQL_ARGS+=(-U "$user")
+  fi
+  PSQL_ARGS+=(-d "$DB_NAME")
+}
+
 BACKUP_FILE="${1}"
 
 if [[ "$BACKUP_FILE" != /* ]]; then
@@ -63,7 +90,6 @@ if [[ ! -f "$BACKUP_PATH" ]]; then
   exit 1
 fi
 
-PG_RESTORE_ARGS=(--data-only --disable-triggers --no-owner --no-privileges -U "$DB_USER" -d "$DB_NAME")
 COMPOSE_ARGS=(compose)
 if [[ -n "${COMPOSE_FILE:-}" ]]; then
   COMPOSE_ARGS+=(-f "$COMPOSE_FILE")
@@ -94,10 +120,19 @@ SET session_replication_role = 'origin';
 
 COMPOSE_CONTAINER="$(docker "${COMPOSE_ARGS[@]}" ps -q postgres 2>/dev/null | head -1 || true)"
 if [[ -n "$COMPOSE_CONTAINER" ]]; then
-  docker exec -i "$COMPOSE_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "$TRUNCATE_SQL"
-  docker exec -i "$COMPOSE_CONTAINER" pg_restore "${PG_RESTORE_ARGS[@]}" < "$BACKUP_PATH"
+  COMPOSE_DB_USER="$(read_container_env "$COMPOSE_CONTAINER" POSTGRES_USER)"
+  COMPOSE_DB_PASSWORD="$(read_container_env "$COMPOSE_CONTAINER" POSTGRES_PASSWORD)"
+  COMPOSE_DB_USER="${COMPOSE_DB_USER:-paid}"
+  COMPOSE_DB_PASSWORD="${COMPOSE_DB_PASSWORD:-paid}"
+
+  pg_restore_args "$COMPOSE_DB_USER"
+  psql_args "$COMPOSE_DB_USER"
+  docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" -i "$COMPOSE_CONTAINER" psql "${PSQL_ARGS[@]}" -c "$TRUNCATE_SQL"
+  docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" -i "$COMPOSE_CONTAINER" pg_restore "${PG_RESTORE_ARGS[@]}" < "$BACKUP_PATH"
 elif [[ -n "$DB_HOST" ]]; then
-  PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -c "$TRUNCATE_SQL"
+  pg_restore_args "$DB_USER"
+  psql_args "$DB_USER"
+  PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" "${PSQL_ARGS[@]}" -c "$TRUNCATE_SQL"
   PGPASSWORD="$DB_PASSWORD" pg_restore -h "$DB_HOST" "${PG_RESTORE_ARGS[@]}" "$BACKUP_PATH"
 else
   echo "Error: No running postgres container found and DB_HOST not set. Start services with 'bin/dev' or set DB_HOST." >&2

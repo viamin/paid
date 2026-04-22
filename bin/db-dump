@@ -43,6 +43,23 @@ DB_USER="${DB_USER-${RAILS_CONFIG[1]:-}}"
 DB_PASSWORD="${DB_PASSWORD-${RAILS_CONFIG[2]:-}}"
 DB_NAME="${DB_NAME-${RAILS_CONFIG[3]:-}}"
 
+read_container_env() {
+  local container="$1"
+  local name="$2"
+
+  docker exec "$container" printenv "$name" 2>/dev/null || true
+}
+
+pg_dump_args() {
+  local user="$1"
+
+  PG_DUMP_ARGS=(--data-only --exclude-table-data=ar_internal_metadata --exclude-table-data=schema_migrations --no-owner --no-privileges -Fc)
+  if [[ -n "$user" ]]; then
+    PG_DUMP_ARGS+=(-U "$user")
+  fi
+  PG_DUMP_ARGS+=("$DB_NAME")
+}
+
 mkdir -p "$BACKUPS_DIR"
 
 if [[ -n "${1:-}" ]]; then
@@ -57,7 +74,6 @@ else
   BACKUP_PATH="$BACKUP_FILE"
 fi
 
-PG_DUMP_ARGS=(--data-only --exclude-table-data=ar_internal_metadata --exclude-table-data=schema_migrations --no-owner --no-privileges -Fc -U "$DB_USER" "$DB_NAME")
 COMPOSE_ARGS=(compose)
 if [[ -n "${COMPOSE_FILE:-}" ]]; then
   COMPOSE_ARGS+=(-f "$COMPOSE_FILE")
@@ -65,8 +81,15 @@ fi
 
 COMPOSE_CONTAINER="$(docker "${COMPOSE_ARGS[@]}" ps -q postgres 2>/dev/null | head -1 || true)"
 if [[ -n "$COMPOSE_CONTAINER" ]]; then
-  docker exec "$COMPOSE_CONTAINER" pg_dump "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
+  COMPOSE_DB_USER="$(read_container_env "$COMPOSE_CONTAINER" POSTGRES_USER)"
+  COMPOSE_DB_PASSWORD="$(read_container_env "$COMPOSE_CONTAINER" POSTGRES_PASSWORD)"
+  COMPOSE_DB_USER="${COMPOSE_DB_USER:-paid}"
+  COMPOSE_DB_PASSWORD="${COMPOSE_DB_PASSWORD:-paid}"
+
+  pg_dump_args "$COMPOSE_DB_USER"
+  docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" "$COMPOSE_CONTAINER" pg_dump "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
 elif [[ -n "$DB_HOST" ]]; then
+  pg_dump_args "$DB_USER"
   PGPASSWORD="$DB_PASSWORD" pg_dump -h "$DB_HOST" "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
 else
   echo "Error: No running postgres container found and DB_HOST not set. Start services with 'bin/dev' or set DB_HOST." >&2
