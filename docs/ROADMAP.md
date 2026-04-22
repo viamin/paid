@@ -32,8 +32,13 @@ This document outlines the phased implementation plan for Paid. Each phase build
 │  • Self-improving coordination         • Orchestration scaling laws         │
 │  • Decision logging & analysis         • Dynamic resource allocation        │
 │                                                                              │
+│  Phase 5: Account Administration                                            │
+│  ───────────────────────────────                                            │
+│  • Avo operator console              • User-facing account admin            │
+│  • Tenant lifecycle operations       • Team, roles, settings, billing       │
+│                                                                              │
 │  ─────────────────────────────────────────────────────────────────────────► │
-│  MVP: "It works"    Growth: "It learns"    Scale: "It flies"    "It evolves"│
+│  MVP: "It works"   Growth: "It learns"   Scale: "It flies"   "It operates" │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -930,7 +935,71 @@ Related: [RDR-017](rdrs/RDR-017-orchestration-scaling-laws.md)
 
 ---
 
-## Future Considerations (Beyond Phase 4)
+## Phase 5: Account Administration
+
+**Goal**: Make account, tenant, and user management safe and visible without requiring Rails console access.
+
+This phase separates internal operator administration from customer-facing account management. The operator console should arrive first through Avo as a fast, constrained backoffice. The product account admin surface should be native Rails/Hotwire UI for account owners and admins.
+
+Related: [RDR-026](rdrs/RDR-026-admin-interface-strategy.md), [RDR-010](rdrs/RDR-010-multi-tenancy-rbac.md), [RDR-024](rdrs/RDR-024-multi-tenancy-isolation-strategy.md)
+
+### 5.1 Avo Operator Console
+
+**Objective**: Give maintainers an internal admin console for tenant/account operations.
+
+Tasks:
+
+- [ ] Implement Avo operator console as a single focused issue
+- [ ] Confirm Avo edition/license supports required auth, field controls, and actions
+- [ ] Mount `/admin` behind a fail-closed operator-only access gate
+- [ ] Add Avo resources for `Account`, `User`, `AccountMembership`, `ProjectMembership`, and `TenantSetting`
+- [ ] Configure Devise `current_user` and Pundit resource authorization
+- [ ] Hide or mask sensitive credential/token fields
+- [ ] Disable dangerous raw deletes by default
+- [ ] Add explicit account lifecycle actions where supported by model APIs
+- [ ] Add access-control specs proving non-operator account owners/admins are denied
+- [ ] Document operator-console boundaries and runbook usage
+
+Deliverables:
+
+- Operators can inspect and correct account/user/tenant state without console access
+- Non-operators, including account owners/admins, cannot access the admin console
+- Sensitive data is not exposed through admin resources
+- Destructive actions are constrained to explicit lifecycle flows
+
+### 5.2 User-Facing Account Administration
+
+**Objective**: Give account owners/admins a polished product UI for managing their own account.
+
+Tasks:
+
+- [ ] Account profile/settings edit UI
+- [ ] User invitation flow
+- [ ] Membership list with role changes and removals
+- [ ] Ownership transfer workflow
+- [ ] Tenant settings and quota visibility
+- [ ] Account lifecycle request flow where appropriate
+- [ ] Billing plan, usage, invoices, and payment status UI once billing models are wired
+- [ ] Audit log or activity trail for account-management changes
+
+Deliverables:
+
+- Account owners/admins can manage users and roles without operator help
+- Account settings and tenant limits are visible from the product UI
+- Billing/account lifecycle surfaces are ready for SaaS operation
+- Avo remains an internal backoffice, not the customer-facing account admin
+
+### Phase 5 Completion Criteria
+
+- [ ] Operator admin console is available and access-controlled
+- [ ] Account owners/admins can invite users and manage memberships
+- [ ] Account settings and tenant limits are editable through product UI
+- [ ] Ownership transfer and lifecycle actions are audited
+- [ ] Billing/account information is visible to authorized owners/admins
+
+---
+
+## Future Considerations (Beyond Phase 5)
 
 These are not committed but worth keeping in mind:
 
@@ -1015,6 +1084,12 @@ Phase 3 (Scale) ─────────────────────�
           └── 3.5 (Completion & Hardening) ────────────────────►
                     │
                     └── 4.1 (Decision Logging) ─── prerequisite gate
+
+Phase 4 (AI-Native Evolution) ───────────────────────────────────►
+          │
+          └── 5.1 (Avo Operator Console) ───────────────────────►
+                    │
+                    └── 5.2 (User-Facing Account Admin)
 ```
 
 ---
@@ -1072,6 +1147,14 @@ Phase 3 (Scale) ─────────────────────�
 - End-to-end optimization improves outcome/cost ratio by 15%+
 - Scaling laws estimated with 95% confidence intervals
 - System shows measurable improvement month-over-month from learning
+
+### Phase 5
+
+- Operators can manage tenant/account state without Rails console access
+- 100% of admin-console access is operator-gated
+- Account owners/admins can invite users and manage roles from product UI
+- Account lifecycle and ownership changes are auditable
+- Sensitive credential/token material is not exposed in account/admin screens
 
 ---
 
