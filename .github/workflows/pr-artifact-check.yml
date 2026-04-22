@@ -120,6 +120,7 @@ jobs:
             ".libyaml_src/"
             ".rubocop-cache/"
             ".rubocop_cache/"
+            "backups/"
             ".pg_log.txt"
             ".ruby_env.sh"
             ".aider*"

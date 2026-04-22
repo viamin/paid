@@ -90,11 +90,15 @@ if [[ -n "$COMPOSE_CONTAINER" ]]; then
 
   pg_dump_args "$COMPOSE_DB_USER"
   docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" "$COMPOSE_CONTAINER" pg_dump "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
-elif [[ -n "$DB_HOST" ]]; then
+elif [[ -n "$DB_NAME" ]]; then
   pg_dump_args "$DB_USER"
-  PGPASSWORD="$DB_PASSWORD" pg_dump -h "$DB_HOST" "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
+  PG_HOST_ARGS=()
+  if [[ -n "$DB_HOST" ]]; then
+    PG_HOST_ARGS=(-h "$DB_HOST")
+  fi
+  PGPASSWORD="$DB_PASSWORD" pg_dump "${PG_HOST_ARGS[@]}" "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
 else
-  echo "Error: No running postgres container found and DB_HOST not set. Start services with 'bin/dev' or set DB_HOST." >&2
+  echo "Error: No running postgres container found and DB_NAME not set. Start services with 'bin/dev' or set DB_NAME." >&2
   exit 1
 fi
 
