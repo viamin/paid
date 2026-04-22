@@ -1294,6 +1294,18 @@ RSpec.describe "Projects" do
         expect(response).to redirect_to(edit_project_path(project))
         expect(flash[:notice]).to eq("Project is not quality-paused.")
       end
+
+      it "does not resume projects from other accounts" do
+        other_account = create(:account)
+        other_project = create(:project, account: other_account, quality_paused_at: Time.current)
+
+        expect {
+          post quality_resume_project_path(other_project)
+        }.not_to change(QualityPauseEvent, :count)
+
+        expect(response).to have_http_status(:not_found)
+        expect(other_project.reload.quality_paused?).to be true
+      end
     end
 
     context "when authenticated as viewer" do
