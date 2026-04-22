@@ -103,6 +103,7 @@
           <%= text_field_tag "tenant_setting[agent_settings][default_goal]", agent_settings["default_goal"], class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
         </div>
         <label class="flex items-center gap-2 pt-6 text-sm text-gray-700 dark:text-gray-200">
+          <%= hidden_field_tag "tenant_setting[agent_settings][auto_continue]", "0" %>
           <%= check_box_tag "tenant_setting[agent_settings][auto_continue]", "1", agent_settings["auto_continue"] %>
           Auto-continue follow-up runs
         </label>

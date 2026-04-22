@@ -37,6 +37,22 @@ RSpec.describe "TenantConfigurations" do
       expect(setting.features["explicit_pr_automation_decisions"]).to be(true)
     end
 
+    it "disables auto-continue when the checkbox submits its hidden false value" do
+      account.tenant_setting!.update!(agent_settings: { "auto_continue" => true })
+
+      patch tenant_configuration_path, params: {
+        tenant_setting: {
+          agent_settings: {
+            default_goal: "create_pr",
+            auto_continue: "0"
+          }
+        }
+      }
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(account.tenant_setting.reload.effective_agent_settings["auto_continue"]).to be(false)
+    end
+
     it "rejects viewers" do
       viewer = create(:user, :viewer, account: account)
       sign_out user

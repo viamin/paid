@@ -62,7 +62,7 @@ module AgentRuns
 
       service_type = ProviderSupport.api_service_type_for(base_provider.provider_key)
       api_key = project.account.tenant_setting&.provider_api_key_for(service_type)
-      return unless api_key&.user_id == owner.id
+      return unless api_key
       return unless api_key.compatible_with?(base_provider.provider_key)
 
       owner.providers.find_or_create_by!(
