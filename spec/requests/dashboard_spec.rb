@@ -73,6 +73,46 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("42s")
       end
 
+      it "shows quality-paused projects on the dashboard" do
+        project.update!(
+          name: "Paused Project",
+          quality_paused_at: 30.minutes.ago,
+          quality_pause_metadata: {
+            "composite_score" => 0.34,
+            "threshold" => 0.5
+          }
+        )
+
+        get dashboard_path
+
+        expect(response.body).to include("Quality-paused projects")
+        expect(response.body).to include("Paused Project")
+        expect(response.body).to include("34.0%")
+        expect(response.body).to include(edit_project_path(project))
+      end
+
+      it "does not link viewers to quality pause review actions" do
+        viewer = create(:user, :viewer, account: account)
+        sign_in viewer
+
+        project.update!(name: "Paused Project", quality_paused_at: 30.minutes.ago)
+
+        get dashboard_path
+
+        expect(response.body).to include("Paused Project")
+        expect(response.body).to include(project_path(project))
+        expect(response.body).not_to include(edit_project_path(project))
+      end
+
+      it "does not show quality-paused projects from other accounts" do
+        other_account = create(:account)
+        other_project = create(:project, account: other_account, quality_paused_at: 30.minutes.ago)
+
+        get dashboard_path
+
+        expect(response.body).not_to include(other_project.name)
+      end
+
       it "includes merged pull requests in the recent activity stream" do
         merged_pr = create(:issue, :pull_request, project: project,
           pr_review_phase: "merged",
@@ -85,6 +125,23 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("PR ##{merged_pr.github_number}")
         expect(response.body).to include("Ship the thing")
         expect(response.body).to include("Merged")
+      end
+
+      it "includes quality pause events in the recent activity stream" do
+        create(:quality_pause_event, :paused, project: project,
+          composite_score: 0.32,
+          threshold: 0.5,
+          created_at: 10.minutes.ago)
+        create(:quality_pause_event, :resumed, project: project,
+          metadata: { resumed_by_user_email: "operator@example.com" },
+          created_at: 5.minutes.ago)
+
+        get dashboard_path
+
+        expect(response.body).to include("Automatic work paused by quality gate")
+        expect(response.body).to include("32.0% below 50.0%")
+        expect(response.body).to include("Quality pause resumed")
+        expect(response.body).to include("operator@example.com")
       end
 
       it "has collapsible sections" do
