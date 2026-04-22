@@ -100,6 +100,8 @@ module Containers
       keyword_init: true
     )
 
+    CodexAuthMount = Struct.new(:host_path, :config_path, keyword_init: true)
+
     # File locks to serialize Codex OAuth refreshes when multiple runs share
     # the same host-backed auth.json. The lock key is derived from the
     # credential directory so unrelated Codex homes do not block each other.
@@ -758,24 +760,15 @@ module Containers
 
     def seed_codex_credentials!
       unless codex_subscription_auth?
+        raise_unshared_codex_auth_error! if unshared_codex_subscription_auth?
+
         seed_codex_config!
         return
       end
 
-      host = codex_subscription_auth_host_mount_path
-      if host.present?
-        log_system("container.codex_credentials_shared", source_path: host)
-        seed_sanitized_codex_config!(source_path: host)
-      else
-        seed_local_credentials!(
-          source_path: codex_local_config_path,
-          target_path: "/home/agent/.codex",
-          files: %w[auth.json],
-          success_log_key: "container.codex_credentials_seeded",
-          failure_log_key: "container.codex_credentials_seed_failed"
-        )
-        seed_sanitized_codex_config!(source_path: codex_local_config_path)
-      end
+      mount = codex_subscription_auth_mount
+      log_system("container.codex_credentials_shared", source_path: mount.host_path)
+      seed_sanitized_codex_config!(source_path: mount.config_path)
 
       seed_codex_notify_hook!
     end
@@ -1516,7 +1509,11 @@ module Containers
     end
 
     def codex_config_host_path
-      @codex_config_host_path ||= ENV["CODEX_CONFIG_DIR"].presence || ENV["CODEX_HOME"].presence || detect_host_config_path("/.codex")
+      codex_subscription_auth_host_mount_path
+    end
+
+    def codex_config_candidate_paths
+      [ ENV["CODEX_CONFIG_DIR"].presence, ENV["CODEX_HOME"].presence ].compact
     end
 
     def codex_local_config_path
@@ -1534,17 +1531,90 @@ module Containers
     end
 
     def codex_subscription_auth?
-      paths = [ codex_config_host_path, codex_local_config_path ].compact
-      paths.any? { |base| File.file?(File.join(base, "auth.json")) }
+      codex_subscription_auth_mount.present?
+    end
+
+    def unshared_codex_subscription_auth?
+      unshared_codex_auth_path.present? && codex_subscription_provider_requested?
+    end
+
+    def unshared_codex_auth_path
+      codex_readable_config_paths.find do |path|
+        File.file?(File.join(path, "auth.json")) && docker_host_path_for(path).blank?
+      end
+    end
+
+    def codex_subscription_provider_requested?
+      return false unless agent_run
+
+      providers = codex_resolved_provider_candidates
+      return providers.any? { |provider| provider.provider_key == "codex" && provider.subscription? } if providers.any?
+
+      ProviderSupport.provider_key_for_agent_type(agent_run.agent_type) == "codex"
+    end
+
+    def codex_resolved_provider_candidates
+      return codex_run_provider_candidates if agent_run.provider
+
+      settings = resolved_user_settings
+      return [] unless settings
+
+      primary = settings.default_provider_identifier_for_goal(agent_run.goal)
+      identifiers = [ primary ].compact
+      if settings.fallback_enabled?
+        identifiers.concat(settings.fallback_priority_for(primary_provider: primary, identifiers: true))
+      end
+
+      providers_for_identifiers(identifiers, user: settings.user)
+    end
+
+    def codex_run_provider_candidates
+      providers = [ agent_run.provider ]
+      settings = resolved_user_settings
+      if settings&.fallback_enabled?
+        providers.concat(providers_for_identifiers(
+          settings.fallback_priority_for(primary_provider: agent_run.provider.routing_key, identifiers: true),
+          user: settings.user
+        ))
+      end
+
+      providers.compact
+    end
+
+    def providers_for_identifiers(identifiers, user:)
+      identifiers.filter_map do |identifier|
+        Provider.for_identifier(user, identifier)
+      end
+    end
+
+    def raise_unshared_codex_auth_error!
+      raise ProvisionError,
+        "Codex subscription auth was found at #{unshared_codex_auth_path}, but that directory is not available as a Docker bind mount. " \
+        "Set CODEX_HOME or CODEX_CONFIG_DIR to a writable Docker-host path containing auth.json."
     end
 
     def codex_subscription_auth_host_mount_path
-      return @codex_subscription_auth_host_mount_path if defined?(@codex_subscription_auth_host_mount_path)
+      codex_subscription_auth_mount&.host_path
+    end
 
-      base = codex_config_host_path
-      @codex_subscription_auth_host_mount_path = if base.present? && File.directory?(base) && File.file?(File.join(base, "auth.json"))
-        base
+    def codex_subscription_auth_mount
+      return @codex_subscription_auth_mount if defined?(@codex_subscription_auth_mount)
+
+      @codex_subscription_auth_mount = codex_subscription_auth_mount_candidates.find do |mount|
+        mount.host_path.present? &&
+          mount.config_path.present? &&
+          File.file?(File.join(mount.config_path, "auth.json"))
       end
+    end
+
+    def codex_subscription_auth_mount_candidates
+      codex_readable_config_paths.map do |path|
+        CodexAuthMount.new(host_path: docker_host_path_for(path), config_path: path)
+      end + [ detected_codex_auth_mount ].compact
+    end
+
+    def codex_readable_config_paths
+      (codex_config_candidate_paths + [ codex_local_config_path ]).compact.uniq
     end
 
     def codex_subscription_auth_file_binds
@@ -1566,10 +1636,10 @@ module Containers
     end
 
     def codex_auth_lockfile_path
-      base = File.realpath(codex_subscription_auth_host_mount_path || codex_config_host_path)
+      base = codex_subscription_auth_host_mount_path
       digest = Digest::SHA256.hexdigest(base)[0, 16]
       "#{CODEX_AUTH_LOCKFILE_PREFIX}-#{digest}.lock"
-    rescue Errno::ENOENT, TypeError
+    rescue TypeError
       "#{CODEX_AUTH_LOCKFILE_PREFIX}-missing.lock"
     end
 
@@ -1587,13 +1657,54 @@ module Containers
     end
 
     def detect_host_config_path(suffix)
+      detected_config_mount(suffix)&.dig("Source")
+    end
+
+    def detected_codex_auth_mount
+      mount = detected_config_mount("/.codex")
+      return unless mount
+
+      CodexAuthMount.new(host_path: mount["Source"], config_path: mount["Destination"])
+    end
+
+    def detected_config_mount(suffix)
       hostname = Socket.gethostname
       container = Docker::Container.get(hostname)
       mounts = container.info["Mounts"] || []
-      config_mount = mounts.find { |mount| mount["Destination"]&.end_with?(suffix) }
-      config_mount&.dig("Source")
+      mounts.find { |mount| mount["Destination"]&.end_with?(suffix) }
     rescue Docker::Error::DockerError
       nil
+    end
+
+    def docker_host_path_for(path)
+      return if path.blank?
+
+      expanded = File.expand_path(path)
+      mounts = current_container_mounts
+      return expanded if mounts.nil?
+
+      mount = mounts.filter_map do |candidate|
+        destination = candidate["Destination"].to_s
+        source = candidate["Source"].to_s
+        next if destination.blank? || source.blank?
+
+        destination = File.expand_path(destination)
+        next unless expanded == destination || expanded.start_with?("#{destination}/")
+
+        [ destination.length, File.join(source, expanded.delete_prefix(destination).delete_prefix("/")) ]
+      end.max_by(&:first)
+
+      mount&.last
+    end
+
+    def current_container_mounts
+      return @current_container_mounts if defined?(@current_container_mounts)
+
+      hostname = Socket.gethostname
+      container = Docker::Container.get(hostname)
+      @current_container_mounts = container.info["Mounts"] || []
+    rescue Docker::Error::DockerError
+      @current_container_mounts = nil
     end
 
     def local_config_path(dirname)
