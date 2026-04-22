@@ -9,6 +9,7 @@ class AgentRun < ApplicationRecord
   FINISHED_STATUSES = %w[completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
   TERMINAL_FAILURE_STATUSES = (FAILURE_STATUSES + %w[cancelled]).freeze
+  QUALITY_EXCLUDED_STATUSES = %w[timeout auth_expired rate_limited].freeze
   UNFINISHED_STATUSES = %w[queued pending running paused].freeze
   GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
@@ -560,10 +561,12 @@ class AgentRun < ApplicationRecord
 
     boundary = first_different_owner_run(scope, first)
     same_owner_scope = same_owner_priority_scope(scope, first)
-    same_owner_scope = same_owner_scope.where(
-      "(#{GOAL_PRIORITY_CASE_SQL}, agent_runs.created_at, agent_runs.id) < (?, ?, ?)",
-      boundary.goal_priority.to_i, boundary.created_at, boundary.id
-    ) if boundary
+    if boundary
+      same_owner_scope = same_owner_scope.where(
+        "(#{GOAL_PRIORITY_CASE_SQL}, agent_runs.created_at, agent_runs.id) < (?, ?, ?)",
+        boundary.goal_priority.to_i, boundary.created_at, boundary.id
+      )
+    end
 
     same_owner_scope.reorder(WITHIN_OWNER_QUEUE_ORDER).first || first
   end
@@ -1202,7 +1205,7 @@ class AgentRun < ApplicationRecord
   def draft_review_round_tracking_is_consistent
     return unless count_toward_draft_review_round?
     return unless will_save_change_to_count_toward_draft_review_round? ||
-                  will_save_change_to_expected_draft_review_count?
+      will_save_change_to_expected_draft_review_count?
 
     if expected_draft_review_count.blank?
       errors.add(:expected_draft_review_count, "is required when counting toward draft review rounds")
