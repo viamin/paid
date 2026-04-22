@@ -41,6 +41,25 @@ RSpec.describe Knowledge::Search::Exact do
       expect(identifiers).to include("POST /api/users")
     end
 
+    it "does not include trigram matches when an exact identifier exists" do
+      fuzzy_artifact = create(:knowledge_artifact,
+        project: project,
+        collector_run: collector_run,
+        artifact_type: "route",
+        identifier: "POST /api/user",
+        content: "POST /api/user -> api/users#create",
+        scope_path: "config/routes.rb")
+      create(:knowledge_chunk,
+        knowledge_artifact: fuzzy_artifact,
+        project: project,
+        chunk_type: "definition",
+        content: "Route: POST /api/user\nController: api/users#create")
+
+      results = described_class.call(project: project, query: "POST /api/users")
+
+      expect(results.map { |result| result[:identifier] }).to eq([ "POST /api/users" ])
+    end
+
     it "returns empty when no match at all" do
       results = described_class.call(project: project, query: "DELETE /nonexistent")
 
