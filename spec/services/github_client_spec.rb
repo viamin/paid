@@ -731,17 +731,20 @@ RSpec.describe GithubClient do
           {
             id: 1, name: "rspec", status: "completed", conclusion: "failure",
             html_url: "https://github.com/owner/repo/runs/1",
-            details_url: "https://ci.example.com/jobs/1"
+            details_url: "https://github.com/owner/repo/actions/runs/100/job/1",
+            output: { title: "RSpec", summary: "1 failure", text: "role root does not exist" }
           },
           {
             id: 2, name: "rubocop", status: "completed", conclusion: "success",
             html_url: "https://github.com/owner/repo/runs/2",
-            details_url: "https://ci.example.com/jobs/2"
+            details_url: "https://ci.example.com/jobs/2",
+            output: { title: "Rubocop", summary: "Clean", text: "" }
           },
           {
             id: 3, name: "integration", status: "in_progress", conclusion: nil,
             html_url: "https://github.com/owner/repo/runs/3",
-            details_url: "https://ci.example.com/jobs/3"
+            details_url: "https://ci.example.com/jobs/3",
+            output: nil
           }
         ]
       end
@@ -759,7 +762,15 @@ RSpec.describe GithubClient do
       it "returns check run names, statuses, conclusions, and URLs" do
         result = client.check_runs_for_ref(repo, ref)
 
-        expect(result).to eq(check_runs_payload.map { |cr| cr.except(:id) })
+        expect(result.first).to include(
+          id: 1,
+          name: "rspec",
+          conclusion: "failure",
+          job_id: "1"
+        )
+        expect(result.first[:output_text]).to include("1 failure")
+        expect(result.second).to include(job_id: nil)
+        expect(result.third).to include(output_text: "")
       end
     end
 
@@ -804,6 +815,24 @@ RSpec.describe GithubClient do
         expect(result.last[:name]).to eq("check-101")
         expect(result.last[:conclusion]).to eq("failure")
       end
+    end
+  end
+
+  describe "#check_run_log" do
+    let(:repo) { "owner/repo" }
+
+    it "fetches GitHub Actions job logs for a check run details URL" do
+      stub = stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .to_return(status: 200, body: "Failure/Error: expected true", headers: { "Content-Type" => "text/plain" })
+
+      result = client.check_run_log(repo, details_url: "https://github.com/owner/repo/actions/runs/456/job/789")
+
+      expect(result).to eq("Failure/Error: expected true")
+      expect(stub).to have_been_requested.once
+    end
+
+    it "returns an empty string for non-Actions checks" do
+      expect(client.check_run_log(repo, details_url: "https://example.com/build/1")).to eq("")
     end
   end
 
