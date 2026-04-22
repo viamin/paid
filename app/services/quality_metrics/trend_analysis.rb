@@ -22,9 +22,10 @@ module QualityMetrics
     attr_reader :scope, :window_size, :project_id
 
     def initialize(prompt_version_id: nil, project_id: nil, window_size: 20,
-                   include_thresholds: false, include_gate_events: false,
-                   include_prediction: false)
+      include_thresholds: false, include_gate_events: false,
+      include_prediction: false)
       @scope = QualityMetric.with_composite_score
+        .joins(:agent_run).where.not(agent_runs: { status: AgentRun::QUALITY_EXCLUDED_STATUSES })
       @scope = @scope.by_prompt_version(prompt_version_id) if prompt_version_id
       @scope = @scope.by_project(project_id) if project_id
       @window_size = window_size
