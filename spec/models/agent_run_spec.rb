@@ -615,9 +615,37 @@ RSpec.describe AgentRun do
         expect(agent_run.operational_failure?).to be true
       end
 
-      it "returns false for failed status with code-level error" do
+      it "returns true for failed status with Docker exec error" do
         agent_run = build(:agent_run, :failed,
-          error_message: "An error occurred during execution")
+          error_message: "Docker exec error: {\"message\":\"container abc123...\"}")
+
+        expect(agent_run.operational_failure?).to be true
+      end
+
+      it "returns true for failed status with worktree conflict" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Branch fix/foo has an active worktree from agent run 1234")
+
+        expect(agent_run.operational_failure?).to be true
+      end
+
+      it "returns true for failed status with Clone failed" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Clone failed: could not resolve host")
+
+        expect(agent_run.operational_failure?).to be true
+      end
+
+      it "returns false for failed status with agent exit code error" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Agent exited with code 1: compilation failed")
+
+        expect(agent_run.operational_failure?).to be false
+      end
+
+      it "returns false for failed status with review posting failure" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "No review was posted on PR #1234")
 
         expect(agent_run.operational_failure?).to be false
       end
