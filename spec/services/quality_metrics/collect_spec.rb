@@ -176,6 +176,22 @@ RSpec.describe QualityMetrics::Collect do
         expect(metric.metadata["exclusion_reason"]).to eq("operational_failure")
       end
 
+      it "records nil composite_score for failed runs with Docker exec errors" do
+        run = create(:agent_run, status: "failed", error_message: "Docker exec error: container crashed")
+
+        metric = described_class.call(agent_run: run)
+
+        expect(metric.composite_score).to be_nil
+      end
+
+      it "records nil composite_score for failed runs with worktree conflicts" do
+        run = create(:agent_run, status: "failed", error_message: "Branch foo has an active worktree from agent run 42")
+
+        metric = described_class.call(agent_run: run)
+
+        expect(metric.composite_score).to be_nil
+      end
+
       it "records a composite_score for failed runs with agent-level errors" do
         run = create(:agent_run, status: "failed", error_message: "Agent exited with code 1")
 

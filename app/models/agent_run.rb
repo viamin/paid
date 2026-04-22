@@ -11,15 +11,42 @@ class AgentRun < ApplicationRecord
   TERMINAL_FAILURE_STATUSES = (FAILURE_STATUSES + %w[cancelled]).freeze
   QUALITY_EXCLUDED_STATUSES = %w[timeout auth_expired rate_limited].freeze
 
+  OPERATIONAL_FAILURE_KEYWORDS = [
+    "providers exhausted",
+    "Docker exec",
+    "Activity task timed out",
+    "Activity task failed",
+    "Activity canceled",
+    "worktree",
+    "Worktree path does not exist",
+    "Clone failed",
+    "Push failed",
+    "Fetch failed",
+    "Credential proxy",
+    "Failed to start service",
+    "Failed to start workflow",
+    "Failed to open TCP",
+    "Failed to resolve remote",
+    "Failed to get HEAD SHA",
+    "could not obtain a connection from the pool",
+    "incompatible character encodings",
+    "string contains null byte",
+    "is closed; project resync",
+    "No container provisioned",
+    "commit_uncommitted_changes failed"
+  ].freeze
+
   def self.quality_scoreable_sql
-    arel_table.grouping(
-      arel_table[:status].not_in(QUALITY_EXCLUDED_STATUSES).and(
-        Arel::Nodes::Not.new(
-          arel_table[:status].eq("failed").and(
-            arel_table[:error_message].matches("%All providers exhausted%")
-          )
-        )
+    excluded_status = arel_table[:status].not_in(QUALITY_EXCLUDED_STATUSES)
+
+    failed_operational = OPERATIONAL_FAILURE_KEYWORDS.map { |keyword|
+      arel_table[:status].eq("failed").and(
+        arel_table[:error_message].matches("%#{keyword}%")
       )
+    }.reduce(:or)
+
+    arel_table.grouping(
+      excluded_status.and(Arel::Nodes::Not.new(failed_operational))
     )
   end
   UNFINISHED_STATUSES = %w[queued pending running paused].freeze
@@ -703,8 +730,9 @@ class AgentRun < ApplicationRecord
     return false unless FAILURE_STATUSES.include?(status)
     return true if status.in?(%w[timeout auth_expired rate_limited])
 
-    # "failed" status: only operational when caused by provider exhaustion
-    error_message.to_s.match?(/All providers exhausted/i)
+    OPERATIONAL_FAILURE_KEYWORDS.any? do |keyword|
+      error_message.to_s.downcase.include?(keyword.downcase)
+    end
   end
 
   def total_tokens
