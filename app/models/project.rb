@@ -134,6 +134,7 @@ class Project < ApplicationRecord
   has_many :pre_commit_requirements, dependent: :destroy
   has_many :quality_gate_thresholds, dependent: :destroy
   has_many :quality_gate_events, dependent: :destroy
+  has_many :quality_thresholds, dependent: :destroy
   has_many :pr_templates, dependent: :destroy
   has_many :context_intake_sessions, dependent: :destroy
   has_one :tracker_configuration, as: :configurable, dependent: :destroy
@@ -333,7 +334,7 @@ class Project < ApplicationRecord
   # NOTE: For full resolution (including user settings and global default),
   # use AgentRun#effective_max_tokens_per_run instead.
   def project_level_max_tokens_per_run
-    max_tokens_per_run || account.default_max_tokens_per_run
+    account.tenant_max_tokens_per_run(max_tokens_per_run || account.default_max_tokens_per_run)
   end
 
   # Returns the absolute token count at which a warning should be emitted.

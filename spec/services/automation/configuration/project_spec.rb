@@ -29,6 +29,13 @@ RSpec.describe Automation::Configuration::Project do
       project = build(:project)
       expect(described_class.from(project).auto_continue.enabled?).to be true
     end
+
+    it "disables auto_continue when the tenant setting disables it" do
+      project = create(:project)
+      create(:tenant_setting, account: project.account, agent_settings: { "auto_continue" => false })
+
+      expect(described_class.from(project).auto_continue.enabled?).to be false
+    end
   end
 
   describe "value-object semantics" do

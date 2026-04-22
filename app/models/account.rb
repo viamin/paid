@@ -28,6 +28,7 @@ class Account < ApplicationRecord
   has_many :billing_invoices, dependent: :destroy
   has_many :billing_periods, dependent: :destroy
   has_many :billing_plans, dependent: :destroy
+  has_many :quality_thresholds, dependent: :destroy
 
   validates :name, presence: true
   validates :plan, presence: true, inclusion: { in: PLANS }
@@ -80,6 +81,14 @@ class Account < ApplicationRecord
     tenant_setting || create_tenant_setting!
   rescue ActiveRecord::RecordNotUnique
     reload_tenant_setting
+  end
+
+  def tenant_max_concurrent_runs(limit)
+    tenant_setting&.cap_max_concurrent_runs(limit) || limit
+  end
+
+  def tenant_max_tokens_per_run(limit)
+    tenant_setting&.cap_max_tokens_per_run(limit) || limit
   end
 
   def onboarding_completed?

@@ -130,6 +130,7 @@ Rails.application.routes.draw do
     resource :quality_dashboard, only: [ :show ], controller: "projects/quality_dashboards" do
       get :export
     end
+    resource :quality_thresholds, only: [ :update ], controller: "projects/quality_thresholds"
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
     resources :cost_budgets, only: [ :create, :update, :destroy ], controller: "projects/cost_budgets"
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
@@ -163,6 +164,7 @@ Rails.application.routes.draw do
     match "proxy/openai/*path", to: "secrets_proxy#openai", via: :post, format: false
     match "proxy/google/*path", to: "secrets_proxy#google", via: :post, format: false
     match "proxy/github/*path", to: "github_proxy#proxy", via: [ :get, :post, :patch ], format: false
+    get "proxy/knowledge/search", to: "proxy/knowledge_search#search"
     get "proxy/git-credentials", to: "git_credentials#show"
 
     get "knowledge/search", to: "knowledge_search#search"

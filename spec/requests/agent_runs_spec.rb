@@ -777,6 +777,27 @@ RSpec.describe "AgentRuns" do
 
         expect(selected_option["value"]).to eq(codex.routing_key)
       end
+
+      it "renders enhance_issue as a selectable goal with the issue picker active" do
+        issue = create(:issue, project: project, github_number: 44, title: "Needs context", github_state: "open")
+        create(:issue, :pull_request, project: project, github_number: 45, title: "Open PR")
+
+        get new_project_agent_run_path(project, goal: "enhance_issue")
+
+        doc = Nokogiri::HTML(response.body)
+        enhance_goal = doc.at_css("input[type='radio'][name='goal'][value='enhance_issue']")
+        issue_table = doc.at_css('[data-goal-toggle-target="issueTable"]')
+        issue_dropdown = doc.at_css('[data-goal-toggle-target="issueDropdown"]')
+        pr_section = doc.at_css('[data-goal-toggle-target="prSection"]')
+
+        expect(enhance_goal).to be_present
+        expect(enhance_goal["checked"]).to eq("checked")
+        expect(issue_table["hidden"]).to be_nil
+        expect(issue_table.text).to include("Needs context")
+        expect(issue_table.at_css("input[type='checkbox'][name='issue_ids[]'][value='#{issue.id}']")).to be_present
+        expect(issue_dropdown.attribute("hidden")).to be_present
+        expect(pr_section.attribute("hidden")).to be_present
+      end
     end
   end
 
@@ -1504,13 +1525,13 @@ RSpec.describe "AgentRuns" do
     context "when authenticated" do
       before { sign_in user }
 
-      it "cancels an active run" do
+      it "cancels an active run and enqueues background cleanup" do
         agent_run = create(:agent_run, :running, project: project)
-        allow(AgentRuns::Cancel).to receive(:call)
 
-        post cancel_project_agent_run_path(project, agent_run)
+        expect {
+          post cancel_project_agent_run_path(project, agent_run)
+        }.to have_enqueued_job(AgentRunCancellationJob).with(agent_run.id)
 
-        expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
         expect(agent_run.reload.status).to eq("cancelled")
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         expect(flash[:notice]).to eq("Agent run cancelled.")
@@ -1523,29 +1544,6 @@ RSpec.describe "AgentRuns" do
 
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         expect(flash[:notice]).to eq("Agent run is no longer active.")
-      end
-
-      it "redirects with alert when external cancellation fails" do
-        agent_run = create(:agent_run, :running, project: project)
-        allow(AgentRuns::Cancel).to receive(:call).and_raise(StandardError, "Temporal unavailable")
-
-        post cancel_project_agent_run_path(project, agent_run)
-
-        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
-        expect(flash[:alert]).to eq("Unable to cancel agent run. Please try again.")
-      end
-
-      it "shows finished message when run completes during cancellation" do
-        agent_run = create(:agent_run, :running, project: project)
-        allow(AgentRuns::Cancel).to receive(:call) do
-          # Simulate the run finishing between the external cancel and the lock
-          agent_run.update_columns(status: "completed", completed_at: Time.current)
-        end
-
-        post cancel_project_agent_run_path(project, agent_run)
-
-        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
-        expect(flash[:notice]).to eq("Agent run finished before it could be cancelled.")
       end
 
       it "does not allow cancelling runs from other accounts" do

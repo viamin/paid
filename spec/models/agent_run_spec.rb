@@ -85,6 +85,29 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "enhance_issue goal requires issue" do
+      it "is valid when an associated issue is present" do
+        project = create(:project)
+        issue = create(:issue, project: project)
+        agent_run = build(:agent_run, :enhance_issue_goal, project: project, issue: issue)
+
+        expect(agent_run).to be_valid
+      end
+
+      it "is invalid without an associated issue" do
+        agent_run = build(:agent_run, :enhance_issue_goal, issue: nil, custom_prompt: "Enhance this issue")
+
+        expect(agent_run).not_to be_valid
+        expect(agent_run.errors[:issue]).to include("is required for enhance_issue goals")
+      end
+
+      it "does not require an issue for create_issue goals" do
+        agent_run = build(:agent_run, :create_issue_goal)
+
+        expect(agent_run).to be_valid
+      end
+    end
+
     describe "provider ownership validation" do
       it "allows provider from the project owner" do
         agent_run = build(:agent_run)
@@ -592,9 +615,37 @@ RSpec.describe AgentRun do
         expect(agent_run.operational_failure?).to be true
       end
 
-      it "returns false for failed status with code-level error" do
+      it "returns true for failed status with Docker exec error" do
         agent_run = build(:agent_run, :failed,
-          error_message: "An error occurred during execution")
+          error_message: "Docker exec error: {\"message\":\"container abc123...\"}")
+
+        expect(agent_run.operational_failure?).to be true
+      end
+
+      it "returns true for failed status with worktree conflict" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Branch fix/foo has an active worktree from agent run 1234")
+
+        expect(agent_run.operational_failure?).to be true
+      end
+
+      it "returns true for failed status with Clone failed" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Clone failed: could not resolve host")
+
+        expect(agent_run.operational_failure?).to be true
+      end
+
+      it "returns false for failed status with agent exit code error" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Agent exited with code 1: compilation failed")
+
+        expect(agent_run.operational_failure?).to be false
+      end
+
+      it "returns false for failed status with review posting failure" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "No review was posted on PR #1234")
 
         expect(agent_run.operational_failure?).to be false
       end
@@ -679,6 +730,14 @@ RSpec.describe AgentRun do
 
         expect(agent_run.effective_max_tokens_per_run).to eq(AgentRun::DEFAULT_MAX_TOKENS_PER_RUN)
       end
+
+      it "caps the resolved token limit with the tenant guardrail" do
+        project = create(:project, max_tokens_per_run: 500_000)
+        create(:tenant_setting, account: project.account, guardrails: { "max_tokens_per_run" => 100_000 })
+        agent_run = build(:agent_run, project: project)
+
+        expect(agent_run.effective_max_tokens_per_run).to eq(100_000)
+      end
     end
 
     describe "#token_limit_usage_ratio" do
@@ -739,6 +798,18 @@ RSpec.describe AgentRun do
           expect(agent_run.duration_seconds).to eq((Time.current - started_time).to_i)
         end
       end
+
+      it "does not overwrite a cancelled run" do
+        agent_run = create(:agent_run, :cancelled, pull_request_url: nil, pull_request_number: nil)
+
+        expect(
+          agent_run.complete!(pr_url: "https://github.com/example/repo/pull/42", pr_number: 42)
+        ).to be false
+
+        expect(agent_run.reload.status).to eq("cancelled")
+        expect(agent_run.pull_request_url).to be_nil
+        expect(agent_run.pull_request_number).to be_nil
+      end
     end
 
     describe "#complete! with issue details" do
@@ -756,6 +827,17 @@ RSpec.describe AgentRun do
           expect(agent_run.created_issue_number).to eq(10)
           expect(agent_run.pull_request_url).to be_nil
         end
+      end
+    end
+
+    describe "#complete_no_output!" do
+      it "does not overwrite a cancelled run" do
+        agent_run = create(:agent_run, :cancelled, error_message: nil)
+
+        expect(agent_run.complete_no_output!(reason: "no_changes")).to be false
+
+        expect(agent_run.reload.status).to eq("cancelled")
+        expect(agent_run.error_message).to be_nil
       end
     end
 
@@ -1271,6 +1353,14 @@ RSpec.describe AgentRun do
 
       it "returns false when user's active count reaches their max" do
         user.settings.update!(max_concurrent_runs: 1)
+        create(:agent_run, :running, project: project)
+
+        expect(described_class.has_run_capacity?(user: user)).to be false
+      end
+
+      it "caps user capacity with the tenant guardrail" do
+        user.settings.update!(max_concurrent_runs: 5)
+        create(:tenant_setting, account: user.account, guardrails: { "max_concurrent_runs" => 1 })
         create(:agent_run, :running, project: project)
 
         expect(described_class.has_run_capacity?(user: user)).to be false

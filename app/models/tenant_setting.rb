@@ -97,6 +97,26 @@ class TenantSetting < ApplicationRecord
     account.provider_api_keys.find_by(id: key_id)
   end
 
+  def model_preference_for(provider_key)
+    effective_provider_preferences.dig("model_preferences", provider_key.to_s).presence
+  end
+
+  def auto_continue?
+    effective_agent_settings["auto_continue"] == true
+  end
+
+  def default_goal
+    effective_agent_settings["default_goal"].presence || DEFAULT_AGENT_SETTINGS.fetch("default_goal")
+  end
+
+  def cap_max_concurrent_runs(limit)
+    [ limit, max_concurrent_runs ].compact.min
+  end
+
+  def cap_max_tokens_per_run(limit)
+    [ limit, max_tokens_per_run ].compact.min
+  end
+
   private
 
   def normalize_configuration_namespaces

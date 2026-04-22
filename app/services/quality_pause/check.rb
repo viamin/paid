@@ -10,9 +10,6 @@ module QualityPause
   # @example
   #   QualityPause::Check.call(agent_run: agent_run)
   class Check
-    MINIMUM_SAMPLE_SIZE = 3
-    DEFAULT_WINDOW_SIZE = 5
-
     def self.call(...)
       new(...).call
     end
@@ -23,34 +20,31 @@ module QualityPause
     end
 
     def call
-      return unless threshold
       return if project.quality_paused?
 
-      trend = QualityMetrics::TrendAnalysis.call(
-        project_id: project.id,
-        window_size: DEFAULT_WINDOW_SIZE
-      )
-
-      return unless trend[:sample_size] >= MINIMUM_SAMPLE_SIZE
-      return unless trend[:rolling_average]
-      return if trend[:rolling_average] >= threshold
+      breached = breached_threshold
+      return unless breached
 
       project.quality_pause!(
-        score: trend[:rolling_average],
-        threshold: threshold,
+        score: breached.fetch(:average),
+        threshold: breached.fetch(:threshold).min_value,
         agent_run: agent_run,
         metadata: {
-          window_size: DEFAULT_WINDOW_SIZE,
-          sample_size: trend[:sample_size],
-          recent_scores: trend[:recent_scores]
+          metric_type: breached.fetch(:threshold).metric_type,
+          goal_type: agent_run.goal,
+          window_size: QualityThreshold::DEFAULT_WINDOW_SIZE,
+          sample_size: breached.fetch(:sample_size),
+          recent_scores: breached.fetch(:scores)
         }
       )
 
       Rails.logger.warn(
         message: "quality_pause.project_paused",
         project_id: project.id,
-        rolling_average: trend[:rolling_average],
-        threshold: threshold,
+        metric_type: breached.fetch(:threshold).metric_type,
+        goal_type: agent_run.goal,
+        rolling_average: breached.fetch(:average),
+        threshold: breached.fetch(:threshold).min_value,
         agent_run_id: agent_run.id
       )
     end
@@ -59,8 +53,55 @@ module QualityPause
 
     attr_reader :agent_run, :project
 
-    def threshold
-      @threshold ||= project.quality_pause_threshold
+    def breached_threshold
+      thresholds.each do |threshold|
+        scores = recent_scores_for(threshold.metric_type)
+        next if scores.size < QualityThreshold::DEFAULT_MIN_SAMPLE_SIZE
+
+        average = (scores.sum / scores.size).round(4)
+        next unless threshold.breached?(average)
+
+        return { threshold: threshold, scores: scores, average: average, sample_size: scores.size }
+      end
+      nil
+    end
+
+    def thresholds
+      @thresholds ||= QualityThreshold.effective_for(project: project, goal_type: agent_run.goal)
+    end
+
+    def recent_scores_for(metric_type)
+      recent_metrics_for(metric_type).filter_map do |metric|
+        score_for(metric, metric_type)
+      end
+    end
+
+    def recent_metrics_for(metric_type)
+      @recent_metrics_by_type ||= {}
+      @recent_metrics_by_type[metric_type] ||= metrics_for(metric_type)
+        .limit(QualityThreshold::DEFAULT_WINDOW_SIZE)
+        .to_a
+    end
+
+    def metrics_for(metric_type)
+      scope = QualityMetric.by_project(project.id)
+        .where(agent_runs: { goal: agent_run.goal })
+        .where(AgentRun.quality_scoreable_sql)
+        .order(created_at: :desc)
+
+      if metric_type == "composite_score"
+        scope.where.not(composite_score: nil)
+      else
+        scope.where("jsonb_exists(quality_metrics.scores, ?)", metric_type)
+      end
+    end
+
+    def score_for(metric, metric_type)
+      if metric_type == "composite_score"
+        metric.composite_score&.to_f
+      else
+        metric.scores&.dig(metric_type)&.to_f
+      end
     end
   end
 end

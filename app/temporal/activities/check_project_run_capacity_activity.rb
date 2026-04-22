@@ -28,7 +28,7 @@ module Activities
 
       # Also check user-level capacity
       user_active_count = AgentRun.active_count_for_user(user)
-      user_max = user.settings.max_concurrent_runs
+      user_max = user.account.tenant_max_concurrent_runs(user.settings.max_concurrent_runs)
       user_available = [ user_max - user_active_count, 0 ].max
 
       effective_slots = [ available_slots, user_available ].min

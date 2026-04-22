@@ -9,6 +9,51 @@ class AgentRun < ApplicationRecord
   FINISHED_STATUSES = %w[completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
   TERMINAL_FAILURE_STATUSES = (FAILURE_STATUSES + %w[cancelled]).freeze
+  QUALITY_EXCLUDED_STATUSES = %w[timeout auth_expired rate_limited].freeze
+
+  OPERATIONAL_FAILURE_KEYWORDS = [
+    "providers exhausted",
+    "Docker exec",
+    "Activity task timed out",
+    "Activity task failed",
+    "Activity canceled",
+    "worktree",
+    "Worktree path does not exist",
+    "Clone failed",
+    "Push failed",
+    "Fetch failed",
+    "Credential proxy",
+    "Failed to start service",
+    "Failed to start workflow",
+    "Failed to open TCP",
+    "Failed to resolve remote",
+    "Failed to get HEAD SHA",
+    "could not obtain a connection from the pool",
+    "incompatible character encodings",
+    "string contains null byte",
+    "is closed; project resync",
+    "No container provisioned",
+    "commit_uncommitted_changes failed"
+  ].freeze
+
+  def self.quality_scoreable_sql
+    excluded_status = arel_table[:status].not_in(QUALITY_EXCLUDED_STATUSES)
+
+    error_message = Arel::Nodes::NamedFunction.new(
+      "COALESCE",
+      [ arel_table[:error_message], Arel::Nodes.build_quoted("") ]
+    )
+
+    failed_operational = OPERATIONAL_FAILURE_KEYWORDS.map { |keyword|
+      arel_table[:status].eq("failed").and(
+        error_message.matches("%#{keyword}%")
+      )
+    }.reduce(:or)
+
+    arel_table.grouping(
+      excluded_status.and(Arel::Nodes::Not.new(failed_operational))
+    )
+  end
   UNFINISHED_STATUSES = %w[queued pending running paused].freeze
   GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
@@ -214,13 +259,14 @@ class AgentRun < ApplicationRecord
 
   # Checks whether the given user has capacity for another agent run.
   #
-  # Capacity is determined solely by the user's max_concurrent_runs setting.
+  # Capacity is determined by the user's max_concurrent_runs setting capped by
+  # the account tenant guardrail when one is configured.
   # Returns false (fail closed) when no user is provided, so orphaned
   # projects or unresolvable owners cannot bypass concurrency limits.
   def self.has_run_capacity?(user: nil)
     return false unless user
 
-    active_count_for_user(user) < user.settings.max_concurrent_runs
+    active_count_for_user(user) < user.account.tenant_max_concurrent_runs(user.settings.max_concurrent_runs)
   end
 
   # Returns the count of active runs attributable to the given user.
@@ -560,10 +606,12 @@ class AgentRun < ApplicationRecord
 
     boundary = first_different_owner_run(scope, first)
     same_owner_scope = same_owner_priority_scope(scope, first)
-    same_owner_scope = same_owner_scope.where(
-      "(#{GOAL_PRIORITY_CASE_SQL}, agent_runs.created_at, agent_runs.id) < (?, ?, ?)",
-      boundary.goal_priority.to_i, boundary.created_at, boundary.id
-    ) if boundary
+    if boundary
+      same_owner_scope = same_owner_scope.where(
+        "(#{GOAL_PRIORITY_CASE_SQL}, agent_runs.created_at, agent_runs.id) < (?, ?, ?)",
+        boundary.goal_priority.to_i, boundary.created_at, boundary.id
+      )
+    end
 
     same_owner_scope.reorder(WITHIN_OWNER_QUEUE_ORDER).first || first
   end
@@ -688,8 +736,9 @@ class AgentRun < ApplicationRecord
     return false unless FAILURE_STATUSES.include?(status)
     return true if status.in?(%w[timeout auth_expired rate_limited])
 
-    # "failed" status: only operational when caused by provider exhaustion
-    error_message.to_s.match?(/All providers exhausted/i)
+    OPERATIONAL_FAILURE_KEYWORDS.any? do |keyword|
+      error_message.to_s.downcase.include?(keyword.downcase)
+    end
   end
 
   def total_tokens
@@ -706,16 +755,19 @@ class AgentRun < ApplicationRecord
 
   # Resolves the effective max tokens per run for this agent run using the
   # full resolution chain: project override → user settings → account default
-  # → global default. Memoized per AgentRun instance so hot paths like token
-  # tracking and detail rendering do not repeat user-settings resolution.
+  # → global default, capped by the tenant guardrail. Memoized per AgentRun
+  # instance so hot paths like token tracking and detail rendering do not
+  # repeat user-settings resolution.
   def effective_max_tokens_per_run
     return @effective_max_tokens_per_run if defined?(@effective_max_tokens_per_run)
 
     @effective_max_tokens_per_run =
-      project.max_tokens_per_run ||
-      explicit_user_max_tokens_per_run ||
-      project.account.default_max_tokens_per_run ||
-      DEFAULT_MAX_TOKENS_PER_RUN
+      project.account.tenant_max_tokens_per_run(
+        project.max_tokens_per_run ||
+        explicit_user_max_tokens_per_run ||
+        project.account.default_max_tokens_per_run ||
+        DEFAULT_MAX_TOKENS_PER_RUN
+      )
   end
 
   # Returns the fraction of the token limit consumed (0.0–1.0+).
@@ -778,25 +830,39 @@ class AgentRun < ApplicationRecord
   end
 
   def complete!(result_commit: nil, pr_url: nil, pr_number: nil, issue_url: nil, issue_number: nil)
-    update!(
-      status: "completed",
-      completed_at: Time.current,
-      result_commit_sha: result_commit,
-      pull_request_url: pr_url,
-      pull_request_number: pr_number,
-      created_issue_url: issue_url,
-      created_issue_number: issue_number,
-      duration_seconds: duration
-    )
+    with_lock do
+      reload
+      if finished?
+        false
+      else
+        update!(
+          status: "completed",
+          completed_at: Time.current,
+          result_commit_sha: result_commit,
+          pull_request_url: pr_url,
+          pull_request_number: pr_number,
+          created_issue_url: issue_url,
+          created_issue_number: issue_number,
+          duration_seconds: duration
+        )
+      end
+    end
   end
 
   def complete_no_output!(reason: "no_changes")
-    update!(
-      status: "no_output",
-      completed_at: Time.current,
-      error_message: reason,
-      duration_seconds: duration
-    )
+    with_lock do
+      reload
+      if finished?
+        false
+      else
+        update!(
+          status: "no_output",
+          completed_at: Time.current,
+          error_message: reason,
+          duration_seconds: duration
+        )
+      end
+    end
   end
 
   def result_url
@@ -1202,7 +1268,7 @@ class AgentRun < ApplicationRecord
   def draft_review_round_tracking_is_consistent
     return unless count_toward_draft_review_round?
     return unless will_save_change_to_count_toward_draft_review_round? ||
-                  will_save_change_to_expected_draft_review_count?
+      will_save_change_to_expected_draft_review_count?
 
     if expected_draft_review_count.blank?
       errors.add(:expected_draft_review_count, "is required when counting toward draft review rounds")

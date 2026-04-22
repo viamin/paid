@@ -36,6 +36,14 @@ RSpec.describe QualityMetrics::Collect do
         expect(metric.scores).not_to include("review_comment_count")
       end
 
+      it "omits merge status until finalized human feedback is collected" do
+        agent_run.issue.update!(pr_review_phase: "ready")
+
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(metric.scores).not_to include("pr_merged")
+      end
+
       it "includes review_comment_count when metadata is populated" do
         # First create metric, then populate metadata as HumanFeedbackCollectionJob would
         metric = described_class.call(agent_run: agent_run)
@@ -143,6 +151,72 @@ RSpec.describe QualityMetrics::Collect do
 
         expect(metric.scores).to eq("comment_posted" => 1.0)
         expect(metric.metadata).to eq({})
+      end
+    end
+
+    context "with operational failure" do
+      AgentRun::QUALITY_EXCLUDED_STATUSES.each do |excluded_status|
+        it "records nil composite_score for #{excluded_status} runs" do
+          run = create(:agent_run, status: excluded_status)
+
+          metric = described_class.call(agent_run: run)
+
+          expect(metric.composite_score).to be_nil
+          expect(metric.scores).to eq({ "excluded_status" => excluded_status })
+          expect(metric.metadata["exclusion_reason"]).to eq("operational_failure")
+        end
+      end
+
+      it "records nil composite_score for failed runs with provider exhaustion" do
+        run = create(:agent_run, status: "failed", error_message: "All providers exhausted: claude_code")
+
+        metric = described_class.call(agent_run: run)
+
+        expect(metric.composite_score).to be_nil
+        expect(metric.metadata["exclusion_reason"]).to eq("operational_failure")
+      end
+
+      it "records nil composite_score for failed runs with Docker exec errors" do
+        run = create(:agent_run, status: "failed", error_message: "Docker exec error: container crashed")
+
+        metric = described_class.call(agent_run: run)
+
+        expect(metric.composite_score).to be_nil
+      end
+
+      it "records nil composite_score for failed runs with worktree conflicts" do
+        run = create(:agent_run, status: "failed", error_message: "Branch foo has an active worktree from agent run 42")
+
+        metric = described_class.call(agent_run: run)
+
+        expect(metric.composite_score).to be_nil
+      end
+
+      it "records a composite_score for failed runs with nil error_message" do
+        run = create(:agent_run, status: "failed", error_message: nil)
+
+        metric = described_class.call(agent_run: run)
+
+        expect(metric.composite_score).not_to be_nil
+        expect(metric.scores).not_to include("excluded_status")
+      end
+
+      it "records a composite_score for failed runs with agent-level errors" do
+        run = create(:agent_run, status: "failed", error_message: "Agent exited with code 1")
+
+        metric = described_class.call(agent_run: run)
+
+        expect(metric.composite_score).not_to be_nil
+        expect(metric.scores).not_to include("excluded_status")
+      end
+
+      it "still records a composite_score for completed runs" do
+        run = create(:agent_run, :completed)
+
+        metric = described_class.call(agent_run: run)
+
+        expect(metric.composite_score).not_to be_nil
+        expect(metric.scores).not_to include("excluded_status")
       end
     end
 

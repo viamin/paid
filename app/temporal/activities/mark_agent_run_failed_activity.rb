@@ -9,13 +9,17 @@ module Activities
       error = input[:error]
       agent_run = AgentRun.find(agent_run_id)
 
-      # Don't overwrite a more specific terminal status (e.g. "timeout")
-      # that was already set by the activity that detected the failure.
-      if agent_run.finished?
-        agent_run.log!("system", "Agent run already #{agent_run.status}, skipping fail! (error: #{error})")
-      else
-        agent_run.fail!(error: error)
-        agent_run.log!("system", "Agent run failed: #{error}")
+      agent_run.with_lock do
+        agent_run.reload
+
+        # Don't overwrite a more specific terminal status (e.g. "timeout")
+        # that was already set by the activity that detected the failure.
+        if agent_run.finished?
+          agent_run.log!("system", "Agent run already #{agent_run.status}, skipping fail! (error: #{error})")
+        else
+          agent_run.fail!(error: error)
+          agent_run.log!("system", "Agent run failed: #{error}")
+        end
       end
 
       # Always trigger queue processing so remaining queued runs get claimed.
@@ -24,12 +28,13 @@ module Activities
       # RunAgentActivity would skip queue processing entirely.
       ProcessRunQueueJob.perform_later
 
-      # Always update issue state so it doesn't stay stuck in "in_progress".
+      # Update issue state for failure statuses so it doesn't stay stuck in
+      # "in_progress". Preserve cancellation and successful terminal states.
       # Review-goal failures restore the issue to "completed" rather than
       # marking it "failed" — the underlying PR work succeeded; only the
       # follow-up review run failed. Using "completed" keeps auto-pick
       # unblocked and lets the scanner re-evaluate the PR on the next cycle.
-      if agent_run.issue
+      if agent_run.issue && agent_run.status.in?(AgentRun::FAILURE_STATUSES)
         target_state = agent_run.review_goal? ? "completed" : "failed"
         if agent_run.issue.paid_state != target_state
           agent_run.issue.update!(paid_state: target_state)

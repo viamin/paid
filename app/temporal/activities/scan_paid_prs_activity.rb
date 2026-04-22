@@ -45,6 +45,7 @@ module Activities
       project = Project.find_by(id: project_id)
       return { prs_to_trigger: [], automation_results: [], project_missing: true } unless project
       return { prs_to_trigger: [], automation_results: [] } unless project.auto_scan_prs
+      return { prs_to_trigger: [], automation_results: [] } if project.account.tenant_setting&.auto_continue? == false
 
       client = project.github_token.client
       paid_prs = find_paid_prs(project)
@@ -77,8 +78,10 @@ module Activities
         next if result == :skipped
         scanned_count += 1
         issue.update_column(:last_pr_scan_at, Time.current)
-        collect_scan_result(issue, result, prs_to_trigger, automation_results,
-          explicit_pr_decisions:) if result
+        if result
+          collect_scan_result(issue, result, prs_to_trigger, automation_results,
+            explicit_pr_decisions:)
+        end
       rescue Temporalio::Error::ApplicationError => e
         raise unless e.type == "RateLimit"
 
@@ -731,14 +734,26 @@ module Activities
       true
     end
 
-    # Only draft/restarted PRs need a time-based rescan floor. They're the
-    # phases waiting on signals that do not bump GitHub's `updated_at` (bot
-    # review requests, CI state transitions, review-goal retry timers).
-    # `ready`/`escalated` PRs already have a targeted rescan path via
-    # `merge_conflict_rescan_needed?`; bypassing skip here would regress that
+    # Draft/restarted PRs need a time-based rescan floor because they wait on
+    # signals that do not bump GitHub's `updated_at` (bot review requests, CI
+    # state transitions, review-goal retry timers).
+    #
+    # Bot-authored ready-phase PRs (e.g. Dependabot) also need periodic
+    # re-evaluation: the first scan may stamp `last_pr_scan_at` while CI is
+    # still pending, and CI transitions to green do not update the PR's
+    # `updated_at` on GitHub. Without this escape hatch the skip-unchanged
+    # optimization prevents the scanner from ever reconsidering them.
+    #
+    # Human-authored ready/escalated PRs already have a targeted rescan path
+    # via `merge_conflict_rescan_needed?`; expanding that would regress the
     # optimization back into full per-PR scans.
     def scan_age_exceeds_ceiling?(project, issue)
-      return false unless issue.pr_review_phase.in?(%w[draft restarted])
+      draft_or_restarted = issue.pr_review_phase.in?(%w[draft restarted])
+      bot_ready_for_merge = issue.pr_review_phase == "ready" &&
+        bot_user?(issue.github_creator_login) &&
+        project.auto_merge_dependabot?
+
+      return false unless draft_or_restarted || bot_ready_for_merge
 
       ceiling = SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
       stale = issue.last_pr_scan_at < ceiling.seconds.ago
@@ -879,7 +894,7 @@ module Activities
       # Don't retry while a review-goal run is already queued or running.
       return false if review_run_in_progress?(project, issue)
 
-      latest_finished_automatic_review_run(project, issue)&.status.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
+      latest_finished_automatic_review_run(project, issue)&.status&.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
     end
 
     def last_completed_run(project, issue)
@@ -1137,9 +1152,9 @@ module Activities
         chain = project ? review_bot_request_chain(project) : []
         if chain.any?
           [ { type: "review_bot_review_pending",
-              details: "No review bot review found",
-              request_login: chain.first,
-              request_logins: chain } ]
+            details: "No review bot review found",
+            request_login: chain.first,
+            request_logins: chain } ]
         elsif project&.review_enabled? && project.review_method_enabled?("paid_agent")
           check_paid_agent_review_status(project, issue)
         else
@@ -1192,18 +1207,16 @@ module Activities
             # Treat as still-unaddressed to prevent unrelated changes
             # (e.g. a CI schema fix) from clearing review findings.
             paid_agent_limit_reached_for_latest_review ? body_only_exhausted_triggers : body_only_pending_triggers
-          else
+          elsif ProviderSupport.provider_bot_username_for?("paid_agent", latest&.dig(:user_login))
             # Thread-based bot with all bot threads resolved, or body-only
             # review already addressed by a subsequent agent run whose diff
             # touches at least one reviewed file. Treat as effectively clean
             # to avoid re-requesting reviews that would produce no new
             # comments.
-            if ProviderSupport.provider_bot_username_for?("paid_agent", latest&.dig(:user_login))
-              pending_review = check_paid_agent_review_status(project, issue)
-              pending_review.presence || []
-            else
-              []
-            end
+            pending_review = check_paid_agent_review_status(project, issue)
+            pending_review.presence || []
+          else
+            []
           end
         end
       when :unknown
@@ -1246,8 +1259,8 @@ module Activities
 
       if unfinished_run
         return [ { type: "paid_agent_review_pending",
-                   details: "paid_agent review run is still in progress",
-                   active_run: true } ]
+                 details: "paid_agent review run is still in progress",
+                 active_run: true } ]
       end
 
       return [] if review_goal_retry_limit_reached?(project, issue)
@@ -1278,10 +1291,10 @@ module Activities
       # even when the last finished review attempt post-dates the last create_pr.
       failed_count = review_goal_consecutive_failure_count(project, issue)
       latest_failed_run = latest_finished_automatic_review_run(project, issue)
-      if latest_failed_run&.status.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
+      if latest_failed_run&.status&.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
         max_retries = review_goal_max_retries(project)
         return [ { type: "paid_agent_review_pending",
-                   details: "Retrying unsuccessful review-goal run (attempt #{failed_count + 1}/#{max_retries})" } ]
+                 details: "Retrying unsuccessful review-goal run (attempt #{failed_count + 1}/#{max_retries})" } ]
       end
 
       # Check whether the most recent finished review-goal run (regardless of
