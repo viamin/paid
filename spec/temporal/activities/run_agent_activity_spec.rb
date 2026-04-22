@@ -1118,13 +1118,13 @@ RSpec.describe Activities::RunAgentActivity do
       end
     end
 
-    shared_examples "externally cancelled run" do |prefix:, error_message:|
+    shared_examples "externally cancelled run" do |params|
       before do
         allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
         allow(container_service).to receive(:execute) do
           AgentRun.where(id: agent_run.id).update_all(
             status: "timeout",
-            error_message: error_message,
+            error_message: params.fetch(:error_message),
             completed_at: Time.current
           )
           exec_failure
@@ -1134,20 +1134,18 @@ RSpec.describe Activities::RunAgentActivity do
       it "does not increment the provider circuit-breaker failure_count" do
         state = user.provider_states.create!(provider_name: "claude", failure_count: 0, circuit_state: "closed")
 
-        begin
+        expect {
           activity.execute(agent_run_id: agent_run.id)
-        rescue Temporalio::Error::ApplicationError
-        end
+        }.to raise_error(Temporalio::Error::ApplicationError)
 
         expect(state.reload.failure_count).to eq(0)
         expect(state.circuit_state).to eq("closed")
       end
 
       it "records the provider attempt as cancelled_by_cleanup" do
-        begin
+        expect {
           activity.execute(agent_run_id: agent_run.id)
-        rescue Temporalio::Error::ApplicationError
-        end
+        }.to raise_error(Temporalio::Error::ApplicationError)
 
         attempts = agent_run.reload.providers_attempted
         expect(attempts.last["error_type"]).to eq("cancelled_by_cleanup")
@@ -1155,23 +1153,21 @@ RSpec.describe Activities::RunAgentActivity do
       end
 
       it "preserves the cleanup error_message and timeout status on the run" do
-        begin
+        expect {
           activity.execute(agent_run_id: agent_run.id)
-        rescue Temporalio::Error::ApplicationError
-        end
+        }.to raise_error(Temporalio::Error::ApplicationError)
 
         agent_run.reload
         expect(agent_run.status).to eq("timeout")
-        expect(agent_run.error_message).to start_with(prefix)
+        expect(agent_run.error_message).to start_with(params.fetch(:prefix))
       end
 
       it "stops iterating providers instead of attempting fallbacks" do
         user.settings.update!(fallback_enabled: true)
 
-        begin
+        expect {
           activity.execute(agent_run_id: agent_run.id)
-        rescue Temporalio::Error::ApplicationError
-        end
+        }.to raise_error(Temporalio::Error::ApplicationError)
 
         expect(agent_run.reload.providers_attempted.size).to eq(1)
       end
@@ -1179,10 +1175,9 @@ RSpec.describe Activities::RunAgentActivity do
       it "does not enqueue ProcessRunQueueJob" do
         expect(ProcessRunQueueJob).not_to receive(:perform_later)
 
-        begin
+        expect {
           activity.execute(agent_run_id: agent_run.id)
-        rescue Temporalio::Error::ApplicationError
-        end
+        }.to raise_error(Temporalio::Error::ApplicationError)
       end
     end
 
