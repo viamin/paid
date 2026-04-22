@@ -389,13 +389,31 @@ class GithubClient
 
       all_check_runs.map do |cr|
         {
+          id: cr.id,
           name: cr.name,
           status: cr.status,
           conclusion: cr.conclusion,
           html_url: cr.html_url,
-          details_url: cr.details_url
+          details_url: cr.details_url,
+          job_id: actions_job_id_from_url(cr.details_url),
+          output_text: check_run_output_text(cr)
         }
       end
+    end
+  end
+
+  # Fetches raw GitHub Actions job logs for a check run when the run is backed
+  # by an Actions job. Non-Actions checks do not expose logs through this API.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param check_run [Hash] Check run hash from +check_runs_for_ref+
+  # @return [String] Raw log text, or an empty string when no job log is available
+  def check_run_log(repo, check_run)
+    job_id = check_run[:job_id] || actions_job_id_from_url(check_run[:details_url])
+    return "" unless job_id
+
+    handle_errors do
+      client.get("#{Octokit::Repository.path(repo)}/actions/jobs/#{job_id}/logs").to_s
     end
   end
 
@@ -1274,6 +1292,17 @@ class GithubClient
     when Time then value
     when String then Time.parse(value)
     end
+  end
+
+  def actions_job_id_from_url(url)
+    url.to_s[%r{/actions/runs/\d+/job/(\d+)}, 1]
+  end
+
+  def check_run_output_text(check_run)
+    output = check_run.output
+    return "" unless output
+
+    [ output.title, output.summary, output.text ].compact_blank.join("\n\n")
   end
 
   def graphql_reaction_to_rest(content)
