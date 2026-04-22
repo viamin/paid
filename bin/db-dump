@@ -57,7 +57,7 @@ else
   BACKUP_PATH="$BACKUP_FILE"
 fi
 
-PG_DUMP_ARGS=(--data-only --no-owner --no-privileges -Fc -U "$DB_USER" "$DB_NAME")
+PG_DUMP_ARGS=(--data-only --exclude-table-data=ar_internal_metadata --exclude-table-data=schema_migrations --no-owner --no-privileges -Fc -U "$DB_USER" "$DB_NAME")
 COMPOSE_ARGS=(compose)
 if [[ -n "${COMPOSE_FILE:-}" ]]; then
   COMPOSE_ARGS+=(-f "$COMPOSE_FILE")
