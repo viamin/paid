@@ -23,11 +23,15 @@ module Knowledge
 
         artifacts = artifacts.by_type(artifact_type) if artifact_type.present?
 
-        exact_matches = artifacts.where(identifier: query)
-
-        unless exact_matches.exists?
-          exact_matches = artifacts.identifier_like(query)
-        end
+        quoted_query = KnowledgeArtifact.connection.quote(query)
+        fallback_condition = fallback_condition_for(artifacts)
+        exact_matches = artifacts
+          .where(fallback_condition)
+          .order(
+            Arel.sql("CASE WHEN identifier = #{quoted_query} THEN 0 ELSE 1 END"),
+            Arel.sql("similarity(identifier, #{quoted_query}) DESC"),
+            :id
+          )
 
         results = exact_matches
           .limit(limit)
@@ -38,6 +42,15 @@ module Knowledge
       end
 
       private
+
+      def fallback_condition_for(artifacts)
+        exact_match_sql = artifacts.where(identifier: query).select(1).limit(1).to_sql
+
+        KnowledgeArtifact.sanitize_sql_array([
+          "identifier = :query OR (identifier % :query AND NOT EXISTS (#{exact_match_sql}))",
+          query: query
+        ])
+      end
 
       def format_artifact_results(artifact)
         version = artifact.collector_run&.project_version

@@ -63,12 +63,12 @@ module QualityMetrics
     def thresholds
       return [] unless @project_id
 
-      QualityGateThreshold.where(project_id: @project_id).enabled.map do |t|
+      enabled_threshold_rows.map do |metric_key, min_threshold, max_threshold, severity|
         {
-          metric_key: t.metric_key,
-          min_threshold: t.min_threshold&.to_f,
-          max_threshold: t.max_threshold&.to_f,
-          severity: t.severity
+          metric_key: metric_key,
+          min_threshold: min_threshold&.to_f,
+          max_threshold: max_threshold&.to_f,
+          severity: severity
         }
       end
     end
@@ -133,12 +133,9 @@ module QualityMetrics
       return nil unless @project_id
       return nil if slope >= 0 # Score is stable or improving
 
-      min_thresholds = QualityGateThreshold
-        .where(project_id: @project_id)
-        .enabled
-        .where(metric_key: "composite_score")
-        .where.not(min_threshold: nil)
-        .pluck(:min_threshold)
+      min_thresholds = enabled_threshold_rows.filter_map do |metric_key, min_threshold, _max_threshold, _severity|
+        min_threshold if metric_key == "composite_score"
+      end
 
       return nil if min_thresholds.empty?
 
@@ -149,6 +146,13 @@ module QualityMetrics
 
       steps = ((target - intercept) / slope).ceil - current_n
       steps.positive? ? steps : nil
+    end
+
+    def enabled_threshold_rows
+      @enabled_threshold_rows ||= QualityGateThreshold
+        .where(project_id: @project_id)
+        .enabled
+        .pluck(:metric_key, :min_threshold, :max_threshold, :severity)
     end
   end
 end

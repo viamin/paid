@@ -22,12 +22,15 @@ module TokenUsages
     end
 
     def call
+      totals = aggregate_totals
+      cost_by_model, cost_by_request_type = aggregate_cost_breakdowns
+
       {
-        total_cost_cents: scope.total_cost_cents,
-        total_input_tokens: scope.total_input_tokens,
-        total_output_tokens: scope.total_output_tokens,
-        cost_by_model: scope.cost_by_model,
-        cost_by_request_type: scope.cost_by_request_type
+        total_cost_cents: totals[0].to_i,
+        total_input_tokens: totals[1].to_i,
+        total_output_tokens: totals[2].to_i,
+        cost_by_model: cost_by_model,
+        cost_by_request_type: cost_by_request_type
       }
     end
 
@@ -52,6 +55,29 @@ module TokenUsages
     end
 
     private
+
+    def aggregate_totals
+      scope.pick(
+        Arel.sql("COALESCE(SUM(token_usages.cost_cents), 0)"),
+        Arel.sql("COALESCE(SUM(token_usages.input_tokens), 0)"),
+        Arel.sql("COALESCE(SUM(token_usages.output_tokens), 0)")
+      )
+    end
+
+    def aggregate_cost_breakdowns
+      cost_by_model = Hash.new(0)
+      cost_by_request_type = Hash.new(0)
+
+      rows = scope.group(:llm_model, :request_type)
+        .pluck(:llm_model, :request_type, Arel.sql("COALESCE(SUM(token_usages.cost_cents), 0)"))
+
+      rows.each do |model, request_type, cost|
+        cost_by_model[model] += cost
+        cost_by_request_type[request_type] += cost
+      end
+
+      [ cost_by_model.to_h, cost_by_request_type.to_h ]
+    end
 
     def calculate_daily_average(recent_scope)
       total = recent_scope.total_cost_cents

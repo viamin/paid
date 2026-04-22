@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_21_110831) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_21_155244) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -226,10 +226,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_110831) do
     t.index ["guardrail_violation_type"], name: "index_agent_runs_on_guardrail_violation_type", where: "(guardrail_violation_type IS NOT NULL)"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["parent_workflow_id"], name: "index_agent_runs_on_parent_workflow_id"
+    t.index ["project_id", "created_at"], name: "idx_agent_runs_project_created_at_desc", order: { created_at: :desc }
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
     t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
     t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
     t.index ["project_id", "status", "completed_at"], name: "index_agent_runs_on_project_status_completed_at"
+    t.index ["project_id", "status", "created_at"], name: "idx_agent_runs_project_status_created_at_desc", order: { created_at: :desc }
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
@@ -658,6 +660,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_110831) do
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
     t.index ["project_id", "github_number"], name: "index_issues_on_project_id_and_github_number"
+    t.index ["project_id", "is_pull_request", "pr_review_phase", "github_updated_at"], name: "idx_issues_project_pr_phase_updated_at_desc", order: { github_updated_at: :desc }
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
     t.index ["project_id", "source", "github_state"], name: "idx_issues_on_project_source_state"
@@ -684,6 +687,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_110831) do
     t.index ["identifier"], name: "index_knowledge_artifacts_on_identifier_trgm", opclass: :gin_trgm_ops, using: :gin
     t.index ["project_id", "artifact_type", "scope_path", "identifier", "collector_type", "status"], name: "idx_knowledge_artifacts_on_project_type_scope_id_ctype_status"
     t.index ["project_id", "artifact_type", "scope_path", "identifier", "collector_type"], name: "idx_knowledge_artifacts_active_unique", unique: true, where: "((status)::text = 'active'::text)"
+    t.index ["project_id", "status", "identifier"], name: "idx_knowledge_artifacts_project_status_identifier"
     t.index ["project_id"], name: "index_knowledge_artifacts_on_project_id"
     t.index ["status"], name: "index_knowledge_artifacts_on_status"
   end
@@ -721,6 +725,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_110831) do
     t.index ["content_hash"], name: "index_knowledge_chunks_on_content_hash"
     t.index ["content_tsvector"], name: "index_knowledge_chunks_on_content_tsvector", using: :gin
     t.index ["knowledge_artifact_id"], name: "index_knowledge_chunks_on_knowledge_artifact_id"
+    t.index ["project_id", "status", "knowledge_artifact_id", "sequence"], name: "idx_knowledge_chunks_project_status_artifact_sequence"
     t.index ["project_id", "status"], name: "index_knowledge_chunks_on_project_id_and_status"
     t.index ["project_id"], name: "index_knowledge_chunks_on_project_id"
   end
@@ -1181,6 +1186,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_110831) do
     t.bigint "project_id", null: false
     t.string "severity", limit: 20, default: "warning", null: false
     t.datetime "updated_at", null: false
+    t.index ["project_id", "enabled", "metric_key"], name: "idx_quality_gate_thresholds_project_enabled_metric"
     t.index ["project_id", "metric_key"], name: "index_quality_gate_thresholds_on_project_id_and_metric_key", unique: true
     t.index ["project_id"], name: "index_quality_gate_thresholds_on_project_id"
   end
@@ -1200,6 +1206,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_110831) do
     t.index ["composite_score"], name: "index_quality_metrics_on_composite_score"
     t.index ["created_at"], name: "index_quality_metrics_on_created_at"
     t.index ["metric_type"], name: "index_quality_metrics_on_metric_type"
+    t.index ["prompt_version_id", "created_at"], name: "idx_quality_metrics_prompt_recent_composite", order: { created_at: :desc }, where: "(composite_score IS NOT NULL)"
     t.index ["prompt_version_id", "created_at"], name: "index_quality_metrics_on_prompt_version_and_created_at"
     t.index ["prompt_version_id"], name: "index_quality_metrics_on_prompt_version_id"
   end
@@ -1336,10 +1343,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_110831) do
     t.integer "output_tokens", default: 0, null: false
     t.string "request_type", limit: 50, null: false
     t.datetime "updated_at", null: false
+    t.index ["agent_run_id", "created_at"], name: "idx_token_usages_agent_run_created_at"
     t.index ["agent_run_id", "request_type"], name: "index_token_usages_on_agent_run_id_and_request_type"
     t.index ["created_at"], name: "index_token_usages_on_created_at"
+    t.index ["knowledge_run_id", "created_at"], name: "idx_token_usages_knowledge_run_created_at"
     t.index ["knowledge_run_id"], name: "index_token_usages_on_knowledge_run_id"
     t.index ["llm_model"], name: "index_token_usages_on_llm_model"
+    t.index ["request_type", "created_at"], name: "idx_token_usages_request_type_created_at"
     t.index ["request_type"], name: "index_token_usages_on_request_type"
     t.check_constraint "(agent_run_id IS NOT NULL) <> (knowledge_run_id IS NOT NULL)", name: "token_usages_exactly_one_run"
   end

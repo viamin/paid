@@ -132,7 +132,10 @@ jobs:
           curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused "$QDRANT_URL/healthz"
 
       - name: Run tests
-        run: bin/rspec
+        run: bin/rspec --exclude-pattern "spec/performance/**/*_spec.rb"
+
+      - name: Run query performance benchmarks
+        run: COVERAGE=false bin/rspec spec/performance
 
   performance:
     runs-on: ubuntu-latest
