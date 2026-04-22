@@ -2,6 +2,8 @@
 set -euo pipefail
 
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$APP_ROOT" || exit
+
 BACKUPS_DIR="${APP_ROOT}/backups"
 
 read_rails_db_config() {
