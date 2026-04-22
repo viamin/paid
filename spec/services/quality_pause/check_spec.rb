@@ -80,6 +80,20 @@ RSpec.describe QualityPause::Check do
       expect(event.threshold).to eq(0.5)
     end
 
+    it "caps the rolling window to the latest DEFAULT_WINDOW_SIZE eligible runs" do
+      # 10 old low-scoring runs followed by 5 newer high-scoring runs.
+      # With window_size=10: latest 10 include 5×0.7 + 5×0.0 → avg=0.35 < 0.5 → paused
+      # With window_size=5:  latest 5 are all 0.7              → avg=0.7  > 0.5 → not paused
+      create_quality_metrics(project, scores: Array.new(10, 0.0))
+      create_quality_metrics(project, scores: Array.new(5, 0.7))
+
+      described_class.call(agent_run: agent_run)
+
+      project.reload
+      expect(project.quality_paused?).to be true
+      expect(project.quality_pause_metadata["sample_size"]).to eq(10)
+    end
+
     it "pauses the project when a metric-specific threshold is breached" do
       create(:quality_threshold, account: project.account, metric_type: "lint_clean", goal_type: "create_pr")
       create_metric_scores(project, metric_type: "lint_clean", scores: [ 0.0, 1.0, 0.0, 0.0, 0.0 ])
