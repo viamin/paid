@@ -94,6 +94,8 @@ jobs:
       BUNDLE_FROZEN: "true"
       RAILS_ENV: test
       DB_HOST: localhost
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
       QDRANT_URL: http://localhost:6333
 
     steps:
@@ -163,6 +165,8 @@ jobs:
       BUNDLE_FROZEN: "true"
       RAILS_ENV: test
       DB_HOST: localhost
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
       QDRANT_URL: http://localhost:6333
 
     steps:
