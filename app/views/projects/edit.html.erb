@@ -17,6 +17,88 @@
         Update settings for <%= @project.full_name %>.
       </p>
 
+      <% pause_metadata = @project.quality_pause_metadata || {} %>
+      <div class="mt-6 rounded-md border <%= @project.quality_paused? ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50' %> p-4">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-sm font-semibold <%= @project.quality_paused? ? 'text-amber-900' : 'text-gray-900' %>">Quality Pause</h2>
+            <% if @project.quality_paused? %>
+              <p class="mt-1 text-sm text-amber-800">
+                Automatic work has been paused since <%= local_time(@project.quality_paused_at) %>.
+              </p>
+            <% else %>
+              <p class="mt-1 text-sm text-gray-600">Automatic work is not paused by quality gates.</p>
+            <% end %>
+          </div>
+          <% if @project.quality_paused? %>
+            <span class="inline-flex items-center rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">Paused</span>
+          <% else %>
+            <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Running</span>
+          <% end %>
+        </div>
+
+        <% if @project.quality_paused? %>
+          <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-amber-700">Score</dt>
+              <dd class="mt-1 text-sm font-semibold text-amber-950">
+                <% if pause_metadata["composite_score"].present? %>
+                  <%= format("%.1f%%", pause_metadata["composite_score"].to_f * 100) %>
+                <% else %>
+                  Unknown
+                <% end %>
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-amber-700">Threshold</dt>
+              <dd class="mt-1 text-sm font-semibold text-amber-950">
+                <% if pause_metadata["threshold"].present? %>
+                  <%= format("%.1f%%", pause_metadata["threshold"].to_f * 100) %>
+                <% else %>
+                  Unknown
+                <% end %>
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-amber-700">Samples</dt>
+              <dd class="mt-1 text-sm font-semibold text-amber-950">
+                <%= pause_metadata["sample_size"].presence || Array(pause_metadata["recent_scores"]).size %>
+              </dd>
+            </div>
+          </dl>
+
+          <% if pause_metadata["metric_type"].present? || pause_metadata["goal_type"].present? %>
+            <p class="mt-3 text-sm text-amber-800">
+              Triggered by <%= pause_metadata["metric_type"].presence || "quality" %>
+              <% if pause_metadata["goal_type"].present? %>
+                for <%= pause_metadata["goal_type"].humanize.downcase %>
+              <% end %>.
+            </p>
+          <% end %>
+
+          <% recent_scores = Array(pause_metadata["recent_scores"]) %>
+          <% if recent_scores.any? %>
+            <div class="mt-4">
+              <h3 class="text-xs font-medium uppercase tracking-wide text-amber-700">Recent Scores</h3>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <% recent_scores.each do |score| %>
+                  <span class="inline-flex items-center rounded-md bg-white px-2 py-1 text-xs font-medium text-amber-900 ring-1 ring-inset ring-amber-200">
+                    <%= format("%.1f%%", score.to_f * 100) %>
+                  </span>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+
+          <div class="mt-4">
+            <%= button_to "Resume", quality_resume_project_path(@project),
+              method: :post,
+              class: "rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500 cursor-pointer",
+              data: { turbo_confirm: "Resume automatic work for this project?" } %>
+          </div>
+        <% end %>
+      </div>
+
       <%= form_with model: @project, url: project_path(@project), method: :patch, class: "mt-6" do |form| %>
         <% if @project.errors.any? %>
           <div class="mb-6 rounded-md bg-red-50 p-4">
