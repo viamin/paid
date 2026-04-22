@@ -1113,6 +1113,8 @@ RSpec.describe Containers::Provision do
       end
 
       it "fails clearly for a Codex subscription run when local auth is not bind-mountable" do
+        codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
+        project.created_by.settings.update!(default_agent_provider: codex_provider.routing_key)
         agent_run.update!(agent_type: "codex")
         current_container = instance_double(Docker::Container, info: { "Mounts" => [] })
         allow(Docker::Container).to receive(:get).with(Socket.gethostname).and_return(current_container)
@@ -1123,6 +1125,22 @@ RSpec.describe Containers::Provision do
           Containers::Provision::ProvisionError,
           /Codex subscription auth was found at .*not available as a Docker bind mount/
         )
+      end
+
+      it "does not fail for an API-key-backed Codex default when local auth is not bind-mountable" do
+        api_key = create(:provider_api_key, user: project.created_by, api_service_type: "openai")
+        codex_provider = create(:provider, :api_key, user: project.created_by, provider_key: "codex", provider_api_key: api_key)
+        project.created_by.settings.update!(default_agent_provider: codex_provider.routing_key)
+        agent_run.update!(agent_type: "codex")
+        current_container = instance_double(Docker::Container, info: { "Mounts" => [] })
+        allow(Docker::Container).to receive(:get).with(Socket.gethostname).and_return(current_container)
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["Env"]).to include("PAID_CODEX_SUBSCRIPTION_AUTH=0")
+          mock_container
+        end
+
+        expect { service.provision }.not_to raise_error
       end
     end
 

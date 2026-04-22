@@ -1546,12 +1546,18 @@ module Containers
 
     def codex_subscription_provider_requested?
       return false unless agent_run
-      return false if agent_run.provider&.api_key? && agent_run.provider.provider_key == "codex"
-      return true if agent_run.provider&.subscription? && agent_run.provider.provider_key == "codex"
-      return true if ProviderSupport.provider_key_for_agent_type(agent_run.agent_type) == "codex"
+
+      providers = codex_resolved_provider_candidates
+      return providers.any? { |provider| provider.provider_key == "codex" && provider.subscription? } if providers.any?
+
+      ProviderSupport.provider_key_for_agent_type(agent_run.agent_type) == "codex"
+    end
+
+    def codex_resolved_provider_candidates
+      return codex_run_provider_candidates if agent_run.provider
 
       settings = resolved_user_settings
-      return false unless settings
+      return [] unless settings
 
       primary = settings.default_provider_identifier_for_goal(agent_run.goal)
       identifiers = [ primary ].compact
@@ -1559,19 +1565,25 @@ module Containers
         identifiers.concat(settings.fallback_priority_for(primary_provider: primary, identifiers: true))
       end
 
-      codex_subscription_identifiers?(
-        identifiers,
-        user: settings.user
-      )
+      providers_for_identifiers(identifiers, user: settings.user)
     end
 
-    def codex_subscription_identifiers?(identifiers, user:)
-      provider_ids = identifiers.filter_map { |identifier| Provider.id_from_routing_key(identifier) }
-      providers_by_id = user.providers.where(id: provider_ids).index_by(&:id)
+    def codex_run_provider_candidates
+      providers = [ agent_run.provider ]
+      settings = resolved_user_settings
+      if settings&.fallback_enabled?
+        providers.concat(providers_for_identifiers(
+          settings.fallback_priority_for(primary_provider: agent_run.provider.routing_key, identifiers: true),
+          user: settings.user
+        ))
+      end
 
-      identifiers.any? do |identifier|
-        provider = providers_by_id[Provider.id_from_routing_key(identifier)]
-        identifier.to_s == "codex" || (provider&.provider_key == "codex" && provider.subscription?)
+      providers.compact
+    end
+
+    def providers_for_identifiers(identifiers, user:)
+      identifiers.filter_map do |identifier|
+        Provider.for_identifier(user, identifier)
       end
     end
 
