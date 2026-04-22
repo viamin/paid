@@ -91,6 +91,19 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include(edit_project_path(project))
       end
 
+      it "does not link viewers to quality pause review actions" do
+        viewer = create(:user, :viewer, account: account)
+        sign_in viewer
+
+        project.update!(name: "Paused Project", quality_paused_at: 30.minutes.ago)
+
+        get dashboard_path
+
+        expect(response.body).to include("Paused Project")
+        expect(response.body).to include(project_path(project))
+        expect(response.body).not_to include(edit_project_path(project))
+      end
+
       it "does not show quality-paused projects from other accounts" do
         other_account = create(:account)
         other_project = create(:project, account: other_account, quality_paused_at: 30.minutes.ago)

@@ -22,7 +22,11 @@
               <% end %>
             </p>
           </div>
-          <%= link_to "Review", edit_project_path(project), class: "shrink-0 text-sm font-medium text-amber-900 hover:text-amber-700" %>
+          <% if policy(project).update? %>
+            <%= link_to "Review", edit_project_path(project), class: "shrink-0 text-sm font-medium text-amber-900 hover:text-amber-700" %>
+          <% else %>
+            <%= link_to "View", project_path(project), class: "shrink-0 text-sm font-medium text-amber-900 hover:text-amber-700" %>
+          <% end %>
         </div>
       <% end %>
     </div>
