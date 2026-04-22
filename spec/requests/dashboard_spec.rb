@@ -73,6 +73,33 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("42s")
       end
 
+      it "shows quality-paused projects on the dashboard" do
+        project.update!(
+          name: "Paused Project",
+          quality_paused_at: 30.minutes.ago,
+          quality_pause_metadata: {
+            "composite_score" => 0.34,
+            "threshold" => 0.5
+          }
+        )
+
+        get dashboard_path
+
+        expect(response.body).to include("Quality-paused projects")
+        expect(response.body).to include("Paused Project")
+        expect(response.body).to include("34.0%")
+        expect(response.body).to include(edit_project_path(project))
+      end
+
+      it "does not show quality-paused projects from other accounts" do
+        other_account = create(:account)
+        other_project = create(:project, account: other_account, quality_paused_at: 30.minutes.ago)
+
+        get dashboard_path
+
+        expect(response.body).not_to include(other_project.name)
+      end
+
       it "includes merged pull requests in the recent activity stream" do
         merged_pr = create(:issue, :pull_request, project: project,
           pr_review_phase: "merged",
