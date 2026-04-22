@@ -138,7 +138,7 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     it "omits CI failures section when no checks are failing" do
-      expect(prompt).not_to include("CI Failures")
+      expect(prompt).not_to include("CI Status: FAILING")
     end
 
     it "omits code review section when no unresolved threads" do
@@ -229,10 +229,16 @@ RSpec.describe Prompts::BuildForPr do
       allow(github_client).to receive(:check_runs_for_ref)
         .with(project.full_name, "abc123")
         .and_return([
-          { name: "rspec", conclusion: "failure" },
-          { name: "rubocop", conclusion: "success" },
-          { name: "build", conclusion: "cancelled" }
+          { id: 1, name: "rspec", conclusion: "failure", output_text: "role \"root\" does not exist" },
+          { id: 2, name: "rubocop", conclusion: "success", output_text: "ok" },
+          { id: 3, name: "build", conclusion: "cancelled", output_text: "" }
         ])
+      allow(github_client).to receive(:check_run_log)
+        .with(project.full_name, { id: 1, name: "rspec", conclusion: "failure", output_text: "role \"root\" does not exist" })
+        .and_return("")
+      allow(github_client).to receive(:check_run_log)
+        .with(project.full_name, { id: 3, name: "build", conclusion: "cancelled", output_text: "" })
+        .and_return("database \"railscrawler_test\" does not exist")
     end
 
     it "includes failing check names" do
@@ -243,10 +249,46 @@ RSpec.describe Prompts::BuildForPr do
         rebase_succeeded: true
       )
 
-      expect(prompt).to include("CI Failures")
+      expect(prompt).to include("CI Status: FAILING")
       expect(prompt).to include("rspec (failure)")
       expect(prompt).to include("build (cancelled)")
       expect(prompt).not_to include("rubocop (success)")
+    end
+
+    it "includes pre-processed failure output" do
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).to include("Error output (pre-processed)")
+      expect(prompt).to include("role \"root\" does not exist")
+      expect(prompt).to include("database \"railscrawler_test\" does not exist")
+      expect(prompt).to include("Fix the issue causing these CI failures")
+    end
+  end
+
+  describe "pending CI checks" do
+    before do
+      allow(github_client).to receive(:check_runs_for_ref)
+        .with(project.full_name, "abc123")
+        .and_return([
+          { name: "rspec", conclusion: nil }
+        ])
+    end
+
+    it "does not present pending checks as failures" do
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).not_to include("CI Status: FAILING")
+      expect(prompt).not_to include("Fix CI failures")
     end
   end
 
@@ -664,9 +706,10 @@ RSpec.describe Prompts::BuildForPr do
   describe "priority ordering" do
     it "orders priorities correctly with all sections present" do
       allow(github_client).to receive_messages(
-        check_runs_for_ref: [ { name: "ci", conclusion: "failure" } ],
+        check_runs_for_ref: [ { name: "ci", conclusion: "failure", output_text: "failed" } ],
         review_threads: [ { id: "t1", is_resolved: false, comments: [ { body: "fix", path: "a.rb", line: 1, author: "r" } ] } ]
       )
+      allow(github_client).to receive(:check_run_log).and_return("")
       allow(github_client).to receive(:recent_issue_comments)
         .with(project.full_name, 42, pages: 1)
         .and_return([ OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "comment") ])
@@ -699,7 +742,7 @@ RSpec.describe Prompts::BuildForPr do
         rebase_succeeded: true
       )
 
-      expect(prompt).not_to include("CI Failures")
+      expect(prompt).not_to include("CI Status: FAILING")
     end
 
     it "omits review section when review_threads raises" do

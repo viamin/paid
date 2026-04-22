@@ -97,7 +97,7 @@ module Prompts
       sections << task_section
       sections << issue_requirements_section if linked_issue?
       sections << merge_conflicts_section unless rebase_succeeded
-      sections << ci_failures_section if failing_checks.any?
+      sections << ci_failures_section if ci_failure_context.failing?
       sections << code_review_section if includes_review_threads?
       sections << conversation_section if trusted_comments.any?
       sections << instructions_and_rules_shell
@@ -132,7 +132,7 @@ module Prompts
     def priority_list
       priorities = []
       priorities << "Resolve merge conflicts" unless rebase_succeeded
-      priorities << "Fix CI failures" if failing_checks.any?
+      priorities << "Fix CI failures" if ci_failure_context.failing?
       priorities << "Close implementation gaps against the linked issue" if linked_issue?
       priorities << "Address code review comments" if includes_review_threads?
       priorities << "Address conversation comments" if trusted_comments.any?
@@ -194,17 +194,32 @@ module Prompts
     end
 
     def ci_failures_section
-      names = failing_checks.map { |c| "- #{c[:name]} (#{c[:conclusion]})" }.join("\n")
+      names = ci_failure_context.checks.map { |c| "- #{c[:name]} (#{c[:conclusion]})" }.join("\n")
+      output = ci_failure_context.output
 
       <<~SECTION
-        # CI Failures
+        # CI Status: FAILING
 
-        The following CI checks are failing:
+        The following CI checks are failing on this branch:
 
         #{names}
 
-        Reproduce these failures locally using the lint and test commands below.
-        Fix the underlying issues — do not skip or disable checks.
+        #{ci_failure_output_section(output)}
+
+        Fix the issue causing these CI failures. Reproduce them locally using the lint
+        and test commands below when possible. Do not skip or disable checks.
+      SECTION
+    end
+
+    def ci_failure_output_section(output)
+      return "No check log output was available from GitHub." if output.blank?
+
+      <<~SECTION
+        Error output (pre-processed):
+
+        ```text
+        #{output}
+        ```
       SECTION
     end
 
@@ -270,10 +285,18 @@ module Prompts
     def failing_checks
       @failing_checks ||= begin
         checks = github_client.check_runs_for_ref(project.full_name, pr_data.head.sha)
-        checks.reject { |c| %w[success skipped neutral].include?(c[:conclusion].to_s) }
+        checks.reject { |c| Ci::FailureContext::GREEN_CONCLUSIONS.include?(c[:conclusion].to_s) }
       rescue GithubClient::Error
         []
       end
+    end
+
+    def ci_failure_context
+      @ci_failure_context ||= Ci::FailureContext.call(
+        repo: project.full_name,
+        checks: failing_checks,
+        github_client: github_client
+      )
     end
 
     def unresolved_threads
