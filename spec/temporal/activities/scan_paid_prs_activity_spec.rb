@@ -857,7 +857,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           draft: true,
           reviews: [ { id: 1, user_login: "copilot", state: "COMMENTED",
-                       body: "I found some issues.", submitted_at: 1.hour.ago } ],
+                     body: "I found some issues.", submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
@@ -889,7 +889,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           checks: [],
           reviews: [ { id: 1, user_login: "copilot", state: "COMMENTED",
-                       body: "I found some issues.", submitted_at: 1.hour.ago } ],
+                     body: "I found some issues.", submitted_at: 1.hour.ago } ],
           review_threads: []
         )
       end
@@ -913,7 +913,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "copilot", state: "COMMENTED",
-                       body: "I found some issues.", submitted_at: 1.hour.ago } ],
+                     body: "I found some issues.", submitted_at: 1.hour.ago } ],
           review_threads: []
         )
       end
@@ -971,8 +971,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
-                       body: "Here are some automated review suggestions.",
-                       submitted_at: 2.hours.ago } ],
+                     body: "Here are some automated review suggestions.",
+                     submitted_at: 2.hours.ago } ],
           review_threads: [],
           recent_issue_comments: [ clean_comment ]
         )
@@ -1007,8 +1007,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-                       body: "Here are some automated review suggestions.",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Here are some automated review suggestions.",
+                     submitted_at: 1.hour.ago } ],
           review_threads: [],
           recent_issue_comments: [ clean_comment, info_comment ]
         )
@@ -1049,8 +1049,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-                       body: "Found issues that still need fixes.",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Found issues that still need fixes.",
+                     submitted_at: 1.hour.ago } ],
           review_threads: [],
           recent_issue_comments: [ clean_comment ]
         )
@@ -1096,8 +1096,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-                       body: "Here are some automated review suggestions.",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Here are some automated review suggestions.",
+                     submitted_at: 1.hour.ago } ],
           review_threads: [],
           recent_issue_comments: [ clean_comment, info_comment ]
         )
@@ -1131,14 +1131,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-                       body: "Copilot reviewed 5 out of 5 changed files and generated 2 comments.",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Copilot reviewed 5 out of 5 changed files and generated 2 comments.",
+                     submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
               is_resolved: false,
               comments: [ { body: "Fix this", path: "app/model.rb", line: 10,
-                            author: "copilot-pull-request-reviewer[bot]" } ]
+                          author: "copilot-pull-request-reviewer[bot]" } ]
             }
           ],
           recent_issue_comments: [ clean_comment ]
@@ -1173,7 +1173,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
-                       body: "Found 2 issues.", submitted_at: 10.minutes.ago } ],
+                     body: "Found 2 issues.", submitted_at: 10.minutes.ago } ],
           review_threads: [],
           recent_issue_comments: [ clean_comment ]
         )
@@ -1203,8 +1203,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
-                       body: "Here are some automated review suggestions.",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Here are some automated review suggestions.",
+                     submitted_at: 1.hour.ago } ],
           review_threads: [],
           recent_issue_comments: [ stale_clean ]
         )
@@ -1258,8 +1258,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-                       body: "Here are some automated review suggestions.",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Here are some automated review suggestions.",
+                     submitted_at: 1.hour.ago } ],
           review_threads: []
         )
       end
@@ -1287,8 +1287,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-                       body: "Here are some automated review suggestions.",
-                       submitted_at: 2.hours.ago } ],
+                     body: "Here are some automated review suggestions.",
+                     submitted_at: 2.hours.ago } ],
           review_threads: []
         )
       end
@@ -1315,8 +1315,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-                       body: "Here are some automated review suggestions.",
-                       submitted_at: 30.minutes.ago } ],
+                     body: "Here are some automated review suggestions.",
+                     submitted_at: 30.minutes.ago } ],
           review_threads: []
         )
       end
@@ -1345,8 +1345,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-                       body: "Here are some automated review suggestions.",
-                       submitted_at: 30.minutes.ago } ],
+                     body: "Here are some automated review suggestions.",
+                     submitted_at: 30.minutes.ago } ],
           review_threads: []
         )
       end
@@ -1374,16 +1374,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-                       body: "Here are some automated review suggestions.",
-                       submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+                     body: "Here are some automated review suggestions.",
+                     submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
           review_threads: []
         )
         allow(github_client).to receive(:pull_request_review_comments)
           .with(project.full_name, 42)
           .and_return([
             { id: 10, user_login: "chatgpt-codex-connector", body: "Fix this",
-              created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
-              pull_request_review_id: 1 }
+             created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
+             pull_request_review_id: 1 }
           ])
         allow(github_client).to receive(:compare_changed_files)
           .with(project.full_name, "rev_sha", "abc123")
@@ -1413,16 +1413,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-                       body: "Here are some automated review suggestions.",
-                       submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+                     body: "Here are some automated review suggestions.",
+                     submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
           review_threads: []
         )
         allow(github_client).to receive(:pull_request_review_comments)
           .with(project.full_name, 42)
           .and_return([
             { id: 10, user_login: "chatgpt-codex-connector", body: "Fix this",
-              created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
-              pull_request_review_id: 1 }
+             created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
+             pull_request_review_id: 1 }
           ])
         allow(github_client).to receive(:compare_changed_files)
           .with(project.full_name, "rev_sha", "abc123")
@@ -1450,8 +1450,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-                       body: "Here are some automated review suggestions.",
-                       submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+                     body: "Here are some automated review suggestions.",
+                     submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
           review_threads: []
         )
         allow(github_client).to receive(:pull_request_review_comments)
@@ -1482,16 +1482,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-                       body: "Here are some automated review suggestions.",
-                       submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+                     body: "Here are some automated review suggestions.",
+                     submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
           review_threads: []
         )
         allow(github_client).to receive(:pull_request_review_comments)
           .with(project.full_name, 42)
           .and_return([
             { id: 10, user_login: "chatgpt-codex-connector", body: "Fix this",
-              created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
-              pull_request_review_id: 1 }
+             created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
+             pull_request_review_id: 1 }
           ])
         allow(github_client).to receive(:compare_changed_files)
           .with(project.full_name, "rev_sha", "abc123")
@@ -1520,16 +1520,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-                       body: "Here are some review suggestions.",
-                       submitted_at: 2.hours.ago, commit_id: "abc123" } ],
+                     body: "Here are some review suggestions.",
+                     submitted_at: 2.hours.ago, commit_id: "abc123" } ],
           review_threads: []
         )
         allow(github_client).to receive(:pull_request_review_comments)
           .with(project.full_name, 42)
           .and_return([
             { id: 10, user_login: "paid-code-reviewer[bot]", body: "Fix this",
-              created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
-              pull_request_review_id: 1 }
+             created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
+             pull_request_review_id: 1 }
           ])
       end
 
@@ -1560,16 +1560,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-                       body: "Here are some review suggestions.",
-                       submitted_at: 30.minutes.ago, commit_id: "abc123" } ],
+                     body: "Here are some review suggestions.",
+                     submitted_at: 30.minutes.ago, commit_id: "abc123" } ],
           review_threads: []
         )
         allow(github_client).to receive(:pull_request_review_comments)
           .with(project.full_name, 42)
           .and_return([
             { id: 10, user_login: "paid-code-reviewer[bot]", body: "Fix this",
-              created_at: 30.minutes.ago, path: "lib/agent_harness/providers/github_copilot.rb",
-              pull_request_review_id: 1 }
+             created_at: 30.minutes.ago, path: "lib/agent_harness/providers/github_copilot.rb",
+             pull_request_review_id: 1 }
           ])
       end
 
@@ -1591,8 +1591,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-                       body: "Here are some review suggestions.",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Here are some review suggestions.",
+                     submitted_at: 1.hour.ago } ],
           review_threads: []
         )
       end
@@ -1621,8 +1621,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-                       body: "Here are some review suggestions.",
-                       submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+                     body: "Here are some review suggestions.",
+                     submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
           review_threads: []
         )
         allow(github_client).to receive(:pull_request_review_comments)
@@ -1662,16 +1662,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-                       body: "Here are some review suggestions.",
-                       submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+                     body: "Here are some review suggestions.",
+                     submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
           review_threads: []
         )
         allow(github_client).to receive(:pull_request_review_comments)
           .with(project.full_name, 42)
           .and_return([
             { id: 10, user_login: "paid-code-reviewer[bot]", body: "Fix this",
-              created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
-              pull_request_review_id: 1 }
+             created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
+             pull_request_review_id: 1 }
           ])
         allow(github_client).to receive(:compare_changed_files)
           .with(project.full_name, "rev_sha", "abc123")
@@ -1703,8 +1703,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-                       body: "Here are some review suggestions.",
-                       submitted_at: 30.minutes.ago } ],
+                     body: "Here are some review suggestions.",
+                     submitted_at: 30.minutes.ago } ],
           review_threads: []
         )
       end
@@ -1728,7 +1728,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           draft: true,
           reviews: [ { id: 1, user_login: "claude[bot]", state: "COMMENTED",
-                       body: "I found some issues.", submitted_at: 1.hour.ago } ],
+                     body: "I found some issues.", submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
@@ -1759,7 +1759,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           draft: true,
           reviews: [ { id: 1, user_login: "claude-code[bot]", state: "COMMENTED",
-                       body: "I found some issues.", submitted_at: 1.hour.ago } ],
+                     body: "I found some issues.", submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
@@ -1793,9 +1793,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+             body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
             { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-              body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
+             body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
           ],
           review_threads: []
         )
@@ -1823,7 +1823,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago }
+             body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago }
           ],
           review_threads: [
             {
@@ -1887,9 +1887,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+             body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
             { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-              body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
+             body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
           ],
           review_threads: [],
           checks: [ { name: "ci", conclusion: "success" } ]
@@ -1920,9 +1920,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+             body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
             { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-              body: "Some old feedback.", submitted_at: 2.hours.ago, commit_id: "rev_sha" }
+             body: "Some old feedback.", submitted_at: 2.hours.ago, commit_id: "rev_sha" }
           ],
           review_threads: []
         )
@@ -1930,7 +1930,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           .with(project.full_name, 42)
           .and_return([
             { id: 10, user_login: "chatgpt-codex-connector", body: "Fix this",
-              created_at: 2.hours.ago, path: "app/model.rb", pull_request_review_id: 2 }
+             created_at: 2.hours.ago, path: "app/model.rb", pull_request_review_id: 2 }
           ])
         allow(github_client).to receive(:compare_changed_files)
           .with(project.full_name, "rev_sha", "abc123")
@@ -1961,9 +1961,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+             body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
             { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-              body: "Some old feedback.", submitted_at: 2.hours.ago, commit_id: "rev_sha" }
+             body: "Some old feedback.", submitted_at: 2.hours.ago, commit_id: "rev_sha" }
           ],
           review_threads: []
         )
@@ -1971,7 +1971,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           .with(project.full_name, 42)
           .and_return([
             { id: 10, user_login: "chatgpt-codex-connector", body: "Fix this",
-              created_at: 2.hours.ago, path: "app/model.rb", pull_request_review_id: 2 }
+             created_at: 2.hours.ago, path: "app/model.rb", pull_request_review_id: 2 }
           ])
         allow(github_client).to receive(:compare_changed_files)
           .with(project.full_name, "rev_sha", "abc123")
@@ -1999,9 +1999,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+             body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
             { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-              body: "Codex reviewed 3 files and generated no new comments.", submitted_at: 30.minutes.ago }
+             body: "Codex reviewed 3 files and generated no new comments.", submitted_at: 30.minutes.ago }
           ],
           review_threads: [],
           checks: [ { name: "ci", conclusion: "success" } ]
@@ -2029,9 +2029,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Please tighten the error handling.", submitted_at: 1.hour.ago },
+             body: "Please tighten the error handling.", submitted_at: 1.hour.ago },
             { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-              body: "Codex reviewed 3 files and generated no new comments.", submitted_at: 30.minutes.ago }
+             body: "Codex reviewed 3 files and generated no new comments.", submitted_at: 30.minutes.ago }
           ],
           review_threads: [],
           checks: [ { name: "ci", conclusion: "success" } ]
@@ -2064,9 +2064,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+             body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
             { id: 2, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
-              body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
+             body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
           ],
           review_threads: [],
           checks: [ { name: "ci", conclusion: "success" } ],
@@ -2100,9 +2100,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+             body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
             { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-              body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
+             body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
           ],
           review_threads: [],
           checks: [ { name: "ci", conclusion: "success" } ],
@@ -2131,11 +2131,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+             body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
             { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-              body: "Codex reviewed 3 files and generated no new comments.", submitted_at: 45.minutes.ago },
+             body: "Codex reviewed 3 files and generated no new comments.", submitted_at: 45.minutes.ago },
             { id: 3, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Please fix the error handling.", submitted_at: 30.minutes.ago }
+             body: "Please fix the error handling.", submitted_at: 30.minutes.ago }
           ],
           review_threads: [],
           checks: [ { name: "ci", conclusion: "success" } ]
@@ -2164,11 +2164,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-              body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
+             body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago },
             { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-              body: "Codex reviewed 3 files and generated no new comments.", submitted_at: 30.minutes.ago },
+             body: "Codex reviewed 3 files and generated no new comments.", submitted_at: 30.minutes.ago },
             { id: 3, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Please fix the error handling.", submitted_at: 20.minutes.ago }
+             body: "Please fix the error handling.", submitted_at: 20.minutes.ago }
           ],
           review_threads: [],
           checks: [ { name: "ci", conclusion: "success" } ]
@@ -2196,9 +2196,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "<!-- PAID_AGENT_REVIEW_STATUS: clean -->", submitted_at: 1.hour.ago },
+             body: "<!-- PAID_AGENT_REVIEW_STATUS: clean -->", submitted_at: 1.hour.ago },
             { id: 2, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-              body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
+             body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
           ],
           review_threads: []
         )
@@ -2224,8 +2224,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           draft: true,
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-                       body: "Copilot reviewed 5 out of 5 changed files and generated no comments.",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Copilot reviewed 5 out of 5 changed files and generated no comments.",
+                     submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
@@ -2283,7 +2283,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           draft: true,
           reviews: [ { id: 100, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-                       body: "Copilot found issues.", submitted_at: 1.day.ago } ],
+                     body: "Copilot found issues.", submitted_at: 1.day.ago } ],
           checks: [ { name: "ci", conclusion: "success" } ]
         )
       end
@@ -2432,8 +2432,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           draft: true,
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-                       body: "Copilot reviewed 3 out of 5 changed files and generated 2 comments.",
-                       submitted_at: 1.hour.ago } ]
+                     body: "Copilot reviewed 3 out of 5 changed files and generated 2 comments.",
+                     submitted_at: 1.hour.ago } ]
         )
         allow(github_client).to receive(:review_threads)
           .with(project.full_name, 42)
@@ -2485,8 +2485,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           draft: true,
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-                       body: "Copilot reviewed 3 out of 3 changed files and generated 2 comments.",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Copilot reviewed 3 out of 3 changed files and generated 2 comments.",
+                     submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
@@ -2519,8 +2519,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           draft: true,
           reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-                       body: "Looks good. <!-- paid-review-clean -->",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Looks good. <!-- paid-review-clean -->",
+                     submitted_at: 1.hour.ago } ],
           review_threads: []
         )
       end
@@ -2545,8 +2545,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           draft: true,
           reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-                       body: "Found a few things to fix in the error handling.",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Found a few things to fix in the error handling.",
+                     submitted_at: 1.hour.ago } ],
           review_threads: []
         )
       end
@@ -2576,11 +2576,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Looks good. <!-- paid-review-clean -->",
-              submitted_at: 2.hours.ago },
+             body: "Looks good. <!-- paid-review-clean -->",
+             submitted_at: 2.hours.ago },
             { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Found new issues after the latest push.",
-              submitted_at: 1.hour.ago }
+             body: "Found new issues after the latest push.",
+             submitted_at: 1.hour.ago }
           ],
           review_threads: []
         )
@@ -2617,18 +2617,18 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Looks good. <!-- paid-review-clean -->",
-              submitted_at: 30.minutes.ago },
+             body: "Looks good. <!-- paid-review-clean -->",
+             submitted_at: 30.minutes.ago },
             { id: 2, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-              body: "Copilot reviewed 3 out of 5 changed files and generated 2 comments.",
-              submitted_at: 1.hour.ago }
+             body: "Copilot reviewed 3 out of 5 changed files and generated 2 comments.",
+             submitted_at: 1.hour.ago }
           ],
           review_threads: [
             {
               id: "thread_1",
               is_resolved: false,
               comments: [ { body: "Fix this", path: "app/model.rb", line: 10,
-                            author: "copilot-pull-request-reviewer[bot]" } ]
+                          author: "copilot-pull-request-reviewer[bot]" } ]
             }
           ]
         )
@@ -2653,8 +2653,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           draft: true,
           reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-                       body: "Looks good. <!-- paid-review-clean -->",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Looks good. <!-- paid-review-clean -->",
+                     submitted_at: 1.hour.ago } ],
           review_threads: []
         )
       end
@@ -2690,11 +2690,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Found issues.", submitted_at: 3.hours.ago },
+             body: "Found issues.", submitted_at: 3.hours.ago },
             { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Still has issues.", submitted_at: 2.hours.ago },
+             body: "Still has issues.", submitted_at: 2.hours.ago },
             { id: 3, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "More issues.", submitted_at: 1.hour.ago }
+             body: "More issues.", submitted_at: 1.hour.ago }
           ],
           review_threads: []
         )
@@ -2735,11 +2735,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Found issues.", submitted_at: 3.hours.ago },
+             body: "Found issues.", submitted_at: 3.hours.ago },
             { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Still has issues.", submitted_at: 2.hours.ago },
+             body: "Still has issues.", submitted_at: 2.hours.ago },
             { id: 3, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Looks good. <!-- paid-review-clean -->", submitted_at: 1.hour.ago }
+             body: "Looks good. <!-- paid-review-clean -->", submitted_at: 1.hour.ago }
           ],
           review_threads: []
         )
@@ -2778,9 +2778,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Found issues.", submitted_at: 2.hours.ago },
+             body: "Found issues.", submitted_at: 2.hours.ago },
             { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Still has issues.", submitted_at: 1.hour.ago }
+             body: "Still has issues.", submitted_at: 1.hour.ago }
           ],
           review_threads: []
         )
@@ -2817,13 +2817,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Found issues.", submitted_at: 3.hours.ago },
+             body: "Found issues.", submitted_at: 3.hours.ago },
             { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Still has issues.", submitted_at: 2.hours.ago },
+             body: "Still has issues.", submitted_at: 2.hours.ago },
             { id: 3, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "More issues.", submitted_at: 1.hour.ago },
+             body: "More issues.", submitted_at: 1.hour.ago },
             { id: 4, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Yet more issues.", submitted_at: 30.minutes.ago }
+             body: "Yet more issues.", submitted_at: 30.minutes.ago }
           ],
           review_threads: []
         )
@@ -2860,9 +2860,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Found issues.", submitted_at: 2.hours.ago },
+             body: "Found issues.", submitted_at: 2.hours.ago },
             { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Still has issues.", submitted_at: 1.hour.ago }
+             body: "Still has issues.", submitted_at: 1.hour.ago }
           ],
           review_threads: []
         )
@@ -2899,7 +2899,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Found issues.", submitted_at: 1.hour.ago }
+             body: "Found issues.", submitted_at: 1.hour.ago }
           ],
           review_threads: []
         )
@@ -2936,9 +2936,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Found issues.", submitted_at: 2.hours.ago },
+             body: "Found issues.", submitted_at: 2.hours.ago },
             { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Still has issues.", submitted_at: 1.hour.ago }
+             body: "Still has issues.", submitted_at: 1.hour.ago }
           ],
           review_threads: []
         )
@@ -2980,11 +2980,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Found issues.", submitted_at: 3.hours.ago },
+             body: "Found issues.", submitted_at: 3.hours.ago },
             { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Still issues.", submitted_at: 2.hours.ago },
+             body: "Still issues.", submitted_at: 2.hours.ago },
             { id: 3, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "More issues.", submitted_at: 1.hour.ago }
+             body: "More issues.", submitted_at: 1.hour.ago }
           ],
           review_threads: []
         )
@@ -3030,11 +3030,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Found issues.", submitted_at: 3.hours.ago },
+             body: "Found issues.", submitted_at: 3.hours.ago },
             { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Still has issues.", submitted_at: 2.hours.ago },
+             body: "Still has issues.", submitted_at: 2.hours.ago },
             { id: 3, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-              body: "Copilot found issues.", submitted_at: 1.hour.ago }
+             body: "Copilot found issues.", submitted_at: 1.hour.ago }
           ],
           review_threads: [ copilot_thread ]
         )
@@ -3078,11 +3078,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-              body: "Copilot found issues.", submitted_at: 3.hours.ago },
+             body: "Copilot found issues.", submitted_at: 3.hours.ago },
             { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Found issues.", submitted_at: 2.hours.ago },
+             body: "Found issues.", submitted_at: 2.hours.ago },
             { id: 3, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Still has issues.", submitted_at: 1.hour.ago }
+             body: "Still has issues.", submitted_at: 1.hour.ago }
           ],
           review_threads: [ copilot_thread ]
         )
@@ -3122,9 +3122,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Found issues.", submitted_at: 2.hours.ago },
+             body: "Found issues.", submitted_at: 2.hours.ago },
             { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Still has issues.", submitted_at: 1.hour.ago }
+             body: "Still has issues.", submitted_at: 1.hour.ago }
           ],
           review_threads: []
         )
@@ -3161,9 +3161,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Found issues.", submitted_at: 2.hours.ago },
+             body: "Found issues.", submitted_at: 2.hours.ago },
             { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Still has issues.", submitted_at: 1.hour.ago }
+             body: "Still has issues.", submitted_at: 1.hour.ago }
           ]
         )
         allow(github_client).to receive(:review_threads)
@@ -3217,8 +3217,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-                       body: "Copilot reviewed 9 out of 9 changed files and generated 2 comments.",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Copilot reviewed 9 out of 9 changed files and generated 2 comments.",
+                     submitted_at: 1.hour.ago } ],
           review_threads: []
         )
       end
@@ -3287,7 +3287,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [
             { id: 1, user_login: "alice", state: "APPROVED", body: "LGTM",
-              submitted_at: 1.hour.ago }
+             submitted_at: 1.hour.ago }
           ],
           review_threads: []
         )
@@ -3321,9 +3321,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [
             { id: 1, user_login: "alice", state: "APPROVED", body: "LGTM",
-              submitted_at: 2.hours.ago },
+             submitted_at: 2.hours.ago },
             { id: 2, user_login: "alice", state: "CHANGES_REQUESTED", body: "Actually, needs fixes",
-              submitted_at: 1.hour.ago }
+             submitted_at: 1.hour.ago }
           ],
           review_threads: []
         )
@@ -3567,7 +3567,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [
             { id: 1, user_login: "viamin", state: "APPROVED", body: "Approved",
-              submitted_at: 1.hour.ago }
+             submitted_at: 1.hour.ago }
           ],
           review_threads: []
         )
@@ -3779,7 +3779,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           review_threads: [
             { id: "thread_1", is_resolved: false,
-              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "viamin" } ] }
+             comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "viamin" } ] }
           ]
         )
       end
@@ -3869,7 +3869,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           author_login: "dependabot[bot]",
           checks: [ { name: "ci", conclusion: "success" } ],
           review_threads: [],
-          reviews: [])
+          reviews: []
+        )
 
         result = activity.execute(project_id: project.id)
 
@@ -3884,7 +3885,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           author_login: "dependabot[bot]",
           checks: [ { name: "ci", conclusion: "failure" } ],
           review_threads: [],
-          reviews: [])
+          reviews: []
+        )
 
         result = activity.execute(project_id: project.id)
 
@@ -3900,7 +3902,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           author_login: "dependabot[bot]",
           checks: [ { name: "ci", conclusion: "success" } ],
           review_threads: [],
-          reviews: [])
+          reviews: []
+        )
 
         result = activity.execute(project_id: project.id)
 
@@ -3916,7 +3919,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           author_login: "dependabot[bot]",
           checks: [ { name: "ci", conclusion: nil } ],
           review_threads: [],
-          reviews: [])
+          reviews: []
+        )
 
         result = activity.execute(project_id: project.id)
 
@@ -3940,7 +3944,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           author_login: "dependabot[bot]",
           checks: [ { name: "ci", conclusion: "success" } ],
           review_threads: [],
-          reviews: [])
+          reviews: []
+        )
 
         result = activity.execute(project_id: project.id)
 
@@ -3955,7 +3960,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           author_login: "dependabot[bot]",
           checks: [ { name: "ci", conclusion: "success" } ],
           review_threads: [],
-          reviews: [])
+          reviews: []
+        )
 
         result = activity.execute(project_id: project.id)
 
@@ -3969,7 +3975,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           author_login: "dependabot[bot]",
           checks: [ { name: "ci", conclusion: "failure" } ],
           review_threads: [],
-          reviews: [])
+          reviews: []
+        )
 
         result = activity.execute(project_id: project.id)
 
@@ -3984,7 +3991,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           author_login: "dependabot[bot]",
           checks: [ { name: "ci", conclusion: "success" } ],
           review_threads: [],
-          reviews: [])
+          reviews: []
+        )
 
         result = activity.execute(project_id: project.id)
 
@@ -4024,7 +4032,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           create_followup_run(
             status: "failed",
             error_message: "All providers exhausted: claude_code, codex",
-            created_at: i.minutes.ago)
+            created_at: i.minutes.ago
+          )
         end
 
         result = activity.execute(project_id: project.id)
@@ -4040,7 +4049,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           create_followup_run(
             status: "timeout",
             error_message: "wall_clock_timeout: exceeded 30 minutes",
-            created_at: i.minutes.ago)
+            created_at: i.minutes.ago
+          )
         end
 
         result = activity.execute(project_id: project.id)
@@ -4081,7 +4091,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           create_followup_run(
             status: "failed",
             error_message: "All providers exhausted: claude_code",
-            created_at: i.minutes.ago)
+            created_at: i.minutes.ago
+          )
         end
 
         result = activity.execute(project_id: project.id)
@@ -4098,7 +4109,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           create_followup_run(
             status: "failed",
             error_message: "All providers exhausted: claude_code",
-            created_at: i.minutes.ago)
+            created_at: i.minutes.ago
+          )
         end
 
         result = activity.execute(project_id: project.id)
@@ -4261,8 +4273,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           draft: true,
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-                       body: "Copilot reviewed and generated 1 comment.",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Copilot reviewed and generated 1 comment.",
+                     submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
@@ -4294,8 +4306,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           checks: [],
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-                       body: "Copilot reviewed 20 out of 20 changed files in this pull request and generated 3 comments.",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Copilot reviewed 20 out of 20 changed files in this pull request and generated 3 comments.",
+                     submitted_at: 1.hour.ago } ],
           review_threads: []
         )
       end
@@ -4375,12 +4387,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "returns review_bot_review_pending when bot review is non-clean even without fetching threads" do
         non_clean_review = { id: 200, user_login: "copilot-pull-request-reviewer[bot]",
-                             state: "COMMENTED",
-                             body: "Copilot reviewed 3 out of 5 changed files and generated 2 comments.",
-                             submitted_at: 1.hour.ago }
+                            state: "COMMENTED",
+                            body: "Copilot reviewed 3 out of 5 changed files and generated 2 comments.",
+                            submitted_at: 1.hour.ago }
         bot_thread = { id: "thread_bot", is_resolved: false,
-                       comments: [ { body: "Fix this", path: "app/model.rb", line: 5,
-                                     author: "copilot-pull-request-reviewer[bot]" } ] }
+                      comments: [ { body: "Fix this", path: "app/model.rb", line: 5,
+                                  author: "copilot-pull-request-reviewer[bot]" } ] }
         stub_github_for_pr(draft: true, checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [ non_clean_review ], review_threads: [ bot_thread ])
 
@@ -4439,13 +4451,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [
             { id: 200, user_login: "chatgpt-codex-connector", state: "COMMENTED",
-              body: "Codex has reviewed the pull request and determined it is ready to merge.",
-              submitted_at: 1.hour.ago }
+             body: "Codex has reviewed the pull request and determined it is ready to merge.",
+             submitted_at: 1.hour.ago }
           ],
           review_threads: [
             { id: "thread_bot", is_resolved: false,
-              comments: [ { body: "Fix this", path: "app/model.rb", line: 5,
-                            author: "chatgpt-codex-connector" } ] }
+             comments: [ { body: "Fix this", path: "app/model.rb", line: 5,
+                         author: "chatgpt-codex-connector" } ] }
           ]
         )
 
@@ -4551,7 +4563,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           reviews: default_clean_copilot_review + [
             { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: 1.hour.ago },
             { id: 2, user_login: "reviewer", state: "CHANGES_REQUESTED", body: "Needs work",
-              submitted_at: Time.current }
+             submitted_at: Time.current }
           ]
         )
       end
@@ -4958,13 +4970,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           reviews: [
             { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-              body: "Copilot reviewed and generated 1 comment.", submitted_at: 1.hour.ago },
+             body: "Copilot reviewed and generated 1 comment.", submitted_at: 1.hour.ago },
             { id: 2, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
           ],
           review_threads: [
             { id: "thread_1", is_resolved: false,
-              comments: [ { body: "Fix this", path: "app/model.rb", line: 10,
-                           author: "copilot-pull-request-reviewer[bot]" } ] }
+             comments: [ { body: "Fix this", path: "app/model.rb", line: 10,
+                         author: "copilot-pull-request-reviewer[bot]" } ] }
           ]
         )
       end
@@ -4994,7 +5006,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           reviews: [
             { id: 1, user_login: "github-actions[bot]", state: "COMMENTED",
-              body: "Codex Review: Found 2 issues.", submitted_at: Time.current },
+             body: "Codex Review: Found 2 issues.", submitted_at: Time.current },
             { id: 2, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
           ]
         )
@@ -5019,8 +5031,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           paid_state: "completed")
         stub_github_for_pr(
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer", state: "COMMENTED",
-                       body: "Copilot reviewed and generated 1 comment.",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Copilot reviewed and generated 1 comment.",
+                     submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
@@ -5099,7 +5111,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         stub_github_for_pr(draft: true,
           reviews: [ { id: 1, user_login: "copilot", state: "COMMENTED",
-                       body: "I found issues.", submitted_at: 1.hour.ago } ],
+                     body: "I found issues.", submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
@@ -5413,11 +5425,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft: true,
           reviews: [
             { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Found issues.", submitted_at: 3.hours.ago },
+             body: "Found issues.", submitted_at: 3.hours.ago },
             { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "Still has issues.", submitted_at: 2.hours.ago },
+             body: "Still has issues.", submitted_at: 2.hours.ago },
             { id: 3, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-              body: "More issues.", submitted_at: 90.minutes.ago, commit_id: "rev_sha" }
+             body: "More issues.", submitted_at: 90.minutes.ago, commit_id: "rev_sha" }
           ],
           review_threads: []
         )
@@ -5425,8 +5437,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           .with(project.full_name, 42)
           .and_return([
             { id: 10, user_login: "paid-code-reviewer[bot]", body: "Fix this",
-              created_at: 90.minutes.ago, path: "app/services/fetch_issues_activity.rb",
-              pull_request_review_id: 3 }
+             created_at: 90.minutes.ago, path: "app/services/fetch_issues_activity.rb",
+             pull_request_review_id: 3 }
           ])
         allow(github_client).to receive(:compare_changed_files)
           .with(project.full_name, "rev_sha", "abc123")
@@ -5785,7 +5797,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(
           draft: true,
           reviews: [ { id: 1, user_login: "copilot", state: "COMMENTED",
-                       body: "I found issues.", submitted_at: 1.hour.ago } ],
+                     body: "I found issues.", submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
@@ -5892,9 +5904,39 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
       end
 
-      it "does not bypass skip for stale ready PRs (preserves merge-conflict rescan path)" do
+      it "does not bypass skip for stale ready PRs authored by humans (preserves merge-conflict rescan path)" do
         ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
         unchanged_pr.update!(pr_review_phase: "ready")
+        unchanged_pr.update_columns(
+          github_updated_at: (ceiling + 60).seconds.ago,
+          last_pr_scan_at: (ceiling + 30).seconds.ago
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+        expect(unchanged_pr.reload.last_pr_scan_at).to be < ceiling.seconds.ago
+      end
+
+      it "rescans stale bot-authored ready PRs when Dependabot auto-merge is enabled" do
+        ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
+        project.update!(auto_merge_mode: "dependabot_only")
+        unchanged_pr.update!(pr_review_phase: "ready", github_creator_login: "dependabot[bot]")
+        unchanged_pr.update_columns(
+          github_updated_at: (ceiling + 60).seconds.ago,
+          last_pr_scan_at: (ceiling + 30).seconds.ago
+        )
+        stub_github_for_pr(author_login: "dependabot[bot]")
+
+        activity.execute(project_id: project.id)
+
+        expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
+      end
+
+      it "does not rescan stale bot-authored ready PRs when Dependabot auto-merge is off" do
+        ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
+        project.update!(auto_merge_mode: "off")
+        unchanged_pr.update!(pr_review_phase: "ready", github_creator_login: "dependabot[bot]")
         unchanged_pr.update_columns(
           github_updated_at: (ceiling + 60).seconds.ago,
           last_pr_scan_at: (ceiling + 30).seconds.ago
@@ -5971,7 +6013,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           mergeable: false,
           checks: [ { name: "ci", conclusion: "failure" } ],
           reviews: [ { id: 200, user_login: "reviewer", state: "CHANGES_REQUESTED",
-                       body: nil, submitted_at: 1.hour.ago } ]
+                     body: nil, submitted_at: 1.hour.ago } ]
         )
 
         result = activity.execute(project_id: project.id)
@@ -6539,8 +6581,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         end
         stub_github_for_pr(
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-                       body: "Copilot reviewed 5 out of 5 changed files and generated no comments.",
-                       submitted_at: 1.hour.ago } ],
+                     body: "Copilot reviewed 5 out of 5 changed files and generated no comments.",
+                     submitted_at: 1.hour.ago } ],
           checks: [ { name: "rspec", conclusion: "failure" } ]
         )
       end
@@ -7212,7 +7254,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_github_for_pr(
         reviews: [
           { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-            body: "Review complete.\n<!-- paid-review-clean -->", submitted_at: 2.hours.ago },
+           body: "Review complete.\n<!-- paid-review-clean -->", submitted_at: 2.hours.ago },
           { id: 2, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
         ]
       )
@@ -7625,7 +7667,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         draft_review_count: 0)
       stub_github_for_pr(draft: true, reviews: [
         { id: 200, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-          body: "Review complete.\n<!-- paid-review-clean -->", submitted_at: 1.hour.ago }
+         body: "Review complete.\n<!-- paid-review-clean -->", submitted_at: 1.hour.ago }
       ])
     end
 
@@ -7734,9 +7776,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         draft: true,
         reviews: [
           { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-            body: "Found issues.", submitted_at: 2.hours.ago },
+           body: "Found issues.", submitted_at: 2.hours.ago },
           { id: 2, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
-            body: "Still has issues.", submitted_at: 1.hour.ago }
+           body: "Still has issues.", submitted_at: 1.hour.ago }
         ]
       )
     end
@@ -7896,6 +7938,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
   def default_clean_copilot_review
     [ { id: 100, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-        body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago } ]
+      body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago } ]
   end
 end
