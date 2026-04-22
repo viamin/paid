@@ -84,7 +84,10 @@ class FeatureFlags
       features = account.tenant_setting&.features
       return nil unless features.is_a?(Hash)
 
-      features[definition(flag_name).name.to_s]
+      value = features[definition(flag_name).name.to_s]
+      return value if [ true, false ].include?(value)
+
+      nil
     end
 
     def resolve_actor(project:, actor:)

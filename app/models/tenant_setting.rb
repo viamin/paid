@@ -44,6 +44,7 @@ class TenantSetting < ApplicationRecord
   validate :validate_features_is_hash
   validate :validate_configuration_namespaces
   validate :validate_default_budgets
+  validate :validate_agent_settings
 
   def configuration
     {
@@ -106,7 +107,10 @@ class TenantSetting < ApplicationRecord
   end
 
   def default_goal
-    effective_agent_settings["default_goal"].presence || DEFAULT_AGENT_SETTINGS.fetch("default_goal")
+    goal = effective_agent_settings["default_goal"].presence
+    return goal if AgentRun::GOALS.include?(goal)
+
+    DEFAULT_AGENT_SETTINGS.fetch("default_goal")
   end
 
   def cap_max_concurrent_runs(limit)
@@ -161,6 +165,15 @@ class TenantSetting < ApplicationRecord
     return if CostBudget::ENFORCEMENT_MODES.include?(settings["enforcement_mode"])
 
     errors.add(:default_budgets, "#{budget_type} enforcement_mode is unsupported")
+  end
+
+  def validate_agent_settings
+    return unless agent_settings.is_a?(Hash)
+
+    goal = agent_settings["default_goal"].presence
+    return if goal.blank? || AgentRun::GOALS.include?(goal)
+
+    errors.add(:agent_settings, "default_goal is unsupported")
   end
 
   def normalize_budget_hash(value)

@@ -53,6 +53,20 @@ RSpec.describe "TenantConfigurations" do
       expect(account.tenant_setting.reload.effective_agent_settings["auto_continue"]).to be(false)
     end
 
+    it "rejects unsupported default agent goals" do
+      patch tenant_configuration_path, params: {
+        tenant_setting: {
+          agent_settings: {
+            default_goal: "typo",
+            auto_continue: "1"
+          }
+        }
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(account.tenant_setting.reload.default_goal).to eq("create_pr")
+    end
+
     it "rejects viewers" do
       viewer = create(:user, :viewer, account: account)
       sign_out user

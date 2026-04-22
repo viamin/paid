@@ -34,6 +34,13 @@ RSpec.describe TenantSetting do
       setting = build(:tenant_setting, features: { "beta_enabled" => true })
       expect(setting).to be_valid
     end
+
+    it "validates the default agent goal" do
+      setting = build(:tenant_setting, agent_settings: { "default_goal" => "typo" })
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:agent_settings]).to include("default_goal is unsupported")
+    end
   end
 
   describe "defaults" do
@@ -68,6 +75,21 @@ RSpec.describe TenantSetting do
       expect(setting.configuration["provider_preferences"]["model_preferences"]["claude"]).to eq("sonnet")
       expect(setting.configuration["guardrails"]["max_concurrent_runs"]).to eq(5)
       expect(setting.configuration["features"]["explicit_pr_automation_decisions"]).to be(true)
+    end
+  end
+
+  describe "#default_goal" do
+    it "returns valid tenant goals" do
+      setting = build(:tenant_setting, agent_settings: { "default_goal" => "review" })
+
+      expect(setting.default_goal).to eq("review")
+    end
+
+    it "falls back when persisted tenant data has an unsupported goal" do
+      setting = build(:tenant_setting)
+      setting.agent_settings = { "default_goal" => "typo" }
+
+      expect(setting.default_goal).to eq("create_pr")
     end
   end
 
