@@ -21,7 +21,7 @@ module QualityMetrics
         record_excluded_metric
       else
         record_quality_metric
-        update_ab_test_variant_stats(automated_metric)
+        update_experiment_variant_stats(automated_metric)
         update_prompt_version_stats if agent_run.prompt_version.present?
       end
 
@@ -196,7 +196,7 @@ module QualityMetrics
       [ question_count / 3.0, 1.0 ].min.round(4)
     end
 
-    def update_ab_test_variant_stats(metric)
+    def update_experiment_variant_stats(metric)
       agent_run.ab_test_assignments.find_each do |assignment|
         variant = assignment.ab_test_variant
 
@@ -213,6 +213,22 @@ module QualityMetrics
           else
             # Inline the aggregate update to avoid the redundant nested
             # with_lock inside record_quality_score!.
+            add_variant_score(variant, metric.composite_score)
+          end
+        end
+      end
+
+      agent_run.configuration_experiment_assignments.find_each do |assignment|
+        variant = assignment.configuration_experiment_variant
+
+        variant.with_lock do
+          assignment.reload
+          old_score = assignment.quality_score
+          assignment.update!(quality_score: metric.composite_score)
+
+          if old_score.present?
+            adjust_variant_aggregates(variant, old_score: old_score, new_score: metric.composite_score)
+          else
             add_variant_score(variant, metric.composite_score)
           end
         end

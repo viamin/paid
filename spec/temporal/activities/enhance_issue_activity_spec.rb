@@ -135,7 +135,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
         mode: "hybrid",
         limit: described_class::MAX_SEARCH_RESULTS
       ))
-      expect(Knowledge::ContextBundle::Build).to have_received(:call).with(issue: issue, project: project)
+      expect(Knowledge::ContextBundle::Build).to have_received(:call).with(issue: issue, project: project, agent_run: agent_run)
     end
 
     it "posts clarifying questions when the LLM reports insufficient context" do

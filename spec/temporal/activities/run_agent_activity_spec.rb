@@ -463,7 +463,7 @@ RSpec.describe Activities::RunAgentActivity do
     it "includes knowledge context when artifacts are available" do
       base_prompt = "Enhance this issue with implementation context."
       allow(Knowledge::ContextBundle::Build).to receive(:call)
-        .with(issue: issue, project: project)
+        .with(issue: issue, project: project, agent_run: agent_run)
         .and_return(content: "## Codebase Context\n\n- Hunt#last_active uses prey.updated_at")
 
       prompt = activity.send(:augment_prompt_for_enhance_issue_goal, agent_run, base_prompt)
@@ -477,7 +477,7 @@ RSpec.describe Activities::RunAgentActivity do
     it "renders without knowledge context when no artifacts are available" do
       base_prompt = "Enhance this issue with implementation context."
       allow(Knowledge::ContextBundle::Build).to receive(:call)
-        .with(issue: issue, project: project)
+        .with(issue: issue, project: project, agent_run: agent_run)
         .and_return(content: "")
 
       prompt = activity.send(:augment_prompt_for_enhance_issue_goal, agent_run, base_prompt)
@@ -533,7 +533,7 @@ RSpec.describe Activities::RunAgentActivity do
     it "uses an assigned enhance-issue variant prompt version" do
       run = create(:agent_run, :enhance_issue_goal, project: project, issue: issue)
       allow(Knowledge::ContextBundle::Build).to receive(:call)
-        .with(issue: issue, project: project)
+        .with(issue: issue, project: project, agent_run: run)
         .and_return(content: "")
       variant_version = create_ab_test_assignment(
         slug: described_class::ENHANCE_ISSUE_GOAL_PROMPT_SLUG,

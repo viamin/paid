@@ -84,6 +84,7 @@ class AgentRun < ApplicationRecord
   has_many :container_pool_entries, dependent: :nullify
   has_many :token_usages, dependent: :destroy
   has_many :ab_test_assignments, dependent: :destroy
+  has_many :configuration_experiment_assignments, dependent: :destroy
   has_many :container_metrics, dependent: :delete_all
   has_many :quality_metrics, dependent: :destroy
   has_one :worktree, dependent: :nullify

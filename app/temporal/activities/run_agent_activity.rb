@@ -1815,7 +1815,7 @@ module Activities
         non_retryable: true
       ) unless issue
 
-      prompt = inject_knowledge_into_prompt(prompt, issue, agent_run.project)
+      prompt = inject_knowledge_into_prompt(prompt, issue, agent_run.project, agent_run)
 
       vars = {
         base_prompt: prompt,
@@ -1862,8 +1862,8 @@ module Activities
       AbTests::Assign.call(ab_test: ab_test, agent_run: agent_run)
     end
 
-    def inject_knowledge_into_prompt(prompt, issue, project)
-      bundle = Knowledge::ContextBundle::Build.call(issue: issue, project: project)
+    def inject_knowledge_into_prompt(prompt, issue, project, agent_run)
+      bundle = Knowledge::ContextBundle::Build.call(issue: issue, project: project, agent_run: agent_run)
       return prompt if bundle[:content].blank?
 
       "#{prompt}\n#{bundle[:content]}\n"

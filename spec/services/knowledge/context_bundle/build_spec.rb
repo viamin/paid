@@ -337,6 +337,41 @@ RSpec.describe Knowledge::ContextBundle::Build do
     ensure
       ENV["KNOWLEDGE_CONTEXT_TOKEN_BUDGET"] = original
     end
+
+    it "uses the assigned configuration experiment token budget" do
+      agent_run = create(:agent_run, project: project)
+      experiment = create(:configuration_experiment,
+        account: project.account,
+        status: "running",
+        config_key: "knowledge.token_budget",
+        control_value: JSON.generate(4000))
+      create(:configuration_experiment_variant,
+        configuration_experiment: experiment,
+        config_value: JSON.generate(40),
+        is_control: true)
+
+      result = described_class.new(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.token_budget).to eq(40)
+      expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run)).to be_present
+    end
+
+    it "uses the assigned configuration experiment section order" do
+      agent_run = create(:agent_run, project: project)
+      experiment = create(:configuration_experiment,
+        account: project.account,
+        status: "running",
+        config_key: "knowledge.section_order",
+        control_value: JSON.generate(%w[stats routes]))
+      create(:configuration_experiment_variant,
+        configuration_experiment: experiment,
+        config_value: JSON.generate(%w[stats routes]),
+        is_control: true)
+
+      result = described_class.new(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.section_order).to eq(%i[stats routes])
+    end
   end
 
   describe "truncation skips oversized sections" do

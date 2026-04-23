@@ -245,6 +245,35 @@ RSpec.describe QualityMetrics::Collect do
       end
     end
 
+    context "with configuration experiment assignment" do
+      let(:configuration_experiment) { create(:configuration_experiment, status: "running", started_at: Time.current) }
+      let!(:variant) { create(:configuration_experiment_variant, configuration_experiment: configuration_experiment, is_control: true) }
+      let!(:assignment) do
+        create(:configuration_experiment_assignment,
+          configuration_experiment: configuration_experiment,
+          configuration_experiment_variant: variant,
+          agent_run: agent_run)
+      end
+
+      it "sets quality_score on the assignment" do
+        described_class.call(agent_run: agent_run)
+
+        expect(assignment.reload.quality_score).to be_present
+      end
+
+      it "updates variant aggregate stats" do
+        expect { described_class.call(agent_run: agent_run) }
+          .to change { variant.reload.sample_count }.by(1)
+      end
+
+      it "adjusts variant aggregates on re-collection without changing sample_count" do
+        described_class.call(agent_run: agent_run)
+
+        expect { described_class.call(agent_run: agent_run) }
+          .not_to change { variant.reload.sample_count }
+      end
+    end
+
     context "with prompt_version" do
       let(:prompt) { create(:prompt, :with_version) }
       let(:agent_run) { create(:agent_run, :completed, iterations: 3, prompt_version: prompt.current_version) }

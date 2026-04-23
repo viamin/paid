@@ -23,14 +23,16 @@ module Knowledge
       # a conventions collector lands in the knowledge pipeline.
       SECTION_ORDER = %i[business_context routes symbols hotspots decisions stats].freeze
 
-      attr_reader :issue, :project, :token_budget
+      attr_reader :issue, :project, :agent_run, :token_budget, :section_order
 
       # issue is accepted for future relevance-ranking of artifacts.
       # Currently unused — all active artifacts are included project-wide.
-      def initialize(issue:, project:, token_budget: nil)
+      def initialize(issue:, project:, agent_run: nil, token_budget: nil, section_order: nil)
         @issue = issue
         @project = project
-        @token_budget = token_budget || env_token_budget
+        @agent_run = agent_run
+        @token_budget = token_budget || experiment_value("knowledge.token_budget") || env_token_budget
+        @section_order = section_order || experiment_value("knowledge.section_order") || SECTION_ORDER
       end
 
       def self.call(...)
@@ -59,7 +61,7 @@ module Knowledge
         built = []
         queries_made = 0
 
-        SECTION_ORDER.each do |section_name|
+        section_order.each do |section_name|
           break if remaining_budget <= 0
 
           queries_made += 1
@@ -255,6 +257,47 @@ module Knowledge
         return DEFAULT_TOKEN_BUDGET if parsed.nil? || parsed <= 0
 
         parsed
+      end
+
+      def experiment_value(config_key)
+        return nil unless agent_run
+
+        experiment = ConfigurationExperiment.active_for(config_key, project: project, agent_run: agent_run)
+        return nil unless experiment
+
+        assignment = ConfigurationExperiments::Assign.call(
+          configuration_experiment: experiment,
+          agent_run: agent_run
+        )
+        normalize_experiment_value(config_key, assignment.configuration_experiment_variant.parsed_value)
+      end
+
+      def normalize_experiment_value(config_key, value)
+        case config_key
+        when "knowledge.token_budget"
+          normalize_token_budget(value)
+        when "knowledge.section_order"
+          normalize_section_order(value)
+        end
+      end
+
+      def normalize_token_budget(value)
+        return value if value.is_a?(Integer) && value.positive?
+
+        raise ArgumentError, "knowledge.token_budget experiment value must be a positive integer"
+      end
+
+      def normalize_section_order(value)
+        unless value.is_a?(Array)
+          raise ArgumentError, "knowledge.section_order experiment value must be an array"
+        end
+
+        normalized = value.map(&:to_sym)
+        unless normalized.all? { |section_name| SECTION_ORDER.include?(section_name) }
+          raise ArgumentError, "knowledge.section_order experiment value includes an unknown section"
+        end
+
+        normalized
       end
 
       def empty_result(queries_made = 0)
