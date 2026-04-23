@@ -1630,12 +1630,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           .and_return([])
       end
 
-      it "keeps the review actionable because empty review paths cannot prove it was addressed" do
+      it "keeps the review actionable and queues a paid_agent review run" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
-        expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending")
+        expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending", "paid_agent_review_pending")
       end
     end
 
@@ -1685,6 +1685,96 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("paid_agent_review_pending")
         expect(trigger_types).not_to include("ready_for_owner")
+      end
+    end
+
+    context "when paid_agent review pre-dates last run and inline comments were not addressed" do
+      before do
+        enable_paid_agent_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          goal: "create_pr",
+          trigger_type: "automatic",
+          completed_at: 30.minutes.ago)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          goal: "review",
+          trigger_type: "automatic",
+          completed_at: 2.hours.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+                     body: "Here are some review suggestions.",
+                     submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: 10, user_login: "paid-code-reviewer[bot]", body: "Fix this",
+             created_at: 2.hours.ago, path: "app/models/agent_run.rb",
+             pull_request_review_id: 1 }
+          ])
+        allow(github_client).to receive(:compare_changed_files)
+          .with(project.full_name, "rev_sha", "abc123")
+          .and_return([ "app/services/other_service.rb", "db/schema.rb" ])
+      end
+
+      it "queues a paid_agent review run alongside the bot triggers" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending", "paid_agent_review_pending")
+      end
+    end
+
+    context "when paid_agent review is unaddressed but review rounds are exhausted" do
+      before do
+        enable_paid_agent_review!(max_review_rounds: 1)
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          goal: "create_pr",
+          trigger_type: "automatic",
+          completed_at: 30.minutes.ago)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          goal: "review",
+          trigger_type: "automatic",
+          completed_at: 2.hours.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+                     body: "Here are some review suggestions.",
+                     submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([])
+      end
+
+      it "does not emit paid_agent_review_pending when rounds are exhausted" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments")
+        expect(trigger_types).not_to include("paid_agent_review_pending")
       end
     end
 
