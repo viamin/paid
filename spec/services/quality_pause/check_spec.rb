@@ -85,7 +85,21 @@ RSpec.describe QualityPause::Check do
       expect(project.quality_paused?).to be false
       action = project.quality_recovery_actions.last
       expect(action.action_type).to eq("prompt_evolution")
+      expect(action.status).to eq("executing")
+      expect(action.executed_at).to be_nil
       expect(action.quality_before).to eq(0.26)
+    end
+
+    it "does not evaluate prompt evolution before the evolution test starts" do
+      create(:quality_recovery_action, :prompt_evolution, :executing,
+        project: project, executed_at: nil, quality_before: 0.3)
+      create(:llm_model, tier: "mid")
+      create_quality_metrics(project, scores: Array.new(QualityThreshold::DEFAULT_WINDOW_SIZE, 0.2))
+
+      described_class.call(agent_run: agent_run)
+
+      expect(project.reload.model_preferences["quality_recovery_min_tier"]).to be_nil
+      expect(project.quality_recovery_actions.last.action_type).to eq("prompt_evolution")
     end
 
     it "caps the rolling window to the latest DEFAULT_WINDOW_SIZE eligible runs" do

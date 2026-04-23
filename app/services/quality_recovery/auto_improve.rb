@@ -62,13 +62,13 @@ module QualityRecovery
       prompt = recovery_prompt
       return escalate_model unless prompt
 
-      action = create_action("prompt_evolution", prompt: prompt)
+      action = create_action("prompt_evolution", prompt: prompt, executed_at: nil)
       PromptEvolutionJob.perform_later(
         project_id: project.id,
         prompt_id: prompt.id,
         recovery_action_id: action.id
       )
-      action.complete!(status: "queued", prompt_id: prompt.id)
+      action.update!(result: { status: "queued", prompt_id: prompt.id })
 
       Rails.logger.info(
         message: "quality_recovery.prompt_evolution_queued",
@@ -145,7 +145,7 @@ module QualityRecovery
       )
     end
 
-    def create_action(action_type, prompt: nil, parameters: {})
+    def create_action(action_type, prompt: nil, parameters: {}, executed_at: Time.current)
       QualityRecoveryAction.create!(
         project: project,
         agent_run: agent_run,
@@ -155,7 +155,7 @@ module QualityRecovery
         parameters: parameters.presence || action_parameters,
         quality_before: breach.fetch(:average),
         status: "executing",
-        executed_at: Time.current
+        executed_at: executed_at
       )
     end
 

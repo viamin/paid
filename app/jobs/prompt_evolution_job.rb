@@ -21,9 +21,11 @@ class PromptEvolutionJob < ApplicationJob
     @project_id = project_id
     @prompt_id = prompt_id
     @sample_days = sample_days
+    workflow_started = false
 
     eligible_prompts.find_each do |prompt|
       start_evolution_workflow(prompt, recovery_action_id: recovery_action_id, sample_days: sample_days)
+      workflow_started = true
     rescue => e
       Rails.logger.warn(
         message: "prompt_evolution.job_failed_for_prompt",
@@ -32,6 +34,11 @@ class PromptEvolutionJob < ApplicationJob
         error: e.message
       )
     end
+
+    return unless recovery_action_id && !workflow_started
+    return if track_running_recovery_test(recovery_action_id)
+
+    fail_recovery_action(recovery_action_id, "no_eligible_prompt")
   end
 
   private
@@ -92,5 +99,22 @@ class PromptEvolutionJob < ApplicationJob
     return "quality-recovery-prompt-evolution-#{recovery_action_id}" if recovery_action_id
 
     "prompt-evolution-#{prompt.id}-#{Date.current}"
+  end
+
+  def fail_recovery_action(recovery_action_id, status)
+    action = QualityRecoveryAction.find_by(id: recovery_action_id)
+    return unless action
+
+    action.fail!(status: status)
+  end
+
+  def track_running_recovery_test(recovery_action_id)
+    action = QualityRecoveryAction.find_by(id: recovery_action_id)
+    prompt = Prompt.find_by(id: prompt_id)
+    ab_test = prompt&.ab_tests&.running&.first
+    return false unless action && ab_test
+
+    action.update!(result: { status: "already_running", ab_test_id: ab_test.id, prompt_id: prompt.id })
+    true
   end
 end

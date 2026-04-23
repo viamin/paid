@@ -39,8 +39,9 @@ class QualityRecoveryAction < ApplicationRecord
     update!(status: "executing", executed_at: Time.current)
   end
 
-  def complete!(result_data = {})
-    update!(status: "executed", result: result_data)
+  def complete!(result_data = {}, executed_at: self.executed_at || Time.current, **result_kwargs)
+    result_data = result_data.merge(result_kwargs)
+    update!(status: "executed", result: result_data, executed_at: executed_at)
   end
 
   def evaluate!(score)

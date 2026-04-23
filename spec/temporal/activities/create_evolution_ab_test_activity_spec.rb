@@ -52,6 +52,22 @@ RSpec.describe Activities::CreateEvolutionAbTestActivity do
       expect(ab_test.non_control_variants.count).to eq(1)
     end
 
+    it "tracks the A/B test without marking recovery executed before an outcome" do
+      recovery_action = create(:quality_recovery_action, :prompt_evolution, :executing, executed_at: nil)
+
+      result = activity.execute(input.merge(recovery_action_id: recovery_action.id))
+
+      ab_test = AbTest.find(result[:ab_test_id])
+      recovery_action.reload
+      expect(recovery_action.status).to eq("executing")
+      expect(recovery_action.executed_at).to be_nil
+      expect(recovery_action.result).to include(
+        "status" => "created",
+        "ab_test_id" => ab_test.id,
+        "prompt_id" => prompt.id
+      )
+    end
+
     context "when a running test already exists" do
       let!(:existing_test) do
         test = create(:ab_test, prompt: prompt, status: "draft")

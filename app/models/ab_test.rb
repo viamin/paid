@@ -79,6 +79,7 @@ class AbTest < ApplicationRecord
       end
       update!(status: "completed", completed_at: Time.current, winner_variant: winner)
     end
+    record_quality_recovery_outcome!
   end
 
   def cancel!
@@ -180,5 +181,35 @@ class AbTest < ApplicationRecord
     return if winner_variant.ab_test_id == id
 
     errors.add(:winner_variant, "must belong to this A/B test")
+  end
+
+  def record_quality_recovery_outcome!
+    recovery_actions.find_each do |action|
+      if evolved_winner?
+        action.complete!(quality_recovery_result, executed_at: started_at || completed_at)
+      else
+        action.update!(status: "failed", result: quality_recovery_result)
+      end
+    end
+  end
+
+  def evolved_winner?
+    winner_variant.present? && !winner_variant.is_control?
+  end
+
+  def recovery_actions
+    QualityRecoveryAction
+      .where(action_type: "prompt_evolution", status: "executing")
+      .where("result @> ?", { ab_test_id: id }.to_json)
+  end
+
+  def quality_recovery_result
+    {
+      status: evolved_winner? ? "winner_found" : "no_evolved_winner",
+      ab_test_id: id,
+      prompt_id: prompt_id,
+      winner_variant_id: winner_variant_id,
+      winner_prompt_version_id: winner_variant&.prompt_version_id
+    }
   end
 end
