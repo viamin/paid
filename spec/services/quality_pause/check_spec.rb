@@ -82,8 +82,8 @@ RSpec.describe QualityPause::Check do
 
     it "caps the rolling window to the latest DEFAULT_WINDOW_SIZE eligible runs" do
       # 10 old low-scoring runs followed by 5 newer high-scoring runs.
-      # With window_size=10: latest 10 include 5×0.7 + 5×0.0 → avg=0.35 < 0.5 → paused
-      # With window_size=5:  latest 5 are all 0.7              → avg=0.7  > 0.5 → not paused
+      # With window_size=10: latest 10 include 5 * 0.7 + 5 * 0.0 -> avg=0.35 < 0.5 -> paused
+      # With window_size=5:  latest 5 are all 0.7                  -> avg=0.7  > 0.5 -> not paused
       create_quality_metrics(project, scores: Array.new(10, 0.0))
       create_quality_metrics(project, scores: Array.new(5, 0.7))
 
