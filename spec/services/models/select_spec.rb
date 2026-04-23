@@ -144,6 +144,31 @@ RSpec.describe Models::Select do
       end
     end
 
+    context "with prompt evolution requested for quality recovery" do
+      let!(:preferred_model) { create(:llm_model, model_id: "preferred-mid", tier: "mid", capability_score: 7.0) }
+      let!(:high_model) { create(:llm_model, model_id: "quality-high", tier: "high", capability_score: 10.0) }
+
+      before do
+        project.update!(model_preferences: {
+          "preferred_model_ids" => [ preferred_model.model_id ],
+          "quality_triggered_escalation" => {
+            "status" => "prompt_evolution_requested",
+            "trigger" => "quality_drop",
+            "from_tier" => "mid",
+            "to_tier" => "high"
+          }
+        })
+      end
+
+      it "keeps selecting the escalated tier while prompt evolution is pending" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection.llm_model).to eq(high_model)
+        expect(selection.selector_type).to eq("quality_escalation")
+        expect(selection.tier).to eq("high")
+      end
+    end
+
     context "with meta-agent selection" do
       let!(:llm_model) { create(:llm_model, model_id: "claude-sonnet-4-6", capability_score: 9.0) }
 

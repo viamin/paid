@@ -4,6 +4,7 @@ module QualityRecovery
   class ModelEscalation
     PREFERENCE_KEY = "quality_triggered_escalation"
     DEFAULT_EVALUATION_WINDOW = 3
+    RECOVERY_STATUSES = %w[active prompt_evolution_requested].freeze
 
     Result = Data.define(:started, :defer_pause, :pause, :reason, :state) do
       def started?
@@ -28,7 +29,7 @@ module QualityRecovery
     end
 
     def self.active?(project)
-      state(project)["status"] == "active"
+      RECOVERY_STATUSES.include?(state(project)["status"])
     end
 
     def self.target_tier(project)
@@ -58,6 +59,7 @@ module QualityRecovery
     end
 
     def evaluate
+      return result(defer_pause: true, reason: self.class.state(project)["status"]) unless evaluating_escalated_model?
       return result(defer_pause: true, reason: "model_escalation_active") if samples.size < evaluation_window
       return result(defer_pause: true, reason: "model_escalation_improving") if escalated_average >= threshold
 
@@ -71,6 +73,10 @@ module QualityRecovery
 
     def result(started: false, defer_pause: false, pause: false, reason:, state: self.class.state(project))
       Result.new(started, defer_pause, pause, reason, state)
+    end
+
+    def evaluating_escalated_model?
+      self.class.state(project)["status"] == "active"
     end
 
     def from_tier

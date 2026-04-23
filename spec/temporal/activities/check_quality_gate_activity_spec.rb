@@ -54,6 +54,25 @@ RSpec.describe Activities::CheckQualityGateActivity do
     expect(result[:recovery]).to include("trigger" => "quality_drop", "to_tier" => "high")
   end
 
+  it "allows automatic runs while prompt evolution is requested for quality recovery" do
+    project.update!(model_preferences: {
+      "quality_triggered_escalation" => {
+        "status" => "prompt_evolution_requested",
+        "trigger" => "quality_drop",
+        "from_tier" => "mid",
+        "to_tier" => "high"
+      }
+    })
+    create_metric(0.4)
+    create_metric(0.5)
+    create_metric(0.3)
+
+    result = activity.execute(project_id: project.id)
+
+    expect(result).to include(allowed: true, blocked: false, reason: "quality_recovery_model_escalation_active")
+    expect(result[:recovery]).to include("status" => "prompt_evolution_requested", "to_tier" => "high")
+  end
+
   it "allows runs when there is not enough recent data" do
     create_metric(0.1)
 

@@ -125,6 +125,29 @@ RSpec.describe QualityPause::Check do
       expect(PromptEvolutionJob).to have_received(:perform_later)
     end
 
+    it "keeps deferring pause without re-requesting prompt evolution while it is pending" do
+      allow(PromptEvolutionJob).to receive(:perform_later)
+      create(:llm_model, tier: "high", capability_score: 10.0)
+      project.update!(model_preferences: {
+        "quality_triggered_escalation" => {
+          "status" => "prompt_evolution_requested",
+          "trigger" => "quality_drop",
+          "from_tier" => "mid",
+          "to_tier" => "high",
+          "started_at" => 1.day.ago.iso8601,
+          "threshold" => 0.5,
+          "evaluation_window" => 3
+        }
+      })
+      create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ])
+      create_escalated_metrics(project, scores: [ 0.2, 0.3, 0.1 ])
+
+      described_class.call(agent_run: agent_run)
+
+      expect(project.reload.quality_paused?).to be false
+      expect(PromptEvolutionJob).not_to have_received(:perform_later)
+    end
+
     it "caps the rolling window to the latest DEFAULT_WINDOW_SIZE eligible runs" do
       # 10 old low-scoring runs followed by 5 newer high-scoring runs.
       # With window_size=10: latest 10 include 5 * 0.7 + 5 * 0.0 -> avg=0.35 < 0.5 -> paused
