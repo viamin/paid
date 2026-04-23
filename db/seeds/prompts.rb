@@ -747,7 +747,7 @@ upsert_global_prompt.call(
 upsert_global_prompt.call(
   slug: "goal.enhance_issue",
   name: "Goal: Enhance Issue",
-  description: "Augments a base prompt with instructions to add implementation context or clarifying questions to an existing issue.",
+  description: "Augments a base prompt with instructions to enhance an existing GitHub issue by adding implementation context or asking clarifying questions.",
   category: "planning",
   template: <<~'TEMPLATE',
     {{base_prompt}}
@@ -804,6 +804,6 @@ upsert_global_prompt.call(
   variables: [
     var.call("base_prompt", "The base prompt this augmentation extends"),
     var.call("repo", "Repository full_name (owner/repo)"),
-    var.call("issue_number", "Issue number")
+    var.call("issue_number", "GitHub issue number")
   ]
 )
