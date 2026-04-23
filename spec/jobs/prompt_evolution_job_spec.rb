@@ -29,6 +29,17 @@ RSpec.describe PromptEvolutionJob do
       end
     end
 
+    def create_failed_run(prompt_version:, project:, composite_score: 0.2, goal: "create_pr", error_message: "Agent produced low-quality output")
+      run = create(:agent_run, :failed,
+        project: project,
+        prompt_version: prompt_version,
+        goal: goal,
+        completed_at: 1.day.ago,
+        error_message: error_message)
+      create(:quality_metric, :automated, agent_run: run,
+        prompt_version: prompt_version, composite_score: composite_score)
+    end
+
     def perform_targeted_quality_pause_job(project)
       job.perform(
         project_id: project.id,
@@ -191,6 +202,31 @@ RSpec.describe PromptEvolutionJob do
         prompt_evolution_calls = workflow_calls.select { |call| call.first == Workflows::PromptEvolutionWorkflow }
         expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).to contain_exactly(prompt.id)
         expect_targeted_workflow_for(prompt, project)
+      end
+
+      it "starts workflows for prompts used by scoreable failed runs" do
+        failed_prompt = create(:prompt, :global, :with_version)
+        create_failed_run(prompt_version: failed_prompt.current_version, project: project)
+
+        perform_targeted_quality_pause_job(project)
+
+        prompt_evolution_calls = workflow_calls.select { |call| call.first == Workflows::PromptEvolutionWorkflow }
+        expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).to contain_exactly(prompt.id, failed_prompt.id)
+        expect_targeted_workflow_for(failed_prompt, project)
+      end
+
+      it "ignores operational failed runs that are not quality scoreable" do
+        failed_prompt = create(:prompt, :global, :with_version)
+        create_failed_run(
+          prompt_version: failed_prompt.current_version,
+          project: project,
+          error_message: "Docker exec failed"
+        )
+
+        perform_targeted_quality_pause_job(project)
+
+        prompt_evolution_calls = workflow_calls.select { |call| call.first == Workflows::PromptEvolutionWorkflow }
+        expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).not_to include(failed_prompt.id)
       end
 
       it "ignores targeted failures outside the sample window" do

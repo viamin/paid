@@ -25,6 +25,8 @@ RSpec.describe PromptEvolution::SampleRuns do
       project: project,
       prompt_version: prompt_version,
       goal: "create_pr",
+      status: "completed",
+      error_message: nil,
       cost_cents: 10,
       tokens_input: 1000,
       tokens_output: 500,
@@ -41,9 +43,10 @@ RSpec.describe PromptEvolution::SampleRuns do
       project_id: attrs[:project].id,
       prompt_version_id: attrs[:prompt_version]&.id,
       source_pull_request_number: attrs[:source_pull_request_number],
-      status: "completed",
+      status: attrs[:status],
       goal: attrs[:goal],
       trigger_type: "automatic",
+      error_message: attrs[:error_message],
       proxy_token: SecureRandom.hex(32),
       cost_cents: attrs[:cost_cents],
       tokens_input: attrs[:tokens_input],
@@ -162,10 +165,74 @@ RSpec.describe PromptEvolution::SampleRuns do
       expect(run_ids).not_to include(healthy_run.id)
     end
 
+    it "samples low-quality scoreable failed runs when failure_only is enabled" do
+      failed_run = create_completed_run(
+        status: "failed",
+        error_message: "Agent produced low-quality output",
+        composite_score: 0.2
+      )
+
+      result = described_class.call(
+        sample_size: 10,
+        days: 7,
+        failure_only: true,
+        metric_type: "composite_score",
+        threshold: 0.5,
+        min_runs_for_evaluation: 1
+      )
+
+      run_ids = result.samples.map { |sample| sample[:agent_run].id }
+      expect(run_ids).to include(failed_run.id)
+    end
+
+    it "excludes operational failed runs when failure_only is enabled" do
+      failed_run = create_completed_run(
+        status: "failed",
+        error_message: "Docker exec failed",
+        composite_score: 0.2
+      )
+
+      result = described_class.call(
+        sample_size: 10,
+        days: 7,
+        failure_only: true,
+        metric_type: "composite_score",
+        threshold: 0.5,
+        min_runs_for_evaluation: 1
+      )
+
+      run_ids = result.samples.map { |sample| sample[:agent_run].id }
+      expect(run_ids).not_to include(failed_run.id)
+    end
+
     it "identifies metric-specific failures as evolution candidates" do
       3.times do
         run = insert_completed_run(project: project, prompt_version: prompt_version, completed_at: 1.day.ago)
         insert_quality_metric(run: run, composite_score: 0.9, scores: { "reaction_score" => 0.1 })
+      end
+
+      result = described_class.call(
+        sample_size: 10,
+        days: 7,
+        failure_only: true,
+        metric_type: "reaction_score",
+        threshold: 0.5,
+        min_runs_for_evaluation: 3
+      )
+
+      candidate = result.evolution_candidates.first
+      expect(candidate[:prompt_version]).to eq(prompt_version)
+      expect(candidate[:reasons]).to include(a_string_matching(/reaction_score avg score.*targeted threshold/))
+    end
+
+    it "identifies metric-specific failures without composite scores as evolution candidates" do
+      3.times do
+        run = insert_completed_run(
+          status: "failed",
+          error_message: "Agent produced low-quality output",
+          completed_at: 1.day.ago
+        )
+        insert_quality_metric(run: run, composite_score: nil, scores: { "reaction_score" => 0.1 })
       end
 
       result = described_class.call(

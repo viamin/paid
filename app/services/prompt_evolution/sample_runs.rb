@@ -45,7 +45,7 @@ module PromptEvolution
     end
 
     def sample
-      runs = fetch_completed_runs
+      runs = fetch_sampleable_runs
       sampled = stratified_sample(runs)
       samples = collect_sample_data(sampled)
       stats = calculate_prompt_stats(samples)
@@ -56,18 +56,25 @@ module PromptEvolution
 
     private
 
-    def fetch_completed_runs
+    def fetch_sampleable_runs
       scope = AgentRun
-        .completed
         .where(completed_at: days.days.ago..)
         .where.not(prompt_version_id: nil)
         .joins(:quality_metrics)
-        .merge(QualityMetric.automated.with_composite_score)
+        .merge(automated_metric_scope)
         .distinct
 
+      scope = failure_only ? scope.where(AgentRun.quality_scoreable_sql) : scope.completed
       scope = scope.where(project_id: project_id) if project_id
       scope = scope.where(goal: goal_type) if goal_type.present?
       failure_only ? failing_runs(scope) : scope
+    end
+
+    def automated_metric_scope
+      scope = QualityMetric.automated
+      return scope if failure_only && metric_type != "composite_score"
+
+      scope.with_composite_score
     end
 
     def failing_runs(scope)
@@ -159,10 +166,12 @@ module PromptEvolution
     def identify_evolution_candidates(stats)
       stats.filter_map do |_version_id, version_stats|
         next if version_stats[:run_count] < min_runs_for_evaluation
-        next if version_stats[:avg_score].nil?
+
+        target_avg_score = version_stats[:target_avg_score]
+        next if version_stats[:avg_score].nil? && target_avg_score.nil?
 
         reasons = []
-        if version_stats[:avg_score] < QUALITY_THRESHOLD
+        if version_stats[:avg_score] && version_stats[:avg_score] < QUALITY_THRESHOLD
           reasons << "avg quality score #{version_stats[:avg_score].round(4)} below threshold #{QUALITY_THRESHOLD}"
         end
 
@@ -173,7 +182,6 @@ module PromptEvolution
           end
         end
 
-        target_avg_score = version_stats[:target_avg_score]
         if failure_only && target_avg_score && target_avg_score < threshold
           reasons << "#{metric_type} avg score #{target_avg_score.round(4)} below targeted threshold #{threshold}"
         end
