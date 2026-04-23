@@ -34,6 +34,8 @@ module Activities
       return insufficient_data_result(metrics.size) if metrics.size < min_recent_runs
 
       breaches = detect_breaches(metrics)
+      return recovery_result(breaches, metrics.size) if breaches.any? && QualityRecovery::ModelEscalation.active?(project)
+
       {
         allowed: breaches.empty?,
         blocked: breaches.any?,
@@ -203,6 +205,14 @@ module Activities
       allowed_result(reason: "insufficient_data").merge(
         sample_size: sample_size,
         min_required: min_recent_runs
+      )
+    end
+
+    def recovery_result(breaches, sample_size)
+      allowed_result(reason: "quality_recovery_model_escalation_active").merge(
+        breaches: breaches,
+        sample_size: sample_size,
+        recovery: QualityRecovery::ModelEscalation.state(project)
       )
     end
 

@@ -34,6 +34,26 @@ RSpec.describe Activities::CheckQualityGateActivity do
     expect(result[:breaches]).to include(hash_including(metric: "composite_score", current: 0.4, threshold: 0.6))
   end
 
+  it "allows automatic runs while quality-triggered model escalation is active" do
+    project.update!(model_preferences: {
+      "quality_triggered_escalation" => {
+        "status" => "active",
+        "trigger" => "quality_drop",
+        "from_tier" => "mid",
+        "to_tier" => "high"
+      }
+    })
+    create_metric(0.4)
+    create_metric(0.5)
+    create_metric(0.3)
+
+    result = activity.execute(project_id: project.id)
+
+    expect(result).to include(allowed: true, blocked: false, reason: "quality_recovery_model_escalation_active")
+    expect(result[:breaches]).to include(hash_including(metric: "composite_score"))
+    expect(result[:recovery]).to include("trigger" => "quality_drop", "to_tier" => "high")
+  end
+
   it "allows runs when there is not enough recent data" do
     create_metric(0.1)
 
