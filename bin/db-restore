@@ -13,6 +13,7 @@ read_rails_db_config() {
     puts cfg[:username].to_s
     puts cfg[:password].to_s
     puts cfg[:database].to_s
+    puts Rails.env
   " 2>/dev/null
 }
 
@@ -30,6 +31,7 @@ usage() {
   echo "  DB_NAME      Database name (default: from config/database.yml)"
   echo "  DB_USER      Database user (default: from config/database.yml)"
   echo "  DB_PASSWORD  Database password (default: from config/database.yml)"
+  echo "  DB_RESTORE_CONFIRM  Set to DB_NAME to allow production or remote restores"
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -51,6 +53,7 @@ DB_HOST="${DB_HOST-${RAILS_CONFIG[0]:-}}"
 DB_USER="${DB_USER-${RAILS_CONFIG[1]:-}}"
 DB_PASSWORD="${DB_PASSWORD-${RAILS_CONFIG[2]:-}}"
 DB_NAME="${DB_NAME-${RAILS_CONFIG[3]:-}}"
+RAILS_ENVIRONMENT="${RAILS_ENVIRONMENT-${RAILS_CONFIG[4]:-${RAILS_ENV:-${RACK_ENV:-development}}}}"
 
 read_container_env() {
   local container="$1"
@@ -79,6 +82,45 @@ psql_args() {
   PSQL_ARGS+=(-d "$DB_NAME")
 }
 
+local_db_host() {
+  case "$DB_HOST" in
+    "" | "localhost" | "127."* | "::1" | "0.0.0.0" | "postgres" | "db")
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+require_restore_confirmation() {
+  local reason="$1"
+
+  if [[ "${DB_RESTORE_CONFIRM:-}" == "$DB_NAME" ]]; then
+    return
+  fi
+
+  echo "Error: Refusing destructive restore for ${reason} database '${DB_NAME}'." >&2
+  echo "This command truncates every public table before restoring data." >&2
+  echo "Set DB_RESTORE_CONFIRM='${DB_NAME}' only if this is the intended target." >&2
+  exit 1
+}
+
+guard_destructive_restore() {
+  if [[ "$RAILS_ENVIRONMENT" == "production" ]]; then
+    require_restore_confirmation "production"
+  fi
+
+  if ! local_db_host; then
+    require_restore_confirmation "remote"
+  fi
+}
+
+announce_restore() {
+  echo "Restoring ${BACKUP_PATH} into ${DB_NAME}..."
+  echo "Truncating existing data..."
+}
+
 BACKUP_FILE="${1}"
 
 if [[ "$BACKUP_FILE" != /* ]]; then
@@ -96,9 +138,6 @@ COMPOSE_ARGS=(compose)
 if [[ -n "${COMPOSE_FILE:-}" ]]; then
   COMPOSE_ARGS+=(-f "$COMPOSE_FILE")
 fi
-
-echo "Restoring ${BACKUP_PATH} into ${DB_NAME}..."
-echo "Truncating existing data..."
 
 TRUNCATE_SQL="
 SET session_replication_role = 'replica';
@@ -122,6 +161,12 @@ SET session_replication_role = 'origin';
 
 COMPOSE_CONTAINER="$(docker "${COMPOSE_ARGS[@]}" ps -q postgres 2>/dev/null | head -1 || true)"
 if [[ -n "$COMPOSE_CONTAINER" ]]; then
+  if [[ "$RAILS_ENVIRONMENT" == "production" ]]; then
+    require_restore_confirmation "production"
+  fi
+
+  announce_restore
+
   COMPOSE_DB_USER="$(read_container_env "$COMPOSE_CONTAINER" POSTGRES_USER)"
   COMPOSE_DB_PASSWORD="$(read_container_env "$COMPOSE_CONTAINER" POSTGRES_PASSWORD)"
   COMPOSE_DB_USER="${COMPOSE_DB_USER:-paid}"
@@ -132,6 +177,10 @@ if [[ -n "$COMPOSE_CONTAINER" ]]; then
   docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" -i "$COMPOSE_CONTAINER" psql "${PSQL_ARGS[@]}" -c "$TRUNCATE_SQL"
   docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" -i "$COMPOSE_CONTAINER" pg_restore "${PG_RESTORE_ARGS[@]}" < "$BACKUP_PATH"
 elif [[ -n "$DB_NAME" ]]; then
+  guard_destructive_restore
+
+  announce_restore
+
   pg_restore_args "$DB_USER"
   psql_args "$DB_USER"
   PG_HOST_ARGS=()
