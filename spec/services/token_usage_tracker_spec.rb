@@ -145,6 +145,30 @@ RSpec.describe TokenUsageTracker do
       end
     end
 
+    context "when guardrail enforcement is disabled" do
+      before do
+        allow(AgentRuns::Cancel).to receive(:call)
+      end
+
+      it "updates usage counters without pausing a successful run for hard-stop budgets" do
+        create(:cost_budget, :hard_stop, :per_run, project: project, limit_cents: 100)
+
+        described_class.track(
+          agent_run: agent_run,
+          usage: { tokens_input: 1_000_000, tokens_output: 1_000_000, request_type: "run_delta" },
+          enforce_guardrails: false
+        )
+
+        agent_run.reload
+        expect(agent_run.tokens_input).to eq(1_000_000)
+        expect(agent_run.tokens_output).to eq(1_000_000)
+        expect(agent_run.cost_cents).to eq(1800)
+        expect(agent_run.status).to eq("running")
+        expect(agent_run.guardrail_violation_type).to be_nil
+        expect(AgentRuns::Cancel).not_to have_received(:call)
+      end
+    end
+
     context "with a knowledge run" do
       it "increments total_tokens on the knowledge run" do
         expect {
@@ -249,6 +273,15 @@ RSpec.describe TokenUsageTracker do
         agent_run: agent_run,
         usage: { tokens_input: 7000, tokens_output: 4000 },
         update_aggregates: false
+      )
+      expect(agent_run.reload.token_limit_status).to be_nil
+    end
+
+    it "does not check limits when guardrail enforcement is disabled" do
+      described_class.track(
+        agent_run: agent_run,
+        usage: { tokens_input: 7000, tokens_output: 4000 },
+        enforce_guardrails: false
       )
       expect(agent_run.reload.token_limit_status).to be_nil
     end

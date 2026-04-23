@@ -883,6 +883,57 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.providers_attempted.map { |attempt| attempt["provider"] }).to eq([ "claude_code" ])
       end
 
+      context "when agent-harness can parse token usage from CLI output" do
+        let(:agent_run) { create(:agent_run, :kilocode, :with_git_context, project: project, issue: issue, container_id: "abc123") }
+        let(:exec_success) do
+          Containers::Provision::Result.success(
+            stdout: [
+              { type: "text", text: "Done" }.to_json,
+              { type: "usage", usage: { input_tokens: 1200, output_tokens: 300, total_tokens: 1500 } }.to_json
+            ].join("\n"),
+            stderr: "",
+            exit_code: 0
+          )
+        end
+
+        it "records run summary usage and updates billable run aggregates" do
+          allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+
+          activity.execute(agent_run_id: agent_run.id)
+
+          usages = agent_run.token_usages.order(:request_type)
+          expect(usages.pluck(:request_type, :input_tokens, :output_tokens)).to eq([
+            [ "run_delta", 1200, 300 ],
+            [ "run_summary", 1200, 300 ]
+          ])
+          expect(agent_run.reload.tokens_input).to eq(1200)
+          expect(agent_run.tokens_output).to eq(300)
+        end
+
+        it "does not subtract proxy usage from previous failed provider attempts" do
+          TokenUsage.create!(
+            agent_run: agent_run,
+            request_type: "agent",
+            input_tokens: 700,
+            output_tokens: 100,
+            cost_cents: 1,
+            llm_model: "claude-sonnet-4",
+            created_at: 2.hours.ago,
+            updated_at: 2.hours.ago
+          )
+          allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+
+          activity.execute(agent_run_id: agent_run.id)
+
+          expect(agent_run.token_usages.find_by!(request_type: "run_delta")).to have_attributes(
+            input_tokens: 1200,
+            output_tokens: 300
+          )
+          expect(agent_run.reload.tokens_input).to eq(1200)
+          expect(agent_run.tokens_output).to eq(300)
+        end
+      end
+
       it "retries transient commit failures before checking for changes" do
         commit_attempts = 0
 

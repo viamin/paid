@@ -13,7 +13,10 @@ class TokenUsageTracker
   # @param update_aggregates [Boolean] when false, only creates a TokenUsage record without
   #   updating agent_run/project counters or cost budgets (use for run_summary records
   #   that would otherwise double-count per-request tracking from the secrets proxy)
-  def self.track(agent_run: nil, knowledge_run: nil, usage:, update_aggregates: true)
+  # @param enforce_guardrails [Boolean] when false, updates aggregates without
+  #   applying in-flight token/cost hard-stop behavior. Use for end-of-run
+  #   summary reconciliation after the provider process has already exited.
+  def self.track(agent_run: nil, knowledge_run: nil, usage:, update_aggregates: true, enforce_guardrails: true)
     tracked_run = resolve_tracked_run!(agent_run:, knowledge_run:)
     tokens_input  = usage.fetch(:tokens_input, 0).to_i
     tokens_output = usage.fetch(:tokens_output, 0).to_i
@@ -21,7 +24,7 @@ class TokenUsageTracker
     request_type  = usage.fetch(:request_type, nil).presence || default_request_type_for(tracked_run)
     metadata      = usage.fetch(:metadata, nil).presence || {}
     cost_cents    = calculate_cost(tokens_input, tokens_output, llm_model: llm_model)
-    resolved_hard_limit = tracked_run.effective_max_tokens_per_run if update_aggregates
+    resolved_hard_limit = tracked_run.effective_max_tokens_per_run if update_aggregates && enforce_guardrails
 
     ActiveRecord::Base.transaction do
       record_per_request_usage(
@@ -38,7 +41,7 @@ class TokenUsageTracker
       if update_aggregates
         tracked_run.with_lock do
           update_run_aggregates(tracked_run, tokens_input:, tokens_output:, cost_cents:)
-          apply_token_limit_status(tracked_run, hard_limit: resolved_hard_limit)
+          apply_token_limit_status(tracked_run, hard_limit: resolved_hard_limit) if enforce_guardrails
           tracked_run.save!
         end
 
@@ -57,7 +60,7 @@ class TokenUsageTracker
     # 1. Row locks from the usage write are already released
     # 2. External side-effects (Temporal cancel, container cleanup) don't
     #    run inside a transaction — a failure won't roll back recorded usage
-    enforce_hard_stop_budgets(tracked_run) if update_aggregates && cost_cents.positive? && agent_run.present?
+    enforce_hard_stop_budgets(tracked_run) if enforce_guardrails && update_aggregates && cost_cents.positive? && agent_run.present?
   end
 
   # Evaluates the agent run's cumulative token usage against project limits

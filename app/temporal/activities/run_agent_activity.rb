@@ -675,6 +675,7 @@ module Activities
         end
 
         output_present = stdout.present? || stderr.present?
+        track_harness_tokens(agent_run, provider_candidate, provider, user_settings.user, result, execution_started_at)
         agent_run.log!("system", "Agent execution succeeded with #{provider}")
         return {
           pre_agent_sha: pre_agent_sha,
@@ -868,6 +869,84 @@ module Activities
       app_provider_key = ProviderSupport.provider_key_for_agent_type(provider_key)
       harness_key = ProviderSupport.harness_provider_key_for(app_provider_key).to_sym
       AgentHarness.provider(harness_key)
+    end
+
+    def track_harness_tokens(agent_run, provider_candidate, provider_key, user, result, execution_started_at)
+      response = parse_harness_response(provider_candidate, provider_key, user, result, execution_started_at)
+      AgentRuns::TrackHarnessTokens.call(
+        agent_run: agent_run,
+        response: response,
+        proxy_scope: token_usage_scope_for_attempt(agent_run, execution_started_at)
+      )
+    rescue => e
+      logger.warn(
+        message: "agent_execution.token_usage_parse_failed",
+        agent_run_id: agent_run.id,
+        provider: provider_key.to_s,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
+    def token_usage_scope_for_attempt(agent_run, execution_started_at)
+      scope = agent_run.token_usages
+      return scope unless execution_started_at
+
+      scope.where("created_at >= ?", execution_started_at)
+    end
+
+    def parse_harness_response(provider_candidate, provider_key, user, result, execution_started_at)
+      harness_provider = harness_response_provider(provider_candidate, provider_key, user)
+      command_result = AgentHarness::CommandExecutor::Result.new(
+        stdout: result[:stdout],
+        stderr: result[:stderr],
+        exit_code: result[:exit_code],
+        duration: harness_duration(execution_started_at)
+      )
+      parse_options = { duration: command_result.duration }
+      parse_options[:json_output_requested] = true if harness_provider.is_a?(AgentHarness::Providers::GithubCopilot)
+      response = harness_provider.send(:parse_response, command_result, **parse_options)
+      apply_runtime_model(response, provider_candidate, user)
+    end
+
+    def harness_response_provider(provider_candidate, provider_key, user)
+      app_provider_key = ProviderSupport.provider_key_for_agent_type(provider_key)
+      harness_key = ProviderSupport.harness_provider_key_for(app_provider_key).to_sym
+      klass = AgentHarness::Providers::Registry.instance.get(harness_key)
+      klass.new(config: harness_response_config(harness_key, provider_candidate, user))
+    end
+
+    def harness_response_config(harness_key, provider_candidate, user)
+      config = AgentHarness::ProviderConfig.new(harness_key)
+      config.externally_sandboxed = true
+      config.model = provider_runtime_model(provider_candidate, user)
+      config
+    end
+
+    def apply_runtime_model(response, provider_candidate, user)
+      model = provider_runtime_model(provider_candidate, user)
+      return response if model.blank? || response.model == model
+
+      AgentHarness::Response.new(
+        output: response.output,
+        exit_code: response.exit_code,
+        duration: response.duration,
+        provider: response.provider,
+        model: model,
+        tokens: response.tokens,
+        metadata: response.metadata,
+        error: response.error
+      )
+    end
+
+    def provider_runtime_model(provider_candidate, user)
+      provider_entry_for(provider_candidate, user)&.agent_harness_provider_runtime&.model
+    end
+
+    def harness_duration(execution_started_at)
+      return 0.0 unless execution_started_at
+
+      Time.current - execution_started_at
     end
 
     def normalized_rate_limit_reset_text(output)
