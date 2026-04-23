@@ -32,6 +32,31 @@ RSpec.describe Activities::RunAgentActivity do
     allow(git_ops).to receive(:write_co_author_trailer)
   end
 
+  def create_ab_test_assignment(slug:, agent_run:, variant_template:, status: "running")
+    prompt = create(:prompt, :for_project, project: project, slug: slug)
+    control_version = prompt.create_version!(template: "control {{base_prompt}}")
+    variant_version = prompt.create_version!(template: variant_template)
+    ab_test = create(:ab_test, prompt: prompt, control_version: control_version,
+      status: status, started_at: Time.current)
+    create(:ab_test_variant, ab_test: ab_test, prompt_version: control_version, is_control: true)
+    variant = create(:ab_test_variant, ab_test: ab_test, prompt_version: variant_version)
+    create(:ab_test_assignment, ab_test: ab_test, ab_test_variant: variant, agent_run: agent_run)
+
+    variant_version
+  end
+
+  def create_running_ab_test(slug:)
+    prompt = create(:prompt, :for_project, project: project, slug: slug)
+    control_version = prompt.create_version!(template: "control {{base_prompt}} {{repo}}")
+    variant_version = prompt.create_version!(template: "variant {{base_prompt}} {{repo}}")
+    ab_test = create(:ab_test, prompt: prompt, control_version: control_version,
+      status: "running", started_at: Time.current)
+    create(:ab_test_variant, ab_test: ab_test, prompt_version: control_version, is_control: true)
+    create(:ab_test_variant, ab_test: ab_test, prompt_version: variant_version)
+
+    ab_test
+  end
+
   describe "#with_periodic_heartbeat" do
     let(:mock_context) { instance_double(Temporalio::Activity::Context) }
 
@@ -460,6 +485,82 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prompt).to include(base_prompt)
       expect(prompt).not_to include("## Codebase Context")
       expect(prompt).to include("Only add a comment to issue ##{issue.github_number}")
+    end
+  end
+
+  describe "A/B test goal prompt assignment" do
+    it "assigns a running test before rendering the issue-goal prompt" do
+      run = create(:agent_run, :create_issue_goal, project: project)
+      ab_test = create_running_ab_test(slug: described_class::ISSUE_GOAL_PROMPT_SLUG)
+
+      prompt = activity.send(:augment_prompt_for_issue_goal, run, "Create a roadmap issue")
+
+      assignment = AbTestAssignment.find_by!(ab_test: ab_test, agent_run: run)
+      assigned_version = assignment.ab_test_variant.prompt_version
+
+      expect(prompt).to eq(assigned_version.render(base_prompt: "Create a roadmap issue", repo: project.full_name))
+      expect(run.reload.prompt_version).to eq(assigned_version)
+    end
+
+    it "uses an assigned issue-goal variant prompt version" do
+      run = create(:agent_run, :create_issue_goal, project: project)
+      variant_version = create_ab_test_assignment(
+        slug: described_class::ISSUE_GOAL_PROMPT_SLUG,
+        agent_run: run,
+        variant_template: "variant {{base_prompt}} {{repo}}"
+      )
+
+      prompt = activity.send(:augment_prompt_for_issue_goal, run, "Create a roadmap issue")
+
+      expect(prompt).to eq("variant Create a roadmap issue #{project.full_name}")
+      expect(run.reload.prompt_version).to eq(variant_version)
+    end
+
+    it "uses an assigned review-goal variant prompt version" do
+      run = create(:agent_run, :review_goal, project: project)
+      variant_version = create_ab_test_assignment(
+        slug: described_class::REVIEW_GOAL_PROMPT_SLUG,
+        agent_run: run,
+        variant_template: "review {{base_prompt}} {{repo}} {{pr_number}}"
+      )
+
+      prompt = activity.send(:augment_prompt_for_review_goal, run, "Review the branch")
+
+      expect(prompt).to eq("review Review the branch #{project.full_name} #{run.source_pull_request_number}")
+      expect(run.reload.prompt_version).to eq(variant_version)
+    end
+
+    it "uses an assigned enhance-issue variant prompt version" do
+      run = create(:agent_run, :enhance_issue_goal, project: project, issue: issue)
+      allow(Knowledge::ContextBundle::Build).to receive(:call)
+        .with(issue: issue, project: project)
+        .and_return(content: "")
+      variant_version = create_ab_test_assignment(
+        slug: described_class::ENHANCE_ISSUE_GOAL_PROMPT_SLUG,
+        agent_run: run,
+        variant_template: "enhance {{base_prompt}} {{repo}} {{issue_number}}"
+      )
+
+      prompt = activity.send(:augment_prompt_for_enhance_issue_goal, run, "Improve the issue")
+
+      expect(prompt).to eq("enhance Improve the issue #{project.full_name} #{issue.github_number}")
+      expect(run.reload.prompt_version).to eq(variant_version)
+    end
+
+    it "keeps using an existing assignment after the test stops running" do
+      run = create(:agent_run, :create_issue_goal, project: project)
+      variant_version = create_ab_test_assignment(
+        slug: described_class::ISSUE_GOAL_PROMPT_SLUG,
+        agent_run: run,
+        variant_template: "assigned {{base_prompt}} {{repo}}",
+        status: "completed"
+      )
+      variant_version.prompt.update!(active: false)
+
+      prompt = activity.send(:augment_prompt_for_issue_goal, run, "Create a roadmap issue")
+
+      expect(prompt).to eq("assigned Create a roadmap issue #{project.full_name}")
+      expect(run.reload.prompt_version).to eq(variant_version)
     end
   end
 

@@ -1774,12 +1774,14 @@ module Activities
 
     def augment_prompt_for_issue_goal(agent_run, prompt)
       vars = { base_prompt: prompt, repo: validated_repo_name(agent_run) }
-      Prompts::Render.call(
+      rendered = Prompts::Render.call(
         slug: ISSUE_GOAL_PROMPT_SLUG,
         project: agent_run.project,
         variables: vars,
         fallback: -> { Prompts::Render.interpolate(FALLBACK_ISSUE_GOAL_PROMPT, vars) }
       )
+
+      maybe_assign_ab_test_variant(agent_run, ISSUE_GOAL_PROMPT_SLUG, rendered, vars)
     end
 
     def augment_prompt_for_review_goal(agent_run, prompt)
@@ -1795,12 +1797,14 @@ module Activities
         repo: validated_repo_name(agent_run),
         pr_number: pr_number.to_s
       }
-      Prompts::Render.call(
+      rendered = Prompts::Render.call(
         slug: REVIEW_GOAL_PROMPT_SLUG,
         project: agent_run.project,
         variables: vars,
         fallback: -> { Prompts::Render.interpolate(FALLBACK_REVIEW_GOAL_PROMPT, vars) }
       )
+
+      maybe_assign_ab_test_variant(agent_run, REVIEW_GOAL_PROMPT_SLUG, rendered, vars)
     end
 
     def augment_prompt_for_enhance_issue_goal(agent_run, prompt)
@@ -1818,12 +1822,44 @@ module Activities
         repo: validated_repo_name(agent_run),
         issue_number: issue.github_number.to_s
       }
-      Prompts::Render.call(
+      rendered = Prompts::Render.call(
         slug: ENHANCE_ISSUE_GOAL_PROMPT_SLUG,
         project: agent_run.project,
         variables: vars,
         fallback: -> { Prompts::Render.interpolate(FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT, vars) }
       )
+
+      maybe_assign_ab_test_variant(agent_run, ENHANCE_ISSUE_GOAL_PROMPT_SLUG, rendered, vars)
+    end
+
+    def maybe_assign_ab_test_variant(agent_run, slug, rendered, vars)
+      assignment = existing_ab_test_assignment(agent_run, slug)
+      assignment ||= assign_running_ab_test(agent_run, slug)
+      return rendered unless assignment
+
+      variant_version = assignment.ab_test_variant.prompt_version
+      agent_run.update!(prompt_version: variant_version)
+
+      variant_version.render(vars)
+    end
+
+    def existing_ab_test_assignment(agent_run, slug)
+      AbTestAssignment
+        .joins(ab_test: :prompt)
+        .includes(ab_test_variant: :prompt_version)
+        .where(agent_run: agent_run, prompts: { slug: slug })
+        .order(:id)
+        .first
+    end
+
+    def assign_running_ab_test(agent_run, slug)
+      prompt = Prompt.resolve(slug, project: agent_run.project)
+      return nil unless prompt
+
+      ab_test = prompt.ab_tests.running.first
+      return nil unless ab_test
+
+      AbTests::Assign.call(ab_test: ab_test, agent_run: agent_run)
     end
 
     def inject_knowledge_into_prompt(prompt, issue, project)
