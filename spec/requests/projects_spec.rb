@@ -1480,7 +1480,10 @@ RSpec.describe "Projects" do
       end
 
       context "when services are detected and matched" do
-        let(:postgres_container) { ServiceContainer.find_by(name: "postgres") || create(:service_container, name: "postgres") }
+        let(:postgres_container) do
+          ServiceContainer.find_by(name: "postgres", account: account) ||
+            create(:service_container, account: account, name: "postgres")
+        end
         let(:detect_result) do
           Projects::DetectServices::Result.new(
             detected: [ { service: "postgres", source: "Gemfile", dependency: "pg" } ],

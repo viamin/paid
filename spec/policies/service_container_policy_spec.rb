@@ -6,7 +6,7 @@ RSpec.describe ServiceContainerPolicy do
   subject { described_class.new(user, service_container) }
 
   let(:account) { create(:account) }
-  let(:service_container) { create(:service_container) }
+  let(:service_container) { create(:service_container, account: account) }
 
   context "when user is an owner" do
     let(:user) { create(:user, :owner, account: account) }
@@ -57,13 +57,15 @@ RSpec.describe ServiceContainerPolicy do
   describe described_class::Scope do
     subject(:scope) { described_class.new(user, ServiceContainer).resolve }
 
-    let!(:service_container) { create(:service_container) }
+    let!(:service_container) { create(:service_container, account: account) }
+    let!(:other_service_container) { create(:service_container) }
 
     context "when user is an owner" do
       let(:user) { create(:user, :owner, account: account) }
 
-      it "returns all service containers" do
+      it "returns service containers for the user's account" do
         expect(scope).to include(service_container)
+        expect(scope).not_to include(other_service_container)
       end
     end
 
@@ -72,8 +74,9 @@ RSpec.describe ServiceContainerPolicy do
 
       let(:user) { create(:user, :admin, account: account) }
 
-      it "returns all service containers" do
+      it "returns service containers for the user's account" do
         expect(scope).to include(service_container)
+        expect(scope).not_to include(other_service_container)
       end
     end
 

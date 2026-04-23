@@ -383,7 +383,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       end
 
       it "appends service environment guidance for configured database containers" do
-        project.service_containers << create(:service_container)
+        project.service_containers << create(:service_container, account: project.account)
 
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
@@ -396,7 +396,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       it "separates appended sections from a template without a trailing newline" do
         prompt.current_version.update_column(:template, "Work on {{title}}")
-        project.service_containers << create(:service_container)
+        project.service_containers << create(:service_container, account: project.account)
 
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 

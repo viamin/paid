@@ -10,23 +10,25 @@
 #     MovieGenre.find_or_create_by!(name: genre_name)
 #   end
 
-# Sample account and user for development/testing
-unless User.exists?(email: "test@example.com")
-  account = Account.find_or_create_by!(name: "Test Team", slug: "test-team")
+TenantContext.with_system_access do
+  # Sample account and user for development/testing
+  unless User.exists?(email: "test@example.com")
+    account = Account.find_or_create_by!(name: "Test Team", slug: "test-team")
 
-  User.create!(
-    account: account,
-    name: "Test User",
-    email: "test@example.com",
-    password: "password",
-    password_confirmation: "password"
-  )
+    User.create!(
+      account: account,
+      name: "Test User",
+      email: "test@example.com",
+      password: "password",
+      password_confirmation: "password"
+    )
 
-  Rails.logger.info(message: "seeds.created_test_user", email: "test@example.com")
+    Rails.logger.info(message: "seeds.created_test_user", email: "test@example.com")
+  end
+
+  # Seed default service containers
+  load Rails.root.join("db/seeds/service_containers.rb")
+
+  # Seed default prompts
+  load Rails.root.join("db/seeds/prompts.rb")
 end
-
-# Seed default service containers
-load Rails.root.join("db/seeds/service_containers.rb")
-
-# Seed default prompts
-load Rails.root.join("db/seeds/prompts.rb")
