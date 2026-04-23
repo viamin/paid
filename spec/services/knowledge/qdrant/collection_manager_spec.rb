@@ -7,7 +7,8 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
   let(:qdrant_client) { instance_double(QdrantClient) }
   let(:collections) { instance_double(Qdrant::Collections) }
   let(:points) { instance_double(Qdrant::Points) }
-  let(:collection_name) { "project_#{project.id}" }
+  let(:collection_name) { "account_#{project.account_id}_project_#{project.id}" }
+  let(:legacy_collection_name) { "project_#{project.id}" }
   let(:manager) { described_class.new(project: project, client: qdrant_client) }
 
   before do
@@ -16,8 +17,8 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
   end
 
   describe ".collection_name" do
-    it "returns project_<id>" do
-      expect(described_class.collection_name(project)).to eq("project_#{project.id}")
+    it "returns an account and project scoped name" do
+      expect(described_class.collection_name(project)).to eq("account_#{project.account_id}_project_#{project.id}")
     end
   end
 
@@ -27,6 +28,9 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
         allow(collections).to receive(:get)
           .with(collection_name: collection_name)
           .and_return({ "result" => { "status" => "green" } })
+        allow(collections).to receive(:get)
+          .with(collection_name: legacy_collection_name)
+          .and_raise(Qdrant::Error.new("Not found"))
       end
 
       it "does not create a new collection" do
@@ -40,6 +44,9 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
       before do
         allow(collections).to receive(:get)
           .with(collection_name: collection_name)
+          .and_raise(Qdrant::Error.new("Not found"))
+        allow(collections).to receive(:get)
+          .with(collection_name: legacy_collection_name)
           .and_raise(Qdrant::Error.new("Not found"))
         allow(collections).to receive_messages(create: { "result" => true }, create_index: { "result" => true })
       end
@@ -56,21 +63,70 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
       it "creates payload indexes with correct field schemas" do
         manager.ensure_collection!
 
-        expect(collections).to have_received(:create_index).with(
-          collection_name: collection_name,
-          field_name: "project_version_id",
-          field_schema: "integer"
+        {
+          "account_id" => "integer",
+          "project_version_id" => "integer",
+          "artifact_type" => "keyword",
+          "status" => "keyword"
+        }.each do |field_name, field_schema|
+          expect(collections).to have_received(:create_index).with(
+            collection_name: collection_name,
+            field_name: field_name,
+            field_schema: field_schema
+          )
+        end
+      end
+    end
+
+    context "when only the legacy project-scoped collection exists" do
+      before do
+        allow(collections).to receive(:get)
+          .with(collection_name: collection_name)
+          .and_raise(Qdrant::Error.new("Not found"))
+        allow(collections).to receive(:get)
+          .with(collection_name: legacy_collection_name)
+          .and_return({ "result" => { "status" => "green" } })
+        allow(collections).to receive_messages(create_index: { "result" => true }, update_aliases: { "result" => true })
+        allow(points).to receive(:set_payload).and_return({ "result" => true })
+      end
+
+      it "migrates the legacy collection before aliasing the tenant-scoped name" do
+        expect(collections).not_to receive(:create)
+
+        manager.ensure_collection!
+
+        expect_legacy_collection_migrated
+        expect(collections).to have_received(:update_aliases).with(
+          actions: [
+            {
+              create_alias: {
+                collection_name: legacy_collection_name,
+                alias_name: collection_name
+              }
+            }
+          ]
         )
-        expect(collections).to have_received(:create_index).with(
-          collection_name: collection_name,
-          field_name: "artifact_type",
-          field_schema: "keyword"
-        )
-        expect(collections).to have_received(:create_index).with(
-          collection_name: collection_name,
-          field_name: "status",
-          field_schema: "keyword"
-        )
+      end
+    end
+
+    context "when the tenant-scoped alias already points at the legacy collection" do
+      before do
+        allow(collections).to receive(:get)
+          .with(collection_name: collection_name)
+          .and_return({ "result" => { "status" => "green" } })
+        allow(collections).to receive(:get)
+          .with(collection_name: legacy_collection_name)
+          .and_return({ "result" => { "status" => "green" } })
+        allow(collections).to receive(:create_index).and_return({ "result" => true })
+        allow(points).to receive(:set_payload).and_return({ "result" => true })
+      end
+
+      it "migrates legacy payloads without recreating the alias" do
+        expect(collections).not_to receive(:update_aliases)
+
+        manager.ensure_collection!
+
+        expect_legacy_collection_migrated
       end
     end
 
@@ -97,6 +153,9 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
             { "result" => { "status" => "green" } }
           end
         end
+        allow(collections).to receive(:get)
+          .with(collection_name: legacy_collection_name)
+          .and_raise(Qdrant::Error.new("Not found"))
         allow(collections).to receive_messages(create: { "result" => true }, create_index: { "result" => true })
       end
 
@@ -151,6 +210,9 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
           raise Qdrant::Error, "Not found"
         end
       end
+      allow(collections).to receive(:get)
+        .with(collection_name: legacy_collection_name)
+        .and_raise(Qdrant::Error.new("Not found"))
 
       allow(collections).to receive_messages(
         delete: { "result" => true },
@@ -181,5 +243,19 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
         hash_including(message: "knowledge.qdrant.rebuild_started")
       )
     end
+  end
+
+  def expect_legacy_collection_migrated
+    expect(collections).to have_received(:create_index).with(
+      collection_name: legacy_collection_name,
+      field_name: "account_id",
+      field_schema: "integer"
+    )
+    expect(points).to have_received(:set_payload).with(
+      collection_name: legacy_collection_name,
+      payload: { account_id: project.account_id },
+      filter: {},
+      wait: true
+    )
   end
 end

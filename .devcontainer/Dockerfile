@@ -24,7 +24,7 @@ RUN set -e; \
   fi; \
   echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80-retries \
   && apt-get update -qq \
-  && apt-get install -y build-essential cmake shellcheck tmux libpq-dev \
+  && apt-get install -y build-essential cmake shellcheck tmux libpq-dev postgresql-client \
   && rm -rf /var/lib/apt/lists/*
 
 # Install chromium separately for better layer caching (updates more frequently)

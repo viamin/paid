@@ -19,6 +19,10 @@ RSpec.describe Activities::BaseActivity do
     let(:executor) { object_double(Rails.application.executor) }
 
     before do
+      allow(TenantContext).to receive(:with_system_access).and_yield
+      allow(TenantContext).to receive(:with).and_yield
+      allow(TenantContext).to receive(:clear!)
+      allow(Project).to receive(:find_by)
       allow(ActiveRecord::Base).to receive(:connection_pool).and_return(connection_pool)
       allow(connection_pool).to receive(:active_connection?).and_return(true)
       allow(connection_pool).to receive(:release_connection)

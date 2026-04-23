@@ -11,15 +11,15 @@ RSpec.describe QdrantCollectionCleanupJob do
     allow(qdrant_client).to receive(:collections).and_return(collections)
   end
 
-  it "drops the collection for the given project ID" do
+  it "drops the collection for the given account and project ID" do
     allow(collections).to receive(:get)
-      .with(collection_name: "project_42")
+      .with(collection_name: "account_7_project_42")
       .and_return({ "result" => { "status" => "green" } })
     allow(collections).to receive(:delete).and_return({ "result" => true })
 
-    described_class.perform_now(42)
+    described_class.perform_now(42, 7)
 
-    expect(collections).to have_received(:delete).with(collection_name: "project_42")
+    expect(collections).to have_received(:delete).with(collection_name: "account_7_project_42")
   end
 
   it "retries on connection errors" do

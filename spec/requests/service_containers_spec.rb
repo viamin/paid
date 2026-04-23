@@ -29,7 +29,7 @@ RSpec.describe "ServiceContainers" do
       end
 
       it "shows existing service containers" do
-        sc = create(:service_container, name: "test-postgres")
+        sc = create(:service_container, account: account, name: "test-postgres")
         get service_containers_path
         expect(response.body).to include("test-postgres")
         expect(response.body).to include(sc.image)
@@ -135,7 +135,7 @@ RSpec.describe "ServiceContainers" do
     before { sign_in user }
 
     it "shows the service container details" do
-      sc = create(:service_container, name: "my-pg")
+      sc = create(:service_container, account: account, name: "my-pg")
       get service_container_path(sc)
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("my-pg")
@@ -147,7 +147,7 @@ RSpec.describe "ServiceContainers" do
     before { sign_in user }
 
     it "shows the edit form" do
-      sc = create(:service_container, name: "my-pg")
+      sc = create(:service_container, account: account, name: "my-pg")
       get edit_service_container_path(sc)
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Edit Service Container")
@@ -159,7 +159,7 @@ RSpec.describe "ServiceContainers" do
     before { sign_in user }
 
     it "updates the service container" do
-      sc = create(:service_container, name: "old-name")
+      sc = create(:service_container, account: account, name: "old-name")
       patch service_container_path(sc), params: { service_container: { name: "new-name" } }
       expect(sc.reload.name).to eq("new-name")
       expect(response).to redirect_to(service_container_path(sc))
@@ -167,7 +167,7 @@ RSpec.describe "ServiceContainers" do
     end
 
     it "re-renders the form on validation error" do
-      sc = create(:service_container)
+      sc = create(:service_container, account: account)
       patch service_container_path(sc), params: { service_container: { name: "" } }
       expect(response).to have_http_status(:unprocessable_content)
     end
@@ -181,14 +181,14 @@ RSpec.describe "ServiceContainers" do
       end
 
       it "deletes the service container" do
-        sc = create(:service_container)
+        sc = create(:service_container, account: account)
         expect {
           delete service_container_path(sc)
         }.to change(ServiceContainer, :count).by(-1)
       end
 
       it "redirects with success message" do
-        sc = create(:service_container)
+        sc = create(:service_container, account: account)
         delete service_container_path(sc)
         expect(response).to redirect_to(service_containers_path)
         expect(flash[:notice]).to include("successfully deleted")
@@ -201,7 +201,7 @@ RSpec.describe "ServiceContainers" do
       before { create(:user_setting, user: admin_only_user) }
 
       it "does not allow deletion" do
-        sc = create(:service_container)
+        sc = create(:service_container, account: account)
         sign_in admin_only_user
         delete service_container_path(sc)
         expect(response).to redirect_to(root_path)

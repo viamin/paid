@@ -39,7 +39,7 @@ module Projects
     end
 
     def find_service_container
-      ServiceContainer.find(params[:service_container_id])
+      policy_scope(ServiceContainer).find(params[:service_container_id])
     rescue ActiveRecord::RecordNotFound
       redirect_to edit_project_path(@project), alert: "Service container not found."
       nil

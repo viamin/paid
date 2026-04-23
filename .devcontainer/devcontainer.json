@@ -21,6 +21,8 @@
     "TZ": "${localEnv:TZ:UTC}",
     "KAMAL_REGISTRY_PASSWORD": "${localEnv:KAMAL_REGISTRY_PASSWORD}",
     "DB_HOST": "postgres",
+    "DB_USERNAME": "paid",
+    "DB_PASSWORD": "paid",
     "TEMPORAL_ADDRESS": "temporal:7233",
     "TEMPORAL_NAMESPACE": "default",
     "TEMPORAL_POLL_TASK_QUEUE": "paid-poll-tasks",

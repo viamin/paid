@@ -75,6 +75,16 @@ RSpec.configure do |config|
     ProviderSupport.reset_supported_provider_keys!
   end
 
+  config.around do |example|
+    if database_available && !example.metadata[:tenant_isolation]
+      TenantContext.with_system_access { example.run }
+    else
+      example.run
+    end
+  ensure
+    TenantContext.clear! if database_available
+  end
+
   # When running without a database (ALLOW_DBLESS_SPECS=true), automatically skip
   # examples that need a database connection. This lets the non-DB specs run and
   # report results while DB-dependent specs are marked as pending.

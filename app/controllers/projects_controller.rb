@@ -102,7 +102,7 @@ class ProjectsController < ApplicationController
   def edit
     authorize @project
     @github_tokens = policy_scope(GithubToken).where(revoked_at: nil)
-    @available_service_containers = ServiceContainer.where.not(id: @project.service_container_ids).order(:name)
+    @available_service_containers = policy_scope(ServiceContainer).where.not(id: @project.service_container_ids).order(:name)
   end
 
   def update
@@ -116,7 +116,7 @@ class ProjectsController < ApplicationController
     if @project.update(update_params)
       redirect_to @project, notice: "Project was successfully updated."
     else
-      @available_service_containers = ServiceContainer.where.not(id: @project.service_container_ids).order(:name)
+      @available_service_containers = policy_scope(ServiceContainer).where.not(id: @project.service_container_ids).order(:name)
       render :edit, status: :unprocessable_content
     end
   end

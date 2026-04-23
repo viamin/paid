@@ -76,6 +76,7 @@ module Knowledge
 
       def build_payload(chunk, artifact)
         {
+          account_id: chunk.project.account_id,
           project_id: chunk.project_id,
           project_version_id: artifact.collector_run.project_version_id,
           artifact_type: artifact.artifact_type,
@@ -87,6 +88,7 @@ module Knowledge
 
       def build_filter(project, filters)
         conditions = [
+          { key: "account_id", match: { value: project.account_id } },
           { key: "project_id", match: { value: project.id } }
         ]
 

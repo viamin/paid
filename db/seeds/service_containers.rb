@@ -17,18 +17,20 @@
     env: {}
   }
 ].each do |attrs|
-  sc = ServiceContainer.find_or_initialize_by(name: attrs[:name])
+  Account.find_each do |account|
+    sc = ServiceContainer.find_or_initialize_by(account: account, name: attrs[:name])
 
-  if sc.new_record?
-    sc.image = attrs[:image]
-    sc.port = attrs[:port]
-    sc.env = attrs[:env]
-    sc.status = "stopped"
+    if sc.new_record?
+      sc.image = attrs[:image]
+      sc.port = attrs[:port]
+      sc.env = attrs[:env]
+      sc.status = "stopped"
+    end
+
+    # Skip validation: image_in_allowlist requires UserSetting records that
+    # may not exist yet during initial db:seed.
+    sc.save!(validate: false)
+
+    Rails.logger.info(message: "seeds.service_container", account_id: account.id, name: attrs[:name], image: attrs[:image])
   end
-
-  # Skip validation: image_in_allowlist requires UserSetting records that
-  # may not exist yet during initial db:seed.
-  sc.save!(validate: false)
-
-  Rails.logger.info(message: "seeds.service_container", name: attrs[:name], image: attrs[:image])
 end

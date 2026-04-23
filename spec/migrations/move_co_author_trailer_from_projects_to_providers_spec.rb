@@ -52,7 +52,7 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
     # Clean up data that was not rolled back by transactional fixtures. Keep
     # deletes ordered from child tables to parent tables so this does not need
     # disable_referential_integrity, which takes broad locks across the suite.
-    %w[projects providers provider_states account_memberships github_tokens users accounts].each do |table|
+    %w[projects service_containers providers provider_states account_memberships github_tokens users accounts].each do |table|
       connection.execute("DELETE FROM #{table}")
     end
   end
