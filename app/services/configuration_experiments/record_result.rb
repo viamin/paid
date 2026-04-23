@@ -2,12 +2,13 @@
 
 module ConfigurationExperiments
   class RecordResult
-    attr_reader :configuration_experiment, :agent_run, :quality_score
+    attr_reader :configuration_experiment, :agent_run, :quality_score, :update_existing
 
-    def initialize(configuration_experiment:, agent_run:, quality_score:)
+    def initialize(configuration_experiment:, agent_run:, quality_score:, update_existing: false)
       @configuration_experiment = configuration_experiment
       @agent_run = agent_run
       @quality_score = quality_score
+      @update_existing = update_existing
     end
 
     def self.call(...)
@@ -17,19 +18,7 @@ module ConfigurationExperiments
     def record
       validate_quality_score!
 
-      score_recorded = ActiveRecord::Base.transaction do
-        updated_count = ConfigurationExperimentAssignment
-          .where(configuration_experiment: configuration_experiment, agent_run: agent_run, quality_score: nil)
-          .update_all(quality_score: quality_score, updated_at: Time.current)
-        next false unless updated_count > 0
-
-        assignment = ConfigurationExperimentAssignment.find_by!(
-          configuration_experiment: configuration_experiment,
-          agent_run: agent_run
-        )
-        assignment.configuration_experiment_variant.record_quality_score!(quality_score)
-        true
-      end
+      score_recorded = ActiveRecord::Base.transaction { record_assignment_score }
 
       check_auto_completion(configuration_experiment) if score_recorded
     end
@@ -37,6 +26,32 @@ module ConfigurationExperiments
     private
 
     ANALYSIS_INTERVAL = ConfigurationExperiment::ANALYSIS_INTERVAL
+
+    def record_assignment_score
+      assignment = ConfigurationExperimentAssignment.find_by!(
+        configuration_experiment: configuration_experiment,
+        agent_run: agent_run
+      )
+      variant = assignment.configuration_experiment_variant
+
+      variant.with_lock do
+        assignment.reload
+        old_score = assignment.quality_score
+        if old_score.present? && !update_existing
+          false
+        else
+          assignment.update!(quality_score: quality_score)
+          if old_score.present?
+            adjust_variant_aggregates(variant, old_score: old_score, new_score: quality_score)
+            clear_analysis_cache
+          else
+            add_variant_score(variant, quality_score)
+          end
+
+          true
+        end
+      end
+    end
 
     def validate_quality_score!
       unless quality_score.is_a?(Numeric) && quality_score >= 0 && quality_score <= 1
@@ -60,6 +75,26 @@ module ConfigurationExperiments
       end
     rescue ActiveRecord::RecordInvalid
       nil
+    end
+
+    def add_variant_score(variant, score)
+      score_decimal = BigDecimal(score.to_s)
+      variant.sample_count += 1
+      variant.total_quality_score = (variant.total_quality_score || BigDecimal(0)) + score_decimal
+      variant.avg_quality_score = variant.total_quality_score / variant.sample_count
+      variant.save!
+    end
+
+    def adjust_variant_aggregates(variant, old_score:, new_score:)
+      old_decimal = BigDecimal(old_score.to_s)
+      new_decimal = BigDecimal(new_score.to_s)
+      variant.total_quality_score = (variant.total_quality_score || BigDecimal(0)) - old_decimal + new_decimal
+      variant.avg_quality_score = variant.sample_count.positive? ? variant.total_quality_score / variant.sample_count : nil
+      variant.save!
+    end
+
+    def clear_analysis_cache
+      configuration_experiment.update_columns(cached_analysis: nil, analysis_samples_key: nil)
     end
 
     def should_analyze?(configuration_experiment)

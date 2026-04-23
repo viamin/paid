@@ -219,19 +219,12 @@ module QualityMetrics
       end
 
       agent_run.configuration_experiment_assignments.find_each do |assignment|
-        variant = assignment.configuration_experiment_variant
-
-        variant.with_lock do
-          assignment.reload
-          old_score = assignment.quality_score
-          assignment.update!(quality_score: metric.composite_score)
-
-          if old_score.present?
-            adjust_variant_aggregates(variant, old_score: old_score, new_score: metric.composite_score)
-          else
-            add_variant_score(variant, metric.composite_score)
-          end
-        end
+        ConfigurationExperiments::RecordResult.call(
+          configuration_experiment: assignment.configuration_experiment,
+          agent_run: agent_run,
+          quality_score: metric.composite_score,
+          update_existing: true
+        )
       end
     end
 

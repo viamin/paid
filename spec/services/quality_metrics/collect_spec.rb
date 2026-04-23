@@ -272,6 +272,31 @@ RSpec.describe QualityMetrics::Collect do
         expect { described_class.call(agent_run: agent_run) }
           .not_to change { variant.reload.sample_count }
       end
+
+      it "auto-completes the experiment when collection reaches the minimum sample count" do
+        configuration_experiment.update!(min_samples_per_variant: 2)
+        test_variant = create(:configuration_experiment_variant, configuration_experiment: configuration_experiment)
+        result = ConfigurationExperiments::Analyze::Result.new(status: :control_wins)
+
+        create(:configuration_experiment_assignment,
+          configuration_experiment: configuration_experiment,
+          configuration_experiment_variant: variant,
+          agent_run: create(:agent_run),
+          quality_score: 0.9)
+        variant.update!(sample_count: 1, total_quality_score: 0.9, avg_quality_score: 0.9)
+
+        create_list(:configuration_experiment_assignment, 2,
+          configuration_experiment: configuration_experiment,
+          configuration_experiment_variant: test_variant,
+          quality_score: 0.3)
+        test_variant.update!(sample_count: 2, total_quality_score: 0.6, avg_quality_score: 0.3)
+
+        allow(ConfigurationExperiments::Analyze).to receive(:call).and_return(result)
+
+        described_class.call(agent_run: agent_run)
+
+        expect(configuration_experiment.reload.status).to eq("completed")
+      end
     end
 
     context "with prompt_version" do
