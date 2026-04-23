@@ -17,16 +17,43 @@ RSpec.describe PromptEvolutionJob do
     let(:prompt) { create(:prompt, :global, :with_version) }
     let(:prompt_version) { prompt.current_version }
 
-    def create_completed_runs(count, prompt_version:, project:)
+    def create_completed_runs(count, prompt_version:, project:, composite_score: 0.5, goal: "create_pr")
       count.times do
         run = create(:agent_run, :completed,
           project: project,
           prompt_version: prompt_version,
-          goal: "create_pr",
+          goal: goal,
           completed_at: 1.day.ago)
         create(:quality_metric, :automated, agent_run: run,
-          prompt_version: prompt_version, composite_score: 0.5)
+          prompt_version: prompt_version, composite_score: composite_score)
       end
+    end
+
+    def perform_targeted_quality_pause_job(project)
+      job.perform(
+        project_id: project.id,
+        failure_only: true,
+        metric_type: "composite_score",
+        threshold: 0.5,
+        goal_type: "create_pr",
+        source: "quality_pause"
+      )
+    end
+
+    def expect_targeted_workflow_for(prompt, project)
+      expect(temporal_client).to have_received(:start_workflow).with(
+        Workflows::PromptEvolutionWorkflow,
+        hash_including(
+          prompt_id: prompt.id,
+          project_id: project.id,
+          failure_only: true,
+          metric_type: "composite_score",
+          threshold: 0.5,
+          goal_type: "create_pr",
+          min_runs_for_evaluation: QualityThreshold::DEFAULT_MIN_SAMPLE_SIZE
+        ),
+        hash_including(id: "prompt-evolution-quality-pause-#{project.id}-#{prompt.id}-#{Date.current}")
+      )
     end
 
     context "with an eligible prompt" do
@@ -140,6 +167,30 @@ RSpec.describe PromptEvolutionJob do
         expect(temporal_client).to have_received(:start_workflow)
           .with(Workflows::PromptEvolutionWorkflow,
             hash_including(prompt_id: prompt2.id), anything)
+      end
+    end
+
+    context "with targeted quality-pause evolution" do
+      let(:other_project) { create(:project, account: account) }
+      let(:healthy_prompt) { create(:prompt, :global, :with_version) }
+      let(:workflow_calls) { [] }
+
+      before do
+        allow(temporal_client).to receive(:start_workflow) do |*args|
+          workflow_calls << args
+        end
+
+        create_completed_runs(3, prompt_version: prompt_version, project: project, composite_score: 0.2)
+        create_completed_runs(3, prompt_version: healthy_prompt.current_version, project: project, composite_score: 0.9)
+        create_completed_runs(3, prompt_version: healthy_prompt.current_version, project: other_project, composite_score: 0.1)
+      end
+
+      it "starts workflows only for prompts used by low-quality runs in the paused project" do
+        perform_targeted_quality_pause_job(project)
+
+        prompt_evolution_calls = workflow_calls.select { |call| call.first == Workflows::PromptEvolutionWorkflow }
+        expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).to contain_exactly(prompt.id)
+        expect_targeted_workflow_for(prompt, project)
       end
     end
   end

@@ -69,7 +69,17 @@ RSpec.describe QualityPause::Check do
 
     it "pauses the project when rolling average falls below threshold" do
       create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ])
-      described_class.call(agent_run: agent_run)
+
+      expect {
+        described_class.call(agent_run: agent_run)
+      }.to have_enqueued_job(PromptEvolutionJob).with(
+        project_id: project.id,
+        failure_only: true,
+        metric_type: "composite_score",
+        threshold: 0.5,
+        goal_type: agent_run.goal,
+        source: "quality_pause"
+      )
 
       project.reload
       expect(project.quality_paused?).to be true
@@ -130,6 +140,14 @@ RSpec.describe QualityPause::Check do
       ))
 
       described_class.call(agent_run: agent_run)
+    end
+
+    it "does not enqueue prompt evolution when the project is not paused" do
+      create_quality_metrics(project, scores: [ 0.8, 0.7, 0.9, 0.6, 0.8 ])
+
+      expect {
+        described_class.call(agent_run: agent_run)
+      }.not_to have_enqueued_job(PromptEvolutionJob)
     end
 
     describe "grace period after manual resume" do

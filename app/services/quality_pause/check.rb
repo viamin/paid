@@ -26,7 +26,7 @@ module QualityPause
       return unless breached
       return if in_grace_period?(breached)
 
-      project.quality_pause!(
+      paused = project.quality_pause!(
         score: breached.fetch(:average),
         threshold: breached.fetch(:threshold).min_value,
         agent_run: agent_run,
@@ -38,6 +38,9 @@ module QualityPause
           recent_scores: breached.fetch(:scores)
         }
       )
+      return unless paused
+
+      enqueue_prompt_evolution(breached)
 
       Rails.logger.warn(
         message: "quality_pause.project_paused",
@@ -53,6 +56,18 @@ module QualityPause
     private
 
     attr_reader :agent_run, :project
+
+    def enqueue_prompt_evolution(breached)
+      threshold = breached.fetch(:threshold)
+      PromptEvolutionJob.perform_later(
+        project_id: project.id,
+        failure_only: true,
+        metric_type: threshold.metric_type,
+        threshold: threshold.min_value,
+        goal_type: agent_run.goal,
+        source: "quality_pause"
+      )
+    end
 
     def in_grace_period?(breached)
       resume_at = last_resume_at

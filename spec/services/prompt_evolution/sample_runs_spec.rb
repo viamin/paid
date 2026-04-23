@@ -59,7 +59,7 @@ RSpec.describe PromptEvolution::SampleRuns do
     }
   end
 
-  def insert_quality_metric(run:, composite_score:, metric_type: "automated", version: prompt_version)
+  def insert_quality_metric(run:, composite_score:, metric_type: "automated", version: prompt_version, scores: {})
     now = Time.current
     QualityMetric.insert_all!([
       {
@@ -68,6 +68,7 @@ RSpec.describe PromptEvolution::SampleRuns do
         metric_type: metric_type,
         feedback_source: metric_type == "human" ? "pr_merge" : "system",
         composite_score: composite_score,
+        scores: scores,
         created_at: now,
         updated_at: now
       }
@@ -141,6 +142,44 @@ RSpec.describe PromptEvolution::SampleRuns do
 
       run_ids = result.samples.map { |s| s[:agent_run].id }
       expect(run_ids).not_to include(other_run.id)
+    end
+
+    it "samples only low-quality runs when failure_only is enabled" do
+      failing_run = create_completed_run(composite_score: 0.2)
+      healthy_run = create_completed_run(composite_score: 0.9)
+
+      result = described_class.call(
+        sample_size: 10,
+        days: 7,
+        failure_only: true,
+        metric_type: "composite_score",
+        threshold: 0.5,
+        min_runs_for_evaluation: 1
+      )
+
+      run_ids = result.samples.map { |sample| sample[:agent_run].id }
+      expect(run_ids).to include(failing_run.id)
+      expect(run_ids).not_to include(healthy_run.id)
+    end
+
+    it "identifies metric-specific failures as evolution candidates" do
+      3.times do
+        run = insert_completed_run(project: project, prompt_version: prompt_version, completed_at: 1.day.ago)
+        insert_quality_metric(run: run, composite_score: 0.9, scores: { "reaction_score" => 0.1 })
+      end
+
+      result = described_class.call(
+        sample_size: 10,
+        days: 7,
+        failure_only: true,
+        metric_type: "reaction_score",
+        threshold: 0.5,
+        min_runs_for_evaluation: 3
+      )
+
+      candidate = result.evolution_candidates.first
+      expect(candidate[:prompt_version]).to eq(prompt_version)
+      expect(candidate[:reasons]).to include(a_string_matching(/reaction_score avg score.*targeted threshold/))
     end
   end
 
