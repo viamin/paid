@@ -18,7 +18,7 @@ RSpec.describe StaleRunDetectorJob do
 
       stale_run.reload
       expect(stale_run.status).to eq("timeout")
-      expect(stale_run.error_message).to include("Stale run detected")
+      expect(stale_run.error_message).to start_with(AgentRun::STALE_DETECTOR_ERROR_PREFIX)
       expect(stale_run.completed_at).to be_present
     end
 
@@ -171,7 +171,7 @@ RSpec.describe StaleRunDetectorJob do
 
         stale_run.reload
         expect(stale_run.status).to eq("timeout")
-        expect(stale_run.error_message).to include("Stale run detected")
+        expect(stale_run.error_message).to start_with(AgentRun::STALE_DETECTOR_ERROR_PREFIX)
       end
 
       it "does not touch pending runs within the threshold" do
@@ -403,7 +403,7 @@ RSpec.describe StaleRunDetectorJob do
 
         stale_run.reload
         expect(stale_run.status).to eq("timeout")
-        expect(stale_run.error_message).to include("Stale run detected")
+        expect(stale_run.error_message).to start_with(AgentRun::STALE_DETECTOR_ERROR_PREFIX)
       end
 
       it "times out a stale time-limit paused run with zero iterations" do
@@ -418,7 +418,7 @@ RSpec.describe StaleRunDetectorJob do
         stale_run.reload
         expect(stale_run.status).to eq("timeout")
         expect(stale_run.stale_requeue_count).to eq(0)
-        expect(stale_run.error_message).to include("Stale run detected")
+        expect(stale_run.error_message).to start_with(AgentRun::STALE_DETECTOR_ERROR_PREFIX)
       end
 
       it "requeues a stale time-limit paused run that made progress" do

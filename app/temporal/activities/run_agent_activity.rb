@@ -356,11 +356,11 @@ module Activities
         # because it indicates an actual execution attempt that should trigger
         # ProcessRunQueueJob to re-schedule work.
         if timeout_error.present?
-          agent_run.timeout!(error: timeout_error) unless agent_run.finished?
+          timed_out = !agent_run.finished? && agent_run.timeout!(error: timeout_error)
           # Skip queue processing when cleanup killed the run — the timeout
           # was not a real provider issue, so there is nothing to re-schedule.
           # (agent_run was reloaded above, so the model method sees current state)
-          ProcessRunQueueJob.perform_later unless agent_run.cancelled_by_cleanup?
+          ProcessRunQueueJob.perform_later if timed_out && !agent_run.cancelled_by_cleanup?
         elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_rate_limited)
           provider_list = providers.any? ? provider_attempt_labels(providers, agent_run, user_settings.user).join(", ") : "none"
           agent_run.rate_limit!(
@@ -504,9 +504,9 @@ module Activities
     end
 
     # True when the agent run we're executing has already been force-timed-out
-    # by `dev:cleanup` (e.g. `bin/setup --skip-server` killed our container).
-    # In that case the failure we just rescued was caused by the cleanup, not
-    # by the provider, so we must not penalize the provider's circuit breaker.
+    # by external cleanup (e.g. `dev:cleanup` or `StaleRunDetectorJob` killed
+    # our container). In that case the failure we just rescued was caused by
+    # cleanup, not by the provider, so we must not penalize the circuit breaker.
     def cancelled_by_cleanup?(agent_run)
       agent_run.reload
       agent_run.cancelled_by_cleanup?
@@ -514,7 +514,7 @@ module Activities
       false
     end
 
-    # Mirror of the failed-attempt bookkeeping for the cleanup-cancelled case:
+    # Mirror of the failed-attempt bookkeeping for externally-cancelled runs:
     # records the attempt with a distinct error_type so the UI can show what
     # happened, but skips both record_provider_failure and the standard warn
     # log (which would imply a real provider problem).

@@ -562,14 +562,21 @@ RSpec.describe AgentRun do
     end
 
     describe "#cancelled_by_cleanup?" do
-      it "returns true when status is timeout and error_message starts with the sentinel prefix" do
+      it "returns true when status is timeout and error_message starts with the dev:cleanup sentinel prefix" do
         agent_run = build(:agent_run, status: "timeout",
           error_message: "#{AgentRun::STALE_CLEANUP_ERROR_PREFIX}: process was restarted")
 
         expect(agent_run.cancelled_by_cleanup?).to be true
       end
 
-      it "returns false when error_message lacks the sentinel prefix" do
+      it "returns true when status is timeout and error_message starts with the stale detector prefix" do
+        agent_run = build(:agent_run, status: "timeout",
+          error_message: "#{AgentRun::STALE_DETECTOR_ERROR_PREFIX}: stuck in 'running' beyond timeout threshold")
+
+        expect(agent_run.cancelled_by_cleanup?).to be true
+      end
+
+      it "returns false when error_message lacks both sentinel prefixes" do
         agent_run = build(:agent_run, status: "timeout", error_message: "Provider timed out")
 
         expect(agent_run.cancelled_by_cleanup?).to be false
@@ -884,6 +891,22 @@ RSpec.describe AgentRun do
           expect(agent_run.completed_at).to eq(Time.current)
           expect(agent_run.duration_seconds).to eq((Time.current - started_time).to_i)
         end
+      end
+
+      it "does not overwrite a finished run", :aggregate_failures do
+        completed_at = 10.minutes.ago
+        agent_run = create(:agent_run, :completed,
+          completed_at: completed_at,
+          duration_seconds: 25,
+          error_message: nil)
+
+        expect(agent_run.timeout!(error: "Stale run detected")).to be false
+
+        agent_run.reload
+        expect(agent_run.status).to eq("completed")
+        expect(agent_run.completed_at).to be_within(1.second).of(completed_at)
+        expect(agent_run.duration_seconds).to eq(25)
+        expect(agent_run.error_message).to be_nil
       end
     end
 

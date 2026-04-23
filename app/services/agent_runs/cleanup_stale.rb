@@ -84,7 +84,8 @@ module AgentRuns
     end
 
     def resolve_stale_running(agent_run)
-      agent_run.timeout!(error: "Manual stale run cleanup: exceeded running timeout")
+      return false unless agent_run.timeout!(error: "Manual stale run cleanup: exceeded running timeout")
+
       agent_run.log!("system", "Run marked as timed out by manual stale run cleanup")
       update_issue_state(agent_run)
       true
@@ -92,7 +93,8 @@ module AgentRuns
 
     def resolve_stale_pending(agent_run)
       if agent_run.stale_requeue_count >= AgentRun::MAX_STALE_REQUEUES
-        agent_run.timeout!(error: "Manual stale run cleanup: exceeded pending requeue limit")
+        return false unless agent_run.timeout!(error: "Manual stale run cleanup: exceeded pending requeue limit")
+
         agent_run.log!("system", "Stale pending run marked as timed out by manual stale run cleanup")
         update_issue_state(agent_run)
         should_cleanup_resources = true

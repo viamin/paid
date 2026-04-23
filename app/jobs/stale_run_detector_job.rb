@@ -261,7 +261,12 @@ class StaleRunDetectorJob < ApplicationJob
 
       old_resources = captured_resources(agent_run)
 
-      agent_run.timeout!(error: "Stale run detected: stuck in '#{agent_run.status}' beyond timeout threshold")
+      agent_run.update!(
+        status: "timeout",
+        completed_at: Time.current,
+        error_message: "#{AgentRun::STALE_DETECTOR_ERROR_PREFIX}: stuck in '#{agent_run.status}' beyond timeout threshold",
+        duration_seconds: agent_run.duration
+      )
       agent_run.log!("system", "Run marked as timed out by stale run detector")
 
       if (issue = agent_run.issue)
