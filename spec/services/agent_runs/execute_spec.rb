@@ -247,6 +247,23 @@ RSpec.describe AgentRuns::Execute do
         system_logs = agent_run.agent_run_logs.where(log_type: "system")
         expect(system_logs.pluck(:content)).to include("Execution timed out")
       end
+
+      it "does not overwrite a cleanup timeout when another process finished the run first" do
+        sentinel = "#{AgentRun::STALE_DETECTOR_ERROR_PREFIX}: stuck in 'running' beyond timeout threshold"
+        allow(AgentHarness).to receive(:send_message) do
+          agent_run.update!(
+            status: "timeout",
+            completed_at: Time.current,
+            error_message: sentinel
+          )
+          raise AgentHarness::TimeoutError, "Timed out after 600s"
+        end
+
+        described_class.call(agent_run: agent_run, prompt: prompt)
+
+        expect(agent_run.reload.error_message).to eq(sentinel)
+        expect(agent_run.agent_run_logs.pluck(:content)).not_to include("Execution timed out")
+      end
     end
 
     context "when agent times out with nil timeout" do

@@ -1395,6 +1395,19 @@ RSpec.describe Activities::RunAgentActivity do
         }.to raise_error(Temporalio::Error::ApplicationError)
           .and have_enqueued_job(ProcessRunQueueJob)
       end
+
+      it "does not enqueue ProcessRunQueueJob when another process finished the run first" do
+        allow(container_service).to receive(:execute) do
+          agent_run.update!(status: "completed", completed_at: Time.current)
+          raise Containers::Provision::TimeoutError
+        end
+
+        expect(ProcessRunQueueJob).not_to receive(:perform_later)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError)
+      end
     end
 
     context "when agent hits startup timeout" do
