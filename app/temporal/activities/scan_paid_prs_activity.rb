@@ -1206,7 +1206,18 @@ module Activities
             # touch any file mentioned in the review's inline comments.
             # Treat as still-unaddressed to prevent unrelated changes
             # (e.g. a CI schema fix) from clearing review findings.
-            paid_agent_limit_reached_for_latest_review ? body_only_exhausted_triggers : body_only_pending_triggers
+            if paid_agent_limit_reached_for_latest_review
+              body_only_exhausted_triggers
+            elsif ProviderSupport.provider_bot_username_for?("paid_agent", latest&.dig(:user_login))
+              # Emit paid_agent_review_pending alongside the bot triggers so
+              # the workflow queues a review run. Without this, the scanner
+              # keeps starting create_pr follow-ups that don't touch the
+              # reviewed files, and no fresh review ever re-evaluates the
+              # code (#1395).
+              body_only_pending_triggers + check_paid_agent_review_status(project, issue)
+            else
+              body_only_pending_triggers
+            end
           elsif ProviderSupport.provider_bot_username_for?("paid_agent", latest&.dig(:user_login))
             # Thread-based bot with all bot threads resolved, or body-only
             # review already addressed by a subsequent agent run whose diff
