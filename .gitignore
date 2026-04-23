@@ -190,3 +190,6 @@ __pycache__/
 
 # Paid heartbeat file (touched by agent CLI hooks during container execution)
 .paid-heartbeat
+
+# Database backups
+/backups/
