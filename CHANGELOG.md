@@ -1,5 +1,66 @@
 # Changelog
 
+## [0.29.0](https://github.com/viamin/paid/compare/v0.28.1...v0.29.0) (2026-04-23)
+
+
+### Features
+
+* **agent-runs:** Add label management and re-evaluation loop for enhance_issue (389-C) ([#1357](https://github.com/viamin/paid/issues/1357)) ([0850838](https://github.com/viamin/paid/commit/085083841d230934dfe2f3786ee8c34bc0491ead))
+* **agent-runs:** Build EnhanceIssueActivity with knowledge base integration (389-B) ([#1342](https://github.com/viamin/paid/issues/1342)) ([795de58](https://github.com/viamin/paid/commit/795de585347757e47a4f28948ee81913c2ad2b0f))
+* **agent-runs:** include pre-processed CI failure context in agent prompts ([#1393](https://github.com/viamin/paid/issues/1393)) ([9cd4dc0](https://github.com/viamin/paid/commit/9cd4dc02e1f0f7305f364845af48adda00345c53))
+* **agent-runs:** move cancel cleanup to background job for faster UI response ([#1351](https://github.com/viamin/paid/issues/1351)) ([daa519a](https://github.com/viamin/paid/commit/daa519af7ccb11321dcb3203920d41ef14e3ab89))
+* **deps:** add Dependabot auto-merge with bot-authored PR scanning ([#1291](https://github.com/viamin/paid/issues/1291)) ([aa2ff91](https://github.com/viamin/paid/commit/aa2ff91351b810d6b05035781d1d5b2d2cd45ed7))
+* **knowledge:** add container-authenticated knowledge search endpoint for agent tool access ([#1364](https://github.com/viamin/paid/issues/1364)) ([83ab28a](https://github.com/viamin/paid/commit/83ab28a4e3f975c23d5fb19ba3beabe6bfa81b83))
+* **knowledge:** inject context into enhance issue prompt ([#1340](https://github.com/viamin/paid/issues/1340)) ([6c83e1c](https://github.com/viamin/paid/commit/6c83e1c6f05aead08b96f5483c2581b3024fc448))
+* **multi-tenancy:** design billing aggregation system ([#1216](https://github.com/viamin/paid/issues/1216)) ([1727d81](https://github.com/viamin/paid/commit/1727d81ad982cbf639f2d89fd77e1d48722b886f))
+* **multi-tenancy:** implement per-tenant configuration ([#1369](https://github.com/viamin/paid/issues/1369)) ([bfe190d](https://github.com/viamin/paid/commit/bfe190d771d299bf13e53f678d579ea712bb8e6b))
+* **performance:** database query optimization ([#1368](https://github.com/viamin/paid/issues/1368)) ([47597db](https://github.com/viamin/paid/commit/47597dbf95d9278ad712931635fd1c36b0343ebe))
+* **performance:** establish performance benchmarking suite ([#1367](https://github.com/viamin/paid/issues/1367)) ([8d3888c](https://github.com/viamin/paid/commit/8d3888c3964a0a79b6bbf2cf86399b3370960c94))
+* **performance:** implement container pool warming ([#1358](https://github.com/viamin/paid/issues/1358)) ([719a9f8](https://github.com/viamin/paid/commit/719a9f8d3ca8757949595c87b85b836e7ce5e13e))
+* **quality:** add enhance issue metrics ([#1355](https://github.com/viamin/paid/issues/1355)) ([15aee2f](https://github.com/viamin/paid/commit/15aee2f3f4b2906210b182d485a3f66db7f14d1a))
+* **quality:** add grace period after manual quality-pause resume ([#1397](https://github.com/viamin/paid/issues/1397)) ([15a561c](https://github.com/viamin/paid/commit/15a561cd90f0ea83ab6cac832d0b9b456f76292f))
+* **quality:** add UI to view and unpause quality-paused projects ([#1392](https://github.com/viamin/paid/issues/1392)) ([2b1446f](https://github.com/viamin/paid/commit/2b1446f0b0160c9359dfac682ce45e10fbc68b6d))
+* **quality:** define configurable quality thresholds per project ([#1354](https://github.com/viamin/paid/issues/1354)) ([94ceee5](https://github.com/viamin/paid/commit/94ceee59401b4dd9fbcbba1e0b512bb07c35bfef))
+* **quality:** implement quality gate checks in agent workflows ([#1356](https://github.com/viamin/paid/issues/1356)) ([24badfa](https://github.com/viamin/paid/commit/24badfa7f3b8a17f1b4281e89a2f722ed7980c8c))
+* **scheduler:** within-user fair queueing across projects ([#1343](https://github.com/viamin/paid/issues/1343)) ([70ee6cc](https://github.com/viamin/paid/commit/70ee6cc52e9b12dd3ae141f02657cca0f84972aa))
+
+
+### Bug Fixes
+
+* 724: feat(scaling): export worker metrics for scaling decisions ([#1213](https://github.com/viamin/paid/issues/1213)) ([28bfc72](https://github.com/viamin/paid/commit/28bfc7299d77400003694ec5e21ce495b1ea98e1))
+* 794: refactor(agent-image): delegate Cursor agent CLI installation to agent-harness ([#1250](https://github.com/viamin/paid/issues/1250)) ([6e24b57](https://github.com/viamin/paid/commit/6e24b577f3ef5ef31159b9898a8ff4b5a4d9d4d5))
+* **agent-runs:** handle unsupported auth refresh flows ([#1331](https://github.com/viamin/paid/issues/1331)) ([b78b408](https://github.com/viamin/paid/commit/b78b408185d6b97d9aaa1f1eaca53022d36d6506))
+* **agent-runs:** harden provider execution fallback ([#1320](https://github.com/viamin/paid/issues/1320)) ([bfa5f90](https://github.com/viamin/paid/commit/bfa5f90729ae8b2df35d4b7a84667fa261ccdf52))
+* **agent-runs:** parse JSONL output from Codex and other providers ([#1332](https://github.com/viamin/paid/issues/1332)) ([0f27e76](https://github.com/viamin/paid/commit/0f27e7654c42a03caba95aea3b78a76b24eb7f5a))
+* **auto-release:** handle package names in release titles and empty check runs ([#1323](https://github.com/viamin/paid/issues/1323)) ([ddb5910](https://github.com/viamin/paid/commit/ddb5910a42c812bc738158a5ab500062269fd16a))
+* **autopick:** use automation label for handed-off PRs ([#1322](https://github.com/viamin/paid/issues/1322)) ([091bdf3](https://github.com/viamin/paid/commit/091bdf3308b7f8bb369850142e52efe36076f3be))
+* **containers:** align network isolation claims across provider auth modes ([#1347](https://github.com/viamin/paid/issues/1347)) ([fa2dae0](https://github.com/viamin/paid/commit/fa2dae0fa21e4fddf78205e4839335c0c968b30d))
+* **css:** limit Tailwind watch source scope ([#1333](https://github.com/viamin/paid/issues/1333)) ([b5cdac8](https://github.com/viamin/paid/commit/b5cdac88dcdba4c1743f7fd5d3414df6e6d3e6f8))
+* **dependabot:** rescan bot-authored ready PRs when CI status changes ([#1385](https://github.com/viamin/paid/issues/1385)) ([afac63e](https://github.com/viamin/paid/commit/afac63e87112e9ae602b882ed7d4f88ca2aa4548))
+* **deps:** use released agent-harness codex parser ([#1352](https://github.com/viamin/paid/issues/1352)) ([9c6bf1e](https://github.com/viamin/paid/commit/9c6bf1e4d58b9979b5ff77b4f9b51fed7482233f))
+* **devcontainer:** repair llm tool setup and codex config mounts ([#1316](https://github.com/viamin/paid/issues/1316)) ([1ab860b](https://github.com/viamin/paid/commit/1ab860b003825a646a8e2c4bd55720b0e54aa13e))
+* **github-sync:** back off non-truncated incremental watermark by 1 second ([#1307](https://github.com/viamin/paid/issues/1307)) ([2f99049](https://github.com/viamin/paid/commit/2f99049e4c98b83ad0278a4aad2e1d80bd35b98f)), closes [#1257](https://github.com/viamin/paid/issues/1257)
+* **github-sync:** reconcile open pull requests ([#1339](https://github.com/viamin/paid/issues/1339)) ([1ff868d](https://github.com/viamin/paid/commit/1ff868da48646ed4616c1af1534d0f25c8b8f435))
+* **infra:** schema.rb drift from shared database across agent containers ([#1311](https://github.com/viamin/paid/issues/1311)) ([b82f501](https://github.com/viamin/paid/commit/b82f501819c7b81bba1802f55cdec97c65470a9a))
+* **maintenance:** recover stale paused runs ([#1326](https://github.com/viamin/paid/issues/1326)) ([d8c1743](https://github.com/viamin/paid/commit/d8c17430f7ceb8a126738e508848a46a460ed412))
+* **notifications:** navigate dropdown links at top frame ([#1341](https://github.com/viamin/paid/issues/1341)) ([8fbf4fe](https://github.com/viamin/paid/commit/8fbf4fe0acfc25994e03cb69a7b63364ae2bf3ca))
+* **perf:** add GoodJob cleanup and reduce metrics collection interval ([#1329](https://github.com/viamin/paid/issues/1329)) ([be283ef](https://github.com/viamin/paid/commit/be283effca287a07578220142672eb71dffa153a))
+* **prompts:** prepare bundled gems before review validation ([#1328](https://github.com/viamin/paid/issues/1328)) ([90d3bf0](https://github.com/viamin/paid/commit/90d3bf0b33b99a20d4a6f8a206f9c38b898a4e37))
+* **providers:** make test agent checks handle provider output ([#1317](https://github.com/viamin/paid/issues/1317)) ([e10288b](https://github.com/viamin/paid/commit/e10288b10c334c5f40ee229f4095f86e33798d08))
+* **quality:** apply operational failure exclusion consistently across all scoring paths ([7b86518](https://github.com/viamin/paid/commit/7b8651870da7be40388b2d7bb91af342e2eb5d03)), closes [#1376](https://github.com/viamin/paid/issues/1376)
+* **quality:** broaden operational failure classification for quality scoring ([#1387](https://github.com/viamin/paid/issues/1387)) ([11d0dd0](https://github.com/viamin/paid/commit/11d0dd0265045a1b449e4582600bb23b69bd66e9))
+* **quality:** exclude non-prompt failures from quality pause scoring ([#1377](https://github.com/viamin/paid/issues/1377)) ([7eade54](https://github.com/viamin/paid/commit/7eade548db9e02365e94d69fc37766b888bfe64e)), closes [#1376](https://github.com/viamin/paid/issues/1376)
+* **quality:** priority bypass ignores PR labels in CheckQualityGateActivity ([#1366](https://github.com/viamin/paid/issues/1366)) ([12e6767](https://github.com/viamin/paid/commit/12e6767dba2508f1d3f0661160673ad6093adf4e))
+* **quality:** use past 10 eligible agent runs for quality pause rolling average ([#1396](https://github.com/viamin/paid/issues/1396)) ([93c39c8](https://github.com/viamin/paid/commit/93c39c8315b0b9465b8e72621ec7e93047b831d4))
+* **review:** track reviews without html_url ([#1363](https://github.com/viamin/paid/issues/1363)) ([c69b16d](https://github.com/viamin/paid/commit/c69b16d0ec23e69293c45fc1629ec7239625c5e7))
+* **scanner:** apply hard gate to review_bot_review_pending matching paid_agent behavior ([#1336](https://github.com/viamin/paid/issues/1336)) ([#1337](https://github.com/viamin/paid/issues/1337)) ([7e7c15f](https://github.com/viamin/paid/commit/7e7c15fdc992a08ca12a9aa45c48370e0dd9ff38))
+* **scanner:** unify review_bot_review_pending and paid_agent_review_pending into a single hard-gated code path ([#1338](https://github.com/viamin/paid/issues/1338)) ([1505553](https://github.com/viamin/paid/commit/1505553bd4c0c0ee0b843b0c351ed103d6f1740c))
+* **secrets:** remove direct provider credential injection from agent runs ([#1349](https://github.com/viamin/paid/issues/1349)) ([c69379b](https://github.com/viamin/paid/commit/c69379b5d35e1b3c5e93463a52a2cf35b9d515d9))
+* **security:** remove severity threshold and add priority mapping for code scanning alerts ([#1279](https://github.com/viamin/paid/issues/1279)) ([b43595c](https://github.com/viamin/paid/commit/b43595c0bfc1f404e67d298f6b193af69f470b2d))
+* share Codex auth via writable bind mount ([#1391](https://github.com/viamin/paid/issues/1391)) ([99d6b01](https://github.com/viamin/paid/commit/99d6b013e7f26e73ac397bfce7097479de4b2423))
+* **ui:** fix dark mode by unlayering CSS overrides ([#1359](https://github.com/viamin/paid/issues/1359)) ([fec8d7f](https://github.com/viamin/paid/commit/fec8d7f06757651c47fefc4fd4e80a43dfee1ab4))
+* **ui:** improve dark mode coverage ([#1350](https://github.com/viamin/paid/issues/1350)) ([7d2c4e6](https://github.com/viamin/paid/commit/7d2c4e6749c22937fb629eda19efe97ee3e72ec0))
+
 ## [0.28.1](https://github.com/viamin/paid/compare/v0.28.0...v0.28.1) (2026-04-19)
 
 
