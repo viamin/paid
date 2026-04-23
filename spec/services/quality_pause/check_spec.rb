@@ -80,6 +80,20 @@ RSpec.describe QualityPause::Check do
       expect(event.threshold).to eq(0.5)
     end
 
+    it "caps the rolling window to the latest DEFAULT_WINDOW_SIZE eligible runs" do
+      # 10 old low-scoring runs followed by 5 newer high-scoring runs.
+      # With window_size=10: latest 10 include 5×0.7 + 5×0.0 → avg=0.35 < 0.5 → paused
+      # With window_size=5:  latest 5 are all 0.7              → avg=0.7  > 0.5 → not paused
+      create_quality_metrics(project, scores: Array.new(10, 0.0))
+      create_quality_metrics(project, scores: Array.new(5, 0.7))
+
+      described_class.call(agent_run: agent_run)
+
+      project.reload
+      expect(project.quality_paused?).to be true
+      expect(project.quality_pause_metadata["sample_size"]).to eq(10)
+    end
+
     it "pauses the project when a metric-specific threshold is breached" do
       create(:quality_threshold, account: project.account, metric_type: "lint_clean", goal_type: "create_pr")
       create_metric_scores(project, metric_type: "lint_clean", scores: [ 0.0, 1.0, 0.0, 0.0, 0.0 ])
@@ -116,6 +130,89 @@ RSpec.describe QualityPause::Check do
       ))
 
       described_class.call(agent_run: agent_run)
+    end
+
+    describe "grace period after manual resume" do
+      it "skips quality pause check within grace period after resume" do
+        create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ])
+
+        project.update!(quality_paused_at: Time.current)
+        project.quality_resume!
+
+        described_class.call(agent_run: agent_run)
+
+        expect(project.reload.quality_paused?).to be false
+      end
+
+      it "does not pause when fewer than DEFAULT_WINDOW_SIZE runs completed after resume" do
+        create(:quality_pause_event, :resumed, project: project, created_at: 1.hour.ago)
+        create_quality_metrics(project, scores: [ 0.1 ] * 5)
+
+        described_class.call(agent_run: agent_run)
+
+        expect(project.reload.quality_paused?).to be false
+      end
+
+      it "resumes quality pause checks after DEFAULT_WINDOW_SIZE runs complete" do
+        create(:quality_pause_event, :resumed, project: project, created_at: 1.hour.ago)
+        create_quality_metrics(project, scores: [ 0.1 ] * (QualityThreshold::DEFAULT_WINDOW_SIZE + 3))
+
+        described_class.call(agent_run: agent_run)
+
+        expect(project.reload.quality_paused?).to be true
+      end
+
+      it "does not count excluded statuses toward grace period window" do
+        create(:quality_pause_event, :resumed, project: project, created_at: 1.hour.ago)
+        create_quality_metrics(project, scores: [ 0.1 ] * (QualityThreshold::DEFAULT_WINDOW_SIZE - 2))
+
+        AgentRun::QUALITY_EXCLUDED_STATUSES.each do |status|
+          run = create(:agent_run, status: status, project: project,
+            completed_at: 30.minutes.ago, goal: agent_run.goal)
+          create(:quality_metric, agent_run: run, composite_score: 0.0)
+        end
+
+        described_class.call(agent_run: agent_run)
+
+        expect(project.reload.quality_paused?).to be false
+      end
+
+      it "applies grace period regardless of score quality" do
+        create(:quality_pause_event, :resumed, project: project, created_at: 1.hour.ago)
+        create_quality_metrics(project, scores: [ 0.0 ] * 4)
+
+        described_class.call(agent_run: agent_run)
+
+        expect(project.reload.quality_paused?).to be false
+      end
+
+      it "does not count runs of a different goal toward grace period window" do
+        create(:quality_pause_event, :resumed, project: project, created_at: 1.hour.ago)
+
+        (QualityThreshold::DEFAULT_WINDOW_SIZE + 3).times do
+          run = create(:agent_run, :completed, project: project, goal: "enhance_issue")
+          create(:quality_metric, agent_run: run, composite_score: 0.1)
+        end
+
+        create_quality_metrics(project, scores: [ 0.1 ] * 3)
+
+        described_class.call(agent_run: agent_run)
+
+        expect(project.reload.quality_paused?).to be false
+      end
+
+      it "logs info when grace period is active" do
+        create(:quality_pause_event, :resumed, project: project, created_at: 1.hour.ago)
+        create_quality_metrics(project, scores: [ 0.1 ] * 3)
+
+        expect(Rails.logger).to receive(:info).with(hash_including(
+          message: "quality_pause.grace_period_active",
+          project_id: project.id,
+          goal: agent_run.goal
+        ))
+
+        described_class.call(agent_run: agent_run)
+      end
     end
   end
 

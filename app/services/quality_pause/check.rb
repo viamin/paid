@@ -21,6 +21,7 @@ module QualityPause
 
     def call
       return if project.quality_paused?
+      return if in_grace_period?
 
       breached = breached_threshold
       return unless breached
@@ -52,6 +53,30 @@ module QualityPause
     private
 
     attr_reader :agent_run, :project
+
+    def in_grace_period?
+      last_resume_at = project.quality_pause_events.resumes
+        .order(created_at: :desc).pick(:created_at)
+      return false unless last_resume_at
+
+      runs_since_resume = project.agent_runs
+        .where(AgentRun.quality_scoreable_sql)
+        .where(goal: agent_run.goal)
+        .where("agent_runs.completed_at > ?", last_resume_at)
+        .count
+
+      return false unless runs_since_resume < QualityThreshold::DEFAULT_WINDOW_SIZE
+
+      Rails.logger.info(
+        message: "quality_pause.grace_period_active",
+        project_id: project.id,
+        goal: agent_run.goal,
+        runs_since_resume: runs_since_resume,
+        grace_window: QualityThreshold::DEFAULT_WINDOW_SIZE
+      )
+
+      true
+    end
 
     def breached_threshold
       thresholds.each do |threshold|
