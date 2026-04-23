@@ -4,15 +4,6 @@ module AbTests
   # Assigns an agent run to an A/B test variant using weighted random selection.
   # Variants with fewer samples get higher weight to ensure balanced distribution.
   #
-  # TODO(#143): Wire into AgentExecutionWorkflow where prompt_version is resolved.
-  # When AgentExecutionWorkflow resolves the prompt_version for an AgentRun:
-  #   1. Check for a running AbTest on the prompt via `prompt.ab_tests.running.first`
-  #   2. Call `AbTests::Assign.call(ab_test:, agent_run:)` to get the assignment
-  #   3. Use `assignment.ab_test_variant.prompt_version` instead of the default
-  # This integration is deferred because AgentExecutionWorkflow infrastructure
-  # does not yet exist. The framework, services, and statistical engine are
-  # complete and tested — only the call site in the workflow is missing.
-  #
   # @example
   #   assignment = AbTests::Assign.call(ab_test: test, agent_run: run)
   #   prompt_version = assignment.ab_test_variant.prompt_version
