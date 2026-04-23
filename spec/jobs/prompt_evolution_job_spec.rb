@@ -49,6 +49,26 @@ RSpec.describe PromptEvolutionJob do
       end
     end
 
+    context "with a targeted recovery prompt" do
+      before do
+        create_completed_runs(
+          PromptEvolution::SampleRuns::MIN_RUNS_FOR_EVALUATION,
+          prompt_version: prompt_version,
+          project: project
+        )
+      end
+
+      it "starts a scoped Temporal workflow with the recovery action id" do
+        job.perform(project_id: project.id, prompt_id: prompt.id, recovery_action_id: 123)
+
+        expect(temporal_client).to have_received(:start_workflow).with(
+          Workflows::PromptEvolutionWorkflow,
+          hash_including(prompt_id: prompt.id, project_id: project.id, recovery_action_id: 123),
+          hash_including(id: "quality-recovery-prompt-evolution-123")
+        )
+      end
+    end
+
     context "with a prompt that has a running A/B test" do
       before do
         create_completed_runs(

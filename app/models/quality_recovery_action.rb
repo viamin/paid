@@ -1,7 +1,15 @@
 # frozen_string_literal: true
 
 class QualityRecoveryAction < ApplicationRecord
-  ACTION_TYPES = %w[prompt_rollback model_change config_adjustment resume_with_monitoring].freeze
+  ACTION_TYPES = %w[
+    prompt_rollback
+    prompt_evolution
+    model_change
+    model_escalation
+    config_adjustment
+    resume_with_monitoring
+    final_pause
+  ].freeze
   STATUSES = %w[pending executing executed evaluated failed].freeze
 
   belongs_to :project
