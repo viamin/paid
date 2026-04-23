@@ -43,6 +43,7 @@ class StaleRunDetectorJob < ApplicationJob
   # being timed out. Prevents infinite retry loops when the underlying
   # issue is persistent (e.g. misconfigured project, missing credentials).
   MAX_STALE_REQUEUES = AgentRun::MAX_STALE_REQUEUES
+  MAX_STALE_SKIPS = AgentRun::MAX_STALE_SKIPS
 
   def perform
     job_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -51,6 +52,7 @@ class StaleRunDetectorJob < ApplicationJob
     paused_threshold = PAUSED_TIMEOUT.ago
     resolved = 0
     requeued = 0
+    skipped = 0
 
     stale_running_runs(running_threshold).find_each do |agent_run|
       resolved += 1 if resolve_stale_run(agent_run)
@@ -68,6 +70,8 @@ class StaleRunDetectorJob < ApplicationJob
         requeued += 1
       when :exhausted
         resolved += 1 if resolve_stale_run(agent_run)
+      when :skip
+        skipped += 1
       end
     rescue => e
       Rails.logger.error(
@@ -83,6 +87,8 @@ class StaleRunDetectorJob < ApplicationJob
         requeued += 1
       when :exhausted
         resolved += 1 if resolve_stale_run(agent_run)
+      when :skip
+        skipped += 1
       end
     rescue => e
       Rails.logger.error(
@@ -97,6 +103,7 @@ class StaleRunDetectorJob < ApplicationJob
       message: "stale_run_detector.completed",
       resolved: resolved,
       requeued: requeued,
+      skipped: skipped,
       duration_ms: duration_ms
     )
 
@@ -132,9 +139,8 @@ class StaleRunDetectorJob < ApplicationJob
   end
 
   # Attempts to requeue a stale pending run.
-  # Returns :requeued if successfully requeued, :exhausted if requeue budget
-  # is spent (caller should time out), or :skip if the run is no longer
-  # stale/pending (e.g. it finished, transitioned to running, or was recently updated).
+  # Returns :requeued if successfully requeued, :exhausted if requeue/skip budget
+  # is spent (caller should time out), or :skip if the run should be retried later.
   #
   # If a Temporal workflow was already started for this run (temporal_workflow_id
   # is present), we cancel it *before* requeuing so ProcessRunQueueJob can start
@@ -154,16 +160,21 @@ class StaleRunDetectorJob < ApplicationJob
 
     agent_run.with_lock do
       agent_run.reload
-      return :skip if agent_run.finished?
-      return :skip unless agent_run.status == policy.fetch(:status)
-      return :skip unless stale_for_requeue?(agent_run, policy)
+      return skip_requeue(agent_run, "finished") if agent_run.finished?
+      return skip_requeue(agent_run, "status_changed") unless agent_run.status == policy.fetch(:status)
+      return skip_requeue(agent_run, "not_stale") unless stale_for_requeue?(agent_run, policy)
       return :exhausted if timeout_before_requeue?(agent_run, policy)
       return :exhausted if agent_run.stale_requeue_count >= MAX_STALE_REQUEUES
 
       old_resources = captured_resources(agent_run)
 
+      if workflow_never_started?(agent_run)
+        log_skip(agent_run, "workflow_never_started")
+        return :exhausted
+      end
+
       unless cancel_temporal_workflow(agent_run, agent_run.temporal_workflow_id)
-        return :skip
+        return skip_after_cancel_failure(agent_run)
       end
 
       agent_run.update!(requeue_attributes(agent_run, policy))
@@ -189,6 +200,10 @@ class StaleRunDetectorJob < ApplicationJob
       service_environment: agent_run.service_environment&.dup,
       stale_requeue_count: agent_run.stale_requeue_count
     }
+  end
+
+  def workflow_never_started?(agent_run)
+    agent_run.temporal_workflow_id.present? && agent_run.started_at.nil?
   end
 
   def pending_requeue_policy
@@ -239,6 +254,7 @@ class StaleRunDetectorJob < ApplicationJob
     {
       status: "queued",
       stale_requeue_count: agent_run.stale_requeue_count + 1,
+      stale_skip_count: 0,
       temporal_workflow_id: nil,
       temporal_run_id: nil,
       service_environment: nil,
@@ -250,6 +266,32 @@ class StaleRunDetectorJob < ApplicationJob
   def stale_requeue_log(agent_run)
     previous_status = agent_run.status_before_last_save
     "Stale #{previous_status} run requeued by stale run detector (attempt #{agent_run.stale_requeue_count}/#{MAX_STALE_REQUEUES})"
+  end
+
+  def skip_after_cancel_failure(agent_run)
+    agent_run.increment!(:stale_skip_count)
+    log_skip(agent_run, "temporal_cancel_failed")
+
+    return :exhausted if agent_run.stale_skip_count >= MAX_STALE_SKIPS
+
+    :skip
+  end
+
+  def skip_requeue(agent_run, reason)
+    log_skip(agent_run, reason)
+    :skip
+  end
+
+  def log_skip(agent_run, reason)
+    Rails.logger.warn(
+      message: "stale_run_detector.skipped_stale_run",
+      agent_run_id: agent_run.id,
+      project_id: agent_run.project_id,
+      status: agent_run.status,
+      reason: reason,
+      stale_requeue_count: agent_run.stale_requeue_count,
+      stale_skip_count: agent_run.stale_skip_count
+    )
   end
 
   def resolve_stale_run(agent_run)

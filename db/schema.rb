@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_21_161445) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_23_130627) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -212,6 +212,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_21_161445) do
     t.jsonb "service_environment", default: {}
     t.integer "source_pull_request_number"
     t.integer "stale_requeue_count", default: 0, null: false
+    t.integer "stale_skip_count", default: 0, null: false
     t.datetime "started_at"
     t.string "status", limit: 50, default: "pending", null: false
     t.string "temporal_run_id", limit: 255
