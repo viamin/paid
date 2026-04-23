@@ -82,8 +82,8 @@ RSpec.describe QualityPause::Check do
 
     it "caps the rolling window to the latest DEFAULT_WINDOW_SIZE eligible runs" do
       # 10 old low-scoring runs followed by 5 newer high-scoring runs.
-      # With window_size=10: latest 10 include 5×0.7 + 5×0.0 → avg=0.35 < 0.5 → paused
-      # With window_size=5:  latest 5 are all 0.7              → avg=0.7  > 0.5 → not paused
+      # With window_size=10: latest 10 include 5 * 0.7 + 5 * 0.0 -> avg=0.35 < 0.5 -> paused
+      # With window_size=5:  latest 5 are all 0.7                  -> avg=0.7  > 0.5 -> not paused
       create_quality_metrics(project, scores: Array.new(10, 0.0))
       create_quality_metrics(project, scores: Array.new(5, 0.7))
 
@@ -144,7 +144,7 @@ RSpec.describe QualityPause::Check do
         expect(project.reload.quality_paused?).to be false
       end
 
-      it "does not pause when fewer than DEFAULT_WINDOW_SIZE runs completed after resume" do
+      it "does not pause when fewer than DEFAULT_WINDOW_SIZE samples exist after resume" do
         create(:quality_pause_event, :resumed, project: project, created_at: 1.hour.ago)
         create_quality_metrics(project, scores: [ 0.1 ] * 5)
 
@@ -153,7 +153,7 @@ RSpec.describe QualityPause::Check do
         expect(project.reload.quality_paused?).to be false
       end
 
-      it "resumes quality pause checks after DEFAULT_WINDOW_SIZE runs complete" do
+      it "resumes quality pause checks after DEFAULT_WINDOW_SIZE samples exist" do
         create(:quality_pause_event, :resumed, project: project, created_at: 1.hour.ago)
         create_quality_metrics(project, scores: [ 0.1 ] * (QualityThreshold::DEFAULT_WINDOW_SIZE + 3))
 
@@ -201,6 +201,42 @@ RSpec.describe QualityPause::Check do
         expect(project.reload.quality_paused?).to be false
       end
 
+      it "does not expire grace period until the breached metric has a full post-resume window" do
+        create(:quality_threshold,
+          account: project.account,
+          metric_type: "reaction_score",
+          goal_type: "create_pr",
+          min_value: 0.5)
+        create_metric_scores(project,
+          metric_type: "reaction_score",
+          scores: [ 0.1 ] * 5,
+          completed_at: 2.hours.ago)
+        create(:quality_pause_event, :resumed, project: project, created_at: 1.hour.ago)
+        create_quality_metrics(project, scores: [ 0.9 ] * QualityThreshold::DEFAULT_WINDOW_SIZE)
+        create_metric_scores(project, metric_type: "reaction_score", scores: [ 0.1 ] * 2)
+
+        described_class.call(agent_run: agent_run)
+
+        expect(project.reload.quality_paused?).to be false
+      end
+
+      it "expires grace period when the breached metric has a full post-resume window" do
+        create(:quality_threshold,
+          account: project.account,
+          metric_type: "reaction_score",
+          goal_type: "create_pr",
+          min_value: 0.5)
+        create(:quality_pause_event, :resumed, project: project, created_at: 1.hour.ago)
+        create_metric_scores(project,
+          metric_type: "reaction_score",
+          scores: [ 0.1 ] * QualityThreshold::DEFAULT_WINDOW_SIZE)
+
+        described_class.call(agent_run: agent_run)
+
+        expect(project.reload.quality_paused?).to be true
+        expect(project.quality_pause_metadata["metric_type"]).to eq("reaction_score")
+      end
+
       it "logs info when grace period is active" do
         create(:quality_pause_event, :resumed, project: project, created_at: 1.hour.ago)
         create_quality_metrics(project, scores: [ 0.1 ] * 3)
@@ -225,9 +261,9 @@ RSpec.describe QualityPause::Check do
     end
   end
 
-  def create_metric_scores(project, metric_type:, scores:)
+  def create_metric_scores(project, metric_type:, scores:, completed_at: Time.current)
     scores.each do |score|
-      run = create(:agent_run, :completed, project: project)
+      run = create(:agent_run, :completed, project: project, completed_at: completed_at)
       create(:quality_metric, agent_run: run, composite_score: 0.8, scores: { metric_type => score })
     end
   end
