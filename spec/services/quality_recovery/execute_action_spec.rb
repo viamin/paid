@@ -98,7 +98,7 @@ RSpec.describe QualityRecovery::ExecuteAction do
     end
 
     context "with model change" do
-      it "records the model change recommendation" do
+      it "applies the agent preference" do
         result = described_class.call(
           project: project,
           action_type: "model_change",
@@ -109,10 +109,57 @@ RSpec.describe QualityRecovery::ExecuteAction do
         )
 
         expect(result).to be_success
-        expect(result.recovery_action.result["status"]).to eq("recommended")
+        expect(result.recovery_action.result).to include(
+          "status" => "changed",
+          "preference_type" => "agent",
+          "from_agent_type" => "claude_code",
+          "to_agent_type" => "cursor"
+        )
+        expect(project.created_by.settings.reload.default_agent_provider).to eq(
+          project.created_by.providers.find_by!(provider_key: "cursor").routing_key
+        )
       end
 
-      it "does not auto-resume because the model preference has not changed yet" do
+      it "updates goal-specific preferences that still point at the old agent" do
+        owner = project.created_by
+        cursor = create(:provider, user: owner, provider_key: "cursor")
+        codex = create(:provider, user: owner, provider_key: "codex")
+        owner.settings.update!(
+          default_agent_providers_by_goal: {
+            "create_pr" => owner.providers.find_by!(provider_key: "claude").routing_key,
+            "review" => codex.routing_key
+          }
+        )
+
+        execute_model_change(from_agent_type: "claude_code", to_agent_type: "cursor")
+
+        expect(owner.settings.reload.default_agent_providers_by_goal).to eq(
+          "create_pr" => cursor.routing_key,
+          "review" => codex.routing_key
+        )
+      end
+
+      it "applies the required model preference" do
+        model = create(:llm_model, model_id: "claude-sonnet-test")
+
+        result = described_class.call(
+          project: project,
+          action_type: "model_change",
+          parameters: {
+            to_model_id: model.model_id
+          }
+        )
+
+        expect(result).to be_success
+        expect(result.recovery_action.result).to include(
+          "status" => "changed",
+          "preference_type" => "model",
+          "to_model_id" => model.model_id
+        )
+        expect(project.reload.model_preferences["required_model_id"]).to eq(model.model_id)
+      end
+
+      it "auto-resumes a quality-paused project after applying the model change" do
         project.update!(quality_paused_at: 1.hour.ago)
 
         result = described_class.call(
@@ -124,6 +171,43 @@ RSpec.describe QualityRecovery::ExecuteAction do
           }
         )
 
+        expect(result.auto_resume_result).to be_resumed
+        expect(project.reload).not_to be_quality_paused
+        expect(project.quality_pause_events.resumes.last.metadata).to include(
+          "reason" => "quality_recovery_model_change",
+          "recovery_action_id" => result.recovery_action.id
+        )
+      end
+
+      it "auto-resumes a quality-paused project after applying the required model preference" do
+        model = create(:llm_model, model_id: "claude-opus-test")
+        project.update!(quality_paused_at: 1.hour.ago)
+
+        result = described_class.call(
+          project: project,
+          action_type: "model_change",
+          parameters: {
+            to_model_id: model.model_id
+          }
+        )
+
+        expect(result.auto_resume_result).to be_resumed
+        expect(project.reload).not_to be_quality_paused
+        expect(project.model_preferences["required_model_id"]).to eq(model.model_id)
+      end
+
+      it "does not auto-resume when the action only records a recommendation" do
+        project.update!(quality_paused_at: 1.hour.ago)
+
+        result = described_class.call(
+          project: project,
+          action_type: "model_change",
+          parameters: {
+            adjustment_type: "provider_switch"
+          }
+        )
+
+        expect(result.recovery_action.result["status"]).to eq("recommended")
         expect(result.auto_resume_result).to be_nil
         expect(project.reload).to be_quality_paused
       end
@@ -174,5 +258,9 @@ RSpec.describe QualityRecovery::ExecuteAction do
         expect(result.error).to be_present
       end
     end
+  end
+
+  def execute_model_change(parameters)
+    described_class.call(project: project, action_type: "model_change", parameters: parameters)
   end
 end
