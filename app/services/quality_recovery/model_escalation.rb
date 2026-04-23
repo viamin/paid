@@ -64,10 +64,9 @@ module QualityRecovery
       return result(pause: true, reason: "quality_recovery_exhausted") if exhausted?
       return result(defer_pause: true, reason: self.class.state(project)["status"]) unless evaluating_escalated_model?
       return result(defer_pause: true, reason: "model_escalation_active") if samples.size < evaluation_window
-      return result(defer_pause: true, reason: "model_escalation_improving") if escalated_average >= threshold
+      return recover!(via: "model_escalation", average: escalated_average, sample_size: samples.size) if escalated_average >= threshold
 
       request_prompt_evolution
-      result(defer_pause: true, reason: "prompt_evolution_requested", state: prompt_evolution_state)
     end
 
     private
@@ -92,7 +91,7 @@ module QualityRecovery
 
     def evaluate_prompt_evolution
       return result(defer_pause: true, reason: "prompt_evolution_pending") if prompt_evolution_samples.size < evaluation_window
-      return result(defer_pause: true, reason: "prompt_evolution_improving") if prompt_evolution_average >= threshold
+      return recover!(via: "prompt_evolution", average: prompt_evolution_average, sample_size: prompt_evolution_samples.size) if prompt_evolution_average >= threshold
 
       project.update!(model_preferences: preferences_with(exhausted_state))
       result(pause: true, reason: "quality_recovery_exhausted", state: exhausted_state)
@@ -126,6 +125,8 @@ module QualityRecovery
       {
         "status" => "active",
         "trigger" => "quality_drop",
+        "prompt_id" => prompt_id,
+        "prompt_version_id" => prompt_version_id,
         "from_tier" => from_tier,
         "to_tier" => to_tier,
         "started_at" => Time.current.iso8601,
@@ -142,6 +143,14 @@ module QualityRecovery
 
     def current_score
       breach&.fetch(:average, nil)
+    end
+
+    def prompt_id
+      agent_run&.prompt_version&.prompt_id || self.class.state(project)["prompt_id"] || recent_prompt_id
+    end
+
+    def prompt_version_id
+      agent_run&.prompt_version_id || self.class.state(project)["prompt_version_id"]
     end
 
     def threshold
@@ -202,10 +211,25 @@ module QualityRecovery
       prompt_evolution_samples.sum / prompt_evolution_samples.size
     end
 
+    def rounded_average(values)
+      return nil if values.empty?
+
+      (values.sum / values.size).round(4)
+    end
+
     def request_prompt_evolution
-      project.update!(model_preferences: preferences_with(prompt_evolution_state))
-      PromptEvolutionJob.perform_later
+      target_prompt_id = prompt_id
+      unless target_prompt_id
+        state = exhausted_state("no_prompt_for_targeted_evolution")
+        project.update!(model_preferences: preferences_with(state))
+        return result(pause: true, reason: "quality_recovery_exhausted", state:)
+      end
+
+      state = prompt_evolution_state
+      project.update!(model_preferences: preferences_with(state))
+      PromptEvolutionJob.perform_later(prompt_id: target_prompt_id, project_id: project.id)
       log_prompt_evolution_requested
+      result(defer_pause: true, reason: "prompt_evolution_requested", state:)
     end
 
     def prompt_evolution_state
@@ -217,13 +241,42 @@ module QualityRecovery
       )
     end
 
-    def exhausted_state
+    def exhausted_state(reason = nil)
       self.class.state(project).merge(
         "status" => "exhausted",
         "exhausted_at" => Time.current.iso8601,
-        "prompt_evolution_average" => prompt_evolution_average.round(4),
+        "prompt_evolution_average" => rounded_average(prompt_evolution_samples),
         "prompt_evolution_sample_size" => prompt_evolution_samples.size
+      ).tap do |state|
+        state["exhausted_reason"] = reason if reason.present?
+      end
+    end
+
+    def recovered_state(via:, average:, sample_size:)
+      self.class.state(project).merge(
+        "status" => "recovered",
+        "recovered_at" => Time.current.iso8601,
+        "recovered_via" => via,
+        "recovered_average" => average.round(4),
+        "recovered_sample_size" => sample_size
       )
+    end
+
+    def recover!(via:, average:, sample_size:)
+      state = recovered_state(via:, average:, sample_size:)
+      project.update!(model_preferences: preferences_with(state))
+      result(defer_pause: true, reason: "#{via}_recovered", state:)
+    end
+
+    def recent_prompt_id
+      QualityMetric
+        .by_project(project.id)
+        .joins(agent_run: :prompt_version)
+        .where(agent_runs: { goal: agent_run.goal })
+        .where("quality_metrics.created_at >= ?", started_at)
+        .order(created_at: :desc)
+        .limit(evaluation_window)
+        .pick("prompt_versions.prompt_id")
     end
 
     def record_action

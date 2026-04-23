@@ -17,9 +17,11 @@ class PromptEvolutionJob < ApplicationJob
   # Default lookback window for sampling (days)
   SAMPLE_DAYS = 14
 
-  def perform
+  def perform(prompt_id: nil, project_id: nil)
+    return perform_targeted(prompt_id:, project_id:) if prompt_id.present?
+
     eligible_prompts.find_each do |prompt|
-      start_evolution_workflow(prompt)
+      start_evolution_workflow(prompt, project_id: prompt.project_id)
     rescue => e
       Rails.logger.warn(
         message: "prompt_evolution.job_failed_for_prompt",
@@ -31,6 +33,13 @@ class PromptEvolutionJob < ApplicationJob
   end
 
   private
+
+  def perform_targeted(prompt_id:, project_id:)
+    prompt = Prompt.active.find_by(id: prompt_id, project_id: [ project_id, nil ])
+    return if prompt.blank? || prompt.current_version_id.blank? || running_test?(prompt)
+
+    start_evolution_workflow(prompt, project_id:)
+  end
 
   def eligible_prompts
     Prompt
@@ -44,6 +53,10 @@ class PromptEvolutionJob < ApplicationJob
     AbTest.running.select(:prompt_id)
   end
 
+  def running_test?(prompt)
+    AbTest.running.exists?(prompt_id: prompt.id)
+  end
+
   def prompts_with_sufficient_runs
     AgentRun
       .completed
@@ -55,12 +68,12 @@ class PromptEvolutionJob < ApplicationJob
       .select("prompts.id")
   end
 
-  def start_evolution_workflow(prompt)
+  def start_evolution_workflow(prompt, project_id:)
     Paid.temporal_client.start_workflow(
       Workflows::PromptEvolutionWorkflow,
       {
         prompt_id: prompt.id,
-        project_id: prompt.project_id,
+        project_id: project_id,
         sample_days: SAMPLE_DAYS
       },
       id: "prompt-evolution-#{prompt.id}-#{Date.current}",

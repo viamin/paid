@@ -4,7 +4,8 @@ require "rails_helper"
 
 RSpec.describe QualityPause::Check do
   let(:project) { create(:project) }
-  let(:agent_run) { create(:agent_run, :completed, project: project) }
+  let(:prompt) { create(:prompt, :global, :with_version) }
+  let(:agent_run) { create(:agent_run, :completed, project: project, prompt_version: prompt.current_version) }
 
   describe ".call" do
     it "does nothing when the project disables an inherited threshold" do
@@ -122,7 +123,7 @@ RSpec.describe QualityPause::Check do
       escalation = project.reload.model_preferences["quality_triggered_escalation"]
       expect(project.quality_paused?).to be false
       expect(escalation).to include("status" => "prompt_evolution_requested")
-      expect(PromptEvolutionJob).to have_received(:perform_later)
+      expect(PromptEvolutionJob).to have_received(:perform_later).with(prompt_id: prompt.id, project_id: project.id)
     end
 
     it "keeps deferring pause without re-requesting prompt evolution while it is pending" do
@@ -163,6 +164,44 @@ RSpec.describe QualityPause::Check do
         "prompt_evolution_average" => 0.2,
         "prompt_evolution_sample_size" => 3
       )
+    end
+
+    it "persists a recovered terminal state when escalated runs recover quality" do
+      create(:llm_model, tier: "high", capability_score: 10.0)
+      request_model_escalation_recovery(project)
+      create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ])
+      create_escalated_metrics(project, scores: [ 0.8, 0.7, 0.9 ])
+
+      described_class.call(agent_run: agent_run)
+
+      escalation = project.reload.model_preferences["quality_triggered_escalation"]
+      expect(project.quality_paused?).to be false
+      expect(escalation).to include(
+        "status" => "recovered",
+        "recovered_via" => "model_escalation",
+        "recovered_average" => 0.8,
+        "recovered_sample_size" => 3
+      )
+      expect(QualityRecovery::ModelEscalation.active?(project)).to be false
+    end
+
+    it "persists a recovered terminal state when prompt evolution recovers quality" do
+      create(:llm_model, tier: "high", capability_score: 10.0)
+      request_prompt_evolution_recovery(project)
+      create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ])
+      create_escalated_metrics(project, scores: [ 0.8, 0.7, 0.9 ])
+
+      described_class.call(agent_run: agent_run)
+
+      escalation = project.reload.model_preferences["quality_triggered_escalation"]
+      expect(project.quality_paused?).to be false
+      expect(escalation).to include(
+        "status" => "recovered",
+        "recovered_via" => "prompt_evolution",
+        "recovered_average" => 0.8,
+        "recovered_sample_size" => 3
+      )
+      expect(QualityRecovery::ModelEscalation.active?(project)).to be false
     end
 
     it "caps the rolling window to the latest DEFAULT_WINDOW_SIZE eligible runs" do
@@ -376,6 +415,20 @@ RSpec.describe QualityPause::Check do
         "to_tier" => "high",
         "started_at" => 2.days.ago.iso8601,
         "prompt_evolution_requested_at" => 1.day.ago.iso8601,
+        "threshold" => 0.5,
+        "evaluation_window" => 3
+      }
+    })
+  end
+
+  def request_model_escalation_recovery(project)
+    project.update!(model_preferences: {
+      "quality_triggered_escalation" => {
+        "status" => "active",
+        "trigger" => "quality_drop",
+        "from_tier" => "mid",
+        "to_tier" => "high",
+        "started_at" => 1.day.ago.iso8601,
         "threshold" => 0.5,
         "evaluation_window" => 3
       }
