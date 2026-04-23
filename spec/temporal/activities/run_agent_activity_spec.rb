@@ -33,11 +33,9 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   def create_ab_test_assignment(slug:, agent_run:, variant_template:, status: "running")
-    prompt = create(:prompt, :global, slug: slug)
+    prompt = create(:prompt, :for_project, project: project, slug: slug)
     control_version = prompt.create_version!(template: "control {{base_prompt}}")
-    variant_version = create(:prompt_version, prompt: prompt,
-      version: control_version.version + 1,
-      template: variant_template)
+    variant_version = prompt.create_version!(template: variant_template)
     ab_test = create(:ab_test, prompt: prompt, control_version: control_version,
       status: status, started_at: Time.current)
     create(:ab_test_variant, ab_test: ab_test, prompt_version: control_version, is_control: true)
@@ -48,11 +46,9 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   def create_running_ab_test(slug:)
-    prompt = create(:prompt, :global, slug: slug)
+    prompt = create(:prompt, :for_project, project: project, slug: slug)
     control_version = prompt.create_version!(template: "control {{base_prompt}} {{repo}}")
-    variant_version = create(:prompt_version, prompt: prompt,
-      version: control_version.version + 1,
-      template: "variant {{base_prompt}} {{repo}}")
+    variant_version = prompt.create_version!(template: "variant {{base_prompt}} {{repo}}")
     ab_test = create(:ab_test, prompt: prompt, control_version: control_version,
       status: "running", started_at: Time.current)
     create(:ab_test_variant, ab_test: ab_test, prompt_version: control_version, is_control: true)
