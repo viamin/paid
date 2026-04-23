@@ -18,12 +18,13 @@ module PromptEvolution
   #     created_by_user: system_user
   #   )
   class CreateVariants
-    attr_reader :prompt, :mutations, :created_by_user
+    attr_reader :prompt, :mutations, :created_by_user, :project
 
-    def initialize(prompt:, mutations:, created_by_user: nil)
+    def initialize(prompt:, mutations:, created_by_user: nil, project: nil)
       @prompt = prompt
       @mutations = Array(mutations)
       @created_by_user = created_by_user
+      @project = project || prompt.project
     end
 
     def self.call(...)
@@ -39,6 +40,7 @@ module PromptEvolution
       end
 
       auto_promote_first(variants) unless prompt.requires_review?
+      auto_resume_project(variants)
       variants
     end
 
@@ -79,6 +81,20 @@ module PromptEvolution
       parts = [ "Evolved variant (#{mutation.strategy})" ]
       parts << mutation.reasoning if mutation.reasoning.present?
       parts.join(": ")
+    end
+
+    def auto_resume_project(variants)
+      return if variants.empty? || project.nil?
+
+      QualityPause::AutoResume.call(
+        project: project,
+        reason: "prompt_evolution_variant_created",
+        metadata: {
+          prompt_id: prompt.id,
+          variant_version_ids: variants.map(&:id),
+          review_required: prompt.requires_review?
+        }
+      )
     end
   end
 end

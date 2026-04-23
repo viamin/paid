@@ -37,10 +37,11 @@ module QualityRecovery
 
       result = execute(recovery_action)
       recovery_action.complete!(result)
+      auto_resume_result = auto_resume_after_action(recovery_action)
 
       log_action(recovery_action)
 
-      Result.new(recovery_action: recovery_action, success: true)
+      Result.new(recovery_action: recovery_action, success: true, auto_resume_result: auto_resume_result)
     rescue => e
       recovery_action&.fail!(error_class: e.class.name, error_message: e.message)
 
@@ -129,13 +130,37 @@ module QualityRecovery
       )
     end
 
-    class Result
-      attr_reader :recovery_action, :error
+    def auto_resume_after_action(recovery_action)
+      return unless %w[prompt_rollback model_change].include?(action_type)
 
-      def initialize(recovery_action:, success:, error: nil)
+      QualityPause::AutoResume.call(
+        project: project,
+        reason: "quality_recovery_#{action_type}",
+        metadata: {
+          recovery_action_id: recovery_action.id,
+          action_type: action_type
+        }
+      )
+    rescue => e
+      Rails.logger.error(
+        message: "quality_recovery.auto_resume_failed",
+        project_id: project.id,
+        recovery_action_id: recovery_action.id,
+        action_type: action_type,
+        error_class: e.class.name,
+        error_message: e.message
+      )
+      nil
+    end
+
+    class Result
+      attr_reader :recovery_action, :error, :auto_resume_result
+
+      def initialize(recovery_action:, success:, error: nil, auto_resume_result: nil)
         @recovery_action = recovery_action
         @success = success
         @error = error
+        @auto_resume_result = auto_resume_result
       end
 
       def success?
