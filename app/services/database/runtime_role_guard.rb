@@ -10,6 +10,10 @@ module Database
       db:reset
       db:setup
     ].freeze
+    BUILD_TIME_TASKS = %w[
+      assets:precompile
+      bootsnap:precompile
+    ].freeze
 
     class << self
       def verify!
@@ -32,7 +36,7 @@ module Database
       end
 
       def disabled?
-        ENV[SKIP_ENV] == "true" || creating_database?
+        ENV[SKIP_ENV] == "true" || creating_database? || build_time?
       end
 
       private
@@ -61,9 +65,16 @@ module Database
       end
 
       def creating_database?
-        task_names = ARGV + rake_task_names
-
         task_names.any? { |task| CREATE_DATABASE_TASKS.include?(task) }
+      end
+
+      def build_time?
+        ENV["SECRET_KEY_BASE_DUMMY"].present? ||
+          task_names.any? { |task| BUILD_TIME_TASKS.include?(task) }
+      end
+
+      def task_names
+        ARGV + rake_task_names
       end
 
       def rake_task_names

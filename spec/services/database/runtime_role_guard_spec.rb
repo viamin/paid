@@ -50,4 +50,26 @@ RSpec.describe Database::RuntimeRoleGuard do
 
     expect(connection).not_to have_received(:select_one)
   end
+
+  it "skips Docker build-time boots that use the dummy secret key base" do
+    previous = ENV["SECRET_KEY_BASE_DUMMY"]
+    ENV["SECRET_KEY_BASE_DUMMY"] = "1"
+
+    begin
+      described_class.verify!
+    ensure
+      ENV["SECRET_KEY_BASE_DUMMY"] = previous
+    end
+
+    expect(connection).not_to have_received(:select_one)
+  end
+
+  it "skips asset precompile tasks before opening a database connection" do
+    rake = double(application: double(top_level_tasks: [ "assets:precompile" ]))
+    stub_const("Rake", rake)
+
+    described_class.verify!
+
+    expect(connection).not_to have_received(:select_one)
+  end
 end
