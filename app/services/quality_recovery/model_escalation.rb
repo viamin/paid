@@ -48,6 +48,7 @@ module QualityRecovery
     end
 
     def start
+      return result(started: false, pause: true, reason: "quality_recovery_exhausted") if exhausted?
       return result(started: false, defer_pause: true, reason: "already_active") if self.class.active?(project)
       return result(started: false, pause: true, reason: "no_higher_tier") unless target_model
 
@@ -59,6 +60,8 @@ module QualityRecovery
     end
 
     def evaluate
+      return evaluate_prompt_evolution if prompt_evolution_requested?
+      return result(pause: true, reason: "quality_recovery_exhausted") if exhausted?
       return result(defer_pause: true, reason: self.class.state(project)["status"]) unless evaluating_escalated_model?
       return result(defer_pause: true, reason: "model_escalation_active") if samples.size < evaluation_window
       return result(defer_pause: true, reason: "model_escalation_improving") if escalated_average >= threshold
@@ -77,6 +80,22 @@ module QualityRecovery
 
     def evaluating_escalated_model?
       self.class.state(project)["status"] == "active"
+    end
+
+    def prompt_evolution_requested?
+      self.class.state(project)["status"] == "prompt_evolution_requested"
+    end
+
+    def exhausted?
+      self.class.state(project)["status"] == "exhausted"
+    end
+
+    def evaluate_prompt_evolution
+      return result(defer_pause: true, reason: "prompt_evolution_pending") if prompt_evolution_samples.size < evaluation_window
+      return result(defer_pause: true, reason: "prompt_evolution_improving") if prompt_evolution_average >= threshold
+
+      project.update!(model_preferences: preferences_with(exhausted_state))
+      result(pause: true, reason: "quality_recovery_exhausted", state: exhausted_state)
     end
 
     def from_tier
@@ -149,14 +168,38 @@ module QualityRecovery
         .map(&:to_f)
     end
 
+    def prompt_evolution_samples
+      @prompt_evolution_samples ||= QualityMetric
+        .by_project(project.id)
+        .joins(agent_run: :model_selection)
+        .where(agent_runs: { goal: agent_run.goal })
+        .where(model_selections: { selector_type: "quality_escalation", tier: self.class.target_tier(project) })
+        .where("quality_metrics.created_at >= ?", prompt_evolution_requested_at)
+        .order(created_at: :desc)
+        .limit(evaluation_window)
+        .pluck(:composite_score)
+        .compact
+        .map(&:to_f)
+    end
+
     def started_at
       Time.iso8601(self.class.state(project).fetch("started_at"))
     rescue ArgumentError, KeyError
       Time.current
     end
 
+    def prompt_evolution_requested_at
+      Time.iso8601(self.class.state(project).fetch("prompt_evolution_requested_at"))
+    rescue ArgumentError, KeyError
+      Time.current
+    end
+
     def escalated_average
       samples.sum / samples.size
+    end
+
+    def prompt_evolution_average
+      prompt_evolution_samples.sum / prompt_evolution_samples.size
     end
 
     def request_prompt_evolution
@@ -171,6 +214,15 @@ module QualityRecovery
         "prompt_evolution_requested_at" => Time.current.iso8601,
         "escalated_average" => escalated_average.round(4),
         "evaluated_sample_size" => samples.size
+      )
+    end
+
+    def exhausted_state
+      self.class.state(project).merge(
+        "status" => "exhausted",
+        "exhausted_at" => Time.current.iso8601,
+        "prompt_evolution_average" => prompt_evolution_average.round(4),
+        "prompt_evolution_sample_size" => prompt_evolution_samples.size
       )
     end
 

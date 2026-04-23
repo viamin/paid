@@ -73,6 +73,30 @@ RSpec.describe Activities::CheckQualityGateActivity do
     expect(result[:recovery]).to include("status" => "prompt_evolution_requested", "to_tier" => "high")
   end
 
+  it "blocks non-composite breaches while quality-triggered model escalation is active" do
+    project.update!(
+      quality_gate_settings: project.quality_gate_settings.merge(
+        "metric_thresholds" => { "security_score" => 0.7 }
+      ),
+      model_preferences: {
+        "quality_triggered_escalation" => {
+          "status" => "active",
+          "trigger" => "quality_drop",
+          "from_tier" => "mid",
+          "to_tier" => "high"
+        }
+      }
+    )
+    create_metric(0.9, scores: { "security_score" => 0.2 })
+    create_metric(0.8, scores: { "security_score" => 0.3 })
+    create_metric(0.7, scores: { "security_score" => 0.1 })
+
+    result = activity.execute(project_id: project.id)
+
+    expect(result).to include(allowed: false, blocked: true, reason: "quality_gate_breached")
+    expect(result[:breaches]).to include(hash_including(metric: "security_score"))
+  end
+
   it "allows runs when there is not enough recent data" do
     create_metric(0.1)
 
@@ -194,8 +218,8 @@ RSpec.describe Activities::CheckQualityGateActivity do
     expect(state.project).to eq(project)
   end
 
-  def create_metric(score)
+  def create_metric(score, scores: {})
     run = create(:agent_run, :completed, project: project)
-    create(:quality_metric, :automated, agent_run: run, composite_score: score)
+    create(:quality_metric, :automated, agent_run: run, composite_score: score, scores: scores)
   end
 end
