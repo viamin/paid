@@ -91,9 +91,6 @@ module QualityRecovery
     end
 
     def execute_model_change
-      # Model changes are tracked as recommendations; the actual model preference
-      # is stored in project.model_preferences and applied by the model selection
-      # system at run time.
       from_type = parameters[:from_agent_type]
       to_type = parameters[:to_agent_type]
 
@@ -101,7 +98,7 @@ module QualityRecovery
         status: "recommended",
         from_agent_type: from_type,
         to_agent_type: to_type,
-        note: "Model preference recorded. Next agent runs will prefer '#{to_type}' over '#{from_type}'."
+        note: "Model change recommended. Review and apply through project settings before resuming automatic work."
       }
     end
 
@@ -131,7 +128,7 @@ module QualityRecovery
     end
 
     def auto_resume_after_action(recovery_action)
-      return unless %w[prompt_rollback model_change].include?(action_type)
+      return unless action_type == "prompt_rollback"
 
       QualityPause::AutoResume.call(
         project: project,

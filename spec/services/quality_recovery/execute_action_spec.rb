@@ -112,7 +112,7 @@ RSpec.describe QualityRecovery::ExecuteAction do
         expect(result.recovery_action.result["status"]).to eq("recommended")
       end
 
-      it "auto-resumes a quality-paused project" do
+      it "does not auto-resume because the model preference has not changed yet" do
         project.update!(quality_paused_at: 1.hour.ago)
 
         result = described_class.call(
@@ -124,8 +124,8 @@ RSpec.describe QualityRecovery::ExecuteAction do
           }
         )
 
-        expect(result.auto_resume_result).to be_resumed
-        expect(project.reload).not_to be_quality_paused
+        expect(result.auto_resume_result).to be_nil
+        expect(project.reload).to be_quality_paused
       end
     end
 
