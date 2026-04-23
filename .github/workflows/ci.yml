@@ -123,6 +123,9 @@ jobs:
       - name: Install ast-grep
         run: bin/install-ast-grep
 
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
       - name: Build assets
         run: yarn build && yarn build:css
 
@@ -190,6 +193,9 @@ jobs:
 
       - name: Install JavaScript dependencies
         run: yarn install --frozen-lockfile && bin/yarn-postinstall
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
       - name: Set up database
         run: bin/rails db:prepare
