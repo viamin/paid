@@ -85,6 +85,22 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.agent_type).to eq("codex")
     end
 
+    it "uses the tenant API key provider for the default provider" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      create(:tenant_setting, account: user.account,
+        provider_preferences: { "api_key_ids" => { "anthropic" => api_key.id.to_s } })
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.provider).to have_attributes(
+        provider_key: "claude",
+        auth_type: "api_key",
+        provider_api_key_id: api_key.id
+      )
+      expect(agent_run.agent_type).to eq("claude_code")
+    end
+
     it "uses the goal-specific provider when goal is review" do
       codex_provider = user.providers.find_or_create_by!(provider_key: "codex", auth_type: "subscription")
       user.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
@@ -129,6 +145,18 @@ RSpec.describe Activities::QueueAgentRunActivity do
 
       agent_run = AgentRun.find(result[:agent_run_id])
       expect(agent_run.goal).to eq("create_pr")
+    end
+
+    it "uses the tenant default goal when goal is not specified" do
+      create(:tenant_setting, account: user.account, agent_settings: { "default_goal" => "review" })
+
+      result = activity.execute(
+        project_id: project.id,
+        source_pull_request_number: 42
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.goal).to eq("review")
     end
 
     it "persists draft review round tracking metadata" do

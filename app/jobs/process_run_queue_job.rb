@@ -114,7 +114,7 @@ class ProcessRunQueueJob < ApplicationJob
   def user_has_capacity?(user)
     cap = @user_capacity[user.id] ||= {
       active: AgentRun.active_count_for_user(user),
-      max: user.settings.max_concurrent_runs
+      max: user.account.tenant_max_concurrent_runs(user.settings.max_concurrent_runs)
     }
     cap[:active] < cap[:max]
   end
@@ -162,7 +162,7 @@ class ProcessRunQueueJob < ApplicationJob
   def seed_budget_for(owner)
     @auto_pick_seed_budget[owner.id] ||= {
       active: AgentRun.unfinished_auto_pick_count_for_user(owner),
-      max: owner.settings.max_concurrent_runs
+      max: owner.account.tenant_max_concurrent_runs(owner.settings.max_concurrent_runs)
     }
   end
 

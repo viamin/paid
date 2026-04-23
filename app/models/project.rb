@@ -334,7 +334,7 @@ class Project < ApplicationRecord
   # NOTE: For full resolution (including user settings and global default),
   # use AgentRun#effective_max_tokens_per_run instead.
   def project_level_max_tokens_per_run
-    max_tokens_per_run || account.default_max_tokens_per_run
+    account.tenant_max_tokens_per_run(max_tokens_per_run || account.default_max_tokens_per_run)
   end
 
   # Returns the absolute token count at which a warning should be emitted.
