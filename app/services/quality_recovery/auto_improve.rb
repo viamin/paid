@@ -205,8 +205,7 @@ module QualityRecovery
     def scores_after(timestamp)
       metric_scope.where("quality_metrics.created_at > ?", timestamp)
         .limit(EVALUATION_RUNS)
-        .pluck(:composite_score)
-        .map(&:to_f)
+        .filter_map { |metric| score_for(metric) }
     end
 
     def recent_metrics
@@ -214,11 +213,28 @@ module QualityRecovery
     end
 
     def metric_scope
-      QualityMetric.by_project(project.id)
+      scope = QualityMetric.by_project(project.id)
         .where(agent_runs: { goal: agent_run.goal })
         .where(AgentRun.quality_scoreable_sql)
-        .where.not(composite_score: nil)
         .order(created_at: :desc)
+
+      if metric_type == "composite_score"
+        scope.where.not(composite_score: nil)
+      else
+        scope.where("jsonb_exists(quality_metrics.scores, ?)", metric_type)
+      end
+    end
+
+    def score_for(metric)
+      if metric_type == "composite_score"
+        metric.composite_score&.to_f
+      else
+        metric.scores&.dig(metric_type)&.to_f
+      end
+    end
+
+    def metric_type
+      breach.fetch(:threshold).metric_type
     end
 
     def cooldown_exhausted?

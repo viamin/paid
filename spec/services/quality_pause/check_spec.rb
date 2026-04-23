@@ -161,6 +161,26 @@ RSpec.describe QualityPause::Check do
       expect(project.quality_recovery_actions.last.action_type).to eq("model_escalation")
     end
 
+    it "evaluates recovery against the breached metric rather than composite score" do
+      create(:quality_threshold,
+        account: project.account,
+        metric_type: "reaction_score",
+        goal_type: "create_pr",
+        min_value: 0.5)
+      action = create(:quality_recovery_action, :prompt_evolution, :executed,
+        project: project, executed_at: 2.hours.ago, quality_before: 0.3)
+      create(:llm_model, tier: "mid")
+      create_metric_scores(project,
+        metric_type: "reaction_score",
+        scores: Array.new(QualityThreshold::DEFAULT_WINDOW_SIZE, 0.2))
+
+      described_class.call(agent_run: agent_run)
+
+      expect(action.reload.quality_after).to eq(0.2)
+      expect(project.reload.model_preferences["quality_recovery_min_tier"]).to eq("mid")
+      expect(project.quality_recovery_actions.last.action_type).to eq("model_escalation")
+    end
+
     it "pauses only after prompt evolution and model escalation fail" do
       create(:quality_recovery_action, :prompt_evolution, :evaluated,
         project: project, executed_at: 3.hours.ago, quality_before: 0.3, quality_after: 0.3)
