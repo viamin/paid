@@ -69,7 +69,7 @@ module Activities
     private
 
     def extract_sample_outputs(samples, metric_type:, threshold:)
-      sorted = samples.sort_by { |s| s[:composite_score] || 0 }
+      sorted = samples.sort_by { |s| score_for(s, metric_type) || 0 }
       failures = sorted.first(MAX_SAMPLE_OUTPUTS).filter_map do |s|
         score = score_for(s, metric_type)
         next unless score && score < threshold.to_f
@@ -78,7 +78,8 @@ module Activities
       end
 
       successes = sorted.reverse.first(MAX_SAMPLE_OUTPUTS).filter_map do |s|
-        next unless s[:composite_score] && s[:composite_score] >= PromptEvolution::SampleRuns::QUALITY_THRESHOLD
+        score = score_for(s, metric_type)
+        next unless score && score >= threshold.to_f
 
         summarize_run(s)
       end

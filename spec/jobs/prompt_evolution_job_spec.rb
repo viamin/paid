@@ -192,6 +192,22 @@ RSpec.describe PromptEvolutionJob do
         expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).to contain_exactly(prompt.id)
         expect_targeted_workflow_for(prompt, project)
       end
+
+      it "ignores targeted failures outside the sample window" do
+        old_prompt = create(:prompt, :global, :with_version)
+        run = create(:agent_run, :completed,
+          project: project,
+          prompt_version: old_prompt.current_version,
+          goal: "create_pr",
+          completed_at: (described_class::SAMPLE_DAYS + 1).days.ago)
+        create(:quality_metric, :automated, agent_run: run,
+          prompt_version: old_prompt.current_version, composite_score: 0.2)
+
+        perform_targeted_quality_pause_job(project)
+
+        prompt_evolution_calls = workflow_calls.select { |call| call.first == Workflows::PromptEvolutionWorkflow }
+        expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).not_to include(old_prompt.id)
+      end
     end
   end
 end

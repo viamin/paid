@@ -80,6 +80,7 @@ class PromptEvolutionJob < ApplicationJob
   def prompts_with_targeted_failures
     scope = AgentRun
       .completed
+      .where(completed_at: SAMPLE_DAYS.days.ago..)
       .where(project_id: project_id)
       .where.not(prompt_version_id: nil)
       .joins(:quality_metrics)
