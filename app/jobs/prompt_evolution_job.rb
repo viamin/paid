@@ -143,6 +143,6 @@ class PromptEvolutionJob < ApplicationJob
   def workflow_id(prompt)
     return "prompt-evolution-#{prompt.id}-#{Date.current}" unless targeted?
 
-    "prompt-evolution-quality-pause-#{project_id}-#{prompt.id}-#{Date.current}"
+    "prompt-evolution-quality-pause-#{project_id}-#{prompt.id}-#{goal_type.presence || 'all-goals'}-#{metric_type}-#{Date.current}"
   end
 end

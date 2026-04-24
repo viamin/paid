@@ -63,7 +63,7 @@ RSpec.describe PromptEvolutionJob do
           goal_type: "create_pr",
           min_runs_for_evaluation: QualityThreshold::DEFAULT_MIN_SAMPLE_SIZE
         ),
-        hash_including(id: "prompt-evolution-quality-pause-#{project.id}-#{prompt.id}-#{Date.current}")
+        hash_including(id: "prompt-evolution-quality-pause-#{project.id}-#{prompt.id}-create_pr-composite_score-#{Date.current}")
       )
     end
 

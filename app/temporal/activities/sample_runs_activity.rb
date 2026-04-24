@@ -105,10 +105,9 @@ module Activities
 
     def extract_quality_metrics(samples)
       samples.filter_map do |s|
-        score = s[:composite_score]
-        next unless score
+        next unless s[:composite_score] || s[:scores].present?
 
-        { composite_score: score, scores: s[:scores] }
+        { composite_score: s[:composite_score], scores: s[:scores] }
       end
     end
 
