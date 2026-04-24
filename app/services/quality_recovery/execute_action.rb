@@ -74,7 +74,7 @@ module QualityRecovery
     end
 
     def execute_prompt_rollback(recovery_action)
-      prompt = Prompt.find(parameter_value(:prompt_id))
+      prompt = project.prompts.find(parameter_value(:prompt_id))
       to_version = prompt.prompt_versions.find(parameter_value(:to_version_id))
 
       recovery_action.update!(prompt_version: to_version)
@@ -119,21 +119,21 @@ module QualityRecovery
     end
 
     def execute_agent_preference_change
-      owner = project.effective_owner
-      raise ActiveRecord::RecordNotFound, "Project has no owner for provider preference changes" unless owner
-
       from_agent_type = parameter_value(:from_agent_type).to_s.presence
       to_agent_type = parameter_value(:to_agent_type).to_s
       to_provider = Provider.provider_key_for_agent_type(to_agent_type)
       validate_agent_preference!(to_agent_type, to_provider)
 
+      project.update!(
+        model_preferences: project.model_preferences.merge("preferred_agent_type" => to_agent_type)
+      )
+
       {
-        status: "recommended",
+        status: "changed",
         preference_type: "agent",
         from_agent_type: from_agent_type,
         to_agent_type: to_agent_type,
-        to_provider: to_provider,
-        note: "Agent/provider change recommended. Apply it through project settings before resuming automatic work."
+        to_provider: to_provider
       }
     end
 
