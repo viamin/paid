@@ -17,19 +17,10 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     ServiceContainer.reset_column_information
   end
 
+  include MigrationSpecHelpers
+
   after do
-    connection = ActiveRecord::Base.connection
-    connection.execute("DELETE FROM project_service_containers")
-    connection.execute("DELETE FROM service_container_metrics")
-    connection.execute("DELETE FROM service_containers")
-    connection.execute("DELETE FROM workflow_states")
-    connection.execute("DELETE FROM projects")
-    connection.execute("DELETE FROM providers")
-    connection.execute("DELETE FROM provider_states")
-    connection.execute("DELETE FROM account_memberships")
-    connection.execute("DELETE FROM github_tokens")
-    connection.execute("DELETE FROM users")
-    connection.execute("DELETE FROM accounts")
+    truncate_migration_test_data
 
     restore_service_container_account_reference unless service_containers_have_account_reference?
     rls_migration.up if tenant_policy_count.zero?
