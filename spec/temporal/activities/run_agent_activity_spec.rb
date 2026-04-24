@@ -156,6 +156,27 @@ RSpec.describe Activities::RunAgentActivity do
 
       expect(result).to eq(42)
     end
+
+    it "propagates tenant context into the worker thread" do
+      allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
+
+      TenantContext.with(user.account) do
+        result = nil
+
+        expect {
+          result = activity.send(:with_periodic_heartbeat, "test", interval: 0.01) do
+            agent_run.log!("system", "tenant context propagated")
+            [
+              Current.account,
+              ActiveRecord::Base.connection.select_value("SELECT paid_current_account_id()")
+            ]
+          end
+        }.to change { agent_run.agent_run_logs.count }.by(1)
+
+        expect(result).to eq([ user.account, user.account.id ])
+        expect(agent_run.agent_run_logs.order(:id).last.content).to eq("tenant context propagated")
+      end
+    end
   end
 
   describe ".container_executable?" do
