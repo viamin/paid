@@ -465,7 +465,8 @@ CREATE TABLE public.agent_runs (
     count_toward_draft_review_round boolean DEFAULT false NOT NULL,
     expected_draft_review_count integer,
     priority_tier character varying(10),
-    cross_repo_issues jsonb DEFAULT '[]'::jsonb
+    cross_repo_issues jsonb DEFAULT '[]'::jsonb,
+    stale_skip_count integer DEFAULT 0 NOT NULL
 );
 
 ALTER TABLE ONLY public.agent_runs FORCE ROW LEVEL SECURITY;
@@ -8763,6 +8764,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260423130627'),
 ('20260421162139'),
 ('20260421162135'),
 ('20260421161445'),
