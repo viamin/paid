@@ -22,6 +22,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     connection.execute("DELETE FROM project_service_containers")
     connection.execute("DELETE FROM service_container_metrics")
     connection.execute("DELETE FROM service_containers")
+    connection.execute("DELETE FROM workflow_states")
     connection.execute("DELETE FROM projects")
     connection.execute("DELETE FROM providers")
     connection.execute("DELETE FROM provider_states")

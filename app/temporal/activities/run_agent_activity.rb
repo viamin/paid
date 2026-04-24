@@ -901,6 +901,8 @@ module Activities
       context = Temporalio::Activity::Context.current_or_nil
       return yield unless context
 
+      tenant_account_id = Current.account&.id
+
       # Wrap the worker thread in Rails executor and ActiveRecord connection
       # pool management. The executor handles autoloading/reloading and the
       # with_connection block ensures the DB connection is checked out only
@@ -918,10 +920,23 @@ module Activities
           end
         end
 
+        tenant_scoped = proc do
+          if tenant_account_id
+            tenant_account = TenantContext.with_system_access { Account.find_by(id: tenant_account_id) }
+            if tenant_account
+              TenantContext.with(tenant_account, &db_scoped)
+            else
+              TenantContext.with_system_access(&db_scoped)
+            end
+          else
+            TenantContext.with_system_access(&db_scoped)
+          end
+        end
+
         if executor
-          executor.wrap(&db_scoped)
+          executor.wrap(&tenant_scoped)
         else
-          db_scoped.call
+          tenant_scoped.call
         end
       end
       worker.report_on_exception = false
