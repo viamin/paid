@@ -36,6 +36,8 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
     Provider.reset_column_information
   end
 
+  include MigrationSpecHelpers
+
   # Ensure the schema ends each example in its post-migration state so the
   # rest of the suite is unaffected. Also clean up data created without
   # transactional rollback.
@@ -49,12 +51,7 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
     end
     Project.reset_column_information
     Provider.reset_column_information
-    # Clean up data that was not rolled back by transactional fixtures. Keep
-    # deletes ordered from child tables to parent tables so this does not need
-    # disable_referential_integrity, which takes broad locks across the suite.
-    %w[projects service_containers providers provider_states account_memberships github_tokens users accounts].each do |table|
-      connection.execute("DELETE FROM #{table}")
-    end
+    truncate_migration_test_data
   end
 
   it "copies a project trailer onto the creator's default subscription provider" do
