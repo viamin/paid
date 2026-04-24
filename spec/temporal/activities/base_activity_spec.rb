@@ -22,6 +22,8 @@ RSpec.describe Activities::BaseActivity do
       allow(TenantContext).to receive(:with_system_access).and_yield
       allow(TenantContext).to receive(:with).and_yield
       allow(TenantContext).to receive(:clear!)
+      allow(TenantContext).to receive(:bypass_enabled?).and_return(false)
+      allow(TenantContext).to receive(:restore!)
       allow(Project).to receive(:find_by)
       allow(ActiveRecord::Base).to receive(:connection_pool).and_return(connection_pool)
       allow(connection_pool).to receive(:active_connection?).and_return(true)
@@ -59,6 +61,29 @@ RSpec.describe Activities::BaseActivity do
       expect { error_activity.execute("project_id" => 789) }.to raise_error(RuntimeError, "activity failed")
       expect(executor).to have_received(:wrap)
       expect(connection_pool).to have_received(:release_connection)
+    end
+
+    it "restores the outer tenant context after releasing the connection" do
+      # rubocop:disable RSpec/VerifiedDoubles,RSpec/VerifiedDoubleReference
+      account = double("Account", id: 123)
+      # rubocop:enable RSpec/VerifiedDoubles,RSpec/VerifiedDoubleReference
+      Current.account = account
+
+      activity.execute("project_id" => 123)
+
+      expect(connection_pool).to have_received(:release_connection).ordered
+      expect(TenantContext).to have_received(:restore!).with(account: account, bypass: false).ordered
+    ensure
+      Current.reset
+    end
+
+    it "restores outer system access after releasing the connection" do
+      allow(TenantContext).to receive(:bypass_enabled?).and_return(true)
+
+      activity.execute("project_id" => 123)
+
+      expect(connection_pool).to have_received(:release_connection).ordered
+      expect(TenantContext).to have_received(:restore!).with(account: nil, bypass: true).ordered
     end
   end
 
