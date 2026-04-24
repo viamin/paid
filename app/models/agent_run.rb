@@ -60,6 +60,7 @@ class AgentRun < ApplicationRecord
   TOKEN_LIMIT_STATUSES = %w[ok warning exceeded].freeze
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
   MAX_STALE_REQUEUES = 2
+  MAX_STALE_SKIPS = 3
   STALE_PENDING_TIMEOUT = 15.minutes
   STALE_PAUSED_TIMEOUT = 2.hours
   STALE_RUNNING_GRACE_PERIOD = 10.minutes
@@ -143,6 +144,7 @@ class AgentRun < ApplicationRecord
   validates :final_provider, length: { maximum: 50 }
   validates :provider_switches, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :stale_requeue_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :stale_skip_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :token_limit_status, inclusion: { in: TOKEN_LIMIT_STATUSES }, allow_nil: true
   validates :guardrail_violation_type, inclusion: { in: GUARDRAIL_VIOLATION_TYPES }, allow_nil: true
   validates :priority_tier, inclusion: { in: Project::PRIORITY_TIERS }, allow_nil: true

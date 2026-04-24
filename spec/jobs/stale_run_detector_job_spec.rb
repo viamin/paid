@@ -289,6 +289,7 @@ RSpec.describe StaleRunDetectorJob do
 
       it "cancels the existing Temporal workflow before requeuing" do
         stale_run = create(:agent_run, status: "pending",
+          started_at: 5.minutes.ago,
           temporal_workflow_id: "queued-1-2-123456",
           temporal_run_id: "run-abc")
         stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
@@ -339,9 +340,12 @@ RSpec.describe StaleRunDetectorJob do
       end
 
       it "skips requeue when Temporal workflow cancel fails with non-NOT_FOUND error" do
-        stale_run = create(:agent_run, status: "pending", temporal_workflow_id: "queued-1-2-123456")
+        stale_run = create(:agent_run, status: "pending",
+          started_at: 5.minutes.ago,
+          temporal_workflow_id: "queued-1-2-123456")
         stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
 
+        allow(Rails.logger).to receive(:warn)
         handle = double # rubocop:disable RSpec/VerifiedDoubles
         allow(handle).to receive(:cancel).and_raise(RuntimeError, "connection refused")
         temporal_client = double(workflow_handle: handle) # rubocop:disable RSpec/VerifiedDoubles
@@ -352,10 +356,57 @@ RSpec.describe StaleRunDetectorJob do
         stale_run.reload
         expect(stale_run.status).to eq("pending")
         expect(stale_run.stale_requeue_count).to eq(0)
+        expect(stale_run.stale_skip_count).to eq(1)
+        expect(Rails.logger).to have_received(:warn).with(hash_including(
+          message: "stale_run_detector.skipped_stale_run",
+          agent_run_id: stale_run.id,
+          reason: "temporal_cancel_failed",
+          stale_skip_count: 1
+        ))
+      end
+
+      it "times out after repeated Temporal workflow cancel failures" do
+        stale_run = create(:agent_run, status: "pending",
+          started_at: 5.minutes.ago,
+          temporal_workflow_id: "queued-1-2-123456",
+          stale_skip_count: described_class::MAX_STALE_SKIPS - 1)
+        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+
+        handle = double # rubocop:disable RSpec/VerifiedDoubles
+        allow(handle).to receive(:cancel).and_raise(RuntimeError, "connection refused")
+        temporal_client = double(workflow_handle: handle) # rubocop:disable RSpec/VerifiedDoubles
+        allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+
+        described_class.perform_now
+
+        stale_run.reload
+        expect(stale_run.status).to eq("timeout")
+        expect(stale_run.stale_skip_count).to eq(described_class::MAX_STALE_SKIPS)
+      end
+
+      it "still cancels and requeues when only temporal_workflow_id is present" do
+        stale_run = create(:agent_run, status: "pending",
+          started_at: nil,
+          temporal_workflow_id: "queued-1-2-123456")
+        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+
+        handle = double(cancel: true) # rubocop:disable RSpec/VerifiedDoubles
+        temporal_client = double(workflow_handle: handle) # rubocop:disable RSpec/VerifiedDoubles
+        allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+
+        described_class.perform_now
+
+        stale_run.reload
+        expect(stale_run.status).to eq("queued")
+        expect(stale_run.temporal_workflow_id).to be_nil
+        expect(handle).to have_received(:cancel)
       end
 
       it "still requeues when Temporal workflow cancel fails with not-found" do
-        stale_run = create(:agent_run, status: "pending", temporal_workflow_id: "queued-1-2-123456")
+        stale_run = create(:agent_run, status: "pending",
+          started_at: 5.minutes.ago,
+          temporal_workflow_id: "queued-1-2-123456",
+          stale_skip_count: 1)
         stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
 
         error = Temporalio::Error::RPCError.allocate
@@ -367,7 +418,9 @@ RSpec.describe StaleRunDetectorJob do
 
         described_class.perform_now
 
-        expect(stale_run.reload.status).to eq("queued")
+        stale_run.reload
+        expect(stale_run.status).to eq("queued")
+        expect(stale_run.stale_skip_count).to eq(0)
       end
     end
 
