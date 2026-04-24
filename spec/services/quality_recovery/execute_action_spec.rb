@@ -98,7 +98,10 @@ RSpec.describe QualityRecovery::ExecuteAction do
     end
 
     context "with model change" do
-      it "applies the agent preference" do
+      it "records an agent preference recommendation without mutating owner defaults" do
+        owner = project.created_by
+        original_default = owner.settings.default_agent_provider
+
         result = described_class.call(
           project: project,
           action_type: "model_change",
@@ -110,33 +113,13 @@ RSpec.describe QualityRecovery::ExecuteAction do
 
         expect(result).to be_success
         expect(result.recovery_action.result).to include(
-          "status" => "changed",
+          "status" => "recommended",
           "preference_type" => "agent",
           "from_agent_type" => "claude_code",
-          "to_agent_type" => "cursor"
+          "to_agent_type" => "cursor",
+          "to_provider" => "cursor"
         )
-        expect(project.created_by.settings.reload.default_agent_provider).to eq(
-          project.created_by.providers.find_by!(provider_key: "cursor").routing_key
-        )
-      end
-
-      it "updates goal-specific preferences that still point at the old agent" do
-        owner = project.created_by
-        cursor = create(:provider, user: owner, provider_key: "cursor")
-        codex = create(:provider, user: owner, provider_key: "codex")
-        owner.settings.update!(
-          default_agent_providers_by_goal: {
-            "create_pr" => owner.providers.find_by!(provider_key: "claude").routing_key,
-            "review" => codex.routing_key
-          }
-        )
-
-        execute_model_change(from_agent_type: "claude_code", to_agent_type: "cursor")
-
-        expect(owner.settings.reload.default_agent_providers_by_goal).to eq(
-          "create_pr" => cursor.routing_key,
-          "review" => codex.routing_key
-        )
+        expect(owner.settings.reload.default_agent_provider).to eq(original_default)
       end
 
       it "applies the required model preference" do
@@ -159,7 +142,7 @@ RSpec.describe QualityRecovery::ExecuteAction do
         expect(project.reload.model_preferences["required_model_id"]).to eq(model.model_id)
       end
 
-      it "auto-resumes a quality-paused project after applying the model change" do
+      it "does not auto-resume after an agent preference recommendation" do
         project.update!(quality_paused_at: 1.hour.ago)
 
         result = described_class.call(
@@ -171,12 +154,9 @@ RSpec.describe QualityRecovery::ExecuteAction do
           }
         )
 
-        expect(result.auto_resume_result).to be_resumed
-        expect(project.reload).not_to be_quality_paused
-        expect(project.quality_pause_events.resumes.last.metadata).to include(
-          "reason" => "quality_recovery_model_change",
-          "recovery_action_id" => result.recovery_action.id
-        )
+        expect(result.recovery_action.result["status"]).to eq("recommended")
+        expect(result.auto_resume_result).to be_nil
+        expect(project.reload).to be_quality_paused
       end
 
       it "auto-resumes a quality-paused project after applying the required model preference" do
@@ -258,9 +238,5 @@ RSpec.describe QualityRecovery::ExecuteAction do
         expect(result.error).to be_present
       end
     end
-  end
-
-  def execute_model_change(parameters)
-    described_class.call(project: project, action_type: "model_change", parameters: parameters)
   end
 end

@@ -127,21 +127,13 @@ module QualityRecovery
       to_provider = Provider.provider_key_for_agent_type(to_agent_type)
       validate_agent_preference!(to_agent_type, to_provider)
 
-      provider = owner.providers.find_or_initialize_by(provider_key: to_provider, auth_type: "subscription")
-      provider.enabled_for_agent_runs = true
-      provider.save!
-      settings = owner.settings
-      settings.update!(
-        default_agent_provider: provider.routing_key,
-        default_agent_providers_by_goal: updated_goal_provider_preferences(settings, provider.routing_key, from_agent_type)
-      )
-
       {
-        status: "changed",
+        status: "recommended",
         preference_type: "agent",
         from_agent_type: from_agent_type,
         to_agent_type: to_agent_type,
-        to_provider_id: provider.id
+        to_provider: to_provider,
+        note: "Agent/provider change recommended. Apply it through project settings before resuming automatic work."
       }
     end
 
@@ -153,19 +145,6 @@ module QualityRecovery
       return if ProviderSupport.container_executable_provider_key?(provider_key)
 
       raise ArgumentError, "Agent type is not runnable in containers: #{agent_type}"
-    end
-
-    def updated_goal_provider_preferences(settings, to_identifier, from_agent_type)
-      return settings.default_agent_providers_by_goal if from_agent_type.blank?
-
-      from_provider = Provider.provider_key_for_agent_type(from_agent_type)
-      settings.default_agent_providers_by_goal.transform_values do |identifier|
-        provider_key_for_identifier(settings, identifier) == from_provider ? to_identifier : identifier
-      end
-    end
-
-    def provider_key_for_identifier(settings, identifier)
-      Provider.for_identifier(settings.user, identifier)&.provider_key || identifier
     end
 
     def execute_config_adjustment

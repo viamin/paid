@@ -41,6 +41,16 @@ RSpec.describe PromptEvolution::CreateVariants do
         expect(variant.parent_version).to eq(prompt.current_version)
         expect(variant.change_notes).to include("refinement")
       end
+
+      it "does not auto-resume a paused project until a variant is active" do
+        project = create(:project, quality_paused_at: 1.hour.ago)
+        scoped_prompt = create(:prompt, :for_account, :with_version, :requires_review, account: project.account)
+
+        described_class.call(prompt: scoped_prompt, mutations: [ mutation ], project: project)
+
+        expect(project.reload).to be_quality_paused
+        expect(project.quality_pause_events.resumes).to be_empty
+      end
     end
 
     context "when the prompt does NOT require review" do

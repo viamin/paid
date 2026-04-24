@@ -40,7 +40,7 @@ module PromptEvolution
       end
 
       auto_promote_first(variants) unless prompt.requires_review?
-      auto_resume_project(variants)
+      auto_resume_project(variants) unless prompt.requires_review?
       variants
     end
 
