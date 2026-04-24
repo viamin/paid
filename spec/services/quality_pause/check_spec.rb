@@ -175,6 +175,26 @@ RSpec.describe QualityPause::Check do
       expect(project.quality_recovery_actions.last.action_type).to eq("model_escalation")
     end
 
+    it "still escalates the model after repeated prompt evolution attempts hit the daily cap" do
+      3.times do |attempt|
+        create(:quality_recovery_action, :prompt_evolution, :evaluated,
+          project: project,
+          created_at: (attempt + 1).hours.ago,
+          executed_at: (attempt + 1).hours.ago,
+          quality_before: 0.3,
+          quality_after: 0.3)
+      end
+      create(:llm_model, tier: "mid")
+      create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ])
+
+      described_class.call(agent_run: agent_run)
+
+      project.reload
+      expect(project.quality_paused?).to be false
+      expect(project.model_preferences["quality_recovery_min_tier"]).to eq("mid")
+      expect(project.quality_recovery_actions.last.action_type).to eq("model_escalation")
+    end
+
     it "evaluates recovery against the breached metric rather than composite score" do
       create(:quality_threshold,
         account: project.account,

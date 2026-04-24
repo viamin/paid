@@ -18,7 +18,7 @@ RSpec.describe AbTest, "#complete!" do
     test
   end
 
-  it "marks prompt evolution executed from the A/B test start when an evolved variant wins" do
+  it "keeps prompt evolution executing until the winning prompt is actually promoted" do
     action = create(:quality_recovery_action, :prompt_evolution, :executing,
       executed_at: nil, result: { ab_test_id: ab_test.id })
     winner = ab_test.non_control_variants.first
@@ -26,12 +26,13 @@ RSpec.describe AbTest, "#complete!" do
     ab_test.complete!(winner: winner)
 
     action.reload
-    expect(action.status).to eq("executed")
-    expect(action.executed_at.to_i).to eq(ab_test.started_at.to_i)
+    expect(action.status).to eq("executing")
+    expect(action.executed_at).to be_nil
     expect(action.result).to include(
       "status" => "winner_found",
       "ab_test_id" => ab_test.id,
-      "winner_variant_id" => winner.id
+      "winner_variant_id" => winner.id,
+      "winner_prompt_version_id" => winner.prompt_version_id
     )
   end
 

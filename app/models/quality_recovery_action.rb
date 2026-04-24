@@ -24,6 +24,10 @@ class QualityRecoveryAction < ApplicationRecord
   scope :by_project, ->(project_id) { where(project_id: project_id) }
   scope :recent, -> { order(created_at: :desc) }
   scope :effective, -> { where(status: "evaluated").where("quality_after > quality_before") }
+  scope :for_ab_test, ->(ab_test_id) { where("result @> ?", { ab_test_id: ab_test_id }.to_json) }
+  scope :for_prompt_version_rollout, ->(prompt_version_id) do
+    where("result ->> 'winner_prompt_version_id' = ?", prompt_version_id.to_s)
+  end
 
   def effective?
     quality_before.present? && quality_after.present? && quality_after > quality_before
@@ -50,5 +54,9 @@ class QualityRecoveryAction < ApplicationRecord
 
   def fail!(error_data = {})
     update!(status: "failed", result: result.merge(error: error_data))
+  end
+
+  def merge_result!(result_data)
+    update!(result: result.merge(result_data))
   end
 end

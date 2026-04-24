@@ -57,7 +57,7 @@ module QualityRecovery
     end
 
     def start_prompt_evolution
-      return pause_project if cooldown_exhausted?
+      return pause_project if prompt_evolution_cooldown_exhausted?
 
       prompt = recovery_prompt
       return escalate_model unless prompt
@@ -80,8 +80,6 @@ module QualityRecovery
     end
 
     def escalate_model
-      return pause_project if cooldown_exhausted?
-
       from_tier = current_tier
       to_tier = next_tier(from_tier)
       return pause_project unless to_tier
@@ -237,7 +235,7 @@ module QualityRecovery
       breach.fetch(:threshold).metric_type
     end
 
-    def cooldown_exhausted?
+    def prompt_evolution_cooldown_exhausted?
       project.quality_recovery_actions
         .where(action_type: "prompt_evolution", created_at: 24.hours.ago..)
         .count >= MAX_CYCLES_PER_DAY

@@ -28,17 +28,19 @@ module PromptReviews
       validate!
 
       prompt = prompt_version.prompt
+      approved_at = Time.current
       prompt.with_lock do
         raise ArgumentError, "prompt version is no longer pending review" unless prompt_version.reload.pending_review?
 
         prompt_version.update!(
           review_status: "approved",
           reviewed_by_user: reviewer,
-          reviewed_at: Time.current,
+          reviewed_at: approved_at,
           review_notes: notes
         )
         prompt.update!(current_version: prompt_version) if promote
       end
+      complete_recovery_action!(approved_at) if promote
       prompt_version
     end
 
@@ -47,6 +49,17 @@ module PromptReviews
     def validate!
       raise ArgumentError, "reviewer is required" unless reviewer
       raise ArgumentError, "prompt version is not pending review" unless prompt_version.pending_review?
+    end
+
+    def complete_recovery_action!(approved_at)
+      recovery_action = QualityRecoveryAction
+        .where(project: prompt_version.prompt.project, action_type: "prompt_evolution", status: "executing")
+        .for_prompt_version_rollout(prompt_version.id)
+        .order(created_at: :desc)
+        .first
+      return unless recovery_action
+
+      recovery_action.complete!(recovery_action.result, executed_at: approved_at)
     end
   end
 end

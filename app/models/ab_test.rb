@@ -186,7 +186,7 @@ class AbTest < ApplicationRecord
   def record_quality_recovery_outcome!
     recovery_actions.find_each do |action|
       if evolved_winner?
-        action.complete!(quality_recovery_result, executed_at: started_at || completed_at)
+        action.merge_result!(quality_recovery_result)
       else
         action.update!(status: "failed", result: quality_recovery_result)
       end
@@ -200,7 +200,7 @@ class AbTest < ApplicationRecord
   def recovery_actions
     QualityRecoveryAction
       .where(action_type: "prompt_evolution", status: "executing")
-      .where("result @> ?", { ab_test_id: id }.to_json)
+      .for_ab_test(id)
   end
 
   def quality_recovery_result
