@@ -10,6 +10,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
   && apt-get install -y nodejs
 
 # Install system dependencies
+# Keep client tools on the same Postgres major as the pinned server image.
 # Use CloudFront mirror to avoid Fastly CDN connection drops in OrbStack
 RUN set -e; \
   sources_modified=0; \
@@ -24,7 +25,7 @@ RUN set -e; \
   fi; \
   echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80-retries \
   && apt-get update -qq \
-  && apt-get install -y build-essential cmake shellcheck tmux libpq-dev postgresql-client \
+  && apt-get install -y build-essential cmake shellcheck tmux libpq-dev postgresql-client-16 \
   && rm -rf /var/lib/apt/lists/*
 
 # Install chromium separately for better layer caching (updates more frequently)
