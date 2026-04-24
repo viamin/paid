@@ -27,27 +27,31 @@ module Projects
     end
 
     def upsert_threshold(row)
+      metric_type = row["metric_type"].to_s
+      goal_type = row["goal_type"].to_s
+      return if metric_type.blank? || goal_type.blank?
+
       return unless QualityThreshold.configurable?(
         project: @project,
-        metric_type: row.fetch("metric_type"),
-        goal_type: row.fetch("goal_type")
+        metric_type: metric_type,
+        goal_type: goal_type
       )
 
       existing = QualityThreshold.override_for(
         project: @project,
-        metric_type: row.fetch("metric_type"),
-        goal_type: row.fetch("goal_type")
+        metric_type: metric_type,
+        goal_type: goal_type
       )
 
       return existing&.destroy! unless truthy?(row["override"])
 
       threshold = existing || @project.quality_thresholds.build(
         account: @project.account,
-        metric_type: row.fetch("metric_type"),
-        goal_type: row.fetch("goal_type")
+        metric_type: metric_type,
+        goal_type: goal_type
       )
       threshold.update!(
-        min_value: row.fetch("min_value"),
+        min_value: row["min_value"],
         enabled: truthy?(row["enabled"])
       )
     end

@@ -15,6 +15,27 @@ RSpec.describe AgentRuns::CleanupStale do
       expect(stale_run.error_message).to eq("Manual stale run cleanup: exceeded running timeout")
     end
 
+    it "does not run timeout side effects when a stale running run was already finished" do
+      stale_run = create(:agent_run, :running, project: project, started_at: AgentRun.stale_running_cutoff - 1.minute)
+      stale_run.issue.update!(paid_state: "in_progress")
+
+      allow(stale_run).to receive(:timeout!) do
+        stale_run.update!(
+          status: "timeout",
+          completed_at: Time.current,
+          error_message: "#{AgentRun::STALE_DETECTOR_ERROR_PREFIX}: stuck in 'running' beyond timeout threshold"
+        )
+        false
+      end
+      relation = instance_double(ActiveRecord::Relation)
+      allow(project.agent_runs).to receive(:stale_for_cleanup).and_return(relation)
+      allow(relation).to receive(:find_each).and_yield(stale_run)
+
+      expect(described_class.call(project: project)).to eq(0)
+      expect(stale_run.issue.reload.paid_state).to eq("in_progress")
+      expect(stale_run.agent_run_logs.pluck(:content)).not_to include("Run marked as timed out by manual stale run cleanup")
+    end
+
     it "requeues stale pending runs for the project" do
       stale_run = create(:agent_run, status: "pending", project: project)
       stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
@@ -36,6 +57,28 @@ RSpec.describe AgentRuns::CleanupStale do
 
       expect(stale_run.reload.status).to eq("timeout")
       expect(stale_run.error_message).to eq("Manual stale run cleanup: exceeded pending requeue limit")
+    end
+
+    it "does not run timeout side effects when a stale pending run was already finished" do
+      stale_run = create(:agent_run, status: "pending", project: project, stale_requeue_count: AgentRun::MAX_STALE_REQUEUES)
+      stale_run.issue.update!(paid_state: "in_progress")
+      stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+
+      allow(stale_run).to receive(:timeout!) do
+        stale_run.update!(
+          status: "timeout",
+          completed_at: Time.current,
+          error_message: "#{AgentRun::STALE_DETECTOR_ERROR_PREFIX}: stuck in 'pending' beyond timeout threshold"
+        )
+        false
+      end
+      relation = instance_double(ActiveRecord::Relation)
+      allow(project.agent_runs).to receive(:stale_for_cleanup).and_return(relation)
+      allow(relation).to receive(:find_each).and_yield(stale_run)
+
+      expect(described_class.call(project: project)).to eq(0)
+      expect(stale_run.issue.reload.paid_state).to eq("in_progress")
+      expect(stale_run.agent_run_logs.pluck(:content)).not_to include("Stale pending run marked as timed out by manual stale run cleanup")
     end
 
     it "leaves fresh or non-stale runs untouched" do

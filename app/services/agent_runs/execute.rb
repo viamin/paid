@@ -150,7 +150,8 @@ module AgentRuns
 
     def handle_timeout(error)
       effective_timeout = timeout || AgentHarness.configuration.default_timeout
-      agent_run.timeout!
+      return Result.new(success: false, error: error) unless agent_run.timeout!
+
       agent_run.update!(error_message: "Agent execution timed out after #{effective_timeout} seconds")
       agent_run.log!("system", "Execution timed out")
 

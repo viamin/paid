@@ -1,7 +1,8 @@
-web: bin/rails server -b 0.0.0.0
+web: GOOD_JOB_EXECUTION_MODE=external bin/rails server -b 0.0.0.0
 js: yarn build --watch
 css: yarn build:css --watch
+jobs: GOOD_JOB_EXECUTION_MODE=external bin/jobs start
 worker: bin/temporal_worker
 
 # Connect to a running process by running `overmind connect <process name>`
-# e.g. `overmind connect web` or `overmind connect worker`
+# e.g. `overmind connect web`, `overmind connect jobs`, or `overmind connect worker`

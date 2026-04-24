@@ -18,7 +18,7 @@ RSpec.describe StaleRunDetectorJob do
 
       stale_run.reload
       expect(stale_run.status).to eq("timeout")
-      expect(stale_run.error_message).to include("Stale run detected")
+      expect(stale_run.error_message).to start_with(AgentRun::STALE_DETECTOR_ERROR_PREFIX)
       expect(stale_run.completed_at).to be_present
     end
 
@@ -171,7 +171,7 @@ RSpec.describe StaleRunDetectorJob do
 
         stale_run.reload
         expect(stale_run.status).to eq("timeout")
-        expect(stale_run.error_message).to include("Stale run detected")
+        expect(stale_run.error_message).to start_with(AgentRun::STALE_DETECTOR_ERROR_PREFIX)
       end
 
       it "does not touch pending runs within the threshold" do
@@ -384,21 +384,22 @@ RSpec.describe StaleRunDetectorJob do
         expect(stale_run.stale_skip_count).to eq(described_class::MAX_STALE_SKIPS)
       end
 
-      it "times out a stale pending run when its workflow was never confirmed running" do
+      it "still cancels and requeues when only temporal_workflow_id is present" do
         stale_run = create(:agent_run, status: "pending",
           started_at: nil,
           temporal_workflow_id: "queued-1-2-123456")
         stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
 
-        temporal_client = double # rubocop:disable RSpec/VerifiedDoubles
-        allow(temporal_client).to receive(:workflow_handle)
+        handle = double(cancel: true) # rubocop:disable RSpec/VerifiedDoubles
+        temporal_client = double(workflow_handle: handle) # rubocop:disable RSpec/VerifiedDoubles
         allow(Paid).to receive(:temporal_client).and_return(temporal_client)
 
         described_class.perform_now
 
         stale_run.reload
-        expect(stale_run.status).to eq("timeout")
-        expect(temporal_client).not_to have_received(:workflow_handle)
+        expect(stale_run.status).to eq("queued")
+        expect(stale_run.temporal_workflow_id).to be_nil
+        expect(handle).to have_received(:cancel)
       end
 
       it "still requeues when Temporal workflow cancel fails with not-found" do
@@ -455,7 +456,7 @@ RSpec.describe StaleRunDetectorJob do
 
         stale_run.reload
         expect(stale_run.status).to eq("timeout")
-        expect(stale_run.error_message).to include("Stale run detected")
+        expect(stale_run.error_message).to start_with(AgentRun::STALE_DETECTOR_ERROR_PREFIX)
       end
 
       it "times out a stale time-limit paused run with zero iterations" do
@@ -470,7 +471,7 @@ RSpec.describe StaleRunDetectorJob do
         stale_run.reload
         expect(stale_run.status).to eq("timeout")
         expect(stale_run.stale_requeue_count).to eq(0)
-        expect(stale_run.error_message).to include("Stale run detected")
+        expect(stale_run.error_message).to start_with(AgentRun::STALE_DETECTOR_ERROR_PREFIX)
       end
 
       it "requeues a stale time-limit paused run that made progress" do

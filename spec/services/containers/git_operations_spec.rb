@@ -37,7 +37,7 @@ RSpec.describe Containers::GitOperations do
     it "clones the repository inside the container" do
       expect(container_service).to receive(:execute)
         .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
-              timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false)
+              timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
 
       git_ops.clone_and_setup_branch
@@ -56,7 +56,7 @@ RSpec.describe Containers::GitOperations do
 
       expect(container_service).to receive(:execute)
         .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
-              timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false)
+              timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
         .ordered
 
@@ -280,11 +280,11 @@ RSpec.describe Containers::GitOperations do
 
       expect(container_service).to receive(:execute)
         .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
-              timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false)
+              timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "fetch", "--depth", "1", "origin", "refs/heads/fix-bug-branch:refs/remotes/origin/fix-bug-branch" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "--depth", "1", "origin", "refs/heads/fix-bug-branch:refs/remotes/origin/fix-bug-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
 
       expect(container_service).to receive(:execute)
@@ -312,10 +312,10 @@ RSpec.describe Containers::GitOperations do
 
       expect(container_service).not_to receive(:execute)
         .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
-              timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false)
+              timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
 
       expect(container_service).not_to receive(:execute)
-        .with([ "git", "fetch", "--depth", "1", "origin", "refs/heads/fix-bug-branch:refs/remotes/origin/fix-bug-branch" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "--depth", "1", "origin", "refs/heads/fix-bug-branch:refs/remotes/origin/fix-bug-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
 
       git_ops.clone_and_checkout_branch(branch_name: "fix-bug-branch")
 
@@ -328,7 +328,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(failure_result)
 
       allow(container_service).to receive(:execute)
-        .with([ "git", "fetch", "--depth", "1", "origin", "refs/heads/nonexistent:refs/remotes/origin/nonexistent" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "--depth", "1", "origin", "refs/heads/nonexistent:refs/remotes/origin/nonexistent" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(failure_result)
 
       expect { git_ops.clone_and_checkout_branch(branch_name: "nonexistent") }
@@ -344,11 +344,11 @@ RSpec.describe Containers::GitOperations do
           .with([ "git", "switch", "--", "deleted-branch" ], timeout: nil, stream: false) { switch_returns.shift }
 
         allow(container_service).to receive(:execute)
-          .with([ "git", "fetch", "--depth", "1", "origin", "refs/heads/deleted-branch:refs/remotes/origin/deleted-branch" ], timeout: nil, stream: false)
+          .with([ "git", "fetch", "--depth", "1", "origin", "refs/heads/deleted-branch:refs/remotes/origin/deleted-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
           .and_return(failure_result)
 
         expect(container_service).to receive(:execute)
-          .with([ "git", "fetch", "origin", "refs/pull/42/head:deleted-branch" ], timeout: nil, stream: false)
+          .with([ "git", "fetch", "origin", "refs/pull/42/head:deleted-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
           .and_return(success_result)
 
         git_ops.clone_and_checkout_branch(branch_name: "deleted-branch", pull_request_number: 42)
@@ -362,11 +362,11 @@ RSpec.describe Containers::GitOperations do
           .and_return(failure_result)
 
         allow(container_service).to receive(:execute)
-          .with([ "git", "fetch", "--depth", "1", "origin", "refs/heads/deleted-branch:refs/remotes/origin/deleted-branch" ], timeout: nil, stream: false)
+          .with([ "git", "fetch", "--depth", "1", "origin", "refs/heads/deleted-branch:refs/remotes/origin/deleted-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
           .and_return(failure_result)
 
         allow(container_service).to receive(:execute)
-          .with([ "git", "fetch", "origin", "refs/pull/42/head:deleted-branch" ], timeout: nil, stream: false)
+          .with([ "git", "fetch", "origin", "refs/pull/42/head:deleted-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
           .and_return(failure_result)
 
         expect { git_ops.clone_and_checkout_branch(branch_name: "deleted-branch", pull_request_number: 42) }
@@ -407,7 +407,7 @@ RSpec.describe Containers::GitOperations do
       create(:worktree, project: project, agent_run: agent_run, branch_name: "paid/test-branch", status: "active")
 
       allow(container_service).to receive(:execute)
-        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch" ], timeout: 60, stream: false)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
 
       sha_result = Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0)
@@ -438,7 +438,7 @@ RSpec.describe Containers::GitOperations do
       agent_run.update!(source_pull_request_number: 42)
 
       allow(container_service).to receive(:execute)
-        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
 
       allow(container_service).to receive(:execute)
@@ -446,7 +446,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(Containers::Provision::Result.success(stdout: "#{remote_sha}\n", stderr: "", exit_code: 0))
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{remote_sha}" ], timeout: 60, stream: false)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{remote_sha}" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
 
       git_ops.push_branch
@@ -463,7 +463,7 @@ RSpec.describe Containers::GitOperations do
 
     it "does not fetch before pushing on new branches" do
       expect(container_service).not_to receive(:execute)
-        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
 
       git_ops.push_branch
     end
@@ -472,7 +472,7 @@ RSpec.describe Containers::GitOperations do
       agent_run.update!(source_pull_request_number: 42)
 
       allow(container_service).to receive(:execute)
-        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(failure_result)
 
       expect { git_ops.push_branch }.to raise_error(described_class::PushError, /Fetch failed/)
@@ -488,7 +488,7 @@ RSpec.describe Containers::GitOperations do
       )
 
       allow(container_service).to receive(:execute)
-        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
 
       allow(container_service).to receive(:execute)
@@ -505,7 +505,7 @@ RSpec.describe Containers::GitOperations do
       agent_run.update!(source_pull_request_number: 42)
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
         .ordered
 
@@ -515,7 +515,7 @@ RSpec.describe Containers::GitOperations do
         .ordered
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{remote_sha}" ], timeout: 60, stream: false)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{remote_sha}" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
         .ordered
 
@@ -600,7 +600,7 @@ RSpec.describe Containers::GitOperations do
       )
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch" ], timeout: 60, stream: false)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
         .ordered
         .and_return(branch_exists_result)
 
@@ -620,7 +620,7 @@ RSpec.describe Containers::GitOperations do
       )
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch" ], timeout: 60, stream: false)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
         .ordered
         .and_return(branch_exists_result)
 
@@ -634,7 +634,7 @@ RSpec.describe Containers::GitOperations do
 
     def expect_refresh_remote_branch(sha, ordered: false)
       receive_fetch = expect(container_service).to receive(:execute)
-        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
       receive_fetch = receive_fetch.ordered if ordered
 
@@ -646,7 +646,7 @@ RSpec.describe Containers::GitOperations do
 
     def expect_push_with_lease(sha, result, ordered: false)
       receive_push = expect(container_service).to receive(:execute)
-        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{sha}" ], timeout: 60, stream: false)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{sha}" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(result)
       receive_push.ordered if ordered
     end
@@ -1213,7 +1213,7 @@ RSpec.describe Containers::GitOperations do
   describe "#fetch_branch" do
     it "fetches the specified branch from origin" do
       expect(container_service).to receive(:execute)
-        .with([ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
 
       git_ops.fetch_branch("main")
@@ -1221,7 +1221,7 @@ RSpec.describe Containers::GitOperations do
 
     it "raises Error when fetch fails" do
       allow(container_service).to receive(:execute)
-        .with([ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(failure_result)
 
       expect { git_ops.fetch_branch("main") }.to raise_error(described_class::Error, /Fetch failed/)
@@ -1231,7 +1231,7 @@ RSpec.describe Containers::GitOperations do
   describe "#head_differs_from_remote_branch?" do
     it "returns true when HEAD differs from the remote branch" do
       allow(container_service).to receive(:execute)
-        .with([ "git", "fetch", "origin", "refs/heads/feature:refs/remotes/origin/feature" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "origin", "refs/heads/feature:refs/remotes/origin/feature" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
       allow(container_service).to receive(:execute)
         .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
@@ -1246,7 +1246,7 @@ RSpec.describe Containers::GitOperations do
     it "returns false when HEAD matches the remote branch" do
       sha = Containers::Provision::Result.success(stdout: "same-sha\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)
-        .with([ "git", "fetch", "origin", "refs/heads/feature:refs/remotes/origin/feature" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "origin", "refs/heads/feature:refs/remotes/origin/feature" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
       allow(container_service).to receive(:execute)
         .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
@@ -1269,11 +1269,11 @@ RSpec.describe Containers::GitOperations do
         .and_return(shallow_true_result)
 
       allow(container_service).to receive(:execute)
-        .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false)
+        .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
 
       allow(container_service).to receive(:execute)
-        .with([ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(fetch_result)
     end
 
@@ -1295,12 +1295,12 @@ RSpec.describe Containers::GitOperations do
           .ordered
 
         expect(container_service).to receive(:execute)
-          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
           .and_return(success_result)
           .ordered
 
         expect(container_service).to receive(:execute)
-          .with([ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ], timeout: nil, stream: false)
+          .with([ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
           .and_return(success_result)
           .ordered
 
@@ -1394,7 +1394,7 @@ RSpec.describe Containers::GitOperations do
 
       it "skips unshallow and proceeds with rebase" do
         expect(container_service).not_to receive(:execute)
-          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
 
         expect(git_ops.rebase_onto("main")).to be true
       end
@@ -1403,7 +1403,7 @@ RSpec.describe Containers::GitOperations do
     context "when unshallow fails" do
       before do
         allow(container_service).to receive(:execute)
-          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
           .and_return(failure_result)
       end
 

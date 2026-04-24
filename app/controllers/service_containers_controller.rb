@@ -13,12 +13,12 @@ class ServiceContainersController < ApplicationController
   end
 
   def new
-    @service_container = ServiceContainer.new(status: "stopped")
+    @service_container = current_account.service_containers.build(status: "stopped")
     authorize @service_container
   end
 
   def create
-    @service_container = ServiceContainer.new(service_container_params)
+    @service_container = current_account.service_containers.build(service_container_params)
     @service_container.status = "stopped"
     authorize @service_container
 

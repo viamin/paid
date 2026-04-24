@@ -26,7 +26,7 @@ class ServiceContainerPolicy < ApplicationPolicy
       raise Pundit::NotAuthorizedError, "must be logged in" unless user
 
       if user.has_role?(:owner, user.account) || user.has_role?(:admin, user.account)
-        scope.all
+        scope.where(account: user.account)
       else
         scope.none
       end
@@ -36,6 +36,6 @@ class ServiceContainerPolicy < ApplicationPolicy
   private
 
   def account_for_record
-    user&.account
+    record.respond_to?(:account) ? record.account : user&.account
   end
 end

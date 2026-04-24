@@ -168,11 +168,6 @@ class StaleRunDetectorJob < ApplicationJob
 
       old_resources = captured_resources(agent_run)
 
-      if workflow_never_started?(agent_run)
-        log_skip(agent_run, "workflow_never_started")
-        return :exhausted
-      end
-
       unless cancel_temporal_workflow(agent_run, agent_run.temporal_workflow_id)
         return skip_after_cancel_failure(agent_run)
       end
@@ -200,10 +195,6 @@ class StaleRunDetectorJob < ApplicationJob
       service_environment: agent_run.service_environment&.dup,
       stale_requeue_count: agent_run.stale_requeue_count
     }
-  end
-
-  def workflow_never_started?(agent_run)
-    agent_run.temporal_workflow_id.present? && agent_run.started_at.nil?
   end
 
   def pending_requeue_policy
@@ -303,7 +294,12 @@ class StaleRunDetectorJob < ApplicationJob
 
       old_resources = captured_resources(agent_run)
 
-      agent_run.timeout!(error: "Stale run detected: stuck in '#{agent_run.status}' beyond timeout threshold")
+      agent_run.update!(
+        status: "timeout",
+        completed_at: Time.current,
+        error_message: "#{AgentRun::STALE_DETECTOR_ERROR_PREFIX}: stuck in '#{agent_run.status}' beyond timeout threshold",
+        duration_seconds: agent_run.duration
+      )
       agent_run.log!("system", "Run marked as timed out by stale run detector")
 
       if (issue = agent_run.issue)
