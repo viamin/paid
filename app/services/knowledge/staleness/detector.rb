@@ -10,14 +10,13 @@ module Knowledge
     # no clone needed, keeping detection fast (~100ms).
     class Detector
       # Minimum number of commits ahead of the last collected SHA to trigger
-      # staleness. With the default of 1, any single commit advance is enough.
-      # Set KNOWLEDGE_STALENESS_THRESHOLD=N to require N commits before
-      # re-collection (e.g., 5 means "at least 5 commits ahead").
+      # staleness. With the default of 3, small merges don't trigger re-collection.
+      # Set KNOWLEDGE_STALENESS_THRESHOLD=N to adjust (e.g., 1 for every commit).
       STALENESS_THRESHOLD = begin
-        val = Integer(ENV.fetch("KNOWLEDGE_STALENESS_THRESHOLD", "1"), exception: false)
+        val = Integer(ENV.fetch("KNOWLEDGE_STALENESS_THRESHOLD", "3"), exception: false)
         if val.nil? || val < 1
-          Rails.logger&.warn("[Knowledge::Staleness::Detector] Invalid KNOWLEDGE_STALENESS_THRESHOLD=#{ENV["KNOWLEDGE_STALENESS_THRESHOLD"].inspect}; using default of 1")
-          1
+          Rails.logger&.warn("[Knowledge::Staleness::Detector] Invalid KNOWLEDGE_STALENESS_THRESHOLD=#{ENV["KNOWLEDGE_STALENESS_THRESHOLD"].inspect}; using default of 3")
+          3
         else
           val
         end
