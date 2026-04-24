@@ -31,8 +31,6 @@ module Activities
         return TenantContext.with(account, &block) if account
 
         TenantContext.with_system_access(&block)
-      ensure
-        TenantContext.clear!
       end
 
       def tenant_account_from(input)
@@ -81,11 +79,20 @@ module Activities
           ActiveRecord::Base.respond_to?(:connection_pool)
         return block.call unless pool
 
-        begin
-          block.call
-        ensure
-          pool.release_connection if pool.respond_to?(:active_connection?) && pool.active_connection?
-        end
+        block.call
+      ensure
+        restore_outer_tenant_context!(pool) if pool
+      end
+
+      def restore_outer_tenant_context!(pool)
+        return unless pool.respond_to?(:active_connection?) && pool.active_connection?
+
+        restore_account = Current.account if defined?(Current)
+        restore_bypass = TenantContext.bypass_enabled? if defined?(TenantContext)
+        pool.release_connection
+        return unless restore_account || restore_bypass
+
+        TenantContext.restore!(account: restore_account, bypass: restore_bypass)
       end
     end
 

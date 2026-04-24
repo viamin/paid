@@ -17,7 +17,7 @@ module Api
       github_token = @agent_run.project.github_token
 
       unless github_token&.active?
-        render plain: "", status: :service_unavailable
+        render json: { error: "Project GitHub token is missing or inactive" }, status: :forbidden
         return
       end
 
