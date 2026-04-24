@@ -872,19 +872,24 @@ module Activities
     end
 
     def track_harness_tokens(agent_run, provider_candidate, provider_key, user, result, execution_started_at)
-      response = parse_harness_response(provider_candidate, provider_key, user, result, execution_started_at)
+      response =
+        begin
+          parse_harness_response(provider_candidate, provider_key, user, result, execution_started_at)
+        rescue => e
+          logger.warn(
+            message: "agent_execution.token_usage_parse_failed",
+            agent_run_id: agent_run.id,
+            provider: provider_key.to_s,
+            error_class: e.class.name,
+            error: e.message
+          )
+          return
+        end
+
       AgentRuns::TrackHarnessTokens.call(
         agent_run: agent_run,
         response: response,
         proxy_scope: token_usage_scope_for_attempt(agent_run, execution_started_at)
-      )
-    rescue => e
-      logger.warn(
-        message: "agent_execution.token_usage_parse_failed",
-        agent_run_id: agent_run.id,
-        provider: provider_key.to_s,
-        error_class: e.class.name,
-        error: e.message
       )
     end
 

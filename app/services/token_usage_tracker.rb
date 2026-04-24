@@ -24,7 +24,7 @@ class TokenUsageTracker
     request_type  = usage.fetch(:request_type, nil).presence || default_request_type_for(tracked_run)
     metadata      = usage.fetch(:metadata, nil).presence || {}
     cost_cents    = calculate_cost(tokens_input, tokens_output, llm_model: llm_model)
-    resolved_hard_limit = tracked_run.effective_max_tokens_per_run if update_aggregates && enforce_guardrails
+    resolved_hard_limit = tracked_run.effective_max_tokens_per_run if update_aggregates
 
     ActiveRecord::Base.transaction do
       record_per_request_usage(
@@ -41,7 +41,7 @@ class TokenUsageTracker
       if update_aggregates
         tracked_run.with_lock do
           update_run_aggregates(tracked_run, tokens_input:, tokens_output:, cost_cents:)
-          apply_token_limit_status(tracked_run, hard_limit: resolved_hard_limit) if enforce_guardrails
+          apply_token_limit_status(tracked_run, hard_limit: resolved_hard_limit)
           tracked_run.save!
         end
 

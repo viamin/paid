@@ -277,13 +277,13 @@ RSpec.describe TokenUsageTracker do
       expect(agent_run.reload.token_limit_status).to be_nil
     end
 
-    it "does not check limits when guardrail enforcement is disabled" do
+    it "still checks limits when guardrail enforcement is disabled" do
       described_class.track(
         agent_run: agent_run,
         usage: { tokens_input: 7000, tokens_output: 4000 },
         enforce_guardrails: false
       )
-      expect(agent_run.reload.token_limit_status).to be_nil
+      expect(agent_run.reload.token_limit_status).to eq("exceeded")
     end
 
     it "transitions from warning to exceeded as usage grows" do

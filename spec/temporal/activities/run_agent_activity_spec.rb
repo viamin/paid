@@ -910,6 +910,37 @@ RSpec.describe Activities::RunAgentActivity do
           expect(agent_run.tokens_output).to eq(300)
         end
 
+        it "logs and skips token tracking when harness parsing fails" do
+          logger = instance_double(ActiveSupport::Logger, warn: nil, error: nil, info: nil)
+
+          allow(activity).to receive(:logger).and_return(logger)
+          allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+          allow(activity).to receive(:parse_harness_response).and_raise(JSON::ParserError, "bad output")
+
+          result = activity.execute(agent_run_id: agent_run.id)
+
+          expect(result[:success]).to be true
+          expect(agent_run.token_usages).to be_empty
+          expect(logger).to have_received(:warn).with(
+            hash_including(
+              message: "agent_execution.token_usage_parse_failed",
+              agent_run_id: agent_run.id,
+              provider: "kilocode",
+              error_class: "JSON::ParserError",
+              error: "bad output"
+            )
+          )
+        end
+
+        it "raises when token usage persistence fails after parsing succeeds" do
+          allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+          allow(AgentRuns::TrackHarnessTokens).to receive(:call).and_raise(ActiveRecord::RecordInvalid.new(agent_run))
+
+          expect {
+            activity.execute(agent_run_id: agent_run.id)
+          }.to raise_error(ActiveRecord::RecordInvalid)
+        end
+
         it "does not subtract proxy usage from previous failed provider attempts" do
           TokenUsage.create!(
             agent_run: agent_run,
