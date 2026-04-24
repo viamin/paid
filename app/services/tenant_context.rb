@@ -8,10 +8,27 @@ class TenantContext
       set_config("paid.bypass_tenant_rls", false)
     end
 
+    def apply_system_access!
+      Current.account = nil
+      set_config("paid.current_account_id", nil)
+      set_config("paid.bypass_tenant_rls", true)
+    end
+
     def clear!
       Current.account = nil
       set_config("paid.current_account_id", nil)
       set_config("paid.bypass_tenant_rls", false)
+    end
+
+    def bypass_enabled?
+      ActiveModel::Type::Boolean.new.cast(current_setting("paid.bypass_tenant_rls"))
+    end
+
+    def restore!(account:, bypass:)
+      return apply_system_access! if ActiveModel::Type::Boolean.new.cast(bypass)
+      return apply!(account) if account
+
+      clear!
     end
 
     def with(account)
@@ -32,9 +49,7 @@ class TenantContext
       previous_account_id = current_setting("paid.current_account_id")
       previous_bypass = current_setting("paid.bypass_tenant_rls")
 
-      Current.account = nil
-      set_config("paid.current_account_id", nil)
-      set_config("paid.bypass_tenant_rls", true)
+      apply_system_access!
       yield
     ensure
       Current.account = previous_account

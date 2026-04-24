@@ -96,12 +96,22 @@ RSpec.describe Activities::RebaseBranchActivity do
           .and_return(Containers::Provision::Result.success(stdout: "true\n", stderr: "", exit_code: 0))
 
         allow(container_service).to receive(:execute)
-          .with([ "git", "fetch", "--unshallow" ], timeout: Containers::GitOperations::DEFAULT_CLONE_TIMEOUT, stream: false)
+          .with(
+            [ "git", "fetch", "--unshallow" ],
+            timeout: Containers::GitOperations::DEFAULT_CLONE_TIMEOUT,
+            stream: false,
+            env: Containers::GitOperations::NETWORK_GIT_ENV
+          )
           .and_return(success_result)
 
         # fetch succeeds
         allow(container_service).to receive(:execute)
-          .with([ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ], timeout: nil, stream: false)
+          .with(
+            [ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ],
+            timeout: nil,
+            stream: false,
+            env: Containers::GitOperations::NETWORK_GIT_ENV
+          )
           .and_return(success_result)
 
         # rebase fails with conflict

@@ -22,8 +22,6 @@ class ApplicationJob < ActiveJob::Base
     return TenantContext.with(account, &block) if account
 
     TenantContext.with_system_access(&block)
-  ensure
-    TenantContext.clear!
   end
 
   def tenant_account

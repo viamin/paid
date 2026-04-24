@@ -105,10 +105,11 @@ RSpec.describe "Api::GitCredentials" do
         github_token.update!(revoked_at: Time.current)
       end
 
-      it "returns service unavailable" do
+      it "returns forbidden with a configuration error" do
         get "/api/proxy/git-credentials", headers: valid_headers
 
-        expect(response).to have_http_status(:service_unavailable)
+        expect(response).to have_http_status(:forbidden)
+        expect(response.parsed_body).to eq("error" => "Project GitHub token is missing or inactive")
       end
     end
   end

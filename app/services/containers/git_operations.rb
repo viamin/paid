@@ -25,6 +25,11 @@ module Containers
     # Runtime code resolves per-user values via UserSetting.
     DEFAULT_CLONE_TIMEOUT = 600
     DEFAULT_PUSH_TIMEOUT = 60
+    NETWORK_GIT_ENV = {
+      # Disable interactive auth fallback so proxy/credential failures surface
+      # clearly instead of ending with a misleading username prompt.
+      "GIT_TERMINAL_PROMPT" => "0"
+    }.freeze
 
     # Marker comment embedded in all Paid-installed git hooks. Used as a
     # grep guard so Temporal retries don't install duplicate hooks.
@@ -560,7 +565,7 @@ module Containers
     # @return [void]
     # @raise [Error] when the fetch fails
     def fetch_branch(branch)
-      result = execute_git(
+      result = execute_network_git(
         "fetch",
         "origin",
         "refs/heads/#{branch}:refs/remotes/origin/#{branch}"
@@ -639,7 +644,7 @@ module Containers
     end
 
     def push_new_branch
-      result = execute_git("push", "--no-verify", "origin", agent_run.branch_name, timeout: push_timeout)
+      result = execute_network_git("push", "--no-verify", "origin", agent_run.branch_name, timeout: push_timeout)
       return result unless branch_exists_rejection?(result)
 
       recover_existing_new_branch_push(result)
@@ -676,7 +681,7 @@ module Containers
       # --no-verify skips any pre-push hooks. The push is a system operation
       # that runs after the agent has exited — quality was already enforced
       # by the pre-commit hook during agent execution.
-      execute_git(
+      execute_network_git(
         "push",
         "--no-verify",
         "origin",
@@ -738,7 +743,7 @@ module Containers
       check = execute_git("rev-parse", "--is-shallow-repository")
       return if check.success? && check[:stdout].to_s.strip == "false"
 
-      result = execute_git("fetch", "--unshallow", timeout: clone_timeout)
+      result = execute_network_git("fetch", "--unshallow", timeout: clone_timeout)
       return if result.success?
 
       raise Error, "Failed to unshallow repository: #{error_with_stderr(result)}"
@@ -776,7 +781,7 @@ module Containers
       attempt = 0
       loop do
         attempt += 1
-        result = execute_git("clone", "--depth", "1", url, ".", timeout: clone_timeout)
+        result = execute_network_git("clone", "--depth", "1", url, ".", timeout: clone_timeout)
         return if result.success?
 
         stderr = result[:stderr].to_s
@@ -834,7 +839,7 @@ module Containers
       # branch shallowly into refs/remotes/origin/<branch>, then create/reset
       # the local branch from that explicit remote-tracking ref.
       remote_ref = "refs/remotes/origin/#{branch_name}"
-      fetch_result = execute_git(
+      fetch_result = execute_network_git(
         "fetch",
         "--depth",
         "1",
@@ -856,7 +861,7 @@ module Containers
 
       raise CloneError, "Checkout failed (#{checkout_detail})" unless pull_request_number
 
-      pr_fetch = execute_git("fetch", "origin", "refs/pull/#{pull_request_number}/head:#{branch_name}")
+      pr_fetch = execute_network_git("fetch", "origin", "refs/pull/#{pull_request_number}/head:#{branch_name}")
       if pr_fetch.failure?
         raise CloneError,
           "Branch checkout failed; PR ref fetch also failed (#{checkout_detail}; " \
@@ -1215,6 +1220,11 @@ module Containers
     def execute_git(*args, timeout: nil)
       cmd = [ "git" ] + args
       container_service.execute(cmd, timeout: timeout, stream: false)
+    end
+
+    def execute_network_git(*args, timeout: nil)
+      cmd = [ "git" ] + args
+      container_service.execute(cmd, timeout: timeout, stream: false, env: NETWORK_GIT_ENV)
     end
 
     def user_settings

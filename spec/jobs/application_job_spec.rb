@@ -28,4 +28,31 @@ RSpec.describe ApplicationJob do
       expect(job.send(:tenant_account)).to eq(account)
     end
   end
+
+  describe "tenant context restoration" do
+    let(:job_class) do
+      Class.new(described_class) do
+        def perform
+        end
+      end
+    end
+
+    let(:job) do
+      stub_const("TenantContextRestorationJob", job_class)
+      TenantContextRestorationJob
+    end
+
+    it "preserves outer system access after perform_now" do
+      TenantContext.with_system_access do
+        job.perform_now
+
+        expect(current_bypass_setting).to eq("true")
+        expect { create(:account) }.not_to raise_error
+      end
+    end
+  end
+
+  def current_bypass_setting
+    ActiveRecord::Base.connection.select_value("SELECT current_setting('paid.bypass_tenant_rls', true)")
+  end
 end
