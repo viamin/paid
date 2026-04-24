@@ -117,6 +117,8 @@ docker compose up --build
 
 Open in VS Code with the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension, or use GitHub Codespaces. The `.devcontainer/` configuration provides a complete development environment.
 
+The checked-in devcontainer also applies conservative `TEMPORAL_*`, `GOOD_JOB_*`, and `DB_POOL` defaults so `bin/dev` stays stable under normal development load.
+
 #### Enable Commit Signing in Dev Container
 
 If commit signing is not configured automatically, run:
