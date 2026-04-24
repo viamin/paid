@@ -71,6 +71,12 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-020](RDR-020-service-container-architecture.md) | Service Container Architecture | Implemented | High |
 
+### Interactive Chat
+
+| RDR | Title | Status | Priority |
+|-----|-------|--------|----------|
+| [RDR-028](RDR-028-interactive-chat.md) | Interactive Chat for Agent-Driven Development | Draft | High |
+
 ### Scaling & Distribution
 
 | RDR | Title | Status | Priority |
