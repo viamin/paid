@@ -190,9 +190,39 @@ ensure_on_main() {
   fi
 }
 
+PULL_CHANGED_FILES=""
+
 pull_latest() {
+  local pre_head
+  pre_head="$(git rev-parse HEAD)"
+
   log "Pulling latest changes from main..."
   git pull --ff-only origin main
+
+  local post_head
+  post_head="$(git rev-parse HEAD)"
+
+  if [ "$pre_head" != "$post_head" ]; then
+    PULL_CHANGED_FILES="$(git diff --name-only "$pre_head" "$post_head")"
+    if [ -n "$PULL_CHANGED_FILES" ]; then
+      local csv
+      csv="$(newline_list_to_csv "$PULL_CHANGED_FILES")"
+      log "Files changed in pull: $csv"
+    fi
+  fi
+}
+
+restart_required_from_pull() {
+  local file
+
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    if restart_required_for_file "$file"; then
+      return 0
+    fi
+  done <<< "$PULL_CHANGED_FILES"
+
+  return 1
 }
 
 stop_overmind() {
@@ -333,7 +363,20 @@ case "$MODE" in
     log "Starting lightweight update..."
     ensure_on_main
     pull_latest
-    log "Lightweight update complete. Rails will autoload changes."
+    if restart_required_from_pull; then
+      log "Pull included restart-worthy files outside the trigger context; upgrading to full restart."
+      stop_overmind
+      if ! run_setup; then
+        recover_dev_if_needed
+        fail "Full restart aborted because bin/setup --skip-server failed."
+      fi
+      if ! start_dev; then
+        fail "Full restart completed setup but failed to restore a healthy Overmind session."
+      fi
+      log "Full restart update complete."
+    else
+      log "Lightweight update complete. Rails will autoload changes."
+    fi
     ;;
   --full)
     configure_logging

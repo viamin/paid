@@ -220,6 +220,52 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "upgrades lightweight to full restart when pull brings in restart-worthy files" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      diff_files = %w[app/models/user.rb config/initializers/temporal.rb]
+      script_path = prepare_script_fixture(dir, pull_diff_files: diff_files)
+      env = trigger_context_env(dir,
+        "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
+        "DEV_UPDATE_CHANGED_FILES" => "app/models/user.rb")
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("upgrading to full restart")
+      expect(updater_log).to include("Full restart update complete.")
+      expect(updater_log).not_to include("Lightweight update complete.")
+    end
+  end
+
+  it "stays lightweight when pull brings in only autoloadable files" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, pull_diff_files: %w[
+        app/models/user.rb
+        app/services/foo.rb
+      ])
+
+      stdout, stderr, status = Open3.capture3(
+        trigger_context_env(dir,
+          "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
+          "DEV_UPDATE_CHANGED_FILES" => "app/models/user.rb"),
+        script_path,
+        "--lightweight",
+        chdir: dir
+      )
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(false)
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("Lightweight update complete.")
+      expect(updater_log).not_to include("upgrading to full restart")
+    end
+  end
+
   it "does not forward STARTUP_CLEANUP_KILL_ALL when unset during full restart" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, capture_kill_all_in_dev: true)
@@ -346,7 +392,8 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     start_overmind_running: false,
     dev_starts_overmind: true,
     capture_port_in_dev: false,
-    capture_kill_all_in_dev: false
+    capture_kill_all_in_dev: false,
+    pull_diff_files: []
   )
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
@@ -387,15 +434,34 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       BASH
     )
 
+    pull_diff_file = File.join(dir, "pull-diff-files")
+    File.write(pull_diff_file, pull_diff_files.join("\n"))
+
     write_executable(
       File.join(dir, "stubbin", "git"),
       <<~BASH
         #!/usr/bin/env bash
         case "$1" in
           rev-parse)
-            echo "main"
+            case "${2:-}" in
+              --abbrev-ref)
+                echo "main"
+                ;;
+              *)
+                if [ -f "#{dir}/pull-ran" ]; then
+                  echo "post-pull-sha"
+                else
+                  echo "pre-pull-sha"
+                fi
+                ;;
+            esac
             ;;
           pull)
+            touch "#{dir}/pull-ran"
+            exit 0
+            ;;
+          diff)
+            cat "#{pull_diff_file}" 2>/dev/null || true
             exit 0
             ;;
           *)
