@@ -129,7 +129,11 @@ unstash_dirty_tree() {
     local pop_output
     if ! pop_output="$(git stash pop 2>&1)"; then
       log_command_output "git stash pop" "$pop_output"
-      log "WARNING: git stash pop failed (conflict). Stashed changes preserved in git stash. Run 'git stash pop' manually."
+      # Abort on conflict — continuing with a conflicted tree would leave the
+      # repo in a broken state that downstream steps (bin/setup, restart) cannot
+      # recover from.  The stash entry is preserved so the user can resolve
+      # manually with `git stash pop`.
+      fail "git stash pop failed (conflict). Resolve manually with 'git stash pop'."
     else
       log_command_output "git stash pop" "$pop_output"
     fi
@@ -245,7 +249,11 @@ ensure_on_main() {
   current_branch="$(git rev-parse --abbrev-ref HEAD)"
 
   if [ "$current_branch" != "main" ]; then
-    stash_dirty_tree
+    # Refuse to switch branches with a dirty tree — stashing would carry
+    # feature-branch edits onto main when unstash_dirty_tree runs later.
+    if tree_is_dirty; then
+      fail "Working tree on '$current_branch' has uncommitted changes. Commit or stash them before running dev-update."
+    fi
     log "Switching to main branch (currently on $current_branch)..."
     git checkout main
   fi

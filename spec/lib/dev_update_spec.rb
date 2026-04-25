@@ -362,7 +362,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  it "logs git stash pop conflict output and warning when restoring auto-stashed changes fails" do
+  it "aborts with error when git stash pop conflicts during restore" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(
         dir,
@@ -375,9 +375,9 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
       updater_log = read_updater_log(dir)
 
-      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
       expect(updater_log).to include("git stash pop: CONFLICT (content): Merge conflict in bin/dev-update")
-      expect(updater_log).to include("WARNING: git stash pop failed (conflict). Stashed changes preserved in git stash. Run 'git stash pop' manually.")
+      expect(updater_log).to include("ERROR: git stash pop failed (conflict). Resolve manually with 'git stash pop'.")
     end
   end
 
