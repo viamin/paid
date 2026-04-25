@@ -60,12 +60,13 @@ module Prompts
     DEFAULT_MAX_COMMENTS = 20
     DEFAULT_MAX_COMMENT_LENGTH = 2000
 
-    attr_reader :issue, :project, :github_client
+    attr_reader :issue, :project, :github_client, :agent_run
 
-    def initialize(issue:, project:, github_client: nil)
+    def initialize(issue:, project:, github_client: nil, agent_run: nil)
       @issue = issue
       @project = project
       @github_client = github_client
+      @agent_run = agent_run
     end
 
     def self.call(...)
@@ -166,7 +167,7 @@ module Prompts
     end
 
     def inject_knowledge_context(prompt)
-      bundle = Knowledge::ContextBundle::Build.call(issue: issue, project: project)
+      bundle = Knowledge::ContextBundle::Build.call(issue: issue, project: project, agent_run: agent_run)
       return prompt if bundle[:content].blank?
 
       "#{prompt}\n#{bundle[:content]}\n"

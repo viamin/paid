@@ -42,7 +42,7 @@ module Activities
       existing_comment = enhancement_comment(comments)
       return complete_existing(agent_run, client, project, issue, existing_comment) if existing_comment && issue.enhance_issue_rounds.zero?
 
-      context = build_context(project, issue)
+      context = build_context(agent_run, project, issue)
       response = call_llm(agent_run, prompt_for(project, gh_issue, comments, context))
       parsed = parse_response!(agent_run, response)
       parsed = stop_after_max_rounds(parsed, project, issue)
@@ -121,9 +121,9 @@ module Activities
       agent_run.issue.update!(paid_state: paid_state) if agent_run.issue
     end
 
-    def build_context(project, issue)
+    def build_context(agent_run, project, issue)
       search = knowledge_search(project, issue)
-      bundle = context_bundle(project, issue)
+      bundle = context_bundle(agent_run, project, issue)
 
       {
         search_results: search[:results],
@@ -155,8 +155,8 @@ module Activities
       { results: [], meta: {} }
     end
 
-    def context_bundle(project, issue)
-      Knowledge::ContextBundle::Build.call(issue: issue, project: project)
+    def context_bundle(agent_run, project, issue)
+      Knowledge::ContextBundle::Build.call(issue: issue, project: project, agent_run: agent_run)
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e

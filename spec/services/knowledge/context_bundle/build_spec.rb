@@ -337,6 +337,90 @@ RSpec.describe Knowledge::ContextBundle::Build do
     ensure
       ENV["KNOWLEDGE_CONTEXT_TOKEN_BUDGET"] = original
     end
+
+    it "uses the assigned configuration experiment token budget" do
+      agent_run = create(:agent_run, project: project)
+      experiment = create(:configuration_experiment,
+        account: project.account,
+        status: "running",
+        config_key: "knowledge.token_budget",
+        control_value: JSON.generate(4000))
+      create(:configuration_experiment_variant,
+        configuration_experiment: experiment,
+        config_value: JSON.generate(40),
+        is_control: true)
+
+      result = described_class.new(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.token_budget).to eq(40)
+      expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run)).to be_present
+    end
+
+    it "uses the assigned configuration experiment section order" do
+      agent_run = create(:agent_run, project: project)
+      experiment = create(:configuration_experiment,
+        account: project.account,
+        status: "running",
+        config_key: "knowledge.section_order",
+        control_value: JSON.generate(%w[stats routes]))
+      create(:configuration_experiment_variant,
+        configuration_experiment: experiment,
+        config_value: JSON.generate(%w[stats routes]),
+        is_control: true)
+
+      result = described_class.new(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.section_order).to eq(%i[stats routes])
+    end
+
+    it "falls back to defaults when experiment lookup raises" do
+      agent_run = create(:agent_run, project: project)
+
+      allow(ConfigurationExperiment).to receive(:active_for)
+        .with("knowledge.token_budget", project: project, agent_run: agent_run)
+        .and_raise(ActiveRecord::StatementInvalid, "boom")
+      allow(ConfigurationExperiment).to receive(:active_for)
+        .with("knowledge.section_order", project: project, agent_run: agent_run)
+        .and_return(nil)
+      allow(Rails.logger).to receive(:warn)
+
+      result = described_class.new(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.token_budget).to eq(4000)
+      expect(result.section_order).to eq(described_class::SECTION_ORDER)
+      expect(Rails.logger).to have_received(:warn).with(
+        message: "prompt_evolution.experiment_lookup_failed",
+        config_key: "knowledge.token_budget",
+        error: "boom"
+      )
+    end
+
+    it "falls back to defaults when experiment variant parsing raises" do
+      agent_run = create(:agent_run, project: project)
+      experiment = instance_double(ConfigurationExperiment)
+      variant = instance_double(ConfigurationExperimentVariant)
+      assignment = instance_double(ConfigurationExperimentAssignment, configuration_experiment_variant: variant)
+      allow(ConfigurationExperiment).to receive(:active_for).and_return(nil)
+      allow(ConfigurationExperiment).to receive(:active_for)
+        .with("knowledge.token_budget", project: project, agent_run: agent_run).and_return(experiment)
+      allow(ConfigurationExperiment).to receive(:active_for)
+        .with("knowledge.section_order", project: project, agent_run: agent_run).and_return(nil)
+      allow(ConfigurationExperiments::Assign).to receive(:call)
+        .with(configuration_experiment: experiment, agent_run: agent_run).and_return(assignment)
+      allow(variant).to receive(:parsed_value).and_raise(JSON::ParserError, "unexpected token")
+      allow(Rails.logger).to receive(:warn)
+      result = described_class.new(issue: issue, project: project, agent_run: agent_run)
+      expect(result.token_budget).to eq(4000)
+      expect_experiment_lookup_warning("knowledge.token_budget", include("unexpected"))
+    end
+
+    def expect_experiment_lookup_warning(config_key, error)
+      expect(Rails.logger).to have_received(:warn).with(
+        message: "prompt_evolution.experiment_lookup_failed",
+        config_key: config_key,
+        error: error
+      )
+    end
   end
 
   describe "truncation skips oversized sections" do
