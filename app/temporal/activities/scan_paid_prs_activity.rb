@@ -55,6 +55,7 @@ module Activities
       unchanged_count = 0
       prs_to_trigger = []
       automation_results = []
+      pending_review_states = []
       paid_prs.each do |issue|
         if skip_unchanged_pr?(project, issue)
           if merge_conflict_rescan_needed?(project, issue)
@@ -62,6 +63,7 @@ module Activities
             if result && result != :skipped
               scanned_count += 1
               issue.update_column(:last_pr_scan_at, Time.current)
+              pending_review_states << pending_review_state(issue, result)
               collect_scan_result(issue, result, prs_to_trigger, automation_results,
                 explicit_pr_decisions:)
               next
@@ -78,6 +80,7 @@ module Activities
         next if result == :skipped
         scanned_count += 1
         issue.update_column(:last_pr_scan_at, Time.current)
+        pending_review_states << pending_review_state(issue, result)
         if result
           collect_scan_result(issue, result, prs_to_trigger, automation_results,
             explicit_pr_decisions:)
@@ -103,7 +106,12 @@ module Activities
         prs_triggered: explicit_pr_decisions ? automation_results.size : prs_to_trigger.size
       )
 
-      { prs_to_trigger: prs_to_trigger, automation_results: automation_results }
+      {
+        prs_to_trigger: prs_to_trigger,
+        automation_results: automation_results,
+        pr_issue_ids: paid_prs.map(&:id),
+        pending_review_states: pending_review_states.compact
+      }
     end
 
     private
@@ -114,6 +122,19 @@ module Activities
       else
         prs_to_trigger << result
       end
+    end
+
+    def pending_review_state(issue, result)
+      return unless result.is_a?(Hash)
+
+      trigger = Array(result[:triggers]).find { |entry| entry[:type] == "review_bot_review_pending" }
+
+      {
+        issue_id: issue.id,
+        pending_review: trigger.present?,
+        requested_bot: trigger&.dig(:request_login) || Array(trigger&.dig(:request_logins)).first,
+        pr_phase: issue.pr_review_phase
+      }.compact
     end
 
     def find_paid_prs(project)

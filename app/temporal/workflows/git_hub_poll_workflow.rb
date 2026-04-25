@@ -53,7 +53,11 @@ module Workflows
 
         record_poll_heartbeat(project_id)
 
-        maybe_run_non_critical_activities(project_id)
+        pr_scan_result = maybe_run_non_critical_activities(project_id)
+
+        run_notification_rules(project_id,
+          issue_ids: result[:issues].map { |issue| issue[:id] },
+          pr_scan_result: pr_scan_result)
 
         record_poll_heartbeat(project_id)
 
@@ -136,13 +140,14 @@ module Workflows
             project_id: project_id,
             rate_limit_remaining: rate_limit[:rate_limit_remaining]
           )
-          return
+          return nil
         end
       end
 
-      maybe_scan_paid_prs(project_id)
+      scan_result = maybe_scan_paid_prs(project_id)
       maybe_scan_code_scanning_alerts(project_id)
       maybe_check_knowledge_staleness(project_id)
+      scan_result
     end
 
     # Scan paid-generated PRs for follow-up work.
@@ -154,6 +159,7 @@ module Workflows
         { project_id: project_id }, timeout: 120)
 
       handle_pr_scan_results(scan_result, project_id)
+      scan_result
     end
 
     # Scan for CodeQL code scanning alerts and create synthetic issues.
@@ -183,6 +189,17 @@ module Workflows
         error_class: e.class.name,
         error: e.message
       )
+    end
+
+    def run_notification_rules(project_id, issue_ids:, pr_scan_result:)
+      return unless Temporalio::Workflow.patched("notification-rules-v1")
+
+      run_activity(Activities::EvaluateNotificationRulesActivity, {
+        project_id: project_id,
+        issue_ids: issue_ids,
+        pr_issue_ids: Array(pr_scan_result&.dig(:pr_issue_ids)),
+        pending_review_states: Array(pr_scan_result&.dig(:pending_review_states))
+      }, timeout: 60)
     end
 
     def handle_automation_result(result, project_id)
