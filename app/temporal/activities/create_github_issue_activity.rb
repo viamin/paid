@@ -108,14 +108,21 @@ module Activities
       # Try first markdown heading (any level) from agent output
       if summary.present?
         heading = summary[/^#+\s+(.+)$/, 1]&.sub(/\s*#+\s*$/, "")&.strip
-        return heading.truncate(Llm::GenerateIssueTitle::MAX_TITLE_LENGTH) if heading.present?
+        if heading.present?
+          @llm_generated_title = false
+          return heading.truncate(Llm::GenerateIssueTitle::MAX_TITLE_LENGTH)
+        end
       end
 
       # Fall back to LLM-generated title from agent output
       llm_title = Llm::GenerateIssueTitle.call(summary: summary)
-      return llm_title if llm_title.present?
+      if llm_title.present?
+        @llm_generated_title = true
+        return llm_title
+      end
 
       # Last resort
+      @llm_generated_title = false
       "Agent analysis"
     end
 
@@ -310,6 +317,8 @@ module Activities
       sync_issue_record(project, gh_issue)
       record_cross_repo_issue(agent_run, project.full_name, gh_issue, role: "downstream") if upstream_issue
 
+      record_issue_title_metric(project, gh_issue.number) if @llm_generated_title
+
       agent_run.log!("system", "Issue created: #{gh_issue.html_url}")
 
       logger.info(
@@ -326,6 +335,23 @@ module Activities
         message: "agent_execution.sync_created_issue_failed",
         project_id: project.id,
         issue_number: gh_issue.number,
+        error: e.message
+      )
+    end
+
+    def record_issue_title_metric(project, issue_number)
+      LlmOutputMetrics::Record.call(
+        project: project,
+        output_type: "issue_title",
+        prompt_slug: Llm::GenerateIssueTitle::PROMPT_SLUG,
+        source_type: "Issue",
+        source_id: issue_number
+      )
+    rescue StandardError => e
+      logger.warn(
+        message: "llm_output_metrics.record_issue_title_failed",
+        project_id: project.id,
+        issue_number: issue_number,
         error: e.message
       )
     end

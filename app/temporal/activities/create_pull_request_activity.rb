@@ -148,6 +148,10 @@ module Activities
           pull_request_url: pr.html_url
         )
       end
+
+      best_effort(agent_run_id, context: "record_pr_description_metric") do
+        record_pr_description_metric(project, pr.number)
+      end
     end
 
     def pr_title(issue)
@@ -443,6 +447,16 @@ module Activities
       pull_request.with_lock do
         pull_request.update!(labels: (pull_request.labels + labels).uniq)
       end
+    end
+
+    def record_pr_description_metric(project, pr_number)
+      LlmOutputMetrics::Record.call(
+        project: project,
+        output_type: "pr_description",
+        prompt_slug: Llm::GeneratePrDescription::PROMPT_SLUG,
+        source_type: "PullRequest",
+        source_id: pr_number
+      )
     end
   end
 end
