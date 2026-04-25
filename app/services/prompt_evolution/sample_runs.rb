@@ -23,12 +23,22 @@ module PromptEvolution
     MIN_RUNS_FOR_EVALUATION = 5
     MAX_RUNS_TO_FETCH = 10_000
 
-    attr_reader :sample_size, :days, :project_id, :random
+    attr_reader :sample_size, :days, :project_id, :prompt_id, :goal_type, :failure_only,
+      :metric_type, :threshold, :min_runs_for_evaluation, :random
 
-    def initialize(sample_size: DEFAULT_SAMPLE_SIZE, days: DEFAULT_DAYS, project_id: nil, random: Random.new)
+    def initialize(sample_size: DEFAULT_SAMPLE_SIZE, days: DEFAULT_DAYS, project_id: nil, prompt_id: nil,
+                   goal_type: nil, failure_only: false, metric_type: "composite_score",
+                   threshold: QUALITY_THRESHOLD, min_runs_for_evaluation: MIN_RUNS_FOR_EVALUATION,
+                   random: Random.new)
       @sample_size = sample_size
       @days = days
       @project_id = project_id
+      @prompt_id = prompt_id
+      @goal_type = goal_type
+      @failure_only = failure_only
+      @metric_type = metric_type.presence || "composite_score"
+      @threshold = threshold.to_f
+      @min_runs_for_evaluation = min_runs_for_evaluation
       @random = random
     end
 
@@ -37,7 +47,7 @@ module PromptEvolution
     end
 
     def sample
-      runs = fetch_completed_runs
+      runs = fetch_sampleable_runs
       sampled = stratified_sample(runs)
       samples = collect_sample_data(sampled)
       stats = calculate_prompt_stats(samples)
@@ -48,17 +58,30 @@ module PromptEvolution
 
     private
 
-    def fetch_completed_runs
+    def fetch_sampleable_runs
       scope = AgentRun
-        .completed
         .where(completed_at: days.days.ago..)
         .where.not(prompt_version_id: nil)
         .joins(:quality_metrics)
-        .merge(QualityMetric.automated.with_composite_score)
+        .merge(automated_metric_scope)
         .distinct
 
+      scope = failure_only ? scope.where(AgentRun.quality_scoreable_sql) : scope.completed
       scope = scope.where(project_id: project_id) if project_id
-      scope
+      scope = scope.joins(:prompt_version).where(prompt_versions: { prompt_id: prompt_id }) if prompt_id
+      scope = scope.where(goal: goal_type) if goal_type.present?
+      failure_only ? failing_runs(scope) : scope
+    end
+
+    def automated_metric_scope
+      scope = QualityMetric.automated
+      return scope if failure_only && metric_type != "composite_score"
+
+      scope.with_composite_score
+    end
+
+    def failing_runs(scope)
+      scope.merge(QualityMetric.below_threshold(metric_type, threshold))
     end
 
     def stratified_sample(runs)
@@ -105,6 +128,7 @@ module PromptEvolution
           project: run.project,
           goal: run.goal,
           composite_score: quality_metric&.composite_score&.to_f,
+          scores: quality_metric&.scores || {},
           cost_cents: run.cost_cents,
           tokens_input: run.tokens_input,
           tokens_output: run.tokens_output,
@@ -126,6 +150,8 @@ module PromptEvolution
           avg_score: scores.any? ? (scores.sum / scores.size).to_f : nil,
           min_score: scores.min,
           max_score: scores.max,
+          target_metric_type: metric_type,
+          target_avg_score: target_avg_score(version_samples),
           median_score: median(scores),
           avg_cost_cents: costs.any? ? (costs.sum.to_f / costs.size).round(2) : nil,
           avg_duration_seconds: durations.any? ? (durations.sum.to_f / durations.size).round(2) : nil,
@@ -136,11 +162,13 @@ module PromptEvolution
 
     def identify_evolution_candidates(stats)
       stats.filter_map do |_version_id, version_stats|
-        next if version_stats[:run_count] < MIN_RUNS_FOR_EVALUATION
-        next if version_stats[:avg_score].nil?
+        next if version_stats[:run_count] < min_runs_for_evaluation
+
+        target_avg_score = version_stats[:target_avg_score]
+        next if version_stats[:avg_score].nil? && target_avg_score.nil?
 
         reasons = []
-        if version_stats[:avg_score] < QUALITY_THRESHOLD
+        if version_stats[:avg_score] && version_stats[:avg_score] < QUALITY_THRESHOLD
           reasons << "avg quality score #{version_stats[:avg_score].round(4)} below threshold #{QUALITY_THRESHOLD}"
         end
 
@@ -149,6 +177,10 @@ module PromptEvolution
           if gstats[:avg_score] && gstats[:avg_score] < QUALITY_THRESHOLD
             reasons << "#{goal} avg score #{gstats[:avg_score].round(4)} below threshold"
           end
+        end
+
+        if failure_only && target_avg_score && target_avg_score < threshold
+          reasons << "#{metric_type} avg score #{target_avg_score.round(4)} below targeted threshold #{threshold}"
         end
 
         next if reasons.empty?
@@ -170,6 +202,17 @@ module PromptEvolution
           avg_score: scores.any? ? (scores.sum / scores.size).to_f : nil
         }
       end
+    end
+
+    def target_avg_score(samples)
+      scores = samples.filter_map { |sample| target_score(sample) }
+      scores.any? ? (scores.sum / scores.size).to_f : nil
+    end
+
+    def target_score(sample)
+      return sample[:composite_score] if metric_type == "composite_score"
+
+      sample[:scores]&.dig(metric_type)&.to_f
     end
 
     def median(values)
