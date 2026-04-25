@@ -106,6 +106,120 @@ RSpec.describe QualityPause::Check do
       expect(project.quality_recovery_actions.last.action_type).to eq("prompt_evolution")
     end
 
+    it "starts quality-triggered model escalation before pausing" do
+      mid_model = create(:llm_model, tier: "mid", capability_score: 7.0)
+      create(:llm_model, tier: "high", capability_score: 10.0)
+      create(:model_selection, agent_run: agent_run, llm_model: mid_model, tier: "mid")
+      create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ])
+
+      described_class.call(agent_run: agent_run)
+
+      project.reload
+      escalation = project.model_preferences["quality_triggered_escalation"]
+      expect(project.quality_paused?).to be false
+      expect(escalation).to include(
+        "status" => "active",
+        "trigger" => "quality_drop",
+        "from_tier" => "mid",
+        "to_tier" => "high"
+      )
+      expect(project.quality_recovery_actions.last.parameters).to include("trigger" => "quality_drop")
+    end
+
+    it "requests prompt evolution when escalated runs do not recover quality" do
+      allow(PromptEvolutionJob).to receive(:perform_later)
+      create(:llm_model, tier: "high", capability_score: 10.0)
+      request_model_escalation_recovery(project)
+      create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ], prompt_version: prompt_version)
+      create_escalated_metrics(project, scores: [ 0.2, 0.3, 0.1 ])
+
+      described_class.call(agent_run: agent_run)
+
+      escalation = project.reload.model_preferences["quality_triggered_escalation"]
+      expect(project.quality_paused?).to be false
+      expect(escalation).to include("status" => "prompt_evolution_requested")
+      expect(PromptEvolutionJob).to have_received(:perform_later).with(prompt_id: prompt.id, project_id: project.id)
+    end
+
+    it "keeps deferring pause without re-requesting prompt evolution while it is pending" do
+      allow(PromptEvolutionJob).to receive(:perform_later)
+      create(:llm_model, tier: "high", capability_score: 10.0)
+      project.update!(model_preferences: {
+        "quality_triggered_escalation" => {
+          "status" => "prompt_evolution_requested",
+          "trigger" => "quality_drop",
+          "goal" => agent_run.goal,
+          "from_tier" => "mid",
+          "to_tier" => "high",
+          "started_at" => 1.day.ago.iso8601,
+          "threshold" => 0.5,
+          "evaluation_window" => 3
+        }
+      })
+      create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ])
+      create_escalated_metrics(project, scores: [ 0.2, 0.3, 0.1 ])
+
+      described_class.call(agent_run: agent_run)
+
+      expect(project.reload.quality_paused?).to be false
+      expect(PromptEvolutionJob).not_to have_received(:perform_later)
+    end
+
+    it "pauses after the prompt evolution recovery window is exhausted" do
+      create(:llm_model, tier: "high", capability_score: 10.0)
+      request_prompt_evolution_recovery(project)
+      create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ])
+      create_escalated_metrics(project, scores: [ 0.2, 0.3, 0.1 ])
+
+      described_class.call(agent_run: agent_run)
+
+      escalation = project.reload.model_preferences["quality_triggered_escalation"]
+      expect(project.quality_paused?).to be true
+      expect(escalation).to include(
+        "status" => "exhausted",
+        "prompt_evolution_average" => 0.2,
+        "prompt_evolution_sample_size" => 3
+      )
+    end
+
+    it "persists a recovered terminal state when escalated runs recover quality" do
+      create(:llm_model, tier: "high", capability_score: 10.0)
+      request_model_escalation_recovery(project)
+      create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ])
+      create_escalated_metrics(project, scores: [ 0.8, 0.7, 0.9 ])
+
+      described_class.call(agent_run: agent_run)
+
+      escalation = project.reload.model_preferences["quality_triggered_escalation"]
+      expect(project.quality_paused?).to be false
+      expect(escalation).to include(
+        "status" => "recovered",
+        "recovered_via" => "model_escalation",
+        "recovered_average" => 0.8,
+        "recovered_sample_size" => 3
+      )
+      expect(QualityRecovery::ModelEscalation.active?(project)).to be false
+    end
+
+    it "persists a recovered terminal state when prompt evolution recovers quality" do
+      create(:llm_model, tier: "high", capability_score: 10.0)
+      request_prompt_evolution_recovery(project)
+      create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ])
+      create_escalated_metrics(project, scores: [ 0.8, 0.7, 0.9 ])
+
+      described_class.call(agent_run: agent_run)
+
+      escalation = project.reload.model_preferences["quality_triggered_escalation"]
+      expect(project.quality_paused?).to be false
+      expect(escalation).to include(
+        "status" => "recovered",
+        "recovered_via" => "prompt_evolution",
+        "recovered_average" => 0.8,
+        "recovered_sample_size" => 3
+      )
+      expect(QualityRecovery::ModelEscalation.active?(project)).to be false
+    end
+
     it "caps the rolling window to the latest DEFAULT_WINDOW_SIZE eligible runs" do
       # 10 old low-scoring runs followed by 5 newer high-scoring runs.
       # With window_size=10: latest 10 include 5 * 0.7 + 5 * 0.0 -> avg=0.35 < 0.5 -> recovery
@@ -396,5 +510,50 @@ RSpec.describe QualityPause::Check do
       run = create(:agent_run, :completed, project: project, completed_at: completed_at, prompt_version: prompt_version)
       create(:quality_metric, agent_run: run, prompt_version: prompt_version, composite_score: 0.8, scores: { metric_type => score })
     end
+  end
+
+  def create_escalated_metrics(project, scores:)
+    high_model = LlmModel.find_by!(tier: "high")
+
+    scores.each do |score|
+      run = create(:agent_run, :completed, project: project, goal: agent_run.goal)
+      create(:model_selection,
+        agent_run: run,
+        llm_model: high_model,
+        selector_type: "quality_escalation",
+        tier: "high")
+      create(:quality_metric, agent_run: run, composite_score: score)
+    end
+  end
+
+  def request_prompt_evolution_recovery(project)
+    project.update!(model_preferences: {
+      "quality_triggered_escalation" => {
+        "status" => "prompt_evolution_requested",
+        "trigger" => "quality_drop",
+        "goal" => agent_run.goal,
+        "from_tier" => "mid",
+        "to_tier" => "high",
+        "started_at" => 2.days.ago.iso8601,
+        "prompt_evolution_requested_at" => 1.day.ago.iso8601,
+        "threshold" => 0.5,
+        "evaluation_window" => 3
+      }
+    })
+  end
+
+  def request_model_escalation_recovery(project)
+    project.update!(model_preferences: {
+      "quality_triggered_escalation" => {
+        "status" => "active",
+        "trigger" => "quality_drop",
+        "goal" => agent_run.goal,
+        "from_tier" => "mid",
+        "to_tier" => "high",
+        "started_at" => 1.day.ago.iso8601,
+        "threshold" => 0.5,
+        "evaluation_window" => 3
+      }
+    })
   end
 end

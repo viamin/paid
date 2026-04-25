@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ModelSelection < ApplicationRecord
-  SELECTOR_TYPES = %w[meta_agent rules override manual].freeze
+  SELECTOR_TYPES = %w[meta_agent rules override manual quality_escalation].freeze
 
   belongs_to :agent_run
   belongs_to :llm_model
