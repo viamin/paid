@@ -32,7 +32,7 @@ module Dashboard
     end
 
     def broadcast_active_runs
-      active_runs = account_agent_runs.active.includes(:project, :issue)
+      active_runs = account_agent_runs.active.includes(:project, :issue, :model_selection)
         .order("agent_runs.created_at DESC")
         .limit(20)
 

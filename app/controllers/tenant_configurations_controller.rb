@@ -53,10 +53,11 @@ class TenantConfigurationsController < ApplicationController
   end
 
   def changed_feature_flag_rollouts
+    originals = feature_flag_rollout_original_params
     feature_flag_rollout_params.select do |flag_name, rollout|
-      current = FeatureFlags.rollout_status(flag_name)
-      normalize_pct(rollout["percentage_of_actors"]) != current[:percentage_of_actors] ||
-        normalize_pct(rollout["percentage_of_time"]) != current[:percentage_of_time]
+      original = originals.fetch(flag_name, {})
+      normalize_pct(rollout["percentage_of_actors"]) != normalize_pct(original["percentage_of_actors"]) ||
+        normalize_pct(rollout["percentage_of_time"]) != normalize_pct(original["percentage_of_time"])
     end
   end
 
@@ -70,9 +71,16 @@ class TenantConfigurationsController < ApplicationController
     ).to_h
   end
 
+  def feature_flag_rollout_original_params
+    params.fetch(:feature_flag_rollout_originals, ActionController::Parameters.new).permit(
+      FeatureFlags::DEFINITIONS.keys.index_with { %i[percentage_of_actors percentage_of_time] }
+    ).to_h
+  end
+
   def tenant_setting_params
     attrs = params.require(:tenant_setting).permit(
       :max_concurrent_runs, :max_projects, :max_users, :max_tokens_per_run, :max_monthly_cost_cents,
+      :self_repo_full_name,
       allowed_provider_keys: [],
       provider_preferences: [
         api_key_ids: ProviderSupport.api_service_types.keys,
@@ -85,6 +93,11 @@ class TenantConfigurationsController < ApplicationController
         { metric_thresholds: {} }
       ],
       agent_settings: %i[default_goal auto_continue],
+      worker_settings: %i[
+        temporal_workflow_slots temporal_activity_slots
+        temporal_poll_workflow_slots temporal_poll_activity_slots
+        good_job_max_threads good_job_queues
+      ],
       features: FeatureFlags::DEFINITIONS.keys
     ).to_h
     attrs["features"] ||= {}

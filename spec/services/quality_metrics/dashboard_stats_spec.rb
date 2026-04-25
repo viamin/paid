@@ -122,6 +122,45 @@ RSpec.describe QualityMetrics::DashboardStats do
       expect(reaction[:goal_types]).to contain_exactly("create_pr", "create_issue", "review", "enhance_issue")
     end
 
+    context "with tier breakdown" do
+      let(:low_model) { create(:llm_model, tier: "low") }
+      let(:high_model) { create(:llm_model, tier: "high") }
+
+      it "computes avg quality score per tier" do
+        low_run = create(:agent_run, project: project)
+        create(:model_selection, agent_run: low_run, llm_model: low_model, tier: "low", selector_type: "rules")
+        create(:quality_metric, agent_run: low_run, composite_score: 0.6)
+
+        high_run = create(:agent_run, :with_custom_prompt, project: project)
+        create(:model_selection, agent_run: high_run, llm_model: high_model, tier: "high", selector_type: "rules")
+        create(:quality_metric, agent_run: high_run, composite_score: 0.9)
+
+        tier_data = described_class.call(project: project)[:tier_breakdown]
+
+        expect(tier_data.find { |t| t[:tier] == "low" }[:avg_score]).to eq(0.6)
+        expect(tier_data.find { |t| t[:tier] == "high" }[:avg_score]).to eq(0.9)
+      end
+
+      it "tracks escalation rate by tier" do
+        run = create(:agent_run, project: project)
+        create(:model_selection, agent_run: run, llm_model: high_model, tier: "high", selector_type: "quality_escalation")
+
+        tier_data = described_class.call(project: project)[:tier_breakdown]
+        high_tier = tier_data.find { |t| t[:tier] == "high" }
+
+        expect(high_tier[:run_count]).to eq(1)
+        expect(high_tier[:escalation_count]).to eq(1)
+        expect(high_tier[:escalation_rate]).to eq(100.0)
+      end
+
+      it "returns all three tiers with zeros when no model selections exist" do
+        tier_data = described_class.call(project: project)[:tier_breakdown]
+
+        expect(tier_data.size).to eq(3)
+        expect(tier_data).to all(include(run_count: 0, avg_score: nil))
+      end
+    end
+
     context "with human feedback" do
       it "calculates merge rate" do
         merged_run = create(:agent_run, project: project)

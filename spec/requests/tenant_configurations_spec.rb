@@ -86,20 +86,7 @@ RSpec.describe "TenantConfigurations" do
     end
 
     it "rejects invalid rollout percentages" do
-      patch tenant_configuration_path, params: {
-        tenant_setting: {
-          agent_settings: {
-            default_goal: "review",
-            auto_continue: "1"
-          }
-        },
-        feature_flag_rollouts: {
-          explicit_pr_automation_decisions: {
-            percentage_of_actors: "101",
-            percentage_of_time: "0"
-          }
-        }
-      }
+      patch tenant_configuration_path, params: rollout_params(percentage_of_actors: "101")
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(FeatureFlags.rollout_status(:explicit_pr_automation_decisions)[:percentage_of_actors]).to eq(0)
@@ -114,6 +101,9 @@ RSpec.describe "TenantConfigurations" do
         tenant_setting: { agent_settings: { default_goal: "review", auto_continue: "1" } },
         feature_flag_rollouts: {
           explicit_pr_automation_decisions: { percentage_of_actors: "50", percentage_of_time: "0" }
+        },
+        feature_flag_rollout_originals: {
+          explicit_pr_automation_decisions: { percentage_of_actors: "0", percentage_of_time: "0" }
         }
       }
 
@@ -143,11 +133,31 @@ RSpec.describe "TenantConfigurations" do
         tenant_setting: { guardrails: { max_concurrent_runs: "3" } },
         feature_flag_rollouts: {
           explicit_pr_automation_decisions: { percentage_of_actors: "0", percentage_of_time: "0" }
+        },
+        feature_flag_rollout_originals: {
+          explicit_pr_automation_decisions: { percentage_of_actors: "0", percentage_of_time: "0" }
         }
       }
 
       expect(response).to redirect_to(edit_tenant_configuration_path)
       expect(account.tenant_setting.reload.effective_guardrails["max_concurrent_runs"]).to eq(3)
+    end
+
+    it "does not overwrite rollout changes made by another user since the page was loaded" do
+      FeatureFlags.enable_percentage_of_actors(:explicit_pr_automation_decisions, 25)
+
+      patch tenant_configuration_path, params: {
+        tenant_setting: { agent_settings: { default_goal: "review", auto_continue: "1" } },
+        feature_flag_rollouts: {
+          explicit_pr_automation_decisions: { percentage_of_actors: "0", percentage_of_time: "0" }
+        },
+        feature_flag_rollout_originals: {
+          explicit_pr_automation_decisions: { percentage_of_actors: "0", percentage_of_time: "0" }
+        }
+      }
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(FeatureFlags.rollout_status(:explicit_pr_automation_decisions)[:percentage_of_actors]).to eq(25)
     end
 
     it "rejects viewers" do
@@ -175,6 +185,12 @@ RSpec.describe "TenantConfigurations" do
         explicit_pr_automation_decisions: {
           percentage_of_actors: "25",
           percentage_of_time: "10"
+        }
+      },
+      feature_flag_rollout_originals: {
+        explicit_pr_automation_decisions: {
+          percentage_of_actors: "0",
+          percentage_of_time: "0"
         }
       }
     }
@@ -220,6 +236,20 @@ RSpec.describe "TenantConfigurations" do
     {
       default_goal: "review",
       auto_continue: "1"
+    }
+  end
+
+  def rollout_params(percentage_of_actors: "0", percentage_of_time: "0")
+    {
+      tenant_setting: { agent_settings: { default_goal: "review", auto_continue: "1" } },
+      feature_flag_rollouts: {
+        explicit_pr_automation_decisions: {
+          percentage_of_actors: percentage_of_actors, percentage_of_time: percentage_of_time
+        }
+      },
+      feature_flag_rollout_originals: {
+        explicit_pr_automation_decisions: { percentage_of_actors: "0", percentage_of_time: "0" }
+      }
     }
   end
 end
