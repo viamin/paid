@@ -1,3 +1,0 @@
-#!/bin/bash
-# No-op: do not dump schema, exit successfully
-exit 0
