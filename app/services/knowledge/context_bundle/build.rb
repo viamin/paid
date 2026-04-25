@@ -303,7 +303,7 @@ module Knowledge
           raise ArgumentError, "knowledge.section_order experiment value must be an array"
         end
 
-        normalized = value.map(&:to_sym)
+        normalized = value.map(&:to_sym).uniq
         unless normalized.all? { |section_name| SECTION_ORDER.include?(section_name) }
           raise ArgumentError, "knowledge.section_order experiment value includes an unknown section"
         end

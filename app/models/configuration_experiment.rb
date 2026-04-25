@@ -110,7 +110,7 @@ class ConfigurationExperiment < ApplicationRecord
 
   CACHE_BUCKET_SIZE = ANALYSIS_INTERVAL
 
-  def self.for_config_key(config_key, project:)
+  private_class_method def self.for_config_key(config_key, project:)
     candidates = running.where(config_key: config_key)
     return candidates.where(account_id: nil).order(:id) unless project
 
