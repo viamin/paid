@@ -5,6 +5,7 @@ require "ostruct"
 
 RSpec.describe Knowledge::ContextBundle::Build do
   let(:project) { create(:project) }
+  let(:agent_run) { create(:agent_run, project: project, issue: create(:issue, project: project)) }
   let(:issue) do
     OpenStruct.new(
       title: "Fix user login",
@@ -257,6 +258,71 @@ RSpec.describe Knowledge::ContextBundle::Build do
         result = described_class.call(issue: issue, project: project)
 
         expect(result[:content]).not_to include("GET /other")
+      end
+    end
+
+    context "when agent_run_id is provided" do
+      before do
+        business_context = create(:knowledge_artifact,
+          project: project,
+          collector_run: collector_run,
+          artifact_type: "business_context",
+          identifier: "authentication",
+          metadata: { "section_title" => "Authentication" },
+          status: "active")
+        create(:knowledge_chunk,
+          knowledge_artifact: business_context,
+          project: project,
+          chunk_type: "summary",
+          content: "Login uses the shared auth service.")
+
+        create(:knowledge_artifact,
+          project: project,
+          collector_run: collector_run,
+          artifact_type: "route",
+          identifier: "POST /sessions",
+          content: "POST /sessions -> SessionsController#create",
+          status: "active")
+      end
+
+      it "records knowledge usage stats and artifact type counts" do
+        result = described_class.call(issue: issue, project: project, agent_run_id: agent_run.id)
+
+        expect(result[:artifact_type_counts]).to eq(
+          "business_context" => 1,
+          "route" => 1
+        )
+        expect(KnowledgeUsageStat.where(agent_run: agent_run).order(:artifact_type).pluck(
+          :artifact_type, :goal, :context_type, :artifact_count, :chunk_count
+        )).to eq([
+          [ "business_context", agent_run.goal, "bundle", 1, 1 ],
+          [ "route", agent_run.goal, "bundle", 1, 0 ]
+        ])
+        expect(KnowledgeUsageStat.where(agent_run: agent_run).pluck(:token_count)).to all(be_positive)
+      end
+
+      it "upserts usage records idempotently" do
+        2.times { described_class.call(issue: issue, project: project, agent_run_id: agent_run.id) }
+
+        expect(KnowledgeUsageStat.where(agent_run: agent_run).count).to eq(2)
+      end
+    end
+
+    context "when agent_run_id is nil" do
+      before do
+        create(:knowledge_artifact,
+          project: project,
+          collector_run: collector_run,
+          artifact_type: "route",
+          identifier: "POST /sessions",
+          content: "POST /sessions -> SessionsController#create",
+          status: "active")
+      end
+
+      it "does not record knowledge usage stats" do
+        expect {
+          described_class.call(issue: issue, project: project)
+        }.not_to change(KnowledgeUsageStat, :count)
       end
     end
   end

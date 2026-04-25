@@ -6,6 +6,7 @@ RSpec.describe Knowledge::Search do
   include_context "without qdrant vector search"
 
   let(:project) { create(:project) }
+  let(:agent_run) { create(:agent_run, project: project, issue: create(:issue, project: project)) }
   let(:project_version) { create(:project_version, project: project, commit_sha: "abc123") }
   let(:collector_run) { create(:collector_run, project_version: project_version, collector_type: "routes") }
 
@@ -24,7 +25,7 @@ RSpec.describe Knowledge::Search do
       knowledge_artifact: route_artifact,
       project: project,
       chunk_type: "definition",
-      content: "Route: POST /api/users\nController: api/users#create")
+      content: "Route: POST /api/users\nController: api/users#create\nAuthentication: signs users in")
   end
 
   let!(:get_artifact) do
@@ -43,6 +44,24 @@ RSpec.describe Knowledge::Search do
       project: project,
       chunk_type: "definition",
       content: "Route: GET /api/users\nController: api/users#index\nPurpose: Lists all users")
+  end
+
+  let!(:symbol_artifact) do
+    create(:knowledge_artifact,
+      project: project,
+      collector_run: collector_run,
+      artifact_type: "symbol",
+      identifier: "app/models/user.rb::User",
+      content: "User model",
+      scope_path: "app/models/user.rb")
+  end
+
+  let(:symbol_chunk) do
+    create(:knowledge_chunk,
+      knowledge_artifact: symbol_artifact,
+      project: project,
+      chunk_type: "definition",
+      content: "User model handles authentication for users.")
   end
 
   describe "#call" do
@@ -232,6 +251,48 @@ RSpec.describe Knowledge::Search do
       expect(Knowledge::Search::Hybrid).to have_received(:call).with(
         hash_including(api_key: "sk-user", api_base_url: "https://openrouter.ai/api/v1")
       )
+    end
+
+    it "records usage stats by artifact type when agent_run_id is provided" do
+      symbol_chunk
+
+      result = described_class.call(
+        project: project,
+        query: "users authentication",
+        mode: "semantic",
+        agent_run_id: agent_run.id
+      )
+
+      expect(result[:results].map { |row| row[:artifact_type] }).to include("route", "symbol")
+      expect(KnowledgeUsageStat.where(agent_run: agent_run).order(:artifact_type).pluck(
+        :artifact_type, :goal, :context_type, :artifact_count, :chunk_count
+      )).to eq([
+        [ "route", agent_run.goal, "search", 1, 1 ],
+        [ "symbol", agent_run.goal, "search", 1, 1 ]
+      ])
+    end
+
+    it "upserts tracked search usage idempotently" do
+      symbol_chunk
+
+      2.times do
+        described_class.call(
+          project: project,
+          query: "users authentication",
+          mode: "semantic",
+          agent_run_id: agent_run.id
+        )
+      end
+
+      expect(KnowledgeUsageStat.where(agent_run: agent_run).count).to eq(2)
+    end
+
+    it "does not record usage stats when agent_run_id is nil" do
+      symbol_chunk
+
+      expect {
+        described_class.call(project: project, query: "users authentication", mode: "semantic")
+      }.not_to change(KnowledgeUsageStat, :count)
     end
   end
 end

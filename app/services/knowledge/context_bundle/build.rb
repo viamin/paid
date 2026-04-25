@@ -23,14 +23,15 @@ module Knowledge
       # a conventions collector lands in the knowledge pipeline.
       SECTION_ORDER = %i[business_context routes symbols schema hotspots decisions stats].freeze
 
-      attr_reader :issue, :project, :agent_run, :token_budget, :section_order
+      attr_reader :issue, :project, :agent_run, :agent_run_id, :token_budget, :section_order
 
       # issue is accepted for future relevance-ranking of artifacts.
       # Currently unused — all active artifacts are included project-wide.
-      def initialize(issue:, project:, agent_run: nil, token_budget: nil, section_order: nil)
+      def initialize(issue:, project:, agent_run: nil, agent_run_id: nil, token_budget: nil, section_order: nil)
         @issue = issue
         @project = project
         @agent_run = agent_run
+        @agent_run_id = agent_run_id || agent_run&.id
         @token_budget = token_budget || safe_experiment_value("knowledge.token_budget") || env_token_budget
         @section_order = section_order || safe_experiment_value("knowledge.section_order") || SECTION_ORDER
       end
@@ -40,7 +41,7 @@ module Knowledge
       end
 
       def call
-        sections, queries_made = build_sections
+        sections, queries_made, artifact_type_counts = build_sections
         return empty_result(queries_made) if sections.empty?
 
         content = render(sections)
@@ -48,7 +49,8 @@ module Knowledge
           content: content,
           sections: sections.map { |s| s[:name] },
           total_tokens: estimate_tokens(content),
-          queries_made: queries_made
+          queries_made: queries_made,
+          artifact_type_counts: artifact_type_counts
         }
       end
 
@@ -60,6 +62,7 @@ module Knowledge
         remaining_budget = token_budget - header_overhead
         built = []
         queries_made = 0
+        artifact_type_counts = Hash.new(0)
 
         section_order.each do |section_name|
           break if remaining_budget <= 0
@@ -73,6 +76,8 @@ module Knowledge
           if section_tokens <= remaining_budget
             built << section
             remaining_budget -= section_tokens
+            record_usage(section)
+            artifact_type_counts[section[:artifact_type]] += section[:artifact_count]
           else
             truncated = truncate_section(section, remaining_budget)
             if truncated
@@ -81,12 +86,14 @@ module Knowledge
 
               built << truncated
               remaining_budget -= truncated_tokens
+              record_usage(section)
+              artifact_type_counts[section[:artifact_type]] += section[:artifact_count]
               break if remaining_budget <= 0
             end
           end
         end
 
-        [ built, queries_made ]
+        [ built, queries_made, artifact_type_counts ]
       end
 
       def build_business_context_section
@@ -104,7 +111,12 @@ module Knowledge
           end
         end
 
-        { name: :business_context, heading: "Business Context (maintainer-provided)", content: lines.join("\n\n") }
+        artifact_section(
+          name: :business_context,
+          heading: "Business Context (maintainer-provided)",
+          content: lines.join("\n\n"),
+          artifacts: artifacts
+        )
       end
 
       def build_routes_section
@@ -115,7 +127,7 @@ module Knowledge
           "- #{a.content.presence || a.identifier}"
         end
 
-        { name: :routes, heading: "Relevant Routes", content: lines.join("\n") }
+        artifact_section(name: :routes, heading: "Relevant Routes", content: lines.join("\n"), artifacts: artifacts)
       end
 
       def build_symbols_section
@@ -127,7 +139,7 @@ module Knowledge
           "- #{a.identifier} #{description}".strip
         end
 
-        { name: :symbols, heading: "Related Code", content: lines.join("\n") }
+        artifact_section(name: :symbols, heading: "Related Code", content: lines.join("\n"), artifacts: artifacts)
       end
 
       def build_schema_section
@@ -160,7 +172,7 @@ module Knowledge
           end
         end
 
-        { name: :hotspots, heading: "Hotspot Warning", content: lines.join("\n") }
+        artifact_section(name: :hotspots, heading: "Hotspot Warning", content: lines.join("\n"), artifacts: artifacts)
       end
 
       def build_decisions_section
@@ -177,7 +189,15 @@ module Knowledge
           "- DR: \"#{dr.title}\" (#{status_label}, #{date})"
         end
 
-        { name: :decisions, heading: "Recent Decisions", content: lines.join("\n") }
+        {
+          name: :decisions,
+          heading: "Recent Decisions",
+          content: lines.join("\n"),
+          artifact_type: section_artifact_type(:decisions),
+          artifact_count: records.size,
+          chunk_count: 0,
+          token_count: estimate_tokens("### Recent Decisions\n#{lines.join("\n")}")
+        }
       end
 
       def build_stats_section
@@ -193,7 +213,60 @@ module Knowledge
           "- #{parts.join(" ")}"
         end
 
-        { name: :stats, heading: "Project Stats", content: lines.join("\n") }
+        artifact_section(name: :stats, heading: "Project Stats", content: lines.join("\n"), artifacts: artifacts)
+      end
+
+      def artifact_section(name:, heading:, content:, artifacts:)
+        {
+          name: name,
+          heading: heading,
+          content: content,
+          artifact_type: section_artifact_type(name),
+          artifact_count: artifacts.size,
+          chunk_count: artifacts.sum { |artifact| artifact.active_ordered_chunks.size },
+          token_count: estimate_tokens("### #{heading}\n#{content}")
+        }
+      end
+
+      def section_artifact_type(section_name)
+        {
+          business_context: "business_context",
+          routes: "route",
+          symbols: "symbol",
+          hotspots: "churn_hotspot",
+          stats: "language_stat",
+          decisions: "decision_record"
+        }.fetch(section_name.to_sym)
+      end
+
+      def record_usage(section)
+        return if tracking_agent_run_id.blank? || tracking_goal.blank?
+
+        KnowledgeUsageStat.upsert(
+          {
+            agent_run_id: tracking_agent_run_id,
+            project_id: project.id,
+            artifact_type: section[:artifact_type],
+            goal: tracking_goal,
+            context_type: "bundle",
+            artifact_count: section[:artifact_count],
+            chunk_count: section[:chunk_count],
+            token_count: section[:token_count]
+          },
+          unique_by: :idx_knowledge_usage_stats_unique
+        )
+      end
+
+      def tracking_agent_run_id
+        tracking_agent_run&.id
+      end
+
+      def tracking_goal
+        tracking_agent_run&.goal
+      end
+
+      def tracking_agent_run
+        @tracking_agent_run ||= agent_run || AgentRun.select(:id, :goal).find_by(id: agent_run_id)
       end
 
       def active_artifacts(type)
@@ -332,7 +405,7 @@ module Knowledge
       end
 
       def empty_result(queries_made = 0)
-        { content: "", sections: [], total_tokens: 0, queries_made: queries_made }
+        { content: "", sections: [], total_tokens: 0, queries_made: queries_made, artifact_type_counts: {} }
       end
     end
   end

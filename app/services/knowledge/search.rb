@@ -7,9 +7,9 @@ module Knowledge
     DEFAULT_LIMIT = 20
     MAX_LIMIT = 100
 
-    attr_reader :project, :query, :mode, :artifact_type, :version, :limit, :api_key, :api_base_url
+    attr_reader :project, :query, :mode, :artifact_type, :version, :limit, :api_key, :api_base_url, :agent_run_id
 
-    def initialize(project:, query:, mode: DEFAULT_MODE, artifact_type: nil, version: nil, limit: DEFAULT_LIMIT, api_key: nil, api_base_url: nil)
+    def initialize(project:, query:, mode: DEFAULT_MODE, artifact_type: nil, version: nil, limit: DEFAULT_LIMIT, api_key: nil, api_base_url: nil, agent_run_id: nil)
       @project = project
       @query = query
       @mode = MODES.include?(mode) ? mode : DEFAULT_MODE
@@ -18,6 +18,7 @@ module Knowledge
       @limit = limit.present? ? [ limit.to_i, 1 ].max.clamp(1, MAX_LIMIT) : DEFAULT_LIMIT
       @api_key = api_key
       @api_base_url = api_base_url
+      @agent_run_id = agent_run_id
     end
 
     def self.call(...)
@@ -29,6 +30,7 @@ module Knowledge
 
       search_output = perform_search
       results = strip_internal_fields(search_output[:results].first(limit))
+      record_usage(results)
       elapsed = ((monotonic_now - start_time) * 1000).round
 
       {
@@ -75,6 +77,29 @@ module Knowledge
       results.map do |result|
         result.except(:status, :link_count, :created_at)
       end
+    end
+
+    def record_usage(results)
+      return if tracking_agent_run.blank?
+
+      results.group_by { |result| result[:artifact_type] }.each do |artifact_type, grouped|
+        KnowledgeUsageStat.upsert(
+          {
+            agent_run_id: tracking_agent_run.id,
+            project_id: project.id,
+            artifact_type: artifact_type,
+            goal: tracking_agent_run.goal,
+            context_type: "search",
+            artifact_count: grouped.map { |result| result[:artifact_id] }.uniq.count,
+            chunk_count: grouped.count
+          },
+          unique_by: :idx_knowledge_usage_stats_unique
+        )
+      end
+    end
+
+    def tracking_agent_run
+      @tracking_agent_run ||= AgentRun.select(:id, :goal).find_by(id: agent_run_id)
     end
 
     def monotonic_now
