@@ -109,6 +109,14 @@
         </label>
       </div>
 
+      <div class="mt-4 grid gap-4 sm:grid-cols-2">
+        <div>
+          <%= label_tag "tenant_setting_self_repo_full_name", "Self-repo full name", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= text_field_tag "tenant_setting[self_repo_full_name]", @tenant_setting.self_repo_full_name, placeholder: "owner/repo", class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Repository that triggers auto dev-environment updates (e.g. owner/repo). Leave blank to disable.</p>
+        </div>
+      </div>
+
       <div class="mt-6 space-y-3">
         <% @feature_flags.each do |definition| %>
           <label class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-200">
@@ -119,6 +127,44 @@
             </span>
           </label>
         <% end %>
+      </div>
+    </section>
+
+    <section>
+      <div class="flex items-center gap-2">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Worker Concurrency</h2>
+        <span class="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Restart required</span>
+      </div>
+      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Changes to these settings require a Temporal worker and/or Rails server restart to take effect.</p>
+      <% ws = @tenant_setting.effective_worker_settings %>
+      <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div>
+          <%= label_tag "tenant_setting_worker_settings_temporal_workflow_slots", "Agent workflow slots", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[worker_settings][temporal_workflow_slots]", ws["temporal_workflow_slots"], min: 1, max: 100, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        </div>
+        <div>
+          <%= label_tag "tenant_setting_worker_settings_temporal_activity_slots", "Agent activity slots", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[worker_settings][temporal_activity_slots]", ws["temporal_activity_slots"], min: 1, max: 100, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        </div>
+        <div>
+          <%= label_tag "tenant_setting_worker_settings_temporal_poll_workflow_slots", "Poll workflow slots", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[worker_settings][temporal_poll_workflow_slots]", ws["temporal_poll_workflow_slots"], min: 1, max: 100, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        </div>
+        <div>
+          <%= label_tag "tenant_setting_worker_settings_temporal_poll_activity_slots", "Poll activity slots", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[worker_settings][temporal_poll_activity_slots]", ws["temporal_poll_activity_slots"], min: 1, max: 100, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        </div>
+      </div>
+      <div class="mt-4 grid gap-4 sm:grid-cols-2">
+        <div>
+          <%= label_tag "tenant_setting_worker_settings_good_job_max_threads", "GoodJob max threads", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[worker_settings][good_job_max_threads]", ws["good_job_max_threads"], min: 1, max: 100, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        </div>
+        <div>
+          <%= label_tag "tenant_setting_worker_settings_good_job_queues", "GoodJob queues", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= text_field_tag "tenant_setting[worker_settings][good_job_queues]", ws["good_job_queues"], class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white font-mono text-xs" %>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Format: name:count;name:count</p>
+        </div>
       </div>
     </section>
 

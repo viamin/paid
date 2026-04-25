@@ -25,6 +25,20 @@ class TenantSetting < ApplicationRecord
     "default_goal" => "create_pr",
     "auto_continue" => true
   }.freeze
+  DEFAULT_WORKER_SETTINGS = {
+    "temporal_workflow_slots" => 20,
+    "temporal_activity_slots" => 4,
+    "temporal_poll_workflow_slots" => 20,
+    "temporal_poll_activity_slots" => 10,
+    "good_job_max_threads" => 11,
+    "good_job_queues" => "default:3;maintenance:2;metrics:2;knowledge:3;low_priority:1"
+  }.freeze
+  WORKER_SETTING_INTEGER_KEYS = %w[
+    temporal_workflow_slots temporal_activity_slots
+    temporal_poll_workflow_slots temporal_poll_activity_slots
+    good_job_max_threads
+  ].freeze
+  REPO_NAME_FORMAT = /\A[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\z/
 
   belongs_to :account
 
@@ -45,6 +59,11 @@ class TenantSetting < ApplicationRecord
   validate :validate_configuration_namespaces
   validate :validate_default_budgets
   validate :validate_agent_settings
+  validate :validate_worker_settings
+  validates :self_repo_full_name,
+    format: { with: REPO_NAME_FORMAT, message: "must be in owner/repo format" },
+    allow_nil: true,
+    if: -> { self_repo_full_name.present? }
 
   def configuration
     {
@@ -53,6 +72,8 @@ class TenantSetting < ApplicationRecord
       "guardrails" => effective_guardrails,
       "quality_thresholds" => effective_quality_thresholds,
       "agent_settings" => effective_agent_settings,
+      "worker_settings" => effective_worker_settings,
+      "self_repo_full_name" => self_repo_full_name,
       "features" => features
     }
   end
@@ -121,6 +142,42 @@ class TenantSetting < ApplicationRecord
     [ limit, max_tokens_per_run ].compact.min
   end
 
+  def effective_worker_settings
+    DEFAULT_WORKER_SETTINGS.deep_dup.merge(
+      worker_settings.is_a?(Hash) ? worker_settings.deep_stringify_keys : {}
+    )
+  end
+
+  def worker_setting(key)
+    effective_worker_settings[key.to_s]
+  end
+
+  def self.resolve_worker_setting(key, env_key:, env:, default:)
+    db_val = read_worker_setting_from_db(key)
+    return db_val if db_val.present?
+    return Integer(env.fetch(env_key, default.to_s)) if WORKER_SETTING_INTEGER_KEYS.include?(key.to_s)
+
+    env.fetch(env_key, default.to_s)
+  rescue ArgumentError
+    default
+  end
+
+  def self.read_worker_setting_from_db(key)
+    return nil unless table_exists?
+
+    setting = Account.first&.tenant_setting
+    return nil unless setting
+
+    value = setting.worker_settings&.dig(key.to_s)
+    return nil if value.nil?
+
+    WORKER_SETTING_INTEGER_KEYS.include?(key.to_s) ? value.to_i : value.to_s
+  rescue ActiveRecord::NoDatabaseError, PG::ConnectionBad
+    nil
+  end
+
+  private_class_method :read_worker_setting_from_db
+
   private
 
   def normalize_configuration_namespaces
@@ -129,6 +186,7 @@ class TenantSetting < ApplicationRecord
     self.guardrails = normalize_integer_hash(guardrails, %w[max_concurrent_runs max_tokens_per_run max_monthly_cost_cents])
     self.quality_thresholds = normalize_quality_thresholds(quality_thresholds)
     self.agent_settings = normalize_agent_settings(agent_settings)
+    self.worker_settings = normalize_worker_settings(worker_settings)
     self.features = normalize_hash(features)
     apply_guardrail_columns
   end
@@ -140,7 +198,7 @@ class TenantSetting < ApplicationRecord
   end
 
   def validate_configuration_namespaces
-    %i[provider_preferences default_budgets guardrails quality_thresholds agent_settings].each do |attribute|
+    %i[provider_preferences default_budgets guardrails quality_thresholds agent_settings worker_settings].each do |attribute|
       errors.add(attribute, "must be a JSON object") unless public_send(attribute).is_a?(Hash)
     end
   end
@@ -174,6 +232,21 @@ class TenantSetting < ApplicationRecord
     return if goal.blank? || AgentRun::GOALS.include?(goal)
 
     errors.add(:agent_settings, "default_goal is unsupported")
+  end
+
+  def validate_worker_settings
+    return unless worker_settings.is_a?(Hash)
+
+    worker_settings.each do |key, value|
+      if WORKER_SETTING_INTEGER_KEYS.include?(key.to_s)
+        unless value.is_a?(Integer) && value >= 1 && value <= 100
+          errors.add(:worker_settings, "#{key} must be an integer between 1 and 100")
+        end
+      elsif key.to_s == "good_job_queues"
+        next if value.is_a?(String) && value.match?(/\A([a-z_]+:\d+)(;[a-z_]+:\d+)*\z/)
+        errors.add(:worker_settings, "good_job_queues must match format 'name:count;name:count'")
+      end
+    end
   end
 
   def normalize_budget_hash(value)
@@ -228,6 +301,16 @@ class TenantSetting < ApplicationRecord
       next unless normalized.is_a?(Hash)
 
       normalized["auto_continue"] = ActiveModel::Type::Boolean.new.cast(normalized["auto_continue"]) if normalized.key?("auto_continue")
+    end
+  end
+
+  def normalize_worker_settings(value)
+    normalize_hash(value).tap do |normalized|
+      next unless normalized.is_a?(Hash)
+
+      WORKER_SETTING_INTEGER_KEYS.each do |key|
+        normalized[key] = normalized[key].present? ? normalized[key].to_i : nil if normalized.key?(key)
+      end
     end
   end
 
