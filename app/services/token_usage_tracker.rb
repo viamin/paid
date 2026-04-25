@@ -13,7 +13,10 @@ class TokenUsageTracker
   # @param update_aggregates [Boolean] when false, only creates a TokenUsage record without
   #   updating agent_run/project counters or cost budgets (use for run_summary records
   #   that would otherwise double-count per-request tracking from the secrets proxy)
-  def self.track(agent_run: nil, knowledge_run: nil, usage:, update_aggregates: true)
+  # @param enforce_guardrails [Boolean] when false, updates aggregates without
+  #   applying in-flight token/cost hard-stop behavior. Use for end-of-run
+  #   summary reconciliation after the provider process has already exited.
+  def self.track(agent_run: nil, knowledge_run: nil, usage:, update_aggregates: true, enforce_guardrails: true)
     tracked_run = resolve_tracked_run!(agent_run:, knowledge_run:)
     tokens_input  = usage.fetch(:tokens_input, 0).to_i
     tokens_output = usage.fetch(:tokens_output, 0).to_i
@@ -57,7 +60,7 @@ class TokenUsageTracker
     # 1. Row locks from the usage write are already released
     # 2. External side-effects (Temporal cancel, container cleanup) don't
     #    run inside a transaction — a failure won't roll back recorded usage
-    enforce_hard_stop_budgets(tracked_run) if update_aggregates && cost_cents.positive? && agent_run.present?
+    enforce_hard_stop_budgets(tracked_run) if enforce_guardrails && update_aggregates && cost_cents.positive? && agent_run.present?
   end
 
   # Evaluates the agent run's cumulative token usage against project limits

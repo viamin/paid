@@ -49,27 +49,14 @@ RSpec.describe AgentRuns::Execute do
       end
 
       it "records run_summary without aggregates, then persists delta as run_delta when no proxy records exist" do
-        expect(TokenUsageTracker).to receive(:track).with(
-          agent_run: agent_run,
-          usage: {
-            tokens_input: 1500,
-            tokens_output: 800,
-            llm_model: "claude-sonnet-4",
-            request_type: "run_summary"
-          },
-          update_aggregates: false
-        )
-        expect(TokenUsageTracker).to receive(:track).with(
-          agent_run: agent_run,
-          usage: {
-            tokens_input: 1500,
-            tokens_output: 800,
-            llm_model: "claude-sonnet-4",
-            request_type: "run_delta"
-          }
-        )
-
         described_class.call(agent_run: agent_run, prompt: prompt)
+
+        expect(agent_run.token_usages.order(:request_type).pluck(:request_type, :input_tokens, :output_tokens)).to eq([
+          [ "run_delta", 1500, 800 ],
+          [ "run_summary", 1500, 800 ]
+        ])
+        expect(agent_run.reload.tokens_input).to eq(1500)
+        expect(agent_run.tokens_output).to eq(800)
       end
 
       it "skips delta record when proxy records fully cover tracking" do
@@ -107,7 +94,8 @@ RSpec.describe AgentRuns::Execute do
             tokens_output: 300,
             llm_model: "claude-sonnet-4",
             request_type: "run_delta"
-          }
+          },
+          enforce_guardrails: false
         )
 
         described_class.call(agent_run: agent_run, prompt: prompt)
