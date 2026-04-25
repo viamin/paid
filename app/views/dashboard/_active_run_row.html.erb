@@ -17,6 +17,16 @@
     <% end %>
   </td>
   <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500"><%= run.goal.titleize %></td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm">
+    <% run_tier = run.model_selection&.tier %>
+    <% if run_tier.present? %>
+      <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= tier_badge_classes(run_tier) %>">
+        <%= run_tier.titleize %>
+      </span>
+    <% else %>
+      <span class="text-gray-400">--</span>
+    <% end %>
+  </td>
   <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500"
       data-controller="elapsed-time"
       data-elapsed-time-started-at-value="<%= run.started_at&.iso8601 %>">
