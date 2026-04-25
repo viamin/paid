@@ -9,9 +9,11 @@ module Activities
 
     def execute(input)
       prompt_id = input[:prompt_id]
+      project_id = input[:project_id]
       mutations_data = input.fetch(:mutations, [])
 
       prompt = Prompt.find(prompt_id)
+      project = project_id ? Project.find(project_id) : prompt.project
 
       mutations = mutations_data.map do |m|
         PromptEvolution::Mutate::Mutation.new(
@@ -24,7 +26,8 @@ module Activities
 
       variants = PromptEvolution::CreateVariants.call(
         prompt: prompt,
-        mutations: mutations
+        mutations: mutations,
+        project: project
       )
 
       {

@@ -93,6 +93,7 @@ module Workflows
         Activities::CreateEvolutionVariantsActivity,
         {
           prompt_id: prompt_id,
+          project_id: project_id,
           mutations: mutations
         },
         timeout: 30

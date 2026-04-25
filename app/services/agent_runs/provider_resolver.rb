@@ -19,6 +19,9 @@ module AgentRuns
       selection = requested_selection if respect_requested
       return selection if selection
 
+      selection = project_preferred_agent_selection
+      return selection if selection
+
       provider = default_provider
       return [ provider.id, Provider.agent_type_for(provider.provider_key) ] if provider
 
@@ -36,6 +39,18 @@ module AgentRuns
 
       log_unrunnable_requested_provider if requested_provider_id.present? || requested_agent_type.present?
       nil
+    end
+
+    def project_preferred_agent_selection
+      agent_type = project.model_preferences["preferred_agent_type"]
+      return unless agent_type.present? && agent_type_runnable?(agent_type)
+
+      provider_key = Provider.provider_key_for_agent_type(agent_type)
+      owner = project.effective_owner
+      return [ nil, agent_type ] unless owner
+
+      provider = owner.providers.find_by(provider_key: provider_key)
+      provider ? [ provider.id, agent_type ] : [ nil, agent_type ]
     end
 
     def default_provider

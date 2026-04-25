@@ -29,6 +29,10 @@ RSpec.describe Activities::CreateEvolutionVariantsActivity do
       { prompt_id: prompt.id, mutations: mutations_data }
     end
 
+    before do
+      allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
+    end
+
     it "creates variant PromptVersions" do
       result = activity.execute(input)
 
@@ -46,6 +50,18 @@ RSpec.describe Activities::CreateEvolutionVariantsActivity do
     it "returns review_required flag" do
       result = activity.execute(input)
       expect(result[:review_required]).to be(false)
+    end
+
+    context "with project scope" do
+      let(:project) { create(:project, quality_paused_at: 1.hour.ago) }
+      let(:prompt) { create(:prompt, :for_account, :with_version, account: project.account) }
+      let(:input) { { prompt_id: prompt.id, project_id: project.id, mutations: mutations_data } }
+
+      it "auto-resumes the scoped project" do
+        activity.execute(input)
+
+        expect(project.reload).not_to be_quality_paused
+      end
     end
 
     context "with review gate enabled" do
