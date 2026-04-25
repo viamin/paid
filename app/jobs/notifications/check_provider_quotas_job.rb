@@ -13,9 +13,8 @@ module Notifications
     )
 
     def perform
-      Provider.includes(:user).find_each do |provider|
-        Rules::ProviderQuotaExhausted.call(scope: provider)
-      end
+      providers = Provider.includes(user: :provider_states).to_a
+      Rules::ProviderQuotaExhausted.call(scope: providers)
     end
   end
 end

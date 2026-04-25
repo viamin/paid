@@ -12,7 +12,10 @@ module Notifications
       def source = SOURCE
 
       def detect(scope)
-        Array(scope).select do |provider|
+        providers = Array(scope)
+        precompute_blocked_run_counts(providers)
+
+        providers.select do |provider|
           quota_state_for(provider)&.rate_limited? && quota_duration_for(provider) >= WARNING_THRESHOLD
         end
       end
@@ -48,17 +51,31 @@ module Notifications
 
       def quota_state_for(provider)
         @quota_states ||= {}
-        @quota_states[provider.id] ||= provider.user.provider_states.find_by(provider_name: provider.state_key)
+        @quota_states[provider.id] ||= provider.user.provider_states.find { |ps| ps.provider_name == provider.state_key }
       end
 
       def blocked_run_count_for(provider)
-        @blocked_run_counts ||= {}
-        @blocked_run_counts[provider.id] ||= AgentRun
+        @blocked_run_counts[provider.id] || 0
+      end
+
+      # Batch-load all blocked run counts for the given providers in a single
+      # query, grouped by user, instead of issuing per-provider lookups.
+      def precompute_blocked_run_counts(providers)
+        @blocked_run_counts = {}
+        return if providers.empty?
+
+        user_ids = providers.map(&:user_id).uniq
+        rows = AgentRun
           .joins(:project)
-          .where(projects: { created_by_id: provider.user_id })
+          .where(projects: { created_by_id: user_ids })
           .where(status: AgentRun::UNFINISHED_STATUSES)
-          .pluck(:final_provider, :agent_type)
-          .count { |final, agent| provider.matches_identifier?(final.presence || agent) }
+          .pluck(:final_provider, :agent_type, "projects.created_by_id")
+
+        providers.each do |provider|
+          @blocked_run_counts[provider.id] = rows.count do |final, agent, uid|
+            uid == provider.user_id && provider.matches_identifier?(final.presence || agent)
+          end
+        end
       end
     end
   end

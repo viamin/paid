@@ -127,7 +127,11 @@ module Activities
     def pending_review_state(issue, result)
       return unless result.is_a?(Hash)
 
-      trigger = Array(result[:triggers]).find { |entry| entry[:type] == "review_bot_review_pending" }
+      trigger = Array(result[:triggers]).find do |entry|
+        entry[:type] == "review_bot_review_pending" &&
+          !entry[:data_incomplete] &&
+          (entry[:request_login].present? || Array(entry[:request_logins]).any?)
+      end
 
       {
         issue_id: issue.id,
