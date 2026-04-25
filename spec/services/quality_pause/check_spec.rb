@@ -175,6 +175,20 @@ RSpec.describe QualityPause::Check do
       expect(project.quality_recovery_actions.last.action_type).to eq("model_escalation")
     end
 
+    it "pauses when escalation target exceeds max_tier preference" do
+      create(:quality_recovery_action, :prompt_evolution, :evaluated,
+        project: project, executed_at: 2.hours.ago, quality_before: 0.3, quality_after: 0.3)
+      create(:llm_model, tier: "mid")
+      project.update!(model_preferences: { "max_tier" => "low" })
+      create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ])
+
+      described_class.call(agent_run: agent_run)
+
+      project.reload
+      expect(project.quality_paused?).to be true
+      expect(project.model_preferences["quality_recovery_min_tier"]).to be_nil
+    end
+
     it "still escalates the model after repeated prompt evolution attempts hit the daily cap" do
       3.times do |attempt|
         create(:quality_recovery_action, :prompt_evolution, :evaluated,

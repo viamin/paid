@@ -83,6 +83,7 @@ module QualityRecovery
       from_tier = current_tier
       to_tier = next_tier(from_tier)
       return pause_project unless to_tier
+      return pause_project if tier_capped_by_max?(to_tier)
 
       preferences = project.model_preferences.deep_dup
       preferences["quality_recovery_min_tier"] = to_tier
@@ -250,6 +251,13 @@ module QualityRecovery
     def next_tier(tier)
       current_index = LlmModel::TIERS.index(tier) || 0
       LlmModel::TIERS[current_index + 1]
+    end
+
+    def tier_capped_by_max?(tier)
+      max = project.model_preferences&.dig("max_tier")
+      return false unless max.present? && LlmModel::TIERS.include?(max)
+
+      LlmModel::TIERS.index(tier) > LlmModel::TIERS.index(max)
     end
   end
 end
