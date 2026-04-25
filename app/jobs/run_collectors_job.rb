@@ -3,7 +3,7 @@
 class RunCollectorsJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
-  queue_as :default
+  queue_as :knowledge
   discard_on ActiveRecord::RecordNotFound
 
   # Prevent duplicate enqueues for the same project+SHA when staleness detection

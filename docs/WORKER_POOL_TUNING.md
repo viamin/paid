@@ -12,8 +12,8 @@ GoodJob processes background jobs using a thread pool backed by PostgreSQL.
 | Variable | Default | Description |
 |---|---|---|
 | `GOOD_JOB_EXECUTION_MODE` | `async_server` | `async_server` (in-process) or `external` (dedicated worker) |
-| `GOOD_JOB_MAX_THREADS` | `10` | Worker thread pool size |
-| `GOOD_JOB_QUEUES` | `default:3;maintenance:2;metrics:2;knowledge:2;low_priority:1` | Per-queue thread caps (semicolons create independent pools) |
+| `GOOD_JOB_MAX_THREADS` | `11` | Worker thread pool size |
+| `GOOD_JOB_QUEUES` | `default:3;maintenance:2;metrics:2;knowledge:3;low_priority:1` | Per-queue thread caps (semicolons create independent pools) |
 | `GOOD_JOB_POLL_INTERVAL` | `3` | Seconds between DB polls for new jobs |
 | `GOOD_JOB_SHUTDOWN_TIMEOUT` | `25` | Seconds to wait for in-flight jobs during shutdown |
 | `GOOD_JOB_ENABLE_CRON` | `true` | Enable cron-scheduled jobs |
@@ -27,7 +27,7 @@ Jobs are assigned to five priority queues:
 | `default` | 1 (highest) | ProcessRunQueue, DiagnoseError, HumanFeedback, GitHubTokenValidation, etc. | Core business logic that directly affects user-facing latency |
 | `maintenance` | 2 | DockerOrphanCleanup, StaleRunDetector, WorktreeCleanup, PollWorkflowHealthCheck, etc. | Infrastructure health; important but tolerates brief delays |
 | `metrics` | 3 | ContainerMetrics, ServiceContainerMetrics, QualityMetrics, AbTestAnalysis | Telemetry and analytics; deferrable under load without user impact |
-| `knowledge` | 4 | EmbedChunks, StyleGuideExtraction, StyleGuideCompression | CPU-intensive embedding and LLM work; bursty, benefits from backpressure |
+| `knowledge` | 4 | EmbedChunks, StyleGuideExtraction, StyleGuideCompression, EnqueueKnowledgeCollection, RunCollectors | CPU-intensive embedding and LLM work; bursty, benefits from backpressure |
 | `low_priority` | 5 (lowest) | DashboardBroadcast, LiveDashboardBroadcast, DelayedHumanFeedback | Non-urgent UI updates and batch processing |
 
 ### Thread Pool Sizing
@@ -44,7 +44,7 @@ bulk low-priority work cannot starve them:
 | `default` | 3 | Core business logic |
 | `maintenance` | 2 | Cleanup and reconciliation |
 | `metrics` | 2 | Telemetry collection |
-| `knowledge` | 2 | Embedding (CPU-bound) |
+| `knowledge` | 3 | Collection and embedding (CPU-bound) |
 | `low_priority` | 1 | Non-urgent batch work |
 
 **Key constraint**: `DB_POOL >= RAILS_MAX_THREADS + GOOD_JOB_MAX_THREADS` when using

@@ -9,13 +9,13 @@ module Paid
     end
 
     def max_threads(env = ENV)
-      Integer(env.fetch("GOOD_JOB_MAX_THREADS", "10"))
+      Integer(env.fetch("GOOD_JOB_MAX_THREADS", "11"))
     end
 
     def queues(env = ENV)
       env.fetch(
         "GOOD_JOB_QUEUES",
-        "default:3;maintenance:2;metrics:2;knowledge:2;low_priority:1"
+        "default:3;maintenance:2;metrics:2;knowledge:3;low_priority:1"
       )
     end
 
@@ -42,11 +42,11 @@ end
 #   4. knowledge   — embedding and indexing (CPU-intensive, bursty)
 #   5. low_priority — dashboard broadcasts, delayed feedback, non-urgent batch work
 #
-# Thread allocation (default total: 10 threads):
+# Thread allocation (default total: 11 threads):
 #   - default:3     — reserves 3 threads for critical work
 #   - maintenance:2  — 2 threads for cleanup/reconciliation
 #   - metrics:2      — 2 threads for telemetry collection
-#   - knowledge:2    — 2 threads for embedding (CPU-bound)
+#   - knowledge:3    — 3 threads for collection and embedding (CPU-bound, bursty)
 #   - low_priority:1 — 1 thread for non-urgent work
 #
 # See docs/WORKER_POOL_TUNING.md for deployment sizing guidance.

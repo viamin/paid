@@ -291,9 +291,22 @@ RSpec.describe Knowledge::Staleness::Detector do
           .and_return("3\n")
       end
 
-      it "returns not stale" do
+      it "returns not stale when collection is recent" do
         result = detector.call
         expect(result[:stale]).to be false
+      end
+
+      it "forces re-collection when last collection exceeds MAX_STALENESS_AGE" do
+        ProjectVersion.where(commit_sha: old_sha).update_all(created_at: 25.hours.ago)
+
+        allow(worktree_service).to receive(:run_repo_command)
+          .with("diff", "--name-only", "#{old_sha}..#{new_sha}")
+          .and_return("app/models/user.rb\n")
+        allow(RunCollectorsJob).to receive(:perform_later)
+
+        result = detector.call
+        expect(result[:stale]).to be true
+        expect(result[:collection_enqueued]).to be true
       end
     end
 

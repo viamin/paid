@@ -11,14 +11,12 @@ RSpec.describe ApplicationJob do
         AutoReleaseEvaluationJob
         DependabotAutoMergeJob
         DiagnoseErrorJob
-        EnqueueKnowledgeCollectionJob
         GithubTokenValidationJob
         HumanFeedbackCollectionJob
         ModelsSyncJob
         ProcessRunQueueJob
         QdrantCollectionCleanupJob
         RetryTimedOutIssueGoalJob
-        RunCollectorsJob
       ],
       maintenance: %w[
         AgentRunResourceJanitorJob
@@ -43,6 +41,8 @@ RSpec.describe ApplicationJob do
       ],
       knowledge: %w[
         EmbedChunksJob
+        EnqueueKnowledgeCollectionJob
+        RunCollectorsJob
         StyleGuideCompressionJob
         StyleGuideExtractionJob
       ],

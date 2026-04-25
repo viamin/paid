@@ -72,6 +72,8 @@ RSpec.describe "Worker pool load behavior" do
       AbTestAnalysisCheckJob => "metrics",
       AbTestAnalysisJob => "metrics",
       EmbedChunksJob => "knowledge",
+      EnqueueKnowledgeCollectionJob => "knowledge",
+      RunCollectorsJob => "knowledge",
       StyleGuideExtractionJob => "knowledge",
       StyleGuideCompressionJob => "knowledge",
       DashboardBroadcastJob => "low_priority",
