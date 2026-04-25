@@ -2,7 +2,7 @@
 
 class KnowledgeUsageStat < ApplicationRecord
   belongs_to :agent_run
-  belongs_to :project, optional: true
+  belongs_to :project
 
   CONTEXT_TYPES = %w[bundle search].freeze
 
