@@ -6,6 +6,8 @@ class KnowledgeUsageStat < ApplicationRecord
 
   CONTEXT_TYPES = %w[bundle search].freeze
 
+  before_validation :assign_project_from_agent_run
+
   validates :artifact_type, presence: true, length: { maximum: 100 }
   validates :goal, presence: true, length: { maximum: 50 }
   validates :context_type, presence: true, length: { maximum: 50 }, inclusion: { in: CONTEXT_TYPES }
@@ -21,13 +23,13 @@ class KnowledgeUsageStat < ApplicationRecord
 
   private
 
-  def project_matches_agent_run
-    return unless agent_run
+  def assign_project_from_agent_run
+    self.project ||= agent_run&.project
+  end
 
-    if project_id.present? && agent_run.project_id.present? && project_id != agent_run.project_id
-      errors.add(:project, "must match the agent run's project")
-    elsif project_id.nil? && agent_run.project_id.present?
-      self.project_id = agent_run.project_id
-    end
+  def project_matches_agent_run
+    return unless project && agent_run
+
+    errors.add(:project, "must match the agent run's project") if project_id != agent_run.project_id
   end
 end

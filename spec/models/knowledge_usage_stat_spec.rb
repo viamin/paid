@@ -43,7 +43,10 @@ RSpec.describe KnowledgeUsageStat do
       it "derives project from agent_run when project is omitted" do
         agent_run = create(:agent_run)
         stat = build(:knowledge_usage_stat, agent_run: agent_run, project: nil)
-        stat.valid?
+        expect(stat).to be_valid
+        expect { stat.save! }.to change(described_class, :count).by(1)
+
+        expect(stat.project).to eq(agent_run.project)
         expect(stat.project_id).to eq(agent_run.project_id)
       end
     end
