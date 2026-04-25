@@ -13,7 +13,6 @@ RSpec.describe KnowledgeUsageStat do
   describe "validations" do
     it { is_expected.to validate_presence_of(:artifact_type) }
     it { is_expected.to validate_length_of(:artifact_type).is_at_most(100) }
-    it { is_expected.to validate_presence_of(:goal) }
     it { is_expected.to validate_length_of(:goal).is_at_most(50) }
     it { is_expected.to validate_presence_of(:context_type) }
     it { is_expected.to validate_length_of(:context_type).is_at_most(50) }
@@ -50,6 +49,22 @@ RSpec.describe KnowledgeUsageStat do
         expect(stat.project_id).to eq(agent_run.project_id)
       end
     end
+
+    describe "goal_matches_agent_run" do
+      it "is invalid when goal does not match agent run's goal" do
+        agent_run = create(:agent_run, goal: "create_pr")
+        stat = build(:knowledge_usage_stat, agent_run: agent_run, goal: "review")
+        expect(stat).not_to be_valid
+        expect(stat.errors[:goal]).to include("must match the agent run's goal")
+      end
+
+      it "derives goal from agent_run when goal is omitted" do
+        agent_run = create(:agent_run, goal: "create_pr")
+        stat = build(:knowledge_usage_stat, agent_run: agent_run, goal: nil)
+        expect(stat).to be_valid
+        expect(stat.goal).to eq("create_pr")
+      end
+    end
   end
 
   describe "scopes" do
@@ -79,11 +94,13 @@ RSpec.describe KnowledgeUsageStat do
 
     describe ".by_goal" do
       it "filters by goal" do
-        analyze = create(:knowledge_usage_stat, agent_run: agent_run, project: project, goal: "analyze_issue")
-        create(:knowledge_usage_stat, agent_run: create(:agent_run, project: project), project: project,
-          goal: "create_pr")
+        pr_run = create(:agent_run, project: project, goal: "create_pr")
+        issue_run = create(:agent_run, project: project, goal: "create_issue")
+        pr_stat = create(:knowledge_usage_stat, agent_run: pr_run, project: project)
+        create(:knowledge_usage_stat, agent_run: issue_run, project: project,
+          artifact_type: "symbol")
 
-        expect(described_class.by_goal("analyze_issue")).to eq([ analyze ])
+        expect(described_class.by_goal("create_pr")).to eq([ pr_stat ])
       end
     end
 

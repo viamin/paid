@@ -5,7 +5,7 @@ FactoryBot.define do
     agent_run
     project { agent_run&.project || association(:project) }
     artifact_type { "route" }
-    goal { "analyze_issue" }
+    goal { agent_run&.goal || "create_pr" }
     context_type { "bundle" }
     artifact_count { 10 }
     chunk_count { 10 }
