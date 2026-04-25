@@ -191,9 +191,10 @@ RSpec.describe PromptEvolutionJob do
           workflow_calls << args
         end
 
-        create_completed_runs(3, prompt_version: prompt_version, project: project, composite_score: 0.2)
-        create_completed_runs(3, prompt_version: healthy_prompt.current_version, project: project, composite_score: 0.9)
-        create_completed_runs(3, prompt_version: healthy_prompt.current_version, project: other_project, composite_score: 0.1)
+        min_runs = PromptEvolution::SampleRuns::MIN_RUNS_FOR_EVALUATION
+        create_completed_runs(min_runs, prompt_version: prompt_version, project: project, composite_score: 0.2)
+        create_completed_runs(min_runs, prompt_version: healthy_prompt.current_version, project: project, composite_score: 0.9)
+        create_completed_runs(min_runs, prompt_version: healthy_prompt.current_version, project: other_project, composite_score: 0.1)
       end
 
       it "starts workflows only for prompts used by low-quality runs in the paused project" do
@@ -206,13 +207,25 @@ RSpec.describe PromptEvolutionJob do
 
       it "starts workflows for prompts used by scoreable failed runs" do
         failed_prompt = create(:prompt, :global, :with_version)
-        create_failed_run(prompt_version: failed_prompt.current_version, project: project)
+        min_runs = PromptEvolution::SampleRuns::MIN_RUNS_FOR_EVALUATION
+        (min_runs - 1).times { create_failed_run(prompt_version: failed_prompt.current_version, project: project) }
+        create_completed_runs(1, prompt_version: failed_prompt.current_version, project: project, composite_score: 0.2)
 
         perform_targeted_quality_pause_job(project)
 
         prompt_evolution_calls = workflow_calls.select { |call| call.first == Workflows::PromptEvolutionWorkflow }
         expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).to contain_exactly(prompt.id, failed_prompt.id)
         expect_targeted_workflow_for(failed_prompt, project)
+      end
+
+      it "skips targeted prompts with insufficient failing runs" do
+        sparse_prompt = create(:prompt, :global, :with_version)
+        create_failed_run(prompt_version: sparse_prompt.current_version, project: project)
+
+        perform_targeted_quality_pause_job(project)
+
+        prompt_evolution_calls = workflow_calls.select { |call| call.first == Workflows::PromptEvolutionWorkflow }
+        expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).not_to include(sparse_prompt.id)
       end
 
       it "ignores operational failed runs that are not quality scoreable" do

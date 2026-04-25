@@ -88,7 +88,10 @@ class PromptEvolutionJob < ApplicationJob
       .joins(prompt_version: :prompt)
 
     scope = scope.where(goal: goal_type) if goal_type.present?
-    failure_scope(scope).select("prompts.id").distinct
+    failure_scope(scope)
+      .group("prompts.id")
+      .having("COUNT(DISTINCT agent_runs.id) >= ?", MIN_RUNS_FOR_EVOLUTION)
+      .select("prompts.id")
   end
 
   def failure_scope(scope)
