@@ -288,6 +288,87 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "auto-stashes dirty working tree before pulling" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, dirty_tree: true)
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("Working tree has uncommitted changes; auto-stashing...")
+      expect(updater_log).to include("Restoring auto-stashed changes...")
+      expect(updater_log).to include("Lightweight update complete.")
+    end
+  end
+
+  it "stops retrying after max consecutive pull failures" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+
+      # Seed the failure lock at the max
+      FileUtils.mkdir_p(File.join(dir, "tmp"))
+      File.write(File.join(dir, "tmp", "dev-update-failure.lock"), "3")
+
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_MAX_CONSECUTIVE_FAILURES" => "3"
+      )
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("consecutive pull failures detected. Manual intervention required.")
+    end
+  end
+
+  it "records and clears failure lock on pull success" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+
+      # Seed a failure lock below the max
+      FileUtils.mkdir_p(File.join(dir, "tmp"))
+      lock_path = File.join(dir, "tmp", "dev-update-failure.lock")
+      File.write(lock_path, "1")
+
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_MAX_CONSECUTIVE_FAILURES" => "3"
+      )
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("Cleared failure lock after successful pull.")
+      expect(File.exist?(lock_path)).to be(false)
+    end
+  end
+
+  it "records pull failure and exits with error" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, pull_exit_status: 1)
+
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_MAX_CONSECUTIVE_FAILURES" => "3"
+      )
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("Recorded pull failure (1/3).")
+      expect(updater_log).to include("ERROR: git pull --ff-only failed.")
+
+      lock_path = File.join(dir, "tmp", "dev-update-failure.lock")
+      expect(File.exist?(lock_path)).to be(true)
+      expect(File.read(lock_path).strip).to eq("1")
+    end
+  end
+
   def write_executable(path, contents)
     File.write(path, contents)
     FileUtils.chmod("+x", path)
@@ -346,7 +427,9 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     start_overmind_running: false,
     dev_starts_overmind: true,
     capture_port_in_dev: false,
-    capture_kill_all_in_dev: false
+    capture_kill_all_in_dev: false,
+    dirty_tree: false,
+    pull_exit_status: 0
   )
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
@@ -387,6 +470,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       BASH
     )
 
+    dirty_status_output = dirty_tree ? " M dirty-file.txt" : ""
     write_executable(
       File.join(dir, "stubbin", "git"),
       <<~BASH
@@ -395,8 +479,21 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
           rev-parse)
             echo "main"
             ;;
-          pull)
+          status)
+            if [ "${2:-}" = "--porcelain" ]; then
+              printf '%s' "#{dirty_status_output}"
+            fi
             exit 0
+            ;;
+          stash)
+            echo "stash: $*" >> "#{dir}/git-stash.log"
+            exit 0
+            ;;
+          checkout)
+            exit 0
+            ;;
+          pull)
+            exit #{pull_exit_status}
             ;;
           *)
             echo "unexpected git command: $*" >&2

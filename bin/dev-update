@@ -42,6 +42,9 @@ OVERMIND_STOP_POLL_COUNT="${DEV_UPDATE_OVERMIND_STOP_POLL_COUNT:-10}"
 OVERMIND_START_POLL_COUNT="${DEV_UPDATE_OVERMIND_START_POLL_COUNT:-15}"
 OVERMIND_POLL_INTERVAL="${DEV_UPDATE_OVERMIND_POLL_INTERVAL:-1}"
 STARTUP_CLEANUP_KILL_ALL="${DEV_UPDATE_STARTUP_CLEANUP_KILL_ALL:-}"
+STASHED_CHANGES=0
+FAILURE_LOCK_FILE="${APP_ROOT}/tmp/dev-update-failure.lock"
+MAX_CONSECUTIVE_FAILURES="${DEV_UPDATE_MAX_CONSECUTIVE_FAILURES:-3}"
 
 newline_list_to_csv() {
   printf '%s' "${1:-}" | tr '\n' ',' | sed 's/,$//'
@@ -104,6 +107,59 @@ truncate_dev_update_logs() {
   truncate_log_if_oversized "$START_DEV_LOG"
   truncate_log_if_oversized "$TMUX_LOG"
   truncate_log_if_oversized "$OVERMIND_LOG"
+}
+
+tree_is_dirty() {
+  [ -n "$(git status --porcelain 2>/dev/null)" ]
+}
+
+stash_dirty_tree() {
+  if tree_is_dirty; then
+    log "Working tree has uncommitted changes; auto-stashing..."
+    local stash_output
+    stash_output="$(git stash push --include-untracked -m "dev-update-autostash" 2>&1)"
+    log_command_output "git stash" "$stash_output"
+    STASHED_CHANGES=1
+  fi
+}
+
+unstash_dirty_tree() {
+  if [ "$STASHED_CHANGES" -eq 1 ]; then
+    log "Restoring auto-stashed changes..."
+    if ! git stash pop 2>&1; then
+      log "WARNING: git stash pop failed (conflict). Stashed changes preserved in git stash. Run 'git stash pop' manually."
+    fi
+    STASHED_CHANGES=0
+  fi
+}
+
+check_failure_lock() {
+  mkdir -p "$(dirname "$FAILURE_LOCK_FILE")"
+  if [ -f "$FAILURE_LOCK_FILE" ]; then
+    local count
+    count="$(cat "$FAILURE_LOCK_FILE")"
+    if [ "$count" -ge "$MAX_CONSECUTIVE_FAILURES" ]; then
+      log "ERROR: $count consecutive pull failures detected. Manual intervention required."
+      log "Remove $FAILURE_LOCK_FILE after resolving the working tree issue."
+      exit 1
+    fi
+  fi
+}
+
+record_failure() {
+  mkdir -p "$(dirname "$FAILURE_LOCK_FILE")"
+  local count=0
+  [ -f "$FAILURE_LOCK_FILE" ] && count="$(cat "$FAILURE_LOCK_FILE")"
+  count=$((count + 1))
+  echo "$count" > "$FAILURE_LOCK_FILE"
+  log "Recorded pull failure ($count/$MAX_CONSECUTIVE_FAILURES)."
+}
+
+clear_failure_lock() {
+  if [ -f "$FAILURE_LOCK_FILE" ]; then
+    rm -f "$FAILURE_LOCK_FILE"
+    log "Cleared failure lock after successful pull."
+  fi
 }
 
 configure_logging() {
@@ -185,14 +241,22 @@ ensure_on_main() {
   current_branch="$(git rev-parse --abbrev-ref HEAD)"
 
   if [ "$current_branch" != "main" ]; then
+    stash_dirty_tree
     log "Switching to main branch (currently on $current_branch)..."
     git checkout main
   fi
 }
 
 pull_latest() {
+  stash_dirty_tree
   log "Pulling latest changes from main..."
-  git pull --ff-only origin main
+  if ! git pull --ff-only origin main; then
+    record_failure
+    unstash_dirty_tree
+    fail "git pull --ff-only failed. Check for diverged history or upstream issues."
+  fi
+  clear_failure_lock
+  unstash_dirty_tree
 }
 
 stop_overmind() {
@@ -325,6 +389,7 @@ case "$MODE" in
   --lightweight)
     configure_logging
     log_trigger_context
+    check_failure_lock
     enforce_safe_mode
     if [ "$MODE" = "--full" ]; then
       run_full_restart
@@ -338,6 +403,7 @@ case "$MODE" in
   --full)
     configure_logging
     log_trigger_context
+    check_failure_lock
     run_full_restart
     ;;
   *)
