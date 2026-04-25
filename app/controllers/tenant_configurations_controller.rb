@@ -13,7 +13,7 @@ class TenantConfigurationsController < ApplicationController
 
     ActiveRecord::Base.transaction do
       @tenant_setting.update!(tenant_setting_params)
-      update_feature_flag_rollouts!
+      update_feature_flag_rollouts! if feature_flag_rollout_params.present?
     end
 
     redirect_to edit_tenant_configuration_path, notice: "Tenant configuration saved successfully."
@@ -38,6 +38,11 @@ class TenantConfigurationsController < ApplicationController
   end
 
   def update_feature_flag_rollouts!
+    # Flipper percentage gates are global (not tenant-scoped), so require
+    # the stricter owner-only manage_feature_flags? policy to prevent
+    # cross-tenant privilege escalation in multi-tenant deployments.
+    authorize current_account, :manage_feature_flags?
+
     feature_flag_rollout_params.each do |flag_name, rollout|
       FeatureFlags.enable_percentage_of_actors(flag_name, rollout["percentage_of_actors"])
       FeatureFlags.enable_percentage_of_time(flag_name, rollout["percentage_of_time"])

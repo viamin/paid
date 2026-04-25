@@ -105,6 +105,35 @@ RSpec.describe "TenantConfigurations" do
       expect(FeatureFlags.rollout_status(:explicit_pr_automation_decisions)[:percentage_of_actors]).to eq(0)
     end
 
+    it "rejects admins from modifying feature flag rollouts" do
+      admin = create(:user, :admin, account: account)
+      sign_out user
+      sign_in admin
+
+      patch tenant_configuration_path, params: {
+        tenant_setting: { agent_settings: { default_goal: "review", auto_continue: "1" } },
+        feature_flag_rollouts: {
+          explicit_pr_automation_decisions: { percentage_of_actors: "50", percentage_of_time: "0" }
+        }
+      }
+
+      expect(response).to redirect_to(root_path)
+      expect(FeatureFlags.rollout_status(:explicit_pr_automation_decisions)[:percentage_of_actors]).to eq(0)
+    end
+
+    it "allows admins to update tenant settings without feature flag rollouts" do
+      admin = create(:user, :admin, account: account)
+      sign_out user
+      sign_in admin
+
+      patch tenant_configuration_path, params: {
+        tenant_setting: { guardrails: { max_concurrent_runs: "2" } }
+      }
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(account.tenant_setting.reload.effective_guardrails["max_concurrent_runs"]).to eq(2)
+    end
+
     it "rejects viewers" do
       viewer = create(:user, :viewer, account: account)
       sign_out user
