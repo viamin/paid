@@ -23,15 +23,17 @@ module PromptEvolution
     MIN_RUNS_FOR_EVALUATION = 5
     MAX_RUNS_TO_FETCH = 10_000
 
-    attr_reader :sample_size, :days, :project_id, :goal_type, :failure_only,
+    attr_reader :sample_size, :days, :project_id, :prompt_id, :goal_type, :failure_only,
       :metric_type, :threshold, :min_runs_for_evaluation, :random
 
-    def initialize(sample_size: DEFAULT_SAMPLE_SIZE, days: DEFAULT_DAYS, project_id: nil, goal_type: nil,
-                   failure_only: false, metric_type: "composite_score", threshold: QUALITY_THRESHOLD,
-                   min_runs_for_evaluation: MIN_RUNS_FOR_EVALUATION, random: Random.new)
+    def initialize(sample_size: DEFAULT_SAMPLE_SIZE, days: DEFAULT_DAYS, project_id: nil, prompt_id: nil,
+                   goal_type: nil, failure_only: false, metric_type: "composite_score",
+                   threshold: QUALITY_THRESHOLD, min_runs_for_evaluation: MIN_RUNS_FOR_EVALUATION,
+                   random: Random.new)
       @sample_size = sample_size
       @days = days
       @project_id = project_id
+      @prompt_id = prompt_id
       @goal_type = goal_type
       @failure_only = failure_only
       @metric_type = metric_type.presence || "composite_score"
@@ -66,6 +68,7 @@ module PromptEvolution
 
       scope = failure_only ? scope.where(AgentRun.quality_scoreable_sql) : scope.completed
       scope = scope.where(project_id: project_id) if project_id
+      scope = scope.joins(:prompt_version).where(prompt_versions: { prompt_id: prompt_id }) if prompt_id
       scope = scope.where(goal: goal_type) if goal_type.present?
       failure_only ? failing_runs(scope) : scope
     end

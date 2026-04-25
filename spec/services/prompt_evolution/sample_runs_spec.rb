@@ -185,6 +185,30 @@ RSpec.describe PromptEvolution::SampleRuns do
       expect(run_ids).to include(failed_run.id)
     end
 
+    it "scopes targeted sampling to the requested prompt before sampling" do
+      other_prompt = create(:prompt, :global, :with_version)
+
+      5.times do
+        create_completed_run(composite_score: 0.2)
+        create_completed_run(composite_score: 0.2, prompt_version: other_prompt.current_version)
+      end
+
+      result = described_class.call(
+        sample_size: 5,
+        days: 7,
+        project_id: project.id,
+        prompt_id: prompt.id,
+        failure_only: true,
+        metric_type: "composite_score",
+        threshold: 0.5,
+        min_runs_for_evaluation: 5
+      )
+
+      expect(result.samples).to have_attributes(size: 5)
+      expect(result.samples.pluck(:prompt_version).uniq).to eq([ prompt_version ])
+      expect(result.evolution_candidates.pluck(:prompt_version)).to eq([ prompt_version ])
+    end
+
     it "excludes operational failed runs when failure_only is enabled" do
       failed_run = create_completed_run(
         status: "failed",

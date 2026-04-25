@@ -34,6 +34,19 @@ RSpec.describe Activities::SampleRunsActivity do
         scores: scores)
     end
 
+    def create_failing_run(version)
+      create(:agent_run, :completed,
+        project: project,
+        prompt_version: version,
+        goal: "create_pr",
+        completed_at: 1.day.ago,
+        cost_cents: 10,
+        duration_seconds: 120).tap do |run|
+        create(:quality_metric, :automated, agent_run: run,
+          prompt_version: version, composite_score: 0.2)
+      end
+    end
+
     context "with completed runs" do
       before do
         3.times do
@@ -88,6 +101,25 @@ RSpec.describe Activities::SampleRunsActivity do
 
         expect(result[:quality_metrics]).to be_an(Array)
         expect(result[:quality_metrics]).to all(include(:composite_score))
+      end
+
+      it "passes prompt_id through to sampling so targeted failures stay eligible" do
+        other_prompt = create(:prompt, :global, :with_version)
+
+        5.times do
+          create_failing_run(prompt_version)
+          create_failing_run(other_prompt.current_version)
+        end
+
+        result = activity.execute(input.merge(
+          sample_size: 5,
+          failure_only: true,
+          threshold: 0.5,
+          min_runs_for_evaluation: 3
+        ))
+
+        expect(result[:evolution_candidates]).to all(include(prompt_version_id: prompt_version.id))
+        expect(result[:total_samples]).to eq(5)
       end
     end
 

@@ -29,6 +29,7 @@ module Activities
         sample_size: sample_size,
         days: sample_days,
         project_id: project_id,
+        prompt_id: prompt_id,
         goal_type: goal_type,
         failure_only: failure_only,
         metric_type: metric_type,
