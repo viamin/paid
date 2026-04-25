@@ -209,10 +209,14 @@ module QualityRecovery
     end
 
     def escalated_average
+      return 0.0 if samples.empty?
+
       samples.sum / samples.size
     end
 
     def prompt_evolution_average
+      return 0.0 if prompt_evolution_samples.empty?
+
       prompt_evolution_samples.sum / prompt_evolution_samples.size
     end
 
