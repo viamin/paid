@@ -21,6 +21,10 @@ module Knowledge
           val
         end
       end
+      # Maximum time since last collection before re-collection is forced,
+      # regardless of commit count. Prevents quiet repos that advance by fewer
+      # than STALENESS_THRESHOLD commits from staying permanently uncollected.
+      MAX_STALENESS_AGE = 24.hours
       FETCH_THROTTLE = 2.minutes
 
       attr_reader :project
@@ -53,7 +57,11 @@ module Knowledge
         commit_distance = commits_between(last_sha, current_sha)
         # commit_distance == 0 with different SHAs indicates a force-push/rewind
         # (new_sha is an ancestor of old_sha), which should be treated as stale.
-        return not_stale_result(current_sha, last_sha:) if commit_distance.positive? && commit_distance < STALENESS_THRESHOLD
+        # When below the commit threshold, still re-collect if the last collection
+        # is older than MAX_STALENESS_AGE to avoid permanently stale quiet repos.
+        if commit_distance.positive? && commit_distance < STALENESS_THRESHOLD
+          return not_stale_result(current_sha, last_sha:) unless collection_expired?(last_version)
+        end
 
         changed_files = changed_files_between(last_sha, current_sha)
         stale_count = mark_stale_artifacts(changed_files, last_version)
@@ -87,6 +95,10 @@ module Knowledge
           .merge(CollectorRun.completed)
           .by_recency
           .first
+      end
+
+      def collection_expired?(last_version)
+        last_version.created_at < MAX_STALENESS_AGE.ago
       end
 
       def commits_between(old_sha, new_sha)
