@@ -17,24 +17,26 @@ RSpec.describe PromptEvolutionJob do
     let(:prompt) { create(:prompt, :global, :with_version) }
     let(:prompt_version) { prompt.current_version }
 
-    def create_completed_runs(count, prompt_version:, project:, composite_score: 0.5, goal: "create_pr")
+    def create_completed_runs(count, prompt_version:, project:, composite_score: 0.5, goal: "create_pr",
+                              completed_at: 1.day.ago)
       count.times do
         run = create(:agent_run, :completed,
           project: project,
           prompt_version: prompt_version,
           goal: goal,
-          completed_at: 1.day.ago)
+          completed_at: completed_at)
         create(:quality_metric, :automated, agent_run: run,
           prompt_version: prompt_version, composite_score: composite_score)
       end
     end
 
-    def create_failed_run(prompt_version:, project:, composite_score: 0.2, goal: "create_pr", error_message: "Agent produced low-quality output")
+    def create_failed_run(prompt_version:, project:, composite_score: 0.2, goal: "create_pr",
+                          error_message: "Agent produced low-quality output", completed_at: 1.day.ago)
       run = create(:agent_run, :failed,
         project: project,
         prompt_version: prompt_version,
         goal: goal,
-        completed_at: 1.day.ago,
+        completed_at: completed_at,
         error_message: error_message)
       create(:quality_metric, :automated, agent_run: run,
         prompt_version: prompt_version, composite_score: composite_score)
@@ -91,7 +93,8 @@ RSpec.describe PromptEvolutionJob do
         create_completed_runs(
           PromptEvolution::SampleRuns::MIN_RUNS_FOR_EVALUATION,
           prompt_version: prompt_version,
-          project: project
+          project: project,
+          composite_score: 0.2
         )
       end
 
@@ -103,6 +106,31 @@ RSpec.describe PromptEvolutionJob do
           hash_including(prompt_id: prompt.id, project_id: project.id, recovery_action_id: 123),
           hash_including(id: "quality-recovery-prompt-evolution-123")
         )
+      end
+
+      it "keeps the targeted scope constrained to the supplied prompt" do
+        other_prompt = create(:prompt, :global, :with_version)
+        workflow_calls = []
+        allow(temporal_client).to receive(:start_workflow) do |*args|
+          workflow_calls << args
+        end
+        create_completed_runs(
+          PromptEvolution::SampleRuns::MIN_RUNS_FOR_EVALUATION,
+          prompt_version: other_prompt.current_version,
+          project: project,
+          composite_score: 0.2
+        )
+
+        job.perform(
+          project_id: project.id,
+          prompt_id: prompt.id,
+          recovery_action_id: 123,
+          failure_only: true,
+          threshold: 0.5
+        )
+
+        prompt_evolution_calls = workflow_calls.select { |call| call.first == Workflows::PromptEvolutionWorkflow }
+        expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).to contain_exactly(prompt.id)
       end
     end
 
@@ -172,6 +200,22 @@ RSpec.describe PromptEvolutionJob do
 
         expect(action.reload.status).to eq("failed")
         expect(action.result["error"]).to include("status" => "no_eligible_prompt")
+      end
+
+      it "honors sample_days when selecting prompts with sufficient runs" do
+        recent_prompt = create(:prompt, :global, :with_version)
+        create_completed_runs(
+          PromptEvolution::SampleRuns::MIN_RUNS_FOR_EVALUATION,
+          prompt_version: recent_prompt.current_version,
+          project: project,
+          completed_at: 3.days.ago
+        )
+
+        job.perform(sample_days: 1)
+
+        expect(temporal_client).not_to have_received(:start_workflow)
+          .with(Workflows::PromptEvolutionWorkflow,
+            hash_including(prompt_id: recent_prompt.id), anything)
       end
     end
 
@@ -312,18 +356,41 @@ RSpec.describe PromptEvolutionJob do
 
       it "ignores targeted failures outside the sample window" do
         old_prompt = create(:prompt, :global, :with_version)
-        run = create(:agent_run, :completed,
-          project: project,
+        create_completed_runs(
+          PromptEvolution::SampleRuns::MIN_RUNS_FOR_EVALUATION,
           prompt_version: old_prompt.current_version,
-          goal: "create_pr",
-          completed_at: (described_class::SAMPLE_DAYS + 1).days.ago)
-        create(:quality_metric, :automated, agent_run: run,
-          prompt_version: old_prompt.current_version, composite_score: 0.2)
+          project: project,
+          composite_score: 0.2,
+          completed_at: (described_class::SAMPLE_DAYS + 1).days.ago
+        )
 
         perform_targeted_quality_pause_job(project)
 
         prompt_evolution_calls = workflow_calls.select { |call| call.first == Workflows::PromptEvolutionWorkflow }
         expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).not_to include(old_prompt.id)
+      end
+
+      it "honors sample_days when selecting prompts with targeted failures" do
+        older_failed_prompt = create(:prompt, :global, :with_version)
+        create_completed_runs(
+          PromptEvolution::SampleRuns::MIN_RUNS_FOR_EVALUATION,
+          prompt_version: older_failed_prompt.current_version,
+          project: project,
+          composite_score: 0.2,
+          completed_at: 3.days.ago
+        )
+
+        job.perform(
+          project_id: project.id,
+          failure_only: true,
+          metric_type: "composite_score",
+          threshold: 0.5,
+          goal_type: "create_pr",
+          sample_days: 1
+        )
+
+        prompt_evolution_calls = workflow_calls.select { |call| call.first == Workflows::PromptEvolutionWorkflow }
+        expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).not_to include(older_failed_prompt.id)
       end
     end
   end

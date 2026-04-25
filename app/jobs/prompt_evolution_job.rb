@@ -23,6 +23,7 @@ class PromptEvolutionJob < ApplicationJob
               threshold: PromptEvolution::SampleRuns::QUALITY_THRESHOLD, goal_type: nil)
     @project_id = project_id
     @prompt_id = prompt_id
+    @sample_days = sample_days
     @failure_only = failure_only
     @metric_type = metric_type.presence || "composite_score"
     @threshold = threshold.to_f
@@ -52,7 +53,7 @@ class PromptEvolutionJob < ApplicationJob
 
   private
 
-  attr_reader :project_id, :prompt_id, :failure_only, :metric_type, :threshold, :goal_type
+  attr_reader :project_id, :prompt_id, :sample_days, :failure_only, :metric_type, :threshold, :goal_type
 
   def eligible_prompts
     scope = Prompt
@@ -62,7 +63,9 @@ class PromptEvolutionJob < ApplicationJob
       .distinct
 
     if targeted?
-      scope.where(id: prompts_with_targeted_failures)
+      targeted_scope = scope.where(id: prompts_with_targeted_failures)
+      targeted_scope = targeted_scope.where(id: prompt_id) if prompt_id
+      targeted_scope
     else
       base = scope.where(id: prompts_with_sufficient_runs)
       base = base.where(id: prompt_id) if prompt_id
@@ -82,7 +85,7 @@ class PromptEvolutionJob < ApplicationJob
   def prompts_with_sufficient_runs
     AgentRun
       .completed
-      .where(completed_at: SAMPLE_DAYS.days.ago..)
+      .where(completed_at: sample_days.days.ago..)
       .where.not(prompt_version_id: nil)
       .joins(prompt_version: :prompt)
       .group("prompts.id")
@@ -93,7 +96,7 @@ class PromptEvolutionJob < ApplicationJob
   def prompts_with_targeted_failures
     scope = AgentRun
       .where(AgentRun.quality_scoreable_sql)
-      .where(completed_at: SAMPLE_DAYS.days.ago..)
+      .where(completed_at: sample_days.days.ago..)
       .where(project_id: project_id)
       .where.not(prompt_version_id: nil)
       .joins(:quality_metrics)
