@@ -41,8 +41,16 @@ module Workflows
         {
           prompt_id: prompt_id,
           project_id: project_id,
+          goal_type: input[:goal_type],
           sample_size: input.fetch(:sample_size, 50),
-          sample_days: input.fetch(:sample_days, 14)
+          sample_days: input.fetch(:sample_days, 14),
+          failure_only: input.fetch(:failure_only, false),
+          metric_type: input.fetch(:metric_type, "composite_score"),
+          threshold: input.fetch(:threshold, PromptEvolution::SampleRuns::QUALITY_THRESHOLD),
+          min_runs_for_evaluation: input.fetch(
+            :min_runs_for_evaluation,
+            PromptEvolution::SampleRuns::MIN_RUNS_FOR_EVALUATION
+          )
         },
         timeout: 60
       )

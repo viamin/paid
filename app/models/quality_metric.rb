@@ -55,6 +55,14 @@ class QualityMetric < ApplicationRecord
   scope :by_time_period, ->(start_date, end_date) { where(created_at: start_date..end_date) }
   scope :with_composite_score, -> { where.not(composite_score: nil) }
   scope :recent, -> { order(created_at: :desc) }
+  scope :below_threshold, ->(metric_type, threshold) {
+    if metric_type == "composite_score"
+      where("quality_metrics.composite_score < ?", threshold)
+    else
+      where("jsonb_exists(quality_metrics.scores, ?)", metric_type)
+        .where("(quality_metrics.scores ->> ?)::float < ?", metric_type, threshold)
+    end
+  }
 
   # Score degradation rate per review comment (0.1 = 10% penalty per comment).
   REVIEW_COMMENT_DEGRADATION = 0.1

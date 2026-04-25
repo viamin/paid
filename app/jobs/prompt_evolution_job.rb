@@ -16,11 +16,19 @@ class PromptEvolutionJob < ApplicationJob
 
   # Default lookback window for sampling (days)
   SAMPLE_DAYS = 14
+  TARGETED_SAMPLE_SIZE = QualityThreshold::DEFAULT_WINDOW_SIZE
+  TARGETED_MIN_RUNS_FOR_EVOLUTION = QualityThreshold::DEFAULT_MIN_SAMPLE_SIZE
 
-  def perform(project_id: nil, prompt_id: nil, recovery_action_id: nil, sample_days: SAMPLE_DAYS)
+  def perform(project_id: nil, prompt_id: nil, recovery_action_id: nil, sample_days: SAMPLE_DAYS,
+              failure_only: false, metric_type: "composite_score",
+              threshold: PromptEvolution::SampleRuns::QUALITY_THRESHOLD, goal_type: nil)
     @project_id = project_id
     @prompt_id = prompt_id
     @sample_days = sample_days
+    @failure_only = failure_only
+    @metric_type = metric_type.presence || "composite_score"
+    @threshold = threshold.to_f
+    @goal_type = goal_type
     workflow_started = false
     eligible_prompt_found = false
 
@@ -46,17 +54,29 @@ class PromptEvolutionJob < ApplicationJob
 
   private
 
-  attr_reader :project_id, :prompt_id
+  attr_reader :project_id, :prompt_id, :sample_days, :failure_only, :metric_type, :threshold, :goal_type
 
   def eligible_prompts
     scope = Prompt
       .active
       .where.not(current_version_id: nil)
       .where.not(id: prompts_with_running_tests)
-      .where(id: prompts_with_sufficient_runs)
-    scope = scope.where(id: prompt_id) if prompt_id
-    scope = scope.where("project_id = ? OR project_id IS NULL", project_id) if project_id
-    scope
+      .distinct
+
+    if targeted?
+      targeted_scope = scope.where(id: prompts_with_targeted_failures)
+      targeted_scope = targeted_scope.where(id: prompt_id) if prompt_id
+      targeted_scope
+    else
+      base = scope.where(id: prompts_with_sufficient_runs)
+      base = base.where(id: prompt_id) if prompt_id
+      base = base.where("project_id = ? OR project_id IS NULL", project_id) if project_id
+      base
+    end
+  end
+
+  def targeted?
+    project_id.present? && failure_only
   end
 
   def prompts_with_running_tests
@@ -66,11 +86,29 @@ class PromptEvolutionJob < ApplicationJob
   def prompts_with_sufficient_runs
     AgentRun
       .completed
-      .where(completed_at: @sample_days.days.ago..)
+      .where(completed_at: sample_days.days.ago..)
       .where.not(prompt_version_id: nil)
       .joins(prompt_version: :prompt)
       .group("prompts.id")
       .having("COUNT(*) >= ?", MIN_RUNS_FOR_EVOLUTION)
+      .select("prompts.id")
+  end
+
+  def prompts_with_targeted_failures
+    scope = AgentRun
+      .where(AgentRun.quality_scoreable_sql)
+      .where(completed_at: sample_days.days.ago..)
+      .where(project_id: project_id)
+      .where.not(prompt_version_id: nil)
+      .joins(:quality_metrics)
+      .merge(QualityMetric.automated)
+      .merge(QualityMetric.below_threshold(metric_type, threshold))
+      .joins(prompt_version: :prompt)
+
+    scope = scope.where(goal: goal_type) if goal_type.present?
+    scope
+      .group("prompts.id")
+      .having("COUNT(DISTINCT agent_runs.id) >= ?", TARGETED_MIN_RUNS_FOR_EVOLUTION)
       .select("prompts.id")
   end
 
@@ -79,12 +117,7 @@ class PromptEvolutionJob < ApplicationJob
 
     Paid.temporal_client.start_workflow(
       Workflows::PromptEvolutionWorkflow,
-      {
-        prompt_id: prompt.id,
-        project_id: project_id || prompt.project_id,
-        sample_days: sample_days,
-        recovery_action_id: recovery_action_id
-      },
+      workflow_input(prompt, recovery_action_id: recovery_action_id, sample_days: sample_days),
       id: workflow_id,
       task_queue: ENV.fetch("TEMPORAL_TASK_QUEUE", "paid-tasks")
     )
@@ -98,8 +131,29 @@ class PromptEvolutionJob < ApplicationJob
     )
   end
 
+  def workflow_input(prompt, recovery_action_id: nil, sample_days: SAMPLE_DAYS)
+    input = {
+      prompt_id: prompt.id,
+      project_id: project_id || prompt.project_id,
+      sample_days: sample_days,
+      recovery_action_id: recovery_action_id
+    }
+
+    return input unless failure_only
+
+    input.merge(
+      goal_type: goal_type,
+      sample_size: TARGETED_SAMPLE_SIZE,
+      failure_only: true,
+      metric_type: metric_type,
+      threshold: threshold,
+      min_runs_for_evaluation: TARGETED_MIN_RUNS_FOR_EVOLUTION
+    )
+  end
+
   def workflow_id_for(prompt, recovery_action_id)
     return "quality-recovery-prompt-evolution-#{recovery_action_id}" if recovery_action_id
+    return "prompt-evolution-quality-pause-#{project_id}-#{prompt.id}-#{goal_type.presence || 'all-goals'}-#{metric_type}-#{Date.current}" if targeted?
 
     "prompt-evolution-#{prompt.id}-#{Date.current}"
   end

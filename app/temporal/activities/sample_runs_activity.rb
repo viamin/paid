@@ -15,15 +15,26 @@ module Activities
     def execute(input)
       prompt_id = input[:prompt_id]
       project_id = input[:project_id]
+      goal_type = input[:goal_type]
       sample_size = input.fetch(:sample_size, 50)
       sample_days = input.fetch(:sample_days, 14)
+      failure_only = input.fetch(:failure_only, false)
+      metric_type = input.fetch(:metric_type, "composite_score")
+      threshold = input.fetch(:threshold, PromptEvolution::SampleRuns::QUALITY_THRESHOLD)
+      min_runs = input.fetch(:min_runs_for_evaluation, PromptEvolution::SampleRuns::MIN_RUNS_FOR_EVALUATION)
 
       prompt = Prompt.find(prompt_id)
 
       result = PromptEvolution::SampleRuns.call(
         sample_size: sample_size,
         days: sample_days,
-        project_id: project_id
+        project_id: project_id,
+        prompt_id: prompt_id,
+        goal_type: goal_type,
+        failure_only: failure_only,
+        metric_type: metric_type,
+        threshold: threshold,
+        min_runs_for_evaluation: min_runs
       )
 
       # Filter candidates to only those for this prompt
@@ -36,7 +47,7 @@ module Activities
         s[:prompt_version]&.prompt_id == prompt.id
       end
 
-      sample_outputs = extract_sample_outputs(prompt_samples)
+      sample_outputs = extract_sample_outputs(prompt_samples, metric_type: metric_type, threshold: threshold)
       quality_metrics = extract_quality_metrics(prompt_samples)
 
       # Serialize prompt stats (only for this prompt's versions)
@@ -58,28 +69,39 @@ module Activities
 
     private
 
-    def extract_sample_outputs(samples)
-      sorted = samples.sort_by { |s| s[:composite_score] || 0 }
+    def extract_sample_outputs(samples, metric_type:, threshold:)
+      sorted = samples.sort_by { |s| score_for(s, metric_type) || 0 }
       failures = sorted.first(MAX_SAMPLE_OUTPUTS).filter_map do |s|
-        next unless s[:composite_score] && s[:composite_score] < PromptEvolution::SampleRuns::QUALITY_THRESHOLD
+        score = score_for(s, metric_type)
+        next unless score && score < threshold.to_f
 
-        summarize_run(s)
+        summarize_run(s, metric_type: metric_type)
       end
 
       successes = sorted.reverse.first(MAX_SAMPLE_OUTPUTS).filter_map do |s|
-        next unless s[:composite_score] && s[:composite_score] >= PromptEvolution::SampleRuns::QUALITY_THRESHOLD
+        score = score_for(s, metric_type)
+        next unless score && score >= threshold.to_f
 
-        summarize_run(s)
+        summarize_run(s, metric_type: metric_type)
       end
 
       { successes: successes, failures: failures }
     end
 
-    def summarize_run(sample)
+    def score_for(sample, metric_type)
+      return sample[:composite_score] if metric_type == "composite_score"
+
+      sample[:scores]&.dig(metric_type)&.to_f
+    end
+
+    def summarize_run(sample, metric_type: "composite_score")
       run = sample[:agent_run]
       parts = []
       parts << "Goal: #{run.goal}" if run.goal.present?
       parts << "Score: #{sample[:composite_score]&.round(4)}"
+      if metric_type != "composite_score" && sample[:scores]&.key?(metric_type)
+        parts << "#{metric_type}: #{sample[:scores][metric_type].to_f.round(4)}"
+      end
       parts << "Cost: #{sample[:cost_cents]}c" if sample[:cost_cents]
       parts << "Duration: #{sample[:duration_seconds]}s" if sample[:duration_seconds]
       parts.join(", ").truncate(MAX_OUTPUT_LENGTH)
@@ -87,10 +109,9 @@ module Activities
 
     def extract_quality_metrics(samples)
       samples.filter_map do |s|
-        score = s[:composite_score]
-        next unless score
+        next unless s[:composite_score] || s[:scores].present?
 
-        { composite_score: score }
+        { composite_score: s[:composite_score], scores: s[:scores] }
       end
     end
 

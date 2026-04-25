@@ -66,7 +66,11 @@ module QualityRecovery
       PromptEvolutionJob.perform_later(
         project_id: project.id,
         prompt_id: prompt.id,
-        recovery_action_id: action.id
+        recovery_action_id: action.id,
+        failure_only: true,
+        metric_type: metric_type,
+        threshold: breach.fetch(:threshold).min_value,
+        goal_type: agent_run.goal
       )
       action.update!(result: { status: "queued", prompt_id: prompt.id })
 
