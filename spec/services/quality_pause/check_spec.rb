@@ -70,7 +70,7 @@ RSpec.describe QualityPause::Check do
       expect(project.quality_recovery_actions.last.action_type).to eq("prompt_evolution")
     end
 
-    it "starts prompt evolution when rolling average falls below threshold" do
+    it "starts targeted prompt evolution when rolling average falls below threshold" do
       create_quality_metrics(project, scores: [ 0.2, 0.3, 0.1, 0.4, 0.3 ], prompt_version: prompt_version)
 
       expect {
@@ -78,7 +78,11 @@ RSpec.describe QualityPause::Check do
       }.to have_enqueued_job(PromptEvolutionJob).with(
         project_id: project.id,
         prompt_id: prompt.id,
-        recovery_action_id: kind_of(Integer)
+        recovery_action_id: kind_of(Integer),
+        failure_only: true,
+        metric_type: "composite_score",
+        threshold: 0.5,
+        goal_type: agent_run.goal
       )
 
       project.reload
@@ -360,6 +364,14 @@ RSpec.describe QualityPause::Check do
       expect(notification).to be_present
       expect(notification.severity).to eq("error")
       expect(notification.metadata["diagnosis"]).to include("metric_type" => "composite_score")
+    end
+
+    it "does not enqueue prompt evolution when the project is not paused" do
+      create_quality_metrics(project, scores: [ 0.8, 0.7, 0.9, 0.6, 0.8 ])
+
+      expect {
+        described_class.call(agent_run: agent_run)
+      }.not_to have_enqueued_job(PromptEvolutionJob)
     end
 
     describe "grace period after manual resume" do
