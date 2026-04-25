@@ -1367,12 +1367,8 @@ module Containers
     end
 
     def compute_direct_outbound_provider?
-      return false if agent_run.nil?
-
-      return true if agent_run.agent_type.to_s == "kilocode"
-      return true if agent_run.provider&.requires_direct_outbound?
-
       settings = resolved_user_settings
+      return true if primary_provider_requires_direct_outbound?(settings)
       return false unless settings
 
       return true if settings.fallback_enabled? && fallback_providers_require_direct_outbound?(settings)
@@ -1380,20 +1376,71 @@ module Containers
       rate_limit_fallback_providers_require_direct_outbound?(settings)
     end
 
+    def primary_provider_requires_direct_outbound?(settings)
+      provider_requires_direct_outbound?(primary_provider_identifier(settings), user: settings&.user)
+    end
+
+    def primary_provider_identifier(settings)
+      if runnable_saved_provider?
+        agent_run.provider.routing_key
+      elsif agent_run&.provider.present? && settings&.fallback_enabled?
+        # Saved provider exists but isn't container-executable — derive the
+        # effective primary from the same fallback order that
+        # RunAgentActivity#build_provider_order uses: try configured fallbacks
+        # first, only fall through to the goal default when none are runnable.
+        first_runnable_fallback_for_saved_provider(settings) ||
+          settings.default_provider_identifier_for_goal(run_goal)
+      elsif agent_run.present? && runnable_agent_type?(agent_run.agent_type)
+        agent_run.agent_type
+      elsif settings
+        settings.default_provider_identifier_for_goal(run_goal)
+      end
+    end
+
+    def runnable_saved_provider?
+      agent_run&.provider.present? && runnable_provider?(agent_run.provider)
+    end
+
+    def first_runnable_fallback_for_saved_provider(settings)
+      fallbacks = settings.fallback_priority_for(
+        primary_provider: agent_run.provider.routing_key, identifiers: true
+      )
+      fallbacks.find do |identifier|
+        provider = Provider.for_identifier(settings.user, identifier)
+        provider && ProviderSupport.container_executable_provider_key?(provider.provider_key)
+      end
+    end
+
+    def runnable_provider?(provider)
+      ProviderSupport.container_executable_provider_key?(provider.provider_key)
+    end
+
+    def runnable_agent_type?(agent_type)
+      return false unless agent_type.present? && AgentRun::AGENT_TYPES.include?(agent_type)
+
+      provider_key = Provider.provider_key_for_agent_type(agent_type)
+      ProviderSupport.container_executable_provider_key?(provider_key)
+    end
+
+    def run_goal
+      agent_run&.goal || "create_pr"
+    end
+
+    def provider_requires_direct_outbound?(identifier, user:)
+      return false if identifier.blank?
+      return true if identifier.to_s == "kilocode"
+
+      provider = Provider.for_identifier(user, identifier)
+      return true if provider&.provider_key == "kilocode"
+
+      provider&.requires_direct_outbound? || false
+    end
+
     def fallback_providers_require_direct_outbound?(settings)
-      primary_identifier = agent_run.provider&.routing_key || settings.default_provider_identifier_for_goal(agent_run.goal)
+      primary_identifier = primary_provider_identifier(settings)
       fallback_identifiers = settings.fallback_priority_for(primary_provider: primary_identifier, identifiers: true)
-      fallback_providers_by_id = settings.user.providers.where(
-        id: fallback_identifiers.filter_map { |identifier| Provider.id_from_routing_key(identifier) }
-      ).index_by(&:id)
-
       fallback_identifiers.any? do |identifier|
-        provider_id = Provider.id_from_routing_key(identifier)
-        provider = provider_id && fallback_providers_by_id[provider_id]
-
-        next true if identifier.to_s == "kilocode" || provider&.provider_key == "kilocode"
-
-        provider&.requires_direct_outbound?
+        provider_requires_direct_outbound?(identifier, user: settings.user)
       end
     end
 
