@@ -72,6 +72,60 @@ RSpec.describe FeatureFlags do
     end
   end
 
+  describe ".enable_percentage_of_actors" do
+    it "configures a percentage-of-actors rollout" do
+      described_class.enable_percentage_of_actors(:explicit_pr_automation_decisions, 25)
+
+      expect(described_class.rollout_status(:explicit_pr_automation_decisions)).to include(
+        percentage_of_actors: 25,
+        percentage_of_time: 0
+      )
+    end
+
+    it "clears the percentage gate when set to zero" do
+      described_class.enable_percentage_of_actors(:explicit_pr_automation_decisions, 25)
+
+      described_class.enable_percentage_of_actors(:explicit_pr_automation_decisions, 0)
+
+      expect(described_class.rollout_status(:explicit_pr_automation_decisions)[:percentage_of_actors]).to eq(0)
+    end
+
+    it "rejects invalid percentages" do
+      expect {
+        described_class.enable_percentage_of_actors(:explicit_pr_automation_decisions, 101)
+      }.to raise_error(described_class::InvalidPercentageError, /between 0 and 100/)
+    end
+  end
+
+  describe ".enable_percentage_of_time" do
+    it "configures a percentage-of-time rollout" do
+      described_class.enable_percentage_of_time(:explicit_pr_automation_decisions, 10)
+
+      expect(described_class.rollout_status(:explicit_pr_automation_decisions)).to include(
+        percentage_of_actors: 0,
+        percentage_of_time: 10
+      )
+    end
+  end
+
+  describe ".rollout_status" do
+    it "returns the configured boolean, actor, group, and percentage gates" do
+      described_class.enable!(:explicit_pr_automation_decisions)
+      described_class.enable!(:explicit_pr_automation_decisions, project:)
+      described_class.enable_percentage_of_actors(:explicit_pr_automation_decisions, 25)
+      described_class.enable_percentage_of_time(:explicit_pr_automation_decisions, 10)
+      described_class.flipper[:explicit_pr_automation_decisions].enable_group(:beta)
+
+      expect(described_class.rollout_status(:explicit_pr_automation_decisions)).to eq(
+        boolean: true,
+        percentage_of_actors: 25,
+        percentage_of_time: 10,
+        actors: [ project.flipper_id ],
+        groups: [ "beta" ]
+      )
+    end
+  end
+
   describe ".snapshot" do
     it "returns the current boolean state for every registered flag" do
       described_class.enable!(:explicit_pr_automation_decisions, project:)

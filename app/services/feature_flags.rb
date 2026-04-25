@@ -5,6 +5,7 @@ class FeatureFlags
 
   UnknownFlagError = Class.new(ArgumentError)
   InvalidActorError = Class.new(ArgumentError)
+  InvalidPercentageError = Class.new(ArgumentError)
 
   DEFINITIONS = {
     explicit_pr_automation_decisions: Definition.new(
@@ -57,6 +58,34 @@ class FeatureFlags
       feature(flag_name).disable(resolved_actor)
     end
 
+    def enable_percentage_of_actors(flag_name, percentage)
+      update_percentage_gate(feature(flag_name), :actors, percentage)
+    end
+
+    def disable_percentage_of_actors(flag_name)
+      feature(flag_name).disable_percentage_of_actors
+    end
+
+    def enable_percentage_of_time(flag_name, percentage)
+      update_percentage_gate(feature(flag_name), :time, percentage)
+    end
+
+    def disable_percentage_of_time(flag_name)
+      feature(flag_name).disable_percentage_of_time
+    end
+
+    def rollout_status(flag_name)
+      flipper_feature = feature(flag_name)
+
+      {
+        boolean: flipper_feature.boolean_value,
+        percentage_of_actors: flipper_feature.percentage_of_actors_value,
+        percentage_of_time: flipper_feature.percentage_of_time_value,
+        actors: flipper_feature.actors_value.to_a.sort,
+        groups: flipper_feature.groups_value.to_a.sort
+      }
+    end
+
     def snapshot(project: nil, actor: nil)
       DEFINITIONS.keys.index_with do |flag_name|
         enabled?(flag_name, project:, actor:)
@@ -97,6 +126,22 @@ class FeatureFlags
       return actor if actor
 
       nil
+    end
+
+    def update_percentage_gate(flipper_feature, gate, percentage)
+      value = normalize_percentage(percentage)
+      return flipper_feature.public_send("disable_percentage_of_#{gate}") if value.zero?
+
+      flipper_feature.public_send("enable_percentage_of_#{gate}", value)
+    end
+
+    def normalize_percentage(percentage)
+      return 0 if percentage.nil? || percentage == ""
+
+      value = Integer(percentage, exception: false)
+      raise InvalidPercentageError, "Percentage must be an integer between 0 and 100" unless value&.between?(0, 100)
+
+      value
     end
   end
 end

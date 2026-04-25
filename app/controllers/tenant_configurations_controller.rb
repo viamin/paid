@@ -11,12 +11,16 @@ class TenantConfigurationsController < ApplicationController
   def update
     authorize current_account, :update?
 
-    if @tenant_setting.update(tenant_setting_params)
-      redirect_to edit_tenant_configuration_path, notice: "Tenant configuration saved successfully."
-    else
-      load_form_options
-      render :edit, status: :unprocessable_content
+    ActiveRecord::Base.transaction do
+      @tenant_setting.update!(tenant_setting_params)
+      update_feature_flag_rollouts!
     end
+
+    redirect_to edit_tenant_configuration_path, notice: "Tenant configuration saved successfully."
+  rescue ActiveRecord::RecordInvalid, FeatureFlags::InvalidPercentageError => e
+    @tenant_setting.errors.add(:base, e.message) if e.is_a?(FeatureFlags::InvalidPercentageError)
+    load_form_options
+    render :edit, status: :unprocessable_content
   end
 
   private
@@ -28,6 +32,22 @@ class TenantConfigurationsController < ApplicationController
   def load_form_options
     @provider_api_keys = current_account.provider_api_keys.includes(:user).order(:api_service_type, :name)
     @feature_flags = FeatureFlags.definitions
+    @feature_flag_rollouts = @feature_flags.index_with do |definition|
+      FeatureFlags.rollout_status(definition.name)
+    end
+  end
+
+  def update_feature_flag_rollouts!
+    feature_flag_rollout_params.each do |flag_name, rollout|
+      FeatureFlags.enable_percentage_of_actors(flag_name, rollout["percentage_of_actors"])
+      FeatureFlags.enable_percentage_of_time(flag_name, rollout["percentage_of_time"])
+    end
+  end
+
+  def feature_flag_rollout_params
+    params.fetch(:feature_flag_rollouts, ActionController::Parameters.new).permit(
+      FeatureFlags::DEFINITIONS.keys.index_with { %i[percentage_of_actors percentage_of_time] }
+    ).to_h
   end
 
   def tenant_setting_params

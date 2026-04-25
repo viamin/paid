@@ -6,15 +6,21 @@ RSpec.describe "TenantConfigurations" do
   let(:account) { create(:account) }
   let(:user) { create(:user, :owner, account: account) }
 
-  before { sign_in user }
+  before do
+    sign_in user
+    FeatureFlags.flipper.features.each(&:remove)
+  end
 
   describe "GET /tenant_configuration/edit" do
     it "renders the tenant configuration form" do
+      FeatureFlags.enable_percentage_of_actors(:explicit_pr_automation_decisions, 15)
+
       get edit_tenant_configuration_path
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Tenant Configuration")
       expect(response.body).to include("Provider Preferences")
+      expect(response.body).to include("Percentage of actors")
     end
   end
 
@@ -35,6 +41,18 @@ RSpec.describe "TenantConfigurations" do
       expect(setting.effective_quality_thresholds["enabled"]).to be(true)
       expect(setting.effective_agent_settings["default_goal"]).to eq("review")
       expect(setting.features["explicit_pr_automation_decisions"]).to be(true)
+    end
+
+    it "updates feature flag rollout percentages" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+
+      patch tenant_configuration_path, params: tenant_configuration_params(api_key)
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(FeatureFlags.rollout_status(:explicit_pr_automation_decisions)).to include(
+        percentage_of_actors: 25,
+        percentage_of_time: 10
+      )
     end
 
     it "disables auto-continue when the checkbox submits its hidden false value" do
@@ -67,6 +85,26 @@ RSpec.describe "TenantConfigurations" do
       expect(account.tenant_setting.reload.default_goal).to eq("create_pr")
     end
 
+    it "rejects invalid rollout percentages" do
+      patch tenant_configuration_path, params: {
+        tenant_setting: {
+          agent_settings: {
+            default_goal: "review",
+            auto_continue: "1"
+          }
+        },
+        feature_flag_rollouts: {
+          explicit_pr_automation_decisions: {
+            percentage_of_actors: "101",
+            percentage_of_time: "0"
+          }
+        }
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(FeatureFlags.rollout_status(:explicit_pr_automation_decisions)[:percentage_of_actors]).to eq(0)
+    end
+
     it "rejects viewers" do
       viewer = create(:user, :viewer, account: account)
       sign_out user
@@ -87,6 +125,12 @@ RSpec.describe "TenantConfigurations" do
         quality_thresholds: quality_thresholds,
         agent_settings: agent_settings,
         features: { explicit_pr_automation_decisions: "1" }
+      },
+      feature_flag_rollouts: {
+        explicit_pr_automation_decisions: {
+          percentage_of_actors: "25",
+          percentage_of_time: "10"
+        }
       }
     }
   end
