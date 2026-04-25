@@ -823,6 +823,39 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "with a direct-outbound default provider" do
+      let(:api_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
+      let!(:direct_outbound_provider) do
+        create(
+          :provider,
+          :api_key,
+          user: project.created_by,
+          provider_key: "opencode",
+          provider_api_key: api_key,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2.5" } }
+        )
+      end
+
+      it "uses the infrastructure network for project-level provisioning when the default provider is direct outbound" do
+        project.created_by.settings.update!(default_agent_provider: direct_outbound_provider.routing_key)
+
+        expect(described_class.new(project: project).network_name).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
+      end
+
+      it "uses the infrastructure network when execution falls back from an unrunnable saved provider to a direct-outbound default" do
+        copilot_provider = create(:provider, user: project.created_by, provider_key: "copilot")
+        agent_run.update!(provider: copilot_provider, agent_type: "copilot")
+        project.created_by.settings.update!(default_agent_provider: direct_outbound_provider.routing_key, fallback_enabled: false)
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
+          mock_container
+        end
+
+        service.provision
+      end
+    end
+
     context "with Gemini subscription auth (GEMINI_CONFIG_DIR)" do
       let(:gemini_config_dir) { Dir.mktmpdir("gemini-config") }
 
