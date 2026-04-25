@@ -4,8 +4,9 @@ require "rails_helper"
 
 RSpec.describe PromptReviews::Approve do
   let(:account) { create(:account) }
+  let(:project) { create(:project, account: account) }
   let(:reviewer) { create(:user, account: account) }
-  let(:prompt) { create(:prompt, :for_account, :requires_review, :with_version, account: account) }
+  let(:prompt) { create(:prompt, :requires_review, :with_version, account: account, project: project) }
   let(:pending_version) do
     prompt.create_pending_version!(template: "Proposed variant {{title}}", change_notes: "Evolved")
   end
@@ -32,6 +33,32 @@ RSpec.describe PromptReviews::Approve do
 
       expect(pending_version.reload).to be_approved
       expect(prompt.reload.current_version).to eq(original)
+    end
+
+    it "marks the queued recovery action executed when approval promotes the version" do
+      action = create(:quality_recovery_action, :prompt_evolution, :executing,
+        project: prompt.project,
+        prompt_version: prompt.current_version,
+        executed_at: nil,
+        result: { winner_prompt_version_id: pending_version.id, status: "winner_found" })
+
+      described_class.call(prompt_version: pending_version, reviewer: reviewer, notes: "LGTM")
+
+      expect(action.reload.status).to eq("executed")
+      expect(action.executed_at).to be_present
+    end
+
+    it "does not mark the recovery action executed when approval skips promotion" do
+      action = create(:quality_recovery_action, :prompt_evolution, :executing,
+        project: prompt.project,
+        prompt_version: prompt.current_version,
+        executed_at: nil,
+        result: { winner_prompt_version_id: pending_version.id, status: "winner_found" })
+
+      described_class.call(prompt_version: pending_version, reviewer: reviewer, promote: false)
+
+      expect(action.reload.status).to eq("executing")
+      expect(action.executed_at).to be_nil
     end
 
     it "raises when version is not pending" do

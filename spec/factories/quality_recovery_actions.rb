@@ -44,6 +44,18 @@ FactoryBot.define do
       action_type { "model_change" }
     end
 
+    trait :prompt_evolution do
+      action_type { "prompt_evolution" }
+    end
+
+    trait :model_escalation do
+      action_type { "model_escalation" }
+    end
+
+    trait :final_pause do
+      action_type { "final_pause" }
+    end
+
     trait :config_adjustment do
       action_type { "config_adjustment" }
     end

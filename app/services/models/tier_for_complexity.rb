@@ -34,7 +34,7 @@ module Models
         "high"
       end
 
-      cap_tier(tier)
+      apply_project_tier_bounds(tier)
     rescue ArgumentError, TypeError
       nil
     end
@@ -47,9 +47,22 @@ module Models
 
     attr_reader :complexity, :agent_run, :project, :provider
 
-    # Caps the derived tier at the project's max_tier preference when set.
-    # For example, max_tier "mid" downgrades "high" → "mid" but leaves
-    # "low" and "mid" unchanged.
+    def apply_project_tier_bounds(tier)
+      tier = raise_to_minimum_tier(tier)
+      cap_tier(tier)
+    end
+
+    def raise_to_minimum_tier(tier)
+      minimum = project&.model_preferences&.dig("quality_recovery_min_tier")
+      return tier unless minimum.present? && LlmModel::TIERS.include?(minimum)
+
+      min_index = LlmModel::TIERS.index(minimum)
+      tier_index = LlmModel::TIERS.index(tier)
+      return tier unless tier_index
+
+      tier_index >= min_index ? tier : minimum
+    end
+
     def cap_tier(tier)
       max = project&.model_preferences&.dig("max_tier")
       return tier unless max.present? && LlmModel::TIERS.include?(max)

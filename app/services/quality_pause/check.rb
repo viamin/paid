@@ -2,8 +2,8 @@
 
 module QualityPause
   # Evaluates recent quality metrics for a project against the configured
-  # quality threshold. When the rolling average falls below the threshold,
-  # automatically pauses automatic agent runs for the project.
+  # quality threshold. Breaches start or advance the auto-improvement cycle;
+  # automatic runs are paused only after recovery attempts fail.
   #
   # Called after each agent run completes and quality metrics are collected.
   #
@@ -26,21 +26,10 @@ module QualityPause
       return unless breached
       return if in_grace_period?(breached)
 
-      project.quality_pause!(
-        score: breached.fetch(:average),
-        threshold: breached.fetch(:threshold).min_value,
-        agent_run: agent_run,
-        metadata: {
-          metric_type: breached.fetch(:threshold).metric_type,
-          goal_type: agent_run.goal,
-          window_size: QualityThreshold::DEFAULT_WINDOW_SIZE,
-          sample_size: breached.fetch(:sample_size),
-          recent_scores: breached.fetch(:scores)
-        }
-      )
+      QualityRecovery::AutoImprove.call(agent_run: agent_run, breach: breached)
 
-      Rails.logger.warn(
-        message: "quality_pause.project_paused",
+      Rails.logger.info(
+        message: "quality_recovery.breach_detected",
         project_id: project.id,
         metric_type: breached.fetch(:threshold).metric_type,
         goal_type: agent_run.goal,

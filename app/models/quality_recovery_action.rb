@@ -1,7 +1,15 @@
 # frozen_string_literal: true
 
 class QualityRecoveryAction < ApplicationRecord
-  ACTION_TYPES = %w[prompt_rollback model_change config_adjustment resume_with_monitoring].freeze
+  ACTION_TYPES = %w[
+    prompt_rollback
+    prompt_evolution
+    model_change
+    model_escalation
+    config_adjustment
+    resume_with_monitoring
+    final_pause
+  ].freeze
   STATUSES = %w[pending executing executed evaluated failed].freeze
 
   belongs_to :project
@@ -16,6 +24,10 @@ class QualityRecoveryAction < ApplicationRecord
   scope :by_project, ->(project_id) { where(project_id: project_id) }
   scope :recent, -> { order(created_at: :desc) }
   scope :effective, -> { where(status: "evaluated").where("quality_after > quality_before") }
+  scope :for_ab_test, ->(ab_test_id) { where("result @> ?", { ab_test_id: ab_test_id }.to_json) }
+  scope :for_prompt_version_rollout, ->(prompt_version_id) do
+    where("result ->> 'winner_prompt_version_id' = ?", prompt_version_id.to_s)
+  end
 
   def effective?
     quality_before.present? && quality_after.present? && quality_after > quality_before
@@ -31,8 +43,9 @@ class QualityRecoveryAction < ApplicationRecord
     update!(status: "executing", executed_at: Time.current)
   end
 
-  def complete!(result_data = {})
-    update!(status: "executed", result: result_data)
+  def complete!(result_data = {}, executed_at: self.executed_at || Time.current, **result_kwargs)
+    result_data = result_data.merge(result_kwargs)
+    update!(status: "executed", result: result_data, executed_at: executed_at)
   end
 
   def evaluate!(score)
@@ -41,5 +54,9 @@ class QualityRecoveryAction < ApplicationRecord
 
   def fail!(error_data = {})
     update!(status: "failed", result: result.merge(error: error_data))
+  end
+
+  def merge_result!(result_data)
+    update!(result: result.merge(result_data))
   end
 end

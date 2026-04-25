@@ -15,6 +15,7 @@ module Activities
       variant_version_ids = input[:variant_version_ids]
       min_samples = input.fetch(:min_samples_per_variant, 30)
       confidence = input.fetch(:confidence_threshold, 0.95)
+      recovery_action_id = input[:recovery_action_id]
 
       prompt = Prompt.find(prompt_id)
 
@@ -24,6 +25,7 @@ module Activities
           prompt_id: prompt_id
         )
         existing = prompt.ab_tests.running.first
+        track_recovery_action(recovery_action_id, existing, :already_running)
         return {
           ab_test_id: existing.id,
           status: :already_running,
@@ -43,6 +45,7 @@ module Activities
       )
 
       ab_test.start!
+      track_recovery_action(recovery_action_id, ab_test, :created)
 
       logger.info(
         message: "prompt_evolution.ab_test_created",
@@ -67,6 +70,21 @@ module Activities
       prompt.ab_tests
         .where("name LIKE ?", "Evolution gen-%")
         .count + 1
+    end
+
+    def track_recovery_action(recovery_action_id, ab_test, status)
+      return unless recovery_action_id
+
+      action = QualityRecoveryAction.find_by(id: recovery_action_id)
+      return unless action
+
+      action.update!(
+        result: {
+          status: status,
+          ab_test_id: ab_test.id,
+          prompt_id: ab_test.prompt_id
+        }
+      )
     end
   end
 end
