@@ -31,8 +31,8 @@ module Knowledge
         @issue = issue
         @project = project
         @agent_run = agent_run
-        @token_budget = token_budget || experiment_value("knowledge.token_budget") || env_token_budget
-        @section_order = section_order || experiment_value("knowledge.section_order") || SECTION_ORDER
+        @token_budget = token_budget || safe_experiment_value("knowledge.token_budget") || env_token_budget
+        @section_order = section_order || safe_experiment_value("knowledge.section_order") || SECTION_ORDER
       end
 
       def self.call(...)
@@ -270,6 +270,17 @@ module Knowledge
           agent_run: agent_run
         )
         normalize_experiment_value(config_key, assignment.configuration_experiment_variant.parsed_value)
+      end
+
+      def safe_experiment_value(config_key)
+        experiment_value(config_key)
+      rescue StandardError => e
+        Rails.logger.warn(
+          message: "prompt_evolution.experiment_lookup_failed",
+          config_key: config_key,
+          error: e.message
+        )
+        nil
       end
 
       def normalize_experiment_value(config_key, value)
