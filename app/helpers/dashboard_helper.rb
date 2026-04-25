@@ -85,6 +85,16 @@ module DashboardHelper
     TIME_RANGE_LABELS.fetch(range, range.to_s.titleize)
   end
 
+  TIER_BADGE_CLASSES = {
+    "low" => "bg-green-100 text-green-700",
+    "mid" => "bg-blue-100 text-blue-700",
+    "high" => "bg-purple-100 text-purple-700"
+  }.freeze
+
+  def tier_badge_classes(tier)
+    TIER_BADGE_CLASSES.fetch(tier, "bg-gray-100 text-gray-700")
+  end
+
   def filter_button_classes(active)
     if active
       "inline-flex items-center rounded-md px-3 py-1.5 text-sm font-semibold text-white bg-indigo-600 shadow-sm"
