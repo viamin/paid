@@ -15,6 +15,10 @@ RSpec.describe PromptEvolution::CreateVariants do
   end
 
   describe ".call" do
+    before do
+      allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
+    end
+
     context "when the prompt requires review" do
       before { prompt.update!(requires_review: true) }
 
@@ -37,6 +41,16 @@ RSpec.describe PromptEvolution::CreateVariants do
         expect(variant.parent_version).to eq(prompt.current_version)
         expect(variant.change_notes).to include("refinement")
       end
+
+      it "does not auto-resume a paused project until a variant is active" do
+        project = create(:project, quality_paused_at: 1.hour.ago)
+        scoped_prompt = create(:prompt, :for_account, :with_version, :requires_review, account: project.account)
+
+        described_class.call(prompt: scoped_prompt, mutations: [ mutation ], project: project)
+
+        expect(project.reload).to be_quality_paused
+        expect(project.quality_pause_events.resumes).to be_empty
+      end
     end
 
     context "when the prompt does NOT require review" do
@@ -53,6 +67,23 @@ RSpec.describe PromptEvolution::CreateVariants do
 
       it "returns an empty array when no mutations are supplied" do
         expect(described_class.call(prompt: prompt, mutations: [])).to eq([])
+      end
+    end
+
+    context "with a targeted project scope" do
+      let(:project) { create(:project, quality_paused_at: 1.hour.ago) }
+      let(:prompt) { create(:prompt, :for_account, :with_version, account: project.account) }
+
+      it "auto-resumes the paused project after creating variants" do
+        variants = described_class.call(prompt: prompt, mutations: [ mutation ], project: project)
+
+        expect(variants).not_to be_empty
+        expect(project.reload).not_to be_quality_paused
+        expect(project.quality_pause_events.resumes.last.metadata).to include(
+          "reason" => "prompt_evolution_variant_created",
+          "prompt_id" => prompt.id,
+          "variant_version_ids" => variants.map(&:id)
+        )
       end
     end
   end

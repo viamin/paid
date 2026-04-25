@@ -86,7 +86,7 @@ RSpec.describe Workflows::PromptEvolutionWorkflow do
             hash_including(prompt_id: prompt_id), timeout: described_class::MUTATION_TIMEOUT)
         expect(workflow).to have_received(:run_activity)
           .with(Activities::CreateEvolutionVariantsActivity,
-            hash_including(prompt_id: prompt_id, mutations: mutations), timeout: 30)
+            hash_including(prompt_id: prompt_id, project_id: project_id, mutations: mutations), timeout: 30)
         expect(workflow).to have_received(:run_activity)
           .with(Activities::CreateEvolutionAbTestActivity,
             hash_including(prompt_id: prompt_id, variant_version_ids: [ 100, 101 ]),
