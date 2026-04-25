@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "shellwords"
+require "tempfile"
 
 module Providers
   # Sends a lightweight test prompt to a provider's agent to verify
@@ -208,8 +209,10 @@ module Providers
         stderr = normalize_output_text(response[:stderr])
         stdout = normalize_output_text(response[:stdout])
         raw_message = stderr.presence || stdout.presence || normalize_output_text(response.error)
-        message = extract_user_facing_error(raw_message)
-        error_type = classify_failed_response(raw_message.presence || message)
+        parsed_error = parse_provider_test_error(raw_message)
+        provider_message = parsed_error&.fetch(:message, nil).presence || raw_message
+        message = extract_user_facing_error(provider_message)
+        error_type = classify_failed_response(provider_message.presence || message)
 
         return Result.new(
           success: false,
@@ -412,17 +415,13 @@ module Providers
         raise UnsupportedProviderError, "Unsupported provider: #{provider.provider_key}"
       end
 
-      return codex_test_command if provider.provider_key == "codex"
-      return gemini_test_command if provider.provider_key == "gemini"
       return harness_runtime_command if provider.agent_harness_runtime?
 
       plan = harness_test_plan
       if provider.requires_direct_outbound?
         provider.direct_outbound_exec_command(command_prefix: plan.command[0..-2], prompt: PROMPT)
-      elsif provider.provider_key == "kilocode"
-        kilocode_test_command
       else
-        plan.command
+        container_test_command
       end
     end
 
@@ -459,6 +458,132 @@ module Providers
       plan = direct_outbound_execution_plan
       unset_vars = ProviderSupport.harness_runtime_unset_vars_for(provider.provider_key)
       ProviderSupport.command_with_unset_env(plan.command, unset_vars)
+    end
+
+    def container_test_command
+      return kilocode_test_command_wrapper if kilocode_test_command?
+      return shell_wrapped_test_command if shell_wrapped_test_command?
+
+      test_command_prefix + [ PROMPT ]
+    end
+
+    def test_command_prefix(output_file: nil)
+      base_command = harness_test_plan.command[0..-2]
+      overrides = provider_test_command_overrides.dup
+
+      if output_file
+        output_flag_index = overrides.index("--output-last-message")
+        overrides.insert(output_flag_index + 1, output_file) if output_flag_index
+      end
+
+      separator_index = base_command.index("--") || base_command.length
+      base_command[0...separator_index] + overrides + base_command[separator_index..]
+    end
+
+    def shell_wrapped_test_command?
+      codex_test_output_capture? || gemini_test_error_capture?
+    end
+
+    def shell_wrapped_test_command
+      command_prefix = shell_join_command(test_command_prefix(output_file: "$tmp_output"))
+      unset_vars = provider_test_unset_vars
+      env_flag = "PAID_#{provider.provider_key.upcase}_SUBSCRIPTION_AUTH"
+      wrapped_command = if unset_vars.any?
+        %(if [ "$#{env_flag}" = "1" ]; then env #{unset_vars.map { |var| "-u #{var}" }.join(" ")} #{command_prefix} "$1"; else #{command_prefix} "$1"; fi)
+      else
+        %(#{command_prefix} "$1")
+      end
+
+      script = if gemini_test_error_capture?
+        <<~SH.squish
+          tmp_output="$(mktemp)" &&
+          tmp_error="$(mktemp)" &&
+          before_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1 || true)" &&
+          #{wrapped_command} >"$tmp_output" 2>"$tmp_error";
+          status=$?;
+          after_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1 || true)";
+          if [ "$status" -eq 0 ] && grep -q "Error when talking to Gemini API" "$tmp_error"; then
+            if [ -n "$after_report" ] && [ "$after_report" != "$before_report" ]; then
+              cat "$after_report" 2>/dev/null || cat "$tmp_error" 2>/dev/null;
+            else
+              cat "$tmp_error" 2>/dev/null;
+            fi;
+            exit 1;
+          fi;
+          if [ "$status" -eq 0 ]; then
+            cat "$tmp_output" 2>/dev/null;
+          else
+            cat "$tmp_error" 2>/dev/null;
+          fi;
+          exit $status
+        SH
+      else
+        <<~SH.squish
+          tmp_output="$(mktemp)" &&
+          tmp_error="$(mktemp)" &&
+          #{wrapped_command} >/dev/null 2>"$tmp_error";
+          status=$?;
+          if [ "$status" -eq 0 ]; then
+            cat "$tmp_output" 2>/dev/null;
+          else
+            cat "$tmp_error" 2>/dev/null;
+          fi;
+          exit $status
+        SH
+      end
+
+      [ "sh", "-c", script, "--", PROMPT ]
+    end
+
+    def kilocode_test_command?
+      provider.provider_key == "kilocode"
+    end
+
+    def kilocode_test_command_wrapper
+      unset_vars = ProviderSupport.subscription_auth_unset_vars.values.flatten.uniq
+      unset_flags = unset_vars.map { |var| "-u #{var}" }.join(" ")
+      command_prefix = shell_join_command(test_command_prefix)
+      script = <<~SH.squish
+        env #{unset_flags}
+        timeout 20s #{command_prefix} "$1"
+      SH
+      [ "sh", "-c", script, "--", PROMPT ]
+    end
+
+    def provider_test_command_overrides
+      harness_provider.test_command_overrides
+    end
+
+    def provider_test_unset_vars
+      harness_provider.subscription_unset_vars
+    end
+
+    def codex_test_output_capture?
+      provider_test_command_overrides.include?("--output-last-message")
+    end
+
+    def gemini_test_error_capture?
+      provider.provider_key == "gemini"
+    end
+
+    def parse_provider_test_error(output)
+      provider_error = harness_provider.parse_test_error(output: output)
+      return provider_error if provider_error
+
+      Tempfile.create([ "#{provider.provider_key}-client-error-", ".json" ]) do |file|
+        file.write(output.to_s)
+        file.flush
+        harness_provider.parse_test_error(output: output, files: { report: file.path })
+      end
+    end
+
+    def shell_join_command(tokens)
+      tokens.map { |token| shell_escape_token(token) }.join(" ")
+    end
+
+    def shell_escape_token(token)
+      value = token.to_s
+      value.start_with?("$") ? value : Shellwords.escape(value)
     end
 
     def classify_failed_response(error_message)
@@ -524,99 +649,6 @@ module Providers
       if message.match?(/Missing agent run ID/i) && message.match?(%r{/api/proxy/openai/}i)
         "Codex did not forward the Paid container credentials to the OpenAI proxy."
       end
-    end
-
-    def codex_test_command
-      escaped_prompt = Shellwords.escape(PROMPT)
-      # Get the base command from agent-harness (without prompt), then add
-      # test-specific flags before the prompt argument.
-      base_cmd = harness_test_plan.command[0..-2]
-      separator_index = base_cmd.index("--") || base_cmd.length
-      cmd_with_flags = base_cmd[0...separator_index] + [
-        "--skip-git-repo-check",
-        "--output-last-message",
-        "$tmp_output"
-      ] + base_cmd[separator_index..]
-      command = cmd_with_flags.join(" ")
-      unset_flags = subscription_auth_unset_flags("codex")
-      <<~SH.squish
-        tmp_output="$(mktemp)" &&
-        tmp_error="$(mktemp)" &&
-        if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]; then
-          env #{unset_flags} #{command} #{escaped_prompt} >/dev/null 2>"$tmp_error";
-        else
-          #{command} #{escaped_prompt} >/dev/null 2>"$tmp_error";
-        fi;
-        status=$?;
-        if [ "$status" -eq 0 ]; then
-          cat "$tmp_output" 2>/dev/null;
-        else
-          cat "$tmp_error" 2>/dev/null;
-        fi;
-        exit $status
-      SH
-    end
-
-    def gemini_test_command
-      escaped_prompt = Shellwords.escape(PROMPT)
-      # Get the base command from agent-harness (without prompt)
-      base_cmd = harness_test_plan.command[0..-2]
-      command = (base_cmd + [ escaped_prompt ]).join(" ")
-      unset_flags = subscription_auth_unset_flags("gemini")
-      <<~SH.squish
-        tmp_output="$(mktemp)" &&
-        tmp_error="$(mktemp)" &&
-        before_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1 || true)" &&
-        if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]; then
-          env #{unset_flags} #{command} >"$tmp_output" 2>"$tmp_error";
-        else
-          #{command} >"$tmp_output" 2>"$tmp_error";
-        fi;
-        status=$?;
-        after_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1 || true)";
-        if [ "$status" -eq 0 ] && grep -q "Error when talking to Gemini API" "$tmp_error"; then
-          if [ -n "$after_report" ] && [ "$after_report" != "$before_report" ]; then
-            ruby -rjson -e 'path = ARGV[0]; data = JSON.parse(File.read(path)); puts(data.dig("error", "message") || File.read(path))' "$after_report" || cat "$tmp_error" 2>/dev/null;
-          else
-            cat "$tmp_error" 2>/dev/null;
-          fi;
-          exit 1;
-        fi;
-        if [ "$status" -eq 0 ]; then
-          cat "$tmp_output" 2>/dev/null;
-        else
-          cat "$tmp_error" 2>/dev/null;
-        fi;
-        exit $status
-      SH
-    end
-
-    def kilocode_test_command
-      escaped_prompt = Shellwords.escape(PROMPT)
-      all_unset_flags = all_subscription_auth_unset_vars
-        .values
-        .flatten
-        .uniq
-        .map { |var| "-u #{var}" }
-        .join(" ")
-      <<~SH.squish
-        env #{all_unset_flags}
-        timeout 20s kilo run --auto --print-logs #{escaped_prompt}
-      SH
-    end
-
-    def subscription_auth_unset_flags(provider)
-      subscription_auth_unset_vars_for(provider)
-        .map { |var| "-u #{var}" }
-        .join(" ")
-    end
-
-    def subscription_auth_unset_vars_for(provider)
-      ProviderSupport.subscription_auth_unset_vars_for(provider)
-    end
-
-    def all_subscription_auth_unset_vars
-      ProviderSupport.subscription_auth_unset_vars
     end
 
     class Result

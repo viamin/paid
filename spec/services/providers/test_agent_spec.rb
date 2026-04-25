@@ -420,10 +420,16 @@ RSpec.describe Providers::TestAgent do
         described_class.call(provider: provider)
 
         expect(test_run).to have_received(:execute_in_container).with(
-          a_string_matching(/--skip-git-repo-check\s+--output-last-message\s+\$tmp_output\s+Respond/)
-            .and(include("-u OPENAI_API_KEY"))
-            .and(include("codex"))
-            .and(include("exec")),
+          [
+            "sh",
+            "-c",
+            a_string_matching(/--skip-git-repo-check\s+--output-last-message\s+\$tmp_output\s+"\$1"/)
+              .and(include("-u OPENAI_API_KEY"))
+              .and(include("codex"))
+              .and(include("exec")),
+            "--",
+            Providers::TestAgent::PROMPT
+          ],
           timeout: 60,
           stream: false,
           env: {}
@@ -477,12 +483,18 @@ RSpec.describe Providers::TestAgent do
         described_class.call(provider: provider)
 
         expect(test_run).to have_received(:execute_in_container).with(
-          a_string_including('if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]')
-            .and(include("-u GEMINI_API_KEY"))
-            .and(include("-u GOOGLE_GEMINI_BASE_URL"))
-            .and(include("gemini"))
-            .and(include('grep -q "Error when talking to Gemini API"'))
-            .and(include('ruby -rjson -e')),
+          [
+            "sh",
+            "-c",
+            a_string_including('if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]')
+              .and(include("-u GEMINI_API_KEY"))
+              .and(include("-u GOOGLE_GEMINI_BASE_URL"))
+              .and(include("gemini"))
+              .and(include('grep -q "Error when talking to Gemini API"'))
+              .and(include('cat "$after_report"')),
+            "--",
+            Providers::TestAgent::PROMPT
+          ],
           timeout: 60,
           stream: false,
           env: {}
@@ -504,7 +516,14 @@ RSpec.describe Providers::TestAgent do
         described_class.call(provider: provider)
 
         expect(test_run).to have_received(:execute_in_container).with(
-          a_string_including('env -u OPENAI_API_KEY').and(include('timeout 20s kilo run --auto --print-logs')),
+          [
+            "sh",
+            "-c",
+            a_string_including('env -u OPENAI_API_KEY')
+              .and(include('timeout 20s kilo run --format json --auto --print-logs "$1"')),
+            "--",
+            Providers::TestAgent::PROMPT
+          ],
           timeout: 60,
           stream: false,
           env: {}
