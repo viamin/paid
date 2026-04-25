@@ -10,34 +10,42 @@ export default class extends Controller {
 
   truncate() {
     const content = this.contentTarget
-    const fullText = content.textContent
-    const lines = fullText.split("\n")
+    const lineHeight = parseFloat(window.getComputedStyle(content).lineHeight)
 
-    if (lines.length <= this.maxLinesValue) {
+    if (!lineHeight || isNaN(lineHeight)) return
+
+    const maxHeight = lineHeight * this.maxLinesValue
+    const renderedHeight = content.scrollHeight
+
+    if (renderedHeight <= maxHeight) {
       this.toggleTarget.classList.add("hidden")
       return
     }
 
-    this.fullText = fullText
-    this.truncatedText = lines.slice(0, this.maxLinesValue).join("\n")
+    this.maxHeight = maxHeight
     this.expanded = false
-    this.totalLines = lines.length
 
-    content.textContent = this.truncatedText
+    content.style.maxHeight = `${maxHeight}px`
+    content.style.overflow = "hidden"
     this.updateToggle()
   }
 
   toggle() {
     this.expanded = !this.expanded
-    this.contentTarget.textContent = this.expanded ? this.fullText : this.truncatedText
+    const content = this.contentTarget
+
+    if (this.expanded) {
+      content.style.maxHeight = "none"
+      content.style.overflow = "visible"
+    } else {
+      content.style.maxHeight = `${this.maxHeight}px`
+      content.style.overflow = "hidden"
+    }
     this.updateToggle()
   }
 
   updateToggle() {
-    const hiddenCount = this.totalLines - this.maxLinesValue
-    this.toggleTarget.textContent = this.expanded
-      ? "Collapse"
-      : `Show ${hiddenCount} more line${hiddenCount === 1 ? "" : "s"}`
+    this.toggleTarget.textContent = this.expanded ? "Collapse" : "Show more"
     this.toggleTarget.classList.remove("hidden")
   }
 }
