@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20260421162139_enable_tenant_row_level_security")
+require Rails.root.join("db/migrate/20260425060000_enable_rls_on_notification_rule_states")
 
 RSpec.describe TenantContext, :tenant_isolation do
   around do |example|
@@ -138,8 +139,10 @@ RSpec.describe TenantContext, :tenant_isolation do
 
   def install_tenant_policies
     ActiveRecord::Migration.suppress_messages do
+      EnableRlsOnNotificationRuleStates.new.down
       EnableTenantRowLevelSecurity.new.down
       EnableTenantRowLevelSecurity.new.up
+      EnableRlsOnNotificationRuleStates.new.up
     end
     ActiveRecord::Base.connection.execute("RESET ROLE")
     cleanup_restricted_role
@@ -153,6 +156,7 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.execute("RESET ROLE")
     cleanup_restricted_role
     ActiveRecord::Migration.suppress_messages do
+      EnableRlsOnNotificationRuleStates.new.down
       EnableTenantRowLevelSecurity.new.down
     end
   end

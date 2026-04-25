@@ -159,6 +159,11 @@ Rails.application.configure do
       cron: "*/5 * * * *",
       class: "QueueMonitorJob",
       description: "Monitor queue depths and alert when thresholds are exceeded"
+    },
+    notifications_check_provider_quotas: {
+      cron: "*/5 * * * *",
+      class: "Notifications::CheckProviderQuotasJob",
+      description: "Publish provider quota exhaustion notifications"
     }
   }
 end

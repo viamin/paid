@@ -1853,6 +1853,45 @@ ALTER TABLE ONLY public.notifications FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: notification_rule_states; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_rule_states (
+    id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    source character varying NOT NULL,
+    subject_type character varying NOT NULL,
+    subject_id bigint NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    first_seen_at timestamp(6) without time zone,
+    last_seen_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.notification_rule_states FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: notification_rule_states_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.notification_rule_states_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: notification_rule_states_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.notification_rule_states_id_seq OWNED BY public.notification_rule_states.id;
+
+
+--
 -- Name: notifications_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -3444,6 +3483,13 @@ ALTER TABLE ONLY public.model_selections ALTER COLUMN id SET DEFAULT nextval('pu
 
 
 --
+-- Name: notification_rule_states id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_rule_states ALTER COLUMN id SET DEFAULT nextval('public.notification_rule_states_id_seq'::regclass);
+
+
+--
 -- Name: notifications id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4026,6 +4072,14 @@ ALTER TABLE ONLY public.mcp_server_definitions
 
 ALTER TABLE ONLY public.model_selections
     ADD CONSTRAINT model_selections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notification_rule_states notification_rule_states_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_rule_states
+    ADD CONSTRAINT notification_rule_states_pkey PRIMARY KEY (id);
 
 
 --
@@ -5839,6 +5893,27 @@ CREATE INDEX index_model_selections_on_tier ON public.model_selections USING btr
 
 
 --
+-- Name: index_notification_rule_states_on_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_notification_rule_states_on_account_id ON public.notification_rule_states USING btree (account_id);
+
+
+--
+-- Name: index_notification_rule_states_on_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_notification_rule_states_on_dedup ON public.notification_rule_states USING btree (account_id, source, subject_type, subject_id);
+
+
+--
+-- Name: index_notification_rule_states_on_subject; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_notification_rule_states_on_subject ON public.notification_rule_states USING btree (subject_type, subject_id);
+
+
+--
 -- Name: index_notifications_on_badge; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6795,6 +6870,14 @@ ALTER TABLE ONLY public.tracker_configurations
 
 ALTER TABLE ONLY public.notifications
     ADD CONSTRAINT fk_rails_1c0a19e3ee FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: notification_rule_states fk_rails_1d0b19e4ff; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_rule_states
+    ADD CONSTRAINT fk_rails_1d0b19e4ff FOREIGN KEY (account_id) REFERENCES public.accounts(id);
 
 
 --
@@ -7891,6 +7974,12 @@ ALTER TABLE public.mcp_server_definitions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.model_selections ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: notification_rule_states; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.notification_rule_states ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: notifications; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -8399,6 +8488,13 @@ CREATE POLICY tenant_isolation ON public.model_selections USING ((public.paid_te
    FROM (public.agent_runs
      JOIN public.projects ON ((projects.id = agent_runs.project_id)))
   WHERE ((agent_runs.id = model_selections.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))));
+
+
+--
+-- Name: notification_rule_states tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.notification_rule_states USING ((public.paid_tenant_bypass() OR (notification_rule_states.account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (notification_rule_states.account_id = public.paid_current_account_id())));
 
 
 --
@@ -9053,14 +9149,11 @@ ALTER TABLE public.workflow_states ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
-
---
--- PostgreSQL database dump complete
---
-
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260425060000'),
+('20260425052958'),
 ('20260425050134'),
 ('20260423132408'),
 ('20260423130627'),
@@ -9270,3 +9363,4 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260128004342'),
 ('20260128004305'),
 ('20260127154444');
+

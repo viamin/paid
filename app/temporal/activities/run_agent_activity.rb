@@ -357,6 +357,7 @@ module Activities
         # ProcessRunQueueJob to re-schedule work.
         if timeout_error.present?
           timed_out = !agent_run.finished? && agent_run.timeout!(error: timeout_error)
+          Notifications::Rules::ZeroIterationTimeout.call(scope: agent_run) if timed_out
           # Skip queue processing when cleanup killed the run — the timeout
           # was not a real provider issue, so there is nothing to re-schedule.
           # (agent_run was reloaded above, so the model method sees current state)
