@@ -1653,10 +1653,7 @@ RSpec.describe Activities::RunAgentActivity do
       it "uses the shorter issue goal timeout" do
         expect(container_service).to receive(:execute).with(
           anything,
-          hash_including(
-            timeout: described_class::DEFAULT_ISSUE_GOAL_TIMEOUT,
-            idle_timeout: described_class::DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT
-          )
+          hash_including(timeout: described_class::DEFAULT_ISSUE_GOAL_TIMEOUT)
         ).and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
@@ -1669,6 +1666,26 @@ RSpec.describe Activities::RunAgentActivity do
           expect(prompt).to include("--max-time 30")
           exec_success
         end
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
+    context "when goal is analyze_issue" do
+      let(:agent_run) do
+        create(:agent_run, :analyze_issue_goal, project: project, issue: issue, container_id: "abc123")
+      end
+
+      before do
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive(:head_sha).and_return("sha123")
+      end
+
+      it "uses the shorter issue goal timeout" do
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(timeout: described_class::DEFAULT_ISSUE_GOAL_TIMEOUT)
+        ).and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
       end
