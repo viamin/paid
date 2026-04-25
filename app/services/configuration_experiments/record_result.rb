@@ -98,6 +98,8 @@ module ConfigurationExperiments
     end
 
     def should_analyze?(configuration_experiment)
+      return true if update_existing
+
       total_samples = configuration_experiment.configuration_experiment_variants.sum(:sample_count)
       min_required = configuration_experiment.min_samples_per_variant * configuration_experiment.configuration_experiment_variants.count
       total_samples == min_required || (total_samples % ANALYSIS_INTERVAL).zero?

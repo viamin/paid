@@ -1886,6 +1886,14 @@ module Activities
     AUGMENTED
 
     def augment_prompt_for_issue_goal(agent_run, prompt)
+      # When custom_prompt is set (PromptVersion path), BuildForIssue is
+      # bypassed and knowledge context is not yet present — inject it here
+      # so configuration experiments can participate.  When BuildForIssue
+      # built the prompt it already injected knowledge with agent_run.
+      if agent_run.custom_prompt.present? && agent_run.issue
+        prompt = inject_knowledge_into_prompt(prompt, agent_run.issue, agent_run.project, agent_run)
+      end
+
       vars = { base_prompt: prompt, repo: validated_repo_name(agent_run) }
       rendered = Prompts::Render.call(
         slug: ISSUE_GOAL_PROMPT_SLUG,

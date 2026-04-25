@@ -1048,7 +1048,7 @@ class AgentRun < ApplicationRecord
     return nil unless issue
     return nil unless issue.trusted?
 
-    Prompts::BuildForIssue.call(issue: issue, project: project, github_client: project.github_token&.client)
+    Prompts::BuildForIssue.call(issue: issue, project: project, github_client: project.github_token&.client, agent_run: self)
   end
 
   # Returns the agent's stdout output joined as a single string.

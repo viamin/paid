@@ -509,6 +509,32 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
+  describe "#augment_prompt_for_issue_goal knowledge injection" do
+    before do
+      allow(Prompt).to receive(:resolve).and_return(nil)
+    end
+
+    it "injects knowledge context for issue-goal runs with custom_prompt" do
+      run = create(:agent_run, :create_issue_goal, project: project, issue: issue, custom_prompt: "Custom coding prompt")
+      allow(Knowledge::ContextBundle::Build).to receive(:call)
+        .with(issue: issue, project: project, agent_run: run)
+        .and_return(content: "## Codebase Context\n\n- important context")
+
+      prompt = activity.send(:augment_prompt_for_issue_goal, run, "Custom coding prompt")
+
+      expect(prompt).to include("## Codebase Context")
+      expect(prompt).to include("important context")
+    end
+
+    it "skips knowledge injection when no custom_prompt is set (BuildForIssue already injected)" do
+      run = create(:agent_run, :create_issue_goal, project: project, issue: issue, custom_prompt: nil)
+
+      expect(Knowledge::ContextBundle::Build).not_to receive(:call)
+
+      activity.send(:augment_prompt_for_issue_goal, run, "BuildForIssue-generated prompt with knowledge")
+    end
+  end
+
   describe "A/B test goal prompt assignment" do
     it "assigns a running test before rendering the issue-goal prompt" do
       run = create(:agent_run, :create_issue_goal, project: project)
