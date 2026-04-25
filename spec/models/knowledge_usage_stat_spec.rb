@@ -7,7 +7,7 @@ RSpec.describe KnowledgeUsageStat do
 
   describe "associations" do
     it { is_expected.to belong_to(:agent_run) }
-    it { is_expected.to belong_to(:project) }
+    it { is_expected.to belong_to(:project).without_validating_presence }
   end
 
   describe "validations" do

@@ -3,18 +3,21 @@
 require "rails_helper"
 require Rails.root.join("db/migrate/20260421162135_add_account_to_service_containers")
 require Rails.root.join("db/migrate/20260421162139_enable_tenant_row_level_security")
+require Rails.root.join("db/migrate/20260425113212_enable_rls_on_knowledge_usage_stats")
 
 RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   self.use_transactional_tests = false
 
   let(:migration) { described_class.new }
   let(:rls_migration) { EnableTenantRowLevelSecurity.new }
+  let(:knowledge_rls_migration) { EnableRlsOnKnowledgeUsageStats.new }
 
   include MigrationSpecHelpers
 
   before do
     truncate_migration_test_data
 
+    knowledge_rls_migration.down if knowledge_usage_stats_has_rls?
     rls_migration.down if tenant_policy_count.positive?
     restore_service_container_account_reference unless service_containers_have_account_reference?
     migration.down
@@ -28,6 +31,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
 
     restore_service_container_account_reference unless service_containers_have_account_reference?
     rls_migration.up if tenant_policy_count.zero?
+    knowledge_rls_migration.up unless knowledge_usage_stats_has_rls?
     ServiceContainer.reset_column_information
   end
 
@@ -181,6 +185,12 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(DISTINCT service_container_id) FROM project_service_containers"
     )
+  end
+
+  def knowledge_usage_stats_has_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'knowledge_usage_stats' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
   end
 
   def tenant_policy_count

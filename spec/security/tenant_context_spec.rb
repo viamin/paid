@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20260421162139_enable_tenant_row_level_security")
+require Rails.root.join("db/migrate/20260425113212_enable_rls_on_knowledge_usage_stats")
 
 RSpec.describe TenantContext, :tenant_isolation do
   around do |example|
@@ -138,8 +139,10 @@ RSpec.describe TenantContext, :tenant_isolation do
 
   def install_tenant_policies
     ActiveRecord::Migration.suppress_messages do
+      EnableRlsOnKnowledgeUsageStats.new.down if knowledge_usage_stats_has_rls?
       EnableTenantRowLevelSecurity.new.down
       EnableTenantRowLevelSecurity.new.up
+      EnableRlsOnKnowledgeUsageStats.new.up unless knowledge_usage_stats_has_rls?
     end
     ActiveRecord::Base.connection.execute("RESET ROLE")
     cleanup_restricted_role
@@ -153,8 +156,15 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.execute("RESET ROLE")
     cleanup_restricted_role
     ActiveRecord::Migration.suppress_messages do
+      EnableRlsOnKnowledgeUsageStats.new.down if knowledge_usage_stats_has_rls?
       EnableTenantRowLevelSecurity.new.down
     end
+  end
+
+  def knowledge_usage_stats_has_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'knowledge_usage_stats' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
   end
 
   def cleanup_restricted_role
