@@ -100,9 +100,11 @@ module Knowledge
         artifacts = active_artifacts("business_context")
         return nil if artifacts.empty?
 
+        total_chunks = 0
         lines = artifacts.map do |a|
           section_title = a.metadata&.dig("section_title") || a.identifier
           chunks = a.active_ordered_chunks.to_a
+          total_chunks += chunks.size
           if chunks.any?
             chunk_lines = chunks.map { |c| "- #{c.content.gsub("\n", " ").truncate(200)}" }
             "#### #{section_title}\n#{chunk_lines.join("\n")}"
@@ -115,7 +117,8 @@ module Knowledge
           name: :business_context,
           heading: "Business Context (maintainer-provided)",
           content: lines.join("\n\n"),
-          artifacts: artifacts
+          artifacts: artifacts,
+          chunk_count: total_chunks
         )
       end
 
@@ -216,14 +219,14 @@ module Knowledge
         artifact_section(name: :stats, heading: "Project Stats", content: lines.join("\n"), artifacts: artifacts)
       end
 
-      def artifact_section(name:, heading:, content:, artifacts:)
+      def artifact_section(name:, heading:, content:, artifacts:, chunk_count: 0)
         {
           name: name,
           heading: heading,
           content: content,
           artifact_type: section_artifact_type(name),
           artifact_count: artifacts.size,
-          chunk_count: artifacts.sum { |artifact| artifact.active_ordered_chunks.size },
+          chunk_count: chunk_count,
           token_count: estimate_tokens("### #{heading}\n#{content}")
         }
       end
