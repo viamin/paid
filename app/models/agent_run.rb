@@ -3,7 +3,7 @@
 class AgentRun < ApplicationRecord
   STATUSES = %w[queued pending running paused completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
-  GOALS = %w[create_pr create_issue review enhance_issue].freeze
+  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
   ACTIVE_STATUSES = %w[pending running].freeze
   FINISHED_STATUSES = %w[completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
@@ -543,7 +543,7 @@ class AgentRun < ApplicationRecord
   QUEUE_PRIORITY_SQL = Arel.sql(QUEUE_PRIORITY_CASE_SQL).freeze
   GOAL_PRIORITY_CASE_SQL = <<~SQL.squish.freeze
     CASE
-      WHEN goal IN ('create_issue', 'enhance_issue') THEN 0
+      WHEN goal IN ('create_issue', 'enhance_issue', 'analyze_issue') THEN 0
       ELSE 1
     END
   SQL
@@ -691,11 +691,15 @@ class AgentRun < ApplicationRecord
     goal == "enhance_issue"
   end
 
+  def analyze_issue_goal?
+    goal == "analyze_issue"
+  end
+
   # Whether this run has a cloned git repository in its container.
   # create_issue and enhance_issue goals skip cloning unless they target
   # an existing PR branch (source_pull_request_number present).
   def repo_cloned?
-    return true unless create_issue_goal? || enhance_issue_goal?
+    return true unless create_issue_goal? || enhance_issue_goal? || analyze_issue_goal?
 
     source_pull_request_number.present?
   end
@@ -1333,8 +1337,8 @@ class AgentRun < ApplicationRecord
   end
 
   def enhance_issue_goal_requires_issue
-    if goal == "enhance_issue" && issue_id.blank?
-      errors.add(:issue, "is required for enhance_issue goals")
+    if goal.in?(%w[enhance_issue analyze_issue]) && issue_id.blank?
+      errors.add(:issue, "is required for #{goal} goals")
     end
   end
 
@@ -1343,6 +1347,8 @@ class AgentRun < ApplicationRecord
       prompt_for_review
     elsif enhance_issue_goal?
       prompt_for_enhance_issue
+    elsif analyze_issue_goal?
+      prompt_for_analyze_issue
     else
       prompt_for_issue
     end
@@ -1355,6 +1361,13 @@ class AgentRun < ApplicationRecord
       "Read the issue description and all comments, then add a comment that either " \
       "provides implementation context (relevant files, architecture notes, suggested approach) " \
       "or asks specific clarifying questions the user needs to answer."
+  end
+
+  def prompt_for_analyze_issue
+    return nil unless issue
+
+    "Analyze issue ##{issue.github_number} in #{project.full_name}. " \
+      "Assess whether there is sufficient context to start implementation."
   end
 
   def empty_phase_summary
