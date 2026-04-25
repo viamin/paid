@@ -9,7 +9,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
   let(:issue) { create(:issue, project: project) }
   let(:agent_run) { create(:agent_run, :with_git_context, :with_metrics, project: project, issue: issue) }
   let(:github_client) { instance_double(GithubClient) }
-  let(:pr_response) { Struct.new(:html_url, :number).new("https://github.com/owner/repo/pull/42", 42) }
+  let(:pr_response) { Struct.new(:html_url, :number, :body).new("https://github.com/owner/repo/pull/42", 42, "PR body") }
   let(:issue_response) do
     OpenStruct.new(
       id: 4242,

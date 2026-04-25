@@ -150,7 +150,7 @@ module Activities
       end
 
       best_effort(agent_run_id, context: "record_pr_description_metric") do
-        record_pr_description_metric(project, pr.number)
+        record_pr_description_metric(project, pr.number, original_text: pr.body)
       end
     end
 
@@ -449,13 +449,14 @@ module Activities
       end
     end
 
-    def record_pr_description_metric(project, pr_number)
+    def record_pr_description_metric(project, pr_number, original_text: nil)
       LlmOutputMetrics::Record.call(
         project: project,
         output_type: "pr_description",
         prompt_slug: Llm::GeneratePrDescription::PROMPT_SLUG,
         source_type: "PullRequest",
-        source_id: pr_number
+        source_id: pr_number,
+        metadata: { "original_text" => original_text }
       )
     end
   end

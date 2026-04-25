@@ -31,6 +31,7 @@ class LlmOutputMetric < ApplicationRecord
   validates :prompt_slug, presence: true
   validates :source_id, presence: true
   validates :source_type, presence: true, inclusion: { in: SOURCE_TYPES }
+  validates :source_id, uniqueness: { scope: [ :project_id, :output_type, :source_type ] }
   validates :composite_score,
     numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 1 },
     allow_nil: true

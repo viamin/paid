@@ -23,6 +23,18 @@ RSpec.describe LlmOutputMetric do
         .is_less_than_or_equal_to(1)
         .allow_nil
     }
+
+    it "enforces uniqueness of source_id scoped to project, output_type, and source_type" do
+      existing = create(:llm_output_metric)
+      duplicate = build(:llm_output_metric,
+        project: existing.project,
+        output_type: existing.output_type,
+        source_type: existing.source_type,
+        source_id: existing.source_id)
+
+      expect(duplicate).not_to be_valid
+      expect(duplicate.errors[:source_id]).to be_present
+    end
   end
 
   describe "scopes" do

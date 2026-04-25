@@ -86,7 +86,7 @@ module Activities
           )
         end
 
-        reconcile_created_issue(agent_run, project, gh_issue, upstream_issue: upstream_issue)
+        reconcile_created_issue(agent_run, project, gh_issue, upstream_issue: upstream_issue, title: title)
 
         ProcessRunQueueJob.perform_later if completed
 
@@ -311,13 +311,13 @@ module Activities
       "#{body}\n\n## Dependencies\n\n- #{dep_line}"
     end
 
-    def reconcile_created_issue(agent_run, project, gh_issue, upstream_issue:)
+    def reconcile_created_issue(agent_run, project, gh_issue, upstream_issue:, title: nil)
       # Reconcile even when cancellation wins the complete! lock, because the
       # GitHub issue already exists and should not be left orphaned.
       sync_issue_record(project, gh_issue)
       record_cross_repo_issue(agent_run, project.full_name, gh_issue, role: "downstream") if upstream_issue
 
-      record_issue_title_metric(project, gh_issue.number) if @llm_generated_title
+      record_issue_title_metric(project, gh_issue.number, original_text: title) if @llm_generated_title
 
       agent_run.log!("system", "Issue created: #{gh_issue.html_url}")
 
@@ -339,13 +339,14 @@ module Activities
       )
     end
 
-    def record_issue_title_metric(project, issue_number)
+    def record_issue_title_metric(project, issue_number, original_text: nil)
       LlmOutputMetrics::Record.call(
         project: project,
         output_type: "issue_title",
         prompt_slug: Llm::GenerateIssueTitle::PROMPT_SLUG,
         source_type: "Issue",
-        source_id: issue_number
+        source_id: issue_number,
+        metadata: { "original_text" => original_text }
       )
     rescue StandardError => e
       logger.warn(

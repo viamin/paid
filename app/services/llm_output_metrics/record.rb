@@ -30,26 +30,35 @@ module LlmOutputMetrics
 
     def call
       prompt_version = resolve_prompt_version
-      LlmOutputMetric.create!(
+      LlmOutputMetric.find_or_create_by!(
         project: project,
-        account: project.account,
-        output_type: output_type,
-        prompt_slug: prompt_slug,
-        source_type: source_type,
-        source_id: source_id,
-        prompt_version: prompt_version,
-        scores: {},
-        metadata: metadata.merge("recorded_at" => Time.current.iso8601)
-      )
-    rescue ActiveRecord::RecordInvalid => e
-      Rails.logger.warn(
-        message: "llm_output_metrics.record_failed",
         output_type: output_type,
         source_type: source_type,
-        source_id: source_id,
-        error: e.message
-      )
-      nil
+        source_id: source_id
+      ) do |metric|
+        metric.account = project.account
+        metric.prompt_slug = prompt_slug
+        metric.prompt_version = prompt_version
+        metric.scores = {}
+        metric.metadata = metadata.merge("recorded_at" => Time.current.iso8601)
+      end
+    rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e
+      # Race with a concurrent insert — return the winner's record.
+      LlmOutputMetric.find_by(
+        project: project,
+        output_type: output_type,
+        source_type: source_type,
+        source_id: source_id
+      ) || begin
+        Rails.logger.warn(
+          message: "llm_output_metrics.record_failed",
+          output_type: output_type,
+          source_type: source_type,
+          source_id: source_id,
+          error: e.message
+        )
+        nil
+      end
     end
 
     private

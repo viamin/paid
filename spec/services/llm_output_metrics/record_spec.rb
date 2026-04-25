@@ -66,5 +66,26 @@ RSpec.describe LlmOutputMetrics::Record do
 
       expect(result).to be_nil
     end
+
+    it "returns the existing metric on duplicate source without creating a new one" do
+      existing = described_class.call(
+        project: project,
+        output_type: "pr_description",
+        prompt_slug: "generation.pr_description",
+        source_type: "PullRequest",
+        source_id: 42
+      )
+
+      expect {
+        result = described_class.call(
+          project: project,
+          output_type: "pr_description",
+          prompt_slug: "generation.pr_description",
+          source_type: "PullRequest",
+          source_id: 42
+        )
+        expect(result.id).to eq(existing.id)
+      }.not_to change(LlmOutputMetric, :count)
+    end
   end
 end
