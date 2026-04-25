@@ -10,7 +10,11 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   let(:migration) { described_class.new }
   let(:rls_migration) { EnableTenantRowLevelSecurity.new }
 
+  include MigrationSpecHelpers
+
   before do
+    truncate_migration_test_data
+
     rls_migration.down if tenant_policy_count.positive?
     restore_service_container_account_reference unless service_containers_have_account_reference?
     migration.down
