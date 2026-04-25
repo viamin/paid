@@ -5,7 +5,7 @@ module Automation
     private
 
     def actionable_state?(record)
-      record.paid_state.in?(%w[new needs_input recommend_close])
+      record.paid_state.in?(%w[new needs_input recommend_close analyzed])
     end
 
     def triggering_label(project, record)

@@ -1647,21 +1647,21 @@ RSpec.describe AgentRun do
       expect(peeked_ids).to eq([ first_run.id, third_run.id, second_run.id, fourth_run.id ])
     end
 
-    it "preserves cross-user FIFO while applying project fairness within an owner" do
+    it "dequeues user with fewer active runs first (cross-user fair queueing)" do
       first_account = create(:account)
       first_user = create(:user, account: first_account)
       first_user.settings.update!(fair_queue_across_projects: true, max_concurrent_runs: 2)
       active_project = create(:project, account: first_account, created_by: first_user)
       create(:agent_run, :running, project: active_project)
-      older_run = create(:agent_run, :queued, :manual, project: active_project, created_at: 2.minutes.ago)
+      create(:agent_run, :queued, :manual, project: active_project, created_at: 2.minutes.ago)
 
       second_account = create(:account)
       second_user = create(:user, account: second_account)
       second_user.settings.update!(fair_queue_across_projects: true, max_concurrent_runs: 2)
       idle_project = create(:project, account: second_account, created_by: second_user)
-      create(:agent_run, :queued, :manual, project: idle_project, created_at: 1.minute.ago)
+      idle_run = create(:agent_run, :queued, :manual, project: idle_project, created_at: 1.minute.ago)
 
-      expect(described_class.peek_next_queued_run).to eq(older_run)
+      expect(described_class.peek_next_queued_run).to eq(idle_run)
     end
 
     it "preserves FIFO within tier when fair queueing is disabled" do
@@ -1703,6 +1703,102 @@ RSpec.describe AgentRun do
       expect(described_class.peek_next_queued_run).to eq(first_run)
       described_class.claim_next_queued_run(target_id: first_run.id)
       expect(described_class.peek_next_queued_run).to eq(second_run)
+    end
+
+    it "interleaves two users with same-tier runs (user with fewer active runs first)" do
+      first_account = create(:account)
+      first_user = create(:user, account: first_account)
+      first_user.settings.update!(max_concurrent_runs: 5)
+      first_project = create(:project, account: first_account, created_by: first_user)
+
+      second_account = create(:account)
+      second_user = create(:user, account: second_account)
+      second_user.settings.update!(max_concurrent_runs: 5)
+      second_project = create(:project, account: second_account, created_by: second_user)
+
+      run_a1 = create(:agent_run, :queued, :manual, project: first_project, created_at: 4.minutes.ago)
+      run_a2 = create(:agent_run, :queued, :manual, project: first_project, created_at: 3.minutes.ago)
+      run_b1 = create(:agent_run, :queued, :manual, project: second_project, created_at: 2.minutes.ago)
+      run_b2 = create(:agent_run, :queued, :manual, project: second_project, created_at: 1.minute.ago)
+
+      peeked_ids = 4.times.map { claim_peeked_run.id }
+
+      expect(peeked_ids).to eq([ run_a1.id, run_b1.id, run_a2.id, run_b2.id ])
+    end
+
+    it "gives single user on system full capacity without unfair throttling" do
+      account = create(:account)
+      user = create(:user, account: account)
+      user.settings.update!(max_concurrent_runs: 5)
+      project = create(:project, account: account, created_by: user)
+
+      runs = 3.times.map do |i|
+        create(:agent_run, :queued, :manual, project: project, created_at: (3 - i).minutes.ago)
+      end
+
+      peeked_ids = 3.times.map { claim_peeked_run.id }
+
+      expect(peeked_ids).to eq(runs.map(&:id))
+    end
+
+    it "attributes orphaned project counts to account fallback owner" do
+      account = create(:account)
+      owner = create(:user, account: account)
+      owner.settings.update!(max_concurrent_runs: 5)
+      orphaned_project = create(:project, account: account, created_by: nil)
+      owned_project = create(:project, account: account, created_by: owner)
+
+      create(:agent_run, :running, project: orphaned_project)
+
+      other_account = create(:account)
+      other_user = create(:user, account: other_account)
+      other_user.settings.update!(max_concurrent_runs: 5)
+      other_project = create(:project, account: other_account, created_by: other_user)
+
+      owned_run = create(:agent_run, :queued, :manual, project: owned_project, created_at: 2.minutes.ago)
+      other_run = create(:agent_run, :queued, :manual, project: other_project, created_at: 1.minute.ago)
+
+      expect(described_class.peek_next_queued_run).to eq(other_run)
+    end
+
+    it "combines cross-user and per-project stride for fair interleaving at both levels" do
+      first_account = create(:account)
+      first_user = create(:user, account: first_account)
+      first_user.settings.update!(fair_queue_across_projects: true, max_concurrent_runs: 5)
+      proj_a1 = create(:project, account: first_account, created_by: first_user)
+      proj_a2 = create(:project, account: first_account, created_by: first_user)
+
+      second_account = create(:account)
+      second_user = create(:user, account: second_account)
+      second_user.settings.update!(fair_queue_across_projects: true, max_concurrent_runs: 5)
+      proj_b1 = create(:project, account: second_account, created_by: second_user)
+
+      run_a1 = create(:agent_run, :queued, :manual, project: proj_a1, created_at: 5.minutes.ago)
+      run_a2 = create(:agent_run, :queued, :manual, project: proj_a2, created_at: 4.minutes.ago)
+      run_a3 = create(:agent_run, :queued, :manual, project: proj_a1, created_at: 3.minutes.ago)
+      run_b1 = create(:agent_run, :queued, :manual, project: proj_b1, created_at: 2.minutes.ago)
+
+      peeked_ids = 4.times.map { claim_peeked_run.id }
+
+      expect(peeked_ids).to eq([ run_a1.id, run_b1.id, run_a2.id, run_a3.id ])
+    end
+
+    it "excludes paused runs from the user active count" do
+      first_account = create(:account)
+      first_user = create(:user, account: first_account)
+      first_user.settings.update!(max_concurrent_runs: 5)
+      first_project = create(:project, account: first_account, created_by: first_user)
+      create(:agent_run, :paused, project: first_project)
+
+      second_account = create(:account)
+      second_user = create(:user, account: second_account)
+      second_user.settings.update!(max_concurrent_runs: 5)
+      second_project = create(:project, account: second_account, created_by: second_user)
+
+      first_run = create(:agent_run, :queued, :manual, project: first_project, created_at: 2.minutes.ago)
+      create(:agent_run, :queued, :manual, project: second_project, created_at: 1.minute.ago)
+
+      expect(described_class.peek_next_queued_run).to eq(first_run)
     end
   end
 

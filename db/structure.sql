@@ -716,6 +716,122 @@ CREATE SEQUENCE public.collector_runs_id_seq
 ALTER SEQUENCE public.collector_runs_id_seq OWNED BY public.collector_runs.id;
 
 
+
+--
+-- Name: configuration_experiment_assignments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.configuration_experiment_assignments (
+    id bigint NOT NULL,
+    configuration_experiment_id bigint NOT NULL,
+    configuration_experiment_variant_id bigint NOT NULL,
+    agent_run_id bigint NOT NULL,
+    quality_score numeric(5,4),
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: configuration_experiment_assignments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.configuration_experiment_assignments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: configuration_experiment_assignments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.configuration_experiment_assignments_id_seq OWNED BY public.configuration_experiment_assignments.id;
+
+
+--
+-- Name: configuration_experiment_variants; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.configuration_experiment_variants (
+    id bigint NOT NULL,
+    configuration_experiment_id bigint NOT NULL,
+    config_value text NOT NULL,
+    is_control boolean DEFAULT false NOT NULL,
+    sample_count integer DEFAULT 0 NOT NULL,
+    total_quality_score numeric(10,4) DEFAULT 0 NOT NULL,
+    avg_quality_score numeric(5,4),
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: configuration_experiment_variants_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.configuration_experiment_variants_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: configuration_experiment_variants_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.configuration_experiment_variants_id_seq OWNED BY public.configuration_experiment_variants.id;
+
+
+--
+-- Name: configuration_experiments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.configuration_experiments (
+    id bigint NOT NULL,
+    account_id bigint,
+    name character varying NOT NULL,
+    description text,
+    config_key character varying NOT NULL,
+    status character varying(50) DEFAULT 'draft'::character varying NOT NULL,
+    control_value text NOT NULL,
+    experiment_type character varying(50) NOT NULL,
+    min_samples_per_variant integer DEFAULT 30 NOT NULL,
+    confidence_threshold numeric(5,4) DEFAULT 0.95 NOT NULL,
+    traffic_percentage integer DEFAULT 100 NOT NULL,
+    cached_analysis jsonb,
+    analysis_samples_key character varying,
+    started_at timestamp without time zone,
+    completed_at timestamp without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    winner_variant_id bigint
+);
+
+
+--
+-- Name: configuration_experiments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.configuration_experiments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: configuration_experiments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.configuration_experiments_id_seq OWNED BY public.configuration_experiments.id;
+
+
 --
 -- Name: container_metrics; Type: TABLE; Schema: public; Owner: -
 --
@@ -1681,6 +1797,9 @@ CREATE TABLE public.model_selections (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     tier character varying(10),
+    escalated_from_tier character varying(10),
+    escalated_reason character varying(255),
+    CONSTRAINT model_selections_escalated_from_tier_check CHECK (((escalated_from_tier IS NULL) OR ((escalated_from_tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[])))),
     CONSTRAINT model_selections_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[]))))
 );
 
@@ -1731,6 +1850,45 @@ CREATE TABLE public.notifications (
 );
 
 ALTER TABLE ONLY public.notifications FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: notification_rule_states; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_rule_states (
+    id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    source character varying NOT NULL,
+    subject_type character varying NOT NULL,
+    subject_id bigint NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    first_seen_at timestamp(6) without time zone,
+    last_seen_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.notification_rule_states FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: notification_rule_states_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.notification_rule_states_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: notification_rule_states_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.notification_rule_states_id_seq OWNED BY public.notification_rule_states.id;
 
 
 --
@@ -3158,6 +3316,27 @@ ALTER TABLE ONLY public.collector_runs ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
+-- Name: configuration_experiment_assignments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiment_assignments ALTER COLUMN id SET DEFAULT nextval('public.configuration_experiment_assignments_id_seq'::regclass);
+
+
+--
+-- Name: configuration_experiment_variants id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiment_variants ALTER COLUMN id SET DEFAULT nextval('public.configuration_experiment_variants_id_seq'::regclass);
+
+
+--
+-- Name: configuration_experiments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiments ALTER COLUMN id SET DEFAULT nextval('public.configuration_experiments_id_seq'::regclass);
+
+
+--
 -- Name: container_metrics id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3302,6 +3481,13 @@ ALTER TABLE ONLY public.mcp_server_definitions ALTER COLUMN id SET DEFAULT nextv
 --
 
 ALTER TABLE ONLY public.model_selections ALTER COLUMN id SET DEFAULT nextval('public.model_selections_id_seq'::regclass);
+
+
+--
+-- Name: notification_rule_states id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_rule_states ALTER COLUMN id SET DEFAULT nextval('public.notification_rule_states_id_seq'::regclass);
 
 
 --
@@ -3650,6 +3836,30 @@ ALTER TABLE ONLY public.collector_runs
 
 
 --
+-- Name: configuration_experiment_assignments configuration_experiment_assignments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiment_assignments
+    ADD CONSTRAINT configuration_experiment_assignments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: configuration_experiment_variants configuration_experiment_variants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiment_variants
+    ADD CONSTRAINT configuration_experiment_variants_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: configuration_experiments configuration_experiments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiments
+    ADD CONSTRAINT configuration_experiments_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: container_metrics container_metrics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3863,6 +4073,14 @@ ALTER TABLE ONLY public.mcp_server_definitions
 
 ALTER TABLE ONLY public.model_selections
     ADD CONSTRAINT model_selections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notification_rule_states notification_rule_states_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_rule_states
+    ADD CONSTRAINT notification_rule_states_pkey PRIMARY KEY (id);
 
 
 --
@@ -4885,6 +5103,90 @@ CREATE INDEX index_collector_runs_on_status ON public.collector_runs USING btree
 
 
 --
+-- Name: index_config_experiment_assignments_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_config_experiment_assignments_unique ON public.configuration_experiment_assignments USING btree (configuration_experiment_id, agent_run_id);
+
+
+--
+-- Name: index_config_experiment_variants_on_experiment_and_control; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_config_experiment_variants_on_experiment_and_control ON public.configuration_experiment_variants USING btree (configuration_experiment_id, is_control);
+
+
+--
+-- Name: index_config_experiment_variants_one_control; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_config_experiment_variants_one_control ON public.configuration_experiment_variants USING btree (configuration_experiment_id) WHERE (is_control = true);
+
+
+--
+-- Name: index_config_experiments_one_running_per_account_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_config_experiments_one_running_per_account_key ON public.configuration_experiments USING btree (account_id, config_key) WHERE (((status)::text = 'running'::text) AND (account_id IS NOT NULL));
+
+
+--
+-- Name: index_configuration_experiment_assignments_on_agent_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_configuration_experiment_assignments_on_agent_run_id ON public.configuration_experiment_assignments USING btree (agent_run_id);
+
+
+--
+-- Name: idx_on_configuration_experiment_id_6532d1a5ed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_configuration_experiment_id_6532d1a5ed ON public.configuration_experiment_assignments USING btree (configuration_experiment_id);
+
+
+--
+-- Name: idx_on_configuration_experiment_variant_id_9de5ff7df6; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_configuration_experiment_variant_id_9de5ff7df6 ON public.configuration_experiment_assignments USING btree (configuration_experiment_variant_id);
+
+
+--
+-- Name: idx_on_configuration_experiment_id_54cb3ed654; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_configuration_experiment_id_54cb3ed654 ON public.configuration_experiment_variants USING btree (configuration_experiment_id);
+
+
+--
+-- Name: index_configuration_experiments_on_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_configuration_experiments_on_account_id ON public.configuration_experiments USING btree (account_id);
+
+
+--
+-- Name: idx_on_account_id_config_key_status_a42f39cd2a; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_account_id_config_key_status_a42f39cd2a ON public.configuration_experiments USING btree (account_id, config_key, status);
+
+
+--
+-- Name: index_configuration_experiments_on_winner_variant_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_configuration_experiments_on_winner_variant_id ON public.configuration_experiments USING btree (winner_variant_id);
+
+
+--
+-- Name: index_global_config_experiments_one_running_per_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_global_config_experiments_one_running_per_key ON public.configuration_experiments USING btree (config_key) WHERE (((status)::text = 'running'::text) AND (account_id IS NULL));
+
+
+--
 -- Name: index_container_metrics_on_container_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5589,6 +5891,27 @@ CREATE INDEX index_model_selections_on_selector_type ON public.model_selections 
 --
 
 CREATE INDEX index_model_selections_on_tier ON public.model_selections USING btree (tier);
+
+
+--
+-- Name: index_notification_rule_states_on_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_notification_rule_states_on_account_id ON public.notification_rule_states USING btree (account_id);
+
+
+--
+-- Name: index_notification_rule_states_on_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_notification_rule_states_on_dedup ON public.notification_rule_states USING btree (account_id, source, subject_type, subject_id);
+
+
+--
+-- Name: index_notification_rule_states_on_subject; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_notification_rule_states_on_subject ON public.notification_rule_states USING btree (subject_type, subject_id);
 
 
 --
@@ -6551,6 +6874,14 @@ ALTER TABLE ONLY public.notifications
 
 
 --
+-- Name: notification_rule_states fk_rails_1d0b19e4ff; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_rule_states
+    ADD CONSTRAINT fk_rails_1d0b19e4ff FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
 -- Name: prompt_versions fk_rails_1eb0a8163a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7389,6 +7720,55 @@ ALTER TABLE ONLY public.worktrees
 ALTER TABLE ONLY public.projects
     ADD CONSTRAINT fk_rails_ff595c9009 FOREIGN KEY (created_by_id) REFERENCES public.users(id);
 
+--
+-- Name: configuration_experiment_assignments fk_rails_cb74c9141a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiment_assignments
+    ADD CONSTRAINT fk_rails_cb74c9141a FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: configuration_experiment_assignments fk_rails_f9597f4b41; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiment_assignments
+    ADD CONSTRAINT fk_rails_f9597f4b41 FOREIGN KEY (configuration_experiment_id) REFERENCES public.configuration_experiments(id) ON DELETE CASCADE;
+
+
+--
+-- Name: configuration_experiment_assignments fk_rails_250cd833e6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiment_assignments
+    ADD CONSTRAINT fk_rails_250cd833e6 FOREIGN KEY (configuration_experiment_variant_id) REFERENCES public.configuration_experiment_variants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: configuration_experiments fk_rails_2bb513571a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiments
+    ADD CONSTRAINT fk_rails_2bb513571a FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: configuration_experiment_variants fk_rails_a4b182da9b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiment_variants
+    ADD CONSTRAINT fk_rails_a4b182da9b FOREIGN KEY (configuration_experiment_id) REFERENCES public.configuration_experiments(id) ON DELETE CASCADE;
+
+
+--
+-- Name: configuration_experiments fk_rails_ba606c78cb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiments
+    ADD CONSTRAINT fk_rails_ba606c78cb FOREIGN KEY (winner_variant_id) REFERENCES public.configuration_experiment_variants(id) ON DELETE SET NULL;
+
+
+
 
 --
 -- Name: ab_test_assignments; Type: ROW SECURITY; Schema: public; Owner: -
@@ -7593,6 +7973,12 @@ ALTER TABLE public.mcp_server_definitions ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.model_selections ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: notification_rule_states; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.notification_rule_states ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: notifications; Type: ROW SECURITY; Schema: public; Owner: -
@@ -8103,6 +8489,13 @@ CREATE POLICY tenant_isolation ON public.model_selections USING ((public.paid_te
    FROM (public.agent_runs
      JOIN public.projects ON ((projects.id = agent_runs.project_id)))
   WHERE ((agent_runs.id = model_selections.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))));
+
+
+--
+-- Name: notification_rule_states tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.notification_rule_states USING ((public.paid_tenant_bypass() OR (notification_rule_states.account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (notification_rule_states.account_id = public.paid_current_account_id())));
 
 
 --
@@ -8757,15 +9150,13 @@ ALTER TABLE public.workflow_states ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
-
---
--- PostgreSQL database dump complete
---
-
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
 ('20260425061110'),
+('20260425060000'),
+('20260425052958'),
+('20260425050134'),
 ('20260423132408'),
 ('20260423130627'),
 ('20260421162139'),
@@ -8974,3 +9365,4 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260128004342'),
 ('20260128004305'),
 ('20260127154444');
+

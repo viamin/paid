@@ -209,6 +209,39 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
+  describe "zero-iteration timeout notifications" do
+    before do
+      allow(Notifications::Rules::ZeroIterationTimeout).to receive(:call)
+      allow(activity).to receive(:track_phase).and_yield
+      allow(activity).to receive_messages(
+        resolve_user_settings: user.settings,
+        build_provider_order: [ "claude_code" ],
+        load_provider_state_cache: {},
+        provider_command_key: "claude",
+        provider_attempt_label: "claude",
+        state_key_for: "claude",
+        provider_unavailable?: false,
+        cancelled_by_cleanup?: false
+      )
+      allow(activity).to receive(:heartbeat)
+      allow(activity).to receive(:record_provider_failure)
+      allow(activity).to receive(:run_agent_with_provider)
+        .and_raise(Activities::RunAgentActivity::ProviderTimeoutError, "wall clock timeout")
+      allow(ProcessRunQueueJob).to receive(:perform_later)
+    end
+
+    it "checks the zero-iteration timeout rule after timing out a run" do
+      agent_run.project.update!(max_execution_seconds: 10_000)
+      agent_run.update!(status: "running", started_at: 1.minute.ago, iterations: 0, tokens_input: 0)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "All providers exhausted")
+
+      expect(Notifications::Rules::ZeroIterationTimeout).to have_received(:call).with(scope: agent_run)
+    end
+  end
+
   describe "harness-generated commands" do
     it "generates codex command with sandbox bypass through agent-harness" do
       plan = Providers::HarnessExecutionPlan.for_provider_key(

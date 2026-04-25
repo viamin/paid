@@ -557,22 +557,28 @@ class AgentRun < ApplicationRecord
     END
   SQL
   PROJECT_ACTIVE_COUNT_SQL = Arel.sql("#{PROJECT_ACTIVE_COUNT_CASE_SQL} ASC").freeze
-  QUEUE_ORDER = [ QUEUE_PRIORITY_SQL, GOAL_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
+  USER_ACTIVE_COUNT_SQL = Arel.sql("COALESCE(user_active_counts.user_active_count, 0) ASC").freeze
+  QUEUE_ORDER = [ QUEUE_PRIORITY_SQL, USER_ACTIVE_COUNT_SQL, GOAL_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
   WITHIN_OWNER_QUEUE_ORDER = [ PROJECT_ACTIVE_COUNT_SQL, GOAL_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
 
   # Scope that adds the CTE and joins required by QUEUE_ORDER.
   # All queue-ordering methods use this instead of bare `queued`.
   scope :queued_with_priority, -> {
     queued
-      .with(project_active_counts: project_active_counts_cte)
+      .with(
+        project_active_counts: project_active_counts_cte,
+        user_active_counts: user_active_counts_cte
+      )
       .joins(QUEUE_LATERAL_JOIN)
       .joins("LEFT JOIN project_active_counts ON project_active_counts.project_id = agent_runs.project_id")
+      .joins("LEFT JOIN user_active_counts ON user_active_counts.user_id = project_owner.user_id")
       .joins("LEFT JOIN user_settings ON user_settings.user_id = project_owner.user_id")
       .select(
         "agent_runs.*",
         "#{QUEUE_PRIORITY_CASE_SQL} AS queue_priority",
         "#{GOAL_PRIORITY_CASE_SQL} AS goal_priority",
         "#{PROJECT_ACTIVE_COUNT_CASE_SQL} AS project_active_count",
+        "COALESCE(user_active_counts.user_active_count, 0) AS user_active_count",
         "project_owner.user_id AS project_owner_user_id",
         "COALESCE(user_settings.fair_queue_across_projects, TRUE) AS fair_queue_across_projects"
       )
@@ -582,6 +588,41 @@ class AgentRun < ApplicationRecord
     active
       .select("project_id, COUNT(*) AS project_active_count")
       .group(:project_id)
+  end
+
+  # CTE that counts pending + running runs per effective user (owner).
+  # Orphaned projects (created_by_id IS NULL) are attributed to the
+  # account's fallback owner using the same COALESCE chain as
+  # QUEUE_LATERAL_JOIN. Paused runs are excluded (only ACTIVE_STATUSES
+  # are counted) so a paused run does not inflate a user's stride.
+  def self.user_active_counts_cte
+    Arel.sql(<<~SQL.squish)
+      SELECT owner.user_id AS user_id, COUNT(*) AS user_active_count
+      FROM agent_runs
+      JOIN projects p ON p.id = agent_runs.project_id
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(
+          p.created_by_id,
+          (
+            SELECT account_memberships.user_id
+            FROM account_memberships
+            WHERE account_memberships.account_id = p.account_id
+              AND account_memberships.role = 3
+            ORDER BY account_memberships.id
+            LIMIT 1
+          ),
+          (
+            SELECT users.id
+            FROM users
+            WHERE users.account_id = p.account_id
+            ORDER BY users.id
+            LIMIT 1
+          )
+        ) AS user_id
+      ) owner ON TRUE
+      WHERE agent_runs.status IN ('pending', 'running')
+      GROUP BY owner.user_id
+    SQL
   end
 
   def self.next_queued_run
