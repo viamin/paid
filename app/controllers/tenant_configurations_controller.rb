@@ -61,7 +61,7 @@ class TenantConfigurationsController < ApplicationController
   end
 
   def normalize_pct(value)
-    value.to_s.strip == "" ? 0 : Integer(value)
+    value.to_s.strip == "" ? 0 : Integer(value, exception: false) || -1
   end
 
   def feature_flag_rollout_params
