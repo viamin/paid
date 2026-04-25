@@ -200,6 +200,15 @@ module Workflows
         pr_issue_ids: Array(pr_scan_result&.dig(:pr_issue_ids)),
         pending_review_states: Array(pr_scan_result&.dig(:pending_review_states))
       }, timeout: 60)
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "notifications.rule_evaluation_failed",
+        project_id: project_id,
+        error_class: e.class.name,
+        error: e.message
+      )
     end
 
     def handle_automation_result(result, project_id)

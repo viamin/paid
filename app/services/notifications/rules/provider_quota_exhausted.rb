@@ -26,7 +26,7 @@ module Notifications
           title: "#{provider.display_name} quota exhausted for #{human_duration(state.updated_at)}",
           description: description_for(provider, state),
           nav_section: "providers",
-          action_url: provider_path(provider),
+          action_url: edit_provider_path(provider),
           metadata: {
             blocked_run_count: blocked_run_count_for(provider),
             reset_at: state.rate_limited_until&.iso8601
@@ -38,7 +38,7 @@ module Notifications
         parts = []
         parts << "#{blocked_run_count_for(provider)} unfinished runs blocked"
         parts << "resets at #{state.rate_limited_until.iso8601}" if state.rate_limited_until
-        parts << "open provider settings at #{provider_path(provider)}"
+        parts << "open provider settings at #{edit_provider_path(provider)}"
         parts.join(". ")
       end
 
