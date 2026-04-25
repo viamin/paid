@@ -5,7 +5,7 @@ module Activities
   # environment update, then spawns `bin/dev-update` in a detached process.
   #
   # Only triggers for PRs merged on the Paid repository itself (detected via
-  # the PAID_REPO_FULL_NAME environment variable). No-ops for other repos.
+  # TenantSetting.self_repo_full_name or the PAID_REPO_FULL_NAME env var).
   #
   # Lightweight update (git pull only):
   #   Any changes that do not match FULL_RESTART_PATTERNS. This includes most
@@ -74,7 +74,8 @@ module Activities
     private
 
     def self_repo?(project)
-      paid_repo = ENV["PAID_REPO_FULL_NAME"]
+      account = project.account
+      paid_repo = account.tenant_setting&.self_repo_full_name.presence || ENV["PAID_REPO_FULL_NAME"]
       return false if paid_repo.blank?
 
       project.full_name.casecmp?(paid_repo)

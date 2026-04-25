@@ -28,18 +28,21 @@ puts "Activities: #{activities.map(&:name).join(", ")}"
 puts "Poll workflows (#{Paid.poll_task_queue}): #{poll_workflows.map(&:name).join(", ")}"
 puts "Agent workflows (#{Paid.agent_task_queue}): #{agent_workflows.map(&:name).join(", ")}"
 
+def resolve_worker_setting(key, env_key, default)
+  TenantSetting.resolve_worker_setting(key, env_key: env_key, env: ENV, default: default)
+end
+
 graceful_shutdown = ENV.fetch("TEMPORAL_GRACEFUL_SHUTDOWN_PERIOD", "30").to_i
 
-# Agent worker concurrency (large pool for long-running agent activities)
-agent_workflow_slots = ENV.fetch("TEMPORAL_WORKFLOW_SLOTS", "20").to_i
-agent_activity_slots = ENV.fetch("TEMPORAL_ACTIVITY_SLOTS", "4").to_i
+agent_workflow_slots = resolve_worker_setting("temporal_workflow_slots", "TEMPORAL_WORKFLOW_SLOTS", 20)
+agent_activity_slots = resolve_worker_setting("temporal_activity_slots", "TEMPORAL_ACTIVITY_SLOTS", 4)
 agent_local_activity_slots = ENV.fetch("TEMPORAL_LOCAL_ACTIVITY_SLOTS", agent_activity_slots.to_s).to_i
 agent_activity_task_polls = ENV.fetch("TEMPORAL_MAX_CONCURRENT_ACTIVITY_TASK_POLLS", agent_activity_slots.to_s).to_i
 agent_workflow_task_polls = ENV.fetch("TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASK_POLLS", agent_workflow_slots.to_s).to_i
 
 # Poll worker concurrency (small fixed pool — poll activities are short-lived)
-poll_workflow_slots = ENV.fetch("TEMPORAL_POLL_WORKFLOW_SLOTS", "20").to_i
-poll_activity_slots = ENV.fetch("TEMPORAL_POLL_ACTIVITY_SLOTS", "10").to_i
+poll_workflow_slots = resolve_worker_setting("temporal_poll_workflow_slots", "TEMPORAL_POLL_WORKFLOW_SLOTS", 20)
+poll_activity_slots = resolve_worker_setting("temporal_poll_activity_slots", "TEMPORAL_POLL_ACTIVITY_SLOTS", 10)
 poll_local_activity_slots = ENV.fetch("TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS", poll_activity_slots.to_s).to_i
 poll_activity_task_polls = ENV.fetch("TEMPORAL_POLL_MAX_CONCURRENT_ACTIVITY_TASK_POLLS", poll_activity_slots.to_s).to_i
 poll_workflow_task_polls = ENV.fetch("TEMPORAL_POLL_MAX_CONCURRENT_WORKFLOW_TASK_POLLS", poll_workflow_slots.to_s).to_i

@@ -4,7 +4,8 @@ require "rails_helper"
 
 RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
   let(:activity) { described_class.new }
-  let(:project) { create(:project, owner: "paid-ai", repo: "paid") }
+  let(:account) { create(:account) }
+  let(:project) { create(:project, owner: "paid-ai", repo: "paid", account: account) }
   let(:github_client) { instance_double(GithubClient) }
 
   before do
@@ -13,12 +14,15 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
     allow(Process).to receive(:detach)
   end
 
+  def stub_repo_full_name(value)
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("PAID_REPO_FULL_NAME").and_return(value)
+  end
+
   describe "#execute" do
     context "when project is not the self-repo" do
       before do
-        allow(ENV).to receive(:fetch).and_call_original
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("PAID_REPO_FULL_NAME").and_return("other-org/other-repo")
+        stub_repo_full_name("other-org/other-repo")
       end
 
       it "returns not_self_repo without fetching files" do
@@ -32,9 +36,7 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
 
     context "when PAID_REPO_FULL_NAME is not set" do
       before do
-        allow(ENV).to receive(:fetch).and_call_original
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("PAID_REPO_FULL_NAME").and_return(nil)
+        stub_repo_full_name(nil)
       end
 
       it "returns not_self_repo" do
@@ -46,9 +48,7 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
 
     context "when project is the self-repo" do
       before do
-        allow(ENV).to receive(:fetch).and_call_original
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("PAID_REPO_FULL_NAME").and_return("paid-ai/paid")
+        stub_repo_full_name("paid-ai/paid")
       end
 
       context "when only app code changed (lightweight)" do
@@ -243,7 +243,7 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
       end
 
       context "with case-insensitive repo matching" do
-        let(:project) { create(:project, owner: "Paid-AI", repo: "PAID") }
+        let(:project) { create(:project, owner: "Paid-AI", repo: "PAID", account: account) }
 
         before do
           allow(github_client).to receive(:pull_request_files)
@@ -255,6 +255,39 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
           result = activity.execute(project_id: project.id, pr_number: 42)
 
           expect(result).to include(triggered: true)
+        end
+      end
+
+      context "when self_repo_full_name is set in TenantSetting" do
+        let(:setting) { account.tenant_setting! }
+
+        before do
+          setting.update!(self_repo_full_name: "paid-ai/paid")
+          stub_repo_full_name(nil)
+          allow(github_client).to receive(:pull_request_files)
+            .with("paid-ai/paid", 42)
+            .and_return(%w[app/models/user.rb])
+        end
+
+        it "uses TenantSetting value instead of ENV" do
+          result = activity.execute(project_id: project.id, pr_number: 42)
+
+          expect(result).to include(triggered: true)
+        end
+      end
+
+      context "when TenantSetting self_repo_full_name does not match" do
+        let(:setting) { account.tenant_setting! }
+
+        before do
+          setting.update!(self_repo_full_name: "other-org/other-repo")
+          stub_repo_full_name(nil)
+        end
+
+        it "returns not_self_repo" do
+          result = activity.execute(project_id: project.id, pr_number: 42)
+
+          expect(result).to eq(triggered: false, reason: "not_self_repo")
         end
       end
     end

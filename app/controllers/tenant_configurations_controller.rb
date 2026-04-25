@@ -33,6 +33,7 @@ class TenantConfigurationsController < ApplicationController
   def tenant_setting_params
     attrs = params.require(:tenant_setting).permit(
       :max_concurrent_runs, :max_projects, :max_users, :max_tokens_per_run, :max_monthly_cost_cents,
+      :self_repo_full_name,
       allowed_provider_keys: [],
       provider_preferences: [
         api_key_ids: ProviderSupport.api_service_types.keys,
@@ -45,6 +46,11 @@ class TenantConfigurationsController < ApplicationController
         { metric_thresholds: {} }
       ],
       agent_settings: %i[default_goal auto_continue],
+      worker_settings: %i[
+        temporal_workflow_slots temporal_activity_slots
+        temporal_poll_workflow_slots temporal_poll_activity_slots
+        good_job_max_threads good_job_queues
+      ],
       features: FeatureFlags::DEFINITIONS.keys
     ).to_h
     attrs["features"] ||= {}

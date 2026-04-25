@@ -9,14 +9,26 @@ module Paid
     end
 
     def max_threads(env = ENV)
-      Integer(env.fetch("GOOD_JOB_MAX_THREADS", "11"))
+      resolve_from_db("good_job_max_threads", env_key: "GOOD_JOB_MAX_THREADS", env: env, default: 11)
     end
 
     def queues(env = ENV)
-      env.fetch(
-        "GOOD_JOB_QUEUES",
-        "default:3;maintenance:2;metrics:2;knowledge:3;low_priority:1"
-      )
+      resolve_from_db("good_job_queues", env_key: "GOOD_JOB_QUEUES", env: env,
+        default: "default:3;maintenance:2;metrics:2;knowledge:3;low_priority:1")
+    end
+
+    def resolve_from_db(key, env_key:, env:, default:)
+      TenantSetting.resolve_worker_setting(key, env_key: env_key, env: env, default: default)
+    rescue NameError
+      fallback = env.fetch(env_key, nil)
+      return default unless fallback
+      begin
+        Integer(fallback)
+      rescue ArgumentError
+        fallback
+      end
+    rescue ArgumentError
+      default
     end
 
     def poll_interval(env = ENV)
