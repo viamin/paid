@@ -83,10 +83,6 @@ class PromptEvolutionJob < ApplicationJob
     AbTest.running.select(:prompt_id)
   end
 
-  def running_test?(prompt)
-    AbTest.running.exists?(prompt_id: prompt.id)
-  end
-
   def prompts_with_sufficient_runs
     AgentRun
       .completed

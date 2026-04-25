@@ -310,7 +310,7 @@ module QualityRecovery
 
     def log_prompt_evolution_requested
       Rails.logger.warn(
-        message: "model_selection.quality_escalation_exhausted",
+        message: "model_selection.prompt_evolution_requested",
         project_id: project.id,
         agent_run_id: agent_run&.id,
         to_tier: self.class.state(project)["to_tier"],
