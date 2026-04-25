@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.30.0](https://github.com/viamin/paid/compare/v0.29.0...v0.30.0) (2026-04-25)
+
+
+### Features
+
+* **ab-tests:** wire A/B test assignment into live agent execution ([#1362](https://github.com/viamin/paid/issues/1362)) ([79daa6f](https://github.com/viamin/paid/commit/79daa6f9244c9b8e3f2320980768003d3874088d))
+* **docs:** add RDR-028 interactive chat architecture ([#1436](https://github.com/viamin/paid/issues/1436)) ([3d5f22c](https://github.com/viamin/paid/commit/3d5f22cd70f7a732b7570b2b1f68374ece3ce6d9))
+* **multi-tenancy:** implement data isolation patterns ([#1370](https://github.com/viamin/paid/issues/1370)) ([47f2909](https://github.com/viamin/paid/commit/47f2909348ddc758e65f527d5465f77c2b06fe76))
+* **temporal:** propagate tenant context into worker threads ([#1437](https://github.com/viamin/paid/issues/1437)) ([0ac5360](https://github.com/viamin/paid/commit/0ac53601e2233f01052d43698a1d4dd01ae36e45))
+
+
+### Bug Fixes
+
+* **agent-runs:** prevent circuit-breaker poisoning from StaleRunDetectorJob timeouts ([#1395](https://github.com/viamin/paid/issues/1395)) ([26c9e1c](https://github.com/viamin/paid/commit/26c9e1cb686fe59ef6516b9352bd7d9c181127f5))
+* **api:** restore tenant context for container-authenticated requests ([#1445](https://github.com/viamin/paid/issues/1445)) ([ad225b6](https://github.com/viamin/paid/commit/ad225b6b8c40f34c1d6efad7d93939db8410b4b4))
+* **containers:** clarify git proxy auth failures ([#1440](https://github.com/viamin/paid/issues/1440)) ([2bf627e](https://github.com/viamin/paid/commit/2bf627e372a9628a6130fd39bfc74989668ac923))
+* **devcontainer:** align Postgres client tools with pinned server ([#1411](https://github.com/viamin/paid/issues/1411)) ([6f5ebaa](https://github.com/viamin/paid/commit/6f5ebaa00d26d253a985e3b356a5d55e67cd1595))
+* **devcontainer:** reduce worker defaults to avoid overmind OOMs ([#1444](https://github.com/viamin/paid/issues/1444)) ([5bded16](https://github.com/viamin/paid/commit/5bded16b26c113cb251ebcc029ee254e42f2d5dc))
+* **devcontainer:** run GoodJob in-process and restore activity slots ([#1446](https://github.com/viamin/paid/issues/1446)) ([8944d20](https://github.com/viamin/paid/commit/8944d2020dc73677939aa4cd8333d26768320526))
+* **quality:** StaleRunDetectorJob silently skips runs when Temporal cancellation fails ([#1408](https://github.com/viamin/paid/issues/1408)) ([5077b09](https://github.com/viamin/paid/commit/5077b0988479b3479630015d96b0f2f67b171d8d))
+* **scanner:** queue paid_agent review run when findings are unaddressed ([#1404](https://github.com/viamin/paid/issues/1404)) ([7750e36](https://github.com/viamin/paid/commit/7750e36a497b15e31ceabed8cea960b52b75617c))
+* **test:** truncate seed data before migration spec runs ([#1442](https://github.com/viamin/paid/issues/1442)) ([72261f2](https://github.com/viamin/paid/commit/72261f27c467c35362bb6a3aaab5c464ff7d53dd))
+
 ## [0.29.0](https://github.com/viamin/paid/compare/v0.28.1...v0.29.0) (2026-04-23)
 
 

@@ -16,6 +16,29 @@ RSpec.describe "Api::GitCredentials" do
 
   describe "GET /api/proxy/git-credentials" do
     context "with valid authentication" do
+      it "authenticates container requests under system access" do
+        allow(TenantContext).to receive(:with_system_access).and_call_original
+
+        get "/api/proxy/git-credentials", headers: valid_headers
+
+        expect(TenantContext).to have_received(:with_system_access)
+        expect(response).to have_http_status(:ok)
+      end
+
+      it "switches back into the authenticated run's tenant context for the action" do
+        allow(TenantContext).to receive(:apply!).and_call_original
+        allow(github_token).to receive(:touch_last_used!).and_wrap_original do |original, *args|
+          expect(TenantContext.bypass_enabled?).to be(false)
+          expect(Current.account).to eq(project.account)
+          original.call(*args)
+        end
+
+        get "/api/proxy/git-credentials", headers: valid_headers
+
+        expect(TenantContext).to have_received(:apply!).with(project.account)
+        expect(response).to have_http_status(:ok)
+      end
+
       it "returns git credential helper format" do
         get "/api/proxy/git-credentials", headers: valid_headers
 
@@ -105,10 +128,11 @@ RSpec.describe "Api::GitCredentials" do
         github_token.update!(revoked_at: Time.current)
       end
 
-      it "returns service unavailable" do
+      it "returns forbidden with a configuration error" do
         get "/api/proxy/git-credentials", headers: valid_headers
 
-        expect(response).to have_http_status(:service_unavailable)
+        expect(response).to have_http_status(:forbidden)
+        expect(response.parsed_body).to eq("error" => "Project GitHub token is missing or inactive")
       end
     end
   end

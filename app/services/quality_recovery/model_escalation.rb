@@ -125,6 +125,7 @@ module QualityRecovery
       {
         "status" => "active",
         "trigger" => "quality_drop",
+        "goal" => goal,
         "prompt_id" => prompt_id,
         "prompt_version_id" => prompt_version_id,
         "from_tier" => from_tier,
@@ -139,6 +140,10 @@ module QualityRecovery
 
     def preferences_with(state)
       project.model_preferences.merge(PREFERENCE_KEY => state)
+    end
+
+    def goal
+      @goal ||= agent_run&.goal || self.class.state(project)["goal"]
     end
 
     def current_score
@@ -167,7 +172,7 @@ module QualityRecovery
       @samples ||= QualityMetric
         .by_project(project.id)
         .joins(agent_run: :model_selection)
-        .where(agent_runs: { goal: agent_run.goal })
+        .where(agent_runs: { goal: goal })
         .where(model_selections: { selector_type: "quality_escalation", tier: self.class.target_tier(project) })
         .where("quality_metrics.created_at >= ?", started_at)
         .order(created_at: :desc)
@@ -181,7 +186,7 @@ module QualityRecovery
       @prompt_evolution_samples ||= QualityMetric
         .by_project(project.id)
         .joins(agent_run: :model_selection)
-        .where(agent_runs: { goal: agent_run.goal })
+        .where(agent_runs: { goal: goal })
         .where(model_selections: { selector_type: "quality_escalation", tier: self.class.target_tier(project) })
         .where("quality_metrics.created_at >= ?", prompt_evolution_requested_at)
         .order(created_at: :desc)
@@ -272,7 +277,7 @@ module QualityRecovery
       QualityMetric
         .by_project(project.id)
         .joins(agent_run: :prompt_version)
-        .where(agent_runs: { goal: agent_run.goal })
+        .where(agent_runs: { goal: goal })
         .where("quality_metrics.created_at >= ?", started_at)
         .order(created_at: :desc)
         .limit(evaluation_window)

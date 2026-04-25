@@ -664,7 +664,7 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     context "when project has configured database containers" do
-      let!(:service_container) { create(:service_container) }
+      let!(:service_container) { create(:service_container, account: project.account) }
 
       before do
         project.service_containers << service_container
@@ -687,7 +687,7 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     context "when project has configured non-database service containers" do
-      let!(:redis_container) { create(:service_container, :redis) }
+      let!(:redis_container) { create(:service_container, :redis, account: project.account) }
 
       before do
         project.service_containers << redis_container

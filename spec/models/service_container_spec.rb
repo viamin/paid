@@ -13,7 +13,7 @@ RSpec.describe ServiceContainer do
 
     it { is_expected.to validate_presence_of(:image) }
     it { is_expected.to validate_presence_of(:name) }
-    it { is_expected.to validate_uniqueness_of(:name) }
+    it { is_expected.to validate_uniqueness_of(:name).scoped_to(:account_id) }
     it { is_expected.to validate_presence_of(:port) }
 
     it { is_expected.to validate_numericality_of(:port).only_integer.is_greater_than(0).is_less_than(65_536) }
@@ -36,6 +36,13 @@ RSpec.describe ServiceContainer do
       admin = create(:user, :admin)
       create(:user_setting, user: admin, allowed_service_images: [ "postgres:16" ])
       container = build(:service_container, image: "postgres:16")
+      expect(container).to be_valid
+    end
+
+    it "allows the same name in different accounts" do
+      create(:service_container, name: "postgres")
+      container = build(:service_container, name: "postgres")
+
       expect(container).to be_valid
     end
   end

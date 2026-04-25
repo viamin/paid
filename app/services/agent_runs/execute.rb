@@ -96,48 +96,7 @@ module AgentRuns
     # - Proxy records exist: run_delta = run_summary - proxy totals (clamped >= 0)
     # - Proxy fully covers run_summary: no run_delta record created
     def track_tokens(response)
-      return unless response.tokens
-
-      run_input = response.input_tokens || 0
-      run_output = response.output_tokens || 0
-
-      # Record full run_summary for auditing (never updates aggregates)
-      TokenUsageTracker.track(
-        agent_run: agent_run,
-        usage: {
-          tokens_input: run_input,
-          tokens_output: run_output,
-          llm_model: response.model,
-          request_type: "run_summary"
-        },
-        update_aggregates: false
-      )
-
-      # Compute delta: what the proxy didn't already track.
-      # Excludes run_summary (audit-only) and run_delta (prior delta records
-      # from retries) so only per-request proxy records are counted.
-      proxy_totals = agent_run.token_usages
-        .where.not(request_type: %w[run_summary run_delta])
-        .pick(Arel.sql("COALESCE(SUM(input_tokens), 0)"), Arel.sql("COALESCE(SUM(output_tokens), 0)"))
-      proxy_input, proxy_output = proxy_totals || [ 0, 0 ]
-
-      delta_input = [ run_input - proxy_input, 0 ].max
-      delta_output = [ run_output - proxy_output, 0 ].max
-
-      return unless (delta_input + delta_output).positive?
-
-      # Persist the delta as a billable TokenUsage record so downstream
-      # aggregation (TokenUsage.billable, TokenUsages::Aggregate) includes
-      # the portion not covered by per-request proxy tracking.
-      TokenUsageTracker.track(
-        agent_run: agent_run,
-        usage: {
-          tokens_input: delta_input,
-          tokens_output: delta_output,
-          llm_model: response.model,
-          request_type: "run_delta"
-        }
-      )
+      AgentRuns::TrackHarnessTokens.call(agent_run: agent_run, response: response)
     end
 
     def handle_auth_error(error)
