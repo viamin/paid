@@ -1,0 +1,2 @@
+#!/bin/sh
+exec bundle exec ruby /workspace/.bin/psql_shim.rb "$@"
