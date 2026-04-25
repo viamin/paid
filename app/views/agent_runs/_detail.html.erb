@@ -379,7 +379,9 @@
                 <%= selection_tier.titleize %>
               </span>
               <% if agent_run.model_selection.selector_type == "quality_escalation" %>
-                <span class="ml-1 inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Escalated</span>
+                <span class="ml-1 inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                  Escalated<% if agent_run.model_selection.escalated_from_tier.present? %> from <%= agent_run.model_selection.escalated_from_tier.titleize %><% end %>
+                </span>
               <% end %>
             </dd>
           </div>
