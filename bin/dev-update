@@ -133,6 +133,7 @@ unstash_dirty_tree() {
       # repo in a broken state that downstream steps (bin/setup, restart) cannot
       # recover from.  The stash entry is preserved so the user can resolve
       # manually with `git stash pop`.
+      record_failure
       fail "git stash pop failed (conflict). Resolve manually with 'git stash pop'."
     else
       log_command_output "git stash pop" "$pop_output"
@@ -252,6 +253,7 @@ ensure_on_main() {
     # Refuse to switch branches with a dirty tree — stashing would carry
     # feature-branch edits onto main when unstash_dirty_tree runs later.
     if tree_is_dirty; then
+      record_failure
       fail "Working tree on '$current_branch' has uncommitted changes. Commit or stash them before running dev-update."
     fi
     log "Switching to main branch (currently on $current_branch)..."
