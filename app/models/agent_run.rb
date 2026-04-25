@@ -93,6 +93,7 @@ class AgentRun < ApplicationRecord
   has_one :model_selection, dependent: :destroy
   has_one :decision_record, dependent: :nullify
   has_many :agent_run_anomalies, dependent: :destroy
+  has_many :knowledge_usage_stats, dependent: :destroy
   has_many :sent_coordination_signals,
     class_name: "AgentCoordinationSignal",
     foreign_key: :source_agent_run_id,

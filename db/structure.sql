@@ -1650,6 +1650,47 @@ ALTER SEQUENCE public.knowledge_runs_id_seq OWNED BY public.knowledge_runs.id;
 
 
 --
+-- Name: knowledge_usage_stats; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.knowledge_usage_stats (
+    id bigint NOT NULL,
+    agent_run_id bigint NOT NULL,
+    project_id bigint NOT NULL,
+    artifact_type character varying(100) NOT NULL,
+    goal character varying(50) NOT NULL,
+    context_type character varying(50) NOT NULL,
+    artifact_count integer DEFAULT 0 NOT NULL,
+    chunk_count integer DEFAULT 0 NOT NULL,
+    token_count integer DEFAULT 0 NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.knowledge_usage_stats FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: knowledge_usage_stats_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.knowledge_usage_stats_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: knowledge_usage_stats_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.knowledge_usage_stats_id_seq OWNED BY public.knowledge_usage_stats.id;
+
+
+--
 -- Name: linear_tokens; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3456,6 +3497,13 @@ ALTER TABLE ONLY public.knowledge_runs ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
+-- Name: knowledge_usage_stats id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_usage_stats ALTER COLUMN id SET DEFAULT nextval('public.knowledge_usage_stats_id_seq'::regclass);
+
+
+--
 -- Name: linear_tokens id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4041,6 +4089,14 @@ ALTER TABLE ONLY public.knowledge_links
 
 ALTER TABLE ONLY public.knowledge_runs
     ADD CONSTRAINT knowledge_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: knowledge_usage_stats knowledge_usage_stats_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_usage_stats
+    ADD CONSTRAINT knowledge_usage_stats_pkey PRIMARY KEY (id);
 
 
 --
@@ -5775,6 +5831,41 @@ CREATE UNIQUE INDEX index_knowledge_runs_on_proxy_token ON public.knowledge_runs
 
 
 --
+-- Name: idx_knowledge_usage_stats_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_knowledge_usage_stats_unique ON public.knowledge_usage_stats USING btree (agent_run_id, artifact_type, context_type);
+
+
+--
+-- Name: index_knowledge_usage_stats_on_agent_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_knowledge_usage_stats_on_agent_run_id ON public.knowledge_usage_stats USING btree (agent_run_id);
+
+
+--
+-- Name: index_knowledge_usage_stats_on_artifact_type_and_goal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_knowledge_usage_stats_on_artifact_type_and_goal ON public.knowledge_usage_stats USING btree (artifact_type, goal);
+
+
+--
+-- Name: index_knowledge_usage_stats_on_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_knowledge_usage_stats_on_project_id ON public.knowledge_usage_stats USING btree (project_id);
+
+
+--
+-- Name: index_knowledge_usage_stats_on_project_id_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_knowledge_usage_stats_on_project_id_and_created_at ON public.knowledge_usage_stats USING btree (project_id, created_at);
+
+
+--
 -- Name: index_linear_tokens_on_account_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7114,6 +7205,22 @@ ALTER TABLE ONLY public.knowledge_runs
 
 
 --
+-- Name: knowledge_usage_stats fk_rails_kus_agent_run; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_usage_stats
+    ADD CONSTRAINT fk_rails_kus_agent_run FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: knowledge_usage_stats fk_rails_kus_project; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_usage_stats
+    ADD CONSTRAINT fk_rails_kus_project FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
 -- Name: decision_records fk_rails_6575197af8; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7956,6 +8063,13 @@ ALTER TABLE public.knowledge_links ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.knowledge_runs ENABLE ROW LEVEL SECURITY;
 
+
+--
+-- Name: knowledge_usage_stats; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.knowledge_usage_stats ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: linear_tokens; Type: ROW SECURITY; Schema: public; Owner: -
 --
@@ -8451,6 +8565,16 @@ CREATE POLICY tenant_isolation ON public.knowledge_links USING ((public.paid_ten
 
 --
 -- Name: knowledge_runs tenant_isolation; Type: POLICY; Schema: public; Owner: -
+
+--
+-- Name: knowledge_usage_stats tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.knowledge_usage_stats USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = knowledge_usage_stats.project_id) AND (projects.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = knowledge_usage_stats.project_id) AND (projects.account_id = public.paid_current_account_id()))))));
 --
 
 CREATE POLICY tenant_isolation ON public.knowledge_runs USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
@@ -9153,9 +9277,11 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260425113212'),
 ('20260425061110'),
 ('20260425060000'),
 ('20260425052958'),
+('20260425045424'),
 ('20260425050134'),
 ('20260423132408'),
 ('20260423130627'),
