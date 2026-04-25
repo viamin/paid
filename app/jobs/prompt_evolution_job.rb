@@ -18,18 +18,22 @@ class PromptEvolutionJob < ApplicationJob
   SAMPLE_DAYS = 14
   TARGETED_SAMPLE_SIZE = QualityThreshold::DEFAULT_WINDOW_SIZE
 
-  def perform(project_id: nil, failure_only: false, metric_type: "composite_score",
-              threshold: PromptEvolution::SampleRuns::QUALITY_THRESHOLD, goal_type: nil,
-              source: "scheduled")
+  def perform(project_id: nil, prompt_id: nil, recovery_action_id: nil, sample_days: SAMPLE_DAYS,
+              failure_only: false, metric_type: "composite_score",
+              threshold: PromptEvolution::SampleRuns::QUALITY_THRESHOLD, goal_type: nil)
     @project_id = project_id
+    @prompt_id = prompt_id
     @failure_only = failure_only
     @metric_type = metric_type.presence || "composite_score"
     @threshold = threshold.to_f
     @goal_type = goal_type
-    @source = source
+    workflow_started = false
+    eligible_prompt_found = false
 
     eligible_prompts.find_each do |prompt|
-      start_evolution_workflow(prompt)
+      eligible_prompt_found = true
+      start_evolution_workflow(prompt, recovery_action_id: recovery_action_id, sample_days: sample_days)
+      workflow_started = true
     rescue => e
       Rails.logger.warn(
         message: "prompt_evolution.job_failed_for_prompt",
@@ -38,11 +42,17 @@ class PromptEvolutionJob < ApplicationJob
         error: e.message
       )
     end
+
+    return unless recovery_action_id && !workflow_started
+    return if track_running_recovery_test(recovery_action_id)
+
+    reason = eligible_prompt_found ? "workflow_start_failed" : "no_eligible_prompt"
+    fail_recovery_action(recovery_action_id, reason)
   end
 
   private
 
-  attr_reader :project_id, :failure_only, :metric_type, :threshold, :goal_type, :source
+  attr_reader :project_id, :prompt_id, :failure_only, :metric_type, :threshold, :goal_type
 
   def eligible_prompts
     scope = Prompt
@@ -54,7 +64,10 @@ class PromptEvolutionJob < ApplicationJob
     if targeted?
       scope.where(id: prompts_with_targeted_failures)
     else
-      scope.where(id: prompts_with_sufficient_runs)
+      base = scope.where(id: prompts_with_sufficient_runs)
+      base = base.where(id: prompt_id) if prompt_id
+      base = base.where("project_id = ? OR project_id IS NULL", project_id) if project_id
+      base
     end
   end
 
@@ -85,49 +98,44 @@ class PromptEvolutionJob < ApplicationJob
       .where.not(prompt_version_id: nil)
       .joins(:quality_metrics)
       .merge(QualityMetric.automated)
+      .merge(QualityMetric.below_threshold(metric_type, threshold))
       .joins(prompt_version: :prompt)
 
     scope = scope.where(goal: goal_type) if goal_type.present?
-    failure_scope(scope)
+    scope
       .group("prompts.id")
       .having("COUNT(DISTINCT agent_runs.id) >= ?", MIN_RUNS_FOR_EVOLUTION)
       .select("prompts.id")
   end
 
-  def failure_scope(scope)
-    if metric_type == "composite_score"
-      scope.where("quality_metrics.composite_score < ?", threshold)
-    else
-      scope
-        .where("jsonb_exists(quality_metrics.scores, ?)", metric_type)
-        .where("(quality_metrics.scores ->> ?)::float < ?", metric_type, threshold)
-    end
-  end
+  def start_evolution_workflow(prompt, recovery_action_id: nil, sample_days: SAMPLE_DAYS)
+    workflow_id = workflow_id_for(prompt, recovery_action_id)
 
-  def start_evolution_workflow(prompt)
     Paid.temporal_client.start_workflow(
       Workflows::PromptEvolutionWorkflow,
-      workflow_input(prompt),
-      id: workflow_id(prompt),
+      workflow_input(prompt, recovery_action_id: recovery_action_id, sample_days: sample_days),
+      id: workflow_id,
       task_queue: ENV.fetch("TEMPORAL_TASK_QUEUE", "paid-tasks")
     )
 
     Rails.logger.info(
       message: "prompt_evolution.workflow_started",
       prompt_id: prompt.id,
-      project_id: workflow_project_id(prompt),
-      source: source
+      project_id: project_id || prompt.project_id,
+      recovery_action_id: recovery_action_id,
+      workflow_id: workflow_id
     )
   end
 
-  def workflow_input(prompt)
+  def workflow_input(prompt, recovery_action_id: nil, sample_days: SAMPLE_DAYS)
     input = {
       prompt_id: prompt.id,
-      project_id: workflow_project_id(prompt),
-      sample_days: SAMPLE_DAYS
+      project_id: project_id || prompt.project_id,
+      sample_days: sample_days,
+      recovery_action_id: recovery_action_id
     }
 
-    return input unless targeted?
+    return input unless failure_only
 
     input.merge(
       goal_type: goal_type,
@@ -139,13 +147,27 @@ class PromptEvolutionJob < ApplicationJob
     )
   end
 
-  def workflow_project_id(prompt)
-    project_id || prompt.project_id
+  def workflow_id_for(prompt, recovery_action_id)
+    return "quality-recovery-prompt-evolution-#{recovery_action_id}" if recovery_action_id
+    return "prompt-evolution-quality-pause-#{project_id}-#{prompt.id}-#{goal_type.presence || 'all-goals'}-#{metric_type}-#{Date.current}" if targeted?
+
+    "prompt-evolution-#{prompt.id}-#{Date.current}"
   end
 
-  def workflow_id(prompt)
-    return "prompt-evolution-#{prompt.id}-#{Date.current}" unless targeted?
+  def fail_recovery_action(recovery_action_id, status)
+    action = QualityRecoveryAction.find_by(id: recovery_action_id)
+    return unless action
 
-    "prompt-evolution-quality-pause-#{project_id}-#{prompt.id}-#{goal_type.presence || 'all-goals'}-#{metric_type}-#{Date.current}"
+    action.fail!(status: status)
+  end
+
+  def track_running_recovery_test(recovery_action_id)
+    action = QualityRecoveryAction.find_by(id: recovery_action_id)
+    prompt = Prompt.find_by(id: prompt_id)
+    ab_test = prompt&.ab_tests&.running&.first
+    return false unless action && ab_test
+
+    action.update!(result: { status: "already_running", ab_test_id: ab_test.id, prompt_id: prompt.id })
+    true
   end
 end

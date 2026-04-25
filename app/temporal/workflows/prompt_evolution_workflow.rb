@@ -29,6 +29,7 @@ module Workflows
     def execute(input)
       prompt_id = input[:prompt_id]
       project_id = input[:project_id]
+      recovery_action_id = input[:recovery_action_id]
 
       Temporalio::Workflow.logger.info(
         "PromptEvolutionWorkflow started for prompt=#{prompt_id} project=#{project_id}"
@@ -60,6 +61,7 @@ module Workflows
         Temporalio::Workflow.logger.info(
           "PromptEvolutionWorkflow: no evolution candidates for prompt=#{prompt_id}"
         )
+        fail_recovery_action(recovery_action_id, :no_candidates)
         return {
           status: :no_candidates,
           prompt_id: prompt_id,
@@ -86,6 +88,7 @@ module Workflows
         Temporalio::Workflow.logger.info(
           "PromptEvolutionWorkflow: no mutations generated for prompt=#{prompt_id}"
         )
+        fail_recovery_action(recovery_action_id, :no_mutations)
         return {
           status: :no_mutations,
           prompt_id: prompt_id,
@@ -98,6 +101,7 @@ module Workflows
         Activities::CreateEvolutionVariantsActivity,
         {
           prompt_id: prompt_id,
+          project_id: project_id,
           mutations: mutations
         },
         timeout: 30
@@ -106,6 +110,7 @@ module Workflows
       variant_version_ids = variants_result[:variant_version_ids]
 
       if variant_version_ids.blank?
+        fail_recovery_action(recovery_action_id, :no_variants_created)
         return {
           status: :no_variants_created,
           prompt_id: prompt_id
@@ -119,7 +124,8 @@ module Workflows
           prompt_id: prompt_id,
           variant_version_ids: variant_version_ids,
           min_samples_per_variant: input.fetch(:min_samples, 30),
-          confidence_threshold: input.fetch(:confidence, 0.95)
+          confidence_threshold: input.fetch(:confidence, 0.95),
+          recovery_action_id: recovery_action_id
         },
         timeout: AB_TEST_TIMEOUT
       )
@@ -139,7 +145,23 @@ module Workflows
         error_class: e.class.to_s,
         error: e.message
       )
+      fail_recovery_action(recovery_action_id, :workflow_failed, error_class: e.class.to_s, error_message: e.message)
       raise
+    end
+
+    private
+
+    def fail_recovery_action(recovery_action_id, status, result = {})
+      return unless recovery_action_id
+
+      run_activity(
+        Activities::MarkQualityRecoveryActionActivity,
+        {
+          recovery_action_id: recovery_action_id,
+          result: result.merge(status: status)
+        },
+        timeout: 30
+      )
     end
   end
 end

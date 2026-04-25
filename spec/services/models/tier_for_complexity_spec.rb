@@ -43,6 +43,13 @@ RSpec.describe Models::TierForComplexity do
     end
 
     context "with max_tier project preference" do
+      it "raises lower complexity tiers to the quality recovery minimum tier" do
+        project = build(:project)
+        project.model_preferences = { "quality_recovery_min_tier" => "high" }
+
+        expect(described_class.call(complexity: 2, project: project)).to eq("high")
+      end
+
       it "caps high tier to mid when max_tier is mid" do
         project = build(:project)
         project.model_preferences = { "max_tier" => "mid" }

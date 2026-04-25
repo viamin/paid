@@ -78,13 +78,7 @@ module PromptEvolution
     end
 
     def failing_runs(scope)
-      if metric_type == "composite_score"
-        scope.where("quality_metrics.composite_score < ?", threshold)
-      else
-        scope
-          .where("jsonb_exists(quality_metrics.scores, ?)", metric_type)
-          .where("(quality_metrics.scores ->> ?)::float < ?", metric_type, threshold)
-      end
+      scope.merge(QualityMetric.below_threshold(metric_type, threshold))
     end
 
     def stratified_sample(runs)
