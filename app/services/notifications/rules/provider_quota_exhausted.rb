@@ -52,7 +52,8 @@ module Notifications
       end
 
       def blocked_run_count_for(provider)
-        AgentRun
+        @blocked_run_counts ||= {}
+        @blocked_run_counts[provider.id] ||= AgentRun
           .joins(:project)
           .where(projects: { created_by_id: provider.user_id })
           .where(status: AgentRun::UNFINISHED_STATUSES)
