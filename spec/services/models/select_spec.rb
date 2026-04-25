@@ -197,6 +197,13 @@ RSpec.describe Models::Select do
 
         expect(selection.tier).to eq("high")
       end
+
+      it "does not mark an escalation without a quality recovery reason" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection.escalated_from_tier).to be_nil
+        expect(selection.escalated_reason).to be_nil
+      end
     end
 
     context "when meta-agent fails and falls back to rules" do
@@ -262,6 +269,79 @@ RSpec.describe Models::Select do
 
         expect(Models::MetaAgentSelector).not_to have_received(:call)
         expect(Models::RulesBasedSelector).not_to have_received(:call)
+      end
+    end
+
+    context "when quality recovery escalation is active" do
+      before do
+        create(:llm_model, model_id: "mid-model", tier: "mid", capability_score: 7.0)
+        create(:llm_model, model_id: "low-model", tier: "low", capability_score: 5.0)
+        # Use a high escalation floor so the low-complexity run gets escalated
+        project.update!(model_preferences: { "quality_recovery_min_tier" => "high" })
+        create(:llm_model, model_id: "high-model", tier: "high", capability_score: 9.0)
+        # Make the issue short so complexity stays low -> base tier = "low"
+        agent_run.issue.update!(body: "x")
+      end
+
+      it "records escalation on the ModelSelection" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection.escalated_from_tier).to be_present
+        expect(selection.escalated_reason).to eq("quality_recovery_project")
+      end
+
+      it "sets the final tier to the escalated tier" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection.tier).to eq("high")
+      end
+    end
+
+    context "when per-goal escalation is active" do
+      before do
+        create(:llm_model, model_id: "high-model", tier: "high", capability_score: 9.0)
+        create(:llm_model, model_id: "low-model", tier: "low", capability_score: 5.0)
+        project.update!(model_preferences: { "goal_min_tiers" => { agent_run.goal => "high" } })
+        agent_run.issue.update!(body: "x")
+      end
+
+      it "records goal-level escalation reason" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection.escalated_from_tier).to be_present
+        expect(selection.escalated_reason).to eq("quality_recovery_goal")
+      end
+    end
+
+    context "when no escalation is needed (above threshold)" do
+      before do
+        create(:llm_model, model_id: "low-model", tier: "low", capability_score: 5.0)
+      end
+
+      it "does not record escalation" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection.escalated_from_tier).to be_nil
+        expect(selection.escalated_reason).to be_nil
+      end
+    end
+
+    context "when project override still wins over escalation" do
+      let!(:low_tier_model) { create(:llm_model, model_id: "cheap-model", tier: "low", capability_score: 3.0) }
+
+      before do
+        project.update!(model_preferences: {
+          "required_model_id" => "cheap-model",
+          "quality_recovery_min_tier" => "high"
+        })
+      end
+
+      it "selects the required model without escalation marking" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection.llm_model).to eq(low_tier_model)
+        expect(selection.selector_type).to eq("override")
+        expect(selection.escalated_from_tier).to be_nil
       end
     end
 

@@ -13,11 +13,12 @@ module Models
       new(...).call
     end
 
-    def initialize(complexity:, agent_run: nil, project: nil, provider: nil)
+    def initialize(complexity:, agent_run: nil, project: nil, provider: nil, goal: nil)
       @complexity = complexity
       @agent_run = agent_run
       @project = project || agent_run&.project
       @provider = provider || agent_run&.provider
+      @goal = goal || agent_run&.goal
     end
 
     def call
@@ -45,7 +46,7 @@ module Models
 
     private
 
-    attr_reader :complexity, :agent_run, :project, :provider
+    attr_reader :complexity, :agent_run, :project, :provider, :goal
 
     def apply_project_tier_bounds(tier)
       tier = raise_to_minimum_tier(tier)
@@ -53,7 +54,7 @@ module Models
     end
 
     def raise_to_minimum_tier(tier)
-      minimum = project&.model_preferences&.dig("quality_recovery_min_tier")
+      minimum = goal_min_tier || project&.model_preferences&.dig("quality_recovery_min_tier")
       return tier unless minimum.present? && LlmModel::TIERS.include?(minimum)
 
       min_index = LlmModel::TIERS.index(minimum)
@@ -61,6 +62,12 @@ module Models
       return tier unless tier_index
 
       tier_index >= min_index ? tier : minimum
+    end
+
+    def goal_min_tier
+      return nil unless goal.present?
+
+      project&.model_preferences&.dig("goal_min_tiers", goal)
     end
 
     def cap_tier(tier)

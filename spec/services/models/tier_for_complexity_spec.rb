@@ -42,6 +42,52 @@ RSpec.describe Models::TierForComplexity do
       expect(described_class.call(complexity: 3, provider: provider, project: project)).to eq("high")
     end
 
+    context "with per-goal min tier" do
+      it "raises tier to per-goal minimum" do
+        project = build(:project)
+        project.model_preferences = { "goal_min_tiers" => { "create_pr" => "high" } }
+
+        expect(described_class.call(complexity: 2, project: project, goal: "create_pr")).to eq("high")
+      end
+
+      it "does not affect other goals" do
+        project = build(:project)
+        project.model_preferences = { "goal_min_tiers" => { "create_pr" => "high" } }
+
+        expect(described_class.call(complexity: 2, project: project, goal: "review")).to eq("low")
+      end
+
+      it "prefers per-goal min tier over project-wide min tier" do
+        project = build(:project)
+        project.model_preferences = {
+          "quality_recovery_min_tier" => "mid",
+          "goal_min_tiers" => { "create_pr" => "high" }
+        }
+
+        expect(described_class.call(complexity: 2, project: project, goal: "create_pr")).to eq("high")
+      end
+
+      it "falls back to project-wide min tier when no goal tier is set" do
+        project = build(:project)
+        project.model_preferences = {
+          "quality_recovery_min_tier" => "mid",
+          "goal_min_tiers" => {}
+        }
+
+        expect(described_class.call(complexity: 2, project: project, goal: "review")).to eq("mid")
+      end
+
+      it "respects max_tier cap even with per-goal escalation" do
+        project = build(:project)
+        project.model_preferences = {
+          "goal_min_tiers" => { "create_pr" => "high" },
+          "max_tier" => "mid"
+        }
+
+        expect(described_class.call(complexity: 2, project: project, goal: "create_pr")).to eq("mid")
+      end
+    end
+
     context "with max_tier project preference" do
       it "raises lower complexity tiers to the quality recovery minimum tier" do
         project = build(:project)
