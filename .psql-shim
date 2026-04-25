@@ -1,0 +1,55 @@
+#!/usr/bin/env ruby
+require 'pg'
+require 'uri'
+
+file = nil
+dbname = nil
+
+args = ARGV.dup
+i = 0
+while i < args.length
+  case args[i]
+  when '--file', '-f'
+    file = args[i + 1]
+    i += 2
+  when '--quiet', '-q', '--no-psqlrc'
+    i += 1
+  when '--set'
+    i += 2
+  when '--output', '-o'
+    i += 2
+  else
+    dbname = args[i] unless args[i].start_with?('-')
+    i += 1
+  end
+end
+
+if file && dbname
+  db_url = ENV['DATABASE_URL'] || ''
+  uri = URI.parse(db_url)
+  # Use the dbname from args, not from DATABASE_URL
+  conn = PG.connect(host: uri.host, port: uri.port, user: uri.user, password: uri.password, dbname: dbname)
+  sql = File.read(file)
+  sql = sql.gsub("SELECT pg_catalog.set_config('search_path', '', false);", "SET search_path = public;")
+  # Remove duplicate schema_migrations INSERT blocks - keep only the last one
+  # which contains the most up-to-date set of versions
+  parts = sql.split(/(INSERT INTO "schema_migrations".*?;)/m)
+  if parts.count { |p| p.include?('INSERT INTO "schema_migrations"') } > 1
+    first_found = false
+    parts = parts.map do |part|
+      if part.include?('INSERT INTO "schema_migrations"')
+        if first_found
+          part  # keep subsequent ones
+        else
+          first_found = true
+          "-- removed duplicate schema_migrations insert"
+        end
+      else
+        part
+      end
+    end
+    sql = parts.join
+  end
+  conn.exec(sql)
+  conn.close
+end
