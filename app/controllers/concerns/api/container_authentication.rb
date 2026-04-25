@@ -18,6 +18,7 @@ module Api
     included do
       class_attribute :knowledge_run_authentication_enabled, instance_accessor: false, default: false
 
+      around_action :with_container_tenant_context
       before_action :validate_container_request
       before_action :set_authenticated_run
       before_action :verify_proxy_token
@@ -30,6 +31,16 @@ module Api
     end
 
     private
+
+    def with_container_tenant_context
+      previous_account = Current.account
+      previous_bypass = TenantContext.bypass_enabled?
+
+      TenantContext.clear!
+      yield
+    ensure
+      TenantContext.restore!(account: previous_account, bypass: previous_bypass)
+    end
 
     def validate_container_request
       embedded_run_type, embedded_run_id, @embedded_proxy_token = extract_embedded_proxy_credentials
@@ -46,18 +57,23 @@ module Api
     def set_authenticated_run
       return if performed?
 
-      case @authenticated_run_type
-      when :knowledge_run
-        @knowledge_run = KnowledgeRun.find_by(id: @authenticated_run_id)
-        @authenticated_run = @knowledge_run
-        error_message = "Invalid or inactive knowledge run"
-      else
-        @agent_run = AgentRun.find_by(id: @authenticated_run_id)
-        @authenticated_run = @agent_run
-        error_message = "Invalid or inactive agent run"
+      @authenticated_run, error_message = TenantContext.with_system_access do
+        case @authenticated_run_type
+        when :knowledge_run
+          @knowledge_run = KnowledgeRun.includes(project: :account).find_by(id: @authenticated_run_id)
+          [ @knowledge_run, "Invalid or inactive knowledge run" ]
+        else
+          @agent_run = AgentRun.includes(project: :account).find_by(id: @authenticated_run_id)
+          [ @agent_run, "Invalid or inactive agent run" ]
+        end
       end
 
-      render json: { error: error_message }, status: :forbidden unless @authenticated_run&.active?
+      unless @authenticated_run&.active?
+        render json: { error: error_message }, status: :forbidden
+        return
+      end
+
+      TenantContext.apply!(authenticated_account)
     end
 
     def verify_proxy_token
@@ -112,6 +128,10 @@ module Api
       else
         "Missing agent run ID"
       end
+    end
+
+    def authenticated_account
+      @authenticated_run&.project&.account
     end
   end
 end
