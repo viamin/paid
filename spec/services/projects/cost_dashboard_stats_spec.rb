@@ -117,6 +117,37 @@ RSpec.describe Projects::CostDashboardStats do
       expect(review[:total_cost_cents]).to eq(0)
     end
 
+    it "breaks down cost by tier" do
+      low_model = create(:llm_model, tier: "low")
+      high_model = create(:llm_model, tier: "high")
+
+      low_run = create(:agent_run, project: project, status: "completed",
+        cost_cents: 100, duration_seconds: 30)
+      create(:model_selection, agent_run: low_run, llm_model: low_model, tier: "low", selector_type: "rules")
+
+      high_run = create(:agent_run, project: project, status: "completed",
+        cost_cents: 500, duration_seconds: 120)
+      create(:model_selection, agent_run: high_run, llm_model: high_model, tier: "high", selector_type: "rules")
+
+      result = described_class.call(project: project)
+      tier_costs = result[:cost_by_tier]
+
+      expect(tier_costs["low"][:run_count]).to eq(1)
+      expect(tier_costs["low"][:total_cost_cents]).to eq(100)
+      expect(tier_costs["high"][:run_count]).to eq(1)
+      expect(tier_costs["high"][:total_cost_cents]).to eq(500)
+      expect(tier_costs["mid"][:run_count]).to eq(0)
+    end
+
+    it "returns zeros for tiers with no runs" do
+      result = described_class.call(project: project)
+      tier_costs = result[:cost_by_tier]
+
+      expect(tier_costs["low"][:run_count]).to eq(0)
+      expect(tier_costs["mid"][:run_count]).to eq(0)
+      expect(tier_costs["high"][:run_count]).to eq(0)
+    end
+
     it "omits period-based usage fields for per_run budgets" do
       create(:cost_budget, project: project, budget_type: "per_run", limit_cents: 2000)
 

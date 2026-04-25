@@ -29,6 +29,7 @@ module QualityMetrics
         breakdown: score_breakdown,
         prompt_comparison: prompt_comparison,
         model_comparison: model_comparison,
+        tier_breakdown: tier_breakdown,
         human_feedback: human_feedback,
         gate_status: gate_status,
         metrics_reference: self.class.metrics_reference
@@ -115,11 +116,12 @@ module QualityMetrics
 
     def export_data(limit: 10_000)
       metrics_scope = QualityMetric.by_project(project.id)
-        .includes(:prompt_version, :agent_run)
+        .includes(:prompt_version, agent_run: :model_selection)
         .order(created_at: :desc)
         .limit(limit)
 
       metrics_scope.map do |m|
+        selection = m.agent_run&.model_selection
         {
           id: m.id,
           date: m.created_at.iso8601,
@@ -130,7 +132,9 @@ module QualityMetrics
           agent_run_id: m.agent_run_id,
           provider: m.agent_run&.effective_provider,
           goal: m.agent_run&.goal,
-          prompt_version: m.prompt_version&.version
+          prompt_version: m.prompt_version&.version,
+          tier: selection&.tier,
+          complexity_score: selection&.complexity_score&.to_f
         }
       end
     end
@@ -289,6 +293,47 @@ module QualityMetrics
           sample_size: row.sample_size.to_i
         }
       end.sort_by { |r| -r[:avg_score] }
+    end
+
+    def tier_breakdown
+      runs_with_tier = AgentRun.where(project: project)
+        .joins(:model_selection)
+        .where.not(model_selections: { tier: nil })
+
+      tier_quality = runs_with_tier
+        .joins(:quality_metrics)
+        .where.not(quality_metrics: { composite_score: nil })
+        .group("model_selections.tier")
+        .select(
+          "model_selections.tier",
+          "AVG(quality_metrics.composite_score) AS avg_score",
+          "COUNT(DISTINCT quality_metrics.id) AS sample_size"
+        )
+        .to_a
+
+      tier_counts = runs_with_tier
+        .group("model_selections.tier")
+        .count
+
+      escalation_count = runs_with_tier
+        .where(model_selections: { selector_type: "quality_escalation" })
+        .group("model_selections.tier")
+        .count
+
+      LlmModel::TIERS.map do |tier|
+        quality_row = tier_quality.find { |r| r.tier == tier }
+        run_count = tier_counts[tier] || 0
+        escalations = escalation_count[tier] || 0
+
+        {
+          tier: tier,
+          run_count: run_count,
+          avg_score: quality_row&.avg_score&.to_f&.round(4),
+          sample_size: quality_row&.sample_size&.to_i || 0,
+          escalation_count: escalations,
+          escalation_rate: run_count.zero? ? nil : (escalations.to_f / run_count * 100).round(1)
+        }
+      end
     end
 
     def gate_status
