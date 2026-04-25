@@ -91,8 +91,7 @@ module PromptEvolution
         reason: "prompt_evolution_variant_created",
         metadata: {
           prompt_id: prompt.id,
-          variant_version_ids: variants.map(&:id),
-          review_required: prompt.requires_review?
+          variant_version_ids: variants.map(&:id)
         }
       )
     end
