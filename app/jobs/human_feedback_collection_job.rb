@@ -42,8 +42,12 @@ class HumanFeedbackCollectionJob < ApplicationJob
 
     QualityMetrics::CollectReactionFeedback.call(agent_run: agent_run)
     collect_pr_review_feedback(agent_run)
-    collect_review_comment_count(agent_run, attempt: comment_count_attempt)
-    collect_pr_description_llm_feedback(agent_run)
+
+    # Fetch the PR once and share across collectors that need it, to avoid
+    # duplicate GitHub API calls.
+    pr_data = fetch_pull_request(agent_run)
+    collect_review_comment_count(agent_run, pr_data: pr_data, attempt: comment_count_attempt)
+    collect_pr_description_llm_feedback(agent_run, pr_data: pr_data)
   end
 
   def collect_pr_review_feedback(agent_run)
@@ -66,12 +70,29 @@ class HumanFeedbackCollectionJob < ApplicationJob
     )
   end
 
-  def collect_review_comment_count(agent_run, attempt: 0)
+  def fetch_pull_request(agent_run)
     github_client = agent_run.project.github_token&.client
-    return unless github_client
+    return nil unless github_client
 
-    repo = agent_run.project.full_name
-    pr = github_client.pull_request(repo, agent_run.pull_request_number)
+    github_client.pull_request(agent_run.project.full_name, agent_run.pull_request_number)
+  rescue GithubClient::Error => e
+    Rails.logger.warn(
+      message: "human_feedback.pull_request_fetch_failed",
+      agent_run_id: agent_run.id,
+      error: e.message
+    )
+    nil
+  end
+
+  def collect_review_comment_count(agent_run, pr_data: nil, attempt: 0)
+    pr = pr_data
+    unless pr
+      github_client = agent_run.project.github_token&.client
+      return unless github_client
+
+      repo = agent_run.project.full_name
+      pr = github_client.pull_request(repo, agent_run.pull_request_number)
+    end
     comment_count = pr[:review_comments] || pr["review_comments"] || 0
 
     metric = agent_run.quality_metrics.find_by(metric_type: "automated")
@@ -162,7 +183,7 @@ class HumanFeedbackCollectionJob < ApplicationJob
     QualityMetrics::CollectEnhanceIssueFeedback.call(agent_run: agent_run)
   end
 
-  def collect_pr_description_llm_feedback(agent_run)
+  def collect_pr_description_llm_feedback(agent_run, pr_data: nil)
     project = agent_run.project
     metric = LlmOutputMetric.find_by(
       project: project,
@@ -176,7 +197,7 @@ class HumanFeedbackCollectionJob < ApplicationJob
     return unless github_client
 
     repo = project.full_name
-    pr = github_client.pull_request(repo, agent_run.pull_request_number)
+    pr = pr_data || github_client.pull_request(repo, agent_run.pull_request_number)
     reactions = github_client.pull_request_reactions(repo, agent_run.pull_request_number)
 
     current_body = pr[:body] || pr["body"]
