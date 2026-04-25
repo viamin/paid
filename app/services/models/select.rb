@@ -44,6 +44,9 @@ module Models
         return override_result(model, "Project requires specific model") if model
       end
 
+      quality_escalation = quality_escalation_result(project)
+      return quality_escalation if quality_escalation
+
       # Check for preferred models
       preferred = preferred_model_result(project)
       return preferred if preferred
@@ -54,6 +57,23 @@ module Models
       # Try meta-agent selection, fall back to rules-based
       Models::MetaAgentSelector.call(agent_run: agent_run) ||
         Models::RulesBasedSelector.call(agent_run: agent_run)
+    end
+
+    def quality_escalation_result(project)
+      tier = QualityRecovery::ModelEscalation.target_tier(project)
+      return nil unless tier
+
+      model = LlmModel.active.by_tier(tier).by_capability.first
+      return nil unless model
+
+      {
+        model: model,
+        selector_type: "quality_escalation",
+        reasoning: "Quality-triggered escalation to #{tier} tier",
+        candidates: [ { model_id: model.model_id, score: model.capability_score.to_f } ],
+        complexity_score: nil,
+        tier: tier
+      }
     end
 
     def preferred_model_result(project)

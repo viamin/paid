@@ -98,6 +98,16 @@ RSpec.describe PromptEvolutionJob do
           hash_including(id: "prompt-evolution-#{prompt.id}-#{Date.current}")
         )
       end
+
+      it "starts a targeted workflow for a degraded project prompt" do
+        job.perform(prompt_id: prompt.id, project_id: project.id)
+
+        expect(temporal_client).to have_received(:start_workflow).with(
+          Workflows::PromptEvolutionWorkflow,
+          hash_including(prompt_id: prompt.id, project_id: project.id),
+          hash_including(id: "prompt-evolution-#{prompt.id}-#{Date.current}")
+        )
+      end
     end
 
     context "with a targeted recovery prompt" do
@@ -190,6 +200,14 @@ RSpec.describe PromptEvolutionJob do
 
       it "skips the prompt" do
         job.perform
+
+        expect(temporal_client).not_to have_received(:start_workflow)
+          .with(Workflows::PromptEvolutionWorkflow,
+            hash_including(prompt_id: prompt.id), anything)
+      end
+
+      it "skips targeted evolution for the prompt" do
+        job.perform(prompt_id: prompt.id, project_id: project.id)
 
         expect(temporal_client).not_to have_received(:start_workflow)
           .with(Workflows::PromptEvolutionWorkflow,

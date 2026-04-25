@@ -25,6 +25,7 @@ module QualityPause
       breached = breached_threshold
       return unless breached
       return if in_grace_period?(breached)
+      return if recover_with_model_escalation?(breached)
 
       QualityRecovery::AutoImprove.call(agent_run: agent_run, breach: breached)
 
@@ -42,6 +43,29 @@ module QualityPause
     private
 
     attr_reader :agent_run, :project
+
+    def recover_with_model_escalation?(breached)
+      return false unless breached.fetch(:threshold).metric_type == "composite_score"
+
+      result = if QualityRecovery::ModelEscalation.active?(project)
+        QualityRecovery::ModelEscalation.evaluate(project: project, agent_run: agent_run, breach: breached)
+      else
+        QualityRecovery::ModelEscalation.start(project: project, agent_run: agent_run, breach: breached)
+      end
+
+      log_recovery(result)
+      result.defer_pause?
+    end
+
+    def log_recovery(result)
+      Rails.logger.info(
+        message: "quality_pause.recovery_before_pause",
+        project_id: project.id,
+        agent_run_id: agent_run.id,
+        recovery_reason: result.reason,
+        defer_pause: result.defer_pause?
+      )
+    end
 
     def in_grace_period?(breached)
       resume_at = last_resume_at
