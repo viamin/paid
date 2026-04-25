@@ -38,15 +38,30 @@ class TenantConfigurationsController < ApplicationController
   end
 
   def update_feature_flag_rollouts!
+    changed = changed_feature_flag_rollouts
+    return if changed.empty?
+
     # Flipper percentage gates are global (not tenant-scoped), so require
     # the stricter owner-only manage_feature_flags? policy to prevent
     # cross-tenant privilege escalation in multi-tenant deployments.
     authorize current_account, :manage_feature_flags?
 
-    feature_flag_rollout_params.each do |flag_name, rollout|
+    changed.each do |flag_name, rollout|
       FeatureFlags.enable_percentage_of_actors(flag_name, rollout["percentage_of_actors"])
       FeatureFlags.enable_percentage_of_time(flag_name, rollout["percentage_of_time"])
     end
+  end
+
+  def changed_feature_flag_rollouts
+    feature_flag_rollout_params.select do |flag_name, rollout|
+      current = FeatureFlags.rollout_status(flag_name)
+      normalize_pct(rollout["percentage_of_actors"]) != current[:percentage_of_actors] ||
+        normalize_pct(rollout["percentage_of_time"]) != current[:percentage_of_time]
+    end
+  end
+
+  def normalize_pct(value)
+    value.to_s.strip == "" ? 0 : Integer(value)
   end
 
   def feature_flag_rollout_params

@@ -134,6 +134,22 @@ RSpec.describe "TenantConfigurations" do
       expect(account.tenant_setting.reload.effective_guardrails["max_concurrent_runs"]).to eq(2)
     end
 
+    it "allows admins to submit the form with unchanged rollout values" do
+      admin = create(:user, :admin, account: account)
+      sign_out user
+      sign_in admin
+
+      patch tenant_configuration_path, params: {
+        tenant_setting: { guardrails: { max_concurrent_runs: "3" } },
+        feature_flag_rollouts: {
+          explicit_pr_automation_decisions: { percentage_of_actors: "0", percentage_of_time: "0" }
+        }
+      }
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(account.tenant_setting.reload.effective_guardrails["max_concurrent_runs"]).to eq(3)
+    end
+
     it "rejects viewers" do
       viewer = create(:user, :viewer, account: account)
       sign_out user
