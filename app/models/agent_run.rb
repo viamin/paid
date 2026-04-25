@@ -696,8 +696,8 @@ class AgentRun < ApplicationRecord
   end
 
   # Whether this run has a cloned git repository in its container.
-  # create_issue and enhance_issue goals skip cloning unless they target
-  # an existing PR branch (source_pull_request_number present).
+  # create_issue, enhance_issue, and analyze_issue goals skip cloning
+  # unless they target an existing PR branch (source_pull_request_number present).
   def repo_cloned?
     return true unless create_issue_goal? || enhance_issue_goal? || analyze_issue_goal?
 

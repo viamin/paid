@@ -79,7 +79,7 @@ module Automation
       end
 
       def queue_analyze_issue_run(issue_id:)
-        new(type: "queue_analyze_issue_run", payload: { "issue_id" => issue_id })
+        new(type: "queue_analyze_issue_run", payload: { issue_id: issue_id })
       end
     end
 
