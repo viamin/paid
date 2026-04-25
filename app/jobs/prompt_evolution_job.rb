@@ -17,6 +17,7 @@ class PromptEvolutionJob < ApplicationJob
   # Default lookback window for sampling (days)
   SAMPLE_DAYS = 14
   TARGETED_SAMPLE_SIZE = QualityThreshold::DEFAULT_WINDOW_SIZE
+  TARGETED_MIN_RUNS_FOR_EVOLUTION = QualityThreshold::DEFAULT_MIN_SAMPLE_SIZE
 
   def perform(project_id: nil, prompt_id: nil, recovery_action_id: nil, sample_days: SAMPLE_DAYS,
               failure_only: false, metric_type: "composite_score",
@@ -107,7 +108,7 @@ class PromptEvolutionJob < ApplicationJob
     scope = scope.where(goal: goal_type) if goal_type.present?
     scope
       .group("prompts.id")
-      .having("COUNT(DISTINCT agent_runs.id) >= ?", MIN_RUNS_FOR_EVOLUTION)
+      .having("COUNT(DISTINCT agent_runs.id) >= ?", TARGETED_MIN_RUNS_FOR_EVOLUTION)
       .select("prompts.id")
   end
 
@@ -146,7 +147,7 @@ class PromptEvolutionJob < ApplicationJob
       failure_only: true,
       metric_type: metric_type,
       threshold: threshold,
-      min_runs_for_evaluation: QualityThreshold::DEFAULT_MIN_SAMPLE_SIZE
+      min_runs_for_evaluation: TARGETED_MIN_RUNS_FOR_EVOLUTION
     )
   end
 

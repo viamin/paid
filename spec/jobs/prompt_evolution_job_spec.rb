@@ -9,6 +9,8 @@ RSpec.describe PromptEvolutionJob do
   before do
     allow(Paid).to receive(:temporal_client).and_return(temporal_client)
     allow(temporal_client).to receive(:start_workflow)
+    allow(ProjectWorkflowManager).to receive(:start_polling)
+    allow(EnqueueKnowledgeCollectionJob).to receive(:perform_later)
   end
 
   describe "#perform" do
@@ -65,6 +67,16 @@ RSpec.describe PromptEvolutionJob do
           min_runs_for_evaluation: QualityThreshold::DEFAULT_MIN_SAMPLE_SIZE
         ),
         hash_including(id: "prompt-evolution-quality-pause-#{project.id}-#{prompt.id}-create_pr-composite_score-#{Date.current}")
+      )
+    end
+
+    def perform_targeted_recovery_job(prompt_id:, recovery_action_id:)
+      job.perform(
+        project_id: project.id,
+        prompt_id: prompt_id,
+        recovery_action_id: recovery_action_id,
+        failure_only: true,
+        threshold: 0.5
       )
     end
 
@@ -131,6 +143,30 @@ RSpec.describe PromptEvolutionJob do
 
         prompt_evolution_calls = workflow_calls.select { |call| call.first == Workflows::PromptEvolutionWorkflow }
         expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).to contain_exactly(prompt.id)
+      end
+
+      it "uses the recovery minimum for failure-only recovery actions" do
+        recovery_prompt = create(:prompt, :global, :with_version)
+        create_completed_runs(
+          described_class::TARGETED_MIN_RUNS_FOR_EVOLUTION,
+          prompt_version: recovery_prompt.current_version,
+          project: project,
+          composite_score: 0.2
+        )
+
+        perform_targeted_recovery_job(prompt_id: recovery_prompt.id, recovery_action_id: 123)
+
+        expect(temporal_client).to have_received(:start_workflow).with(
+          Workflows::PromptEvolutionWorkflow,
+          hash_including(
+            prompt_id: recovery_prompt.id,
+            project_id: project.id,
+            recovery_action_id: 123,
+            failure_only: true,
+            min_runs_for_evaluation: described_class::TARGETED_MIN_RUNS_FOR_EVOLUTION
+          ),
+          hash_including(id: "quality-recovery-prompt-evolution-123")
+        )
       end
     end
 
@@ -303,7 +339,7 @@ RSpec.describe PromptEvolutionJob do
           workflow_calls << args
         end
 
-        min_runs = PromptEvolution::SampleRuns::MIN_RUNS_FOR_EVALUATION
+        min_runs = described_class::TARGETED_MIN_RUNS_FOR_EVOLUTION
         create_completed_runs(min_runs, prompt_version: prompt_version, project: project, composite_score: 0.2)
         create_completed_runs(min_runs, prompt_version: healthy_prompt.current_version, project: project, composite_score: 0.9)
         create_completed_runs(min_runs, prompt_version: healthy_prompt.current_version, project: other_project, composite_score: 0.1)
@@ -319,7 +355,7 @@ RSpec.describe PromptEvolutionJob do
 
       it "starts workflows for prompts used by scoreable failed runs" do
         failed_prompt = create(:prompt, :global, :with_version)
-        min_runs = PromptEvolution::SampleRuns::MIN_RUNS_FOR_EVALUATION
+        min_runs = described_class::TARGETED_MIN_RUNS_FOR_EVOLUTION
         (min_runs - 1).times { create_failed_run(prompt_version: failed_prompt.current_version, project: project) }
         create_completed_runs(1, prompt_version: failed_prompt.current_version, project: project, composite_score: 0.2)
 
@@ -357,7 +393,7 @@ RSpec.describe PromptEvolutionJob do
       it "ignores targeted failures outside the sample window" do
         old_prompt = create(:prompt, :global, :with_version)
         create_completed_runs(
-          PromptEvolution::SampleRuns::MIN_RUNS_FOR_EVALUATION,
+          described_class::TARGETED_MIN_RUNS_FOR_EVOLUTION,
           prompt_version: old_prompt.current_version,
           project: project,
           composite_score: 0.2,
@@ -373,7 +409,7 @@ RSpec.describe PromptEvolutionJob do
       it "honors sample_days when selecting prompts with targeted failures" do
         older_failed_prompt = create(:prompt, :global, :with_version)
         create_completed_runs(
-          PromptEvolution::SampleRuns::MIN_RUNS_FOR_EVALUATION,
+          described_class::TARGETED_MIN_RUNS_FOR_EVOLUTION,
           prompt_version: older_failed_prompt.current_version,
           project: project,
           composite_score: 0.2,
@@ -391,6 +427,22 @@ RSpec.describe PromptEvolutionJob do
 
         prompt_evolution_calls = workflow_calls.select { |call| call.first == Workflows::PromptEvolutionWorkflow }
         expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).not_to include(older_failed_prompt.id)
+      end
+
+      it "uses the recovery minimum when selecting targeted prompts" do
+        recovery_prompt = create(:prompt, :global, :with_version)
+        create_completed_runs(
+          described_class::TARGETED_MIN_RUNS_FOR_EVOLUTION,
+          prompt_version: recovery_prompt.current_version,
+          project: project,
+          composite_score: 0.2
+        )
+
+        perform_targeted_quality_pause_job(project)
+
+        prompt_evolution_calls = workflow_calls.select { |call| call.first == Workflows::PromptEvolutionWorkflow }
+        expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).to include(recovery_prompt.id)
+        expect_targeted_workflow_for(recovery_prompt, project)
       end
     end
   end
