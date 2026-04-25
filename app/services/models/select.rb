@@ -144,21 +144,10 @@ module Models
     end
 
     def base_tier_for(complexity_score)
-      thresholds = Models::TierForComplexity.new(
+      Models::TierForComplexity.call(
         complexity: complexity_score,
         provider: agent_run.provider
-      ).effective_thresholds
-
-      score = Float(complexity_score)
-      if score <= thresholds["low_max"]
-        "low"
-      elsif score <= thresholds["mid_max"]
-        "mid"
-      else
-        "high"
-      end
-    rescue ArgumentError, TypeError
-      nil
+      )
     end
 
     def escalation_reason
