@@ -484,7 +484,7 @@ RSpec.describe Activities::RunAgentActivity do
     it "includes knowledge context when artifacts are available" do
       base_prompt = "Enhance this issue with implementation context."
       allow(Knowledge::ContextBundle::Build).to receive(:call)
-        .with(issue: issue, project: project)
+        .with(issue: issue, project: project, agent_run: agent_run)
         .and_return(content: "## Codebase Context\n\n- Hunt#last_active uses prey.updated_at")
 
       prompt = activity.send(:augment_prompt_for_enhance_issue_goal, agent_run, base_prompt)
@@ -498,7 +498,7 @@ RSpec.describe Activities::RunAgentActivity do
     it "renders without knowledge context when no artifacts are available" do
       base_prompt = "Enhance this issue with implementation context."
       allow(Knowledge::ContextBundle::Build).to receive(:call)
-        .with(issue: issue, project: project)
+        .with(issue: issue, project: project, agent_run: agent_run)
         .and_return(content: "")
 
       prompt = activity.send(:augment_prompt_for_enhance_issue_goal, agent_run, base_prompt)
@@ -506,6 +506,32 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prompt).to include(base_prompt)
       expect(prompt).not_to include("## Codebase Context")
       expect(prompt).to include("Only add a comment to issue ##{issue.github_number}")
+    end
+  end
+
+  describe "#augment_prompt_for_issue_goal knowledge injection" do
+    before do
+      allow(Prompt).to receive(:resolve).and_return(nil)
+    end
+
+    it "injects knowledge context for issue-goal runs with custom_prompt" do
+      run = create(:agent_run, :create_issue_goal, project: project, issue: issue, custom_prompt: "Custom coding prompt")
+      allow(Knowledge::ContextBundle::Build).to receive(:call)
+        .with(issue: issue, project: project, agent_run: run)
+        .and_return(content: "## Codebase Context\n\n- important context")
+
+      prompt = activity.send(:augment_prompt_for_issue_goal, run, "Custom coding prompt")
+
+      expect(prompt).to include("## Codebase Context")
+      expect(prompt).to include("important context")
+    end
+
+    it "skips knowledge injection when no custom_prompt is set (BuildForIssue already injected)" do
+      run = create(:agent_run, :create_issue_goal, project: project, issue: issue, custom_prompt: nil)
+
+      expect(Knowledge::ContextBundle::Build).not_to receive(:call)
+
+      activity.send(:augment_prompt_for_issue_goal, run, "BuildForIssue-generated prompt with knowledge")
     end
   end
 
@@ -554,7 +580,7 @@ RSpec.describe Activities::RunAgentActivity do
     it "uses an assigned enhance-issue variant prompt version" do
       run = create(:agent_run, :enhance_issue_goal, project: project, issue: issue)
       allow(Knowledge::ContextBundle::Build).to receive(:call)
-        .with(issue: issue, project: project)
+        .with(issue: issue, project: project, agent_run: run)
         .and_return(content: "")
       variant_version = create_ab_test_assignment(
         slug: described_class::ENHANCE_ISSUE_GOAL_PROMPT_SLUG,

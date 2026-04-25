@@ -85,6 +85,7 @@ class AgentRun < ApplicationRecord
   has_many :container_pool_entries, dependent: :nullify
   has_many :token_usages, dependent: :destroy
   has_many :ab_test_assignments, dependent: :destroy
+  has_many :configuration_experiment_assignments, dependent: :destroy
   has_many :container_metrics, dependent: :delete_all
   has_many :quality_metrics, dependent: :destroy
   has_one :worktree, dependent: :nullify
@@ -1047,7 +1048,7 @@ class AgentRun < ApplicationRecord
     return nil unless issue
     return nil unless issue.trusted?
 
-    Prompts::BuildForIssue.call(issue: issue, project: project, github_client: project.github_token&.client)
+    Prompts::BuildForIssue.call(issue: issue, project: project, github_client: project.github_token&.client, agent_run: self)
   end
 
   # Returns the agent's stdout output joined as a single string.

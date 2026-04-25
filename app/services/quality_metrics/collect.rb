@@ -21,7 +21,7 @@ module QualityMetrics
         record_excluded_metric
       else
         record_quality_metric
-        update_ab_test_variant_stats(automated_metric)
+        update_experiment_variant_stats(automated_metric)
         update_prompt_version_stats if agent_run.prompt_version.present?
       end
 
@@ -196,7 +196,7 @@ module QualityMetrics
       [ question_count / 3.0, 1.0 ].min.round(4)
     end
 
-    def update_ab_test_variant_stats(metric)
+    def update_experiment_variant_stats(metric)
       agent_run.ab_test_assignments.find_each do |assignment|
         variant = assignment.ab_test_variant
 
@@ -216,6 +216,15 @@ module QualityMetrics
             add_variant_score(variant, metric.composite_score)
           end
         end
+      end
+
+      agent_run.configuration_experiment_assignments.find_each do |assignment|
+        ConfigurationExperiments::RecordResult.call(
+          configuration_experiment: assignment.configuration_experiment,
+          agent_run: agent_run,
+          quality_score: metric.composite_score,
+          update_existing: true
+        )
       end
     end
 

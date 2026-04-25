@@ -1,0 +1,67 @@
+# frozen_string_literal: true
+
+module ConfigurationExperiments
+  class Assign
+    attr_reader :configuration_experiment, :agent_run
+
+    def initialize(configuration_experiment:, agent_run:)
+      @configuration_experiment = configuration_experiment
+      @agent_run = agent_run
+    end
+
+    def self.call(...)
+      new(...).assign
+    end
+
+    def assign
+      raise ArgumentError, "configuration experiment is not running" unless configuration_experiment.running?
+
+      existing = ConfigurationExperimentAssignment.find_by(
+        configuration_experiment: configuration_experiment,
+        agent_run: agent_run
+      )
+      return existing if existing
+
+      variant = select_variant
+
+      begin
+        ConfigurationExperimentAssignment.create!(
+          configuration_experiment: configuration_experiment,
+          configuration_experiment_variant: variant,
+          agent_run: agent_run
+        )
+      rescue ActiveRecord::RecordNotUnique
+        ConfigurationExperimentAssignment.find_by!(
+          configuration_experiment: configuration_experiment,
+          agent_run: agent_run
+        )
+      end
+    end
+
+    private
+
+    def select_variant
+      variants = configuration_experiment.configuration_experiment_variants.order(:id).to_a
+      raise ArgumentError, "configuration experiment has no variants" if variants.empty?
+      return variants.first if variants.size == 1
+
+      assignment_counts = ConfigurationExperimentAssignment
+        .where(configuration_experiment: configuration_experiment, configuration_experiment_variant: variants)
+        .group(:configuration_experiment_variant_id)
+        .count
+      max_count = variants.map { |variant| assignment_counts[variant.id] || 0 }.max
+      weights = variants.map { |variant| (max_count - (assignment_counts[variant.id] || 0)) + 1 }
+      total = weights.sum.to_f
+
+      roll = rand
+      cumulative = 0.0
+
+      variants.zip(weights).each do |variant, weight|
+        cumulative += weight / total
+        return variant if roll < cumulative
+      end
+
+      variants.last
+    end
+  end
+end
