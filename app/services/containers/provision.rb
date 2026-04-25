@@ -1383,6 +1383,13 @@ module Containers
     def primary_provider_identifier(settings)
       if runnable_saved_provider?
         agent_run.provider.routing_key
+      elsif agent_run&.provider.present? && settings&.fallback_enabled?
+        # Saved provider exists but isn't container-executable — derive the
+        # effective primary from the same fallback order that
+        # RunAgentActivity#build_provider_order uses: try configured fallbacks
+        # first, only fall through to the goal default when none are runnable.
+        first_runnable_fallback_for_saved_provider(settings) ||
+          settings.default_provider_identifier_for_goal(run_goal)
       elsif agent_run.present? && runnable_agent_type?(agent_run.agent_type)
         agent_run.agent_type
       elsif settings
@@ -1392,6 +1399,16 @@ module Containers
 
     def runnable_saved_provider?
       agent_run&.provider.present? && runnable_provider?(agent_run.provider)
+    end
+
+    def first_runnable_fallback_for_saved_provider(settings)
+      fallbacks = settings.fallback_priority_for(
+        primary_provider: agent_run.provider.routing_key, identifiers: true
+      )
+      fallbacks.find do |identifier|
+        provider = Provider.for_identifier(settings.user, identifier)
+        provider && ProviderSupport.container_executable_provider_key?(provider.provider_key)
+      end
     end
 
     def runnable_provider?(provider)

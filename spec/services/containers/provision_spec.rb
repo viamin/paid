@@ -854,6 +854,31 @@ RSpec.describe Containers::Provision do
 
         service.provision
       end
+
+      it "uses the restricted network when an unrunnable saved provider has a runnable proxy-mode fallback despite a direct-outbound default" do
+        copilot_provider = create(:provider, user: project.created_by, provider_key: "copilot")
+        claude_api_key = create(:provider_api_key, user: project.created_by, api_service_type: "anthropic")
+        claude_fallback = create(:provider, :api_key, user: project.created_by,
+          provider_key: "claude", provider_api_key: claude_api_key)
+
+        direct_outbound_provider.update!(enabled_for_fallback: false)
+        project.created_by.providers.subscription.find_by!(provider_key: "claude")
+          .update!(enabled_for_fallback: false)
+
+        agent_run.update!(provider: copilot_provider, agent_type: "copilot")
+        project.created_by.settings.update!(
+          default_agent_provider: direct_outbound_provider.routing_key,
+          fallback_enabled: true,
+          fallback_providers: [ claude_fallback.routing_key ]
+        )
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::NETWORK_NAME)
+          mock_container
+        end
+
+        service.provision
+      end
     end
 
     context "with service-container network alignment (#1282)" do
