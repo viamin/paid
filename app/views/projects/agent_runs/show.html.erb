@@ -45,7 +45,7 @@
                data-controller="log-truncate" data-log-truncate-max-lines-value="10">
             <span class="mr-2 text-gray-400"><%= local_time(log.created_at, format: :time) %></span>
             <span class="mr-2 rounded bg-gray-200 px-1 text-gray-600"><%= log.log_type %></span>
-            <pre class="inline whitespace-pre-wrap" data-log-truncate-target="content"><%= log.content %></pre>
+            <pre class="inline-block whitespace-pre-wrap" data-log-truncate-target="content"><%= log.content %></pre>
             <button type="button" class="mt-1 hidden cursor-pointer text-xs font-medium text-indigo-600 hover:text-indigo-800" data-log-truncate-target="toggle" data-action="log-truncate#toggle"></button>
           </div>
         <% end %>
