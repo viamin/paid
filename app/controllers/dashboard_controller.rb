@@ -19,7 +19,7 @@ class DashboardController < ApplicationController
     @knowledge_stats = Knowledge::DashboardStats.call(account: current_account)
     @live_stats = Dashboard::LiveStats.call(account: current_account)
     @queue_health = Scaling::QueueMonitor.call(account: current_account)
-    @active_runs = live_agent_runs.active.includes(:project, :issue)
+    @active_runs = live_agent_runs.active.includes(:project, :issue, :model_selection)
       .order("agent_runs.created_at DESC")
       .limit(20)
     @quality_paused_projects = current_account.projects
