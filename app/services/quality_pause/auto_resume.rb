@@ -43,7 +43,7 @@ module QualityPause
     end
 
     def recent_auto_resumes_count
-      project.quality_pause_events.resumes
+      @recent_auto_resumes_count ||= project.quality_pause_events.resumes
         .where(created_at: WINDOW.ago..)
         .where("metadata->>'auto_resumed' = ?", "true")
         .count
