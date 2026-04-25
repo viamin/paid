@@ -7,7 +7,7 @@ RSpec.describe KnowledgeUsageStat do
 
   describe "associations" do
     it { is_expected.to belong_to(:agent_run) }
-    it { is_expected.to belong_to(:project) }
+    it { is_expected.to belong_to(:project).optional }
   end
 
   describe "validations" do
@@ -17,11 +17,36 @@ RSpec.describe KnowledgeUsageStat do
     it { is_expected.to validate_length_of(:goal).is_at_most(50) }
     it { is_expected.to validate_presence_of(:context_type) }
     it { is_expected.to validate_length_of(:context_type).is_at_most(50) }
+    it { is_expected.to validate_inclusion_of(:context_type).in_array(described_class::CONTEXT_TYPES) }
+
+    it "rejects an invalid context_type" do
+      stat = build(:knowledge_usage_stat, context_type: "unknown")
+      expect(stat).not_to be_valid
+      expect(stat.errors[:context_type]).to include(a_string_matching(/is not included/))
+    end
+
     it { is_expected.to validate_presence_of(:artifact_count) }
     it { is_expected.to validate_numericality_of(:artifact_count).is_greater_than_or_equal_to(0) }
     it { is_expected.to validate_presence_of(:chunk_count) }
     it { is_expected.to validate_numericality_of(:chunk_count).is_greater_than_or_equal_to(0) }
     it { is_expected.to validate_numericality_of(:token_count).is_greater_than_or_equal_to(0) }
+
+    describe "project_matches_agent_run" do
+      it "is invalid when project does not match agent run's project" do
+        agent_run = create(:agent_run)
+        other_project = create(:project)
+        stat = build(:knowledge_usage_stat, agent_run: agent_run, project: other_project)
+        expect(stat).not_to be_valid
+        expect(stat.errors[:project]).to include("must match the agent run's project")
+      end
+
+      it "derives project from agent_run when project is omitted" do
+        agent_run = create(:agent_run)
+        stat = build(:knowledge_usage_stat, agent_run: agent_run, project: nil)
+        stat.valid?
+        expect(stat.project_id).to eq(agent_run.project_id)
+      end
+    end
   end
 
   describe "scopes" do
