@@ -220,6 +220,52 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "upgrades lightweight to full restart when pull brings in restart-worthy files" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      diff_files = %w[app/models/user.rb config/initializers/temporal.rb]
+      script_path = prepare_script_fixture(dir, pull_diff_files: diff_files)
+      env = trigger_context_env(dir,
+        "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
+        "DEV_UPDATE_CHANGED_FILES" => "app/models/user.rb")
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("upgrading to full restart")
+      expect(updater_log).to include("Full restart update complete.")
+      expect(updater_log).not_to include("Lightweight update complete.")
+    end
+  end
+
+  it "stays lightweight when pull brings in only autoloadable files" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, pull_diff_files: %w[
+        app/models/user.rb
+        app/services/foo.rb
+      ])
+
+      stdout, stderr, status = Open3.capture3(
+        trigger_context_env(dir,
+          "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
+          "DEV_UPDATE_CHANGED_FILES" => "app/models/user.rb"),
+        script_path,
+        "--lightweight",
+        chdir: dir
+      )
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(false)
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("Lightweight update complete.")
+      expect(updater_log).not_to include("upgrading to full restart")
+    end
+  end
+
   it "does not forward STARTUP_CLEANUP_KILL_ALL when unset during full restart" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, capture_kill_all_in_dev: true)
@@ -300,6 +346,38 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       expect(updater_log).to include("Working tree has uncommitted changes; auto-stashing...")
       expect(updater_log).to include("Restoring auto-stashed changes...")
       expect(updater_log).to include("Lightweight update complete.")
+    end
+  end
+
+  it "logs git stash pop output after restoring auto-stashed changes" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, dirty_tree: true, stash_pop_output: "Applied autostash cleanly")
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("git stash pop: Applied autostash cleanly")
+    end
+  end
+
+  it "logs git stash pop conflict output and warning when restoring auto-stashed changes fails" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(
+        dir,
+        dirty_tree: true,
+        stash_pop_exit_status: 1,
+        stash_pop_output: "CONFLICT (content): Merge conflict in bin/dev-update"
+      )
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("git stash pop: CONFLICT (content): Merge conflict in bin/dev-update")
+      expect(updater_log).to include("WARNING: git stash pop failed (conflict). Stashed changes preserved in git stash. Run 'git stash pop' manually.")
     end
   end
 
@@ -429,7 +507,10 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     capture_port_in_dev: false,
     capture_kill_all_in_dev: false,
     dirty_tree: false,
-    pull_exit_status: 0
+    pull_exit_status: 0,
+    stash_pop_exit_status: 0,
+    stash_pop_output: "Applied stash",
+    pull_diff_files: []
   )
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
@@ -471,13 +552,26 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     )
 
     dirty_status_output = dirty_tree ? " M dirty-file.txt" : ""
+    pull_diff_file = File.join(dir, "pull-diff-files")
+    File.write(pull_diff_file, pull_diff_files.join("\n"))
     write_executable(
       File.join(dir, "stubbin", "git"),
       <<~BASH
         #!/usr/bin/env bash
         case "$1" in
           rev-parse)
-            echo "main"
+            case "${2:-}" in
+              --abbrev-ref)
+                echo "main"
+                ;;
+              *)
+                if [ -f "#{dir}/pull-ran" ]; then
+                  echo "post-pull-sha"
+                else
+                  echo "pre-pull-sha"
+                fi
+                ;;
+            esac
             ;;
           status)
             if [ "${2:-}" = "--porcelain" ]; then
@@ -487,13 +581,21 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
             ;;
           stash)
             echo "stash: $*" >> "#{dir}/git-stash.log"
-            exit 0
+            if [ "${2:-}" = "pop" ]; then
+              printf '%s\n' "#{stash_pop_output}"
+              exit #{stash_pop_exit_status}
+            fi
             ;;
           checkout)
             exit 0
             ;;
           pull)
+            touch "#{dir}/pull-ran"
             exit #{pull_exit_status}
+            ;;
+          diff)
+            cat "#{pull_diff_file}" 2>/dev/null || true
+            exit 0
             ;;
           *)
             echo "unexpected git command: $*" >&2

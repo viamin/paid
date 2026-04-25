@@ -41,10 +41,12 @@
       <h2 class="border-b border-gray-200 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-900">Execution Logs</h2>
       <div class="max-h-96 overflow-auto">
         <% @logs.each do |log| %>
-          <div class="border-b border-gray-100 px-4 py-2 font-mono text-xs last:border-b-0 <%= log.log_type == 'stderr' ? 'bg-red-50 text-red-800' : '' %> <%= log.log_type == 'system' ? 'bg-blue-50 text-blue-800' : '' %>">
+          <div class="border-b border-gray-100 px-4 py-2 font-mono text-xs last:border-b-0 <%= log.log_type == 'stderr' ? 'bg-red-50 text-red-800' : '' %> <%= log.log_type == 'system' ? 'bg-blue-50 text-blue-800' : '' %>"
+               data-controller="log-truncate" data-log-truncate-max-lines-value="10">
             <span class="mr-2 text-gray-400"><%= local_time(log.created_at, format: :time) %></span>
             <span class="mr-2 rounded bg-gray-200 px-1 text-gray-600"><%= log.log_type %></span>
-            <pre class="inline whitespace-pre-wrap"><%= log.content %></pre>
+            <pre class="inline-block whitespace-pre-wrap" data-log-truncate-target="content"><%= log.content %></pre>
+            <button type="button" class="mt-1 hidden cursor-pointer text-xs font-medium text-indigo-600 hover:text-indigo-800" data-log-truncate-target="toggle" data-action="log-truncate#toggle"></button>
           </div>
         <% end %>
       </div>
