@@ -149,23 +149,24 @@ module Metrics
     end
 
     def collect_temporal_config_metrics(lines)
-      slots = temporal_env("TEMPORAL_WORKFLOW_SLOTS", 20)
+      workflow_slots = resolve_worker_setting("temporal_workflow_slots", "TEMPORAL_WORKFLOW_SLOTS", 20)
+      activity_slots = resolve_worker_setting("temporal_activity_slots", "TEMPORAL_ACTIVITY_SLOTS", 4)
 
       lines << "# HELP paid_temporal_workflow_slots_total Configured Temporal workflow slots."
       lines << "# TYPE paid_temporal_workflow_slots_total gauge"
-      lines << "paid_temporal_workflow_slots_total #{slots}"
+      lines << "paid_temporal_workflow_slots_total #{workflow_slots}"
 
       lines << "# HELP paid_temporal_activity_slots_total Configured Temporal activity slots."
       lines << "# TYPE paid_temporal_activity_slots_total gauge"
-      lines << "paid_temporal_activity_slots_total #{temporal_env("TEMPORAL_ACTIVITY_SLOTS", 4)}"
+      lines << "paid_temporal_activity_slots_total #{activity_slots}"
 
       running_workflows = AgentRun.running.where.not(temporal_workflow_id: [ nil, "" ]).count
       lines << "# HELP paid_temporal_workflows_running Temporal workflows currently running."
       lines << "# TYPE paid_temporal_workflows_running gauge"
       lines << "paid_temporal_workflows_running #{running_workflows}"
 
-      utilization = if slots.positive?
-        (running_workflows.to_f / slots * 100).round(2)
+      utilization = if workflow_slots.positive?
+        (running_workflows.to_f / workflow_slots * 100).round(2)
       else
         0.0
       end
@@ -174,10 +175,8 @@ module Metrics
       lines << "paid_temporal_workflow_utilization_percent #{utilization}"
     end
 
-    def temporal_env(key, default)
-      Integer(ENV.fetch(key, default))
-    rescue ArgumentError
-      Integer(default)
+    def resolve_worker_setting(key, env_key, default)
+      TenantSetting.resolve_worker_setting(key, env_key: env_key, env: ENV, default: default)
     end
   end
 end
