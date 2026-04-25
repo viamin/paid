@@ -31,6 +31,9 @@ application.register("hello", HelloController)
 import LiveDashboardController from "./live_dashboard_controller"
 application.register("live-dashboard", LiveDashboardController)
 
+import LogTruncateController from "./log_truncate_controller"
+application.register("log-truncate", LogTruncateController)
+
 import LocalTimeController from "./local_time_controller"
 application.register("local-time", LocalTimeController)
 
