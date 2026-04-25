@@ -39,8 +39,8 @@ RSpec.describe GoodJob do
   end
 
   describe "max_threads" do
-    it "defaults to 10" do
-      expect(Paid::GoodJobConfig.max_threads).to eq(10)
+    it "defaults to 11" do
+      expect(Paid::GoodJobConfig.max_threads).to eq(11)
     end
   end
 

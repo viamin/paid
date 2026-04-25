@@ -16,6 +16,7 @@ module Workflows
     POSTED_BOT_FEEDBACK_TRIGGER_TYPES = %w[
       review_bot_comments review_bot_threads
     ].freeze
+    JITTER_FRACTION = 0.15
 
     workflow_signal
     def request_sync
@@ -66,7 +67,10 @@ module Workflows
           raise Temporalio::Workflow::ContinueAsNewError.new({ project_id: project_id })
         end
 
-        interruptible_sleep(poll_config[:poll_interval_seconds])
+        interval = poll_config[:poll_interval_seconds]
+        jitter = with_jitter(interval)
+
+        interruptible_sleep(jitter)
       end
     end
 
@@ -109,6 +113,11 @@ module Workflows
       # Signal woke us — loop will restart immediately
     ensure
       @sleep_cancel_proc = nil
+    end
+
+    def with_jitter(base_seconds)
+      jitter_range = base_seconds * JITTER_FRACTION
+      base_seconds + Temporalio::Workflow.random.rand(-jitter_range..jitter_range)
     end
 
     # Checks rate limit budget and runs non-critical activities only when

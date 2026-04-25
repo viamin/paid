@@ -111,9 +111,13 @@ docker compose up --build
 
 > **Note**: By default, the checked-in `docker-compose.yml` starts `postgres`, `temporal`, `temporal-admin-tools`, `temporal-ui`, `qdrant`, `web`, and `worker` when you run `docker compose up --build`. The `agent-image` and `agent-test` services are profile-gated, so they only start when their profiles are explicitly enabled. The compose file already wires `DATABASE_URL`, Temporal, and Qdrant for the app. `ANTHROPIC_API_KEY` is passed through today; if you want proxy-based OpenAI or Google auth in Compose, add `OPENAI_API_KEY` and/or `GOOGLE_API_KEY` to the `web` service, and to `worker` as well if you want worker-side flows to see them.
 
+**Database role note**: Compose creates the Rails `paid` role separately from the PostgreSQL admin role so tenant row-level security cannot be bypassed by a superuser connection. If you have an older `postgres-data` volume where `paid` was the bootstrap superuser, recreate that volume before running this branch.
+
 ### Option 2: Dev Container
 
 Open in VS Code with the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension, or use GitHub Codespaces. The `.devcontainer/` configuration provides a complete development environment.
+
+The checked-in devcontainer also applies conservative `TEMPORAL_*`, `GOOD_JOB_*`, and `DB_POOL` defaults so `bin/dev` stays stable under normal development load.
 
 #### Enable Commit Signing in Dev Container
 
@@ -144,7 +148,7 @@ bash .devcontainer/setup-signing-key.sh
 # Prerequisites: Ruby 3.4+, Bundler 2.7.2, PostgreSQL 16+, Node.js 22.x (see .tool-versions for the exact pinned version), Yarn 1.22.22, Docker Engine
 # Also start PostgreSQL, Temporal, and Qdrant locally before running setup.
 bin/setup               # Install deps, prepare DB
-bin/dev                 # Start Rails, JS/CSS watchers, and the Temporal worker
+bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the Temporal worker
 ```
 
 `bin/setup` now does more than install Ruby and JS dependencies: it configures git hooks, prepares the database, checks Qdrant connectivity, builds the `paid-agent:latest` Docker image, and cleans up stale dev state. If Docker is unavailable, setup is incomplete.
@@ -155,7 +159,7 @@ bin/dev                 # Start Rails, JS/CSS watchers, and the Temporal worker
 | ------- | --- | ----------- |
 | Rails app | <http://localhost:3000> | Main application |
 | Temporal UI | <http://localhost:8080> | Workflow monitoring |
-| PostgreSQL | localhost:5432 | Database (user: paid, password: paid) |
+| PostgreSQL | localhost:5432 | Database (app user: paid, password: paid; admin user: paid_admin) |
 | Temporal gRPC | localhost:7233 | Temporal server |
 | Qdrant | <http://localhost:6333> | Vector store for semantic knowledge search |
 

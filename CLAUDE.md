@@ -184,6 +184,9 @@ When adding a new artifact pattern, update ALL of: `.gitignore`, `CONTAINER_ARTI
 - Always add foreign key constraints
 - Index all foreign keys and frequently queried columns
 - **Always use `rails generate migration`** to create migrations — never create migration files manually. The generator ensures correct timestamps, naming conventions, and boilerplate.
+- In devcontainer/Compose environments, the app database host is usually `postgres`, not `localhost`. Paid also uses forced tenant RLS on core tables like `agent_runs`, `projects`, and `issues`, so raw `psql` as app user `paid` may legitimately show `0` rows unless you set the session context first.
+- For Rails console/runner inspection that must ignore tenant filtering, use `TenantContext.with_system_access { ... }`. For raw SQL, set either `SET paid.current_account_id = '<account_id>';` or `SET paid.bypass_tenant_rls = 'true';` before querying tenant-scoped tables.
+- Container-authenticated proxy endpoints run outside the normal `ApplicationController` tenant setup. If you add or debug controller code under `app/controllers/api/` that authenticates agent/knowledge runs directly, make sure it establishes the correct `TenantContext` explicitly.
 
 ## Release Management
 

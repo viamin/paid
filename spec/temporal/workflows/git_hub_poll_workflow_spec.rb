@@ -1521,6 +1521,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:patched)
         .with("batch-evaluate-issues-v1").and_return(true)
       allow(workflow).to receive(:interruptible_sleep)
+      allow(workflow).to receive(:with_jitter) { |base| base }
       allow(workflow).to receive(:run_activity)
         .with(Activities::GetPollIntervalActivity, anything, timeout: anything)
         .and_return({ poll_interval_seconds: 60 })
