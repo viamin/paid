@@ -25,6 +25,34 @@ RSpec.describe AgentRuns::ProviderResolver do
       )
     end
 
+    it "uses the project-level preferred_agent_type from model_preferences" do
+      project = create(:project)
+      owner = project.created_by
+      cursor_provider = create(:provider, user: owner, provider_key: "cursor")
+      project.update!(model_preferences: project.model_preferences.merge("preferred_agent_type" => "cursor"))
+
+      provider_id, agent_type = described_class.call(project: project, goal: "create_pr")
+
+      expect(agent_type).to eq("cursor")
+      expect(provider_id).to eq(cursor_provider.id)
+    end
+
+    it "prefers requested_agent_type over project-level preferred_agent_type" do
+      project = create(:project)
+      owner = project.created_by
+      create(:provider, user: owner, provider_key: "cursor")
+      create(:provider, user: owner, provider_key: "codex")
+      project.update!(model_preferences: project.model_preferences.merge("preferred_agent_type" => "cursor"))
+
+      _provider_id, agent_type = described_class.call(
+        project: project,
+        goal: "create_pr",
+        requested_agent_type: "codex"
+      )
+
+      expect(agent_type).to eq("codex")
+    end
+
     it "ignores requested provider ids from another account" do
       project = create(:project)
       other_owner = create(:user, :owner)

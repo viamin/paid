@@ -3,7 +3,8 @@
 require "rails_helper"
 
 RSpec.describe AbTests::PromoteWinner do
-  let(:prompt) { create(:prompt, :global, :with_version) }
+  let(:project) { create(:project) }
+  let(:prompt) { create(:prompt, :with_version, project: project, account: project.account) }
   let(:original_version) { prompt.current_version }
   let(:new_version) do
     next_version = (prompt.prompt_versions.maximum(:version) || 0) + 1
@@ -26,6 +27,23 @@ RSpec.describe AbTests::PromoteWinner do
       expect(prompt.reload.current_version).to eq(new_version)
     end
 
+    it "marks the recovery action executed only after the winning version is promoted" do
+      action = create(:quality_recovery_action, :prompt_evolution, :executing,
+        project: prompt.project,
+        prompt_version: original_version,
+        executed_at: nil,
+        result: {
+          ab_test_id: ab_test.id,
+          status: "winner_found",
+          winner_prompt_version_id: new_version.id
+        })
+
+      described_class.call(ab_test: ab_test)
+
+      expect(action.reload.status).to eq("executed")
+      expect(action.executed_at).to be_present
+    end
+
     it "raises when test is not completed" do
       ab_test.update_column(:status, "running")
 
@@ -43,11 +61,22 @@ RSpec.describe AbTests::PromoteWinner do
 
       it "does NOT promote immediately; marks the winning version pending" do
         original = prompt.current_version
+        action = create(:quality_recovery_action, :prompt_evolution, :executing,
+          project: prompt.project,
+          prompt_version: original_version,
+          executed_at: nil,
+          result: {
+            ab_test_id: ab_test.id,
+            status: "winner_found",
+            winner_prompt_version_id: new_version.id
+          })
 
         described_class.call(ab_test: ab_test)
 
         expect(prompt.reload.current_version).to eq(original)
         expect(new_version.reload).to be_pending_review
+        expect(action.reload.status).to eq("executing")
+        expect(action.executed_at).to be_nil
       end
 
       it "leaves an already-approved winner alone" do

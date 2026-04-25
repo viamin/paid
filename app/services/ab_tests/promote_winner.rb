@@ -60,6 +60,7 @@ module AbTests
       prompt.with_lock do
         prompt.update!(current_version: winning_version)
       end
+      complete_recovery_action!(winning_version)
     end
 
     def gate_for_review(winning_version)
@@ -69,6 +70,18 @@ module AbTests
       return if winning_version.under_review?
 
       winning_version.update!(review_status: "pending")
+    end
+
+    def complete_recovery_action!(winning_version)
+      recovery_action = QualityRecoveryAction
+        .where(project: ab_test.prompt.project, action_type: "prompt_evolution", status: "executing")
+        .for_ab_test(ab_test.id)
+        .for_prompt_version_rollout(winning_version.id)
+        .order(created_at: :desc)
+        .first
+      return unless recovery_action
+
+      recovery_action.complete!(recovery_action.result)
     end
   end
 end
