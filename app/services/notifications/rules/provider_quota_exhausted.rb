@@ -56,8 +56,8 @@ module Notifications
           .joins(:project)
           .where(projects: { created_by_id: provider.user_id })
           .where(status: AgentRun::UNFINISHED_STATUSES)
-          .select { |run| provider.matches_identifier?(run.final_provider.presence || run.agent_type) }
-          .size
+          .pluck(:final_provider, :agent_type)
+          .count { |final, agent| provider.matches_identifier?(final.presence || agent) }
       end
     end
   end
