@@ -10,18 +10,21 @@ module Knowledge
     # no clone needed, keeping detection fast (~100ms).
     class Detector
       # Minimum number of commits ahead of the last collected SHA to trigger
-      # staleness. With the default of 1, any single commit advance is enough.
-      # Set KNOWLEDGE_STALENESS_THRESHOLD=N to require N commits before
-      # re-collection (e.g., 5 means "at least 5 commits ahead").
+      # staleness. With the default of 3, small merges don't trigger re-collection.
+      # Set KNOWLEDGE_STALENESS_THRESHOLD=N to adjust (e.g., 1 for every commit).
       STALENESS_THRESHOLD = begin
-        val = Integer(ENV.fetch("KNOWLEDGE_STALENESS_THRESHOLD", "1"), exception: false)
+        val = Integer(ENV.fetch("KNOWLEDGE_STALENESS_THRESHOLD", "3"), exception: false)
         if val.nil? || val < 1
-          Rails.logger&.warn("[Knowledge::Staleness::Detector] Invalid KNOWLEDGE_STALENESS_THRESHOLD=#{ENV["KNOWLEDGE_STALENESS_THRESHOLD"].inspect}; using default of 1")
-          1
+          Rails.logger&.warn("[Knowledge::Staleness::Detector] Invalid KNOWLEDGE_STALENESS_THRESHOLD=#{ENV["KNOWLEDGE_STALENESS_THRESHOLD"].inspect}; using default of 3")
+          3
         else
           val
         end
       end
+      # Maximum time since last collection before re-collection is forced,
+      # regardless of commit count. Prevents quiet repos that advance by fewer
+      # than STALENESS_THRESHOLD commits from staying permanently uncollected.
+      MAX_STALENESS_AGE = 24.hours
       FETCH_THROTTLE = 2.minutes
 
       attr_reader :project
@@ -54,7 +57,11 @@ module Knowledge
         commit_distance = commits_between(last_sha, current_sha)
         # commit_distance == 0 with different SHAs indicates a force-push/rewind
         # (new_sha is an ancestor of old_sha), which should be treated as stale.
-        return not_stale_result(current_sha, last_sha:) if commit_distance.positive? && commit_distance < STALENESS_THRESHOLD
+        # When below the commit threshold, still re-collect if the last collection
+        # is older than MAX_STALENESS_AGE to avoid permanently stale quiet repos.
+        if commit_distance.positive? && commit_distance < STALENESS_THRESHOLD
+          return not_stale_result(current_sha, last_sha:) unless collection_expired?(last_version)
+        end
 
         changed_files = changed_files_between(last_sha, current_sha)
         stale_count = mark_stale_artifacts(changed_files, last_version)
@@ -88,6 +95,10 @@ module Knowledge
           .merge(CollectorRun.completed)
           .by_recency
           .first
+      end
+
+      def collection_expired?(last_version)
+        last_version.created_at < MAX_STALENESS_AGE.ago
       end
 
       def commits_between(old_sha, new_sha)

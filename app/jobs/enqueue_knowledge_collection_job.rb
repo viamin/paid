@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class EnqueueKnowledgeCollectionJob < ApplicationJob
-  queue_as :default
+  queue_as :knowledge
 
   discard_on ActiveRecord::RecordNotFound
   retry_on WorktreeService::Error, wait: :polynomially_longer, attempts: 5
