@@ -121,7 +121,7 @@ class AgentRun < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :goal, presence: true, inclusion: { in: GOALS }
   validate :review_goal_requires_pull_request
-  validate :enhance_issue_goal_requires_issue
+  validate :issue_goal_requires_issue
   validates :trigger_type, presence: true, inclusion: { in: TRIGGER_TYPES }
   validates :created_issue_url, length: { maximum: 500 }
   validates :worktree_path, length: { maximum: 500 }
@@ -1379,7 +1379,7 @@ class AgentRun < ApplicationRecord
     end
   end
 
-  def enhance_issue_goal_requires_issue
+  def issue_goal_requires_issue
     if goal.in?(%w[enhance_issue analyze_issue]) && issue_id.blank?
       errors.add(:issue, "is required for #{goal} goals")
     end

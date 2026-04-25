@@ -1686,7 +1686,10 @@ RSpec.describe Activities::RunAgentActivity do
       it "uses the shorter issue goal timeout" do
         expect(container_service).to receive(:execute).with(
           anything,
-          hash_including(timeout: described_class::DEFAULT_ISSUE_GOAL_TIMEOUT)
+          hash_including(
+            timeout: described_class::DEFAULT_ISSUE_GOAL_TIMEOUT,
+            idle_timeout: described_class::DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT
+          )
         ).and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
