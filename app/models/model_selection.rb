@@ -10,4 +10,11 @@ class ModelSelection < ApplicationRecord
   validates :agent_run_id, uniqueness: true
   validates :complexity_score, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 10 }, allow_nil: true
   validates :tier, inclusion: { in: LlmModel::TIERS }, allow_nil: true
+  validates :escalated_from_tier, inclusion: { in: LlmModel::TIERS }, allow_nil: true
+
+  scope :escalated, -> { where.not(escalated_from_tier: nil) }
+
+  def escalated?
+    escalated_from_tier.present?
+  end
 end
