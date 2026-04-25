@@ -908,10 +908,24 @@ module Activities
         exit_code: result[:exit_code],
         duration: harness_duration(execution_started_at)
       )
-      parse_options = { duration: command_result.duration }
-      parse_options[:json_output_requested] = true if harness_provider.is_a?(AgentHarness::Providers::GithubCopilot)
-      response = harness_provider.send(:parse_response, command_result, **parse_options)
+      response = parse_provider_output(harness_provider, command_result)
       apply_runtime_model(response, provider_candidate, user)
+    end
+
+    # Calls the provider's protected parse_response to convert raw container
+    # output into an AgentHarness::Response. This uses send() because
+    # agent-harness only exposes parsing through send_message (which executes
+    # the CLI), but container runs have already executed externally.
+    # TODO: replace with a public parse_container_output method in the
+    # agent-harness provider interface (upstream).
+    def parse_provider_output(provider, command_result)
+      parse_options = { duration: command_result.duration }
+      # Detect json_output_requested support from the method signature
+      # rather than checking for a specific provider class.
+      if provider.method(:parse_response).parameters.any? { |_, name| name == :json_output_requested }
+        parse_options[:json_output_requested] = true
+      end
+      provider.send(:parse_response, command_result, **parse_options)
     end
 
     def harness_response_provider(provider_candidate, provider_key, user)
