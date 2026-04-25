@@ -17,6 +17,7 @@ module Projects
         summary: summary,
         cost_by_outcome: cost_by_outcome,
         cost_by_goal: cost_by_goal,
+        cost_by_tier: cost_by_tier,
         cost_by_model: cost_by_model,
         cost_by_request_type: cost_by_request_type,
         daily_costs: daily_costs,
@@ -107,6 +108,33 @@ module Projects
 
     def empty_cost_summary
       { run_count: 0, total_cost_cents: 0, avg_cost_cents: 0, total_tokens: 0, avg_duration_seconds: 0 }
+    end
+
+    def cost_by_tier
+      finished_runs = project.agent_runs.finished
+        .joins(:model_selection)
+        .where.not(model_selections: { tier: nil })
+
+      rows = finished_runs
+        .group("model_selections.tier")
+        .pluck(
+          Arel.sql("model_selections.tier"),
+          Arel.sql("COUNT(*)"),
+          Arel.sql("COALESCE(SUM(agent_runs.cost_cents), 0)"),
+          Arel.sql("AVG(agent_runs.duration_seconds)")
+        )
+
+      agg = rows.to_h do |tier, count, cost, avg_dur|
+        count = count.to_i
+        [ tier, {
+          run_count: count,
+          total_cost_cents: cost.to_i,
+          avg_cost_cents: count.zero? ? 0 : (cost.to_f / count).round,
+          avg_duration_seconds: avg_dur&.to_i || 0
+        } ]
+      end
+
+      LlmModel::TIERS.index_with { |tier| agg[tier] || { run_count: 0, total_cost_cents: 0, avg_cost_cents: 0, avg_duration_seconds: 0 } }
     end
 
     def cost_by_model
