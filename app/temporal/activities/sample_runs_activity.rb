@@ -74,14 +74,14 @@ module Activities
         score = score_for(s, metric_type)
         next unless score && score < threshold.to_f
 
-        summarize_run(s)
+        summarize_run(s, metric_type: metric_type)
       end
 
       successes = sorted.reverse.first(MAX_SAMPLE_OUTPUTS).filter_map do |s|
         score = score_for(s, metric_type)
         next unless score && score >= threshold.to_f
 
-        summarize_run(s)
+        summarize_run(s, metric_type: metric_type)
       end
 
       { successes: successes, failures: failures }
@@ -93,11 +93,14 @@ module Activities
       sample[:scores]&.dig(metric_type)&.to_f
     end
 
-    def summarize_run(sample)
+    def summarize_run(sample, metric_type: "composite_score")
       run = sample[:agent_run]
       parts = []
       parts << "Goal: #{run.goal}" if run.goal.present?
       parts << "Score: #{sample[:composite_score]&.round(4)}"
+      if metric_type != "composite_score" && sample[:scores]&.key?(metric_type)
+        parts << "#{metric_type}: #{sample[:scores][metric_type].to_f.round(4)}"
+      end
       parts << "Cost: #{sample[:cost_cents]}c" if sample[:cost_cents]
       parts << "Duration: #{sample[:duration_seconds]}s" if sample[:duration_seconds]
       parts.join(", ").truncate(MAX_OUTPUT_LENGTH)
