@@ -91,10 +91,13 @@ module QualityRecovery
 
       preferences = project.model_preferences.deep_dup
       preferences["quality_recovery_min_tier"] = to_tier
+      set_goal_min_tier(preferences, to_tier)
       project.update!(model_preferences: preferences)
 
-      action = create_action("model_escalation", parameters: { from_tier: from_tier, to_tier: to_tier })
-      action.complete!(status: "escalated", from_tier: from_tier, to_tier: to_tier)
+      action = create_action("model_escalation", parameters: {
+        from_tier: from_tier, to_tier: to_tier, goal: agent_run.goal
+      })
+      action.complete!(status: "escalated", from_tier: from_tier, to_tier: to_tier, goal: agent_run.goal)
 
       Rails.logger.info(
         message: "quality_recovery.model_escalated",
@@ -102,6 +105,7 @@ module QualityRecovery
         recovery_action_id: action.id,
         from_tier: from_tier,
         to_tier: to_tier,
+        goal: agent_run.goal,
         agent_run_id: agent_run.id
       )
     end
@@ -244,6 +248,13 @@ module QualityRecovery
       project.quality_recovery_actions
         .where(action_type: "prompt_evolution", created_at: 24.hours.ago..)
         .count >= MAX_CYCLES_PER_DAY
+    end
+
+    def set_goal_min_tier(preferences, to_tier)
+      return unless agent_run.goal.present?
+
+      preferences["goal_min_tiers"] ||= {}
+      preferences["goal_min_tiers"][agent_run.goal] = to_tier
     end
 
     def current_tier

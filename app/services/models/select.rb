@@ -20,14 +20,19 @@ module Models
 
       duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
 
+      final_tier = selected[:tier] || tier_for(selected)
+      escalation = detect_escalation(selected, final_tier)
+
       ModelSelection.find_or_create_by!(agent_run: agent_run) do |ms|
         ms.llm_model = selected[:model]
         ms.selector_type = selected[:selector_type]
         ms.reasoning = selected[:reasoning]
         ms.candidates = selected[:candidates]
         ms.complexity_score = selected[:complexity_score]
-        ms.tier = selected[:tier] || tier_for(selected)
+        ms.tier = final_tier
         ms.selection_duration_ms = duration_ms
+        ms.escalated_from_tier = escalation[:from_tier]
+        ms.escalated_reason = escalation[:reason]
       end
     rescue ActiveRecord::RecordNotUnique
       ModelSelection.find_by!(agent_run: agent_run)
@@ -119,6 +124,52 @@ module Models
       return nil if selected.blank?
 
       selected[:tier].presence || selected[:model]&.tier
+    end
+
+    # Detects whether the final tier was escalated above the complexity-derived
+    # tier due to quality recovery min tier settings (project-wide or per-goal).
+    def detect_escalation(selected, final_tier)
+      return { from_tier: nil, reason: nil } if selected[:selector_type] == "override"
+      return { from_tier: nil, reason: nil } unless final_tier && selected[:complexity_score]
+
+      base_tier = base_tier_for(selected[:complexity_score])
+      return { from_tier: nil, reason: nil } unless base_tier
+
+      base_index = LlmModel::TIERS.index(base_tier)
+      final_index = LlmModel::TIERS.index(final_tier)
+      return { from_tier: nil, reason: nil } unless base_index && final_index && final_index > base_index
+
+      reason = escalation_reason
+      { from_tier: base_tier, reason: reason }
+    end
+
+    def base_tier_for(complexity_score)
+      thresholds = Models::TierForComplexity.new(
+        complexity: complexity_score,
+        provider: agent_run.provider
+      ).effective_thresholds
+
+      score = Float(complexity_score)
+      if score <= thresholds["low_max"]
+        "low"
+      elsif score <= thresholds["mid_max"]
+        "mid"
+      else
+        "high"
+      end
+    rescue ArgumentError, TypeError
+      nil
+    end
+
+    def escalation_reason
+      project = agent_run.project
+      goal = agent_run.goal
+
+      if project.model_preferences&.dig("goal_min_tiers", goal).present?
+        "quality_recovery_goal"
+      elsif project.model_preferences&.dig("quality_recovery_min_tier").present?
+        "quality_recovery_project"
+      end
     end
   end
 end

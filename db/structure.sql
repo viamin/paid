@@ -1681,6 +1681,8 @@ CREATE TABLE public.model_selections (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     tier character varying(10),
+    escalated_from_tier character varying(10),
+    escalated_reason character varying(255),
     CONSTRAINT model_selections_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[]))))
 );
 
@@ -8764,6 +8766,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260425050134'),
 ('20260423130627'),
 ('20260421162139'),
 ('20260421162135'),
