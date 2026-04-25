@@ -197,6 +197,13 @@ RSpec.describe Models::Select do
 
         expect(selection.tier).to eq("high")
       end
+
+      it "does not mark an escalation without a quality recovery reason" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection.escalated_from_tier).to be_nil
+        expect(selection.escalated_reason).to be_nil
+      end
     end
 
     context "when meta-agent fails and falls back to rules" do

@@ -140,6 +140,8 @@ module Models
       return { from_tier: nil, reason: nil } unless base_index && final_index && final_index > base_index
 
       reason = escalation_reason
+      return { from_tier: nil, reason: nil } unless reason
+
       { from_tier: base_tier, reason: reason }
     end
 
