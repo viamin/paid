@@ -497,7 +497,9 @@ RSpec.describe "Api::GithubProxy" do
           }.to_json,
           headers: valid_headers
 
-        expect(Rails.logger).not_to have_received(:warn)
+        expect(Rails.logger).not_to have_received(:warn).with(
+          hash_including(message: "github_proxy.review_missing_inline_comments")
+        )
       end
 
       it "does not log a warning for the clean review body-only format" do
@@ -520,7 +522,9 @@ RSpec.describe "Api::GithubProxy" do
           }.to_json,
           headers: valid_headers
 
-        expect(Rails.logger).not_to have_received(:warn)
+        expect(Rails.logger).not_to have_received(:warn).with(
+          hash_including(message: "github_proxy.review_missing_inline_comments")
+        )
       end
     end
   end
