@@ -823,6 +823,143 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "with a direct-outbound default provider" do
+      let(:api_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
+      let!(:direct_outbound_provider) do
+        create(
+          :provider,
+          :api_key,
+          user: project.created_by,
+          provider_key: "opencode",
+          provider_api_key: api_key,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2.5" } }
+        )
+      end
+
+      it "uses the infrastructure network for project-level provisioning when the default provider is direct outbound" do
+        project.created_by.settings.update!(default_agent_provider: direct_outbound_provider.routing_key)
+
+        expect(described_class.new(project: project).network_name).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
+      end
+
+      it "uses the infrastructure network when execution falls back from an unrunnable saved provider to a direct-outbound default" do
+        copilot_provider = create(:provider, user: project.created_by, provider_key: "copilot")
+        agent_run.update!(provider: copilot_provider, agent_type: "copilot")
+        project.created_by.settings.update!(default_agent_provider: direct_outbound_provider.routing_key, fallback_enabled: false)
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "uses the restricted network when an unrunnable saved provider has a runnable proxy-mode fallback despite a direct-outbound default" do
+        copilot_provider = create(:provider, user: project.created_by, provider_key: "copilot")
+        claude_api_key = create(:provider_api_key, user: project.created_by, api_service_type: "anthropic")
+        claude_fallback = create(:provider, :api_key, user: project.created_by,
+          provider_key: "claude", provider_api_key: claude_api_key)
+
+        direct_outbound_provider.update!(enabled_for_fallback: false)
+        project.created_by.providers.subscription.find_by!(provider_key: "claude")
+          .update!(enabled_for_fallback: false)
+
+        agent_run.update!(provider: copilot_provider, agent_type: "copilot")
+        project.created_by.settings.update!(
+          default_agent_provider: direct_outbound_provider.routing_key,
+          fallback_enabled: true,
+          fallback_providers: [ claude_fallback.routing_key ]
+        )
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::NETWORK_NAME)
+          mock_container
+        end
+
+        service.provision
+      end
+    end
+
+    context "with service-container network alignment (#1282)" do
+      let(:api_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
+      let!(:direct_outbound_provider) do
+        create(
+          :provider,
+          :api_key,
+          user: project.created_by,
+          provider_key: "opencode",
+          provider_api_key: api_key,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2.5" } }
+        )
+      end
+
+      it "network_for matches agent container network in proxy mode" do
+        container_network = nil
+
+        expect(Docker::Container).to receive(:create) do |config|
+          container_network = config["HostConfig"]["NetworkMode"]
+          mock_container
+        end
+
+        service.provision
+
+        service_network = described_class.network_for(agent_run: agent_run)
+
+        expect(service_network).to eq(container_network)
+        expect(service_network).to eq(NetworkPolicy::NETWORK_NAME)
+      end
+
+      it "network_for matches agent container network in direct-outbound mode" do
+        copilot_provider = create(:provider, user: project.created_by, provider_key: "copilot")
+        agent_run.update!(provider: copilot_provider, agent_type: "copilot")
+        project.created_by.settings.update!(default_agent_provider: direct_outbound_provider.routing_key, fallback_enabled: false)
+
+        container_network = nil
+
+        expect(Docker::Container).to receive(:create) do |config|
+          container_network = config["HostConfig"]["NetworkMode"]
+          mock_container
+        end
+
+        service.provision
+
+        service_network = described_class.network_for(agent_run: agent_run)
+
+        expect(service_network).to eq(container_network)
+        expect(service_network).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
+      end
+
+      it "network_for matches agent container network in subscription-auth mode" do
+        claude_config_dir = Dir.mktmpdir("claude-config")
+        File.write(File.join(claude_config_dir, ".credentials.json"), "{}")
+
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(claude_config_dir)
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+        allow(service).to receive_messages(codex_local_config_path: nil, gemini_local_config_path: nil, copilot_local_config_path: nil)
+
+        container_network = nil
+
+        expect(Docker::Container).to receive(:create) do |config|
+          container_network = config["HostConfig"]["NetworkMode"]
+          mock_container
+        end
+
+        service.provision
+
+        service_network = described_class.network_for(agent_run: agent_run)
+
+        expect(service_network).to eq(container_network)
+        expect(service_network).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
+      ensure
+        FileUtils.rm_rf(claude_config_dir)
+      end
+    end
+
     context "with Gemini subscription auth (GEMINI_CONFIG_DIR)" do
       let(:gemini_config_dir) { Dir.mktmpdir("gemini-config") }
 
