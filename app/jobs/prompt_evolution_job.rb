@@ -22,8 +22,10 @@ class PromptEvolutionJob < ApplicationJob
     @prompt_id = prompt_id
     @sample_days = sample_days
     workflow_started = false
+    eligible_prompt_found = false
 
     eligible_prompts.find_each do |prompt|
+      eligible_prompt_found = true
       start_evolution_workflow(prompt, recovery_action_id: recovery_action_id, sample_days: sample_days)
       workflow_started = true
     rescue => e
@@ -38,7 +40,8 @@ class PromptEvolutionJob < ApplicationJob
     return unless recovery_action_id && !workflow_started
     return if track_running_recovery_test(recovery_action_id)
 
-    fail_recovery_action(recovery_action_id, "no_eligible_prompt")
+    reason = eligible_prompt_found ? "workflow_start_failed" : "no_eligible_prompt"
+    fail_recovery_action(recovery_action_id, reason)
   end
 
   private

@@ -36,6 +36,7 @@ module PromptReviews
           review_notes: notes
         )
       end
+      fail_recovery_action!
       prompt_version
     end
 
@@ -45,6 +46,17 @@ module PromptReviews
       raise ArgumentError, "reviewer is required" unless reviewer
       raise ArgumentError, "rejection notes are required" if notes.to_s.strip.empty?
       raise ArgumentError, "prompt version is not pending review" unless prompt_version.pending_review?
+    end
+
+    def fail_recovery_action!
+      recovery_action = QualityRecoveryAction
+        .where(project: prompt_version.prompt.project, action_type: "prompt_evolution", status: "executing")
+        .for_prompt_version_rollout(prompt_version.id)
+        .order(created_at: :desc)
+        .first
+      return unless recovery_action
+
+      recovery_action.fail!(status: "review_rejected", prompt_version_id: prompt_version.id)
     end
   end
 end

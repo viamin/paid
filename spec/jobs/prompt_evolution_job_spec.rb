@@ -199,6 +199,17 @@ RSpec.describe PromptEvolutionJob do
           .with(Workflows::PromptEvolutionWorkflow,
             hash_including(prompt_id: prompt2.id), anything)
       end
+
+      it "marks targeted recovery as workflow_start_failed when the eligible prompt fails" do
+        action = create(:quality_recovery_action, :prompt_evolution, :executing, executed_at: nil)
+
+        allow(temporal_client).to receive(:start_workflow).and_raise("Temporal unavailable")
+
+        job.perform(project_id: project.id, prompt_id: prompt.id, recovery_action_id: action.id)
+
+        expect(action.reload.status).to eq("failed")
+        expect(action.result["error"]).to include("status" => "workflow_start_failed")
+      end
     end
   end
 end
