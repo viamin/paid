@@ -17,7 +17,7 @@ class KnowledgeUsageStat < ApplicationRecord
   validate :project_matches_agent_run
   validate :goal_matches_agent_run
 
-  scope :for_project, ->(project) { where(project_id: project.id) }
+  scope :for_project, ->(project) { where(project: project) }
   scope :by_artifact_type, ->(type) { where(artifact_type: type) }
   scope :by_goal, ->(goal) { where(goal: goal) }
   scope :since, ->(time) { where(created_at: time..) }

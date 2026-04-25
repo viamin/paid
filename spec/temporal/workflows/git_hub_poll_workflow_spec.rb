@@ -77,6 +77,35 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
   end
 
+  describe "notification rule evaluation" do
+    let(:workflow) { described_class.new }
+
+    before do
+      allow(workflow).to receive(:run_activity)
+      allow(Temporalio::Workflow).to receive(:patched).with("notification-rules-v1").and_return(true)
+    end
+
+    it "runs EvaluateNotificationRulesActivity with fetched issue ids and PR scan context" do
+      workflow.send(:run_notification_rules, 1,
+        issue_ids: [ 10, 11 ],
+        pr_scan_result: {
+          pr_issue_ids: [ 11 ],
+          pending_review_states: [ { issue_id: 11, pending_review: true, requested_bot: "copilot", pr_phase: "draft" } ]
+        })
+
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::EvaluateNotificationRulesActivity,
+        {
+          project_id: 1,
+          issue_ids: [ 10, 11 ],
+          pr_issue_ids: [ 11 ],
+          pending_review_states: [ { issue_id: 11, pending_review: true, requested_bot: "copilot", pr_phase: "draft" } ]
+        },
+        timeout: 60
+      )
+    end
+  end
+
   describe "rate limit budget coordination" do
     let(:workflow) { described_class.new }
 
@@ -1520,6 +1549,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with("pause-review-bot-followup-during-review-v1").and_return(true)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("batch-evaluate-issues-v1").and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("notification-rules-v1").and_return(false)
       allow(workflow).to receive(:interruptible_sleep)
       allow(workflow).to receive(:with_jitter) { |base| base }
       allow(workflow).to receive(:run_activity)

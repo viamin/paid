@@ -4,6 +4,7 @@ require "rails_helper"
 require Rails.root.join("db/migrate/20260421162135_add_account_to_service_containers")
 require Rails.root.join("db/migrate/20260421162139_enable_tenant_row_level_security")
 require Rails.root.join("db/migrate/20260425113212_enable_rls_on_knowledge_usage_stats")
+require Rails.root.join("db/migrate/20260425060000_enable_rls_on_notification_rule_states")
 
 RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   self.use_transactional_tests = false
@@ -11,14 +12,18 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   let(:migration) { described_class.new }
   let(:rls_migration) { EnableTenantRowLevelSecurity.new }
   let(:knowledge_rls_migration) { EnableRlsOnKnowledgeUsageStats.new }
+  let(:notification_rls_migration) { EnableRlsOnNotificationRuleStates.new }
 
   include MigrationSpecHelpers
 
   before do
     truncate_migration_test_data
 
-    knowledge_rls_migration.down if knowledge_usage_stats_has_rls?
-    rls_migration.down if tenant_policy_count.positive?
+    if tenant_policy_count.positive?
+      knowledge_rls_migration.down if knowledge_usage_stats_has_rls?
+      notification_rls_migration.down
+      rls_migration.down
+    end
     restore_service_container_account_reference unless service_containers_have_account_reference?
     migration.down
     ServiceContainer.reset_column_information
@@ -30,8 +35,11 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     truncate_migration_test_data
 
     restore_service_container_account_reference unless service_containers_have_account_reference?
-    rls_migration.up if tenant_policy_count.zero?
-    knowledge_rls_migration.up unless knowledge_usage_stats_has_rls?
+    if tenant_policy_count.zero?
+      rls_migration.up
+      notification_rls_migration.up
+      knowledge_rls_migration.up unless knowledge_usage_stats_has_rls?
+    end
     ServiceContainer.reset_column_information
   end
 
