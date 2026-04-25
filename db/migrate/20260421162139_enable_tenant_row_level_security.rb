@@ -116,6 +116,8 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
 
   def down
     tenant_tables.each do |table|
+      next unless table_exists?(table)
+
       drop_policies(table)
       execute "ALTER TABLE #{quote_table_name(table)} NO FORCE ROW LEVEL SECURITY"
       execute "ALTER TABLE #{quote_table_name(table)} DISABLE ROW LEVEL SECURITY"
@@ -591,6 +593,7 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
       "project_memberships",
       "project_service_containers",
       "service_container_metrics",
+      "knowledge_usage_stats",
       "token_usages",
       "tracker_configurations"
     ].uniq
