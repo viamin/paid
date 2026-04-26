@@ -211,7 +211,6 @@ module Knowledge
         fk_columns = table_fks.map { |fk| fk[:column] }
         table[:columns].each do |col|
           next unless col[:name].end_with?("_id")
-          next if col[:name].end_with?("_type") # skip polymorphic type columns
           next if fk_columns.include?(col[:name])
 
           model_name = col[:name].delete_suffix("_id")
