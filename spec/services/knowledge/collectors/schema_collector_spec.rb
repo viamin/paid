@@ -329,6 +329,13 @@ RSpec.describe Knowledge::Collectors::SchemaCollector, :no_db do
         expect(templates[:content]).to include("index_templates_on_position (position)")
         expect(templates[:content]).not_to include('"position"')
       end
+
+      it "parses quoted column definitions" do
+        result = collector.collect
+        templates = result.find { |a| a[:identifier] == "templates" }
+
+        expect(templates[:content]).to include("position (bigint, not null)")
+      end
     end
 
     context "with SQL columns that have no explicit foreign key" do

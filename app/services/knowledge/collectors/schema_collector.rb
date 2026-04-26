@@ -77,7 +77,8 @@ module Knowledge
         return if line.blank?
 
         # Match: column_name type_with_optional_parens [NOT NULL] [DEFAULT ...]
-        match = line.match(/\A(\w+)\s+(.+)/)
+        # Column names may be quoted (e.g., "position") for reserved words.
+        match = line.match(/\A"?(\w+)"?\s+(.+)/)
         return unless match
 
         name = match[1]
