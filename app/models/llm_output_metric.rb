@@ -3,8 +3,6 @@
 class LlmOutputMetric < ApplicationRecord
   OUTPUT_TYPES = %w[pr_description issue_title decision_record].freeze
   SOURCE_TYPES = %w[PullRequest Issue DecisionRecord].freeze
-  METRIC_TYPES = %w[automated human].freeze
-
   # Weights for composite quality scoring by output type.
   OUTPUT_WEIGHTS = {
     "pr_description" => {
