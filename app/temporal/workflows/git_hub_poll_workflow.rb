@@ -250,6 +250,12 @@ module Workflows
           issue_id: decision[:issue_id],
           expected_review_goal_retry_count: decision[:expected_review_goal_retry_count]
         }, timeout: 30)
+      when "queue_analyze_issue_run"
+        run_activity(Activities::QueueAgentRunActivity, {
+          project_id: project_id,
+          issue_id: decision[:issue_id],
+          goal: "analyze_issue"
+        }, timeout: 30)
       end
     end
 

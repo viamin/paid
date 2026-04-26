@@ -301,7 +301,13 @@ module Workflows
             pr_prompt_result,
             agent_result)
 
-          if issue_id.present? && !source_pull_request_number
+          if goal == "analyze_issue" && issue_id.present?
+            # Analyze-issue runs assess readiness without producing code changes.
+            # Mark complete and persist the "analyzed" state so the issue is
+            # recognized as assessed and ready for a follow-up implementation run.
+            run_activity(Activities::MarkAgentRunCompleteActivity,
+              { agent_run_id: agent_run_id, reason: "no_changes" }, timeout: 30)
+          elsif issue_id.present? && !source_pull_request_number
             # Issue-based run with no code changes / no PR: classify as
             # needs_input or recommend_close and post an actionable GitHub comment.
             run_activity(Activities::HandleNoOutputIssueRunActivity,

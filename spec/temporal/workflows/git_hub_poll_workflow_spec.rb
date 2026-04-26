@@ -227,6 +227,15 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           timeout: 30)
     end
 
+    it "queues analyze_issue run for queue_analyze_issue_run decisions" do
+      evaluation = { decisions: [ { type: "queue_analyze_issue_run", issue_id: 10 } ] }
+
+      workflow.send(:handle_automation_result, evaluation, project_id)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, { project_id: project_id, issue_id: 10, goal: "analyze_issue" }, timeout: 30)
+    end
+
     it "starts PlanningWorkflow for start_planning decisions" do
       evaluation = { decisions: [ { type: "start_planning", issue_id: 20 } ] }
 
