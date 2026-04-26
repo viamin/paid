@@ -9,4 +9,5 @@ Rails.application.config.to_prepare do
   Knowledge::CollectorRunner.register("routes", Knowledge::Collectors::RoutesCollector)
   Knowledge::CollectorRunner.register("tree_sitter", Knowledge::Collectors::TreeSitterCollector)
   Knowledge::CollectorRunner.register("decision_record", Knowledge::Collectors::DecisionRecordCollector)
+  Knowledge::CollectorRunner.register("schema", Knowledge::Collectors::SchemaCollector)
 end
