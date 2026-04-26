@@ -69,10 +69,12 @@ module Activities
         alerts_actionable: open_alerts.size
       )
     rescue SecurityAlerts::ConfigurationError
-      # Record scan attempt to avoid hammering the API every poll cycle while
-      # the underlying config issue persists, then re-raise so the workflow
-      # can log the error without failing the entire poll cycle.
-      project.update_column(:last_code_scanning_scan_at, Time.current)
+      # Do NOT advance last_code_scanning_scan_at here. A 403 means the token
+      # lacks the required scope — advancing the timestamp would suppress
+      # retries for the full code_scanning_interval_hours window, turning a
+      # recoverable misconfiguration into a stale blackout. The workflow
+      # catches ConfigurationError and logs a warning; rate-limit budget
+      # checks in the poll loop already prevent excessive API calls.
       raise
     end
 
