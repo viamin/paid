@@ -3,9 +3,12 @@ import { Controller } from "@hotwired/stimulus"
 export default class extends Controller {
   static values = { preference: { type: String, default: "system" } }
 
-  connect() {
+  initialize() {
     this.mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
     this.handleSystemChange = this.applyTheme.bind(this)
+  }
+
+  connect() {
     this.mediaQuery.addEventListener("change", this.handleSystemChange)
     this.applyTheme()
   }
