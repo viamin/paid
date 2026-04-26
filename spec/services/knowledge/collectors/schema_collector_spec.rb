@@ -242,6 +242,95 @@ RSpec.describe Knowledge::Collectors::SchemaCollector, :no_db do
       end
     end
 
+    context "with array and custom PostgreSQL column types" do
+      before do
+        allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with("#{fixture_path}/db/structure.sql").and_return(true)
+        allow(File).to receive(:exist?).with("#{fixture_path}/app/models/setting.rb").and_return(true)
+        allow(File).to receive(:read).and_call_original
+        allow(File).to receive(:read).with("#{fixture_path}/db/structure.sql").and_return(<<~SQL)
+          CREATE TABLE public.settings (
+              id bigint NOT NULL,
+              allowed_providers text[],
+              search_vector tsvector,
+              ip_range cidr,
+              created_at timestamp(6) without time zone NOT NULL,
+              updated_at timestamp(6) without time zone NOT NULL
+          );
+        SQL
+      end
+
+      it "preserves array types instead of dropping the column" do
+        result = collector.collect
+        settings = result.find { |a| a[:identifier] == "settings" }
+
+        expect(settings[:content]).to include("allowed_providers (text[])")
+      end
+
+      it "preserves custom PostgreSQL types instead of dropping the column" do
+        result = collector.collect
+        settings = result.find { |a| a[:identifier] == "settings" }
+
+        expect(settings[:content]).to include("search_vector (tsvector)")
+        expect(settings[:content]).to include("ip_range (cidr)")
+      end
+    end
+
+    context "with trigram indexes containing operator classes" do
+      before do
+        allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with("#{fixture_path}/db/structure.sql").and_return(true)
+        allow(File).to receive(:exist?).with("#{fixture_path}/app/models/artifact.rb").and_return(true)
+        allow(File).to receive(:read).and_call_original
+        allow(File).to receive(:read).with("#{fixture_path}/db/structure.sql").and_return(<<~SQL)
+          CREATE TABLE public.artifacts (
+              id bigint NOT NULL,
+              identifier character varying NOT NULL,
+              created_at timestamp(6) without time zone NOT NULL,
+              updated_at timestamp(6) without time zone NOT NULL
+          );
+
+          CREATE INDEX index_artifacts_on_identifier_trgm ON public.artifacts USING gin (identifier public.gin_trgm_ops);
+        SQL
+      end
+
+      it "extracts only the column name, not operator classes" do
+        result = collector.collect
+        artifacts = result.find { |a| a[:identifier] == "artifacts" }
+
+        expect(artifacts[:content]).to include("index_artifacts_on_identifier_trgm (identifier)")
+        expect(artifacts[:content]).not_to include("gin_trgm_ops")
+        expect(artifacts[:content]).not_to include("public")
+      end
+    end
+
+    context "with quoted SQL index columns" do
+      before do
+        allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with("#{fixture_path}/db/structure.sql").and_return(true)
+        allow(File).to receive(:exist?).with("#{fixture_path}/app/models/template.rb").and_return(true)
+        allow(File).to receive(:read).and_call_original
+        allow(File).to receive(:read).with("#{fixture_path}/db/structure.sql").and_return(<<~SQL)
+          CREATE TABLE public.templates (
+              id bigint NOT NULL,
+              "position" bigint NOT NULL,
+              created_at timestamp(6) without time zone NOT NULL,
+              updated_at timestamp(6) without time zone NOT NULL
+          );
+
+          CREATE INDEX index_templates_on_position ON public.templates USING btree ("position");
+        SQL
+      end
+
+      it "normalizes quoted SQL index columns to plain column names" do
+        result = collector.collect
+        templates = result.find { |a| a[:identifier] == "templates" }
+
+        expect(templates[:content]).to include("index_templates_on_position (position)")
+        expect(templates[:content]).not_to include('"position"')
+      end
+    end
+
     context "with SQL columns that have no explicit foreign key" do
       before do
         allow(File).to receive(:exist?).and_call_original

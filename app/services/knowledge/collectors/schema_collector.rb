@@ -86,8 +86,7 @@ module Knowledge
         # Skip the id column auto-detected as primary key
         return if name == "id"
 
-        type = map_sql_type(rest)
-        return unless type
+        type = map_sql_type(rest) || extract_raw_sql_type(rest)
 
         column = { name: name, type: type }
         column[:null] = false if rest.match?(/\bNOT NULL\b/)
@@ -127,6 +126,10 @@ module Knowledge
         SQL_TYPE_MAP[base_type]
       end
 
+      def extract_raw_sql_type(rest)
+        rest.split(/\s+(?:NOT NULL|DEFAULT)\b|,/i, 2).first.strip.downcase
+      end
+
       def merge_sql_indexes(content, tables)
         table_lookup = tables.index_by { |t| t[:name] }
 
@@ -140,7 +143,7 @@ module Knowledge
           unique = match[1].present?
           index_name = match[2]
           table_name = match[3]
-          columns = match[4].scan(/\b(\w+)\b/).flatten.reject { |c| c.match?(/\A(DESC|ASC|NULLS)\z/i) }
+          columns = match[4].split(",").filter_map { |part| extract_index_column(part) }
 
           table = table_lookup[table_name]
           next unless table
@@ -177,6 +180,14 @@ module Knowledge
         end
 
         fks
+      end
+
+      def extract_index_column(part)
+        token = part.strip.split(/\s+/, 2).first.to_s.delete_prefix("(").delete_suffix(")")
+        token = token.split(".").last
+        token = token.delete_prefix('"').delete_suffix('"')
+
+        token if token.match?(/\A[a-zA-Z_]\w*\z/)
       end
 
       # --- Ruby (schema.rb) parsing ---
