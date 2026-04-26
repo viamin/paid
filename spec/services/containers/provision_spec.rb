@@ -458,7 +458,14 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "disables Gemini CLI sandbox and retries since the container is already isolated" do
+      it "includes provider CLI env overrides from agent-harness" do
+        gemini_provider = instance_double(
+          AgentHarness::Providers::Gemini,
+          cli_env_overrides: { "GEMINI_SANDBOX" => "false", "GEMINI_CLI_DISABLE_RETRIES" => "true" }
+        )
+        allow(AgentHarness).to receive(:provider).and_call_original
+        allow(AgentHarness).to receive(:provider).with(:gemini).and_return(gemini_provider)
+
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
           expect(env).to include("GEMINI_SANDBOX=false")
