@@ -558,6 +558,37 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
+    context "when agent-harness parses a provider-specific container error type" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      let(:execution_result) do
+        Containers::Provision::Result.failure(
+          error: "Process exited abnormally",
+          stdout: "",
+          stderr: "Process exited abnormally",
+          exit_code: 1
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "prefers the harness-classified error type" do
+        service = described_class.new(provider: provider)
+        allow(service).to receive_messages(
+          parse_provider_test_error: { message: "Process exited abnormally", type: :rate_limited },
+          rate_limit_reset_at: 1.hour.from_now
+        )
+        result = service.call
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+      end
+    end
+
     context "when gemini exits with an auth setup error in stderr" do
       let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
       let(:execution_result) do

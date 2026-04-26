@@ -212,7 +212,7 @@ module Providers
         parsed_error = parse_provider_test_error(raw_message)
         provider_message = parsed_error&.fetch(:message, nil).presence || raw_message
         message = extract_user_facing_error(provider_message)
-        error_type = classify_failed_response(provider_message.presence || message)
+        error_type = parsed_error&.fetch(:type, nil) || classify_failed_response(provider_message.presence || message)
 
         return Result.new(
           success: false,
