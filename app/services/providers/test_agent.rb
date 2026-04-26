@@ -663,12 +663,12 @@ module Providers
     end
 
     def authentication_error_patterns
-      BASE_AUTHENTICATION_ERROR_PATTERNS +
+      @authentication_error_patterns ||= BASE_AUTHENTICATION_ERROR_PATTERNS +
         ProviderSupport.error_classification_patterns_for(provider.provider_key, :authentication)
     end
 
     def noisy_error_line_patterns
-      BASE_NOISY_ERROR_LINES +
+      @noisy_error_line_patterns ||= BASE_NOISY_ERROR_LINES +
         ProviderSupport.aggregated_noisy_error_patterns
     end
 
