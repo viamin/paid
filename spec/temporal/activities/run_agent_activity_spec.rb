@@ -392,7 +392,7 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command[2]).not_to include("\n")
     end
 
-    it "returns the harness-generated command for non-subscription providers" do
+    it "wraps Claude in a subscription-auth check now that agent-harness provides subscription_unset_vars" do
       context = described_class::CommandContext.new(
         provider_candidate: "claude",
         provider: "claude",
@@ -400,7 +400,10 @@ RSpec.describe Activities::RunAgentActivity do
       )
       command = activity.send(:build_command, context, "ping")
 
-      expect(command).to include("claude", "--print", "--dangerously-skip-permissions")
+      expect(command.first).to eq("sh")
+      script = command[2]
+      expect(script).to include('PAID_CLAUDE_SUBSCRIPTION_AUTH')
+      expect(script).to include("claude")
       expect(command.last).to eq("ping")
     end
 
