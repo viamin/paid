@@ -20,10 +20,13 @@ module LlmOutputMetrics
     POSITIVE_REACTIONS = %w[+1 heart hooray rocket].freeze
     NEGATIVE_REACTIONS = %w[-1 confused].freeze
 
-    # Ideal description-to-diff ratio range.
-    # Below MIN or above MAX degrades the length ratio score.
-    MIN_LENGTH_RATIO = 0.02
-    MAX_LENGTH_RATIO = 0.50
+    # Ideal description-to-diff ratio range (characters / changed lines).
+    # diff_size is in lines (GitHub additions + deletions), description
+    # length is in characters, so the ratio has units of chars/line.
+    # Typical values: 0.5 (terse) to 10+ (verbose). Below MIN or above
+    # MAX degrades the length ratio score.
+    MIN_LENGTH_RATIO = 0.5
+    MAX_LENGTH_RATIO = 10.0
 
     def self.call(...)
       new(...).call

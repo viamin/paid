@@ -10,20 +10,12 @@ class EnableRlsOnLlmOutputMetrics < ActiveRecord::Migration[8.1]
       FOR ALL
       USING (
         paid_tenant_bypass() OR (
-          EXISTS (
-            SELECT 1 FROM projects
-            WHERE projects.id = llm_output_metrics.project_id
-              AND projects.account_id = paid_current_account_id()
-          )
+          llm_output_metrics.account_id = paid_current_account_id()
         )
       )
       WITH CHECK (
         paid_tenant_bypass() OR (
-          EXISTS (
-            SELECT 1 FROM projects
-            WHERE projects.id = llm_output_metrics.project_id
-              AND projects.account_id = paid_current_account_id()
-          )
+          llm_output_metrics.account_id = paid_current_account_id()
         )
       )
     SQL

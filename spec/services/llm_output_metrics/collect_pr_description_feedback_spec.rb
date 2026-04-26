@@ -46,11 +46,11 @@ RSpec.describe LlmOutputMetrics::CollectPrDescriptionFeedback do
       result = described_class.call(
         project: project,
         pull_request_number: 42,
-        current_description: "A" * 100,
+        current_description: "A" * 2000,
         diff_size: 1000
       )
 
-      # ratio = 0.1, within 0.02-0.50 range -> 1.0
+      # ratio = 2.0 chars/line, within 0.5-10.0 range -> 1.0
       expect(result.scores["description_length_ratio"]).to eq(1.0)
     end
 
@@ -62,8 +62,8 @@ RSpec.describe LlmOutputMetrics::CollectPrDescriptionFeedback do
         diff_size: 10_000
       )
 
-      # ratio = 0.001, below MIN_LENGTH_RATIO (0.02) -> 0.001/0.02 = 0.05
-      expect(result.scores["description_length_ratio"]).to eq(0.05)
+      # ratio = 0.001 chars/line, below MIN_LENGTH_RATIO (0.5) -> 0.001/0.5 = 0.002
+      expect(result.scores["description_length_ratio"]).to eq(0.002)
     end
 
     it "scores positive reactions" do
