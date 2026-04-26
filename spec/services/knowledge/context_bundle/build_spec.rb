@@ -324,6 +324,12 @@ RSpec.describe Knowledge::ContextBundle::Build do
           described_class.call(issue: issue, project: project)
         }.not_to change(KnowledgeUsageStat, :count)
       end
+
+      it "does not record knowledge usage stats when only agent_run is provided" do
+        expect {
+          described_class.call(issue: issue, project: project, agent_run: agent_run)
+        }.not_to change(KnowledgeUsageStat, :count)
+      end
     end
   end
 

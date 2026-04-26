@@ -31,7 +31,7 @@ module Knowledge
         @issue = issue
         @project = project
         @agent_run = agent_run
-        @agent_run_id = agent_run_id || agent_run&.id
+        @agent_run_id = agent_run_id
         @token_budget = token_budget || safe_experiment_value("knowledge.token_budget") || env_token_budget
         @section_order = section_order || safe_experiment_value("knowledge.section_order") || SECTION_ORDER
       end
@@ -269,7 +269,15 @@ module Knowledge
       end
 
       def tracking_agent_run
-        @tracking_agent_run ||= agent_run || AgentRun.select(:id, :goal).find_by(id: agent_run_id)
+        @tracking_agent_run ||= begin
+          if agent_run_id.blank?
+            nil
+          elsif agent_run&.id == agent_run_id
+            agent_run
+          else
+            AgentRun.select(:id, :goal).find_by(id: agent_run_id)
+          end
+        end
       end
 
       def active_artifacts(type)
@@ -367,7 +375,7 @@ module Knowledge
       end
 
       def experiment_value(config_key)
-        resolved_run = tracking_agent_run
+        resolved_run = experiment_agent_run
         return nil unless resolved_run
 
         experiment = ConfigurationExperiment.active_for(config_key, project: project, agent_run: resolved_run)
@@ -417,6 +425,10 @@ module Knowledge
         end
 
         normalized
+      end
+
+      def experiment_agent_run
+        @experiment_agent_run ||= agent_run || tracking_agent_run
       end
 
       def empty_result(queries_made = 0)
