@@ -33,7 +33,7 @@ RSpec.describe AutoReleaseEvaluationJob do
       pull_request: pr_data,
       contents: manifest_content,
       check_runs_for_ref: green_checks,
-      combined_status_state: "success"
+      combined_status: { state: "success", total_count: 1 }
     )
     allow(client).to receive(:merge_pull_request)
     allow(client).to receive(:add_labels_to_issue)
@@ -106,17 +106,42 @@ RSpec.describe AutoReleaseEvaluationJob do
       expect(client).not_to have_received(:merge_pull_request)
     end
 
-    it "merges when no CI checks exist and combined status is not pending" do
-      allow(client).to receive_messages(check_runs_for_ref: [], combined_status_state: "success")
+    it "merges when no CI checks exist and combined status is success" do
+      allow(client).to receive_messages(check_runs_for_ref: [], combined_status: { state: "success", total_count: 1 })
 
       described_class.perform_now(project.id)
 
-      expect(client).to have_received(:combined_status_state)
+      expect(client).to have_received(:combined_status)
       expect(client).to have_received(:merge_pull_request)
     end
 
-    it "skips when no CI checks exist but combined status is pending" do
-      allow(client).to receive_messages(check_runs_for_ref: [], combined_status_state: "pending")
+    it "merges when no CI checks or statuses exist (no CI configured)" do
+      allow(client).to receive_messages(check_runs_for_ref: [], combined_status: { state: "pending", total_count: 0 })
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:combined_status)
+      expect(client).to have_received(:merge_pull_request)
+    end
+
+    it "skips when no CI checks exist but combined status is pending with statuses" do
+      allow(client).to receive_messages(check_runs_for_ref: [], combined_status: { state: "pending", total_count: 2 })
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    it "skips when no CI checks exist and combined status is failure" do
+      allow(client).to receive_messages(check_runs_for_ref: [], combined_status: { state: "failure", total_count: 1 })
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    it "skips when no CI checks exist and combined status is error" do
+      allow(client).to receive_messages(check_runs_for_ref: [], combined_status: { state: "error", total_count: 1 })
 
       described_class.perform_now(project.id)
 

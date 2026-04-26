@@ -140,11 +140,13 @@ class AutoReleaseEvaluationJob < ApplicationJob
     false
   end
 
-  # Returns true when the combined commit status is not "pending", meaning
-  # either no status checks exist (repo has no CI) or all have completed.
+  # Returns true when CI has passed or no CI is configured.
+  # GitHub returns "pending" with 0 contexts when no status checks exist,
+  # so we treat that as "no CI" and allow the merge. Any other non-success
+  # state (failure, error, or pending with actual statuses) blocks merging.
   def combined_status_state_settled?(client, project, sha)
-    state = client.combined_status_state(project.full_name, sha)
-    state != "pending"
+    status = client.combined_status(project.full_name, sha)
+    status[:state] == "success" || (status[:state] == "pending" && status[:total_count] == 0)
   rescue GithubClient::Error => e
     Rails.logger.warn(
       message: "auto_release.combined_status_failed",

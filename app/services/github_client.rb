@@ -417,6 +417,21 @@ class GithubClient
     end
   end
 
+  # Fetches combined commit status with context count for a ref.
+  # Returns both the state and the number of status contexts, which
+  # lets callers distinguish "no CI configured" (pending + 0 contexts)
+  # from "CI is running" (pending + N contexts).
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param ref [String] Git ref (branch name, tag, or SHA)
+  # @return [Hash] { state: String, total_count: Integer }
+  def combined_status(repo, ref)
+    handle_errors do
+      response = client.combined_status(repo, ref)
+      { state: response.state, total_count: response.total_count }
+    end
+  end
+
   # Fetches raw GitHub Actions job logs for a check run when the run is backed
   # by an Actions job. Non-Actions checks do not expose logs through this API.
   #
