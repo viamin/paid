@@ -298,6 +298,7 @@ module Knowledge
           project: agent_run.project,
           output_type: "decision_record",
           prompt_slug: PROMPT_SLUG,
+          prompt_project: agent_run.project,
           source_type: "DecisionRecord",
           source_id: record.id
         )

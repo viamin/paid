@@ -41,7 +41,7 @@ RSpec.describe LlmOutputMetrics::Record do
       expect(metric.metadata).to include("model" => "claude-sonnet-4-6", "recorded_at" => be_present)
     end
 
-    it "resolves the prompt version when a matching prompt exists" do
+    it "resolves the prompt version from global scope when prompt_project is nil" do
       prompt = create(:prompt, :with_version, slug: "generation.pr_description")
 
       metric = described_class.call(
@@ -53,6 +53,41 @@ RSpec.describe LlmOutputMetrics::Record do
       )
 
       expect(metric.prompt_version).to eq(prompt.current_version)
+    end
+
+    it "resolves via project scope when prompt_project is provided" do
+      global_prompt = create(:prompt, :with_version, slug: "knowledge.decision_record")
+      project_prompt = create(:prompt, :for_project, :with_version,
+        slug: "knowledge.decision_record", project: project)
+
+      metric = described_class.call(
+        project: project,
+        output_type: "decision_record",
+        prompt_slug: "knowledge.decision_record",
+        prompt_project: project,
+        source_type: "DecisionRecord",
+        source_id: 1
+      )
+
+      expect(metric.prompt_version).to eq(project_prompt.current_version)
+      expect(metric.prompt_version).not_to eq(global_prompt.current_version)
+    end
+
+    it "ignores project overrides when prompt_project is nil" do
+      create(:prompt, :with_version, slug: "generation.pr_description")
+      create(:prompt, :for_project, :with_version,
+        slug: "generation.pr_description", project: project)
+      global_prompt = Prompt.global.active.find_by(slug: "generation.pr_description")
+
+      metric = described_class.call(
+        project: project,
+        output_type: "pr_description",
+        prompt_slug: "generation.pr_description",
+        source_type: "PullRequest",
+        source_id: 42
+      )
+
+      expect(metric.prompt_version).to eq(global_prompt.current_version)
     end
 
     it "returns nil on validation failure without raising" do

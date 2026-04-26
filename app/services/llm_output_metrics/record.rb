@@ -19,12 +19,19 @@ module LlmOutputMetrics
       new(...).call
     end
 
-    def initialize(project:, output_type:, prompt_slug:, source_type:, source_id:, metadata: {})
+    # @param prompt_project [Project, nil] When set, prompt version is resolved
+    #   via Prompt.resolve (project > account > global), matching
+    #   Prompts::Render.call(project: ...). When nil, resolution uses
+    #   global-only lookup, matching Prompts::Render.call without project:.
+    #   Callers must pass the same project here that they passed (or omitted)
+    #   when rendering, so the recorded version matches the rendered one.
+    def initialize(project:, output_type:, prompt_slug:, source_type:, source_id:, prompt_project: nil, metadata: {})
       @project = project
       @output_type = output_type
       @prompt_slug = prompt_slug
       @source_type = source_type
       @source_id = source_id
+      @prompt_project = prompt_project
       @metadata = metadata
     end
 
@@ -63,11 +70,16 @@ module LlmOutputMetrics
 
     private
 
-    attr_reader :project, :output_type, :prompt_slug, :source_type, :source_id, :metadata
+    attr_reader :project, :output_type, :prompt_slug, :source_type, :source_id, :prompt_project, :metadata
 
+    # Mirror the resolution logic in Prompts::Render.call so the recorded
+    # prompt version matches the one that actually rendered the output.
     def resolve_prompt_version
-      prompt = Prompt.resolve(prompt_slug, project: project)
-      prompt ||= Prompt.global.active.find_by(slug: prompt_slug)
+      prompt = if prompt_project
+        Prompt.resolve(prompt_slug, project: prompt_project)
+      else
+        Prompt.global.active.find_by(slug: prompt_slug)
+      end
       prompt&.current_version
     end
   end
