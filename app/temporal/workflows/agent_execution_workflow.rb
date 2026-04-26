@@ -133,6 +133,16 @@ module Workflows
           return { success: true, agent_run_id: agent_run_id }
         end
 
+        if goal == "analyze_issue"
+          result = run_activity(Activities::AnalyzeIssueActivity,
+            { agent_run_id: agent_run_id },
+            start_to_close_timeout: issue_goal_timeout_seconds,
+            retry_policy: NO_RETRY)
+
+          agent_step_succeeded = true
+          return { success: true, agent_run_id: agent_run_id, **result.slice(:sufficient_context) }
+        end
+
         # Step 1.5: Provision service containers (database, redis, etc.)
         # Always run unconditionally — the activity returns {} when no services
         # are configured. Avoids DB queries inside the workflow, which would
