@@ -113,6 +113,17 @@ class AutoReleaseEvaluationJob < ApplicationJob
     return true if checks.nil? || checks.empty?
 
     checks.all? { |c| %w[success skipped neutral].include?(c[:conclusion]) }
+  rescue GithubClient::ApiError => e
+    if e.status == 403
+      Rails.logger.info(
+        message: "auto_release.check_runs_forbidden",
+        project_id: project.id,
+        error: e.message
+      )
+      return true
+    end
+
+    raise
   rescue GithubClient::Error => e
     Rails.logger.warn(
       message: "auto_release.check_runs_failed",

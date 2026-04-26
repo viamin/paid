@@ -38,6 +38,8 @@ RSpec.describe DependabotAutoMergeJob do
     it "merges a Dependabot PR when all conditions are met" do
       described_class.perform_now(project.id)
 
+      expect(client).to have_received(:pull_requests).with(project.full_name, state: "open")
+      expect(client).to have_received(:pull_request).with(project.full_name, 42)
       expect(client).to have_received(:merge_pull_request).with(
         project.full_name, 42, merge_method: project.merge_method
       )
@@ -173,12 +175,12 @@ RSpec.describe DependabotAutoMergeJob do
       expect(client).to have_received(:merge_pull_request)
     end
 
-    it "skips when no CI checks exist" do
+    it "merges when no CI checks exist" do
       allow(client).to receive(:check_runs_for_ref).and_return([])
 
       described_class.perform_now(project.id)
 
-      expect(client).not_to have_received(:merge_pull_request)
+      expect(client).to have_received(:merge_pull_request)
     end
 
     it "merges when mode is all" do
@@ -187,6 +189,34 @@ RSpec.describe DependabotAutoMergeJob do
       described_class.perform_now(project.id)
 
       expect(client).to have_received(:merge_pull_request)
+    end
+
+    it "merges when check_runs returns 403 (token lacks checks permission)" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::ApiError.new("Resource not accessible by personal access token", status: 403)
+      )
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:merge_pull_request)
+    end
+
+    it "skips when check_runs fails with a non-403 error" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::Error.new("Network timeout")
+      )
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    it "raises when check_runs fails with a server error" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::ApiError.new("Internal Server Error", status: 500)
+      )
+
+      expect { described_class.perform_now(project.id) }.to raise_error(GithubClient::ApiError)
     end
   end
 end

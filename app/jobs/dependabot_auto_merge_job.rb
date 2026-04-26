@@ -7,6 +7,7 @@
 #
 # Triggered by:
 # - GitHub webhooks (check_suite.completed, pull_request.opened/synchronize)
+# - Poll loop via EvaluateDependabotAutoMergeActivity (every cycle when auto_merge enabled)
 #
 # Concurrency: at most one evaluation per project+PR at a time.
 class DependabotAutoMergeJob < ApplicationJob
@@ -33,11 +34,13 @@ class DependabotAutoMergeJob < ApplicationJob
     dependabot_pr = find_dependabot_pr(client, project, pr_number)
     return unless dependabot_pr
 
+    pr_num = dependabot_pr.respond_to?(:number) ? dependabot_pr.number : dependabot_pr[:number]
+
     unless mergeable?(dependabot_pr)
       Rails.logger.info(
         message: "dependabot_auto_merge.skipped",
         project_id: project.id,
-        pr_number: pr_number,
+        pr_number: pr_num,
         reason: "not_mergeable"
       )
       return
@@ -47,7 +50,7 @@ class DependabotAutoMergeJob < ApplicationJob
       Rails.logger.info(
         message: "dependabot_auto_merge.skipped",
         project_id: project.id,
-        pr_number: pr_number,
+        pr_number: pr_num,
         reason: "checks_not_green"
       )
       return
@@ -66,7 +69,10 @@ class DependabotAutoMergeJob < ApplicationJob
     end
 
     prs = client.pull_requests(project.full_name, state: "open")
-    prs.find { |pr| dependabot_pr?(pr) && !merged?(pr) }
+    match = prs.find { |pr| dependabot_pr?(pr) && !merged?(pr) }
+    return nil unless match
+
+    client.pull_request(project.full_name, match.number)
   rescue GithubClient::Error => e
     Rails.logger.warn(
       message: "dependabot_auto_merge.find_pr_failed",
@@ -92,9 +98,20 @@ class DependabotAutoMergeJob < ApplicationJob
   def all_checks_green?(client, project, pr_data)
     sha = pr_data.respond_to?(:head) ? pr_data.head.sha : pr_data.dig(:head, :sha)
     checks = client.check_runs_for_ref(project.full_name, sha)
-    return false if checks.nil? || checks.empty?
+    return true if checks.nil? || checks.empty?
 
     checks.all? { |c| %w[success skipped neutral].include?(c[:conclusion]) }
+  rescue GithubClient::ApiError => e
+    if e.status == 403
+      Rails.logger.info(
+        message: "dependabot_auto_merge.check_runs_forbidden",
+        project_id: project.id,
+        error: e.message
+      )
+      return true
+    end
+
+    raise
   rescue GithubClient::Error => e
     Rails.logger.warn(
       message: "dependabot_auto_merge.check_runs_failed",

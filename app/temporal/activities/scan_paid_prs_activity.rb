@@ -505,16 +505,9 @@ module Activities
     end
 
     # Bot-authored PRs (Dependabot, Renovate) skip review requirements.
-    # Auto-merge only needs CI green + mergeable. CI failures trigger follow-up.
+    # Auto-merge is handled by EvaluateDependabotAutoMergeActivity + DependabotAutoMergeJob.
+    # This method only detects follow-up triggers (CI failures, merge conflicts, labels).
     def scan_bot_authored_ready_pr(project, client, issue, pr_data:, checks:, mergeable:)
-      if project.auto_merge_dependabot? &&
-          pr_data.present? &&
-          !checks.nil? && checks.any? &&
-          all_checks_green?(checks) &&
-          mergeable == true
-        return owner_approved_trigger(issue)
-      end
-
       return nil if followup_limit_reached?(project, issue)
 
       ci_triggers = ci_failure_triggers(checks || [])
