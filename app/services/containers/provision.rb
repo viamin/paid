@@ -1521,7 +1521,7 @@ module Containers
       ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS.flat_map do |key|
         harness_key = ProviderSupport.harness_provider_key_for(key).to_sym
         AgentHarness.provider(harness_key).cli_env_overrides.map { |k, v| "#{k}=#{v}" }
-      rescue KeyError
+      rescue KeyError, AgentHarness::ConfigurationError
         []
       end
     end
