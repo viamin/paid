@@ -764,7 +764,7 @@ class AgentRun < ApplicationRecord
   end
 
   def cancellable?
-    active? || queued? || paused?
+    status.in?(UNFINISHED_STATUSES)
   end
 
   def running?
