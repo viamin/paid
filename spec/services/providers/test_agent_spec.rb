@@ -420,10 +420,16 @@ RSpec.describe Providers::TestAgent do
         described_class.call(provider: provider)
 
         expect(test_run).to have_received(:execute_in_container).with(
-          a_string_matching(/--skip-git-repo-check\s+--output-last-message\s+\$tmp_output\s+Respond/)
-            .and(include("-u OPENAI_API_KEY"))
-            .and(include("codex"))
-            .and(include("exec")),
+          [
+            "sh",
+            "-c",
+            a_string_matching(/--skip-git-repo-check\s+--output-last-message\s+\$tmp_output\s+"\$1"/)
+              .and(include("-u OPENAI_API_KEY"))
+              .and(include("codex"))
+              .and(include("exec")),
+            "--",
+            Providers::TestAgent::PROMPT
+          ],
           timeout: 60,
           stream: false,
           env: {}
@@ -477,12 +483,18 @@ RSpec.describe Providers::TestAgent do
         described_class.call(provider: provider)
 
         expect(test_run).to have_received(:execute_in_container).with(
-          a_string_including('if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]')
-            .and(include("-u GEMINI_API_KEY"))
-            .and(include("-u GOOGLE_GEMINI_BASE_URL"))
-            .and(include("gemini"))
-            .and(include('grep -q "Error when talking to Gemini API"'))
-            .and(include('ruby -rjson -e')),
+          [
+            "sh",
+            "-c",
+            a_string_including('if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]')
+              .and(include("-u GEMINI_API_KEY"))
+              .and(include("-u GOOGLE_GEMINI_BASE_URL"))
+              .and(include("gemini"))
+              .and(include('grep -q "Error when talking to Gemini API"'))
+              .and(include('cat "$after_report"')),
+            "--",
+            Providers::TestAgent::PROMPT
+          ],
           timeout: 60,
           stream: false,
           env: {}
@@ -504,7 +516,14 @@ RSpec.describe Providers::TestAgent do
         described_class.call(provider: provider)
 
         expect(test_run).to have_received(:execute_in_container).with(
-          a_string_including('env -u OPENAI_API_KEY').and(include('timeout 20s kilo run --auto --print-logs')),
+          [
+            "sh",
+            "-c",
+            a_string_including('env -u OPENAI_API_KEY')
+              .and(include('timeout 20s kilo run --format json --auto --print-logs "$1"')),
+            "--",
+            Providers::TestAgent::PROMPT
+          ],
           timeout: 60,
           stream: false,
           env: {}
@@ -536,6 +555,37 @@ RSpec.describe Providers::TestAgent do
         expect(result).not_to be_success
         expect(result.error_type).to eq(:unexpected)
         expect(result.message).to include("Process exited abnormally")
+      end
+    end
+
+    context "when agent-harness parses a provider-specific container error type" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      let(:execution_result) do
+        Containers::Provision::Result.failure(
+          error: "Process exited abnormally",
+          stdout: "",
+          stderr: "Process exited abnormally",
+          exit_code: 1
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "prefers the harness-classified error type" do
+        service = described_class.new(provider: provider)
+        allow(service).to receive_messages(
+          parse_provider_test_error: { message: "Process exited abnormally", type: :rate_limited },
+          rate_limit_reset_at: 1.hour.from_now
+        )
+        result = service.call
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
       end
     end
 
