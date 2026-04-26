@@ -1355,16 +1355,7 @@ module Activities
     end
 
     def api_key_env_var_names_for(provider_entry)
-      case provider_entry.provider_key
-      when "gemini"
-        %w[GEMINI_API_KEY GOOGLE_API_KEY]
-      when "codex"
-        %w[OPENAI_API_KEY]
-      when "claude", "cursor", "aider"
-        %w[ANTHROPIC_API_KEY]
-      else
-        []
-      end
+      harness_provider_for(provider_entry.provider_key).api_key_env_var_names
     end
 
     def api_key_proxy_header_assignments_for(provider_entry)
@@ -1864,11 +1855,12 @@ module Activities
       end
 
       vars = { base_prompt: prompt, repo: validated_repo_name(agent_run) }
-      rendered = Prompts::Render.call(
+
+      rendered = resolve_and_persist_goal_prompt(
+        agent_run: agent_run,
         slug: ISSUE_GOAL_PROMPT_SLUG,
-        project: agent_run.project,
         variables: vars,
-        fallback: -> { Prompts::Render.interpolate(FALLBACK_ISSUE_GOAL_PROMPT, vars) }
+        fallback_template: FALLBACK_ISSUE_GOAL_PROMPT
       )
 
       maybe_assign_ab_test_variant(agent_run, ISSUE_GOAL_PROMPT_SLUG, rendered, vars)
@@ -1887,11 +1879,12 @@ module Activities
         repo: validated_repo_name(agent_run),
         pr_number: pr_number.to_s
       }
-      rendered = Prompts::Render.call(
+
+      rendered = resolve_and_persist_goal_prompt(
+        agent_run: agent_run,
         slug: REVIEW_GOAL_PROMPT_SLUG,
-        project: agent_run.project,
         variables: vars,
-        fallback: -> { Prompts::Render.interpolate(FALLBACK_REVIEW_GOAL_PROMPT, vars) }
+        fallback_template: FALLBACK_REVIEW_GOAL_PROMPT
       )
 
       maybe_assign_ab_test_variant(agent_run, REVIEW_GOAL_PROMPT_SLUG, rendered, vars)
@@ -1912,14 +1905,32 @@ module Activities
         repo: validated_repo_name(agent_run),
         issue_number: issue.github_number.to_s
       }
-      rendered = Prompts::Render.call(
+
+      rendered = resolve_and_persist_goal_prompt(
+        agent_run: agent_run,
         slug: ENHANCE_ISSUE_GOAL_PROMPT_SLUG,
-        project: agent_run.project,
         variables: vars,
-        fallback: -> { Prompts::Render.interpolate(FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT, vars) }
+        fallback_template: FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT
       )
 
       maybe_assign_ab_test_variant(agent_run, ENHANCE_ISSUE_GOAL_PROMPT_SLUG, rendered, vars)
+    end
+
+    def resolve_and_persist_goal_prompt(agent_run:, slug:, variables:, fallback_template:)
+      prompt_version = Prompts::Resolve.call(slug: slug, project: agent_run.project)
+
+      if prompt_version
+        agent_run.update!(prompt_version: prompt_version) unless agent_run.prompt_version_id
+        prompt_version.render(variables)
+      else
+        Rails.logger.warn(
+          message: "prompts.render_fallback",
+          slug: slug,
+          project_id: agent_run.project_id,
+          reason: "no_active_version"
+        )
+        Prompts::Render.interpolate(fallback_template, variables)
+      end
     end
 
     def maybe_assign_ab_test_variant(agent_run, slug, rendered, vars)

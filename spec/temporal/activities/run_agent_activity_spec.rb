@@ -392,7 +392,7 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command[2]).not_to include("\n")
     end
 
-    it "returns the harness-generated command for non-subscription providers" do
+    it "wraps Claude in a subscription-auth check now that agent-harness provides subscription_unset_vars" do
       context = described_class::CommandContext.new(
         provider_candidate: "claude",
         provider: "claude",
@@ -400,7 +400,10 @@ RSpec.describe Activities::RunAgentActivity do
       )
       command = activity.send(:build_command, context, "ping")
 
-      expect(command).to include("claude", "--print", "--dangerously-skip-permissions")
+      expect(command.first).to eq("sh")
+      script = command[2]
+      expect(script).to include('PAID_CLAUDE_SUBSCRIPTION_AUTH')
+      expect(script).to include("claude")
       expect(command.last).to eq("ping")
     end
 
@@ -539,6 +542,62 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prompt).to include(base_prompt)
       expect(prompt).not_to include("## Codebase Context")
       expect(prompt).to include("Only add a comment to issue ##{issue.github_number}")
+    end
+  end
+
+  describe "goal prompt version persistence" do
+    it "persists prompt_version_id for review-goal runs" do
+      prompt = create(:prompt, :for_project, project: project, slug: described_class::REVIEW_GOAL_PROMPT_SLUG)
+      version = prompt.create_version!(template: "review {{base_prompt}} {{repo}} {{pr_number}}")
+      run = create(:agent_run, :review_goal, project: project)
+
+      activity.send(:augment_prompt_for_review_goal, run, "Review the branch")
+
+      expect(run.reload.prompt_version).to eq(version)
+    end
+
+    it "persists prompt_version_id for issue-goal runs without an existing version" do
+      prompt = create(:prompt, :for_project, project: project, slug: described_class::ISSUE_GOAL_PROMPT_SLUG)
+      version = prompt.create_version!(template: "issue {{base_prompt}} {{repo}}")
+      run = create(:agent_run, :create_issue_goal, project: project)
+
+      activity.send(:augment_prompt_for_issue_goal, run, "Create the issue")
+
+      expect(run.reload.prompt_version).to eq(version)
+    end
+
+    it "persists prompt_version_id for enhance-issue-goal runs" do
+      prompt = create(:prompt, :for_project, project: project, slug: described_class::ENHANCE_ISSUE_GOAL_PROMPT_SLUG)
+      version = prompt.create_version!(template: "enhance {{base_prompt}} {{repo}} {{issue_number}}")
+      run = create(:agent_run, :enhance_issue_goal, project: project, issue: issue)
+      allow(Knowledge::ContextBundle::Build).to receive(:call)
+        .with(issue: issue, project: project, agent_run: run)
+        .and_return(content: "")
+
+      activity.send(:augment_prompt_for_enhance_issue_goal, run, "Enhance this issue")
+
+      expect(run.reload.prompt_version).to eq(version)
+    end
+
+    it "does not overwrite an existing prompt_version_id" do
+      existing_version = create(:prompt_version)
+      prompt = create(:prompt, :for_project, project: project, slug: described_class::ISSUE_GOAL_PROMPT_SLUG)
+      prompt.create_version!(template: "goal {{base_prompt}} {{repo}}")
+      run = create(:agent_run, :create_issue_goal, project: project, prompt_version: existing_version)
+
+      activity.send(:augment_prompt_for_issue_goal, run, "Create the issue")
+
+      expect(run.reload.prompt_version).to eq(existing_version)
+    end
+
+    it "falls back to inline template when no prompt version exists" do
+      allow(Prompt).to receive(:resolve).and_return(nil)
+      run = create(:agent_run, :review_goal, project: project)
+
+      prompt = activity.send(:augment_prompt_for_review_goal, run, "Review the branch")
+
+      expect(run.reload.prompt_version_id).to be_nil
+      expect(prompt).to include("Review the branch")
     end
   end
 
