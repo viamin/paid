@@ -520,7 +520,7 @@ RSpec.describe Activities::RunAgentActivity do
     it "includes knowledge context when artifacts are available" do
       base_prompt = "Enhance this issue with implementation context."
       allow(Knowledge::ContextBundle::Build).to receive(:call)
-        .with(issue: issue, project: project, agent_run: agent_run)
+        .with(issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id)
         .and_return(content: "## Codebase Context\n\n- Hunt#last_active uses prey.updated_at")
 
       prompt = activity.send(:augment_prompt_for_enhance_issue_goal, agent_run, base_prompt)
@@ -534,7 +534,7 @@ RSpec.describe Activities::RunAgentActivity do
     it "renders without knowledge context when no artifacts are available" do
       base_prompt = "Enhance this issue with implementation context."
       allow(Knowledge::ContextBundle::Build).to receive(:call)
-        .with(issue: issue, project: project, agent_run: agent_run)
+        .with(issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id)
         .and_return(content: "")
 
       prompt = activity.send(:augment_prompt_for_enhance_issue_goal, agent_run, base_prompt)
@@ -571,7 +571,7 @@ RSpec.describe Activities::RunAgentActivity do
       version = prompt.create_version!(template: "enhance {{base_prompt}} {{repo}} {{issue_number}}")
       run = create(:agent_run, :enhance_issue_goal, project: project, issue: issue)
       allow(Knowledge::ContextBundle::Build).to receive(:call)
-        .with(issue: issue, project: project, agent_run: run)
+        .with(issue: issue, project: project, agent_run: run, agent_run_id: run.id)
         .and_return(content: "")
 
       activity.send(:augment_prompt_for_enhance_issue_goal, run, "Enhance this issue")
@@ -609,7 +609,7 @@ RSpec.describe Activities::RunAgentActivity do
     it "injects knowledge context for issue-goal runs with custom_prompt" do
       run = create(:agent_run, :create_issue_goal, project: project, issue: issue, custom_prompt: "Custom coding prompt")
       allow(Knowledge::ContextBundle::Build).to receive(:call)
-        .with(issue: issue, project: project, agent_run: run)
+        .with(issue: issue, project: project, agent_run: run, agent_run_id: run.id)
         .and_return(content: "## Codebase Context\n\n- important context")
 
       prompt = activity.send(:augment_prompt_for_issue_goal, run, "Custom coding prompt")
@@ -672,7 +672,7 @@ RSpec.describe Activities::RunAgentActivity do
     it "uses an assigned enhance-issue variant prompt version" do
       run = create(:agent_run, :enhance_issue_goal, project: project, issue: issue)
       allow(Knowledge::ContextBundle::Build).to receive(:call)
-        .with(issue: issue, project: project, agent_run: run)
+        .with(issue: issue, project: project, agent_run: run, agent_run_id: run.id)
         .and_return(content: "")
       variant_version = create_ab_test_assignment(
         slug: described_class::ENHANCE_ISSUE_GOAL_PROMPT_SLUG,
