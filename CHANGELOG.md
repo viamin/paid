@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.32.0](https://github.com/viamin/paid/compare/v0.31.0...v0.32.0) (2026-04-26)
+
+
+### Features
+
+* **auto-pick:** integrate analyze_issue gate into auto-pick strategy ([#1475](https://github.com/viamin/paid/issues/1475)) ([ae59183](https://github.com/viamin/paid/commit/ae59183f8c9c908f9958ad0c7125c39013017d2a)), closes [#1415](https://github.com/viamin/paid/issues/1415)
+* **providers:** display per-provider usage stats on /providers page ([#1470](https://github.com/viamin/paid/issues/1470)) ([ec7640b](https://github.com/viamin/paid/commit/ec7640bbbff0501a1a6bdc70179447cdc66fc1ca))
+
+
+### Bug Fixes
+
+* **auth:** restore login by deferring Warden auth until after CSRF check ([#1473](https://github.com/viamin/paid/issues/1473)) ([df6782c](https://github.com/viamin/paid/commit/df6782cd4b3f6035d47fe3ef84bf3535b57bec41))
+* **prompt-evolution:** persist prompt_version_id for goal-augmented runs ([#1480](https://github.com/viamin/paid/issues/1480)) ([56675c9](https://github.com/viamin/paid/commit/56675c93f162ba4520c6c56cbc3c85bc8c38c18a)), closes [#1324](https://github.com/viamin/paid/issues/1324)
+* **providers:** upgrade agent-harness to 0.11.0 for GitHub Copilot CLI fix ([#1313](https://github.com/viamin/paid/issues/1313)) ([#1479](https://github.com/viamin/paid/issues/1479)) ([9d7d63e](https://github.com/viamin/paid/commit/9d7d63e5f1e72ecb12f1b8b47cf99fd00f636a92))
+
 ## [0.31.0](https://github.com/viamin/paid/compare/v0.30.0...v0.31.0) (2026-04-26)
 
 
