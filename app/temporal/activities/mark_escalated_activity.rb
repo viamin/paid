@@ -84,7 +84,7 @@ module Activities
       lines << ""
       lines << "**How to resolve:**"
       lines << "- **Approve** this PR to allow auto-merge (if enabled)"
-      lines << "- **Add the `paid-dismiss-escalation` label** to move back to the `ready` phase without merging"
+      lines << "- **Remove the `paid-escalated` label** to dismiss escalation and let automation try again"
       lines << "- **Convert to draft** on GitHub to restart the automated review cycle"
       lines.join("\n")
     end

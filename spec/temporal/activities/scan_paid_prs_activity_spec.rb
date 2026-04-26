@@ -4194,7 +4194,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "does not re-escalate PRs already in escalated phase" do
-        pr_issue.update!(pr_review_phase: "escalated")
+        pr_issue.update!(
+          pr_review_phase: "escalated",
+          labels: pr_issue.labels + [ "paid-escalated" ]
+        )
         3.times do |i|
           create_followup_run(
             status: "failed",
@@ -4230,6 +4233,40 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         if triggers.any?
           expect(triggers.first[:triggers].first[:type]).not_to eq("escalate_to_owner")
         end
+      end
+
+      it "does not immediately re-escalate after the operational reset boundary" do
+        pr_issue.update!(operational_failure_reset_at: Time.current)
+        3.times do |i|
+          create_followup_run(
+            status: "failed",
+            error_message: "All providers exhausted: claude_code",
+            created_at: (i + 1).minutes.ago
+          )
+        end
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger]
+        if triggers.any?
+          expect(triggers.first[:triggers].first[:type]).not_to eq("escalate_to_owner")
+        end
+      end
+
+      it "can re-escalate after a fresh post-dismiss streak of operational failures" do
+        pr_issue.update!(operational_failure_reset_at: 10.minutes.ago)
+        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 1.minute.ago)
+        create_followup_run(status: "rate_limited", error_message: "All providers rate limited", created_at: 2.minutes.ago)
+        create_followup_run(
+          status: "failed",
+          error_message: "All providers exhausted: claude_code",
+          created_at: 3.minutes.ago
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("escalate_to_owner")
       end
     end
 
@@ -5150,7 +5187,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ],
+          labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
           pr_review_phase: "escalated",
           paid_state: "completed")
         stub_github_for_pr(
@@ -5192,7 +5229,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       let!(:pr_issue) do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ],
+          labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
           pr_review_phase: "escalated",
           draft_review_count: 10,
           pr_followup_count: 3)
@@ -5243,7 +5280,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       let!(:pr_issue) do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ],
+          labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
           pr_review_phase: "escalated",
           draft_review_count: 10,
           pr_followup_count: 3)
@@ -5732,7 +5769,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       let!(:pr_issue) do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ],
+          labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
           pr_review_phase: "escalated",
           draft_review_count: 10,
           pr_followup_count: 3)
@@ -5784,7 +5821,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       let!(:pr_issue) do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ],
+          labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
           pr_review_phase: "escalated",
           draft_review_count: 10,
           pr_followup_count: 3)
@@ -5815,7 +5852,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ],
+          labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
           pr_review_phase: "escalated",
           paid_state: "completed")
         stub_github_for_pr(
@@ -5857,11 +5894,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
-    context "when escalated PR has the paid-dismiss-escalation label" do
+    context "when escalated PR no longer has the paid-escalated label" do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation", "paid-dismiss-escalation" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "escalated",
           paid_state: "completed")
         stub_github_for_pr
@@ -5874,6 +5911,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("dismiss_escalation")
         expect(trigger[:phase]).to eq("escalated")
+        expect(trigger[:draft]).to be(false)
       end
     end
 
@@ -6410,7 +6448,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "does not re-escalate when issue is already escalated" do
-        pr_issue.update!(review_goal_retry_count: 3, pr_review_phase: "escalated")
+        pr_issue.update!(
+          review_goal_retry_count: 3,
+          pr_review_phase: "escalated",
+          labels: pr_issue.labels + [ "paid-escalated" ]
+        )
         3.times do
           create(:agent_run, :failed,
             project: project,
@@ -7674,11 +7716,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
-  context "when escalated PR has reached the review-goal retry limit" do
+  context "when escalated PR has reached the review-goal retry limit and the escalation label was removed" do
     let(:escalated_retry_issue) do
       create(:issue, :pull_request,
         project: project, github_number: 42,
-        labels: [ "paid-generated", "paid-automation", "paid-dismiss-escalation" ],
+        labels: [ "paid-generated", "paid-automation" ],
         pr_review_phase: "escalated",
         paid_state: "completed")
     end
@@ -7695,7 +7737,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_github_for_pr
     end
 
-    it "still reaches scan_escalated_pr and processes the dismiss label" do
+    it "still dismisses instead of getting stuck behind the retry limit" do
       result = activity.execute(project_id: project.id)
 
       expect(result[:prs_to_trigger].size).to eq(1)
@@ -7711,11 +7753,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
-  context "when escalated PR at retry limit has no dismiss label" do
+  context "when escalated PR at retry limit still has the escalation label" do
     let(:escalated_no_dismiss_issue) do
       create(:issue, :pull_request,
         project: project, github_number: 42,
-        labels: [ "paid-generated", "paid-automation" ],
+        labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
         pr_review_phase: "escalated",
         paid_state: "completed")
     end
@@ -7744,6 +7786,30 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
       expect(triggers).not_to include("escalate_to_owner")
+    end
+  end
+
+  context "when an escalated draft PR has the escalation label removed" do
+    before do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "escalated",
+        paid_state: "completed")
+      stub_github_for_pr(draft: true)
+    end
+
+    it "detects dismissal before the draft restart path" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger]).to contain_exactly(
+        hash_including(
+          pr_number: 42,
+          phase: "escalated",
+          draft: true,
+          triggers: contain_exactly(hash_including(type: "dismiss_escalation"))
+        )
+      )
     end
   end
 

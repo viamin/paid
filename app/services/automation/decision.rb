@@ -52,8 +52,8 @@ module Automation
         }.compact)
       end
 
-      def dismiss_escalation(issue_id:)
-        new(type: "dismiss_escalation", payload: { issue_id: issue_id })
+      def dismiss_escalation(issue_id:, draft: nil)
+        new(type: "dismiss_escalation", payload: { issue_id: issue_id, draft: draft }.compact)
       end
 
       def merge(issue_id:, pr_number:)

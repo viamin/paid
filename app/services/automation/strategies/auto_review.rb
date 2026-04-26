@@ -113,7 +113,7 @@ module Automation
         end
 
         if trigger_types.include?("dismiss_escalation")
-          decisions << Automation::Decision.dismiss_escalation(issue_id: signals.issue_id)
+          decisions << Automation::Decision.dismiss_escalation(issue_id: signals.issue_id, draft: signals.draft)
           return decisions
         end
 
