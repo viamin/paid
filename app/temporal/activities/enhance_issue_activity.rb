@@ -165,7 +165,8 @@ module Activities
       Knowledge::ContextBundle::Build.call(
         issue: issue,
         project: project,
-        agent_run: agent_run
+        agent_run: agent_run,
+        agent_run_id: agent_run.id
       )
     rescue Temporalio::Error::CanceledError
       raise
