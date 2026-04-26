@@ -836,7 +836,10 @@ module Containers
         touch "$config" 2>/dev/null || true;
         tmp="$(mktemp)";
         awk -v notify_line=#{escaped_notify_line} '
-          /^[[:space:]]*\\[notify\\][[:space:]]*$/ { next }
+          BEGIN { in_notify = 0 }
+          /^[[:space:]]*\\[notify\\][[:space:]]*$/ { in_notify = 1; next }
+          in_notify && /^[[:space:]]*\\[[^]]+\\][[:space:]]*$/ { in_notify = 0 }
+          in_notify { next }
           /^[[:space:]]*notify[[:space:]]*=/ { next }
           !inserted && /^[[:space:]]*\\[[^]]+\\][[:space:]]*$/ { print notify_line; print ""; inserted = 1 }
           { print }
