@@ -622,7 +622,7 @@ module Activities
       log_container_context(agent_run, provider)
       execution_started_at = Time.current
 
-      effective_timeout = if agent_run.create_issue_goal? || agent_run.enhance_issue_goal?
+      effective_timeout = if agent_run.create_issue_goal? || agent_run.enhance_issue_goal? || agent_run.analyze_issue_goal?
         user_settings&.issue_goal_timeout_seconds || DEFAULT_ISSUE_GOAL_TIMEOUT
       else
         user_settings&.agent_timeout_seconds || agent_timeout
@@ -637,7 +637,7 @@ module Activities
         effective_timeout = [ effective_timeout, remaining ].min
       end
 
-      effective_idle_timeout = if agent_run.create_issue_goal? || agent_run.enhance_issue_goal?
+      effective_idle_timeout = if agent_run.create_issue_goal? || agent_run.enhance_issue_goal? || agent_run.analyze_issue_goal?
         user_settings&.issue_goal_idle_timeout_seconds || DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT
       elsif agent_run.review_goal?
         user_settings&.review_goal_idle_timeout_seconds || DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT

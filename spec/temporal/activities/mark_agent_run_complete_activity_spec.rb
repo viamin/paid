@@ -55,6 +55,15 @@ RSpec.describe Activities::MarkAgentRunCompleteActivity do
       expect(issue.reload.paid_state).to eq("completed")
     end
 
+    it "updates issue paid_state to analyzed for analyze_issue goals" do
+      issue = create(:issue, :in_progress, project: project)
+      agent_run = create(:agent_run, :running, :analyze_issue_goal, project: project, issue: issue)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(issue.reload.paid_state).to eq("analyzed")
+    end
+
     it "does not update issue paid_state for no_output create_pr runs" do
       issue = create(:issue, :in_progress, project: project)
       agent_run = create(:agent_run, :running, project: project, issue: issue)

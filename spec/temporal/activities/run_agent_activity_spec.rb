@@ -1707,6 +1707,26 @@ RSpec.describe Activities::RunAgentActivity do
       end
     end
 
+    context "when goal is analyze_issue" do
+      let(:agent_run) do
+        create(:agent_run, :analyze_issue_goal, project: project, issue: issue, container_id: "abc123")
+      end
+
+      before do
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive(:head_sha).and_return("sha123")
+      end
+
+      it "uses the shorter issue goal timeout" do
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(timeout: described_class::DEFAULT_ISSUE_GOAL_TIMEOUT)
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
     context "when goal is create_pr" do
       it "uses the default agent timeout with create_pr idle_timeout" do
         project.update!(max_execution_seconds: 86_400)

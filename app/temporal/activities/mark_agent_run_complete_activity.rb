@@ -21,7 +21,8 @@ module Activities
           agent_run.log!("system", "Completed without output: #{reason}")
 
           if agent_run.issue && agent_run.status != "no_output"
-            agent_run.issue.update!(paid_state: "completed")
+            paid_state = agent_run.analyze_issue_goal? ? "analyzed" : "completed"
+            agent_run.issue.update!(paid_state: paid_state)
           end
 
           logger.info(

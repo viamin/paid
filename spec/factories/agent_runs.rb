@@ -199,5 +199,9 @@ FactoryBot.define do
     trait :enhance_issue_goal do
       goal { "enhance_issue" }
     end
+
+    trait :analyze_issue_goal do
+      goal { "analyze_issue" }
+    end
   end
 end

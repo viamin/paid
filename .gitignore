@@ -67,6 +67,7 @@ WORKLOG.md
 # Build artifacts (PostgreSQL, libyaml, ruby-build, etc.)
 /.build
 /.tmp-*/
+/.tmpbin/
 /.*-build/
 /.*_build/
 config.log
