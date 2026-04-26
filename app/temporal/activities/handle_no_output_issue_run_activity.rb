@@ -22,23 +22,19 @@ module Activities
     NEEDS_INPUT_COMMENT_MARKER = "<!-- paid:needs-input -->"
     RECOMMEND_CLOSE_COMMENT_MARKER = "<!-- paid:recommend-close -->"
 
-    # Patterns indicating the agent "output" is actually a provider-level
-    # credit/quota/billing error rather than legitimate agent output. When
-    # matched, the output is treated as evidence of a provider failure, not
-    # grounds to recommend closing the issue. Mirrors and extends the patterns
-    # in RunAgentActivity so a provider error that slipped past the primary
-    # detector is still caught here.
-    PROVIDER_ERROR_OUTPUT_PATTERNS = [
-      /requires? more credits/i,
-      /add more credits/i,
-      /insufficient credits/i,
-      /not enough credits/i,
-      /purchase (?:more )?credits/i,
-      /buy (?:more )?credits/i,
+    # Supplementary patterns used alongside quota patterns from agent-harness
+    # to detect provider-level errors in agent output. Includes rate-limit
+    # indicators and credit/quota phrases not yet covered by agent-harness.
+    SUPPLEMENTARY_ERROR_PATTERNS = [
       /quota exceeded/i,
       /rate.?limit/i,
       /too many requests/i,
-      /\b429\b/
+      /\b429\b/,
+      /add more credits/i,
+      /not enough credits/i,
+      /purchase (?:more )?credits/i,
+      /buy (?:more )?credits/i,
+      /requires? more credits/i
     ].freeze
 
     def execute(input)
@@ -110,7 +106,12 @@ module Activities
     def provider_error_output?(text)
       return false if text.blank?
 
-      PROVIDER_ERROR_OUTPUT_PATTERNS.any? { |pattern| text.match?(pattern) }
+      provider_error_patterns.any? { |pattern| text.match?(pattern) }
+    end
+
+    def provider_error_patterns
+      @provider_error_patterns ||= ProviderSupport.aggregated_error_classification_patterns(:quota) +
+        SUPPLEMENTARY_ERROR_PATTERNS
     end
 
     def handle_provider_error(agent_run, agent_summary)
