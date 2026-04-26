@@ -431,9 +431,25 @@ module Workflows
     end
 
     def handle_dismiss_escalation(project_id, pr_data)
-      run_activity(Activities::DismissEscalationActivity,
-        { issue_id: pr_data[:issue_id] },
+      result = run_activity(Activities::DismissEscalationActivity,
+        { issue_id: pr_data[:issue_id], draft: pr_data[:draft] == true },
         timeout: 30)
+      return unless result[:dismissed]
+
+      resumed_pr_data = {
+        issue_id: result[:issue_id],
+        pr_number: result[:pr_number],
+        phase: result[:phase],
+        current_draft_review_count: result[:current_draft_review_count],
+        current_followup_count: result[:current_followup_count],
+        labels_to_remove: []
+      }
+
+      if result[:phase].in?(%w[draft restarted])
+        start_draft_followup_workflow(project_id, resumed_pr_data)
+      else
+        start_pr_followup_workflow(project_id, resumed_pr_data)
+      end
     end
 
     def request_owner_review(project_id, pr_data)

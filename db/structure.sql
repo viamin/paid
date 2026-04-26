@@ -1440,6 +1440,7 @@ CREATE TABLE public.issues (
     relationships_parsed_at timestamp(6) without time zone,
     review_goal_retry_count integer DEFAULT 0 NOT NULL,
     review_goal_retry_reset_at timestamp(6) without time zone,
+    operational_failure_reset_at timestamp(6) without time zone,
     ci_action_dispatched_at timestamp(6) without time zone,
     deployed_at timestamp(6) without time zone,
     enhance_issue_rounds integer DEFAULT 0 NOT NULL
@@ -9428,6 +9429,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260426114303'),
 ('20260426011810'),
 ('20260425225105'),
 ('20260425164954'),

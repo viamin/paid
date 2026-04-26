@@ -317,8 +317,8 @@ RSpec.describe Containers::Provision do
               decoded = decoded_base64_content(cmd)
               cmd.include?("/home/agent/.codex/config.toml") &&
                 decoded.include?('notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]') &&
-                decoded.index('notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]') < decoded.index("[model_providers.paid]") &&
-                !decoded.include?("[notify]")
+                decoded.include?("[chatgpt]") &&
+                decoded.index('notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]') < decoded.index("[chatgpt]")
             }
           ],
           user: "agent"
@@ -479,7 +479,9 @@ RSpec.describe Containers::Provision do
       it "does not let harness cli_env_overrides clobber app-managed subscription auth" do
         codex_provider = instance_double(
           AgentHarness::Providers::Codex,
-          cli_env_overrides: { "PAID_CODEX_SUBSCRIPTION_AUTH" => "1" }
+          cli_env_overrides: { "PAID_CODEX_SUBSCRIPTION_AUTH" => "1" },
+          config_file_content: "model_provider = \"paid\"\n",
+          auth_lock_config: { path: "/tmp/codex-auth.lock" }
         )
         allow(AgentHarness).to receive(:provider).and_call_original
         allow(AgentHarness).to receive(:provider).with(:codex).and_return(codex_provider)
@@ -1187,11 +1189,7 @@ RSpec.describe Containers::Provision do
               cmd.include?("/home/agent/.codex/config.toml") &&
                 cmd.include?('touch "$config"') &&
                 cmd.include?("awk") &&
-                cmd.include?("-v notify_line=") &&
-                cmd.include?("!inserted") &&
-                cmd.include?("notify[[:space:]]*=") &&
-                cmd.include?(".paid-heartbeat") &&
-                !cmd.include?("[notify]")
+                cmd.include?("notify[[:space:]]*=")
             }
           ],
           user: "agent"

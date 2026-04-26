@@ -5,6 +5,7 @@ require Rails.root.join("db/migrate/20260421162135_add_account_to_service_contai
 require Rails.root.join("db/migrate/20260421162139_enable_tenant_row_level_security")
 require Rails.root.join("db/migrate/20260425113212_enable_rls_on_knowledge_usage_stats")
 require Rails.root.join("db/migrate/20260425060000_enable_rls_on_notification_rule_states")
+require Rails.root.join("db/migrate/20260426011810_enable_rls_on_llm_output_metrics")
 
 RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   self.use_transactional_tests = false
@@ -13,6 +14,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   let(:rls_migration) { EnableTenantRowLevelSecurity.new }
   let(:knowledge_rls_migration) { EnableRlsOnKnowledgeUsageStats.new }
   let(:notification_rls_migration) { EnableRlsOnNotificationRuleStates.new }
+  let(:llm_output_metrics_rls_migration) { EnableRlsOnLlmOutputMetrics.new }
 
   include MigrationSpecHelpers
 
@@ -20,6 +22,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     truncate_migration_test_data
 
     if tenant_policy_count.positive?
+      llm_output_metrics_rls_migration.down if llm_output_metrics_has_rls?
       knowledge_rls_migration.down if knowledge_usage_stats_has_rls?
       notification_rls_migration.down
       rls_migration.down
@@ -39,6 +42,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       rls_migration.up
       notification_rls_migration.up
       knowledge_rls_migration.up unless knowledge_usage_stats_has_rls?
+      llm_output_metrics_rls_migration.up unless llm_output_metrics_has_rls?
     end
     ServiceContainer.reset_column_information
   end
@@ -198,6 +202,12 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   def knowledge_usage_stats_has_rls?
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'knowledge_usage_stats' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
+  end
+
+  def llm_output_metrics_has_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'llm_output_metrics' AND policyname = 'tenant_isolation'"
     ).to_i.positive?
   end
 
