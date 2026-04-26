@@ -367,14 +367,15 @@ module Knowledge
       end
 
       def experiment_value(config_key)
-        return nil unless agent_run
+        resolved_run = tracking_agent_run
+        return nil unless resolved_run
 
-        experiment = ConfigurationExperiment.active_for(config_key, project: project, agent_run: agent_run)
+        experiment = ConfigurationExperiment.active_for(config_key, project: project, agent_run: resolved_run)
         return nil unless experiment
 
         assignment = ConfigurationExperiments::Assign.call(
           configuration_experiment: experiment,
-          agent_run: agent_run
+          agent_run: resolved_run
         )
         normalize_experiment_value(config_key, assignment.configuration_experiment_variant.parsed_value)
       end
