@@ -6,7 +6,7 @@
 #
 # Triggered by:
 # - GitHub webhooks (check_suite.completed, pull_request.opened/synchronize/labeled)
-# - Safety-net enqueue from the project poll loop
+# - Poll loop via EvaluateAutoReleaseActivity (every cycle when auto_release enabled)
 #
 # Concurrency: at most one evaluation per project at a time.
 class AutoReleaseEvaluationJob < ApplicationJob
