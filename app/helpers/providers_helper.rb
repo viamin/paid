@@ -56,6 +56,24 @@ module ProvidersHelper
     Provider.supported_provider_keys.map { |provider_key| provider_auth_instruction_block(provider_key) }
   end
 
+  def provider_usage_stats_for(provider)
+    return unless @usage_stats
+
+    stats = @usage_stats[provider.provider_key]
+    stats ||= @usage_stats[provider.routing_key]
+    stats
+  end
+
+  def format_token_count(count)
+    if count >= 1_000_000
+      "#{(count / 1_000_000.0).round(1)}M"
+    elsif count >= 1_000
+      "#{(count / 1_000.0).round(1)}k"
+    else
+      count.to_s
+    end
+  end
+
   private
 
   def provider_auth_instruction_block(provider_key)

@@ -1,0 +1,46 @@
+<% if @usage_stats.present? %>
+  <div class="mt-8">
+    <details class="rounded-lg border border-gray-200 bg-white shadow">
+      <summary class="cursor-pointer list-none px-4 py-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base font-semibold text-gray-900">Provider Usage Details (7 days)</h2>
+          <span class="text-xs text-gray-500">Click to expand</span>
+        </div>
+      </summary>
+      <div class="border-t border-gray-200 divide-y divide-gray-100">
+        <% @providers.each do |provider| %>
+          <% stats = provider_usage_stats_for(provider) %>
+          <% next unless stats %>
+          <div class="px-4 py-3">
+            <h3 class="text-sm font-semibold text-gray-900"><%= provider.display_name %></h3>
+            <div class="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div>
+                <p class="text-xs text-gray-500">Runs</p>
+                <p class="text-sm font-medium text-gray-900"><%= number_with_delimiter(stats[:runs_7d]) %></p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Cost</p>
+                <p class="text-sm font-medium text-gray-900"><%= number_to_currency(stats[:cost_cents_7d] / 100.0) %></p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Tokens</p>
+                <p class="text-sm font-medium text-gray-900"><%= number_to_human(stats[:tokens_7d], precision: 2, significant: true) %></p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Rate Limit Events</p>
+                <p class="text-sm font-medium text-gray-900"><%= number_with_delimiter(stats[:rate_limit_events_7d]) %></p>
+              </div>
+            </div>
+            <% if stats[:fallback_total] > 0 %>
+              <div class="mt-2">
+                <p class="text-xs text-gray-500">
+                  Fallback: <%= stats[:fallback_switched] %> of <%= stats[:fallback_total] %> runs switched away (<%= stats[:fallback_rate] %>%)
+                </p>
+              </div>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+    </details>
+  </div>
+<% end %>
