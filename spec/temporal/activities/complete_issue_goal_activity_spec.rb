@@ -8,6 +8,13 @@ RSpec.describe Activities::CompleteIssueGoalActivity do
 
   describe "#execute" do
     context "when the agent created an issue" do
+      let(:github_client) { instance_double(GithubClient) }
+
+      before do
+        allow(GithubClient).to receive(:new).and_return(github_client)
+        allow(github_client).to receive(:add_labels_to_issue)
+      end
+
       it "marks the agent run as completed with issue details" do
         agent_run = create(:agent_run, :running, project: project,
           created_issue_url: "https://github.com/example/repo/issues/42",
@@ -28,12 +35,10 @@ RSpec.describe Activities::CompleteIssueGoalActivity do
           created_issue_url: "https://github.com/example/repo/issues/42",
           created_issue_number: 42)
 
-        expect {
-          activity.execute(agent_run_id: agent_run.id)
-        }.to change(AgentRunLog, :count).by(1)
+        activity.execute(agent_run_id: agent_run.id)
 
-        log = agent_run.agent_run_logs.last
-        expect(log.content).to include("issue #42 created")
+        logs = agent_run.agent_run_logs.pluck(:content)
+        expect(logs).to include(a_string_including("issue #42 created"))
       end
 
       it "enqueues ProcessRunQueueJob" do
@@ -71,6 +76,74 @@ RSpec.describe Activities::CompleteIssueGoalActivity do
           finished: true,
           cancelled: true
         )
+      end
+
+      context "with a priority tier" do
+        it "applies the priority label to the created GitHub issue" do
+          agent_run = create(:agent_run, :running, project: project,
+            priority_tier: "P1",
+            created_issue_url: "https://github.com/example/repo/issues/42",
+            created_issue_number: 42)
+
+          activity.execute(agent_run_id: agent_run.id)
+
+          expect(github_client).to have_received(:add_labels_to_issue)
+            .with(project.full_name, 42, [ "P1" ])
+        end
+
+        it "uses the project custom priority label name" do
+          project.update!(priority_labels: { "P1" => "critical" })
+          agent_run = create(:agent_run, :running, project: project,
+            priority_tier: "P1",
+            created_issue_url: "https://github.com/example/repo/issues/42",
+            created_issue_number: 42)
+
+          activity.execute(agent_run_id: agent_run.id)
+
+          expect(github_client).to have_received(:add_labels_to_issue)
+            .with(project.full_name, 42, [ "critical" ])
+        end
+
+        it "logs the label application" do
+          agent_run = create(:agent_run, :running, project: project,
+            priority_tier: "P2",
+            created_issue_url: "https://github.com/example/repo/issues/42",
+            created_issue_number: 42)
+
+          activity.execute(agent_run_id: agent_run.id)
+
+          logs = agent_run.agent_run_logs.pluck(:content)
+          expect(logs).to include(a_string_including("Applied priority label: P2"))
+        end
+
+        it "logs failure but does not raise when label application fails" do
+          allow(github_client).to receive(:add_labels_to_issue)
+            .and_raise(GithubClient::Error, "Not Found")
+
+          agent_run = create(:agent_run, :running, project: project,
+            priority_tier: "P1",
+            created_issue_url: "https://github.com/example/repo/issues/42",
+            created_issue_number: 42)
+
+          result = activity.execute(agent_run_id: agent_run.id)
+
+          expect(result[:success]).to be true
+          expect(result[:issue_created]).to be true
+          logs = agent_run.agent_run_logs.pluck(:content)
+          expect(logs).to include(a_string_including("Failed to apply priority label"))
+        end
+      end
+
+      context "without a priority tier" do
+        it "does not call the GitHub labels API" do
+          agent_run = create(:agent_run, :running, project: project,
+            created_issue_url: "https://github.com/example/repo/issues/42",
+            created_issue_number: 42)
+
+          activity.execute(agent_run_id: agent_run.id)
+
+          expect(github_client).not_to have_received(:add_labels_to_issue)
+        end
       end
     end
 
