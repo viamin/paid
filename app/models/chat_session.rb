@@ -1,0 +1,31 @@
+# frozen_string_literal: true
+
+class ChatSession < ApplicationRecord
+  include TenantScoped
+
+  STATUSES = %w[active idle closed archived].freeze
+  MODES = %w[api workspace].freeze
+
+  before_validation :set_external_id, on: :create
+
+  belongs_to :project, optional: true
+  belongs_to :provider, optional: true
+  belongs_to :created_by, class_name: "User"
+
+  has_many :messages, class_name: "ChatMessage", dependent: :destroy
+  has_many :chat_session_projects, dependent: :destroy
+  has_many :projects, through: :chat_session_projects
+
+  validates :status, inclusion: { in: STATUSES }
+  validates :mode, inclusion: { in: MODES }
+  validates :external_id, uniqueness: true
+
+  scope :active, -> { where(status: "active") }
+  scope :idle_expired, -> { where(status: "active").where("idle_timeout_at < ?", Time.current) }
+
+  private
+
+  def set_external_id
+    self.external_id ||= SecureRandom.uuid
+  end
+end
