@@ -23,6 +23,23 @@ module FeatureFlagTasks
   def scope_label(project)
     project ? "project #{project.full_name}" : "global"
   end
+
+  def print_status(flag_name, project: nil)
+    definition = FeatureFlags.definition(flag_name)
+    enabled = FeatureFlags.enabled?(definition.name, project:)
+    rollout = FeatureFlags.rollout_status(definition.name)
+
+    puts "#{definition.name}: #{enabled ? 'enabled' : 'disabled'} (#{scope_label(project)})"
+    puts "  owner: #{definition.owner}"
+    puts "  intent: #{definition.intent}"
+    puts "  rollout_plan: #{definition.rollout_plan}"
+    puts "  cleanup_criteria: #{definition.cleanup_criteria}"
+    puts "  boolean: #{rollout[:boolean]}"
+    puts "  percentage_of_actors: #{rollout[:percentage_of_actors]}"
+    puts "  percentage_of_time: #{rollout[:percentage_of_time]}"
+    puts "  actors: #{rollout[:actors].presence || 'none'}"
+    puts "  groups: #{rollout[:groups].presence || 'none'}"
+  end
 end
 
 namespace :feature_flags do
@@ -31,13 +48,7 @@ namespace :feature_flags do
     project = FeatureFlagTasks.project_scope
 
     FeatureFlags.definitions.each do |definition|
-      enabled = FeatureFlags.enabled?(definition.name, project:)
-
-      puts "#{definition.name}: #{enabled ? 'enabled' : 'disabled'} (#{FeatureFlagTasks.scope_label(project)})"
-      puts "  owner: #{definition.owner}"
-      puts "  intent: #{definition.intent}"
-      puts "  rollout_plan: #{definition.rollout_plan}"
-      puts "  cleanup_criteria: #{definition.cleanup_criteria}"
+      FeatureFlagTasks.print_status(definition.name, project:)
     end
   end
 
@@ -55,5 +66,24 @@ namespace :feature_flags do
     FeatureFlags.disable!(args.fetch(:flag), project:)
 
     puts "Disabled #{args.fetch(:flag)} for #{FeatureFlagTasks.scope_label(project)}"
+  end
+
+  desc "Enable a percentage-of-actors rollout globally"
+  task :enable_percentage_of_actors, [ :flag, :percentage ] => :environment do |_task, args|
+    FeatureFlags.enable_percentage_of_actors(args.fetch(:flag), args.fetch(:percentage))
+
+    puts "Enabled #{args.fetch(:flag)} for #{args.fetch(:percentage)}% of actors"
+  end
+
+  desc "Enable a percentage-of-time rollout globally"
+  task :enable_percentage_of_time, [ :flag, :percentage ] => :environment do |_task, args|
+    FeatureFlags.enable_percentage_of_time(args.fetch(:flag), args.fetch(:percentage))
+
+    puts "Enabled #{args.fetch(:flag)} for #{args.fetch(:percentage)}% of time"
+  end
+
+  desc "Show full rollout status for a feature flag"
+  task :status, [ :flag ] => :environment do |_task, args|
+    FeatureFlagTasks.print_status(args.fetch(:flag), project: FeatureFlagTasks.project_scope)
   end
 end
