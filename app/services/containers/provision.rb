@@ -747,8 +747,7 @@ module Containers
         env_key: "OPENAI_API_KEY",
         wire_api: "responses"
       )
-      notify_line = 'notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]'
-      content = "#{notify_line}\n\n#{config_toml}"
+      content = "#{codex_notify_line}\n\n#{config_toml}"
 
       write_container_file("/home/agent/.codex/config.toml", content)
       log_system("container.codex_config_seeded")
@@ -818,10 +817,9 @@ module Containers
     # Codex turns without leaving duplicate TOML keys.
     # Creates config.toml when subscription auth only provided auth.json.
     def seed_codex_notify_hook!
-      notify_content = codex_harness_provider.notify_hook_content
-      escaped_content = Shellwords.escape(notify_content)
+      escaped_notify = Shellwords.escape(codex_notify_line)
       result = container.exec(
-        [ "sh", "-lc", codex_notify_rewrite_script(escaped_content) ],
+        [ "sh", "-lc", codex_notify_rewrite_script(escaped_notify) ],
         user: "agent"
       )
       exit_code = result.is_a?(Array) ? result[2].to_i : 0
@@ -832,17 +830,18 @@ module Containers
       log_system("container.codex_notify_hook_seed_failed", error: e.message)
     end
 
-    def codex_notify_rewrite_script(escaped_notify_content)
+    def codex_notify_rewrite_script(escaped_notify_line)
       <<~SH.squish
         config=/home/agent/.codex/config.toml;
         touch "$config" 2>/dev/null || true;
         tmp="$(mktemp)";
-        awk '
+        awk -v notify_line=#{escaped_notify_line} '
           /^[[:space:]]*\\[notify\\][[:space:]]*$/ { next }
           /^[[:space:]]*notify[[:space:]]*=/ { next }
+          !inserted && /^[[:space:]]*\\[[^]]+\\][[:space:]]*$/ { print notify_line; print ""; inserted = 1 }
           { print }
+          END { if (!inserted) { print ""; print notify_line } }
         ' "$config" > "$tmp" &&
-        printf '%s' #{escaped_notify_content} >> "$tmp" &&
         cat "$tmp" > "$config";
         status=$?;
         rm -f "$tmp";
@@ -1709,6 +1708,14 @@ module Containers
 
     def codex_harness_provider
       AgentHarness.provider(:codex)
+    end
+
+    # Single source of truth for the Codex heartbeat notify line used in both
+    # fresh-config (seed_codex_config!) and subscription-auth (seed_codex_notify_hook!)
+    # paths. The agent-harness notify_hook_content returns only a TOML section
+    # header; the actual heartbeat command is Paid-specific.
+    def codex_notify_line
+      'notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]'
     end
 
     def copilot_config_host_path
