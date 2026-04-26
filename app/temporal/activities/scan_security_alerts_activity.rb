@@ -57,8 +57,9 @@ module Activities
       open_alerts = all_alerts.select { |a| a[:state] == "open" }
       SecurityAlerts::ProcessCodeScanningAlerts.new(project).call(open_alerts)
 
-      # Record successful scan. Retryable errors (5xx) intentionally skip
-      # this so Temporal retries re-check within the same interval window.
+      # Record scan timestamp only after successful processing. Retryable
+      # errors (5xx) intentionally skip this so Temporal retries within the
+      # same interval window.
       project.update_column(:last_code_scanning_scan_at, Time.current)
 
       logger.info(
@@ -67,6 +68,12 @@ module Activities
         alerts_fetched: all_alerts.size,
         alerts_actionable: open_alerts.size
       )
+    rescue SecurityAlerts::ConfigurationError
+      # Record scan attempt to avoid hammering the API every poll cycle while
+      # the underlying config issue persists, then re-raise so the workflow
+      # can log the error without failing the entire poll cycle.
+      project.update_column(:last_code_scanning_scan_at, Time.current)
+      raise
     end
 
     def should_scan_code_scanning?(project)
@@ -87,13 +94,10 @@ module Activities
       nil
     rescue GithubClient::ApiError => e
       if e.status == 403
-        logger.warn(
-          message: "github_sync.code_scanning_fetch_failed",
-          project_id: project.id,
-          error: e.message,
-          status: e.status
-        )
-        nil
+        raise SecurityAlerts::ConfigurationError,
+          "GitHub token lacks permission to read code scanning alerts for #{project.full_name}. " \
+          "Ensure the token includes the security_events scope (classic PAT) or " \
+          "code_scanning_alerts:read permission (fine-grained PAT)."
       else
         raise
       end

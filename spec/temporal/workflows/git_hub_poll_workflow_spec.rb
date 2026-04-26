@@ -218,6 +218,73 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
   end
 
+  describe "ScanSecurityAlertsActivity error handling" do
+    let(:workflow) { described_class.new }
+
+    before do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("add-scan-security-alerts-v1").and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("add-rate-limit-budget-v1").and_return(false)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with(anything).and_return(true)
+    end
+
+    def activity_error_with_cause(cause)
+      begin
+        begin
+          raise cause
+        rescue
+          raise Temporalio::Error::ActivityError.new(
+            "activity failed",
+            scheduled_event_id: 1, started_event_id: 2, identity: "",
+            activity_type: "ScanSecurityAlerts", activity_id: "1",
+            retry_state: Temporalio::Error::RetryState::NON_RETRYABLE_FAILURE
+          )
+        end
+      rescue => e
+        e
+      end
+    end
+
+    it "swallows ConfigurationError and continues the poll cycle" do
+      config_error = Temporalio::Error::ApplicationError.new(
+        "Token lacks security_events scope",
+        type: "ConfigurationError",
+        non_retryable: true
+      )
+      activity_error = activity_error_with_cause(config_error)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ScanSecurityAlertsActivity, anything, timeout: anything)
+        .and_raise(activity_error)
+
+      logger = instance_double(Logger, warn: nil)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
+
+      expect { workflow.send(:maybe_scan_code_scanning_alerts, 1) }.not_to raise_error
+
+      expect(logger).to have_received(:warn).with(hash_including(
+        message: "poll.code_scanning_configuration_error",
+        project_id: 1
+      ))
+    end
+
+    it "re-raises non-ConfigurationError ActivityErrors" do
+      other_error = Temporalio::Error::ApplicationError.new(
+        "Something else",
+        type: "OtherError",
+        non_retryable: true
+      )
+      activity_error = activity_error_with_cause(other_error)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ScanSecurityAlertsActivity, anything, timeout: anything)
+        .and_raise(activity_error)
+
+      expect { workflow.send(:maybe_scan_code_scanning_alerts, 1) }
+        .to raise_error(Temporalio::Error::ActivityError)
+    end
+  end
+
   describe "#handle_automation_result" do
     let(:workflow) { described_class.new }
     let(:project_id) { 1 }
