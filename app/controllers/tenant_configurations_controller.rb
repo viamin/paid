@@ -11,12 +11,16 @@ class TenantConfigurationsController < ApplicationController
   def update
     authorize current_account, :update?
 
-    if @tenant_setting.update(tenant_setting_params)
-      redirect_to edit_tenant_configuration_path, notice: "Tenant configuration saved successfully."
-    else
-      load_form_options
-      render :edit, status: :unprocessable_content
+    ActiveRecord::Base.transaction do
+      @tenant_setting.update!(tenant_setting_params)
+      update_feature_flag_rollouts! if feature_flag_rollout_params.present?
     end
+
+    redirect_to edit_tenant_configuration_path, notice: "Tenant configuration saved successfully."
+  rescue ActiveRecord::RecordInvalid, FeatureFlags::InvalidPercentageError => e
+    @tenant_setting.errors.add(:base, e.message) if e.is_a?(FeatureFlags::InvalidPercentageError)
+    load_form_options
+    render :edit, status: :unprocessable_content
   end
 
   private
@@ -28,6 +32,49 @@ class TenantConfigurationsController < ApplicationController
   def load_form_options
     @provider_api_keys = current_account.provider_api_keys.includes(:user).order(:api_service_type, :name)
     @feature_flags = FeatureFlags.definitions
+    @feature_flag_rollouts = @feature_flags.index_with do |definition|
+      FeatureFlags.rollout_status(definition.name)
+    end
+  end
+
+  def update_feature_flag_rollouts!
+    changed = changed_feature_flag_rollouts
+    return if changed.empty?
+
+    # Flipper percentage gates are global (not tenant-scoped), so require
+    # the stricter owner-only manage_feature_flags? policy to prevent
+    # cross-tenant privilege escalation in multi-tenant deployments.
+    authorize current_account, :manage_feature_flags?
+
+    changed.each do |flag_name, rollout|
+      FeatureFlags.enable_percentage_of_actors(flag_name, rollout["percentage_of_actors"])
+      FeatureFlags.enable_percentage_of_time(flag_name, rollout["percentage_of_time"])
+    end
+  end
+
+  def changed_feature_flag_rollouts
+    originals = feature_flag_rollout_original_params
+    feature_flag_rollout_params.select do |flag_name, rollout|
+      original = originals.fetch(flag_name, {})
+      normalize_pct(rollout["percentage_of_actors"]) != normalize_pct(original["percentage_of_actors"]) ||
+        normalize_pct(rollout["percentage_of_time"]) != normalize_pct(original["percentage_of_time"])
+    end
+  end
+
+  def normalize_pct(value)
+    value.to_s.strip == "" ? 0 : Integer(value, exception: false) || -1
+  end
+
+  def feature_flag_rollout_params
+    params.fetch(:feature_flag_rollouts, ActionController::Parameters.new).permit(
+      FeatureFlags::DEFINITIONS.keys.index_with { %i[percentage_of_actors percentage_of_time] }
+    ).to_h
+  end
+
+  def feature_flag_rollout_original_params
+    params.fetch(:feature_flag_rollout_originals, ActionController::Parameters.new).permit(
+      FeatureFlags::DEFINITIONS.keys.index_with { %i[percentage_of_actors percentage_of_time] }
+    ).to_h
   end
 
   def tenant_setting_params
