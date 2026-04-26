@@ -23,15 +23,15 @@ RSpec.describe Knowledge::Collectors::SchemaCollector, :no_db do
     end
   end
 
-  describe "#collect" do
+  shared_examples "schema collection" do |schema_file:|
     let(:artifacts) { collector.collect }
 
     it "sets artifact_type to schema" do
       expect(artifacts).to all(include(artifact_type: "schema"))
     end
 
-    it "sets scope_path to db/schema.rb" do
-      expect(artifacts).to all(include(scope_path: "db/schema.rb"))
+    it "sets scope_path to the detected schema file" do
+      expect(artifacts).to all(include(scope_path: schema_file))
     end
 
     it "extracts application tables" do
@@ -108,9 +108,6 @@ RSpec.describe Knowledge::Collectors::SchemaCollector, :no_db do
       posts = artifacts.find { |a| a[:identifier] == "posts" }
 
       expect(posts[:metadata][:table_name]).to eq("posts")
-      expect(posts[:metadata][:column_count]).to eq(7)
-      expect(posts[:metadata][:index_count]).to eq(2)
-      expect(posts[:metadata][:foreign_key_count]).to eq(1)
       expect(posts[:metadata][:has_timestamps]).to be true
     end
 
@@ -127,19 +124,83 @@ RSpec.describe Knowledge::Collectors::SchemaCollector, :no_db do
 
       expect(first_run).to eq(second_run)
     end
+  end
 
-    context "when db/schema.rb does not exist" do
+  describe "#collect" do
+    context "with db/structure.sql (SQL format)" do
+      before do
+        # Remove schema.rb so structure.sql is used
+        allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with("#{fixture_path}/db/schema.rb").and_return(false)
+      end
+
+      it_behaves_like "schema collection", schema_file: "db/structure.sql"
+
+      it "parses SQL column types correctly" do
+        artifacts = collector.collect
+        posts = artifacts.find { |a| a[:identifier] == "posts" }
+
+        expect(posts[:content]).to include("title (string, not null)")
+        expect(posts[:content]).to include("body (text)")
+        expect(posts[:content]).to include("status (string, default: 'draft')")
+        expect(posts[:content]).to include("views_count (integer, not null, default: 0)")
+      end
+
+      it "stores column and index counts" do
+        artifacts = collector.collect
+        posts = artifacts.find { |a| a[:identifier] == "posts" }
+
+        expect(posts[:metadata][:column_count]).to eq(8)
+        expect(posts[:metadata][:index_count]).to eq(2)
+        expect(posts[:metadata][:foreign_key_count]).to eq(1)
+      end
+    end
+
+    context "with db/schema.rb (Ruby format)" do
+      before do
+        # Remove structure.sql so schema.rb is used
+        allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with("#{fixture_path}/db/structure.sql").and_return(false)
+      end
+
+      it_behaves_like "schema collection", schema_file: "db/schema.rb"
+
+      it "stores column and index counts for schema.rb" do
+        artifacts = collector.collect
+        posts = artifacts.find { |a| a[:identifier] == "posts" }
+
+        expect(posts[:metadata][:column_count]).to eq(7)
+        expect(posts[:metadata][:index_count]).to eq(2)
+        expect(posts[:metadata][:foreign_key_count]).to eq(1)
+      end
+    end
+
+    context "when structure.sql is preferred over schema.rb" do
+      it "uses structure.sql when both files exist" do
+        artifacts = collector.collect
+
+        expect(artifacts).to all(include(scope_path: "db/structure.sql"))
+      end
+    end
+
+    context "when neither schema file exists" do
       let(:fixture_path) { Rails.root.join("spec/fixtures/knowledge/nonexistent").to_s }
 
       it "raises SkipCollector" do
-        expect { collector.collect }.to raise_error(Knowledge::SkipCollector, /schema.rb not found/)
+        expect { collector.collect }.to raise_error(
+          Knowledge::SkipCollector,
+          /neither db\/structure\.sql nor db\/schema\.rb found/
+        )
       end
     end
 
     context "when table has no corresponding model file" do
-      it "excludes tables without model files" do
-        # The tags table has a model file, but if we remove it the table should be excluded
+      before do
         allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with("#{fixture_path}/db/schema.rb").and_return(false)
+      end
+
+      it "excludes tables without model files" do
         allow(File).to receive(:exist?).with("#{fixture_path}/app/models/tag.rb").and_return(false)
 
         identifiers = collector.collect.map { |a| a[:identifier] }
@@ -152,6 +213,7 @@ RSpec.describe Knowledge::Collectors::SchemaCollector, :no_db do
     context "with columns that have no explicit foreign key" do
       before do
         allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with("#{fixture_path}/db/structure.sql").and_return(false)
         allow(File).to receive(:exist?).with("#{fixture_path}/db/schema.rb").and_return(true)
         allow(File).to receive(:exist?).with("#{fixture_path}/app/models/task.rb").and_return(true)
         allow(File).to receive(:read).and_call_original
@@ -168,6 +230,37 @@ RSpec.describe Knowledge::Collectors::SchemaCollector, :no_db do
             add_foreign_key "tasks", "projects"
           end
         SCHEMA
+      end
+
+      it "infers belongs_to from column naming when no FK exists" do
+        result = collector.collect
+        tasks = result.find { |a| a[:identifier] == "tasks" }
+        context_chunk = tasks[:chunks].find { |c| c[:chunk_type] == "context" }
+
+        expect(context_chunk[:content]).to include("belongs_to :project")
+        expect(context_chunk[:content]).to include("belongs_to :assignee (inferred)")
+      end
+    end
+
+    context "with SQL columns that have no explicit foreign key" do
+      before do
+        allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with("#{fixture_path}/db/structure.sql").and_return(true)
+        allow(File).to receive(:exist?).with("#{fixture_path}/app/models/task.rb").and_return(true)
+        allow(File).to receive(:read).and_call_original
+        allow(File).to receive(:read).with("#{fixture_path}/db/structure.sql").and_return(<<~SQL)
+          CREATE TABLE public.tasks (
+              id bigint NOT NULL,
+              title character varying,
+              assignee_id bigint,
+              project_id bigint,
+              created_at timestamp(6) without time zone NOT NULL,
+              updated_at timestamp(6) without time zone NOT NULL
+          );
+
+          ALTER TABLE ONLY public.tasks
+              ADD CONSTRAINT fk_tasks_project FOREIGN KEY (project_id) REFERENCES public.projects(id);
+        SQL
       end
 
       it "infers belongs_to from column naming when no FK exists" do
