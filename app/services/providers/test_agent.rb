@@ -19,23 +19,17 @@ module Providers
     EXPECTED_OUTPUT = "PING OK"
     TIMEOUT = 60
     RATE_LIMIT_PATTERNS = Activities::RunAgentActivity::RATE_LIMIT_PATTERNS
-    AUTHENTICATION_ERROR_PATTERNS = [
+    # Base authentication patterns shared across all providers. Provider-specific
+    # patterns are sourced from agent-harness error_classification_patterns[:authentication].
+    BASE_AUTHENTICATION_ERROR_PATTERNS = [
       /api[_ -]?key/i,
-      /API key not configured for openai/i,
       /API key not configured for/i,
       /auth(?:entication)?/i,
       /oauth/i,
       /token/i,
       /unauthori[sz]ed/i,
       /invalid credentials/i,
-      /session.*expired/i,
-      /ValidationRequiredError/i,
-      /Verify your account to continue\./i,
-      /Please set an Auth method/i,
-      /Missing agent run ID/i,
-      /GEMINI_API_KEY/i,
-      /GOOGLE_GENAI_USE_VERTEXAI/i,
-      /GOOGLE_GENAI_USE_GCA/i
+      /session.*expired/i
     ].freeze
     INSTALLATION_ERROR_PATTERNS = [
       /command not found/i,
@@ -73,7 +67,9 @@ module Providers
       /Connection refused.*?(?=\n|$)/i
     ].freeze
     ANSI_ESCAPE_PATTERN = /\e\[[0-9;?]*[ -\/]*[@-~]/
-    NOISY_ERROR_LINES = [
+    # Base noisy-error patterns shared across all providers. Provider-specific
+    # patterns are sourced from agent-harness noisy_error_patterns.
+    BASE_NOISY_ERROR_LINES = [
       /^INFO\s+\d{4}-\d{2}-\d{2}T/i,
       /^OpenAI Codex v/i,
       /^-+$/,
@@ -94,7 +90,6 @@ module Providers
       /Loaded cached credentials/i,
       /Validation handler failed:/i,
       %r{^\s*at\s+},
-      /Error when talking to Gemini API/i,
       /Full report available at:/i,
       /An unexpected critical error occurred:/i,
       /service=.*\b(status|loading|subscribing|publishing|request|state|using bundled provider)\b/i,
@@ -590,7 +585,7 @@ module Providers
       message = error_message.to_s
 
       return :rate_limited if matches_any_pattern?(message, RATE_LIMIT_PATTERNS)
-      return :authentication if matches_any_pattern?(message, AUTHENTICATION_ERROR_PATTERNS)
+      return :authentication if matches_any_pattern?(message, authentication_error_patterns)
       return :installation if matches_any_pattern?(message, INSTALLATION_ERROR_PATTERNS)
       return :timeout if matches_any_pattern?(message, TIMEOUT_ERROR_PATTERNS)
       return :connection if matches_any_pattern?(message, CONNECTION_ERROR_PATTERNS)
@@ -623,7 +618,7 @@ module Providers
     end
 
     def noisy_error_line?(line)
-      matches_any_pattern?(line, NOISY_ERROR_LINES)
+      matches_any_pattern?(line, noisy_error_line_patterns)
     end
 
     def sanitize_error_message(error_message)
@@ -637,7 +632,21 @@ module Providers
     include OutputSanitizer
 
     def translate_known_provider_errors(message)
-      return "Paid is not configured with a Google API key for containerized Gemini runs." if message.match?(/API key not configured for google/i)
+      # Paid-specific translations that reference container/proxy infrastructure
+      # take priority since they provide more actionable context than generic
+      # agent-harness translations.
+      paid_translation = translate_paid_specific_errors(message)
+      return paid_translation if paid_translation
+
+      # Fall back to the agent-harness provider's translate_error.
+      ProviderSupport.translate_provider_error(provider.provider_key, message)
+    end
+
+    def translate_paid_specific_errors(message)
+      if message.match?(/API key not configured for google/i)
+        return "Paid is not configured with a Google API key for containerized Gemini runs."
+      end
+
       if message.match?(/API key not configured for openai/i)
         return "Paid is not configured with an OpenAI API key for containerized OpenAI-backed runs (Codex or OpenCode)."
       end
@@ -647,8 +656,20 @@ module Providers
       end
 
       if message.match?(/Missing agent run ID/i) && message.match?(%r{/api/proxy/openai/}i)
-        "Codex did not forward the Paid container credentials to the OpenAI proxy."
+        return "Codex did not forward the Paid container credentials to the OpenAI proxy."
       end
+
+      nil
+    end
+
+    def authentication_error_patterns
+      BASE_AUTHENTICATION_ERROR_PATTERNS +
+        ProviderSupport.error_classification_patterns_for(provider.provider_key, :authentication)
+    end
+
+    def noisy_error_line_patterns
+      BASE_NOISY_ERROR_LINES +
+        ProviderSupport.aggregated_noisy_error_patterns
     end
 
     class Result
