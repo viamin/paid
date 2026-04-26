@@ -716,7 +716,6 @@ CREATE SEQUENCE public.collector_runs_id_seq
 ALTER SEQUENCE public.collector_runs_id_seq OWNED BY public.collector_runs.id;
 
 
-
 --
 -- Name: configuration_experiment_assignments; Type: TABLE; Schema: public; Owner: -
 --
@@ -1755,7 +1754,7 @@ CREATE TABLE public.llm_models (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     tier character varying(10),
-    CONSTRAINT llm_models_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[]))))
+    CONSTRAINT llm_models_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text]))))
 );
 
 
@@ -1884,8 +1883,8 @@ CREATE TABLE public.model_selections (
     tier character varying(10),
     escalated_from_tier character varying(10),
     escalated_reason character varying(255),
-    CONSTRAINT model_selections_escalated_from_tier_check CHECK (((escalated_from_tier IS NULL) OR ((escalated_from_tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[])))),
-    CONSTRAINT model_selections_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[]))))
+    CONSTRAINT model_selections_escalated_from_tier_check CHECK (((escalated_from_tier IS NULL) OR ((escalated_from_tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text])))),
+    CONSTRAINT model_selections_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text]))))
 );
 
 ALTER TABLE ONLY public.model_selections FORCE ROW LEVEL SECURITY;
@@ -1908,33 +1907,6 @@ CREATE SEQUENCE public.model_selections_id_seq
 --
 
 ALTER SEQUENCE public.model_selections_id_seq OWNED BY public.model_selections.id;
-
-
---
--- Name: notifications; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.notifications (
-    id bigint NOT NULL,
-    account_id bigint NOT NULL,
-    user_id bigint,
-    subject_type character varying,
-    subject_id bigint,
-    source character varying NOT NULL,
-    severity integer DEFAULT 0 NOT NULL,
-    title character varying NOT NULL,
-    description text,
-    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
-    action_url character varying,
-    nav_section character varying,
-    read_at timestamp(6) without time zone,
-    dismissed_at timestamp(6) without time zone,
-    resolved_at timestamp(6) without time zone,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
-);
-
-ALTER TABLE ONLY public.notifications FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -1974,6 +1946,33 @@ CREATE SEQUENCE public.notification_rule_states_id_seq
 --
 
 ALTER SEQUENCE public.notification_rule_states_id_seq OWNED BY public.notification_rule_states.id;
+
+
+--
+-- Name: notifications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notifications (
+    id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    user_id bigint,
+    subject_type character varying,
+    subject_id bigint,
+    source character varying NOT NULL,
+    severity integer DEFAULT 0 NOT NULL,
+    title character varying NOT NULL,
+    description text,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    action_url character varying,
+    nav_section character varying,
+    read_at timestamp(6) without time zone,
+    dismissed_at timestamp(6) without time zone,
+    resolved_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.notifications FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -3150,7 +3149,7 @@ CREATE TABLE public.user_settings (
     fair_queue_across_projects boolean DEFAULT true NOT NULL,
     CONSTRAINT chk_max_issues_per_page_bounds CHECK (((max_issues_per_page >= 5) AND (max_issues_per_page <= 200))),
     CONSTRAINT chk_max_prs_per_page_bounds CHECK (((max_prs_per_page >= 5) AND (max_prs_per_page <= 200))),
-    CONSTRAINT chk_provider_selection_mode CHECK (((provider_selection_mode)::text = ANY ((ARRAY['single'::character varying, 'round_robin'::character varying, 'random'::character varying])::text[])))
+    CONSTRAINT chk_provider_selection_mode CHECK (((provider_selection_mode)::text = ANY (ARRAY[('single'::character varying)::text, ('round_robin'::character varying)::text, ('random'::character varying)::text])))
 );
 
 ALTER TABLE ONLY public.user_settings FORCE ROW LEVEL SECURITY;
@@ -4474,14 +4473,14 @@ CREATE INDEX idx_agent_runs_project_status_created_at_desc ON public.agent_runs 
 -- Name: idx_agent_runs_unique_active_issue; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_agent_runs_unique_active_issue ON public.agent_runs USING btree (project_id, issue_id, goal) WHERE ((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])));
+CREATE UNIQUE INDEX idx_agent_runs_unique_active_issue ON public.agent_runs USING btree (project_id, issue_id, goal) WHERE ((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])));
 
 
 --
 -- Name: idx_agent_runs_unique_active_pr; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_agent_runs_unique_active_pr ON public.agent_runs USING btree (project_id, source_pull_request_number, goal) WHERE ((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])));
+CREATE UNIQUE INDEX idx_agent_runs_unique_active_pr ON public.agent_runs USING btree (project_id, source_pull_request_number, goal) WHERE ((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])));
 
 
 --
@@ -4604,10 +4603,45 @@ CREATE UNIQUE INDEX idx_knowledge_links_uniqueness ON public.knowledge_links USI
 
 
 --
+-- Name: idx_knowledge_usage_stats_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_knowledge_usage_stats_unique ON public.knowledge_usage_stats USING btree (agent_run_id, artifact_type, context_type);
+
+
+--
+-- Name: idx_on_account_id_config_key_status_a42f39cd2a; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_account_id_config_key_status_a42f39cd2a ON public.configuration_experiments USING btree (account_id, config_key, status);
+
+
+--
 -- Name: idx_on_account_id_service_key_name_e4c03e1ea7; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_on_account_id_service_key_name_e4c03e1ea7 ON public.integration_credentials USING btree (account_id, service_key, name);
+
+
+--
+-- Name: idx_on_configuration_experiment_id_54cb3ed654; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_configuration_experiment_id_54cb3ed654 ON public.configuration_experiment_variants USING btree (configuration_experiment_id);
+
+
+--
+-- Name: idx_on_configuration_experiment_id_6532d1a5ed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_configuration_experiment_id_6532d1a5ed ON public.configuration_experiment_assignments USING btree (configuration_experiment_id);
+
+
+--
+-- Name: idx_on_configuration_experiment_variant_id_9de5ff7df6; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_configuration_experiment_variant_id_9de5ff7df6 ON public.configuration_experiment_assignments USING btree (configuration_experiment_variant_id);
 
 
 --
@@ -5255,27 +5289,6 @@ CREATE INDEX index_configuration_experiment_assignments_on_agent_run_id ON publi
 
 
 --
--- Name: idx_on_configuration_experiment_id_6532d1a5ed; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_on_configuration_experiment_id_6532d1a5ed ON public.configuration_experiment_assignments USING btree (configuration_experiment_id);
-
-
---
--- Name: idx_on_configuration_experiment_variant_id_9de5ff7df6; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_on_configuration_experiment_variant_id_9de5ff7df6 ON public.configuration_experiment_assignments USING btree (configuration_experiment_variant_id);
-
-
---
--- Name: idx_on_configuration_experiment_id_54cb3ed654; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_on_configuration_experiment_id_54cb3ed654 ON public.configuration_experiment_variants USING btree (configuration_experiment_id);
-
-
---
 -- Name: index_configuration_experiments_on_account_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5283,24 +5296,10 @@ CREATE INDEX index_configuration_experiments_on_account_id ON public.configurati
 
 
 --
--- Name: idx_on_account_id_config_key_status_a42f39cd2a; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_on_account_id_config_key_status_a42f39cd2a ON public.configuration_experiments USING btree (account_id, config_key, status);
-
-
---
 -- Name: index_configuration_experiments_on_winner_variant_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX index_configuration_experiments_on_winner_variant_id ON public.configuration_experiments USING btree (winner_variant_id);
-
-
---
--- Name: index_global_config_experiments_one_running_per_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX index_global_config_experiments_one_running_per_key ON public.configuration_experiments USING btree (config_key) WHERE (((status)::text = 'running'::text) AND (account_id IS NULL));
 
 
 --
@@ -5511,6 +5510,13 @@ CREATE INDEX index_github_tokens_on_revoked_at ON public.github_tokens USING btr
 --
 
 CREATE INDEX index_github_tokens_on_validation_status ON public.github_tokens USING btree (validation_status);
+
+
+--
+-- Name: index_global_config_experiments_one_running_per_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_global_config_experiments_one_running_per_key ON public.configuration_experiments USING btree (config_key) WHERE (((status)::text = 'running'::text) AND (account_id IS NULL));
 
 
 --
@@ -5889,13 +5895,6 @@ CREATE INDEX index_knowledge_runs_on_project_id_and_status ON public.knowledge_r
 --
 
 CREATE UNIQUE INDEX index_knowledge_runs_on_proxy_token ON public.knowledge_runs USING btree (proxy_token);
-
-
---
--- Name: idx_knowledge_usage_stats_unique; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX idx_knowledge_usage_stats_unique ON public.knowledge_usage_stats USING btree (agent_run_id, artifact_type, context_type);
 
 
 --
@@ -7130,6 +7129,14 @@ ALTER TABLE ONLY public.style_guides
 
 
 --
+-- Name: configuration_experiment_assignments fk_rails_250cd833e6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiment_assignments
+    ADD CONSTRAINT fk_rails_250cd833e6 FOREIGN KEY (configuration_experiment_variant_id) REFERENCES public.configuration_experiment_variants(id) ON DELETE CASCADE;
+
+
+--
 -- Name: knowledge_artifacts fk_rails_267c7f4678; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7143,6 +7150,14 @@ ALTER TABLE ONLY public.knowledge_artifacts
 
 ALTER TABLE ONLY public.service_containers
     ADD CONSTRAINT fk_rails_28ab710fe6 FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: configuration_experiments fk_rails_2bb513571a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiments
+    ADD CONSTRAINT fk_rails_2bb513571a FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 
 --
@@ -7327,22 +7342,6 @@ ALTER TABLE ONLY public.knowledge_audit_events
 
 ALTER TABLE ONLY public.knowledge_runs
     ADD CONSTRAINT fk_rails_64dcf0f9ee FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
-
-
---
--- Name: knowledge_usage_stats fk_rails_kus_agent_run; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.knowledge_usage_stats
-    ADD CONSTRAINT fk_rails_kus_agent_run FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id) ON DELETE CASCADE;
-
-
---
--- Name: knowledge_usage_stats fk_rails_kus_project; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.knowledge_usage_stats
-    ADD CONSTRAINT fk_rails_kus_project FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
 
 
 --
@@ -7578,6 +7577,14 @@ ALTER TABLE ONLY public.ab_tests
 
 
 --
+-- Name: configuration_experiment_variants fk_rails_a4b182da9b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiment_variants
+    ADD CONSTRAINT fk_rails_a4b182da9b FOREIGN KEY (configuration_experiment_id) REFERENCES public.configuration_experiments(id) ON DELETE CASCADE;
+
+
+--
 -- Name: container_pool_entries fk_rails_a75e8d53a7; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7674,6 +7681,14 @@ ALTER TABLE ONLY public.projects
 
 
 --
+-- Name: configuration_experiments fk_rails_ba606c78cb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiments
+    ADD CONSTRAINT fk_rails_ba606c78cb FOREIGN KEY (winner_variant_id) REFERENCES public.configuration_experiment_variants(id) ON DELETE SET NULL;
+
+
+--
 -- Name: issue_dependencies fk_rails_bc8dc02ec7; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7735,6 +7750,14 @@ ALTER TABLE ONLY public.knowledge_chunks
 
 ALTER TABLE ONLY public.billing_periods
     ADD CONSTRAINT fk_rails_cb0b0e19f9 FOREIGN KEY (billing_plan_id) REFERENCES public.billing_plans(id);
+
+
+--
+-- Name: configuration_experiment_assignments fk_rails_cb74c9141a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiment_assignments
+    ADD CONSTRAINT fk_rails_cb74c9141a FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id) ON DELETE CASCADE;
 
 
 --
@@ -7938,6 +7961,14 @@ ALTER TABLE ONLY public.billing_invoices
 
 
 --
+-- Name: configuration_experiment_assignments fk_rails_f9597f4b41; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_experiment_assignments
+    ADD CONSTRAINT fk_rails_f9597f4b41 FOREIGN KEY (configuration_experiment_id) REFERENCES public.configuration_experiments(id) ON DELETE CASCADE;
+
+
+--
 -- Name: quality_gate_events fk_rails_fa1ba6a1b8; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7968,54 +7999,21 @@ ALTER TABLE ONLY public.worktrees
 ALTER TABLE ONLY public.projects
     ADD CONSTRAINT fk_rails_ff595c9009 FOREIGN KEY (created_by_id) REFERENCES public.users(id);
 
---
--- Name: configuration_experiment_assignments fk_rails_cb74c9141a; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.configuration_experiment_assignments
-    ADD CONSTRAINT fk_rails_cb74c9141a FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id) ON DELETE CASCADE;
-
 
 --
--- Name: configuration_experiment_assignments fk_rails_f9597f4b41; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: knowledge_usage_stats fk_rails_kus_agent_run; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.configuration_experiment_assignments
-    ADD CONSTRAINT fk_rails_f9597f4b41 FOREIGN KEY (configuration_experiment_id) REFERENCES public.configuration_experiments(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.knowledge_usage_stats
+    ADD CONSTRAINT fk_rails_kus_agent_run FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id) ON DELETE CASCADE;
 
 
 --
--- Name: configuration_experiment_assignments fk_rails_250cd833e6; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: knowledge_usage_stats fk_rails_kus_project; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.configuration_experiment_assignments
-    ADD CONSTRAINT fk_rails_250cd833e6 FOREIGN KEY (configuration_experiment_variant_id) REFERENCES public.configuration_experiment_variants(id) ON DELETE CASCADE;
-
-
---
--- Name: configuration_experiments fk_rails_2bb513571a; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.configuration_experiments
-    ADD CONSTRAINT fk_rails_2bb513571a FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
-
-
---
--- Name: configuration_experiment_variants fk_rails_a4b182da9b; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.configuration_experiment_variants
-    ADD CONSTRAINT fk_rails_a4b182da9b FOREIGN KEY (configuration_experiment_id) REFERENCES public.configuration_experiments(id) ON DELETE CASCADE;
-
-
---
--- Name: configuration_experiments fk_rails_ba606c78cb; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.configuration_experiments
-    ADD CONSTRAINT fk_rails_ba606c78cb FOREIGN KEY (winner_variant_id) REFERENCES public.configuration_experiment_variants(id) ON DELETE SET NULL;
-
-
+ALTER TABLE ONLY public.knowledge_usage_stats
+    ADD CONSTRAINT fk_rails_kus_project FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
 
 
 --
@@ -8203,7 +8201,6 @@ ALTER TABLE public.knowledge_links ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.knowledge_runs ENABLE ROW LEVEL SECURITY;
-
 
 --
 -- Name: knowledge_usage_stats; Type: ROW SECURITY; Schema: public; Owner: -
@@ -8706,6 +8703,14 @@ CREATE POLICY tenant_isolation ON public.knowledge_links USING ((public.paid_ten
 
 --
 -- Name: knowledge_runs tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.knowledge_runs USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = knowledge_runs.project_id) AND (projects.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = knowledge_runs.project_id) AND (projects.account_id = public.paid_current_account_id()))))));
+
 
 --
 -- Name: knowledge_usage_stats tenant_isolation; Type: POLICY; Schema: public; Owner: -
@@ -8716,13 +8721,6 @@ CREATE POLICY tenant_isolation ON public.knowledge_usage_stats USING ((public.pa
   WHERE ((projects.id = knowledge_usage_stats.project_id) AND (projects.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
    FROM public.projects
   WHERE ((projects.id = knowledge_usage_stats.project_id) AND (projects.account_id = public.paid_current_account_id()))))));
---
-
-CREATE POLICY tenant_isolation ON public.knowledge_runs USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
-   FROM public.projects
-  WHERE ((projects.id = knowledge_runs.project_id) AND (projects.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
-   FROM public.projects
-  WHERE ((projects.id = knowledge_runs.project_id) AND (projects.account_id = public.paid_current_account_id()))))));
 
 
 --
@@ -8767,7 +8765,7 @@ CREATE POLICY tenant_isolation ON public.model_selections USING ((public.paid_te
 -- Name: notification_rule_states tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.notification_rule_states USING ((public.paid_tenant_bypass() OR (notification_rule_states.account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (notification_rule_states.account_id = public.paid_current_account_id())));
+CREATE POLICY tenant_isolation ON public.notification_rule_states USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
 
 
 --
@@ -9422,6 +9420,11 @@ ALTER TABLE public.workflow_states ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
+
+--
+-- PostgreSQL database dump complete
+--
+
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
@@ -9433,8 +9436,8 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260425061110'),
 ('20260425060000'),
 ('20260425052958'),
-('20260425045424'),
 ('20260425050134'),
+('20260425045424'),
 ('20260423132408'),
 ('20260423130627'),
 ('20260421162139'),
@@ -9643,4 +9646,3 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260128004342'),
 ('20260128004305'),
 ('20260127154444');
-

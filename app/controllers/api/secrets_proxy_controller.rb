@@ -14,6 +14,7 @@ module Api
 
     # POST /api/proxy/anthropic/*path
     def anthropic
+      @api_service_type = :anthropic
       api_key = fetch_api_key(:anthropic)
       return if performed?
 
@@ -26,6 +27,7 @@ module Api
 
     # POST /api/proxy/openai/*path
     def openai
+      @api_service_type = :openai
       api_key = fetch_api_key(:openai)
       return if performed?
 
@@ -38,6 +40,7 @@ module Api
 
     # POST /api/proxy/google/*path
     def google
+      @api_service_type = :google
       api_key = fetch_api_key(:google)
       return if performed?
 
@@ -115,15 +118,17 @@ module Api
       body = parse_response_body(response.body)
       return unless body.is_a?(Hash)
 
-      input_tokens, output_tokens, model = extract_usage(body)
-      return unless input_tokens
+      usage = harness_provider.token_usage_from_api_response(body)
+      return if usage.empty?
+
+      model = body["model"] || body["modelVersion"]
 
       TokenUsageTracker.track(
         agent_run: @agent_run,
         knowledge_run: @knowledge_run,
         usage: {
-          tokens_input: input_tokens,
-          tokens_output: output_tokens,
+          tokens_input: usage[:input_tokens],
+          tokens_output: usage[:output_tokens],
           llm_model: model,
           request_type: token_usage_request_type,
           metadata: token_usage_metadata
@@ -131,28 +136,6 @@ module Api
       )
     rescue => e
       log_error("secrets_proxy.track_usage_failed", e.message)
-    end
-
-    # Extracts token counts and model from provider-specific response shapes.
-    # Returns [input_tokens, output_tokens, model] or nil if no usage data found.
-    def extract_usage(body)
-      if body["usage"]
-        # Anthropic (input_tokens/output_tokens) and OpenAI (prompt_tokens/completion_tokens)
-        usage = body["usage"]
-        [
-          usage["input_tokens"] || usage["prompt_tokens"] || 0,
-          usage["output_tokens"] || usage["completion_tokens"] || 0,
-          body["model"]
-        ]
-      elsif body["usageMetadata"]
-        # Google Generative Language API (promptTokenCount/candidatesTokenCount)
-        meta = body["usageMetadata"]
-        [
-          meta["promptTokenCount"] || 0,
-          meta["candidatesTokenCount"] || 0,
-          body.dig("modelVersion") || body["model"]
-        ]
-      end
     end
 
     def parse_response_body(body)
@@ -278,6 +261,10 @@ module Api
         &.order(created_at: :desc, id: :desc)
         &.first
         &.api_key
+    end
+
+    def harness_provider
+      ProviderSupport.harness_provider_for_api_service_type(@api_service_type)
     end
 
     def token_usage_request_type

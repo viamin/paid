@@ -182,6 +182,14 @@ module ProviderSupport
     "gemini" => "google"
   }.freeze
 
+  # Reverse mapping: API service type → harness provider key.
+  # Used by the secrets proxy to delegate token extraction to the correct
+  # agent-harness provider class based on the proxy route.
+  API_SERVICE_TYPE_TO_HARNESS_KEY = PROVIDER_API_SERVICE_TYPE
+    .each_with_object({}) { |(provider_key, service_type), map| map[service_type] ||= provider_key }
+    .transform_values { |pk| APP_TO_HARNESS_PROVIDER_KEYS.fetch(pk, pk) }
+    .freeze
+
   # Maps provider keys to their upstream proxy API key name (used by
   # harness-based health checks). Providers listed here can be health-checked
   # via AgentHarness.check_provider when the corresponding API key is
@@ -246,6 +254,13 @@ module ProviderSupport
       OPENAI_HEADER_X_PROXY_TOKEN
     ].freeze
   }.freeze
+
+  # Returns an AgentHarness provider instance for the given API service type
+  # (e.g. "anthropic", "openai", "google") as used by the secrets proxy routes.
+  def harness_provider_for_api_service_type(api_service_type)
+    harness_key = API_SERVICE_TYPE_TO_HARNESS_KEY.fetch(api_service_type.to_s)
+    AgentHarness.provider(harness_key.to_sym)
+  end
 
   def harness_runtime_unset_vars_for(provider_key)
     HARNESS_RUNTIME_UNSET_VARS.fetch(provider_key.to_s, [])

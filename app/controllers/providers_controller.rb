@@ -347,6 +347,7 @@ class ProvidersController < ApplicationController
     @provider_state_aliases = @providers.each_with_object({}) do |provider, aliases|
       aliases[provider.routing_key] = provider.provider_key
     end
+    @usage_stats = Providers::UsageStats.call(user: current_user)
     @available_api_keys = current_user.provider_api_keys.ordered
     existing_subscription_keys = current_user.providers.subscription.pluck(:provider_key)
     addable_keys = Provider.addable_provider_keys
