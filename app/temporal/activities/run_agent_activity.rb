@@ -1967,8 +1967,7 @@ module Activities
       bundle = Knowledge::ContextBundle::Build.call(
         issue: issue,
         project: project,
-        agent_run: agent_run,
-        agent_run_id: agent_run.id
+        agent_run: agent_run
       )
       return prompt if bundle[:content].blank?
 

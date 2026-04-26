@@ -342,7 +342,7 @@ module Knowledge
           heading: section[:heading],
           content: truncated_content,
           artifact_type: section[:artifact_type],
-          artifact_count: item_count,
+          artifact_count: section[:name] == :business_context ? truncated_lines.count { |l| l.start_with?("#### ") } : item_count,
           chunk_count: [ section[:chunk_count].to_i, item_count ].min,
           token_count: estimate_tokens("### #{section[:heading]}\n#{truncated_content}")
         }
