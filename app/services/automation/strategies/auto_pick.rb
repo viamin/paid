@@ -46,7 +46,13 @@ module Automation
         issue = @candidate_source.next_candidate(project)
         return noop_result unless issue
 
-        Result.new(decisions: [ Decision.queue_create_pr_run(issue_id: issue.id) ])
+        decision = if project.auto_enhance_enabled?
+          Decision.queue_analyze_issue_run(issue_id: issue.id)
+        else
+          Decision.queue_create_pr_run(issue_id: issue.id)
+        end
+
+        Result.new(decisions: [ decision ])
       end
 
       private
