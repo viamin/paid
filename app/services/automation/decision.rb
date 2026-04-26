@@ -77,6 +77,10 @@ module Automation
           expected_review_goal_retry_count: expected_review_goal_retry_count
         })
       end
+
+      def queue_analyze_issue_run(issue_id:)
+        new(type: "queue_analyze_issue_run", payload: { issue_id: issue_id })
+      end
     end
 
     def to_h

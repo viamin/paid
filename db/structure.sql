@@ -2314,7 +2314,8 @@ CREATE TABLE public.projects (
     auto_merge_mode character varying DEFAULT 'off'::character varying NOT NULL,
     enhance_issue_needs_input_label_name character varying DEFAULT 'paid-needs-input'::character varying NOT NULL,
     enhance_issue_enhanced_label_name character varying DEFAULT 'paid-enhanced'::character varying NOT NULL,
-    max_enhance_issue_reevaluation_rounds integer DEFAULT 3 NOT NULL
+    max_enhance_issue_reevaluation_rounds integer DEFAULT 3 NOT NULL,
+    auto_enhance_enabled boolean DEFAULT false NOT NULL
 );
 
 ALTER TABLE ONLY public.projects FORCE ROW LEVEL SECURITY;
@@ -9277,6 +9278,7 @@ SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
 ('20260425113212'),
+('20260425061110'),
 ('20260425060000'),
 ('20260425052958'),
 ('20260425045424'),

@@ -117,6 +117,7 @@ module Containers
       .cache/
       .tmp/
       .tmp-*/
+      .tmpbin/
       .build/
       .*-build/
       .*_build/
@@ -214,6 +215,7 @@ module Containers
       .cache/
       .tmp/
       .tmp-*/
+      .tmpbin/
       .build/
       .*-build/
       .*_build/

@@ -108,6 +108,23 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "analyze_issue goal requires issue" do
+      it "is valid when an associated issue is present" do
+        project = create(:project)
+        issue = create(:issue, project: project)
+        agent_run = build(:agent_run, :analyze_issue_goal, project: project, issue: issue)
+
+        expect(agent_run).to be_valid
+      end
+
+      it "is invalid without an associated issue" do
+        agent_run = build(:agent_run, :analyze_issue_goal, issue: nil, custom_prompt: "Analyze this issue")
+
+        expect(agent_run).not_to be_valid
+        expect(agent_run.errors[:issue]).to include("is required for analyze_issue goals")
+      end
+    end
+
     describe "provider ownership validation" do
       it "allows provider from the project owner" do
         agent_run = build(:agent_run)
@@ -2000,7 +2017,7 @@ RSpec.describe AgentRun do
     end
 
     it "defines valid GOALS" do
-      expect(described_class::GOALS).to eq(%w[create_pr create_issue review enhance_issue])
+      expect(described_class::GOALS).to eq(%w[create_pr create_issue review enhance_issue analyze_issue])
     end
 
     it "defines valid TRIGGER_TYPES" do

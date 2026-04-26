@@ -89,7 +89,7 @@ module Activities
       if incremental && !truncated
         fetched_ids = open_issues.map { |si| si[:id] }.to_set
         rescannable = project.issues
-          .where(github_state: "open", paid_state: %w[new needs_input recommend_close])
+          .where(github_state: "open", paid_state: %w[new needs_input recommend_close analyzed])
           .where.not("labels @> ?::jsonb", [ project.enhance_issue_needs_input_label_name ].to_json)
           .where.not(id: fetched_ids.to_a)
           .limit(200)

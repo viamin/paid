@@ -149,7 +149,7 @@ module Workflows
         # Rails app is down (e.g. PendingMigration), the proxy is unreachable
         # and git operations fail. This check polls until the proxy recovers,
         # effectively pausing the workflow until credentials are available.
-        skip_clone = (goal == "create_issue" || goal == "enhance_issue") && source_pull_request_number.blank?
+        skip_clone = goal.in?(%w[create_issue enhance_issue analyze_issue]) && source_pull_request_number.blank?
         unless skip_clone
           if Temporalio::Workflow.patched("check_proxy_health_before_clone")
             ensure_proxy_healthy(agent_run_id)
@@ -186,7 +186,7 @@ module Workflows
         # (from CreateAgentRunActivity), plus a small Temporal buffer.
         # Issue goals use a shorter timeout since they only need to create
         # a GitHub issue via curl, not write code.
-        per_provider_timeout = if goal.in?(%w[create_issue enhance_issue])
+        per_provider_timeout = if goal.in?(%w[create_issue enhance_issue analyze_issue])
           issue_goal_timeout_seconds
         else
           agent_timeout_seconds
@@ -301,7 +301,13 @@ module Workflows
             pr_prompt_result,
             agent_result)
 
-          if issue_id.present? && !source_pull_request_number
+          if goal == "analyze_issue" && issue_id.present?
+            # Analyze-issue runs assess readiness without producing code changes.
+            # Mark complete and persist the "analyzed" state so the issue is
+            # recognized as assessed and ready for a follow-up implementation run.
+            run_activity(Activities::MarkAgentRunCompleteActivity,
+              { agent_run_id: agent_run_id, reason: "no_changes" }, timeout: 30)
+          elsif issue_id.present? && !source_pull_request_number
             # Issue-based run with no code changes / no PR: classify as
             # needs_input or recommend_close and post an actionable GitHub comment.
             run_activity(Activities::HandleNoOutputIssueRunActivity,

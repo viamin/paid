@@ -187,6 +187,55 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "analyze_issue goal" do
+    let(:input) { { project_id: 1, issue_id: 1, goal: "analyze_issue" } }
+
+    before do
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
+    end
+
+    it "skips proxy health and clone without a source PR" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        else {}
+        end
+      end
+
+      result = workflow.execute(input)
+
+      expect(result).to eq(success: true, agent_run_id: 42)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CheckProxyHealthActivity, anything, any_args)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CloneRepoActivity, anything, any_args)
+    end
+
+    it "uses the issue-goal timeout budget" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity"
+          {
+            agent_run_id: 42,
+            provider_attempt_count: 2,
+            agent_timeout_seconds: AGENT_TIMEOUT_DEFAULT,
+            issue_goal_timeout_seconds: Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT
+          }
+        when "Activities::RunAgentActivity"
+          expected_timeout = (Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT * 2) + 300
+          expect(opts[:start_to_close_timeout]).to eq(expected_timeout)
+          { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+    end
+  end
+
   describe "enhance_issue goal" do
     let(:input) { { project_id: 1, issue_id: 1, goal: "enhance_issue" } }
 
@@ -1229,6 +1278,23 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
         when "Activities::RunAgentActivity" then { success: true }
         when "Activities::CompleteIssueGoalActivity" then { issue_created: true }
+        else {}
+        end
+      end
+
+      workflow.execute(issue_input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CheckProxyHealthActivity, anything, any_args)
+    end
+
+    it "skips health check for analyze_issue goal without source PR" do
+      issue_input = { project_id: 1, issue_id: 1, goal: "analyze_issue" }
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
         else {}
         end
       end

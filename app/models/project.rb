@@ -86,7 +86,9 @@ class Project < ApplicationRecord
     { label: "Aggregate PRs", attribute: :pr_aggregation_enabled,
      description: "When a feature is decomposed into sub-tasks, aggregate all agent changes into a single PR instead of individual PRs per sub-task." }.freeze,
     { label: "Inherit Priority Labels", attribute: :inherit_priority_labels,
-     description: "When Paid creates a PR for an issue, copy any user-defined priority labels (P1/P2/P3) from the issue onto the new PR." }.freeze
+     description: "When Paid creates a PR for an issue, copy any user-defined priority labels (P1/P2/P3) from the issue onto the new PR." }.freeze,
+    { label: "Auto-enhance before PR", attribute: :auto_enhance_enabled,
+     description: "Analyze issue context readiness before auto-pick creates a PR run" }.freeze
   ].freeze
 
   AUTO_MERGE_MODE_OPTIONS = [
