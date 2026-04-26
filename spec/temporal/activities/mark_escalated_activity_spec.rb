@@ -68,11 +68,11 @@ RSpec.describe Activities::MarkEscalatedActivity do
           .with(anything, anything, a_string_including("@viamin"))
       end
 
-      it "includes the dismiss label instruction" do
+      it "includes the remove-label instruction" do
         activity.execute(issue_id: issue.id)
 
         expect(github_client).to have_received(:add_comment)
-          .with(anything, anything, a_string_including("paid-dismiss-escalation"))
+          .with(anything, anything, a_string_including("Remove the `paid-escalated` label"))
       end
 
       it "includes the hidden comment marker for future identification" do

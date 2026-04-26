@@ -4,23 +4,16 @@ require "rails_helper"
 
 RSpec.describe Activities::DismissEscalationActivity do
   let(:activity) { described_class.new }
-  let(:github_client) { instance_double(GithubClient) }
-
-  before do
-    allow(GithubClient).to receive(:new).and_return(github_client)
-  end
 
   describe "#execute" do
     context "when issue is in escalated phase" do
       let(:issue) do
         create(:issue, :pull_request,
           pr_review_phase: "escalated",
+          pr_followup_count: 2,
           review_goal_retry_count: 3,
+          operational_failure_reset_at: 2.hours.ago,
           labels: [ "paid-generated", "paid-escalated", "paid-dismiss-escalation" ])
-      end
-
-      before do
-        allow(github_client).to receive(:remove_label_from_issue)
       end
 
       it "transitions pr_review_phase to ready" do
@@ -43,47 +36,50 @@ RSpec.describe Activities::DismissEscalationActivity do
         expect(issue.reload.review_goal_retry_count).to eq(0)
       end
 
-      it "removes the paid-dismiss-escalation label" do
-        activity.execute(issue_id: issue.id)
+      it "resets the operational failure breaker and follow-up counter" do
+        freeze_time do
+          activity.execute(issue_id: issue.id)
 
-        expect(github_client).to have_received(:remove_label_from_issue)
-          .with(issue.project.full_name, issue.github_number, "paid-dismiss-escalation")
+          issue.reload
+          expect(issue.operational_failure_reset_at).to be_within(1.second).of(Time.current)
+          expect(issue.pr_followup_count).to eq(0)
+        end
       end
 
-      it "removes the paid-escalated label" do
+      it "cleans up stale escalation labels locally" do
         activity.execute(issue_id: issue.id)
 
-        expect(github_client).to have_received(:remove_label_from_issue)
-          .with(issue.project.full_name, issue.github_number, "paid-escalated")
+        expect(issue.reload.labels).not_to include("paid-escalated", "paid-dismiss-escalation")
       end
 
       it "returns dismissed: true" do
         result = activity.execute(issue_id: issue.id)
 
         expect(result[:dismissed]).to be true
+        expect(result[:phase]).to eq("ready")
+        expect(result[:current_followup_count]).to eq(0)
       end
     end
 
-    context "when label removal fails" do
+    context "when the escalated PR is still draft" do
       let(:issue) do
-        create(:issue, :pull_request, pr_review_phase: "escalated")
+        create(:issue, :pull_request,
+          pr_review_phase: "escalated",
+          draft_review_count: 4,
+          pr_followup_count: 2,
+          review_goal_retry_count: 3,
+          labels: [ "paid-generated", "paid-escalated" ])
       end
 
-      before do
-        allow(github_client).to receive(:remove_label_from_issue)
-          .and_raise(GithubClient::Error, "Not found")
-      end
+      it "resets into restarted phase with fresh draft counters" do
+        result = activity.execute(issue_id: issue.id, draft: true)
 
-      it "still transitions the phase" do
-        activity.execute(issue_id: issue.id)
-
-        expect(issue.reload.pr_review_phase).to eq("ready")
-      end
-
-      it "still returns dismissed: true" do
-        result = activity.execute(issue_id: issue.id)
-
+        issue.reload
         expect(result[:dismissed]).to be true
+        expect(result[:phase]).to eq("restarted")
+        expect(issue.pr_review_phase).to eq("restarted")
+        expect(issue.draft_review_count).to eq(0)
+        expect(issue.pr_followup_count).to eq(0)
       end
     end
 

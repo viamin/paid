@@ -504,7 +504,17 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           { issue_id: 10 }, timeout: anything)
     end
 
-    it "routes dismiss_escalation to DismissEscalationActivity" do
+    it "routes dismiss_escalation to DismissEscalationActivity and queues a fresh ready-phase follow-up" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::DismissEscalationActivity, anything, timeout: anything)
+        .and_return({
+          dismissed: true,
+          issue_id: 10,
+          pr_number: 42,
+          phase: "ready",
+          current_followup_count: 0
+        })
+
       pr_data = {
         issue_id: 10, pr_number: 42,
         triggers: [ { type: "dismiss_escalation" } ]
@@ -514,6 +524,33 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::DismissEscalationActivity, hash_including(issue_id: 10), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42, goal: "create_pr" },
+          timeout: 30)
+    end
+
+    it "queues a fresh draft-cycle follow-up when dismissal resumes a restarted draft PR" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::DismissEscalationActivity, anything, timeout: anything)
+        .and_return({
+          dismissed: true,
+          issue_id: 10,
+          pr_number: 42,
+          phase: "restarted",
+          current_draft_review_count: 0,
+          current_followup_count: 0
+        })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, draft: true,
+        triggers: [ { type: "dismiss_escalation" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, expected_draft_queue_input(count: 0), timeout: 30)
     end
 
     it "prioritizes escalate_to_owner over review_goal_retry in mixed payloads" do
