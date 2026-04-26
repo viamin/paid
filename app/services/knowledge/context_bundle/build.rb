@@ -86,8 +86,8 @@ module Knowledge
 
               built << truncated
               remaining_budget -= truncated_tokens
-              record_usage(section)
-              artifact_type_counts[section[:artifact_type]] += section[:artifact_count]
+              record_usage(truncated)
+              artifact_type_counts[truncated[:artifact_type]] += truncated[:artifact_count]
               break if remaining_budget <= 0
             end
           end
@@ -334,7 +334,18 @@ module Knowledge
 
         return nil if truncated_lines.empty?
 
-        { name: section[:name], heading: section[:heading], content: truncated_lines.join("\n") }
+        truncated_content = truncated_lines.join("\n")
+        item_count = truncated_lines.count { |l| l.start_with?("- ") }
+
+        {
+          name: section[:name],
+          heading: section[:heading],
+          content: truncated_content,
+          artifact_type: section[:artifact_type],
+          artifact_count: item_count,
+          chunk_count: [ section[:chunk_count].to_i, item_count ].min,
+          token_count: estimate_tokens("### #{section[:heading]}\n#{truncated_content}")
+        }
       end
 
       # Fast token approximation: ~0.75 tokens per word (per issue spec)
