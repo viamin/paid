@@ -21,7 +21,7 @@ module Knowledge
       # Section builders in priority order.
       # Conventions section is not yet implemented — will be added when
       # a conventions collector lands in the knowledge pipeline.
-      SECTION_ORDER = %i[business_context routes symbols hotspots decisions stats].freeze
+      SECTION_ORDER = %i[business_context routes symbols schema hotspots decisions stats].freeze
 
       attr_reader :issue, :project, :agent_run, :token_budget, :section_order
 
@@ -128,6 +128,17 @@ module Knowledge
         end
 
         { name: :symbols, heading: "Related Code", content: lines.join("\n") }
+      end
+
+      def build_schema_section
+        artifacts = active_artifacts("schema")
+        return nil if artifacts.empty?
+
+        lines = artifacts.map do |a|
+          a.content.presence || a.identifier
+        end
+
+        { name: :schema, heading: "Data Model", content: lines.join("\n\n") }
       end
 
       def build_hotspots_section
