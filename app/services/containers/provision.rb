@@ -1493,7 +1493,7 @@ module Containers
     end
 
     def run_scoped_environment(proxy_base)
-      [
+      env = [
         "AGENT_RUN_ID=#{agent_run.id}",
         "PROXY_TOKEN=#{agent_run.proxy_token}",
         "OPENAI_BASE_URL=#{proxy_base}/api/proxy/openai",
@@ -1507,10 +1507,23 @@ module Containers
         "GOOGLE_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
         "GEMINI_CLI_CUSTOM_HEADERS=X-Agent-Run-Id: #{agent_run.id}, X-Proxy-Token: #{agent_run.proxy_token}",
         "GEMINI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
-        "GEMINI_SANDBOX=false",
-        "GEMINI_CLI_DISABLE_RETRIES=true",
         "PAID_GEMINI_SUBSCRIPTION_AUTH=#{gemini_subscription_auth? ? 1 : 0}"
       ]
+
+      # Append provider-specific CLI settings (e.g. sandbox flags, retry config)
+      # from agent-harness so the gem is the single source of truth.
+      env.concat(provider_cli_env_overrides)
+
+      env
+    end
+
+    def provider_cli_env_overrides
+      ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS.flat_map do |key|
+        harness_key = ProviderSupport.harness_provider_key_for(key).to_sym
+        AgentHarness.provider(harness_key).cli_env_overrides.map { |k, v| "#{k}=#{v}" }
+      rescue KeyError
+        []
+      end
     end
 
     def exec_environment(env)

@@ -102,11 +102,20 @@ module ProviderSupport
   end
 
   def subscription_auth_unset_vars_for(provider_key)
-    SUBSCRIPTION_AUTH_UNSET_VARS.fetch(provider_key.to_s, [])
+    key = provider_key.to_s
+    harness_key = harness_provider_key_for(key).to_sym
+    harness_vars = AgentHarness.provider(harness_key).subscription_unset_vars
+    proxy_vars = PROXY_HEADER_UNSET_VARS.fetch(key, [])
+    (harness_vars + proxy_vars).uniq
+  rescue KeyError, AgentHarness::ConfigurationError
+    []
   end
 
   def subscription_auth_unset_vars
-    SUBSCRIPTION_AUTH_UNSET_VARS
+    CONTAINER_EXECUTABLE_PROVIDER_KEYS.each_with_object({}) do |key, hash|
+      vars = subscription_auth_unset_vars_for(key)
+      hash[key] = vars if vars.any?
+    end
   end
 
   # Returns the proxy API key name (e.g. :openai, :google) for a provider
@@ -223,24 +232,13 @@ module ProviderSupport
     ].freeze
   }.freeze
 
-  # Environment variables to unset when running a provider with its own
-  # subscription auth (so the agent talks directly to the provider instead of
-  # through the Paid proxy). Shared between RunAgentActivity and TestAgent to
-  # keep runtime and test paths in sync.
-  SUBSCRIPTION_AUTH_UNSET_VARS = {
-    "codex" => %w[
-      OPENAI_API_KEY
-      OPENAI_BASE_URL
-      OPENAI_HEADER_X_AGENT_RUN_ID
-      OPENAI_HEADER_X_PROXY_TOKEN
-    ].freeze,
+  # Proxy-specific header env vars that Paid sets but agent-harness does not
+  # know about. These must be unset alongside the provider-native vars from
+  # agent-harness when running in subscription-auth mode.
+  PROXY_HEADER_UNSET_VARS = {
     "gemini" => %w[
-      GEMINI_API_KEY
-      GOOGLE_GEMINI_BASE_URL
-      GOOGLE_GENAI_BASE_URL
       GOOGLE_HEADER_X_AGENT_RUN_ID
       GOOGLE_HEADER_X_PROXY_TOKEN
-      GEMINI_CLI_CUSTOM_HEADERS
     ].freeze
   }.freeze
 

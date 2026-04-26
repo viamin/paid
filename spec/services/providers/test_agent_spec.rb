@@ -474,7 +474,9 @@ RSpec.describe Providers::TestAgent do
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
+          container_executable_provider_key?: true)
+        allow(ProviderSupport).to receive(:harness_provider_key_for).and_call_original
+        allow(ProviderSupport).to receive(:harness_provider_key_for).with("gemini").and_return("gemini")
         stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
@@ -507,7 +509,9 @@ RSpec.describe Providers::TestAgent do
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+          container_executable_provider_key?: true)
+        allow(ProviderSupport).to receive(:harness_provider_key_for).and_call_original
+        allow(ProviderSupport).to receive(:harness_provider_key_for).with("kilocode").and_return("kilocode")
         stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
@@ -519,7 +523,7 @@ RSpec.describe Providers::TestAgent do
           [
             "sh",
             "-c",
-            a_string_including('env -u OPENAI_API_KEY')
+            a_string_including('-u OPENAI_API_KEY')
               .and(include('timeout 20s kilo run --format json --auto --print-logs "$1"')),
             "--",
             Providers::TestAgent::PROMPT

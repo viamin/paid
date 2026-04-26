@@ -1355,16 +1355,7 @@ module Activities
     end
 
     def api_key_env_var_names_for(provider_entry)
-      case provider_entry.provider_key
-      when "gemini"
-        %w[GEMINI_API_KEY GOOGLE_API_KEY]
-      when "codex"
-        %w[OPENAI_API_KEY]
-      when "claude", "cursor", "aider"
-        %w[ANTHROPIC_API_KEY]
-      else
-        []
-      end
+      harness_provider_for(provider_entry.provider_key).api_key_env_var_names
     end
 
     def api_key_proxy_header_assignments_for(provider_entry)
