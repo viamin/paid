@@ -151,7 +151,9 @@ jobs:
           curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused "$QDRANT_URL/healthz"
 
       - name: Run tests
-        run: bin/rspec --exclude-pattern "spec/performance/**/*_spec.rb"
+        # System specs run in a separate workflow (.github/workflows/system_tests.yml)
+        # because they need Chromium and built JS/CSS assets.
+        run: bin/rspec --exclude-pattern "spec/performance/**/*_spec.rb,spec/system/**/*_spec.rb"
 
       - name: Run query performance benchmarks
         run: COVERAGE=false bin/rspec spec/performance
