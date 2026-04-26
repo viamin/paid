@@ -263,4 +263,40 @@ module ProviderSupport
       [ "sh", "-c", "env #{unset_flags} #{command}" ]
     end
   end
+
+  # Returns an AgentHarness provider instance for the given app-level provider key.
+  def harness_provider_for(provider_key)
+    harness_key = harness_provider_key_for(provider_key).to_sym
+    AgentHarness.provider(harness_key)
+  end
+
+  # Returns error_classification_patterns[category] for a single provider.
+  def error_classification_patterns_for(provider_key, category)
+    harness_provider_for(provider_key).error_classification_patterns.fetch(category, [])
+  rescue AgentHarness::ConfigurationError, KeyError
+    []
+  end
+
+  # Aggregates error_classification_patterns[category] across all supported providers.
+  def aggregated_error_classification_patterns(category)
+    supported_provider_keys.flat_map { |key| error_classification_patterns_for(key, category) }.uniq
+  end
+
+  # Aggregates noisy_error_patterns across all supported providers.
+  def aggregated_noisy_error_patterns
+    supported_provider_keys.flat_map do |key|
+      harness_provider_for(key).noisy_error_patterns
+    rescue AgentHarness::ConfigurationError, KeyError
+      []
+    end.uniq
+  end
+
+  # Translates a raw error message using the given provider's translate_error.
+  # Returns nil if the provider does not translate the message (returns it unchanged).
+  def translate_provider_error(provider_key, message)
+    translated = harness_provider_for(provider_key).translate_error(message)
+    translated == message ? nil : translated
+  rescue AgentHarness::ConfigurationError, KeyError
+    nil
+  end
 end

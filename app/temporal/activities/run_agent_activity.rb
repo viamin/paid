@@ -63,45 +63,6 @@ module Activities
       /out of (?:extra )?usage/i
     ].freeze
 
-    AUTH_EXPIRED_PATTERNS = {
-      "codex" => [
-        /refresh_token_reused/i,
-        /refresh token has already been used to generate a new access token/i,
-        /refresh token was already used/i,
-        /Please log out and sign in again/i,
-        /Your access token could not be refreshed/i
-      ].freeze
-    }.freeze
-
-    # Patterns for provider-level credit/quota exhaustion errors that may be
-    # emitted as agent "output" even when the CLI exits with a zero status
-    # (observed with OpenRouter-backed providers returning a billing error as
-    # the only stdout line). These must be specific enough to avoid matching
-    # ordinary agent prose that mentions credits/billing — they key on phrases
-    # that only appear in provider error responses.
-    INSUFFICIENT_CREDITS_PATTERNS = [
-      /requires? more credits/i,
-      /add more credits/i,
-      /insufficient credits/i,
-      /not enough credits/i,
-      /purchase (?:more )?credits/i,
-      /buy (?:more )?credits/i
-    ].freeze
-
-    # Patterns that indicate a fatal provider quota/billing error where the
-    # CLI is known to hang instead of exiting promptly. When any of these
-    # match streaming stderr, the container is stopped immediately rather
-    # than waiting for an idle or wall-clock timeout.
-    #
-    # These are intentionally a strict subset of RATE_LIMIT_PATTERNS —
-    # only patterns where the CLI is empirically known to hang after emitting
-    # the error. Generic rate-limit messages from CLIs that exit cleanly
-    # should NOT be added here.
-    PROVIDER_ABORT_PATTERNS = [
-      /free tier limit reached/i,
-      /please upgrade to a paid plan/i
-    ].freeze
-
     # Maximum number of log rows to inspect when reclassifying a timeout.
     # Caps memory and DB load on long-running, verbose agent attempts.
     TIMEOUT_RATE_LIMIT_LOG_LIMIT = 200
@@ -657,7 +618,7 @@ module Activities
           env: command_env,
           preparation: command_preparation,
           heartbeat_path: heartbeat.available? ? heartbeat.heartbeat_path : nil,
-          abort_patterns: PROVIDER_ABORT_PATTERNS
+          abort_patterns: aggregated_abort_patterns
         )
       end
       stdout = normalize_output_text(result[:stdout])
@@ -765,7 +726,9 @@ module Activities
     def auth_expired_error?(provider, output)
       return false if output.blank?
 
-      AUTH_EXPIRED_PATTERNS.fetch(provider.to_s, []).any? { |pattern| output.match?(pattern) }
+      provider_key = ProviderSupport.provider_key_for_agent_type(provider)
+      ProviderSupport.error_classification_patterns_for(provider_key, :auth_expired)
+        .any? { |pattern| output.match?(pattern) }
     end
 
     # Detects provider-level credit/quota exhaustion errors surfaced as
@@ -775,7 +738,8 @@ module Activities
     def insufficient_credits_error?(output)
       return false if output.blank?
 
-      INSUFFICIENT_CREDITS_PATTERNS.any? { |pattern| output.match?(pattern) }
+      ProviderSupport.aggregated_error_classification_patterns(:quota)
+        .any? { |pattern| output.match?(pattern) }
     end
 
     def strip_prompt_echo(output, prompt)
@@ -870,6 +834,10 @@ module Activities
       app_provider_key = ProviderSupport.provider_key_for_agent_type(provider_key)
       harness_key = ProviderSupport.harness_provider_key_for(app_provider_key).to_sym
       AgentHarness.provider(harness_key)
+    end
+
+    def aggregated_abort_patterns
+      ProviderSupport.aggregated_error_classification_patterns(:abort)
     end
 
     def track_harness_tokens(agent_run, provider_candidate, provider_key, user, result, execution_started_at)
