@@ -168,6 +168,11 @@ RSpec.describe ProviderSupport do
       expect(described_class.subscription_auth_unset_vars_for("codex")).to include("OPENAI_API_KEY")
     end
 
+    it "includes codex proxy header vars" do
+      vars = described_class.subscription_auth_unset_vars_for("codex")
+      expect(vars).to include("OPENAI_HEADER_X_AGENT_RUN_ID", "OPENAI_HEADER_X_PROXY_TOKEN")
+    end
+
     it "returns the gemini unset vars" do
       expect(described_class.subscription_auth_unset_vars_for("gemini")).to include("GEMINI_API_KEY")
     end

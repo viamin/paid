@@ -239,6 +239,10 @@ module ProviderSupport
     "gemini" => %w[
       GOOGLE_HEADER_X_AGENT_RUN_ID
       GOOGLE_HEADER_X_PROXY_TOKEN
+    ].freeze,
+    "codex" => %w[
+      OPENAI_HEADER_X_AGENT_RUN_ID
+      OPENAI_HEADER_X_PROXY_TOKEN
     ].freeze
   }.freeze
 
