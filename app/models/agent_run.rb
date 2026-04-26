@@ -763,6 +763,10 @@ class AgentRun < ApplicationRecord
     ACTIVE_STATUSES.include?(status)
   end
 
+  def cancellable?
+    active? || queued? || paused?
+  end
+
   def running?
     status == "running"
   end

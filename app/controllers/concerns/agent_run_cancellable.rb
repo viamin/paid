@@ -12,7 +12,7 @@ module AgentRunCancellable
   private
 
   def cancel_agent_run(agent_run, redirect_path:)
-    unless agent_run.active?
+    unless agent_run.cancellable?
       redirect_to redirect_path, status: :see_other, notice: "Agent run is no longer active."
       return
     end
@@ -20,7 +20,7 @@ module AgentRunCancellable
     cancelled = false
 
     agent_run.with_lock do
-      if agent_run.active?
+      if agent_run.cancellable?
         agent_run.cancel!
         cancelled = true
       end
