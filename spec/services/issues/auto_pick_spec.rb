@@ -19,6 +19,28 @@ RSpec.describe Issues::AutoPick do
       expect(result.agent_type).to eq("claude_code")
     end
 
+    it "creates a create_pr run when auto_enhance_enabled is false" do
+      issue = create(:issue, project: project, github_state: "open")
+
+      result = described_class.new(project).call
+
+      expect(result).to be_a(AgentRun)
+      expect(result.goal).to eq("create_pr")
+    end
+
+    it "creates an analyze_issue run when auto_enhance_enabled is true" do
+      project.update!(auto_enhance_enabled: true)
+      issue = create(:issue, project: project, github_state: "open")
+
+      result = described_class.new(project).call
+
+      expect(result).to be_a(AgentRun)
+      expect(result.issue).to eq(issue)
+      expect(result.goal).to eq("analyze_issue")
+      expect(result.status).to eq("queued")
+      expect(result.trigger_type).to eq("automatic")
+    end
+
     it "returns nil when auto_pick is disabled on the project" do
       project.update!(auto_pick_enabled: false)
       create(:issue, project: project, github_state: "open")

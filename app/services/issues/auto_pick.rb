@@ -53,7 +53,8 @@ module Issues
       # the rescues below and abort the queue-seed tick.
       return nil unless issue
 
-      agent_run = create_agent_run(issue)
+      goal = decision.type == "queue_analyze_issue_run" ? "analyze_issue" : "create_pr"
+      agent_run = create_agent_run(issue, goal: goal)
 
       Rails.logger.info(
         message: "auto_pick.issue_selected",
@@ -156,8 +157,8 @@ module Issues
       owner.settings.max_auto_pick_open_prs
     end
 
-    def create_agent_run(issue)
-      provider = resolve_provider
+    def create_agent_run(issue, goal: "create_pr")
+      provider = resolve_provider(goal)
       raise NoRunnableProviderError, "No runnable provider could be resolved for this project." unless provider
 
       AgentRun.create!(
@@ -167,12 +168,13 @@ module Issues
         agent_type: Provider.agent_type_for(provider.provider_key),
         status: "queued",
         trigger_type: "automatic",
-        auto_pick: true
+        auto_pick: true,
+        goal: goal
       )
     end
 
-    def resolve_provider
-      provider_id, = AgentRuns::ProviderResolver.call(project: @project, goal: "create_pr")
+    def resolve_provider(goal)
+      provider_id, = AgentRuns::ProviderResolver.call(project: @project, goal: goal)
       Provider.find_by(id: provider_id) if provider_id
     end
   end

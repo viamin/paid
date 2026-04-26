@@ -27,6 +27,18 @@ RSpec.describe Automation::Strategies::AutoPick do
       expect(result.decisions.first.payload[:issue_id]).to eq(42)
     end
 
+    it "returns a queue_analyze_issue_run decision when auto_enhance_enabled is true" do
+      project = build_stubbed(:project, auto_pick_enabled: true, auto_enhance_enabled: true)
+      issue = instance_double(Issue, id: 42)
+      allow(candidate_source).to receive(:next_candidate).with(project).and_return(issue)
+
+      result = strategy.evaluate(build_context_for(project))
+
+      expect(result.decisions.size).to eq(1)
+      expect(result.decisions.first.type).to eq("queue_analyze_issue_run")
+      expect(result.decisions.first.payload[:issue_id]).to eq(42)
+    end
+
     it "returns a noop result when auto-pick is disabled on the project" do
       project = build_stubbed(:project, auto_pick_enabled: false)
       allow(candidate_source).to receive(:next_candidate)
