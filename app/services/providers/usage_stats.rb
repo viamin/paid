@@ -21,7 +21,7 @@ module Providers
     private
 
     def cache_key
-      "providers/usage_stats/#{user.id}"
+      "providers/usage_stats/#{user.account_id}"
     end
 
     def build_stats
