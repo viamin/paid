@@ -192,31 +192,15 @@ class Provider < ApplicationRecord
   end
 
   def kilocode_config_json
-    provider_id = "paid-provider-#{id || provider_key}"
     model_id = kilocode_model_id
     raise ArgumentError, "Missing KiloCode model id for provider #{id || provider_key}" if model_id.blank?
 
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(kilocode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["anthropic"])
     api_adapter = api_config[:kilocode_api] || "openai-compatible"
-    provider_options = { "apiKey" => provider_api_key&.api_key.to_s }
-    provider_options["baseURL"] = api_config[:base_url] if api_adapter == "openai-compatible"
 
-    JSON.pretty_generate(
-      {
-        "provider" => {
-          provider_id => {
-            "api" => api_adapter,
-            "name" => display_name,
-            "options" => provider_options,
-            "models" => {
-              model_id => {
-                "name" => model_id
-              }
-            }
-          }
-        },
-        "model" => "#{provider_id}/#{model_id}"
-      }
+    AgentHarness.provider(:kilocode).config_file_content(
+      api_provider: api_adapter,
+      model_id: model_id
     )
   end
 
