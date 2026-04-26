@@ -479,7 +479,9 @@ RSpec.describe Containers::Provision do
       it "does not let harness cli_env_overrides clobber app-managed subscription auth" do
         codex_provider = instance_double(
           AgentHarness::Providers::Codex,
-          cli_env_overrides: { "PAID_CODEX_SUBSCRIPTION_AUTH" => "1" }
+          cli_env_overrides: { "PAID_CODEX_SUBSCRIPTION_AUTH" => "1" },
+          config_file_content: "model_provider = \"paid\"\n",
+          auth_lock_config: { path: "/tmp/codex-auth.lock" }
         )
         allow(AgentHarness).to receive(:provider).and_call_original
         allow(AgentHarness).to receive(:provider).with(:codex).and_return(codex_provider)

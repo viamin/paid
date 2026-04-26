@@ -1700,11 +1700,13 @@ module Containers
 
     def codex_auth_lockfile_path
       lock_config = codex_harness_provider.auth_lock_config
-      base_path = lock_config[:path].sub(/\.lock\z/, "")
+      base_path = lock_config&.dig(:path)&.sub(/\.lock\z/, "")
+      raise TypeError, "no lock path configured" unless base_path
+
       host_mount = codex_subscription_auth_host_mount_path
       digest = Digest::SHA256.hexdigest(host_mount)[0, 16]
       "#{base_path}-#{digest}.lock"
-    rescue TypeError
+    rescue TypeError, NoMethodError
       base = lock_config&.dig(:path)&.sub(/\.lock\z/, "") || "/tmp/codex-auth"
       "#{base}-missing.lock"
     end
