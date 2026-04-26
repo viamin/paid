@@ -17,12 +17,12 @@ class ApplicationController < ActionController::Base
   private
 
   def with_current_attributes
-    Current.user = rls_safe_current_user
     Current.request_id = request.uuid
 
     if devise_controller?
       TenantContext.with_system_access { yield }
     else
+      Current.user = rls_safe_current_user
       TenantContext.apply!(Current.user&.account)
       yield
     end

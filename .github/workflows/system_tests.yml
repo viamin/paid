@@ -1,0 +1,104 @@
+name: System tests
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+# Cancel in-progress system test runs on the same PR when a new commit is
+# pushed. Don't cancel runs on `main` (those are gating the changelog).
+concurrency:
+  group: system-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  system:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16.13
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      BUNDLE_FROZEN: "true"
+      RAILS_ENV: test
+      DB_HOST: localhost
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      COVERAGE: "false"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@0cb964fd540e0a24c900370abf38a33466142735
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version-file: .tool-versions
+          cache: 'yarn'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install JavaScript dependencies
+        run: yarn install --frozen-lockfile && bin/yarn-postinstall
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+
+      - name: Locate Chromium-family browser
+        # ubuntu-latest ships google-chrome pre-installed at /usr/bin/google-chrome.
+        # Avoid `apt-get install chromium-browser` — on Ubuntu 22.04 that's a snap
+        # transitional package that doesn't work in CI; on 24.04 the package was
+        # renamed to `chromium`. Pre-installed Chrome is the most stable option.
+        # Cuprite/Ferrum work fine against Chrome too.
+        run: |
+          path="$(command -v google-chrome || command -v chromium-browser || command -v chromium)"
+          if [ -z "$path" ]; then
+            echo "::error::No Chromium-family browser found on the runner."
+            exit 1
+          fi
+          echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"
+          "$path" --version
+
+      - name: Build assets
+        run: yarn build && yarn build:css
+
+      - name: Set up database
+        run: bin/rails db:prepare
+
+      - name: Run system specs
+        run: bin/rspec spec/system
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-test-failures
+          # Capybara screenshots live under tmp/capybara/. Test logs help
+          # diagnose server-side issues that don't show up in the screenshot.
+          path: |
+            tmp/capybara/**
+            log/test.log
+          if-no-files-found: ignore
+          retention-days: 7
