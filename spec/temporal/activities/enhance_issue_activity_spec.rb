@@ -133,7 +133,8 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(Knowledge::Search).to have_received(:call).with(hash_including(
         project: project,
         mode: "hybrid",
-        limit: described_class::MAX_SEARCH_RESULTS
+        limit: described_class::MAX_SEARCH_RESULTS,
+        agent_run_id: agent_run.id
       ))
       expect(Knowledge::ContextBundle::Build).to have_received(:call).with(issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id)
     end
