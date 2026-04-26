@@ -168,12 +168,30 @@ RSpec.describe ProviderSupport do
       expect(described_class.subscription_auth_unset_vars_for("codex")).to include("OPENAI_API_KEY")
     end
 
+    it "includes codex proxy header vars" do
+      vars = described_class.subscription_auth_unset_vars_for("codex")
+      expect(vars).to include("OPENAI_HEADER_X_AGENT_RUN_ID", "OPENAI_HEADER_X_PROXY_TOKEN")
+    end
+
     it "returns the gemini unset vars" do
       expect(described_class.subscription_auth_unset_vars_for("gemini")).to include("GEMINI_API_KEY")
     end
 
     it "returns an empty array for unknown providers" do
       expect(described_class.subscription_auth_unset_vars_for("unknown_provider")).to eq([])
+    end
+
+    it "raises when a known provider is missing from agent-harness" do
+      allow(AgentHarness).to receive(:provider).with(:codex).and_raise(KeyError, "missing codex")
+
+      expect { described_class.subscription_auth_unset_vars_for("codex") }.to raise_error(KeyError, /missing codex/)
+    end
+
+    it "raises when a known provider has invalid harness config" do
+      allow(AgentHarness).to receive(:provider).with(:gemini).and_raise(AgentHarness::ConfigurationError, "broken gemini")
+
+      expect { described_class.subscription_auth_unset_vars_for("gemini") }
+        .to raise_error(AgentHarness::ConfigurationError, /broken gemini/)
     end
   end
 

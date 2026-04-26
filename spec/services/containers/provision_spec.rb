@@ -458,7 +458,14 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "disables Gemini CLI sandbox and retries since the container is already isolated" do
+      it "includes provider CLI env overrides from agent-harness" do
+        gemini_provider = instance_double(
+          AgentHarness::Providers::Gemini,
+          cli_env_overrides: { "GEMINI_SANDBOX" => "false", "GEMINI_CLI_DISABLE_RETRIES" => "true" }
+        )
+        allow(AgentHarness).to receive(:provider).and_call_original
+        allow(AgentHarness).to receive(:provider).with(:gemini).and_return(gemini_provider)
+
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
           expect(env).to include("GEMINI_SANDBOX=false")
@@ -467,6 +474,42 @@ RSpec.describe Containers::Provision do
         end
 
         service.provision
+      end
+
+      it "does not let harness cli_env_overrides clobber app-managed subscription auth" do
+        codex_provider = instance_double(
+          AgentHarness::Providers::Codex,
+          cli_env_overrides: { "PAID_CODEX_SUBSCRIPTION_AUTH" => "1" }
+        )
+        allow(AgentHarness).to receive(:provider).and_call_original
+        allow(AgentHarness).to receive(:provider).with(:codex).and_return(codex_provider)
+
+        expect(Docker::Container).to receive(:create) do |config|
+          env = config["Env"]
+          # App sets PAID_CODEX_SUBSCRIPTION_AUTH=0 (no subscription); harness
+          # defaults to 1, but the app value must win.
+          auth_entries = env.select { |e| e.start_with?("PAID_CODEX_SUBSCRIPTION_AUTH=") }
+          expect(auth_entries).to eq([ "PAID_CODEX_SUBSCRIPTION_AUTH=0" ])
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "raises when a known provider is missing from agent-harness" do
+        allow(AgentHarness).to receive(:provider).and_call_original
+        allow(AgentHarness).to receive(:provider).with(:gemini).and_raise(KeyError, "missing gemini")
+
+        expect { service.provision }.to raise_error(KeyError, /missing gemini/)
+      end
+
+      it "raises when provider CLI env overrides are misconfigured in agent-harness" do
+        allow(AgentHarness).to receive(:provider).and_call_original
+        allow(AgentHarness).to receive(:provider).with(:gemini)
+          .and_raise(AgentHarness::ConfigurationError, "broken gemini")
+
+        expect { service.provision }
+          .to raise_error(AgentHarness::ConfigurationError, /broken gemini/)
       end
 
       it "does not include real upstream API keys in environment variables" do
