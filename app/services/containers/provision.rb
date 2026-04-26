@@ -105,7 +105,7 @@ module Containers
     # File locks to serialize Codex OAuth refreshes when multiple runs share
     # the same host-backed auth.json. The lock key is derived from the
     # credential directory so unrelated Codex homes do not block each other.
-    CODEX_AUTH_LOCKFILE_PREFIX = "/tmp/paid-codex-auth".freeze
+    # Lock path prefix comes from AgentHarness::Providers::Codex#auth_lock_config.
 
     # Default resource limits (per issue #23 requirements)
     DEFAULTS = {
@@ -741,16 +741,14 @@ module Containers
     # ChatGPT credentials. This keeps containerized runs aligned with Paid's
     # provider configuration.
     def seed_codex_config!
-      content = <<~TOML
-        model_provider = "paid"
-        notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]
-
-        [model_providers.paid]
-        name = "Paid"
-        base_url = "#{proxy_base_url}/api/proxy/openai"
-        env_key = "OPENAI_API_KEY"
-        wire_api = "responses"
-      TOML
+      config_toml = codex_harness_provider.config_file_content(
+        model_provider: "paid",
+        base_url: "#{proxy_base_url}/api/proxy/openai",
+        env_key: "OPENAI_API_KEY",
+        wire_api: "responses"
+      )
+      notify_line = 'notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]'
+      content = "#{notify_line}\n\n#{config_toml}"
 
       write_container_file("/home/agent/.codex/config.toml", content)
       log_system("container.codex_config_seeded")
@@ -820,7 +818,12 @@ module Containers
     # Codex turns without leaving duplicate TOML keys.
     # Creates config.toml when subscription auth only provided auth.json.
     def seed_codex_notify_hook!
-      result = container.exec([ "sh", "-lc", codex_notify_rewrite_script ], user: "agent")
+      notify_content = codex_harness_provider.notify_hook_content
+      escaped_content = Shellwords.escape(notify_content)
+      result = container.exec(
+        [ "sh", "-lc", codex_notify_rewrite_script(escaped_content) ],
+        user: "agent"
+      )
       exit_code = result.is_a?(Array) ? result[2].to_i : 0
       raise Docker::Error::DockerError, "config rewrite exited with #{exit_code}" unless exit_code == 0
 
@@ -829,24 +832,17 @@ module Containers
       log_system("container.codex_notify_hook_seed_failed", error: e.message)
     end
 
-    def codex_notify_rewrite_script
-      notify_line = 'notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]'
-      escaped_notify_line = Shellwords.escape(notify_line)
-
+    def codex_notify_rewrite_script(escaped_notify_content)
       <<~SH.squish
         config=/home/agent/.codex/config.toml;
         touch "$config" 2>/dev/null || true;
         tmp="$(mktemp)";
-        awk -v notify_line=#{escaped_notify_line} '
-          BEGIN { in_notify = 0 }
-          /^[[:space:]]*\\[notify\\][[:space:]]*$/ { in_notify = 1; next }
-          in_notify && /^[[:space:]]*\\[[^]]+\\][[:space:]]*$/ { in_notify = 0 }
-          in_notify { next }
+        awk '
+          /^[[:space:]]*\\[notify\\][[:space:]]*$/ { next }
           /^[[:space:]]*notify[[:space:]]*=/ { next }
-          !inserted && /^[[:space:]]*\\[[^]]+\\][[:space:]]*$/ { print notify_line; print ""; inserted = 1 }
           { print }
-          END { if (!inserted) { print ""; print notify_line } }
         ' "$config" > "$tmp" &&
+        printf '%s' #{escaped_notify_content} >> "$tmp" &&
         cat "$tmp" > "$config";
         status=$?;
         rm -f "$tmp";
@@ -1701,11 +1697,17 @@ module Containers
     end
 
     def codex_auth_lockfile_path
-      base = codex_subscription_auth_host_mount_path
-      digest = Digest::SHA256.hexdigest(base)[0, 16]
-      "#{CODEX_AUTH_LOCKFILE_PREFIX}-#{digest}.lock"
+      lock_config = codex_harness_provider.auth_lock_config
+      base_path = lock_config[:path].sub(/\.lock\z/, "")
+      host_mount = codex_subscription_auth_host_mount_path
+      digest = Digest::SHA256.hexdigest(host_mount)[0, 16]
+      "#{base_path}-#{digest}.lock"
     rescue TypeError
-      "#{CODEX_AUTH_LOCKFILE_PREFIX}-missing.lock"
+      "#{lock_config&.dig(:path) || "/tmp/codex-auth"}-missing.lock"
+    end
+
+    def codex_harness_provider
+      AgentHarness.provider(:codex)
     end
 
     def copilot_config_host_path
