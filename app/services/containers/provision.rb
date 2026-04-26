@@ -1520,12 +1520,14 @@ module Containers
       env
     end
 
+    # Intentionally no rescue — if a harness provider is misconfigured or
+    # stops exporting cli_env_overrides, we want the error to propagate so
+    # containers are never provisioned without required flags (e.g.
+    # GEMINI_SANDBOX=false).
     def provider_cli_env_overrides
       ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS.flat_map do |key|
         harness_key = ProviderSupport.harness_provider_key_for(key).to_sym
         AgentHarness.provider(harness_key).cli_env_overrides.map { |k, v| "#{k}=#{v}" }
-      rescue KeyError, AgentHarness::ConfigurationError
-        []
       end
     end
 

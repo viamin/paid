@@ -180,6 +180,19 @@ RSpec.describe ProviderSupport do
     it "returns an empty array for unknown providers" do
       expect(described_class.subscription_auth_unset_vars_for("unknown_provider")).to eq([])
     end
+
+    it "raises when a known provider is missing from agent-harness" do
+      allow(AgentHarness).to receive(:provider).with(:codex).and_raise(KeyError, "missing codex")
+
+      expect { described_class.subscription_auth_unset_vars_for("codex") }.to raise_error(KeyError, /missing codex/)
+    end
+
+    it "raises when a known provider has invalid harness config" do
+      allow(AgentHarness).to receive(:provider).with(:gemini).and_raise(AgentHarness::ConfigurationError, "broken gemini")
+
+      expect { described_class.subscription_auth_unset_vars_for("gemini") }
+        .to raise_error(AgentHarness::ConfigurationError, /broken gemini/)
+    end
   end
 
   describe ".proxy_health_check_api_key_for" do

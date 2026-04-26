@@ -103,12 +103,15 @@ module ProviderSupport
 
   def subscription_auth_unset_vars_for(provider_key)
     key = provider_key.to_s
+    return [] unless APP_TO_HARNESS_PROVIDER_KEYS.key?(key)
+
+    # Intentionally no rescue — if the harness provider is misconfigured or
+    # renamed upstream, we want AgentHarness::ConfigurationError to propagate
+    # so subscription auth failures are loud rather than silently degraded.
     harness_key = harness_provider_key_for(key).to_sym
     harness_vars = AgentHarness.provider(harness_key).subscription_unset_vars
     proxy_vars = PROXY_HEADER_UNSET_VARS.fetch(key, [])
     (harness_vars + proxy_vars).uniq
-  rescue KeyError, AgentHarness::ConfigurationError
-    []
   end
 
   def subscription_auth_unset_vars

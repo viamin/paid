@@ -496,6 +496,22 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      it "raises when a known provider is missing from agent-harness" do
+        allow(AgentHarness).to receive(:provider).and_call_original
+        allow(AgentHarness).to receive(:provider).with(:gemini).and_raise(KeyError, "missing gemini")
+
+        expect { service.provision }.to raise_error(KeyError, /missing gemini/)
+      end
+
+      it "raises when provider CLI env overrides are misconfigured in agent-harness" do
+        allow(AgentHarness).to receive(:provider).and_call_original
+        allow(AgentHarness).to receive(:provider).with(:gemini)
+          .and_raise(AgentHarness::ConfigurationError, "broken gemini")
+
+        expect { service.provision }
+          .to raise_error(AgentHarness::ConfigurationError, /broken gemini/)
+      end
+
       it "does not include real upstream API keys in environment variables" do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
