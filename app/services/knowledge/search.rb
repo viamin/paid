@@ -82,20 +82,33 @@ module Knowledge
     def record_usage(results)
       return if tracking_agent_run.blank?
 
-      results.group_by { |result| result[:artifact_type] }.each do |artifact_type, grouped|
-        KnowledgeUsageStat.upsert(
-          {
-            agent_run_id: tracking_agent_run.id,
-            project_id: project.id,
-            artifact_type: artifact_type,
-            goal: tracking_agent_run.goal,
-            context_type: "search",
-            artifact_count: grouped.map { |result| result[:artifact_id] }.uniq.count,
-            chunk_count: grouped.count
-          },
-          unique_by: :idx_knowledge_usage_stats_unique
-        )
+      timestamp = Time.current
+      rows = results.group_by { |result| result[:artifact_type] }.map do |artifact_type, grouped|
+        {
+          agent_run_id: tracking_agent_run.id,
+          project_id: project.id,
+          artifact_type: artifact_type,
+          goal: tracking_agent_run.goal,
+          context_type: "search",
+          artifact_count: grouped.map { |result| result[:artifact_id] }.uniq.count,
+          chunk_count: grouped.count,
+          created_at: timestamp,
+          updated_at: timestamp
+        }
       end
+      return if rows.empty?
+
+      KnowledgeUsageStat.upsert_all(
+        rows,
+        unique_by: :idx_knowledge_usage_stats_unique,
+        on_duplicate: Arel.sql(
+          "project_id = EXCLUDED.project_id, " \
+            "goal = EXCLUDED.goal, " \
+            "artifact_count = knowledge_usage_stats.artifact_count + EXCLUDED.artifact_count, " \
+            "chunk_count = knowledge_usage_stats.chunk_count + EXCLUDED.chunk_count, " \
+            "updated_at = EXCLUDED.updated_at"
+        )
+      )
     end
 
     def tracking_agent_run

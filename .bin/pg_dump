@@ -1,0 +1,85 @@
+#!/usr/bin/env ruby
+$LOAD_PATH.unshift '/workspace/vendor/bundle/ruby/3.4.0/gems/pg-1.6.3-aarch64-linux/lib'
+require 'uri'
+require 'pg'
+
+# Parse args
+file = nil
+schema_only = false
+args = ARGV.dup
+dbname = nil
+
+while arg = args.shift
+  case arg
+  when '--file'
+    file = args.shift
+  when '--schema-only'
+    schema_only = true
+  when /^-/
+    # skip other flags
+  else
+    dbname = arg
+  end
+end
+
+uri = URI.parse(ENV['DATABASE_URL'])
+conn = PG.connect(
+  host: uri.host,
+  port: uri.port,
+  dbname: uri.path[1..],
+  user: uri.user,
+  password: uri.password
+)
+
+output = []
+output << "SET statement_timeout = 0;"
+output << "SET lock_timeout = 0;"
+output << "SET client_encoding = 'UTF8';"
+output << ""
+
+# Get all tables
+tables = conn.exec("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename")
+
+tables.each do |t|
+  tname = t['tablename']
+
+  # Get CREATE TABLE
+  cols = conn.exec("SELECT column_name, data_type, column_default, is_nullable, character_maximum_length
+                     FROM information_schema.columns
+                     WHERE table_schema = 'public' AND table_name = '#{tname}'
+                     ORDER BY ordinal_position")
+
+  col_defs = cols.map do |c|
+    type = c['data_type']
+    type = "character varying(#{c['character_maximum_length']})" if type == 'character varying' && c['character_maximum_length']
+    defn = "    #{c['column_name']} #{type}"
+    defn += " DEFAULT #{c['column_default']}" if c['column_default']
+    defn += " NOT NULL" if c['is_nullable'] == 'NO'
+    defn
+  end
+
+  output << "CREATE TABLE IF NOT EXISTS public.#{tname} ("
+  output << col_defs.join(",\n")
+  output << ");"
+  output << ""
+end
+
+# Dump schema_migrations data
+result = conn.exec("SELECT version FROM schema_migrations ORDER BY version")
+result.each do |row|
+  output << "INSERT INTO schema_migrations (version) VALUES ('#{row['version']}');"
+end
+
+# Dump ar_internal_metadata
+result = conn.exec("SELECT key, value, created_at, updated_at FROM ar_internal_metadata")
+result.each do |row|
+  output << "INSERT INTO ar_internal_metadata (key, value, created_at, updated_at) VALUES ('#{row['key']}', '#{row['value']}', '#{row['created_at']}', '#{row['updated_at']}');"
+end
+
+conn.close
+
+if file
+  File.write(file, output.join("\n") + "\n")
+else
+  puts output.join("\n")
+end

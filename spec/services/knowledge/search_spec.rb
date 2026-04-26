@@ -272,7 +272,7 @@ RSpec.describe Knowledge::Search do
       ])
     end
 
-    it "upserts tracked search usage idempotently" do
+    it "accumulates tracked search usage across repeated searches" do
       symbol_chunk
 
       2.times do
@@ -284,7 +284,12 @@ RSpec.describe Knowledge::Search do
         )
       end
 
-      expect(KnowledgeUsageStat.where(agent_run: agent_run).count).to eq(2)
+      expect(KnowledgeUsageStat.where(agent_run: agent_run).order(:artifact_type).pluck(
+        :artifact_type, :goal, :context_type, :artifact_count, :chunk_count
+      )).to eq([
+        [ "route", agent_run.goal, "search", 2, 2 ],
+        [ "symbol", agent_run.goal, "search", 2, 2 ]
+      ])
     end
 
     it "does not record usage stats when agent_run_id is nil" do
