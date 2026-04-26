@@ -110,7 +110,14 @@ class AutoReleaseEvaluationJob < ApplicationJob
 
   def all_checks_green?(client, project, pr_data)
     checks = client.check_runs_for_ref(project.full_name, pr_data.head.sha)
-    return true if checks.nil? || checks.empty?
+
+    if checks.nil? || checks.empty?
+      # Empty check runs may mean "no CI configured" or "CI hasn't queued yet."
+      # Use the commit status API as a secondary signal: GitHub returns "pending"
+      # when statuses exist but haven't completed. If the combined state is
+      # "pending", CI is likely still spinning up — wait for the next poll cycle.
+      return combined_status_state_settled?(client, project, pr_data.head.sha)
+    end
 
     checks.all? { |c| %w[success skipped neutral].include?(c[:conclusion]) }
   rescue GithubClient::ApiError => e
@@ -127,6 +134,20 @@ class AutoReleaseEvaluationJob < ApplicationJob
   rescue GithubClient::Error => e
     Rails.logger.warn(
       message: "auto_release.check_runs_failed",
+      project_id: project.id,
+      error: e.message
+    )
+    false
+  end
+
+  # Returns true when the combined commit status is not "pending", meaning
+  # either no status checks exist (repo has no CI) or all have completed.
+  def combined_status_state_settled?(client, project, sha)
+    state = client.combined_status_state(project.full_name, sha)
+    state != "pending"
+  rescue GithubClient::Error => e
+    Rails.logger.warn(
+      message: "auto_release.combined_status_failed",
       project_id: project.id,
       error: e.message
     )

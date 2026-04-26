@@ -27,7 +27,8 @@ RSpec.describe DependabotAutoMergeJob do
     allow(client).to receive_messages(
       pull_requests: [ dependabot_pr ],
       pull_request: dependabot_pr,
-      check_runs_for_ref: green_checks
+      check_runs_for_ref: green_checks,
+      combined_status_state: "success"
     )
     allow(client).to receive(:merge_pull_request)
     allow(client).to receive(:add_labels_to_issue)
@@ -175,12 +176,21 @@ RSpec.describe DependabotAutoMergeJob do
       expect(client).to have_received(:merge_pull_request)
     end
 
-    it "merges when no CI checks exist" do
-      allow(client).to receive(:check_runs_for_ref).and_return([])
+    it "merges when no CI checks exist and combined status is not pending" do
+      allow(client).to receive_messages(check_runs_for_ref: [], combined_status_state: "success")
 
       described_class.perform_now(project.id)
 
+      expect(client).to have_received(:combined_status_state)
       expect(client).to have_received(:merge_pull_request)
+    end
+
+    it "skips when no CI checks exist but combined status is pending" do
+      allow(client).to receive_messages(check_runs_for_ref: [], combined_status_state: "pending")
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
     end
 
     it "merges when mode is all" do
