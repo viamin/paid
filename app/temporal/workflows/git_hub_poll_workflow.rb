@@ -147,6 +147,7 @@ module Workflows
       scan_result = maybe_scan_paid_prs(project_id)
       maybe_scan_code_scanning_alerts(project_id)
       maybe_check_knowledge_staleness(project_id)
+      maybe_evaluate_auto_release(project_id)
       scan_result
     end
 
@@ -185,6 +186,24 @@ module Workflows
     rescue => e
       Temporalio::Workflow.logger.warn(
         message: "knowledge.staleness_check_failed",
+        project_id: project_id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
+    # Evaluate auto-release for the project's open release-please PRs.
+    # Runs on every poll cycle so webhooks are not required for auto-release.
+    def maybe_evaluate_auto_release(project_id)
+      return unless Temporalio::Workflow.patched("add-auto-release-poll-v1")
+
+      run_activity(Activities::EvaluateAutoReleaseActivity,
+        { project_id: project_id }, timeout: 30)
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "auto_release.poll_evaluation_failed",
         project_id: project_id,
         error_class: e.class.name,
         error: e.message

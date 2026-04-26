@@ -192,6 +192,32 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
   end
 
+  describe "EvaluateAutoReleaseActivity patch guard" do
+    let(:workflow) { described_class.new }
+
+    before do
+      allow(workflow).to receive(:run_activity).and_return({})
+    end
+
+    it "runs EvaluateAutoReleaseActivity when patched returns true" do
+      allow(Temporalio::Workflow).to receive(:patched).with("add-auto-release-poll-v1").and_return(true)
+
+      workflow.send(:maybe_evaluate_auto_release, 1)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::EvaluateAutoReleaseActivity, { project_id: 1 }, timeout: 30)
+    end
+
+    it "skips EvaluateAutoReleaseActivity when patched returns false" do
+      allow(Temporalio::Workflow).to receive(:patched).with("add-auto-release-poll-v1").and_return(false)
+
+      workflow.send(:maybe_evaluate_auto_release, 1)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::EvaluateAutoReleaseActivity, anything, timeout: anything)
+    end
+  end
+
   describe "#handle_automation_result" do
     let(:workflow) { described_class.new }
     let(:project_id) { 1 }
@@ -1548,6 +1574,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with("add-scan-security-alerts-v1").and_return(false)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("add-check-knowledge-staleness-v1").and_return(false)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("add-auto-release-poll-v1").and_return(false)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("queue-agent-run-goal-v1").and_return(true)
       allow(Temporalio::Workflow).to receive(:patched)
