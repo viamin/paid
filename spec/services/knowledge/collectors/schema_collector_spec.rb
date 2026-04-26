@@ -136,10 +136,24 @@ RSpec.describe Knowledge::Collectors::SchemaCollector, :no_db do
       end
     end
 
+    context "when table has no corresponding model file" do
+      it "excludes tables without model files" do
+        # The tags table has a model file, but if we remove it the table should be excluded
+        allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with("#{fixture_path}/app/models/tag.rb").and_return(false)
+
+        identifiers = collector.collect.map { |a| a[:identifier] }
+
+        expect(identifiers).not_to include("tags")
+        expect(identifiers).to include("users", "posts", "comments")
+      end
+    end
+
     context "with columns that have no explicit foreign key" do
       before do
         allow(File).to receive(:exist?).and_call_original
         allow(File).to receive(:exist?).with("#{fixture_path}/db/schema.rb").and_return(true)
+        allow(File).to receive(:exist?).with("#{fixture_path}/app/models/task.rb").and_return(true)
         allow(File).to receive(:read).and_call_original
         allow(File).to receive(:read).with("#{fixture_path}/db/schema.rb").and_return(<<~SCHEMA)
           ActiveRecord::Schema[7.1].define(version: 2024_01_01_000000) do

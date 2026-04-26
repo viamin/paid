@@ -135,7 +135,10 @@ module Knowledge
         return nil if artifacts.empty?
 
         lines = artifacts.map do |a|
-          a.content.presence || a.identifier
+          parts = [ a.content.presence || a.identifier ]
+          context_chunk = a.active_ordered_chunks.find { |c| c.chunk_type == "context" }
+          parts << context_chunk.content if context_chunk&.content.present?
+          parts.join("\n")
         end
 
         { name: :schema, heading: "Data Model", content: lines.join("\n\n") }
@@ -217,6 +220,12 @@ module Knowledge
               Arel.sql("COALESCE((metadata->>'revisions')::int, (metadata->>'revision_count')::int, 0) DESC")
             )
             .limit(10)
+            .to_a
+        elsif type == "schema"
+          scope
+            .includes(:knowledge_chunks)
+            .order(:identifier)
+            .limit(20)
             .to_a
         else
           scope

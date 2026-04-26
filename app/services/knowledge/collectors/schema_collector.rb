@@ -25,6 +25,7 @@ module Knowledge
 
         tables.filter_map do |table|
           next if INTERNAL_TABLES.include?(table[:name])
+          next unless model_backed?(table[:name])
 
           build_artifact(table, foreign_keys)
         end
@@ -225,6 +226,14 @@ module Knowledge
         end
 
         associations
+      end
+
+      # Checks whether the table has a corresponding model file in the repo.
+      # Converts table name to the expected model path (e.g. "agent_runs" ->
+      # "app/models/agent_run.rb") and verifies the file exists.
+      def model_backed?(table_name)
+        model_path = "app/models/#{table_name.singularize}.rb"
+        repo_file_exists?(model_path)
       end
 
       def detect_polymorphic(table)
