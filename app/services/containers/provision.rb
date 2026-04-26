@@ -1512,7 +1512,10 @@ module Containers
 
       # Append provider-specific CLI settings (e.g. sandbox flags, retry config)
       # from agent-harness so the gem is the single source of truth.
-      env.concat(provider_cli_env_overrides)
+      # Filter out vars already set above so app-managed values (e.g.
+      # PAID_CODEX_SUBSCRIPTION_AUTH) are never overridden by harness defaults.
+      existing_keys = env.each_with_object(Set.new) { |entry, set| set << entry.split("=", 2).first }
+      env.concat(provider_cli_env_overrides.reject { |entry| existing_keys.include?(entry.split("=", 2).first) })
 
       env
     end

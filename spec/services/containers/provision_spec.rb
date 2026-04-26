@@ -476,6 +476,26 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      it "does not let harness cli_env_overrides clobber app-managed subscription auth" do
+        codex_provider = instance_double(
+          AgentHarness::Providers::Codex,
+          cli_env_overrides: { "PAID_CODEX_SUBSCRIPTION_AUTH" => "1" }
+        )
+        allow(AgentHarness).to receive(:provider).and_call_original
+        allow(AgentHarness).to receive(:provider).with(:codex).and_return(codex_provider)
+
+        expect(Docker::Container).to receive(:create) do |config|
+          env = config["Env"]
+          # App sets PAID_CODEX_SUBSCRIPTION_AUTH=0 (no subscription); harness
+          # defaults to 1, but the app value must win.
+          auth_entries = env.select { |e| e.start_with?("PAID_CODEX_SUBSCRIPTION_AUTH=") }
+          expect(auth_entries).to eq([ "PAID_CODEX_SUBSCRIPTION_AUTH=0" ])
+          mock_container
+        end
+
+        service.provision
+      end
+
       it "does not include real upstream API keys in environment variables" do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
