@@ -11,6 +11,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 
 # Install system dependencies
 # Keep client tools on the same Postgres major as the pinned server image.
+# Use the PGDG apt repository because Debian Bookworm does not ship client v16.
 # Use CloudFront mirror to avoid Fastly CDN connection drops in OrbStack
 RUN set -e; \
   sources_modified=0; \
@@ -24,6 +25,12 @@ RUN set -e; \
     echo "Info: no APT sources were updated to use the CloudFront mirror; this can be normal for some base images." >&2; \
   fi; \
   echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80-retries \
+  && apt-get update -qq \
+  && apt-get install -y ca-certificates curl postgresql-common \
+  && install -d /usr/share/postgresql-common/pgdg \
+  && curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+  && . /etc/os-release \
+  && printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" > /etc/apt/sources.list.d/pgdg.sources \
   && apt-get update -qq \
   && apt-get install -y build-essential cmake shellcheck tmux libpq-dev postgresql-client-16 \
   && rm -rf /var/lib/apt/lists/*

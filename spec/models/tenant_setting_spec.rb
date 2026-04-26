@@ -62,6 +62,8 @@ RSpec.describe TenantSetting do
       expect(setting.guardrails).to eq({})
       expect(setting.quality_thresholds).to eq({})
       expect(setting.agent_settings).to eq({})
+      expect(setting.worker_settings).to eq({})
+      expect(setting.self_repo_full_name).to be_nil
     end
   end
 
@@ -126,6 +128,120 @@ RSpec.describe TenantSetting do
         provider_preferences: { "api_key_ids" => { "anthropic" => api_key.id } })
 
       expect(setting.provider_api_key_for("anthropic")).to eq(api_key)
+    end
+  end
+
+  describe "worker_settings" do
+    it "returns defaults when no worker_settings configured" do
+      setting = build(:tenant_setting)
+      expect(setting.effective_worker_settings).to eq(TenantSetting::DEFAULT_WORKER_SETTINGS)
+    end
+
+    it "merges stored values over defaults" do
+      setting = build(:tenant_setting, worker_settings: { "temporal_workflow_slots" => 30 })
+      expect(setting.effective_worker_settings["temporal_workflow_slots"]).to eq(30)
+      expect(setting.effective_worker_settings["temporal_activity_slots"]).to eq(4)
+    end
+
+    it "validates integer keys are between 1 and 100" do
+      setting = build(:tenant_setting, worker_settings: { "temporal_workflow_slots" => 0 })
+      expect(setting).not_to be_valid
+      expect(setting.errors[:worker_settings]).to include(match(/must be an integer between 1 and 100/))
+    end
+
+    it "validates integer keys do not exceed 100" do
+      setting = build(:tenant_setting, worker_settings: { "temporal_activity_slots" => 101 })
+      expect(setting).not_to be_valid
+    end
+
+    it "validates good_job_queues format" do
+      setting = build(:tenant_setting, worker_settings: { "good_job_queues" => "invalid" })
+      expect(setting).not_to be_valid
+      expect(setting.errors[:worker_settings]).to include(match(/good_job_queues must match format/))
+    end
+
+    it "accepts valid good_job_queues" do
+      setting = build(:tenant_setting, worker_settings: { "good_job_queues" => "default:3;maintenance:2" })
+      expect(setting).to be_valid
+    end
+
+    it "normalizes integer values from string input" do
+      setting = build(:tenant_setting, worker_settings: { "temporal_workflow_slots" => "25" })
+      setting.valid?
+      expect(setting.worker_settings["temporal_workflow_slots"]).to eq(25)
+    end
+
+    it "provides accessor for individual settings" do
+      setting = build(:tenant_setting, worker_settings: { "temporal_workflow_slots" => 30 })
+      expect(setting.worker_setting("temporal_workflow_slots")).to eq(30)
+    end
+
+    it "returns default for unconfigured individual settings" do
+      setting = build(:tenant_setting)
+      expect(setting.worker_setting("temporal_workflow_slots")).to eq(20)
+    end
+  end
+
+  describe "self_repo_full_name" do
+    it "accepts valid owner/repo format" do
+      setting = build(:tenant_setting, self_repo_full_name: "owner/repo")
+      expect(setting).to be_valid
+    end
+
+    it "accepts nil" do
+      setting = build(:tenant_setting, self_repo_full_name: nil)
+      expect(setting).to be_valid
+    end
+
+    it "rejects invalid format" do
+      setting = build(:tenant_setting, self_repo_full_name: "not-a-repo-format")
+      expect(setting).not_to be_valid
+      expect(setting.errors[:self_repo_full_name]).to include(match(/must be in owner\/repo format/))
+    end
+  end
+
+  describe ".resolve_worker_setting" do
+    it "returns ENV value when no DB setting exists" do
+      result = described_class.resolve_worker_setting(
+        "temporal_workflow_slots",
+        env_key: "TEMPORAL_WORKFLOW_SLOTS",
+        env: { "TEMPORAL_WORKFLOW_SLOTS" => "30" },
+        default: 20
+      )
+      expect(result).to eq(30)
+    end
+
+    it "returns default when no DB or ENV setting" do
+      result = described_class.resolve_worker_setting(
+        "temporal_workflow_slots",
+        env_key: "TEMPORAL_WORKFLOW_SLOTS",
+        env: {},
+        default: 20
+      )
+      expect(result).to eq(20)
+    end
+
+    it "returns DB value when present" do
+      account = create(:account)
+      create(:tenant_setting, account: account, worker_settings: { "temporal_workflow_slots" => 50 })
+
+      result = described_class.resolve_worker_setting(
+        "temporal_workflow_slots",
+        env_key: "TEMPORAL_WORKFLOW_SLOTS",
+        env: { "TEMPORAL_WORKFLOW_SLOTS" => "30" },
+        default: 20
+      )
+      expect(result).to eq(50)
+    end
+
+    it "handles good_job_queues as string" do
+      result = described_class.resolve_worker_setting(
+        "good_job_queues",
+        env_key: "GOOD_JOB_QUEUES",
+        env: { "GOOD_JOB_QUEUES" => "default:5;maintenance:3" },
+        default: "default:3;maintenance:2"
+      )
+      expect(result).to eq("default:5;maintenance:3")
     end
   end
 end
