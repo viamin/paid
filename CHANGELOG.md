@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.31.0](https://github.com/viamin/paid/compare/v0.30.0...v0.31.0) (2026-04-26)
+
+
+### Features
+
+* **agent-runs:** create AgentRuns::CreateFollowup service for post-analysis routing ([#1469](https://github.com/viamin/paid/issues/1469)) ([b2675c1](https://github.com/viamin/paid/commit/b2675c1d8a2b8d9373b97a49c2e7a271d82dfd97)), closes [#1414](https://github.com/viamin/paid/issues/1414)
+* **agent-runs:** escalate to higher model tier when quality scores are low ([#1450](https://github.com/viamin/paid/issues/1450)) ([5639064](https://github.com/viamin/paid/commit/563906423a11d60da9b67ea3181fda729a8b278d))
+* **dashboards:** surface tier usage and tier-vs-quality metrics ([#1455](https://github.com/viamin/paid/issues/1455)) ([093a15a](https://github.com/viamin/paid/commit/093a15a8eecc118aa15ae99bf9d3960980718da8))
+* **evolution:** extend A/B testing to non-prompt configuration experiments ([#1410](https://github.com/viamin/paid/issues/1410)) ([ef6f68c](https://github.com/viamin/paid/commit/ef6f68c6b9414012c4158ece23f536b313e5e440))
+* **infrastructure:** expose Flipper percentage rollout and add progressive deployment UI ([#1460](https://github.com/viamin/paid/issues/1460)) ([0d505ee](https://github.com/viamin/paid/commit/0d505ee734d359d34c817494252cc88415afdb6e))
+* **knowledge:** add  project setting and  goal scaffolding ([#1453](https://github.com/viamin/paid/issues/1453)) ([3884ee6](https://github.com/viamin/paid/commit/3884ee6c1fe5c94b5caca5268af23d85ce0575e6))
+* **knowledge:** add KnowledgeUsageStat model for per-artifact-type usage tracking ([#1448](https://github.com/viamin/paid/issues/1448)) ([136d8f0](https://github.com/viamin/paid/commit/136d8f06683d52f3de4254c5087909d6068eb131))
+* **monitoring:** operational alert rules for stalled PRs, runaway loops, quota exhaustion ([#1451](https://github.com/viamin/paid/issues/1451)) ([75a2fc0](https://github.com/viamin/paid/commit/75a2fc091ece3b353322273e3ab465ec8887c723))
+* **quality:** auto-unpause projects after quality recovery or prompt evolution ([#1405](https://github.com/viamin/paid/issues/1405)) ([fd8b662](https://github.com/viamin/paid/commit/fd8b6627576d26213756aab2be41a5441fac1e7d))
+* **quality:** quality pause should trigger targeted prompt evolution ([#1406](https://github.com/viamin/paid/issues/1406)) ([8f19e5f](https://github.com/viamin/paid/commit/8f19e5f0f36994024860b9648f6b5d55e903a280))
+* **quality:** replace auto-pause with auto-improve cycle ([#1409](https://github.com/viamin/paid/issues/1409)) ([7e0a62e](https://github.com/viamin/paid/commit/7e0a62e0e6aa7ea00197d1aab79b6f25dbb50cda))
+* **quality:** try different models before pausing on quality drop ([#1407](https://github.com/viamin/paid/issues/1407)) ([51031c6](https://github.com/viamin/paid/commit/51031c616110d378a78471002938c3b3e205d9b6))
+* **release:** evaluate auto-release from poll loop so webhooks are optional ([#1464](https://github.com/viamin/paid/issues/1464)) ([277c724](https://github.com/viamin/paid/commit/277c724a8fb51bbd3a8b481e3c032953c2e936a7))
+* **scheduler:** add cross-user fair queueing ([#1275](https://github.com/viamin/paid/issues/1275)) ([#1459](https://github.com/viamin/paid/issues/1459)) ([32830f0](https://github.com/viamin/paid/commit/32830f02cf2d309953ff9b009db013c17b520792))
+* **settings:** move worker concurrency and self-repo config to TenantSetting ([#1465](https://github.com/viamin/paid/issues/1465)) ([c85d935](https://github.com/viamin/paid/commit/c85d93506afc9d941fbcc097e6e0428cc1d5ce21))
+* **temporal:** create AnalyzeIssueActivity for context readiness assessment ([#1468](https://github.com/viamin/paid/issues/1468)) ([c8a6d3e](https://github.com/viamin/paid/commit/c8a6d3e4cc34ec7a210616e23a7d3dd367102073)), closes [#1413](https://github.com/viamin/paid/issues/1413)
+
+
+### Bug Fixes
+
+* 1255: dev-update: deadlocks when working tree has unstaged changes ([#1454](https://github.com/viamin/paid/issues/1454)) ([8fb8878](https://github.com/viamin/paid/commit/8fb88781d764e2519848e5ab1bf19572f68b4d74))
+* 847: Add truncation with expand/collapse for long log output on agent run page ([#1449](https://github.com/viamin/paid/issues/1449)) ([bffbaa7](https://github.com/viamin/paid/commit/bffbaa7f744fb36ec65485d96909c91250cdb15f))
+* **agent-runs:** record harness token usage from containers ([#1403](https://github.com/viamin/paid/issues/1403)) ([a3a9a93](https://github.com/viamin/paid/commit/a3a9a93d4d04717439e609350fd8025403893b0f))
+* **dev-update:** use actual pull diff for restart decision instead of trigger context ([#1452](https://github.com/viamin/paid/issues/1452)) ([2677a43](https://github.com/viamin/paid/commit/2677a43177fcbebdf817f1c2f4e22144ae08627a)), closes [#1254](https://github.com/viamin/paid/issues/1254)
+* **knowledge:** reduce periodic slowdowns from synchronized collection bursts ([#1443](https://github.com/viamin/paid/issues/1443)) ([e21d1db](https://github.com/viamin/paid/commit/e21d1dbbd6c561619a436fc5422566625508646c))
+* **service-containers:** align service and agent Docker networks for direct-outbound runs ([#1462](https://github.com/viamin/paid/issues/1462)) ([ea9822b](https://github.com/viamin/paid/commit/ea9822bc72a54e8c90111b2f54a2b2c2b217b15b))
+
 ## [0.30.0](https://github.com/viamin/paid/compare/v0.29.0...v0.30.0) (2026-04-25)
 
 
