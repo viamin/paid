@@ -39,6 +39,7 @@ module Activities
     # PROVIDER_BOT_USERNAMES, we can safely key off both author identity and
     # the marker without matching human-authored text.
     PAID_REVIEW_CLEAN_MARKER = "<!-- paid-review-clean -->"
+    PAID_ESCALATED_LABEL = "paid-escalated"
 
     def execute(input)
       project_id = input[:project_id]
@@ -224,6 +225,8 @@ module Activities
       when "escalated"
         check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
+        return dismiss_escalation_trigger(issue, draft: pr_data&.draft) if escalation_dismissed?(issue)
+
         if maybe_restart_draft(project, issue, pr_data)
           if review_goal_retry_limit_requires_escalation?(project, issue)
             return escalate_trigger(issue, reason: retry_limit_reason)
@@ -535,15 +538,8 @@ module Activities
 
     # --- Escalated phase scanning ---
 
-    DISMISS_ESCALATION_LABEL = "paid-dismiss-escalation"
-
     def scan_escalated_pr(project, client, issue, pr_data: nil)
       pr_data ||= fetch_pr_data(client, project, issue)
-
-      # Owner can dismiss escalation by adding the dismiss label.
-      if issue.has_label?(DISMISS_ESCALATION_LABEL)
-        return dismiss_escalation_trigger(issue)
-      end
 
       # Owner approval on an escalated PR unblocks auto-merge.
       if project.auto_merge_enabled? && pr_data.present?
@@ -615,14 +611,15 @@ module Activities
       }
     end
 
-    def dismiss_escalation_trigger(issue)
+    def dismiss_escalation_trigger(issue, draft:)
       log_triggers(issue.project, issue, [ { type: "dismiss_escalation" } ])
 
       {
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: "dismiss_escalation", details: "Owner dismissed escalation via label" } ],
+        triggers: [ { type: "dismiss_escalation", details: "Owner dismissed escalation by removing paid-escalated" } ],
         phase: "escalated",
+        draft: draft == true,
         owner_reviewer_login: issue.project.owner_reviewer_login
       }
     end
@@ -716,6 +713,10 @@ module Activities
       )
 
       true
+    end
+
+    def escalation_dismissed?(issue)
+      issue.escalated_phase? && !issue.has_label?(PAID_ESCALATED_LABEL)
     end
 
     # Detect when a user marks a draft PR as ready on GitHub without going
@@ -900,7 +901,8 @@ module Activities
         .where(source_pull_request_number: issue.github_number)
         .where(trigger_type: "automatic", goal: "create_pr")
         .finished
-        .order(created_at: :desc)
+      recent_runs = recent_runs.where("created_at >= ?", issue.operational_failure_reset_at) if issue.operational_failure_reset_at.present?
+      recent_runs = recent_runs.order(created_at: :desc)
         .limit(MAX_CONSECUTIVE_OPERATIONAL_FAILURES)
 
       return false if recent_runs.size < MAX_CONSECUTIVE_OPERATIONAL_FAILURES

@@ -215,6 +215,21 @@ class Issue < ApplicationRecord
     )
   end
 
+  def dismiss_escalation!(draft:)
+    reset_at = Time.current
+    attrs = {
+      labels: labels - %w[paid-escalated paid-dismiss-escalation],
+      pr_review_phase: draft ? "restarted" : "ready",
+      pr_followup_count: 0,
+      review_goal_retry_count: 0,
+      review_goal_retry_reset_at: reset_at,
+      operational_failure_reset_at: reset_at
+    }
+    attrs[:draft_review_count] = 0 if draft
+
+    update!(attrs)
+  end
+
   def ready_to_work?
     blocking_issues.none? &&
       blocking_deployment_dependencies.none? &&
