@@ -571,7 +571,7 @@ RSpec.describe Activities::RunAgentActivity do
       version = prompt.create_version!(template: "enhance {{base_prompt}} {{repo}} {{issue_number}}")
       run = create(:agent_run, :enhance_issue_goal, project: project, issue: issue)
       allow(Knowledge::ContextBundle::Build).to receive(:call)
-        .with(issue: issue, project: project, agent_run: run)
+        .with(issue: issue, project: project, agent_run: run, agent_run_id: run.id)
         .and_return(content: "")
 
       activity.send(:augment_prompt_for_enhance_issue_goal, run, "Enhance this issue")

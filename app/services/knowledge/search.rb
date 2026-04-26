@@ -99,7 +99,7 @@ module Knowledge
     end
 
     def tracking_agent_run
-      @tracking_agent_run ||= AgentRun.select(:id, :goal).find_by(id: agent_run_id)
+      @tracking_agent_run ||= agent_run_id.present? ? AgentRun.select(:id, :goal).find_by(id: agent_run_id) : nil
     end
 
     def monotonic_now
