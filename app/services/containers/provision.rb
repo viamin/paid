@@ -1703,7 +1703,8 @@ module Containers
       digest = Digest::SHA256.hexdigest(host_mount)[0, 16]
       "#{base_path}-#{digest}.lock"
     rescue TypeError
-      "#{lock_config&.dig(:path) || "/tmp/codex-auth"}-missing.lock"
+      base = lock_config&.dig(:path)&.sub(/\.lock\z/, "") || "/tmp/codex-auth"
+      "#{base}-missing.lock"
     end
 
     def codex_harness_provider
