@@ -184,6 +184,7 @@
   <% phase_summary = local_assigns.fetch(:phase_summary) { agent_run.phase_summary } %>
   <% phase_timeline = local_assigns.fetch(:phase_timeline) { agent_run.phase_timeline } %>
   <% phases = phase_timeline.to_a %>
+  <% active_phase_group = agent_run.current_phase_group(phases: phases) %>
 
   <div class="mt-6 rounded-lg bg-white p-4 shadow">
     <div class="flex items-start justify-between gap-4">
@@ -196,6 +197,7 @@
       </span>
     </div>
 
+    <% completed_groups = phases.map(&:phase_group).uniq %>
     <div class="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
       <% {
         "queue" => phase_summary[:queue_seconds],
@@ -205,9 +207,34 @@
         "post" => phase_summary[:post_seconds],
         "cleanup" => phase_summary[:cleanup_seconds]
       }.each do |phase_group, seconds| %>
-        <div class="rounded-lg border border-gray-200 px-3 py-3">
-          <div class="text-xs font-medium uppercase tracking-wide text-gray-500"><%= phase_group_label(phase_group) %></div>
-          <div class="mt-2 text-xl font-semibold text-gray-900"><%= format_duration(seconds) %></div>
+        <% is_active = active_phase_group == phase_group %>
+        <% is_completed = phase_group == "queue" ? phases.any? : completed_groups.include?(phase_group) %>
+        <% is_pending = !is_active && !is_completed && active_phase_group.present? %>
+        <div class="rounded-lg border px-3 py-3 <%= if is_active
+          'border-blue-400 bg-blue-50'
+        elsif is_pending
+          'border-gray-200 opacity-50'
+        else
+          'border-gray-200'
+        end %>">
+          <div class="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide <%= is_active ? 'text-blue-600' : 'text-gray-500' %>">
+            <% if is_active %>
+              <span class="relative flex h-2 w-2">
+                <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75"></span>
+                <span class="relative inline-flex h-2 w-2 rounded-full bg-blue-500"></span>
+              </span>
+            <% end %>
+            <%= phase_group_label(phase_group) %>
+          </div>
+          <div class="mt-2 text-xl font-semibold <%= is_active ? 'text-blue-900' : 'text-gray-900' %>">
+            <% if is_active %>
+              <span class="text-blue-600">In Progress</span>
+            <% elsif is_pending %>
+              &mdash;
+            <% else %>
+              <%= format_duration(seconds) %>
+            <% end %>
+          </div>
         </div>
       <% end %>
     </div>
