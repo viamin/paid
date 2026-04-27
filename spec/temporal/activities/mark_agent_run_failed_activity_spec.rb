@@ -113,6 +113,64 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
         .to have_enqueued_job(ProcessRunQueueJob)
     end
 
+    context "with auth failure detection" do
+      it "enqueues GithubTokenValidationJob for auth-related errors" do
+        agent_run = create(:agent_run, :running, project: project)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "Authentication failed for 'https://github.com/org/repo.git'")
+        }.to have_enqueued_job(GithubTokenValidationJob).with(project.github_token.id)
+      end
+
+      it "enqueues GithubTokenValidationJob for GithubClient::AuthenticationError" do
+        agent_run = create(:agent_run, :running, project: project)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "GithubClient::AuthenticationError: Invalid or expired GitHub token")
+        }.to have_enqueued_job(GithubTokenValidationJob).with(project.github_token.id)
+      end
+
+      it "enqueues GithubTokenValidationJob for proxy 503 errors" do
+        agent_run = create(:agent_run, :running, project: project)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "GitCredentials proxy returned 503")
+        }.to have_enqueued_job(GithubTokenValidationJob).with(project.github_token.id)
+      end
+
+      it "does not enqueue validation for non-auth errors" do
+        agent_run = create(:agent_run, :running, project: project)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "Container crashed")
+        }.not_to have_enqueued_job(GithubTokenValidationJob)
+      end
+
+      it "does not break the main flow when auth check raises" do
+        agent_run = create(:agent_run, :running, project: project)
+        allow(GithubTokens::AuthFailureChecker).to receive(:new).and_raise(StandardError, "Redis down")
+
+        result = activity.execute(agent_run_id: agent_run.id, error: "Authentication failed")
+
+        expect(result).to eq({ agent_run_id: agent_run.id })
+        expect(agent_run.reload.status).to eq("failed")
+      end
+
+      it "handles missing github_token gracefully" do
+        agent_run = create(:agent_run, :running, project: project)
+        # Simulate a project whose token was deleted after the run started
+        allow(project).to receive(:github_token).and_return(nil)
+        allow(Project).to receive(:find).and_return(project)
+        agent_run_double = agent_run
+        allow(agent_run_double).to receive(:project).and_return(project)
+        allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run_double)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "Authentication failed")
+        }.not_to have_enqueued_job(GithubTokenValidationJob)
+      end
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       expect {
         activity.execute(agent_run_id: -1, error: "error")
