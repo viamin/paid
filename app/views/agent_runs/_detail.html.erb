@@ -334,7 +334,7 @@
     violation_type = agent_run.guardrail_violation_type.presence ||
       agent_run.guardrail_context&.dig("violation_type").presence
     violation_label = violation_type&.tr("_", " ")&.capitalize || "Guardrail violation"
-    violation_detail = agent_run.guardrail_context&.dig("detail").presence
+    violation_detail = agent_run.guardrail_context&.dig("details").presence
   %>
   <div class="mt-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
     <h2 class="text-sm font-semibold text-yellow-800">Run Paused</h2>
