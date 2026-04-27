@@ -51,7 +51,17 @@ class GithubHealthState < ApplicationRecord
       new_count = failure_count + 1
       attrs = { failure_count: new_count, last_error_message: error_message&.truncate(500) }
 
-      if new_count >= threshold && circuit_state == "closed"
+      if circuit_state == "half_open"
+        attrs[:circuit_state] = "open"
+        attrs[:circuit_opened_at] = Time.current
+
+        Rails.logger.warn(
+          message: "github_health.circuit_reopened",
+          endpoint: endpoint,
+          failure_count: new_count,
+          last_error: error_message&.truncate(200)
+        )
+      elsif new_count >= threshold && circuit_state == "closed"
         attrs[:circuit_state] = "open"
         attrs[:circuit_opened_at] = Time.current
 

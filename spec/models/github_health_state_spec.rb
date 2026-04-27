@@ -105,6 +105,25 @@ RSpec.describe GithubHealthState do
 
       state.record_failure!(threshold: 5)
     end
+
+    it "reopens the circuit from half_open on any failure" do
+      state = create(:github_health_state, :circuit_half_open)
+      state.record_failure!(error_message: "probe failed")
+
+      state.reload
+      expect(state.circuit_state).to eq("open")
+      expect(state.circuit_opened_at).to be_present
+    end
+
+    it "logs when reopening the circuit from half_open" do
+      state = create(:github_health_state, :circuit_half_open)
+
+      expect(Rails.logger).to receive(:warn).with(hash_including(
+        message: "github_health.circuit_reopened"
+      ))
+
+      state.record_failure!
+    end
   end
 
   describe "#record_success!" do
