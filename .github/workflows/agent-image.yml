@@ -132,6 +132,19 @@ jobs:
           fi
           echo "package=$package" >> "$GITHUB_OUTPUT"
 
+      - name: Extract Kilocode CLI install contract from agent-harness
+        id: kilocode-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-provider-install-contract.rb kilocode)
+          install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
+          if [ -z "$install_command" ]; then
+            echo "Failed to extract Kilocode CLI install command from agent-harness" >&2
+            exit 1
+          fi
+          echo "install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "$install_command" >> "$GITHUB_OUTPUT"
+          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
+
       - name: Extract Gemini CLI install contract from agent-harness
         id: gemini-contract
         run: |
@@ -163,6 +176,7 @@ jobs:
             CURSOR_GLOBAL_PATH=${{ steps.cursor-contract.outputs.global_path }}
             CODEX_PACKAGE=${{ steps.codex-contract.outputs.package }}
             GITHUB_COPILOT_PACKAGE=${{ steps.github-copilot-contract.outputs.package }}
+            KILOCODE_INSTALL_COMMAND=${{ steps.kilocode-contract.outputs.install_command }}
             GEMINI_CLI_INSTALL_COMMAND=${{ steps.gemini-contract.outputs.install_command }}
           cache-from: type=gha,scope=paid-agent
           cache-to: type=gha,mode=max,scope=paid-agent
