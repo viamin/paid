@@ -1339,10 +1339,6 @@ class GithubClient
     url.to_s[%r{/actions/runs/\d+/job/(\d+)}, 1]
   end
 
-  def actions_run_id_from_url(url)
-    url.to_s[%r{/actions/runs/(\d+)}, 1]
-  end
-
   def check_run_output_text(check_run)
     output = check_run.output
     return "" unless output

@@ -956,12 +956,7 @@ module Activities
     CI_RETRY_COOLDOWN = 30.minutes
 
     def ci_failure_triggers(checks)
-      return [] if checks.nil?
-
-      completed = checks.select { |c| c[:conclusion].present? }
-      return [] if completed.empty?
-
-      failed = completed.select { |c| %w[failure cancelled timed_out action_required stale].include?(c[:conclusion]) }
+      failed = failed_checks_from(checks)
       return [] if failed.empty?
 
       [ { type: "ci_failure", details: failed.map { |c| c[:name] } } ]

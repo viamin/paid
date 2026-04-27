@@ -1,9 +1,0 @@
-#!/bin/bash
-# No-op pg_dump shim - schema dump is handled by structure.sql in repo
-# Parse --file flag to create an empty output file
-while [[ "$#" -gt 0 ]]; do
-  case $1 in
-    --file) touch "$2"; shift 2;;
-    *) shift;;
-  esac
-done
