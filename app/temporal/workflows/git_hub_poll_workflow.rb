@@ -148,6 +148,7 @@ module Workflows
       maybe_scan_code_scanning_alerts(project_id)
       maybe_check_knowledge_staleness(project_id)
       maybe_evaluate_auto_release(project_id)
+      maybe_evaluate_dependabot_auto_merge(project_id)
       scan_result
     end
 
@@ -213,6 +214,24 @@ module Workflows
     rescue => e
       Temporalio::Workflow.logger.warn(
         message: "auto_release.poll_evaluation_failed",
+        project_id: project_id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
+    # Evaluate dependabot auto-merge for the project's open Dependabot PRs.
+    # Runs on every poll cycle so webhooks are not required for auto-merge.
+    def maybe_evaluate_dependabot_auto_merge(project_id)
+      return unless Temporalio::Workflow.patched("add-dependabot-auto-merge-poll-v1")
+
+      run_activity(Activities::EvaluateDependabotAutoMergeActivity,
+        { project_id: project_id }, timeout: 30)
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "dependabot_auto_merge.poll_evaluation_failed",
         project_id: project_id,
         error_class: e.class.name,
         error: e.message

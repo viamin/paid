@@ -4028,7 +4028,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           github_creator_login: "dependabot[bot]")
       end
 
-      it "auto-merges without review when CI is green and mergeable" do
+      it "does not emit owner_approved — auto-merge is handled by DependabotAutoMergeJob" do
         project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
         stub_github_for_pr(
           author_login: "dependabot[bot]",
@@ -4039,12 +4039,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
-        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "owner_approved" ])
+        expect(result[:prs_to_trigger]).to be_empty
       end
 
-      it "auto-merges in dependabot_only mode without review" do
+      it "does not emit owner_approved in dependabot_only mode" do
         project.update!(auto_merge_mode: "dependabot_only")
         stub_github_for_pr(
           author_login: "dependabot[bot]",
@@ -4055,9 +4053,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
-        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "owner_approved" ])
+        expect(result[:prs_to_trigger]).to be_empty
       end
 
       it "triggers ci_failure follow-up without requiring reviews" do
@@ -4075,7 +4071,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger[:triggers].map { |t| t[:type] }).to include("ci_failure")
       end
 
-      it "does not auto-merge when auto_merge is disabled" do
+      it "returns no triggers when CI is green regardless of auto_merge mode" do
         project.update!(auto_merge_mode: "off")
         stub_github_for_pr(
           author_login: "dependabot[bot]",

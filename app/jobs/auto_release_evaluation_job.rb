@@ -109,13 +109,46 @@ class AutoReleaseEvaluationJob < ApplicationJob
   end
 
   def all_checks_green?(client, project, pr_data)
-    checks = client.check_runs_for_ref(project.full_name, pr_data.head.sha)
-    return true if checks.nil? || checks.empty?
+    sha = pr_data.head.sha
+    checks = client.check_runs_for_ref(project.full_name, sha)
+
+    if checks.nil? || checks.empty?
+      return combined_status_state_settled?(client, project, sha)
+    end
 
     checks.all? { |c| %w[success skipped neutral].include?(c[:conclusion]) }
+  rescue GithubClient::ApiError => e
+    if e.status == 403
+      Rails.logger.info(
+        message: "auto_release.check_runs_forbidden",
+        project_id: project.id,
+        error: e.message
+      )
+      return combined_status_state_settled?(client, project, sha)
+    end
+
+    raise
   rescue GithubClient::Error => e
     Rails.logger.warn(
       message: "auto_release.check_runs_failed",
+      project_id: project.id,
+      error: e.message
+    )
+    false
+  end
+
+  # Returns true when CI has passed or no CI is configured.
+  # GitHub returns "pending" with 0 contexts when no status checks exist,
+  # so we treat that as "no CI" and allow the merge. Any other non-success
+  # state (failure, error, or pending with actual statuses) blocks merging.
+  # This is also the fallback when the token cannot read check runs: we only
+  # proceed after a separate API confirms success or that no statuses exist.
+  def combined_status_state_settled?(client, project, sha)
+    status = client.combined_status(project.full_name, sha)
+    status[:state] == "success" || (status[:state] == "pending" && status[:total_count] == 0)
+  rescue GithubClient::Error => e
+    Rails.logger.warn(
+      message: "auto_release.combined_status_failed",
       project_id: project.id,
       error: e.message
     )
