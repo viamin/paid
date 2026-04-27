@@ -1,0 +1,52 @@
+<% content_for(:title) { "Search Knowledge - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to project_knowledge_browse_index_path(@project), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to Knowledge Base
+    <% end %>
+  </div>
+
+  <div class="sm:flex sm:items-center">
+    <div class="sm:flex-auto">
+      <h1 class="text-2xl font-semibold leading-6 text-gray-900">Search Knowledge</h1>
+      <p class="mt-2 text-sm text-gray-700">Search knowledge artifacts in <span class="font-medium"><%= @project.name %></span>.</p>
+    </div>
+  </div>
+
+  <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+    <div class="px-4 py-5 sm:p-6">
+      <%= form_with url: project_knowledge_search_results_path(@project), method: :get, data: { turbo_frame: "search-results" } do |f| %>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
+          <div class="sm:col-span-2">
+            <%= f.label :q, "Query", class: "block text-sm font-medium text-gray-700" %>
+            <%= f.text_field :q, value: @query, placeholder: "Search artifacts...", autofocus: true,
+                  class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
+          </div>
+          <div class="sm:col-span-1">
+            <%= f.label :mode, "Mode", class: "block text-sm font-medium text-gray-700" %>
+            <% disabled_modes = @semantic_search_source == :none ? %w[hybrid semantic] : [] %>
+            <%= f.select :mode, options_for_select([["Hybrid", "hybrid"], ["Semantic", "semantic"], ["Exact", "exact"]], selected: @search_mode, disabled: disabled_modes),
+                  {},
+                  class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
+          </div>
+          <div class="sm:col-span-1 flex items-end">
+            <%= f.submit "Search", class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
+          </div>
+        </div>
+        <% if params[:type].present? %>
+          <%= f.hidden_field :type, value: params[:type] %>
+        <% end %>
+      <% end %>
+    </div>
+  </div>
+
+  <%= render "knowledge/search/semantic_search_settings" %>
+
+  <%= turbo_frame_tag "search-results" do %>
+    <%= render "knowledge/search/results" %>
+  <% end %>
+</div>

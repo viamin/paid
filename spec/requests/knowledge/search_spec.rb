@@ -18,29 +18,66 @@ RSpec.describe "Knowledge::Search" do
     context "when authenticated" do
       before { sign_in user }
 
-      it "renders the search page" do
+      it "renders the project directory page" do
         get knowledge_search_path
         expect(response).to have_http_status(:ok)
-        expect(response.body).to include("Knowledge Search")
+        expect(response.body).to include("Knowledge")
       end
 
-      it "lists projects in the selector" do
+      it "lists projects with their knowledge status" do
         project # ensure created
         get knowledge_search_path
+        expect(response.body).to include(project.name)
+      end
+
+      it "shows artifact type counts for each project" do
+        version = create(:project_version, project: project)
+        run = create(:collector_run, :completed, project_version: version)
+        create(:knowledge_artifact, collector_run: run, project: project,
+          artifact_type: "route", identifier: "GET /test")
+
+        get knowledge_search_path
+        expect(response.body).to include("Route")
+      end
+
+      it "links to project-scoped browse and search" do
+        project # ensure created
+        get knowledge_search_path
+        expect(response.body).to include(project_knowledge_browse_index_path(project))
+        expect(response.body).to include(project_knowledge_search_path(project))
+      end
+    end
+  end
+
+  describe "GET /projects/:project_id/knowledge/search" do
+    context "when not authenticated" do
+      it "redirects to sign in" do
+        get project_knowledge_search_path(project)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "renders the project-scoped search page" do
+        get project_knowledge_search_path(project)
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Search Knowledge")
         expect(response.body).to include(project.name)
       end
 
       it "shows a warning when no knowledge embedding provider is available" do
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
-        get knowledge_search_path, params: { project_id: project.id }
+        get project_knowledge_search_path(project)
         expect(response.body).to include("No configured knowledge embedding provider is available")
       end
 
       it "shows the user key name and manage link when the current user owns the API key" do
         create(:provider_api_key, user: user, name: "My OpenAI Key", api_service_type: "openai", api_key: "sk-test-key")
         project.update!(created_by: user)
-        get knowledge_search_path, params: { project_id: project.id }
+        get project_knowledge_search_path(project)
         expect(response.body).not_to include("No configured knowledge embedding provider is available")
         expect(response.body).to include("My OpenAI Key")
         expect(response.body).to include("Manage your API keys")
@@ -50,7 +87,7 @@ RSpec.describe "Knowledge::Search" do
         other_user = create(:user, account: account)
         create(:provider_api_key, user: other_user, name: "Other Key", api_service_type: "openai", api_key: "sk-other")
         project.update!(created_by: other_user)
-        get knowledge_search_path, params: { project_id: project.id }
+        get project_knowledge_search_path(project)
         expect(response.body).to include("View your API keys")
       end
 
@@ -59,7 +96,7 @@ RSpec.describe "Knowledge::Search" do
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return("sk-platform-key")
         allow(ENV).to receive(:fetch).with("OPENAI_API_KEY", anything).and_return("sk-platform-key")
-        get knowledge_search_path, params: { project_id: project.id }
+        get project_knowledge_search_path(project)
         expect(response.body).not_to include("No configured knowledge embedding provider is available")
         expect(response.body).to include("platform-provided")
         expect(response.body).not_to include("Manage your API keys")
@@ -69,7 +106,7 @@ RSpec.describe "Knowledge::Search" do
       it "disables Hybrid and Semantic mode options when no API key is available" do
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
-        get knowledge_search_path, params: { project_id: project.id }
+        get project_knowledge_search_path(project)
 
         doc = Nokogiri::HTML(response.body)
         hybrid_option = doc.at_css('option[value="hybrid"]')
@@ -84,7 +121,7 @@ RSpec.describe "Knowledge::Search" do
       it "enables all mode options when an API key is available" do
         owner = project.effective_owner
         create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-key")
-        get knowledge_search_path, params: { project_id: project.id }
+        get project_knowledge_search_path(project)
 
         doc = Nokogiri::HTML(response.body)
         hybrid_option = doc.at_css('option[value="hybrid"]')
@@ -97,17 +134,17 @@ RSpec.describe "Knowledge::Search" do
       it "shows embedding model info when mode is hybrid or semantic" do
         owner = project.effective_owner
         create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-key")
-        get knowledge_search_path, params: { project_id: project.id, mode: "hybrid" }
+        get project_knowledge_search_path(project, mode: "hybrid")
         expect(response.body).to include("Embedding model")
 
-        get knowledge_search_path, params: { project_id: project.id, mode: "semantic" }
+        get project_knowledge_search_path(project, mode: "semantic")
         expect(response.body).to include("Embedding model")
       end
 
       it "hides embedding model info when mode is exact even with a key available" do
         owner = project.effective_owner
         create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-key")
-        get knowledge_search_path, params: { project_id: project.id, mode: "exact" }
+        get project_knowledge_search_path(project, mode: "exact")
         expect(response.body).not_to include("Embedding model")
       end
     end
@@ -119,11 +156,21 @@ RSpec.describe "Knowledge::Search" do
     it "requires a project" do
       get knowledge_search_results_path, params: { q: "test" }
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include("Please select a project")
+      expect(response.body).to include("Please select a project to search")
     end
 
     it "requires a query" do
       get knowledge_search_results_path, params: { project_id: project.id }
+      follow_redirect!
+      expect(response).to have_http_status(:ok)
+    end
+  end
+
+  describe "GET /projects/:project_id/knowledge/search/results" do
+    before { sign_in user }
+
+    it "requires a query" do
+      get project_knowledge_search_results_path(project)
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Please enter a search query")
     end
@@ -142,7 +189,7 @@ RSpec.describe "Knowledge::Search" do
       end
 
       it "returns search results including the matching artifact" do
-        get knowledge_search_results_path, params: { project_id: project.id, q: "test", mode: "exact" }
+        get project_knowledge_search_results_path(project), params: { q: "test", mode: "exact" }
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("GET /api/test")
         expect(response.body).to include("route")
@@ -154,7 +201,7 @@ RSpec.describe "Knowledge::Search" do
 
         allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "hybrid", total: 0, took_ms: 0, exact_count: 0, semantic_count: 0 } })
 
-        get knowledge_search_results_path, params: { project_id: project.id, q: "test" }
+        get project_knowledge_search_results_path(project), params: { q: "test" }
 
         expect(Knowledge::Search).to have_received(:call).with(
           hash_including(api_key: api_key.api_key)
@@ -169,14 +216,14 @@ RSpec.describe "Knowledge::Search" do
       end
 
       it "coerces mode=hybrid to exact when no API key is available" do
-        get knowledge_search_results_path, params: { project_id: project.id, q: "test", mode: "hybrid" }
+        get project_knowledge_search_results_path(project), params: { q: "test", mode: "hybrid" }
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("(mode: exact)")
       end
 
       it "coerces mode=semantic to exact when no API key is available" do
-        get knowledge_search_results_path, params: { project_id: project.id, q: "test", mode: "semantic" }
+        get project_knowledge_search_results_path(project), params: { q: "test", mode: "semantic" }
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("(mode: exact)")
