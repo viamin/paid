@@ -31,6 +31,7 @@
       <%= render "agent_runs/detail_actions",
             agent_run: @agent_run,
             show_cancel: policy(@agent_run).cancel?,
+            show_resume: policy(@agent_run).resume?,
             show_retry: policy(@agent_run.project).run_agent?,
             retry_provider_options: @retry_provider_options %>
     </div>

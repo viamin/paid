@@ -1537,6 +1537,19 @@ RSpec.describe "AgentRuns" do
         expect(flash[:notice]).to eq("Agent run cancelled.")
       end
 
+      it "cancels a paused run and enqueues background cleanup" do
+        agent_run = create(:agent_run, project: project, status: "paused", paused_at: Time.current,
+          guardrail_violation_type: "cost_limit")
+
+        expect {
+          post cancel_project_agent_run_path(project, agent_run)
+        }.to have_enqueued_job(AgentRunCancellationJob).with(agent_run.id)
+
+        expect(agent_run.reload.status).to eq("cancelled")
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:notice]).to eq("Agent run cancelled.")
+      end
+
       it "redirects with notice when run is no longer active" do
         agent_run = create(:agent_run, :failed, project: project)
 
