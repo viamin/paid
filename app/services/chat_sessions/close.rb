@@ -19,9 +19,9 @@ module ChatSessions
 
     def call
       validate!
-      compute_totals
 
       ActiveRecord::Base.transaction do
+        compute_totals
         transition_to_closed
         cleanup_workspace if chat_session.mode == "workspace"
       end
