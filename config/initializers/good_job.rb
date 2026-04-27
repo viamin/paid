@@ -159,6 +159,11 @@ Rails.application.configure do
       cron: "0 */6 * * *",
       class: "LlmOutputMetricFeedbackCollectionJob",
       description: "Collect feedback for LLM output metrics (decision records)"
+    },
+    chat_idle_reaper: {
+      cron: "*/5 * * * *",
+      class: "ChatSessions::IdleReaperJob",
+      description: "Close idle chat sessions past their timeout"
     }
   }
 end
