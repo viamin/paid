@@ -49,8 +49,15 @@ module ChatSessions
       )
     end
 
+    # Cap conversation history to avoid unbounded memory growth and
+    # exceeding the LLM context window in long-running sessions.
+    MAX_CONVERSATION_MESSAGES = 200
+
     def build_conversation
-      chat_session.messages.chronological.map do |msg|
+      messages = chat_session.messages.chronological
+      messages = messages.last(MAX_CONVERSATION_MESSAGES)
+
+      messages.map do |msg|
         { role: msg.role, content: msg.content }.tap do |entry|
           entry[:tool_call_id] = msg.tool_call_id if msg.tool_call_id.present?
           entry[:tool_name] = msg.tool_name if msg.tool_name.present?

@@ -23,9 +23,9 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
 
     it "includes primary project context when associated" do
       project = create(:project, account: account, name: "my-app")
-      chat_session.chat_session_projects.create!(project: project, context_type: "primary")
+      session = create(:chat_session, account: account, created_by: user, project: project)
 
-      prompt = described_class.call(chat_session: chat_session)
+      prompt = described_class.call(chat_session: session)
 
       expect(prompt).to include("my-app")
     end

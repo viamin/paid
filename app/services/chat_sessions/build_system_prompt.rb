@@ -57,9 +57,10 @@ module ChatSessions
         "You can read and write files, run commands, and make code changes directly."
     end
 
+    # Primary project is the canonical project_id FK on ChatSession.
+    # chat_session_projects is reserved for reference projects only.
     def primary_project
-      @primary_project ||= chat_session.chat_session_projects
-        .find_by(context_type: "primary")&.project
+      @primary_project ||= chat_session.project
     end
 
     def reference_projects

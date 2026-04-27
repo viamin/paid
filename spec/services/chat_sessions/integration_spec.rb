@@ -63,7 +63,7 @@ RSpec.describe "ChatSessions integration", type: :model do
     session = ChatSessions::Create.call(account: account, user: user, project_id: project.id)
 
     expect(session.project).to eq(project)
-    expect(session.chat_session_projects.first.context_type).to eq("primary")
+    expect(session.chat_session_projects).to be_empty
 
     system_msg = session.messages.find_by(role: "system")
     expect(system_msg.content).to include(project.name)

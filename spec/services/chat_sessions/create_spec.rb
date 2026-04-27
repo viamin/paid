@@ -45,9 +45,7 @@ RSpec.describe ChatSessions::Create do
         project_id: project.id
       )
 
-      expect(session.project_id).to eq(project.id)
-      assoc = session.chat_session_projects.first
-      expect(assoc.context_type).to eq("primary")
+      expect(session.project).to eq(project)
     end
 
     it "resolves and associates a provider" do

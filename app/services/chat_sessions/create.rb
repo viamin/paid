@@ -38,7 +38,6 @@ module ChatSessions
 
       ActiveRecord::Base.transaction do
         session = create_session
-        associate_project(session) if project_id.present?
         prompt_text = build_system_prompt(session)
         persist_system_message(session, prompt_text)
         session
@@ -66,13 +65,6 @@ module ChatSessions
         status: "active",
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now,
         metadata: {}
-      )
-    end
-
-    def associate_project(session)
-      session.chat_session_projects.create!(
-        project_id: project_id,
-        context_type: "primary"
       )
     end
 
