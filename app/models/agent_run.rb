@@ -939,12 +939,19 @@ class AgentRun < ApplicationRecord
   end
 
   def fail!(error: nil)
-    update!(
-      status: "failed",
-      completed_at: Time.current,
-      error_message: error,
-      duration_seconds: duration
-    )
+    with_lock do
+      reload
+      if finished?
+        false
+      else
+        update!(
+          status: "failed",
+          completed_at: Time.current,
+          error_message: error,
+          duration_seconds: duration
+        )
+      end
+    end
   end
 
   def pause!(violation_type:, context: nil)
@@ -987,11 +994,18 @@ class AgentRun < ApplicationRecord
   end
 
   def cancel!
-    update!(
-      status: "cancelled",
-      completed_at: Time.current,
-      duration_seconds: duration
-    )
+    with_lock do
+      reload
+      if finished?
+        false
+      else
+        update!(
+          status: "cancelled",
+          completed_at: Time.current,
+          duration_seconds: duration
+        )
+      end
+    end
   end
 
   def timeout!(error: nil)
