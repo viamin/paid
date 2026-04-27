@@ -31,7 +31,7 @@ module Paid
     # Useful for recovering from connection failures or configuration changes.
     def reset_temporal_client!
       @temporal_mutex.synchronize do
-        @temporal_client = nil
+        remove_instance_variable(:@temporal_client) if defined?(@temporal_client)
       end
     end
 
