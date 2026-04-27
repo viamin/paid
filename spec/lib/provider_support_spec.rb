@@ -342,9 +342,7 @@ RSpec.describe ProviderSupport do
           wire_api: "responses"
         )
       end
-      let(:notify_line) do
-        'notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]'
-      end
+      let(:notify_line) { Containers::Provision.codex_notify_line }
 
       it "generates a TOML body with a [chatgpt] section" do
         expect(config_toml).to match(/^\[chatgpt\]/)
