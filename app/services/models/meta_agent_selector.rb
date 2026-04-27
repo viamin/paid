@@ -2,6 +2,8 @@
 
 module Models
   class MetaAgentSelector
+    include ProviderTierLookup
+
     MODEL = "claude-haiku-4-5-20251001"
     TIMEOUT = 15
     MAX_BODY_LENGTH = 2000
@@ -20,6 +22,20 @@ module Models
 
       candidates = available_candidates(tier: initial_tier)
       return nil if candidates.empty?
+
+      # When the candidate pool contains a single entry — whether from a provider
+      # tier pin or a global pool with one active model — skip the LLM round-trip.
+      if candidates.size == 1
+        only = candidates.first
+        return {
+          model: only,
+          selector_type: "meta_agent",
+          tier: initial_tier,
+          reasoning: "Single candidate in pool; LLM selection skipped",
+          candidates: [ { model_id: only.model_id, score: only.capability_score.to_f } ],
+          complexity_score: initial_complexity
+        }
+      end
 
       response = request_selection(candidates)
       return nil unless response
@@ -58,6 +74,12 @@ module Models
 
       excluded = agent_run.project.model_preferences["excluded_model_ids"]
       scope = scope.where.not(model_id: excluded) if excluded.present?
+
+      # Prefer the provider's explicitly configured tier model when available
+      provider_model = provider_tier_model(tier)
+      if provider_model && !excluded_model?(provider_model, excluded)
+        return [ provider_model ]
+      end
 
       if tier
         tier_candidates = scope.by_tier(tier).order(Arel.sql("capability_score DESC NULLS LAST")).to_a
