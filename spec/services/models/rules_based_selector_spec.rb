@@ -80,13 +80,9 @@ RSpec.describe Models::RulesBasedSelector do
       end
 
       it "routes complex tasks to the high tier" do
-        # body > 3000 + existing_pr → complexity 3+1+1+1+1 = 7.0
-        # Lower mid_max so 7.0 > 6 routes to "high"
+        # body > 3000 + existing_pr → complexity 3+1+1+2+1 = 8.0 > mid_max(7)
         agent_run.issue.update!(body: "A" * 5000)
         agent_run.update!(source_pull_request_number: 99)
-        agent_run.project.update!(
-          model_preferences: { "complexity_thresholds" => { "low_max" => 3, "mid_max" => 6 } }
-        )
 
         result = described_class.call(agent_run: agent_run)
 
@@ -145,12 +141,9 @@ RSpec.describe Models::RulesBasedSelector do
         # the floor when high-tier candidates are exhausted.
         untiered_high = create(:llm_model, model_id: "untiered-high", capability_score: 9.0)
         high_model.update!(active: false)
+        # body > 3000 + existing_pr → complexity 8.0 > mid_max(7) → "high"
         agent_run.issue.update!(body: "A" * 5000)
         agent_run.update!(source_pull_request_number: 99)
-        # Lower mid_max so complexity 7.0 routes to "high"
-        agent_run.project.update!(
-          model_preferences: { "complexity_thresholds" => { "low_max" => 3, "mid_max" => 6 } }
-        )
 
         result = described_class.call(agent_run: agent_run)
 

@@ -43,7 +43,10 @@ module Models
         body_length = agent_run.issue.body.to_s.length
         score += 1.0 if body_length > 500
         score += 1.0 if body_length > 1000
-        score += 1.0 if body_length > 3000
+        # Heavily-specified issues (>3000 chars) get a larger bump so the
+        # "high" tier remains reachable through rules-based selection even
+        # with the low default base (max score: 3+1+1+2+1 = 8 > mid_max).
+        score += 2.0 if body_length > 3000
       end
 
       score += 1.0 if agent_run.existing_pr?
