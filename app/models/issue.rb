@@ -223,7 +223,8 @@ class Issue < ApplicationRecord
       pr_followup_count: 0,
       review_goal_retry_count: 0,
       review_goal_retry_reset_at: reset_at,
-      operational_failure_reset_at: reset_at
+      operational_failure_reset_at: reset_at,
+      ci_retry_requested_at: nil
     }
     attrs[:draft_review_count] = 0 if draft
 

@@ -143,6 +143,19 @@ class GithubClient
     handle_errors { client.get("#{Octokit::Repository.path(repo)}/actions/runs/#{run_id}") }
   end
 
+  # Re-runs only the failed jobs in a GitHub Actions workflow run.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param run_id [String, Integer] The workflow run ID
+  # @return [Boolean] true if the rerun was accepted
+  # @raise [GithubClient::Error] on API errors
+  def rerun_workflow_run_failed_jobs(repo, run_id)
+    handle_errors do
+      client.post("#{Octokit::Repository.path(repo)}/actions/runs/#{run_id}/rerun-failed-jobs")
+      true
+    end
+  end
+
   # Fetches the full file tree for a repository at a given ref.
   #
   # @param repo [String] Repository in "owner/name" format

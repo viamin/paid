@@ -59,7 +59,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive(:rate_limit_remaining!).and_return(100)
+    allow(github_client).to receive_messages(rate_limit_remaining!: 100, check_run_log: "")
     allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
   end
 
@@ -352,6 +352,132 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when CI failure is transient and retryable" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          paid_state: "completed")
+      end
+
+      before do
+        pr_issue
+        allow(github_client).to receive_messages(check_run_log: "", rerun_workflow_run_failed_jobs: true)
+      end
+
+      it "retries transient CI failures instead of triggering agent run" do
+        stub_github_for_pr(
+          checks: [
+            { id: 1, name: "rspec", conclusion: "failure",
+              output_text: "Error: getaddrinfo ENOTFOUND registry.npmjs.org",
+              details_url: "https://github.com/owner/repo/actions/runs/12345/job/67890" }
+          ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+        expect(pr_issue.reload.ci_retry_requested_at).to be_present
+      end
+
+      it "calls rerun_workflow_run_failed_jobs with the correct run_id" do
+        stub_github_for_pr(
+          checks: [
+            { id: 1, name: "rspec", conclusion: "failure",
+              output_text: "connect ETIMEDOUT 104.16.23.35:443",
+              details_url: "https://github.com/owner/repo/actions/runs/12345/job/67890" }
+          ]
+        )
+
+        expect(github_client).to receive(:rerun_workflow_run_failed_jobs)
+          .with(project.full_name, "12345")
+
+        activity.execute(project_id: project.id)
+      end
+
+      it "does not retry when ci_retry_requested_at is within cooldown" do
+        pr_issue.update_column(:ci_retry_requested_at, 10.minutes.ago)
+
+        stub_github_for_pr(
+          checks: [
+            { id: 1, name: "rspec", conclusion: "failure",
+              output_text: "Error: getaddrinfo ENOTFOUND registry.npmjs.org",
+              details_url: "https://github.com/owner/repo/actions/runs/12345/job/67890" }
+          ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ci_failure")
+      end
+
+      it "retries again after cooldown expires" do
+        pr_issue.update_column(:ci_retry_requested_at, 45.minutes.ago)
+
+        stub_github_for_pr(
+          checks: [
+            { id: 1, name: "rspec", conclusion: "failure",
+              output_text: "Error: getaddrinfo ENOTFOUND registry.npmjs.org",
+              details_url: "https://github.com/owner/repo/actions/runs/12345/job/67890" }
+          ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
+      it "does not retry non-transient CI failures" do
+        stub_github_for_pr(
+          checks: [
+            { id: 1, name: "rspec", conclusion: "failure",
+              output_text: "SyntaxError: unexpected end of input",
+              details_url: "https://github.com/owner/repo/actions/runs/12345/job/67890" }
+          ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ci_failure")
+        expect(pr_issue.reload.ci_retry_requested_at).to be_nil
+      end
+
+      it "falls through to normal trigger when rerun fails" do
+        stub_github_for_pr(
+          checks: [
+            { id: 1, name: "rspec", conclusion: "failure",
+              output_text: "Error: getaddrinfo ENOTFOUND registry.npmjs.org",
+              details_url: "https://github.com/owner/repo/actions/runs/12345/job/67890" }
+          ]
+        )
+
+        allow(github_client).to receive(:rerun_workflow_run_failed_jobs)
+          .and_raise(GithubClient::Error.new("Forbidden"))
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ci_failure")
+      end
+
+      it "falls through when check has no details_url for run_id extraction" do
+        stub_github_for_pr(
+          checks: [
+            { id: 1, name: "rspec", conclusion: "failure",
+              output_text: "connect ETIMEDOUT 104.16.23.35:443",
+              details_url: nil }
+          ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
       end
     end
 
