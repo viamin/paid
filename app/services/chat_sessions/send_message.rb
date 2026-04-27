@@ -142,7 +142,7 @@ module ChatSessions
 
     def update_session_activity
       chat_session.update!(
-        idle_timeout_at: ChatSessions::Create::IDLE_TIMEOUT_DURATION.from_now
+        idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
     end
   end

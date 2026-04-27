@@ -14,8 +14,6 @@ module ChatSessions
   #     model: "gpt-4o"
   #   )
   class Create
-    IDLE_TIMEOUT_DURATION = 30.minutes
-
     attr_reader :account, :user, :mode, :provider_id, :model,
       :project_id, :system_prompt, :title
 
@@ -66,7 +64,7 @@ module ChatSessions
         system_prompt: system_prompt,
         title: title,
         status: "active",
-        idle_timeout_at: IDLE_TIMEOUT_DURATION.from_now,
+        idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now,
         metadata: {}
       )
     end

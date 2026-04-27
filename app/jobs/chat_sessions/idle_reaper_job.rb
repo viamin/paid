@@ -33,8 +33,7 @@ module ChatSessions
 
     def reap_session(session)
       TenantContext.with(session.account) do
-        session.update!(status: "idle")
-        ChatSessions::Close.call(chat_session: session.reload)
+        ChatSessions::Close.call(chat_session: session)
       end
       true
     rescue => e
