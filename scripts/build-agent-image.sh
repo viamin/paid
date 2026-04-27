@@ -92,6 +92,15 @@ if [ -z "${CODEX_PACKAGE}" ]; then
     exit 1
 fi
 
+# Extract GitHub Copilot CLI package from agent-harness installation contract.
+# agent-harness owns the supported GitHub Copilot CLI version; Paid consumes it at build time.
+GITHUB_COPILOT_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" github_copilot)
+GITHUB_COPILOT_PACKAGE=$(echo "${GITHUB_COPILOT_CONTRACT}" | sed -n 's/^PACKAGE=//p')
+if [ -z "${GITHUB_COPILOT_PACKAGE}" ]; then
+    echo "ERROR: Could not extract GitHub Copilot package from agent-harness" >&2
+    exit 1
+fi
+
 # Extract Gemini CLI install command from agent-harness (single source of truth).
 GEMINI_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" gemini)
 GEMINI_CLI_INSTALL_COMMAND=$(echo "${GEMINI_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
@@ -108,6 +117,7 @@ echo "  ruby-maat: ${RUBY_MAAT_VERSION}"
 echo "  claude-install: via agent-harness contract"
 echo "  cursor-install: via agent-harness contract"
 echo "  codex: ${CODEX_PACKAGE}"
+echo "  github-copilot: ${GITHUB_COPILOT_PACKAGE}"
 echo "  gemini-cli: ${GEMINI_CLI_INSTALL_COMMAND}"
 
 "${DOCKER_BUILD_ENV[@]}" docker build \
@@ -121,6 +131,7 @@ echo "  gemini-cli: ${GEMINI_CLI_INSTALL_COMMAND}"
     --build-arg "CURSOR_BINARY_NAME=${CURSOR_BINARY_NAME}" \
     --build-arg "CURSOR_GLOBAL_PATH=${CURSOR_GLOBAL_PATH}" \
     --build-arg "CODEX_PACKAGE=${CODEX_PACKAGE}" \
+    --build-arg "GITHUB_COPILOT_PACKAGE=${GITHUB_COPILOT_PACKAGE}" \
     --build-arg "GEMINI_CLI_INSTALL_COMMAND=${GEMINI_CLI_INSTALL_COMMAND}" \
     "${PROJECT_ROOT}/docker/agent/"
 
