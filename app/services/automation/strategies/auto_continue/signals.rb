@@ -28,8 +28,6 @@ module Automation
         :draft,
         :scan
       )
-        PHASES = %w[draft ready escalated restarted].freeze
-
         class << self
           def from_metadata(metadata)
             return nil unless metadata
