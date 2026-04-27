@@ -37,12 +37,12 @@ RSpec.describe Models::MetaAgentSelector do
       result = described_class.call(agent_run: agent_run)
 
       # Default factory issue body is short, so the rules-based estimator
-      # returns complexity ~4.0 which maps to "mid" with default thresholds
+      # returns complexity 3.0 which maps to "low" with default thresholds
       # (low_max=3, mid_max=7). The LLM's reported complexity_score (7.5) is
       # recorded separately but does NOT change the tier — keeping the tier
       # in sync with the candidate pool the LLM was actually given to choose
       # from is essential for consistent model_selection.tier analytics.
-      expect(result[:tier]).to eq("mid")
+      expect(result[:tier]).to eq("low")
       expect(result[:complexity_score]).to eq(7.5)
     end
 

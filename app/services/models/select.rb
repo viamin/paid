@@ -2,6 +2,8 @@
 
 module Models
   class Select
+    include ProviderTierLookup
+
     attr_reader :agent_run
 
     def self.call(...)
@@ -68,7 +70,12 @@ module Models
       tier = QualityRecovery::ModelEscalation.target_tier(project)
       return nil unless tier
 
-      model = LlmModel.active.by_tier(tier).by_capability.first
+      excluded = project.model_preferences["excluded_model_ids"]
+      provider_model = provider_tier_model(tier)
+      provider_model = nil if provider_model && excluded_model?(provider_model, excluded)
+      scope = LlmModel.active.by_tier(tier).by_capability
+      scope = scope.where.not(model_id: excluded) if excluded.present?
+      model = provider_model || scope.first
       return nil unless model
 
       {
