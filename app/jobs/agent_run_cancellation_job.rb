@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "docker-api"
+require "temporalio/error"
+
 class AgentRunCancellationJob < ApplicationJob
   queue_as :default
 
