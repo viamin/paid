@@ -89,6 +89,45 @@ RSpec.describe Knowledge::DashboardStats do
       end
     end
 
+    context "with knowledge usage stats" do
+      before do
+        run = create(:agent_run, project: project, goal: "create_pr")
+        create(:knowledge_usage_stat, agent_run: run, project: project, artifact_type: "route", artifact_count: 10)
+        create(:knowledge_usage_stat, agent_run: run, project: project, artifact_type: "dependency", artifact_count: 5, context_type: "search")
+      end
+
+      it "returns knowledge usage summary grouped by artifact type" do
+        summary = stats[:knowledge_usage_summary].to_h
+        expect(summary["route"]).to eq(10)
+        expect(summary["dependency"]).to eq(5)
+      end
+
+      it "returns usage by goal" do
+        by_goal = stats[:usage_by_goal].to_h
+        expect(by_goal["create_pr"]).to eq(15)
+      end
+
+      it "excludes usage from other accounts" do
+        other_account = create(:account)
+        other_project = create(:project, account: other_account)
+        other_run = create(:agent_run, project: other_project)
+        create(:knowledge_usage_stat, agent_run: other_run, project: other_project, artifact_type: "route", artifact_count: 999)
+
+        summary = stats[:knowledge_usage_summary].to_h
+        expect(summary["route"]).to eq(10)
+      end
+    end
+
+    context "with no knowledge usage stats" do
+      it "returns empty knowledge usage summary" do
+        expect(stats[:knowledge_usage_summary]).to be_empty
+      end
+
+      it "returns empty usage by goal" do
+        expect(stats[:usage_by_goal]).to be_empty
+      end
+    end
+
     context "with multiple projects" do
       let(:project2) { create(:project, account: account) }
       let(:other_account) { create(:account) }

@@ -21,7 +21,9 @@ module Knowledge
         stale_percent: stale_percent,
         artifacts_by_type: artifacts_by_type,
         last_collection_at: last_collection_at,
-        token_usage_summary: token_usage_summary
+        token_usage_summary: token_usage_summary,
+        knowledge_usage_summary: knowledge_usage_summary,
+        usage_by_goal: usage_by_goal
       }
     end
 
@@ -84,6 +86,24 @@ module Knowledge
     def knowledge_runs
       KnowledgeRun.joins(:project)
         .where(projects: { account_id: account.id })
+    end
+
+    def knowledge_usage_summary
+      @knowledge_usage_summary ||= KnowledgeUsageStat
+        .joins(:project)
+        .where(projects: { account_id: account.id })
+        .group(:artifact_type)
+        .sum(:artifact_count)
+        .sort_by { |_, v| -v }
+    end
+
+    def usage_by_goal
+      @usage_by_goal ||= KnowledgeUsageStat
+        .joins(:project)
+        .where(projects: { account_id: account.id })
+        .group(:goal)
+        .sum(:artifact_count)
+        .sort_by { |_, v| -v }
     end
   end
 end
