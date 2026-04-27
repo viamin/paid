@@ -133,8 +133,9 @@
           <h2 class="text-base font-semibold text-gray-900">Provider</h2>
           <div class="mt-4">
             <select name="provider" id="provider" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" data-action="change->goal-toggle#providerChanged" data-goal-toggle-target="providerSelect">
+              <option value="" selected>Inherit (from provider settings)</option>
               <% @available_run_provider_options.each do |label, identifier| %>
-                <option value="<%= identifier %>" <%= "selected" if identifier == @default_provider_identifier %>>
+                <option value="<%= identifier %>">
                   <%= label %>
                 </option>
               <% end %>
