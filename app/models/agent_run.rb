@@ -640,6 +640,7 @@ class AgentRun < ApplicationRecord
     scope = queued_with_priority
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     scope = scope.joins(project: :account).where(accounts: { scheduler_paused_at: nil })
+    scope = scope.where(projects: { scheduler_paused_at: nil })
     scope = scope.where(
       "agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL"
     )

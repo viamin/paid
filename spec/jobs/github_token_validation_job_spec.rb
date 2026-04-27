@@ -51,6 +51,24 @@ RSpec.describe GithubTokenValidationJob do
         described_class.perform_now(github_token.id)
         expect(github_token.reload.validation_error).to include("invalid or has been revoked")
       end
+
+      it "auto-pauses active projects using the token" do
+        project = create(:project, account: account, github_token: github_token)
+
+        described_class.perform_now(github_token.id)
+
+        expect(project.reload.scheduler_paused_at).to be_present
+        expect(project.reload.scheduler_pause_reason).to include("failed validation")
+      end
+
+      it "does not auto-pause when token was already in failed state" do
+        github_token.update!(validation_status: "failed", validation_error: "old error")
+        project = create(:project, account: account, github_token: github_token)
+
+        described_class.perform_now(github_token.id)
+
+        expect(project.reload.scheduler_paused_at).to be_nil
+      end
     end
 
     context "when GitHub API returns a server error" do
@@ -65,6 +83,14 @@ RSpec.describe GithubTokenValidationJob do
         described_class.perform_now(github_token.id)
         expect(github_token.reload.validation_status).to eq("failed")
         expect(github_token.reload.validation_error).to include("GitHub API error")
+      end
+
+      it "does not auto-pause projects on transient API errors" do
+        project = create(:project, account: account, github_token: github_token)
+
+        described_class.perform_now(github_token.id)
+
+        expect(project.reload.scheduler_paused_at).to be_nil
       end
     end
 
