@@ -148,6 +148,30 @@ RSpec.describe AutoReleaseEvaluationJob do
       expect(client).not_to have_received(:merge_pull_request)
     end
 
+    it "falls back to combined status when check_runs returns 403 and status is green" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::ApiError.new("Resource not accessible by personal access token", status: 403)
+      )
+      allow(client).to receive(:combined_status).and_return(state: "success", total_count: 1)
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:combined_status).with(project.full_name, pr_data.head.sha)
+      expect(client).to have_received(:merge_pull_request)
+    end
+
+    it "skips when check_runs returns 403 and combined status is not green" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::ApiError.new("Resource not accessible by personal access token", status: 403)
+      )
+      allow(client).to receive(:combined_status).and_return(state: "pending", total_count: 2)
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:combined_status).with(project.full_name, pr_data.head.sha)
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
     it "skips when no release PR is found" do
       allow(client).to receive(:pull_requests).and_return([])
 

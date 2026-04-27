@@ -100,10 +100,6 @@ class DependabotAutoMergeJob < ApplicationJob
     checks = client.check_runs_for_ref(project.full_name, sha)
 
     if checks.nil? || checks.empty?
-      # Empty check runs may mean "no CI configured" or "CI hasn't queued yet."
-      # Use the commit status API as a secondary signal: GitHub returns "pending"
-      # when statuses exist but haven't completed. If the combined state is
-      # "pending", CI is likely still spinning up — wait for the next poll cycle.
       return combined_status_state_settled?(client, project, sha)
     end
 
@@ -115,7 +111,7 @@ class DependabotAutoMergeJob < ApplicationJob
         project_id: project.id,
         error: e.message
       )
-      return true
+      return combined_status_state_settled?(client, project, sha)
     end
 
     raise
@@ -132,6 +128,8 @@ class DependabotAutoMergeJob < ApplicationJob
   # GitHub returns "pending" with 0 contexts when no status checks exist,
   # so we treat that as "no CI" and allow the merge. Any other non-success
   # state (failure, error, or pending with actual statuses) blocks merging.
+  # This is also the fallback when the token cannot read check runs: we only
+  # proceed after a separate API confirms success or that no statuses exist.
   def combined_status_state_settled?(client, project, sha)
     status = client.combined_status(project.full_name, sha)
     status[:state] == "success" || (status[:state] == "pending" && status[:total_count] == 0)
