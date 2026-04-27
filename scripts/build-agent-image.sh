@@ -101,6 +101,15 @@ if [ -z "${OPENCODE_PACKAGE}" ]; then
     exit 1
 fi
 
+# Extract Kilocode CLI install command from agent-harness (single source of truth).
+KILOCODE_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" kilocode)
+KILOCODE_INSTALL_COMMAND=$(echo "${KILOCODE_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
+
+if [ -z "${KILOCODE_INSTALL_COMMAND}" ]; then
+    echo "ERROR: Could not extract Kilocode CLI install command from agent-harness" >&2
+    exit 1
+fi
+
 # Extract Gemini CLI install command from agent-harness (single source of truth).
 GEMINI_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" gemini)
 GEMINI_CLI_INSTALL_COMMAND=$(echo "${GEMINI_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
@@ -118,6 +127,7 @@ echo "  claude-install: via agent-harness contract"
 echo "  cursor-install: via agent-harness contract"
 echo "  codex: ${CODEX_PACKAGE}"
 echo "  opencode: ${OPENCODE_PACKAGE}"
+echo "  kilocode-cli: ${KILOCODE_INSTALL_COMMAND}"
 echo "  gemini-cli: ${GEMINI_CLI_INSTALL_COMMAND}"
 
 "${DOCKER_BUILD_ENV[@]}" docker build \
@@ -132,6 +142,7 @@ echo "  gemini-cli: ${GEMINI_CLI_INSTALL_COMMAND}"
     --build-arg "CURSOR_GLOBAL_PATH=${CURSOR_GLOBAL_PATH}" \
     --build-arg "CODEX_PACKAGE=${CODEX_PACKAGE}" \
     --build-arg "OPENCODE_PACKAGE=${OPENCODE_PACKAGE}" \
+    --build-arg "KILOCODE_INSTALL_COMMAND=${KILOCODE_INSTALL_COMMAND}" \
     --build-arg "GEMINI_CLI_INSTALL_COMMAND=${GEMINI_CLI_INSTALL_COMMAND}" \
     "${PROJECT_ROOT}/docker/agent/"
 
