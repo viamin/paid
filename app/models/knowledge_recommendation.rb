@@ -14,7 +14,7 @@ class KnowledgeRecommendation < ApplicationRecord
 
   scope :pending, -> { where(status: "pending") }
   scope :accepted, -> { where(status: "accepted") }
-  scope :by_priority, -> { in_order_of(:priority, PRIORITIES) }
+  scope :by_priority, -> { in_order_of(:priority, PRIORITIES.reverse) }
 
   def dismiss!(reason:)
     update!(status: "dismissed", dismissed_at: Time.current, dismissal_reason: reason)

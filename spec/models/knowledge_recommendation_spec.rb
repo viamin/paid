@@ -48,7 +48,7 @@ RSpec.describe KnowledgeRecommendation do
         create(:knowledge_recommendation, project: project, priority: "medium")
 
         priorities = described_class.by_priority.pluck(:priority)
-        expect(priorities).to eq(%w[low medium high critical])
+        expect(priorities).to eq(%w[critical high medium low])
       end
     end
   end
