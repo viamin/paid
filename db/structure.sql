@@ -6384,6 +6384,13 @@ CREATE INDEX index_projects_on_quality_paused_at ON public.projects USING btree 
 
 
 --
+-- Name: index_projects_on_scheduler_paused_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_projects_on_scheduler_paused_at ON public.projects USING btree (scheduler_paused_at) WHERE (scheduler_paused_at IS NOT NULL);
+
+
+--
 -- Name: index_prompt_versions_on_created_by_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
