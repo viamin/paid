@@ -109,6 +109,7 @@ module Containers
       __pycache__/
       *.pyc
       # APT/package caches
+      .apt/
       .apt-cache/
       .cache-pkg/
       # XDG cache (sometimes redirected into workspace)
@@ -209,6 +210,7 @@ module Containers
       .local-deps/
       .venv/
       __pycache__/
+      .apt/
       .apt-cache/
       .cache-pkg/
       .xdg-cache/

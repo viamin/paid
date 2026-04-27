@@ -9,7 +9,7 @@ RSpec.describe ChatSession do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:project).optional }
     it { is_expected.to belong_to(:provider).optional }
-    it { is_expected.to belong_to(:created_by).class_name("User") }
+    it { is_expected.to belong_to(:created_by).class_name("User").optional }
     it { is_expected.to have_many(:messages).class_name("ChatMessage").dependent(:destroy) }
     it { is_expected.to have_many(:chat_session_projects).dependent(:destroy) }
     it { is_expected.to have_many(:projects).through(:chat_session_projects) }
@@ -22,6 +22,16 @@ RSpec.describe ChatSession do
     it "validates uniqueness of external_id" do
       create(:chat_session)
       expect(chat_session).to validate_uniqueness_of(:external_id).case_insensitive
+    end
+
+    it "rejects a provider from a different account" do
+      other_account = create(:account)
+      other_user = create(:user, account: other_account)
+      other_provider = other_user.providers.first
+
+      session = build(:chat_session, provider: other_provider)
+      expect(session).not_to be_valid
+      expect(session.errors[:provider]).to include("must belong to the same account")
     end
   end
 

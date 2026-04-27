@@ -42,7 +42,12 @@ class HumanFeedbackCollectionJob < ApplicationJob
 
     QualityMetrics::CollectReactionFeedback.call(agent_run: agent_run)
     collect_pr_review_feedback(agent_run)
-    collect_review_comment_count(agent_run, attempt: comment_count_attempt)
+
+    # Fetch the PR once and share across collectors that need it, to avoid
+    # duplicate GitHub API calls.
+    pr_data = fetch_pull_request(agent_run)
+    collect_review_comment_count(agent_run, pr_data: pr_data, attempt: comment_count_attempt)
+    collect_pr_description_llm_feedback(agent_run, pr_data: pr_data)
   end
 
   def collect_pr_review_feedback(agent_run)
@@ -65,12 +70,29 @@ class HumanFeedbackCollectionJob < ApplicationJob
     )
   end
 
-  def collect_review_comment_count(agent_run, attempt: 0)
+  def fetch_pull_request(agent_run)
     github_client = agent_run.project.github_token&.client
-    return unless github_client
+    return nil unless github_client
 
-    repo = agent_run.project.full_name
-    pr = github_client.pull_request(repo, agent_run.pull_request_number)
+    github_client.pull_request(agent_run.project.full_name, agent_run.pull_request_number)
+  rescue GithubClient::Error => e
+    Rails.logger.warn(
+      message: "human_feedback.pull_request_fetch_failed",
+      agent_run_id: agent_run.id,
+      error: e.message
+    )
+    nil
+  end
+
+  def collect_review_comment_count(agent_run, pr_data: nil, attempt: 0)
+    pr = pr_data
+    unless pr
+      github_client = agent_run.project.github_token&.client
+      return unless github_client
+
+      repo = agent_run.project.full_name
+      pr = github_client.pull_request(repo, agent_run.pull_request_number)
+    end
     comment_count = pr[:review_comments] || pr["review_comments"] || 0
 
     metric = agent_run.quality_metrics.find_by(metric_type: "automated")
@@ -150,6 +172,7 @@ class HumanFeedbackCollectionJob < ApplicationJob
 
   def collect_issue_feedback(agent_run)
     QualityMetrics::CollectIssueFeedback.call(agent_run: agent_run)
+    collect_issue_title_llm_feedback(agent_run)
   end
 
   def collect_review_reaction_feedback(agent_run)
@@ -158,6 +181,80 @@ class HumanFeedbackCollectionJob < ApplicationJob
 
   def collect_enhance_issue_feedback(agent_run)
     QualityMetrics::CollectEnhanceIssueFeedback.call(agent_run: agent_run)
+  end
+
+  def collect_pr_description_llm_feedback(agent_run, pr_data: nil)
+    project = agent_run.project
+    metric = LlmOutputMetric.find_by(
+      project: project,
+      output_type: "pr_description",
+      source_type: "PullRequest",
+      source_id: agent_run.pull_request_number
+    )
+    return unless metric
+
+    github_client = project.github_token&.client
+    return unless github_client
+
+    repo = project.full_name
+    pr = pr_data || github_client.pull_request(repo, agent_run.pull_request_number)
+    reactions = github_client.pull_request_reactions(repo, agent_run.pull_request_number)
+
+    current_body = pr[:body] || pr["body"]
+    original_body = metric.metadata["original_text"]
+    diff_size = (pr[:additions] || pr["additions"]).to_i + (pr[:deletions] || pr["deletions"]).to_i
+
+    LlmOutputMetrics::CollectPrDescriptionFeedback.call(
+      project: project,
+      pull_request_number: agent_run.pull_request_number,
+      current_description: current_body,
+      original_description: original_body,
+      diff_size: diff_size.zero? ? nil : diff_size,
+      reactions: reactions
+    )
+  rescue GithubClient::Error => e
+    Rails.logger.warn(
+      message: "llm_output_metrics.pr_description_feedback_failed",
+      agent_run_id: agent_run.id,
+      error: e.message
+    )
+  end
+
+  def collect_issue_title_llm_feedback(agent_run)
+    project = agent_run.project
+    return unless agent_run.created_issue_number
+
+    metric = LlmOutputMetric.find_by(
+      project: project,
+      output_type: "issue_title",
+      source_type: "Issue",
+      source_id: agent_run.created_issue_number
+    )
+    return unless metric
+
+    github_client = project.github_token&.client
+    return unless github_client
+
+    repo = project.full_name
+    issue = github_client.issue(repo, agent_run.created_issue_number)
+    reactions = github_client.issue_reactions(repo, agent_run.created_issue_number)
+
+    current_title = issue[:title] || issue["title"]
+    original_title = metric.metadata["original_text"]
+
+    LlmOutputMetrics::CollectIssueTitleFeedback.call(
+      project: project,
+      issue_number: agent_run.created_issue_number,
+      current_title: current_title,
+      original_title: original_title,
+      reactions: reactions
+    )
+  rescue GithubClient::Error => e
+    Rails.logger.warn(
+      message: "llm_output_metrics.issue_title_feedback_failed",
+      agent_run_id: agent_run.id,
+      error: e.message
+    )
   end
 
   def check_quality_pause(agent_run)

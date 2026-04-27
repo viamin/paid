@@ -19,10 +19,24 @@ class EnableRlsOnChatTables < ActiveRecord::Migration[8.1]
                   AND projects.account_id = paid_current_account_id()
               )
             )
-            AND EXISTS (
-              SELECT 1 FROM users
-              WHERE users.id = chat_sessions.created_by_id
-                AND users.account_id = paid_current_account_id()
+            AND (
+              chat_sessions.provider_id IS NULL
+              OR EXISTS (
+                SELECT 1 FROM providers
+                WHERE providers.id = chat_sessions.provider_id
+                  AND providers.user_id IN (
+                    SELECT users.id FROM users
+                    WHERE users.account_id = paid_current_account_id()
+                  )
+              )
+            )
+            AND (
+              chat_sessions.created_by_id IS NULL
+              OR EXISTS (
+                SELECT 1 FROM users
+                WHERE users.id = chat_sessions.created_by_id
+                  AND users.account_id = paid_current_account_id()
+              )
             )
           )
         )
@@ -37,10 +51,24 @@ class EnableRlsOnChatTables < ActiveRecord::Migration[8.1]
                   AND projects.account_id = paid_current_account_id()
               )
             )
-            AND EXISTS (
-              SELECT 1 FROM users
-              WHERE users.id = chat_sessions.created_by_id
-                AND users.account_id = paid_current_account_id()
+            AND (
+              chat_sessions.provider_id IS NULL
+              OR EXISTS (
+                SELECT 1 FROM providers
+                WHERE providers.id = chat_sessions.provider_id
+                  AND providers.user_id IN (
+                    SELECT users.id FROM users
+                    WHERE users.account_id = paid_current_account_id()
+                  )
+              )
+            )
+            AND (
+              chat_sessions.created_by_id IS NULL
+              OR EXISTS (
+                SELECT 1 FROM users
+                WHERE users.id = chat_sessions.created_by_id
+                  AND users.account_id = paid_current_account_id()
+              )
             )
           )
         );

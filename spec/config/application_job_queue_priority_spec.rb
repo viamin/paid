@@ -50,6 +50,7 @@ RSpec.describe ApplicationJob do
         DashboardBroadcastJob
         DelayedHumanFeedbackCollectionJob
         LiveDashboardBroadcastJob
+        LlmOutputMetricFeedbackCollectionJob
       ]
     }
   end

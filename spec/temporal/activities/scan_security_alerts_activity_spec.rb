@@ -76,14 +76,18 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(project.last_code_scanning_scan_at).to be_present
       end
 
-      it "handles 403 gracefully and updates last_code_scanning_scan_at" do
+      it "raises CodeScanningPermissionsError on 403 without advancing last_code_scanning_scan_at" do
         allow(github_client).to receive(:code_scanning_alerts)
           .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
 
-        expect { activity.execute(project_id: project.id) }.not_to raise_error
+        expect { activity.execute(project_id: project.id) }
+          .to raise_error(Temporalio::Error::ApplicationError) do |e|
+            expect(e.type).to eq("CodeScanningPermissionsError")
+            expect(e.message).to include("security_events")
+          end
 
         project.reload
-        expect(project.last_code_scanning_scan_at).to be_present
+        expect(project.last_code_scanning_scan_at).to be_nil
       end
 
       it "re-raises non-403 ApiError without updating last_code_scanning_scan_at" do

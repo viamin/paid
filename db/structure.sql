@@ -771,7 +771,7 @@ CREATE TABLE public.chat_sessions (
     workspace_volume character varying,
     metadata jsonb DEFAULT '{}'::jsonb,
     idle_timeout_at timestamp(6) without time zone,
-    created_by_id bigint NOT NULL,
+    created_by_id bigint,
     title character varying,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
@@ -1901,6 +1901,50 @@ CREATE SEQUENCE public.llm_models_id_seq
 --
 
 ALTER SEQUENCE public.llm_models_id_seq OWNED BY public.llm_models.id;
+
+
+--
+-- Name: llm_output_metrics; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.llm_output_metrics (
+    id bigint NOT NULL,
+    project_id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    output_type character varying(30) NOT NULL,
+    prompt_slug character varying(100) NOT NULL,
+    source_id bigint NOT NULL,
+    source_type character varying(30) NOT NULL,
+    prompt_version_id bigint,
+    scores jsonb DEFAULT '{}'::jsonb NOT NULL,
+    composite_score numeric(5,4),
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.llm_output_metrics ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE ONLY public.llm_output_metrics FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: llm_output_metrics_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.llm_output_metrics_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: llm_output_metrics_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.llm_output_metrics_id_seq OWNED BY public.llm_output_metrics.id;
 
 
 --
@@ -3666,6 +3710,13 @@ ALTER TABLE ONLY public.llm_models ALTER COLUMN id SET DEFAULT nextval('public.l
 
 
 --
+-- Name: llm_output_metrics id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.llm_output_metrics ALTER COLUMN id SET DEFAULT nextval('public.llm_output_metrics_id_seq'::regclass);
+
+
+--
 -- Name: mcp_server_definitions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4285,6 +4336,14 @@ ALTER TABLE ONLY public.linear_tokens
 
 ALTER TABLE ONLY public.llm_models
     ADD CONSTRAINT llm_models_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: llm_output_metrics llm_output_metrics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.llm_output_metrics
+    ADD CONSTRAINT llm_output_metrics_pkey PRIMARY KEY (id);
 
 
 --
@@ -6206,6 +6265,62 @@ CREATE INDEX index_llm_models_on_tier ON public.llm_models USING btree (tier);
 
 
 --
+-- Name: idx_llm_output_metrics_project_type_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_llm_output_metrics_project_type_time ON public.llm_output_metrics USING btree (project_id, output_type, created_at);
+
+
+--
+-- Name: idx_llm_output_metrics_slug_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_llm_output_metrics_slug_version ON public.llm_output_metrics USING btree (prompt_slug, prompt_version_id);
+
+
+--
+-- Name: idx_llm_output_metrics_unique_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_llm_output_metrics_unique_source ON public.llm_output_metrics USING btree (project_id, output_type, source_type, source_id);
+
+
+--
+-- Name: index_llm_output_metrics_on_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_llm_output_metrics_on_account_id ON public.llm_output_metrics USING btree (account_id);
+
+
+--
+-- Name: index_llm_output_metrics_on_output_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_llm_output_metrics_on_output_type ON public.llm_output_metrics USING btree (output_type);
+
+
+--
+-- Name: index_llm_output_metrics_on_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_llm_output_metrics_on_project_id ON public.llm_output_metrics USING btree (project_id);
+
+
+--
+-- Name: index_llm_output_metrics_on_prompt_version_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_llm_output_metrics_on_prompt_version_id ON public.llm_output_metrics USING btree (prompt_version_id);
+
+
+--
+-- Name: index_llm_output_metrics_on_source_type_and_source_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_llm_output_metrics_on_source_type_and_source_id ON public.llm_output_metrics USING btree (source_type, source_id);
+
+
+--
 -- Name: index_mcp_server_definitions_on_account_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7459,6 +7574,14 @@ ALTER TABLE ONLY public.quality_pause_events
 
 
 --
+-- Name: llm_output_metrics fk_rails_5735bac119; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.llm_output_metrics
+    ADD CONSTRAINT fk_rails_5735bac119 FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
 -- Name: ab_test_assignments fk_rails_5c6d672759; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7819,6 +7942,14 @@ ALTER TABLE ONLY public.github_tokens
 
 
 --
+-- Name: llm_output_metrics fk_rails_aebcf4d3bc; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.llm_output_metrics
+    ADD CONSTRAINT fk_rails_aebcf4d3bc FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
 -- Name: pre_commit_requirements fk_rails_afd2d025c0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8120,6 +8251,14 @@ ALTER TABLE ONLY public.project_versions
 
 ALTER TABLE ONLY public.workflow_states
     ADD CONSTRAINT fk_rails_f081d0cc32 FOREIGN KEY (project_id) REFERENCES public.projects(id);
+
+
+--
+-- Name: llm_output_metrics fk_rails_f0aa7b7e3f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.llm_output_metrics
+    ADD CONSTRAINT fk_rails_f0aa7b7e3f FOREIGN KEY (prompt_version_id) REFERENCES public.prompt_versions(id) ON DELETE SET NULL;
 
 
 --
@@ -8737,13 +8876,21 @@ CREATE POLICY tenant_isolation ON public.chat_session_projects USING ((public.pa
 
 CREATE POLICY tenant_isolation ON public.chat_sessions USING ((public.paid_tenant_bypass() OR ((chat_sessions.account_id = public.paid_current_account_id()) AND ((chat_sessions.project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.projects
-  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND (EXISTS ( SELECT 1
+  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((chat_sessions.provider_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.providers
+  WHERE ((providers.id = chat_sessions.provider_id) AND (providers.user_id IN ( SELECT users.id
+           FROM public.users
+          WHERE (users.account_id = public.paid_current_account_id()))))))) AND ((chat_sessions.created_by_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.users
-  WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = public.paid_current_account_id()))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((chat_sessions.account_id = public.paid_current_account_id()) AND ((chat_sessions.project_id IS NULL) OR (EXISTS ( SELECT 1
+  WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((chat_sessions.account_id = public.paid_current_account_id()) AND ((chat_sessions.project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.projects
-  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND (EXISTS ( SELECT 1
+  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((chat_sessions.provider_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.providers
+  WHERE ((providers.id = chat_sessions.provider_id) AND (providers.user_id IN ( SELECT users.id
+           FROM public.users
+          WHERE (users.account_id = public.paid_current_account_id()))))))) AND ((chat_sessions.created_by_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.users
-  WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = public.paid_current_account_id())))))));
+  WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = public.paid_current_account_id()))))))));
 
 
 --
@@ -8977,6 +9124,13 @@ CREATE POLICY tenant_isolation ON public.linear_tokens USING ((public.paid_tenan
   WHERE ((users.id = linear_tokens.created_by_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.users
   WHERE ((users.id = linear_tokens.created_by_id) AND (users.account_id = public.paid_current_account_id()))))))));
+
+
+--
+-- Name: llm_output_metrics tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.llm_output_metrics USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
 
 
 --
@@ -9671,7 +9825,10 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260426231602'),
 ('20260426231558'),
 ('20260426114303'),
+('20260426011810'),
 ('20260425225105'),
+('20260425164954'),
+('20260425114721'),
 ('20260425113212'),
 ('20260425061110'),
 ('20260425060000'),

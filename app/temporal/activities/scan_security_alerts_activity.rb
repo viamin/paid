@@ -22,6 +22,12 @@ module Activities
       scan_code_scanning_alerts(project)
 
       { alerts_to_fix: [] }
+    rescue SecurityAlerts::CodeScanningPermissionsError => e
+      raise Temporalio::Error::ApplicationError.new(
+        e.message,
+        type: "CodeScanningPermissionsError",
+        non_retryable: true
+      )
     rescue SecurityAlerts::ConfigurationError => e
       raise Temporalio::Error::ApplicationError.new(
         e.message,
@@ -57,8 +63,9 @@ module Activities
       open_alerts = all_alerts.select { |a| a[:state] == "open" }
       SecurityAlerts::ProcessCodeScanningAlerts.new(project).call(open_alerts)
 
-      # Record successful scan. Retryable errors (5xx) intentionally skip
-      # this so Temporal retries re-check within the same interval window.
+      # Record scan timestamp only after successful processing. Retryable
+      # errors (5xx) intentionally skip this so Temporal retries within the
+      # same interval window.
       project.update_column(:last_code_scanning_scan_at, Time.current)
 
       logger.info(
@@ -67,6 +74,14 @@ module Activities
         alerts_fetched: all_alerts.size,
         alerts_actionable: open_alerts.size
       )
+    rescue SecurityAlerts::ConfigurationError
+      # Do NOT advance last_code_scanning_scan_at here. A 403 means the token
+      # lacks the required scope — advancing the timestamp would suppress
+      # retries for the full code_scanning_interval_hours window, turning a
+      # recoverable misconfiguration into a stale blackout. The workflow
+      # catches ConfigurationError and logs a warning; rate-limit budget
+      # checks in the poll loop already prevent excessive API calls.
+      raise
     end
 
     def should_scan_code_scanning?(project)
@@ -87,13 +102,10 @@ module Activities
       nil
     rescue GithubClient::ApiError => e
       if e.status == 403
-        logger.warn(
-          message: "github_sync.code_scanning_fetch_failed",
-          project_id: project.id,
-          error: e.message,
-          status: e.status
-        )
-        nil
+        raise SecurityAlerts::CodeScanningPermissionsError,
+          "GitHub token lacks permission to read code scanning alerts for #{project.full_name}. " \
+          "Ensure the token includes the security_events scope (classic PAT) or " \
+          "code_scanning_alerts:read permission (fine-grained PAT)."
       else
         raise
       end

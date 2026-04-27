@@ -15,7 +15,7 @@ class CreateChatSessions < ActiveRecord::Migration[8.1]
       t.string :workspace_volume
       t.jsonb :metadata, default: {}
       t.datetime :idle_timeout_at
-      t.references :created_by, null: false, foreign_key: { to_table: :users }
+      t.references :created_by, foreign_key: { to_table: :users }
       t.string :title
       t.timestamps
     end
