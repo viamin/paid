@@ -8,7 +8,7 @@ class ChatMessage < ApplicationRecord
   belongs_to :chat_session
 
   validates :role, inclusion: { in: ROLES }
-  validates :content, presence: true, unless: :tool_result_message?
+  validates :content, presence: true, unless: -> { tool_result_message? || tool_name.present? }
   validates :external_id, uniqueness: true
 
   scope :chronological, -> { order(created_at: :asc) }

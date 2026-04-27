@@ -27,6 +27,11 @@ RSpec.describe ChatMessage do
       message = build(:chat_message, :tool)
       expect(message).to be_valid
     end
+
+    it "allows nil content for assistant messages with tool calls" do
+      message = build(:chat_message, :tool_call)
+      expect(message).to be_valid
+    end
   end
 
   describe "scopes" do
