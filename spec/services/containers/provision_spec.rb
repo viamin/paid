@@ -288,8 +288,9 @@ RSpec.describe Containers::Provision do
       # Regression: Docker's default tmpfs flags include noexec, which makes
       # mkmf's File.executable? check fail when bundle install builds native
       # gem extensions in /tmp — surfacing as a misleading "compiler failed
-      # to generate an executable file" error (e.g. bigdecimal extconf) and
-      # blocking review-goal runs that prepare gems under BUNDLE_PATH=/tmp/bundle.
+      # to generate an executable file" error (e.g. bigdecimal extconf).
+      # Coding/review/rebase prompts all run bundle install as step 1, and
+      # review-goal runs additionally set BUNDLE_PATH=/tmp/bundle.
       it "mounts /tmp tmpfs with exec so bundle install can build native gems" do
         expect(Docker::Container).to receive(:create) do |config|
           tmp_options = config.dig("HostConfig", "Tmpfs", "/tmp")
