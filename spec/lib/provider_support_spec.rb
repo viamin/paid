@@ -300,6 +300,91 @@ RSpec.describe ProviderSupport do
     end
   end
 
+  describe "provider contract smoke checks" do
+    describe "CLI binary mapping completeness" do
+      it "has a CLI binary mapping for every container-executable provider" do
+        cli_binary_for = {
+          "aider" => "aider",
+          "claude" => "claude",
+          "codex" => "codex",
+          "cursor" => "cursor-agent",
+          "gemini" => "gemini",
+          "kilocode" => "kilo",
+          "opencode" => "opencode"
+        }
+
+        described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS.each do |key|
+          expect(cli_binary_for).to have_key(key),
+            "No CLI binary mapping for container-executable provider '#{key}'. " \
+            "Add it to this test and to scripts/test-agent-provider-contracts-inner.sh."
+        end
+      end
+    end
+
+    describe "agent-harness registry backing" do
+      it "only contains providers backed by the agent-harness registry" do
+        described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS.each do |key|
+          harness_key = described_class.harness_provider_key_for(key)
+          expect {
+            AgentHarness.provider(harness_key.to_sym)
+          }.not_to raise_error
+        end
+      end
+    end
+
+    describe "Codex config.toml shape" do
+      let(:codex_provider) { AgentHarness.provider(:codex) }
+      let(:config_toml) do
+        codex_provider.config_file_content(
+          model_provider: "paid",
+          base_url: "http://localhost:8080/api/proxy/openai",
+          env_key: "OPENAI_API_KEY",
+          wire_api: "responses"
+        )
+      end
+      let(:notify_line) { Containers::Provision.codex_notify_line }
+
+      it "generates a TOML body with a [chatgpt] section" do
+        expect(config_toml).to match(/^\[chatgpt\]/)
+      end
+
+      it "includes required keys in the [chatgpt] section" do
+        expect(config_toml).to include('model_provider = "paid"')
+        expect(config_toml).to include('env_key = "OPENAI_API_KEY"')
+      end
+
+      it "produces a notify line shaped as a TOML string-array assignment" do
+        expect(notify_line).to match(/\Anotify\s*=\s*\[/)
+      end
+
+      it "produces a full config with notify before section header" do
+        full_config = "#{notify_line}\n\n#{config_toml}"
+        lines = full_config.lines.map(&:strip).reject(&:empty?)
+        notify_idx = lines.index { |l| l.start_with?("notify") }
+        section_idx = lines.index { |l| l.start_with?("[chatgpt]") }
+
+        expect(notify_idx).not_to be_nil
+        expect(section_idx).not_to be_nil
+        expect(notify_idx).to be < section_idx
+      end
+
+      it "does not contain bare notify without array brackets" do
+        expect(notify_line).not_to match(/\Anotify\s*=\s*"/)
+        expect(notify_line).not_to match(/\Anotify\s*=\s*'(?!\[)/)
+      end
+    end
+
+    describe "copilot exclusion" do
+      it "is listed in APP_TO_HARNESS_PROVIDER_KEYS as a known provider" do
+        expect(described_class::APP_TO_HARNESS_PROVIDER_KEYS).to have_key("copilot")
+      end
+
+      it "is not addable as a provider" do
+        expect(described_class.addable_provider_key?("copilot")).to be false
+      end
+    end
+  end
+
   describe ".command_with_unset_env" do
     it "returns command unchanged when unset_vars is empty" do
       expect(described_class.command_with_unset_env("my_cmd", [])).to eq("my_cmd")

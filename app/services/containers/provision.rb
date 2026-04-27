@@ -28,6 +28,8 @@ module Containers
   #   end
   #
   class Provision
+    CODEX_NOTIFY_LINE = 'notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]'
+
     # Base error for all container service errors
     class Error < StandardError; end
 
@@ -124,6 +126,10 @@ module Containers
 
     def self.network_for(agent_run:)
       new(agent_run: agent_run).network_name
+    end
+
+    def self.codex_notify_line
+      CODEX_NOTIFY_LINE
     end
 
     # @param agent_run [AgentRun] The agent run to associate logs with
@@ -1720,7 +1726,7 @@ module Containers
     # paths. The agent-harness notify_hook_content returns only a TOML section
     # header; the actual heartbeat command is Paid-specific.
     def codex_notify_line
-      'notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]'
+      self.class.codex_notify_line
     end
 
     def copilot_config_host_path
