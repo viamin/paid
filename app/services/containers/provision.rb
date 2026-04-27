@@ -1281,8 +1281,16 @@ module Containers
         binds << "#{copilot_config_host_path}:/home/agent/.config/github-copilot-host:ro"
       end
 
+      # /tmp must be `exec` because review-goal runs install gems with
+      # BUNDLE_PATH=/tmp/bundle and bundle install builds native gem
+      # extensions there. mkmf's try_link verifies the produced binary with
+      # File.executable?, which returns false on a noexec mount — producing
+      # a misleading "compiler failed to generate an executable file" error
+      # (e.g. bigdecimal extconf). Docker's default tmpfs flags include
+      # noexec, so it must be overridden here.
+      # /home/agent/.cache only stores cache data and stays noexec.
       tmpfs = {
-        "/tmp" => "size=#{options[:tmpfs_tmp_size]},mode=1777",
+        "/tmp" => "exec,size=#{options[:tmpfs_tmp_size]},mode=1777",
         "/home/agent/.cache" => "size=#{options[:tmpfs_cache_size]},mode=0755"
       }
 
