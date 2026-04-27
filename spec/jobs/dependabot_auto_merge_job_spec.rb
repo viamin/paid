@@ -27,7 +27,8 @@ RSpec.describe DependabotAutoMergeJob do
     allow(client).to receive_messages(
       pull_requests: [ dependabot_pr ],
       pull_request: dependabot_pr,
-      check_runs_for_ref: green_checks
+      check_runs_for_ref: green_checks,
+      combined_status: { state: "success", total_count: 1 }
     )
     allow(client).to receive(:merge_pull_request)
     allow(client).to receive(:add_labels_to_issue)
@@ -38,6 +39,8 @@ RSpec.describe DependabotAutoMergeJob do
     it "merges a Dependabot PR when all conditions are met" do
       described_class.perform_now(project.id)
 
+      expect(client).to have_received(:pull_requests).with(project.full_name, state: "open")
+      expect(client).to have_received(:pull_request).with(project.full_name, 42)
       expect(client).to have_received(:merge_pull_request).with(
         project.full_name, 42, merge_method: project.merge_method
       )
@@ -173,8 +176,42 @@ RSpec.describe DependabotAutoMergeJob do
       expect(client).to have_received(:merge_pull_request)
     end
 
-    it "skips when no CI checks exist" do
-      allow(client).to receive(:check_runs_for_ref).and_return([])
+    it "merges when no CI checks exist and combined status is success" do
+      allow(client).to receive_messages(check_runs_for_ref: [], combined_status: { state: "success", total_count: 1 })
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:combined_status)
+      expect(client).to have_received(:merge_pull_request)
+    end
+
+    it "merges when no CI checks or statuses exist (no CI configured)" do
+      allow(client).to receive_messages(check_runs_for_ref: [], combined_status: { state: "pending", total_count: 0 })
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:combined_status)
+      expect(client).to have_received(:merge_pull_request)
+    end
+
+    it "skips when no CI checks exist but combined status is pending with statuses" do
+      allow(client).to receive_messages(check_runs_for_ref: [], combined_status: { state: "pending", total_count: 2 })
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    it "skips when no CI checks exist and combined status is failure" do
+      allow(client).to receive_messages(check_runs_for_ref: [], combined_status: { state: "failure", total_count: 1 })
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    it "skips when no CI checks exist and combined status is error" do
+      allow(client).to receive_messages(check_runs_for_ref: [], combined_status: { state: "error", total_count: 1 })
 
       described_class.perform_now(project.id)
 
@@ -187,6 +224,48 @@ RSpec.describe DependabotAutoMergeJob do
       described_class.perform_now(project.id)
 
       expect(client).to have_received(:merge_pull_request)
+    end
+
+    it "falls back to combined status when check_runs returns 403 and status is green" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::ApiError.new("Resource not accessible by personal access token", status: 403)
+      )
+      allow(client).to receive(:combined_status).and_return(state: "success", total_count: 1)
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:combined_status).with(project.full_name, dependabot_pr.head.sha)
+      expect(client).to have_received(:merge_pull_request)
+    end
+
+    it "skips when check_runs returns 403 and combined status is not green" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::ApiError.new("Resource not accessible by personal access token", status: 403)
+      )
+      allow(client).to receive(:combined_status).and_return(state: "pending", total_count: 2)
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:combined_status).with(project.full_name, dependabot_pr.head.sha)
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    it "skips when check_runs fails with a non-403 error" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::Error.new("Network timeout")
+      )
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    it "raises when check_runs fails with a server error" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::ApiError.new("Internal Server Error", status: 500)
+      )
+
+      expect { described_class.perform_now(project.id) }.to raise_error(GithubClient::ApiError)
     end
   end
 end

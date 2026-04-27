@@ -159,21 +159,50 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(log.content).to include("https://github.com/owner/repo/pull/42")
     end
 
-    it "uses templated fallback body when LLM description is nil" do
+    it "uses agent summary as fallback body when LLM description is nil" do
       agent_run.log!("stdout", "Here are the changes I made to fix the issue.")
 
       expect(github_client).to receive(:create_pull_request).with(
         anything,
         hash_including(
           body: a_string_including("## Summary")
-            .and(including(issue.title))
-            .and(including("See ##{issue.github_number} for context"))
-            .and(including("unable to auto-generate"))
+            .and(including("Here are the changes I made to fix the issue."))
             .and(including("Closes ##{issue.github_number}"))
         )
       ).and_return(pr_response)
 
       activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "does not use raw JSON as fallback body" do
+      agent_run.log!("stdout", '{"type":"result","result":"","is_error":false}')
+
+      captured_body = nil
+      allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+        captured_body = kwargs[:body]
+        pr_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_body).to include(issue.title)
+      expect(captured_body).to include("See ##{issue.github_number} for context")
+      expect(captured_body).not_to include('{"type"')
+    end
+
+    it "does not use agent error messages as fallback body" do
+      agent_run.log!("stdout", "Agent encountered an error: Rate limit exceeded")
+
+      captured_body = nil
+      allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+        captured_body = kwargs[:body]
+        pr_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_body).to include(issue.title)
+      expect(captured_body).not_to include("Agent encountered an error")
     end
 
     it "does not record a PR description metric when the fallback body is used" do
@@ -342,7 +371,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         )
       end
 
-      it "falls back to templated body when LLM provider fails and logs with context" do
+      it "falls back to agent summary when LLM provider fails and logs with context" do
         agent_run.log!("stdout", "Raw agent output here")
         allow(AgentHarness).to receive(:send_message)
           .and_raise(AgentHarness::ProviderError.new("Provider unavailable"))
@@ -356,13 +385,13 @@ RSpec.describe Activities::CreatePullRequestActivity do
         ))
         expect(github_client).to receive(:create_pull_request).with(
           anything,
-          hash_including(body: a_string_including("unable to auto-generate"))
+          hash_including(body: a_string_including("Raw agent output here"))
         ).and_return(pr_response)
 
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "falls back to templated body when LLM raises an unexpected error and logs with context" do
+      it "falls back to agent summary when LLM raises an unexpected error and logs with context" do
         agent_run.log!("stdout", "Raw agent output here")
         allow(AgentHarness).to receive(:send_message)
           .and_raise(RuntimeError.new("unexpected failure"))
@@ -376,20 +405,19 @@ RSpec.describe Activities::CreatePullRequestActivity do
         ))
         expect(github_client).to receive(:create_pull_request).with(
           anything,
-          hash_including(body: a_string_including("unable to auto-generate"))
+          hash_including(body: a_string_including("Raw agent output here"))
         ).and_return(pr_response)
 
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "falls back to templated body when LLM returns a failed response" do
+      it "falls back to agent summary when LLM returns a failed response" do
         agent_run.log!("stdout", "Raw agent output here")
-        # Default before block already stubs a failed response
 
         expect(github_client).to receive(:create_pull_request).with(
           anything,
           hash_including(
-            body: a_string_including("unable to auto-generate")
+            body: a_string_including("Raw agent output here")
           )
         ).and_return(pr_response)
 
@@ -404,6 +432,21 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect {
           activity.execute(agent_run_id: agent_run.id)
         }.not_to change(LlmOutputMetric, :count)
+      end
+
+      it "logs an unsuccessful warning when LLM returns nil without raising" do
+        agent_run.log!("stdout", "Raw agent output here")
+
+        mock_logger = instance_double(ActiveSupport::Logger, info: nil, warn: nil)
+        allow(activity).to receive(:logger).and_return(mock_logger)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(mock_logger).to have_received(:warn).with(hash_including(
+          message: "agent_execution.pr_description_llm_unsuccessful",
+          agent_run_id: agent_run.id,
+          issue_number: issue.github_number
+        ))
       end
     end
 
@@ -422,16 +465,17 @@ RSpec.describe Activities::CreatePullRequestActivity do
       end
 
       it "logs a scope mismatch warning" do
-        mock_logger = instance_double(ActiveSupport::Logger, info: nil)
+        mock_logger = instance_double(ActiveSupport::Logger, info: nil, warn: nil)
         allow(activity).to receive(:logger).and_return(mock_logger)
-        expect(mock_logger).to receive(:warn).with(hash_including(
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(mock_logger).to have_received(:warn).with(hash_including(
           message: "agent_execution.summary_scope_mismatch",
           agent_run_id: agent_run.id,
           issue_number: issue.github_number,
           cross_referenced_issues: [ other_issue.github_number ]
         ))
-
-        activity.execute(agent_run_id: agent_run.id)
       end
 
       it "adds a system log to the agent run about the mismatch" do
@@ -458,16 +502,17 @@ RSpec.describe Activities::CreatePullRequestActivity do
       end
 
       it "detects scope mismatch from qualified references" do
-        mock_logger = instance_double(ActiveSupport::Logger, info: nil)
+        mock_logger = instance_double(ActiveSupport::Logger, info: nil, warn: nil)
         allow(activity).to receive(:logger).and_return(mock_logger)
-        expect(mock_logger).to receive(:warn).with(hash_including(
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(mock_logger).to have_received(:warn).with(hash_including(
           message: "agent_execution.summary_scope_mismatch",
           agent_run_id: agent_run.id,
           issue_number: issue.github_number,
           cross_referenced_issues: [ other_issue.github_number ]
         ))
-
-        activity.execute(agent_run_id: agent_run.id)
       end
     end
 
@@ -516,16 +561,17 @@ RSpec.describe Activities::CreatePullRequestActivity do
       end
 
       it "does not treat external qualified ref as own-issue mention and detects cross-ref mismatch" do
-        mock_logger = instance_double(ActiveSupport::Logger, info: nil)
+        mock_logger = instance_double(ActiveSupport::Logger, info: nil, warn: nil)
         allow(activity).to receive(:logger).and_return(mock_logger)
-        expect(mock_logger).to receive(:warn).with(hash_including(
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(mock_logger).to have_received(:warn).with(hash_including(
           message: "agent_execution.summary_scope_mismatch",
           agent_run_id: agent_run.id,
           issue_number: issue.github_number,
           cross_referenced_issues: [ other_issue.github_number ]
         ))
-
-        activity.execute(agent_run_id: agent_run.id)
       end
     end
 
@@ -676,15 +722,16 @@ RSpec.describe Activities::CreatePullRequestActivity do
       end
 
       it "logs the scope check failure" do
-        mock_logger = instance_double(ActiveSupport::Logger, info: nil)
+        mock_logger = instance_double(ActiveSupport::Logger, info: nil, warn: nil)
         allow(activity).to receive(:logger).and_return(mock_logger)
-        expect(mock_logger).to receive(:warn).with(hash_including(
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(mock_logger).to have_received(:warn).with(hash_including(
           message: "agent_execution.summary_scope_check_failed",
           agent_run_id: agent_run.id,
           error_class: "ActiveRecord::StatementInvalid"
         ))
-
-        activity.execute(agent_run_id: agent_run.id)
       end
     end
 
