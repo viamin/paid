@@ -33,15 +33,14 @@ if [ ! -f "${INNER_SCRIPT}" ]; then
     exit 1
 fi
 
-# Extract the container-executable provider keys from ProviderSupport.
-# This ensures the test stays in sync with the app's runtime contract without
-# hard-coding the list in the shell script.
+# Extract runtime contract values from app code without booting the full Rails
+# environment or requiring a database connection.
 CONTAINER_EXECUTABLE_KEYS=$(cd "${PROJECT_ROOT}" && bundle exec ruby -e "
   require 'bundler/setup'
   require 'agent_harness'
   \$LOAD_PATH.unshift('lib')
   require 'provider_support'
-  puts ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS.to_a.sort.join(' ')
+  puts ProviderSupport.container_executable_provider_keys.sort.join(' ')
 ")
 
 # Generate the Codex config TOML body and notify line as Paid would.
@@ -57,9 +56,11 @@ CODEX_CONFIG_TOML_BODY=$(cd "${PROJECT_ROOT}" && bundle exec ruby -e "
   )
 ")
 
-# The notify line is Paid-specific (lives in Containers::Provision), not in
-# agent-harness. Replicate the exact shape here for validation.
-CODEX_NOTIFY_LINE='notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]'
+CODEX_NOTIFY_LINE=$(cd "${PROJECT_ROOT}" && bundle exec ruby -e "
+  require 'bundler/setup'
+  require_relative 'app/services/containers/provision'
+  puts Containers::Provision.codex_notify_line
+")
 
 echo "Container-executable keys: ${CONTAINER_EXECUTABLE_KEYS}"
 echo "Codex notify line: ${CODEX_NOTIFY_LINE}"

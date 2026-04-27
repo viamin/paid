@@ -12,6 +12,7 @@ on:
       - scripts/test-agent-image-inner.sh
       - scripts/test-agent-provider-contracts.sh
       - scripts/test-agent-provider-contracts-inner.sh
+      - app/services/containers/provision.rb
       - lib/provider_support.rb
   push:
     branches: [ main ]
@@ -25,6 +26,7 @@ on:
       - scripts/test-agent-image-inner.sh
       - scripts/test-agent-provider-contracts.sh
       - scripts/test-agent-provider-contracts-inner.sh
+      - app/services/containers/provision.rb
       - lib/provider_support.rb
 
 permissions:
