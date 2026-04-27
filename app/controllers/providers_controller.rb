@@ -393,7 +393,26 @@ class ProvidersController < ApplicationController
       end
     end
 
+    expand_combined_provider_mode!(permitted)
+
     permitted
+  end
+
+  # Parses the combined provider_mode param into provider_selection_mode
+  # and default_agent_provider. Values are either "single:<identifier>"
+  # for a specific provider, or "round_robin"/"random" for multi-provider
+  # distribution.
+  def expand_combined_provider_mode!(permitted)
+    combined = params.dig(:user_setting, :provider_mode).to_s.strip
+    return if combined.blank?
+
+    if combined.start_with?("single:")
+      provider_identifier = combined.delete_prefix("single:")
+      permitted[:provider_selection_mode] = "single"
+      permitted[:default_agent_provider] = provider_identifier
+    elsif UserSetting::PROVIDER_SELECTION_MODES.include?(combined)
+      permitted[:provider_selection_mode] = combined
+    end
   end
 
   # Applies per-provider weight updates from form params. Each entry must

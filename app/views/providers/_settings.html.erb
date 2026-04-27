@@ -31,33 +31,37 @@
       <% end %>
 
       <div class="space-y-6">
+        <%
+          current_mode = @user_setting.provider_selection_mode
+          combined_value = if current_mode == "single"
+            "single:#{@default_provider_identifier}"
+          else
+            current_mode
+          end
+          combined_options = @enabled_agent_providers.map do |provider|
+            [ @provider_labels[provider] || provider.titleize, "single:#{provider}" ]
+          end
+          if @enabled_agent_providers.length > 1
+            combined_options += [
+              [ "Round Robin (cycle through all providers, respecting weights)", "round_robin" ],
+              [ "Random (pick at random, respecting weights)", "random" ]
+            ]
+          end
+        %>
         <div>
-          <%= form.label :default_agent_provider, "Automated Provider", class: "block text-sm font-medium leading-6 text-gray-900" %>
+          <label for="user_setting_provider_mode" class="block text-sm font-medium leading-6 text-gray-900">Automated Provider</label>
           <div class="mt-2">
-            <%= form.select :default_agent_provider,
-                @enabled_agent_providers.map { |provider| [ @provider_labels[provider] || provider.titleize, provider ] },
-                { selected: @default_provider_identifier },
-                class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            <select name="user_setting[provider_mode]" id="user_setting_provider_mode"
+                    class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+              <% combined_options.each do |label, value| %>
+                <option value="<%= value %>" <%= "selected" if value == combined_value %>><%= label %></option>
+              <% end %>
+            </select>
           </div>
-          <p class="mt-1 text-xs text-gray-500">In Single mode this provider is always tried first for new agent runs.</p>
+          <p class="mt-1 text-xs text-gray-500">Choose a single provider for all automated agent runs, or distribute across all enabled providers.</p>
         </div>
 
         <% if @enabled_agent_providers.length > 1 %>
-          <div>
-            <%= form.label :provider_selection_mode, "Selection Mode", class: "block text-sm font-medium leading-6 text-gray-900" %>
-            <div class="mt-2">
-              <%= form.select :provider_selection_mode,
-                  [
-                    [ "Single (use automated provider)", "single" ],
-                    [ "Round Robin (cycle through enabled providers, respecting weights)", "round_robin" ],
-                    [ "Random (pick at random, respecting weights)", "random" ]
-                  ],
-                  { selected: @user_setting.provider_selection_mode },
-                  class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
-            </div>
-            <p class="mt-1 text-xs text-gray-500">Round Robin and Random modes pick from all providers enabled for agent runs, weighted by the values below.</p>
-          </div>
-
           <div>
             <h3 class="block text-sm font-medium leading-6 text-gray-900">Provider Weights</h3>
             <p class="mt-1 text-xs text-gray-500">A provider with weight N is picked N times more often in Random mode and used N consecutive times in Round Robin mode. Default is 1.</p>

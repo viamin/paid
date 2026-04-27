@@ -103,16 +103,16 @@ RSpec.describe "Providers" do
         expect(response.body).not_to match(/Kimi K2\.5.*Circuit Open/m)
       end
 
-      it "renders selection mode controls only when more than one provider is enabled" do
+      it "renders multi-provider options only when more than one provider is enabled" do
         get providers_path
-        expect(response.body).not_to include("Selection Mode")
+        expect(response.body).not_to include("Round Robin")
         expect(response.body).not_to include("Provider Weights")
 
         allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor])
         user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
 
         get providers_path
-        expect(response.body).to include("Selection Mode")
+        expect(response.body).to include("Round Robin")
         expect(response.body).to include("Provider Weights")
       end
 
@@ -279,13 +279,12 @@ RSpec.describe "Providers" do
       expect(user.providers.find_by(provider_key: "cursor").enabled_for_fallback).to be(true)
     end
 
-    it "persists provider_selection_mode and per-provider weights" do
+    it "persists provider_selection_mode and per-provider weights via combined provider_mode" do
       cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
 
       patch settings_providers_path, params: {
         user_setting: {
-          default_agent_provider: "claude",
-          provider_selection_mode: "round_robin",
+          provider_mode: "round_robin",
           provider_weights: { cursor.id.to_s => "5" },
           fallback_enabled: false,
           fallback_providers: [].to_json
@@ -295,6 +294,23 @@ RSpec.describe "Providers" do
       expect(response).to redirect_to(providers_path)
       expect(user.reload.settings.provider_selection_mode).to eq("round_robin")
       expect(cursor.reload.weight).to eq(5)
+    end
+
+    it "sets single mode and default_agent_provider from combined provider_mode" do
+      cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
+
+      patch settings_providers_path, params: {
+        user_setting: {
+          provider_mode: "single:#{cursor.routing_key}",
+          fallback_enabled: false,
+          fallback_providers: [].to_json
+        }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      settings = user.reload.settings
+      expect(settings.provider_selection_mode).to eq("single")
+      expect(settings.default_agent_provider).to eq(cursor.routing_key)
     end
 
     it "rejects an invalid provider_selection_mode by ignoring the change" do
@@ -320,8 +336,7 @@ RSpec.describe "Providers" do
 
       patch settings_providers_path, params: {
         user_setting: {
-          default_agent_provider: "claude",
-          provider_selection_mode: "round_robin",
+          provider_mode: "round_robin",
           provider_weights: { cursor.id.to_s => "0" },
           fallback_enabled: false,
           fallback_providers: [].to_json

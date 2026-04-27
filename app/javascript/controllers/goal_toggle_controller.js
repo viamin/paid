@@ -138,6 +138,9 @@ export default class extends Controller {
   syncProviderDefault(previousGoal, goal) {
     if (!this.hasProviderSelectTarget) return
 
+    // When "Inherit" (empty value) is selected, keep it as-is across goal changes
+    if (this.providerSelectTarget.value === "") return
+
     const previousDefault = this.defaultProviderForGoal(previousGoal)
     const nextDefault = this.defaultProviderForGoal(goal)
     if (!nextDefault) return
