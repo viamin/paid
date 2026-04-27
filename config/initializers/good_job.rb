@@ -159,6 +159,11 @@ Rails.application.configure do
       cron: "0 */6 * * *",
       class: "LlmOutputMetricFeedbackCollectionJob",
       description: "Collect feedback for LLM output metrics (decision records)"
+    },
+    github_token_health_check: {
+      cron: "0 6 * * *",
+      class: "GithubTokenHealthCheckJob",
+      description: "Validate all active GitHub tokens and flag revoked/expired ones"
     }
   }
 end
