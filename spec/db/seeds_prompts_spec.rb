@@ -12,6 +12,7 @@ require "rails_helper"
 # seed metadata, this spec will fail.
 module SeedsPromptsSpec
   EXPECTED_SLUGS = %w[
+    ci.failure_guidance
     coding.issue_implementation
     coding.pr_review_rebase
     diagnostics.agent_run_failure

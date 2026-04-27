@@ -126,8 +126,21 @@ class GithubClient
   # @return [Sawyer::Resource] File content data (Base64-encoded)
   # @raise [NotFoundError] if the file does not exist
   # @raise [AuthenticationError] if access is denied
-  def contents(repo, path:)
-    handle_errors { client.contents(repo, path: path) }
+  def contents(repo, path:, ref: nil)
+    opts = { path: path }
+    opts[:ref] = ref if ref
+    handle_errors { client.contents(repo, opts) }
+  end
+
+  def file_content(repo, path:, ref: nil)
+    data = contents(repo, path: path, ref: ref)
+    return nil unless data&.content
+
+    Base64.decode64(data.content).force_encoding("UTF-8")
+  end
+
+  def actions_run(repo, run_id)
+    handle_errors { client.get("#{Octokit::Repository.path(repo)}/actions/runs/#{run_id}") }
   end
 
   # Fetches the full file tree for a repository at a given ref.

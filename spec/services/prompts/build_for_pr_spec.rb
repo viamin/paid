@@ -51,7 +51,11 @@ RSpec.describe Prompts::BuildForPr do
 
 
 
-    allow(github_client).to receive_messages(check_runs_for_ref: [], review_threads: [], recent_issue_comments: [])
+    allow(github_client).to receive_messages(
+      check_runs_for_ref: [],
+      review_threads: [],
+      recent_issue_comments: []
+    )
     allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(user_settings)
   end
 
@@ -267,6 +271,49 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("role \"root\" does not exist")
       expect(prompt).to include("database \"railscrawler_test\" does not exist")
       expect(prompt).to include("Fix the issue causing these CI failures")
+    end
+
+    it "includes CI failure guidance" do
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).to include("database error")
+      expect(prompt).to include("RAILS_ENV")
+    end
+
+    it "includes failure type hints for database errors" do
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).to include("Detected failure type")
+    end
+
+    it "includes workflow content when available" do
+      check = { id: 1, name: "rspec", conclusion: "failure", output_text: "failed", details_url: "https://github.com/owner/repo/actions/runs/999/job/1" }
+      allow(github_client).to receive(:check_runs_for_ref)
+        .with(project.full_name, "abc123")
+        .and_return([ check ])
+      allow(github_client).to receive(:check_run_log).with(project.full_name, check).and_return("")
+      run_response = double(path: ".github/workflows/test.yml")
+      allow(github_client).to receive_messages(actions_run: run_response, file_content: "name: Test\non: push")
+
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).to include("CI Workflow Configuration")
+      expect(prompt).to include(".github/workflows/test.yml")
     end
   end
 

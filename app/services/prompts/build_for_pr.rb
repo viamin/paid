@@ -206,8 +206,9 @@ module Prompts
 
         #{ci_failure_output_section(output)}
 
-        Fix the issue causing these CI failures. Reproduce them locally using the lint
-        and test commands below when possible. Do not skip or disable checks.
+        #{ci_failure_guidance_section}
+
+        Fix the issue causing these CI failures. Do not skip or disable checks.
       SECTION
     end
 
@@ -221,6 +222,62 @@ module Prompts
         #{output}
         ```
       SECTION
+    end
+
+    def ci_failure_guidance_section
+      guidance = Prompts::Render.call(
+        slug: "ci.failure_guidance",
+        project: project,
+        variables: {
+          failure_type_hints: failure_type_hints,
+          workflow_content_section: workflow_content_section
+        },
+        fallback: -> { fallback_ci_failure_guidance }
+      )
+
+      guidance.present? ? guidance : ""
+    end
+
+    def fallback_ci_failure_guidance
+      section = ""
+      section += failure_type_hints if failure_type_hints.present?
+      section += "\n\n#{workflow_content_section}" if workflow_content_section.present?
+      section
+    end
+
+    FAILURE_TYPE_HINTS = {
+      database: "This looks like a **database error**. Check that the CI workflow's database " \
+                "setup step creates the correct database for the test environment. Compare " \
+                "`RAILS_ENV` in the setup step vs the test step — a mismatch can cause the " \
+                "database to be created for `development` but tested under `test`.",
+      environment: "This looks like an **environment error**. A command or configuration file " \
+                   "is missing in CI. Check the CI workflow for missing setup steps or " \
+                   "environment variables.",
+      dependency: "This looks like a **dependency error**. A gem, package, or library is missing " \
+                  "or incompatible. Check the CI workflow's dependency installation step and " \
+                  "compare versions with what's expected.",
+      service: "This looks like a **service connectivity error**. A required service (database, " \
+               "Redis, etc.) is not reachable. Check the CI workflow's service container " \
+               "configuration and health checks.",
+      timeout: "This looks like a **timeout error**. A step or network request took too long. " \
+               "Check the CI workflow for appropriate timeout settings."
+    }.freeze
+
+    def failure_type_hints
+      types = ci_failure_context.failure_types
+      return "" if types.empty?
+
+      hints = types.filter_map { |t| FAILURE_TYPE_HINTS[t] }
+      return "" if hints.empty?
+
+      "### Detected failure types: #{types.map(&:to_s).join(', ')}\n\n" + hints.join("\n\n")
+    end
+
+    def workflow_content_section
+      content = ci_failure_context.workflow_content
+      return "" if content.blank?
+
+      "## CI Workflow Configuration\n\nThe following CI workflow files are active on this branch:\n\n#{content}"
     end
 
     def code_review_section
@@ -295,7 +352,8 @@ module Prompts
       @ci_failure_context ||= Ci::FailureContext.call(
         repo: project.full_name,
         checks: failing_checks,
-        github_client: github_client
+        github_client: github_client,
+        ref: pr_data.head.sha
       )
     end
 
