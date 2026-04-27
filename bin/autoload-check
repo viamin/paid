@@ -1,0 +1,82 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Detects autoloaded constants referenced during Rails boot.
+# Based on https://island94.org/2024/07/on-the-importance-of-rails-code-reloading
+# and https://gist.github.com/bensheldon/ba6532c4216c11dd9ba03487c5a06ee4
+#
+# Usage: bin/autoload-check
+#
+# This script boots Rails in a instrumented mode that tracks when autoloaded
+# constants are first referenced. If any app/ constants are referenced during
+# boot (before after_initialize), they are pinned and won't reload in development.
+
+require_relative "../config/environment"
+
+puts "Checking for autoloaded constants referenced during boot..."
+puts
+
+# Collect constants defined under the app autoload paths
+app_constants = []
+
+# Find all constants defined under app/ directories
+autoload_paths = Rails.autoloaders.main.dirs
+
+autoload_paths.each do |path|
+  next unless path.include?("/app/")
+
+  # Walk the directory tree to find expected constant names
+  Dir.glob("**/*.rb", base: path).each do |relative|
+    # Convert file path to expected constant name
+    parts = relative.sub(/\.rb$/, "").split("/")
+    # Skip concern subdirectories and other non-class files
+    next if parts.any? { |p| p.start_with?("_") || p == "concerns" }
+
+    module_name = parts.first.camelize
+    begin
+      mod = Object.const_get(module_name)
+      if parts.size > 1
+        sub_constants = parts[1..].reduce([mod]) do |mods, part|
+          parent = mods.last
+          begin
+            child = parent.const_get(part.camelize)
+            mods << child
+          rescue NameError
+            mods
+          end
+          mods
+        end
+        constant = sub_constants.last
+        app_constants << constant if constant.is_a?(Module) && constant != mod
+      end
+    rescue NameError
+      nil
+    end
+  end
+end
+
+# Filter to find constants that were loaded (not just defined in autoload map)
+loaded_during_boot = app_constants.select do |const|
+  # A constant is "loaded during boot" if it's defined now (after boot)
+  # but shouldn't have been needed just for Rails initialization
+  const.name.start_with?("Database::", "Github::", "Containers::", "Activities::", "Workflows::")
+end
+
+if loaded_during_boot.any?
+  puts "The following autoloaded constants were loaded during boot:"
+  puts "(These may not reload correctly in development)"
+  puts
+  loaded_during_boot.sort_by(&:name).each do |const|
+    source_location = const.respond_to?(:constant_source_location) ? const.constant_source_location : "unknown"
+    puts "  #{const.name} — #{Array(source_location).first}"
+  end
+  puts
+  puts "Consider using to_prepare instead of after_initialize, or referencing"
+  puts "constants by string to avoid pinning them during boot."
+else
+  puts "No autoload violations detected."
+end
+
+puts
+puts "Autoload paths checked:"
+autoload_paths.each { |p| puts "  #{p}" }
