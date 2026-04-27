@@ -402,21 +402,6 @@ class GithubClient
     end
   end
 
-  # Fetches the combined commit status for a ref via the Status API.
-  # Returns the overall state ("success", "pending", "failure", "error")
-  # which aggregates all status contexts attached to the commit.
-  # Repos with no status contexts return "pending" by default from GitHub.
-  #
-  # @param repo [String] Repository in "owner/name" format
-  # @param ref [String] Git ref (branch name, tag, or SHA)
-  # @return [String] Combined state: "success", "pending", "failure", or "error"
-  def combined_status_state(repo, ref)
-    handle_errors do
-      response = client.combined_status(repo, ref)
-      response.state
-    end
-  end
-
   # Fetches combined commit status with context count for a ref.
   # Returns both the state and the number of status contexts, which
   # lets callers distinguish "no CI configured" (pending + 0 contexts)

@@ -61,7 +61,7 @@ module Activities
         client = project.github_token.client
         summary = agent_run.agent_summary_with_stderr_fallback
         validate_issue_creation_attempt!(agent_run)
-        title = extract_title(summary, agent_run.custom_prompt)
+        title, llm_generated_title = extract_title(summary, agent_run.custom_prompt)
         body = body_override.present? ? issue_body(body_override) : issue_body(summary)
         body = append_dependency_text(body, upstream_issue) if upstream_issue
 
@@ -86,7 +86,7 @@ module Activities
           )
         end
 
-        reconcile_created_issue(agent_run, project, gh_issue, upstream_issue: upstream_issue)
+        reconcile_created_issue(agent_run, project, gh_issue, upstream_issue: upstream_issue, title: title, llm_generated_title: llm_generated_title)
 
         ProcessRunQueueJob.perform_later if completed
 
@@ -104,19 +104,23 @@ module Activities
       }
     end
 
+    # Returns [title, llm_generated] where llm_generated indicates whether
+    # the title was produced by the LLM title-generation prompt.
     def extract_title(summary, _custom_prompt = nil)
       # Try first markdown heading (any level) from agent output
       if summary.present?
         heading = summary[/^#+\s+(.+)$/, 1]&.sub(/\s*#+\s*$/, "")&.strip
-        return heading.truncate(Llm::GenerateIssueTitle::MAX_TITLE_LENGTH) if heading.present?
+        if heading.present?
+          return [ heading.truncate(Llm::GenerateIssueTitle::MAX_TITLE_LENGTH), false ]
+        end
       end
 
       # Fall back to LLM-generated title from agent output
       llm_title = Llm::GenerateIssueTitle.call(summary: summary)
-      return llm_title if llm_title.present?
+      return [ llm_title, true ] if llm_title.present?
 
       # Last resort
-      "Agent analysis"
+      [ "Agent analysis", false ]
     end
 
     def issue_body(summary)
@@ -304,11 +308,13 @@ module Activities
       "#{body}\n\n## Dependencies\n\n- #{dep_line}"
     end
 
-    def reconcile_created_issue(agent_run, project, gh_issue, upstream_issue:)
+    def reconcile_created_issue(agent_run, project, gh_issue, upstream_issue:, title: nil, llm_generated_title: false)
       # Reconcile even when cancellation wins the complete! lock, because the
       # GitHub issue already exists and should not be left orphaned.
       sync_issue_record(project, gh_issue)
       record_cross_repo_issue(agent_run, project.full_name, gh_issue, role: "downstream") if upstream_issue
+
+      record_issue_title_metric(project, gh_issue.number, original_text: title) if llm_generated_title
 
       agent_run.log!("system", "Issue created: #{gh_issue.html_url}")
 
@@ -326,6 +332,24 @@ module Activities
         message: "agent_execution.sync_created_issue_failed",
         project_id: project.id,
         issue_number: gh_issue.number,
+        error: e.message
+      )
+    end
+
+    def record_issue_title_metric(project, issue_number, original_text: nil)
+      LlmOutputMetrics::Record.call(
+        project: project,
+        output_type: "issue_title",
+        prompt_slug: Llm::GenerateIssueTitle::PROMPT_SLUG,
+        source_type: "Issue",
+        source_id: issue_number,
+        metadata: { "original_text" => original_text }
+      )
+    rescue StandardError => e
+      logger.warn(
+        message: "llm_output_metrics.record_issue_title_failed",
+        project_id: project.id,
+        issue_number: issue_number,
         error: e.message
       )
     end

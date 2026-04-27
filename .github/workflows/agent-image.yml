@@ -10,6 +10,10 @@ on:
       - scripts/extract-provider-install-contract.rb
       - scripts/test-agent-image.sh
       - scripts/test-agent-image-inner.sh
+      - scripts/test-agent-provider-contracts.sh
+      - scripts/test-agent-provider-contracts-inner.sh
+      - app/services/containers/provision.rb
+      - lib/provider_support.rb
   push:
     branches: [ main ]
     paths:
@@ -20,6 +24,10 @@ on:
       - scripts/extract-provider-install-contract.rb
       - scripts/test-agent-image.sh
       - scripts/test-agent-image-inner.sh
+      - scripts/test-agent-provider-contracts.sh
+      - scripts/test-agent-provider-contracts-inner.sh
+      - app/services/containers/provision.rb
+      - lib/provider_support.rb
 
 permissions:
   contents: read
@@ -47,7 +55,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@0cb964fd540e0a24c900370abf38a33466142735
+        uses: ruby/setup-ruby@c4e5b1316158f92e3d49443a9d58b31d25ac0f8f
         with:
           ruby-version: .tool-versions
           bundler-cache: true
@@ -149,3 +157,6 @@ jobs:
 
       - name: Smoke test paid-agent image
         run: ./scripts/test-agent-image.sh
+
+      - name: Provider-contract smoke test
+        run: ./scripts/test-agent-provider-contracts.sh

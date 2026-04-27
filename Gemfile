@@ -47,7 +47,7 @@ gem "qdrant-ruby"
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
 # 0.11.0 fixes GithubCopilot provider CLI version detection for 0.1.x subcommand CLIs.
-gem "agent-harness", "~> 0.11.0"
+gem "agent-harness", "~> 0.11.2"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
 gem "ruby-maat"
