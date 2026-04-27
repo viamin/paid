@@ -163,11 +163,12 @@ Rails.application.configure do
   }
 end
 
-# TenantSetting-dependent config resolved in to_prepare so that:
-# 1. The autoloaded TenantSetting model is fully available (not during boot)
-# 2. Values re-resolve correctly after code reload in development
-# to_prepare runs before after_initialize, so GoodJob's scheduler sees the
-# updated values when it starts.
+# TenantSetting-dependent config resolved in to_prepare so that the
+# autoloaded TenantSetting model is fully available (not during boot).
+# to_prepare runs before after_initialize, so GoodJob's scheduler sees
+# the resolved values on first boot. Note: GoodJob reads these settings
+# once at scheduler startup — re-running to_prepare on dev reload updates
+# the config hash but does not dynamically reconfigure a running scheduler.
 Rails.application.config.to_prepare do
   Rails.application.config.good_job.max_threads = Paid::GoodJobConfig.max_threads
   Rails.application.config.good_job.queues = Paid::GoodJobConfig.queues

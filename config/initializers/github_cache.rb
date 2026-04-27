@@ -8,11 +8,10 @@
 # re-runs after code reload in development, picking up the refreshed
 # Github::CacheMetrics constant.
 #
-# Unsubscribes before re-subscribing to prevent duplicate listeners
-# from accumulating across reloads.
+# Unsubscribes only our own handles before re-subscribing to prevent
+# duplicate listeners from accumulating across reloads, without
+# removing subscribers registered by other code.
 Rails.application.config.to_prepare do
-  Github::CacheMetrics::EVENTS.each do |event_name|
-    ActiveSupport::Notifications.unsubscribe(event_name)
-  end
-  Github::CacheMetrics.subscribe!
+  Array(@_github_cache_subscribers).each { |sub| ActiveSupport::Notifications.unsubscribe(sub) }
+  @_github_cache_subscribers = Github::CacheMetrics.subscribe!
 end
