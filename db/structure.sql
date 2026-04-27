@@ -675,6 +675,131 @@ ALTER SEQUENCE public.billing_plans_id_seq OWNED BY public.billing_plans.id;
 
 
 --
+-- Name: chat_messages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chat_messages (
+    id bigint NOT NULL,
+    chat_session_id bigint NOT NULL,
+    external_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    role character varying NOT NULL,
+    content text,
+    tool_call_id character varying,
+    tool_name character varying,
+    tool_arguments jsonb,
+    tool_result jsonb,
+    model character varying,
+    tokens_input integer,
+    tokens_output integer,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.chat_messages FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: chat_messages_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.chat_messages_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: chat_messages_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.chat_messages_id_seq OWNED BY public.chat_messages.id;
+
+
+--
+-- Name: chat_session_projects; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chat_session_projects (
+    id bigint NOT NULL,
+    chat_session_id bigint NOT NULL,
+    project_id bigint NOT NULL,
+    context_type character varying DEFAULT 'reference'::character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.chat_session_projects FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: chat_session_projects_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.chat_session_projects_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: chat_session_projects_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.chat_session_projects_id_seq OWNED BY public.chat_session_projects.id;
+
+
+--
+-- Name: chat_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chat_sessions (
+    id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    project_id bigint,
+    provider_id bigint,
+    external_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    status character varying DEFAULT 'active'::character varying NOT NULL,
+    mode character varying DEFAULT 'api'::character varying NOT NULL,
+    model character varying,
+    system_prompt text,
+    container_id character varying,
+    workspace_volume character varying,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    idle_timeout_at timestamp(6) without time zone,
+    created_by_id bigint,
+    title character varying,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.chat_sessions FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: chat_sessions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.chat_sessions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: chat_sessions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.chat_sessions_id_seq OWNED BY public.chat_sessions.id;
+
+
+--
 -- Name: collector_runs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3396,6 +3521,27 @@ ALTER TABLE ONLY public.billing_plans ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: chat_messages id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chat_messages ALTER COLUMN id SET DEFAULT nextval('public.chat_messages_id_seq'::regclass);
+
+
+--
+-- Name: chat_session_projects id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chat_session_projects ALTER COLUMN id SET DEFAULT nextval('public.chat_session_projects_id_seq'::regclass);
+
+
+--
+-- Name: chat_sessions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chat_sessions ALTER COLUMN id SET DEFAULT nextval('public.chat_sessions_id_seq'::regclass);
+
+
+--
 -- Name: collector_runs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3926,6 +4072,30 @@ ALTER TABLE ONLY public.billing_periods
 
 ALTER TABLE ONLY public.billing_plans
     ADD CONSTRAINT billing_plans_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: chat_messages chat_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chat_messages
+    ADD CONSTRAINT chat_messages_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: chat_session_projects chat_session_projects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chat_session_projects
+    ADD CONSTRAINT chat_session_projects_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: chat_sessions chat_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chat_sessions
+    ADD CONSTRAINT chat_sessions_pkey PRIMARY KEY (id);
 
 
 --
@@ -5231,6 +5401,104 @@ CREATE INDEX index_billing_plans_on_account_id ON public.billing_plans USING btr
 --
 
 CREATE INDEX index_billing_plans_on_account_id_and_active ON public.billing_plans USING btree (account_id, active);
+
+
+--
+-- Name: index_chat_messages_on_chat_session_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_chat_messages_on_chat_session_id ON public.chat_messages USING btree (chat_session_id);
+
+
+--
+-- Name: index_chat_messages_on_chat_session_id_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_chat_messages_on_chat_session_id_and_created_at ON public.chat_messages USING btree (chat_session_id, created_at);
+
+
+--
+-- Name: index_chat_messages_on_external_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_chat_messages_on_external_id ON public.chat_messages USING btree (external_id);
+
+
+--
+-- Name: index_chat_messages_on_role; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_chat_messages_on_role ON public.chat_messages USING btree (role);
+
+
+--
+-- Name: index_chat_session_projects_on_chat_session_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_chat_session_projects_on_chat_session_id ON public.chat_session_projects USING btree (chat_session_id);
+
+
+--
+-- Name: index_chat_session_projects_on_chat_session_id_and_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_chat_session_projects_on_chat_session_id_and_project_id ON public.chat_session_projects USING btree (chat_session_id, project_id);
+
+
+--
+-- Name: index_chat_session_projects_on_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_chat_session_projects_on_project_id ON public.chat_session_projects USING btree (project_id);
+
+
+--
+-- Name: index_chat_sessions_on_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_chat_sessions_on_account_id ON public.chat_sessions USING btree (account_id);
+
+
+--
+-- Name: index_chat_sessions_on_created_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_chat_sessions_on_created_by_id ON public.chat_sessions USING btree (created_by_id);
+
+
+--
+-- Name: index_chat_sessions_on_external_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_chat_sessions_on_external_id ON public.chat_sessions USING btree (external_id);
+
+
+--
+-- Name: index_chat_sessions_on_idle_timeout_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_chat_sessions_on_idle_timeout_at ON public.chat_sessions USING btree (idle_timeout_at);
+
+
+--
+-- Name: index_chat_sessions_on_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_chat_sessions_on_project_id ON public.chat_sessions USING btree (project_id);
+
+
+--
+-- Name: index_chat_sessions_on_provider_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_chat_sessions_on_provider_id ON public.chat_sessions USING btree (provider_id);
+
+
+--
+-- Name: index_chat_sessions_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_chat_sessions_on_status ON public.chat_sessions USING btree (status);
 
 
 --
@@ -7130,6 +7398,14 @@ ALTER TABLE ONLY public.style_guides
 
 
 --
+-- Name: chat_session_projects fk_rails_24faeffa39; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chat_session_projects
+    ADD CONSTRAINT fk_rails_24faeffa39 FOREIGN KEY (chat_session_id) REFERENCES public.chat_sessions(id);
+
+
+--
 -- Name: configuration_experiment_assignments fk_rails_250cd833e6; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7175,6 +7451,14 @@ ALTER TABLE ONLY public.token_usages
 
 ALTER TABLE ONLY public.prompts
     ADD CONSTRAINT fk_rails_314c3f0405 FOREIGN KEY (current_version_id) REFERENCES public.prompt_versions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: chat_session_projects fk_rails_3358d3948c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chat_session_projects
+    ADD CONSTRAINT fk_rails_3358d3948c FOREIGN KEY (project_id) REFERENCES public.projects(id);
 
 
 --
@@ -7255,6 +7539,14 @@ ALTER TABLE ONLY public.prompt_versions
 
 ALTER TABLE ONLY public.container_pool_entries
     ADD CONSTRAINT fk_rails_49dc6bbeb8 FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: chat_messages fk_rails_4ad9cc70bd; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chat_messages
+    ADD CONSTRAINT fk_rails_4ad9cc70bd FOREIGN KEY (chat_session_id) REFERENCES public.chat_sessions(id);
 
 
 --
@@ -7498,6 +7790,14 @@ ALTER TABLE ONLY public.account_memberships
 
 
 --
+-- Name: chat_sessions fk_rails_8f4e060e89; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chat_sessions
+    ADD CONSTRAINT fk_rails_8f4e060e89 FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
 -- Name: providers fk_rails_901136bfff; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7543,6 +7843,14 @@ ALTER TABLE ONLY public.agent_run_anomalies
 
 ALTER TABLE ONLY public.prompts
     ADD CONSTRAINT fk_rails_98fa12453f FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: chat_sessions fk_rails_9b5b542892; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chat_sessions
+    ADD CONSTRAINT fk_rails_9b5b542892 FOREIGN KEY (created_by_id) REFERENCES public.users(id);
 
 
 --
@@ -7655,6 +7963,14 @@ ALTER TABLE ONLY public.pre_commit_requirements
 
 ALTER TABLE ONLY public.notifications
     ADD CONSTRAINT fk_rails_b080fb4855 FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: chat_sessions fk_rails_b20daa8c1f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chat_sessions
+    ADD CONSTRAINT fk_rails_b20daa8c1f FOREIGN KEY (provider_id) REFERENCES public.providers(id);
 
 
 --
@@ -7946,6 +8262,14 @@ ALTER TABLE ONLY public.llm_output_metrics
 
 
 --
+-- Name: chat_sessions fk_rails_f3ce73dd5f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chat_sessions
+    ADD CONSTRAINT fk_rails_f3ce73dd5f FOREIGN KEY (project_id) REFERENCES public.projects(id);
+
+
+--
 -- Name: knowledge_chunks fk_rails_f54688f9e3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8100,6 +8424,24 @@ ALTER TABLE public.billing_periods ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.billing_plans ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: chat_messages; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: chat_session_projects; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.chat_session_projects ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: chat_sessions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.chat_sessions ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: collector_runs; Type: ROW SECURITY; Schema: public; Owner: -
@@ -8500,6 +8842,55 @@ CREATE POLICY tenant_isolation ON public.billing_periods USING ((public.paid_ten
 --
 
 CREATE POLICY tenant_isolation ON public.billing_plans USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+
+
+--
+-- Name: chat_messages tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.chat_messages USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.chat_sessions
+  WHERE ((chat_sessions.id = chat_messages.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.chat_sessions
+  WHERE ((chat_sessions.id = chat_messages.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id()))))));
+
+
+--
+-- Name: chat_session_projects tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.chat_session_projects USING ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM public.chat_sessions
+  WHERE ((chat_sessions.id = chat_session_projects.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = chat_session_projects.project_id) AND (projects.account_id = public.paid_current_account_id()))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM public.chat_sessions
+  WHERE ((chat_sessions.id = chat_session_projects.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = chat_session_projects.project_id) AND (projects.account_id = public.paid_current_account_id())))))));
+
+
+--
+-- Name: chat_sessions tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.chat_sessions USING ((public.paid_tenant_bypass() OR ((chat_sessions.account_id = public.paid_current_account_id()) AND ((chat_sessions.project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((chat_sessions.provider_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.providers
+  WHERE ((providers.id = chat_sessions.provider_id) AND (providers.user_id IN ( SELECT users.id
+           FROM public.users
+          WHERE (users.account_id = public.paid_current_account_id()))))))) AND ((chat_sessions.created_by_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((chat_sessions.account_id = public.paid_current_account_id()) AND ((chat_sessions.project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((chat_sessions.provider_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.providers
+  WHERE ((providers.id = chat_sessions.provider_id) AND (providers.user_id IN ( SELECT users.id
+           FROM public.users
+          WHERE (users.account_id = public.paid_current_account_id()))))))) AND ((chat_sessions.created_by_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = public.paid_current_account_id()))))))));
 
 
 --
@@ -9429,6 +9820,10 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260426231639'),
+('20260426231603'),
+('20260426231602'),
+('20260426231558'),
 ('20260426114303'),
 ('20260426011810'),
 ('20260425225105'),

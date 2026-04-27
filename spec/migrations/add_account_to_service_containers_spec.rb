@@ -6,6 +6,7 @@ require Rails.root.join("db/migrate/20260421162139_enable_tenant_row_level_secur
 require Rails.root.join("db/migrate/20260425113212_enable_rls_on_knowledge_usage_stats")
 require Rails.root.join("db/migrate/20260425060000_enable_rls_on_notification_rule_states")
 require Rails.root.join("db/migrate/20260426011810_enable_rls_on_llm_output_metrics")
+require Rails.root.join("db/migrate/20260426231639_enable_rls_on_chat_tables")
 
 RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   self.use_transactional_tests = false
@@ -15,6 +16,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   let(:knowledge_rls_migration) { EnableRlsOnKnowledgeUsageStats.new }
   let(:notification_rls_migration) { EnableRlsOnNotificationRuleStates.new }
   let(:llm_output_metrics_rls_migration) { EnableRlsOnLlmOutputMetrics.new }
+  let(:chat_rls_migration) { EnableRlsOnChatTables.new }
 
   include MigrationSpecHelpers
 
@@ -22,6 +24,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     truncate_migration_test_data
 
     if tenant_policy_count.positive?
+      chat_rls_migration.down if chat_tables_have_rls?
       llm_output_metrics_rls_migration.down if llm_output_metrics_has_rls?
       knowledge_rls_migration.down if knowledge_usage_stats_has_rls?
       notification_rls_migration.down
@@ -43,6 +46,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       notification_rls_migration.up
       knowledge_rls_migration.up unless knowledge_usage_stats_has_rls?
       llm_output_metrics_rls_migration.up unless llm_output_metrics_has_rls?
+      chat_rls_migration.up unless chat_tables_have_rls?
     end
     ServiceContainer.reset_column_information
   end
@@ -202,6 +206,12 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   def knowledge_usage_stats_has_rls?
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'knowledge_usage_stats' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
+  end
+
+  def chat_tables_have_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'chat_sessions' AND policyname = 'tenant_isolation'"
     ).to_i.positive?
   end
 
