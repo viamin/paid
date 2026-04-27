@@ -23,15 +23,15 @@ module Models
       candidates = available_candidates(tier: initial_tier)
       return nil if candidates.empty?
 
-      # When the provider has pinned a specific tier model the candidate pool is
-      # a single entry — skip the LLM round-trip and return it directly.
+      # When the candidate pool contains a single entry — whether from a provider
+      # tier pin or a global pool with one active model — skip the LLM round-trip.
       if candidates.size == 1
         only = candidates.first
         return {
           model: only,
           selector_type: "meta_agent",
           tier: initial_tier,
-          reasoning: "Single candidate from provider tier configuration; LLM selection skipped",
+          reasoning: "Single candidate in pool; LLM selection skipped",
           candidates: [ { model_id: only.model_id, score: only.capability_score.to_f } ],
           complexity_score: initial_complexity
         }
