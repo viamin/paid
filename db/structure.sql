@@ -885,7 +885,7 @@ CREATE TABLE public.configuration_experiment_variants (
     config_value text NOT NULL,
     is_control boolean DEFAULT false NOT NULL,
     sample_count integer DEFAULT 0 NOT NULL,
-    total_quality_score numeric(10,4) DEFAULT 0 NOT NULL,
+    total_quality_score numeric(10,4) DEFAULT 0.0 NOT NULL,
     avg_quality_score numeric(5,4),
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
@@ -929,8 +929,8 @@ CREATE TABLE public.configuration_experiments (
     traffic_percentage integer DEFAULT 100 NOT NULL,
     cached_analysis jsonb,
     analysis_samples_key character varying,
-    started_at timestamp without time zone,
-    completed_at timestamp without time zone,
+    started_at timestamp(6) without time zone,
+    completed_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     winner_variant_id bigint
@@ -1565,10 +1565,11 @@ CREATE TABLE public.issues (
     relationships_parsed_at timestamp(6) without time zone,
     review_goal_retry_count integer DEFAULT 0 NOT NULL,
     review_goal_retry_reset_at timestamp(6) without time zone,
-    operational_failure_reset_at timestamp(6) without time zone,
     ci_action_dispatched_at timestamp(6) without time zone,
     deployed_at timestamp(6) without time zone,
-    enhance_issue_rounds integer DEFAULT 0 NOT NULL
+    enhance_issue_rounds integer DEFAULT 0 NOT NULL,
+    operational_failure_reset_at timestamp(6) without time zone,
+    ci_retry_requested_at timestamp(6) without time zone
 );
 
 ALTER TABLE ONLY public.issues FORCE ROW LEVEL SECURITY;
@@ -1880,7 +1881,7 @@ CREATE TABLE public.llm_models (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     tier character varying(10),
-    CONSTRAINT llm_models_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text]))))
+    CONSTRAINT llm_models_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[]))))
 );
 
 
@@ -1922,8 +1923,6 @@ CREATE TABLE public.llm_output_metrics (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
 );
-
-ALTER TABLE ONLY public.llm_output_metrics ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE ONLY public.llm_output_metrics FORCE ROW LEVEL SECURITY;
 
@@ -2009,8 +2008,8 @@ CREATE TABLE public.model_selections (
     tier character varying(10),
     escalated_from_tier character varying(10),
     escalated_reason character varying(255),
-    CONSTRAINT model_selections_escalated_from_tier_check CHECK (((escalated_from_tier IS NULL) OR ((escalated_from_tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text])))),
-    CONSTRAINT model_selections_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text]))))
+    CONSTRAINT model_selections_escalated_from_tier_check CHECK (((escalated_from_tier IS NULL) OR ((escalated_from_tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[])))),
+    CONSTRAINT model_selections_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[]))))
 );
 
 ALTER TABLE ONLY public.model_selections FORCE ROW LEVEL SECURITY;
@@ -3277,7 +3276,7 @@ CREATE TABLE public.user_settings (
     fair_queue_across_projects boolean DEFAULT true NOT NULL,
     CONSTRAINT chk_max_issues_per_page_bounds CHECK (((max_issues_per_page >= 5) AND (max_issues_per_page <= 200))),
     CONSTRAINT chk_max_prs_per_page_bounds CHECK (((max_prs_per_page >= 5) AND (max_prs_per_page <= 200))),
-    CONSTRAINT chk_provider_selection_mode CHECK (((provider_selection_mode)::text = ANY (ARRAY[('single'::character varying)::text, ('round_robin'::character varying)::text, ('random'::character varying)::text])))
+    CONSTRAINT chk_provider_selection_mode CHECK (((provider_selection_mode)::text = ANY ((ARRAY['single'::character varying, 'round_robin'::character varying, 'random'::character varying])::text[])))
 );
 
 ALTER TABLE ONLY public.user_settings FORCE ROW LEVEL SECURITY;
@@ -4646,14 +4645,14 @@ CREATE INDEX idx_agent_runs_project_status_created_at_desc ON public.agent_runs 
 -- Name: idx_agent_runs_unique_active_issue; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_agent_runs_unique_active_issue ON public.agent_runs USING btree (project_id, issue_id, goal) WHERE ((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])));
+CREATE UNIQUE INDEX idx_agent_runs_unique_active_issue ON public.agent_runs USING btree (project_id, issue_id, goal) WHERE ((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])));
 
 
 --
 -- Name: idx_agent_runs_unique_active_pr; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_agent_runs_unique_active_pr ON public.agent_runs USING btree (project_id, source_pull_request_number, goal) WHERE ((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])));
+CREATE UNIQUE INDEX idx_agent_runs_unique_active_pr ON public.agent_runs USING btree (project_id, source_pull_request_number, goal) WHERE ((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])));
 
 
 --
@@ -4780,6 +4779,27 @@ CREATE UNIQUE INDEX idx_knowledge_links_uniqueness ON public.knowledge_links USI
 --
 
 CREATE UNIQUE INDEX idx_knowledge_usage_stats_unique ON public.knowledge_usage_stats USING btree (agent_run_id, artifact_type, context_type);
+
+
+--
+-- Name: idx_llm_output_metrics_project_type_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_llm_output_metrics_project_type_time ON public.llm_output_metrics USING btree (project_id, output_type, created_at);
+
+
+--
+-- Name: idx_llm_output_metrics_slug_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_llm_output_metrics_slug_version ON public.llm_output_metrics USING btree (prompt_slug, prompt_version_id);
+
+
+--
+-- Name: idx_llm_output_metrics_unique_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_llm_output_metrics_unique_source ON public.llm_output_metrics USING btree (project_id, output_type, source_type, source_id);
 
 
 --
@@ -6267,27 +6287,6 @@ CREATE INDEX index_llm_models_on_tier ON public.llm_models USING btree (tier);
 
 
 --
--- Name: idx_llm_output_metrics_project_type_time; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_llm_output_metrics_project_type_time ON public.llm_output_metrics USING btree (project_id, output_type, created_at);
-
-
---
--- Name: idx_llm_output_metrics_slug_version; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_llm_output_metrics_slug_version ON public.llm_output_metrics USING btree (prompt_slug, prompt_version_id);
-
-
---
--- Name: idx_llm_output_metrics_unique_source; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX idx_llm_output_metrics_unique_source ON public.llm_output_metrics USING btree (project_id, output_type, source_type, source_id);
-
-
---
 -- Name: index_llm_output_metrics_on_account_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7263,6 +7262,14 @@ ALTER TABLE ONLY public.decision_records
 
 
 --
+-- Name: knowledge_usage_stats fk_rails_0329536d8b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_usage_stats
+    ADD CONSTRAINT fk_rails_0329536d8b FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
 -- Name: project_mcp_servers fk_rails_04e723b430; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7343,6 +7350,14 @@ ALTER TABLE ONLY public.project_memberships
 
 
 --
+-- Name: knowledge_usage_stats fk_rails_19580b1096; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_usage_stats
+    ADD CONSTRAINT fk_rails_19580b1096 FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id) ON DELETE CASCADE;
+
+
+--
 -- Name: tracker_configurations fk_rails_1ba0f7ea23; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7356,14 +7371,6 @@ ALTER TABLE ONLY public.tracker_configurations
 
 ALTER TABLE ONLY public.notifications
     ADD CONSTRAINT fk_rails_1c0a19e3ee FOREIGN KEY (account_id) REFERENCES public.accounts(id);
-
-
---
--- Name: notification_rule_states fk_rails_1d0b19e4ff; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.notification_rule_states
-    ADD CONSTRAINT fk_rails_1d0b19e4ff FOREIGN KEY (account_id) REFERENCES public.accounts(id);
 
 
 --
@@ -8039,6 +8046,14 @@ ALTER TABLE ONLY public.billing_invoices
 
 
 --
+-- Name: notification_rule_states fk_rails_c198fcfeea; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_rule_states
+    ADD CONSTRAINT fk_rails_c198fcfeea FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
 -- Name: quality_recovery_actions fk_rails_c1b71cbe0e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8335,22 +8350,6 @@ ALTER TABLE ONLY public.projects
 
 
 --
--- Name: knowledge_usage_stats fk_rails_kus_agent_run; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.knowledge_usage_stats
-    ADD CONSTRAINT fk_rails_kus_agent_run FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id) ON DELETE CASCADE;
-
-
---
--- Name: knowledge_usage_stats fk_rails_kus_project; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.knowledge_usage_stats
-    ADD CONSTRAINT fk_rails_kus_project FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
-
-
---
 -- Name: ab_test_assignments; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -8565,6 +8564,12 @@ ALTER TABLE public.knowledge_usage_stats ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.linear_tokens ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: llm_output_metrics; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.llm_output_metrics ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: mcp_server_definitions; Type: ROW SECURITY; Schema: public; Owner: -
@@ -8883,21 +8888,21 @@ CREATE POLICY tenant_isolation ON public.chat_session_projects USING ((public.pa
 -- Name: chat_sessions tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.chat_sessions USING ((public.paid_tenant_bypass() OR ((chat_sessions.account_id = public.paid_current_account_id()) AND ((chat_sessions.project_id IS NULL) OR (EXISTS ( SELECT 1
+CREATE POLICY tenant_isolation ON public.chat_sessions USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.projects
-  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((chat_sessions.provider_id IS NULL) OR (EXISTS ( SELECT 1
+  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((provider_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.providers
   WHERE ((providers.id = chat_sessions.provider_id) AND (providers.user_id IN ( SELECT users.id
            FROM public.users
-          WHERE (users.account_id = public.paid_current_account_id()))))))) AND ((chat_sessions.created_by_id IS NULL) OR (EXISTS ( SELECT 1
+          WHERE (users.account_id = public.paid_current_account_id()))))))) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.users
-  WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((chat_sessions.account_id = public.paid_current_account_id()) AND ((chat_sessions.project_id IS NULL) OR (EXISTS ( SELECT 1
+  WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.projects
-  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((chat_sessions.provider_id IS NULL) OR (EXISTS ( SELECT 1
+  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((provider_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.providers
   WHERE ((providers.id = chat_sessions.provider_id) AND (providers.user_id IN ( SELECT users.id
            FROM public.users
-          WHERE (users.account_id = public.paid_current_account_id()))))))) AND ((chat_sessions.created_by_id IS NULL) OR (EXISTS ( SELECT 1
+          WHERE (users.account_id = public.paid_current_account_id()))))))) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.users
   WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = public.paid_current_account_id()))))))));
 
@@ -9830,6 +9835,7 @@ SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
 ('20260427143916'),
+('20260427135718'),
 ('20260426231639'),
 ('20260426231603'),
 ('20260426231602'),
@@ -10053,3 +10059,4 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260128004342'),
 ('20260128004305'),
 ('20260127154444');
+
