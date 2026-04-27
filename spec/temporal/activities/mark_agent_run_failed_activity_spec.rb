@@ -146,6 +146,16 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
         }.not_to have_enqueued_job(GithubTokenValidationJob)
       end
 
+      it "does not break the main flow when auth check raises" do
+        agent_run = create(:agent_run, :running, project: project)
+        allow(GithubTokens::AuthFailureChecker).to receive(:new).and_raise(StandardError, "Redis down")
+
+        result = activity.execute(agent_run_id: agent_run.id, error: "Authentication failed")
+
+        expect(result).to eq({ agent_run_id: agent_run.id })
+        expect(agent_run.reload.status).to eq("failed")
+      end
+
       it "handles missing github_token gracefully" do
         agent_run = create(:agent_run, :running, project: project)
         # Simulate a project whose token was deleted after the run started

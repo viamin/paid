@@ -47,6 +47,7 @@ RSpec.describe GithubTokens::AuthFailureChecker do
         "Timeout after 300 seconds",
         "No changes detected",
         "Rate limit exceeded",
+        "PermissionUnauthorizedError in module",
         ""
       ].each do |msg|
         checker = described_class.new(error_message: msg)

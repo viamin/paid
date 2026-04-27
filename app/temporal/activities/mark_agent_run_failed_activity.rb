@@ -70,6 +70,13 @@ module Activities
       )
 
       GithubTokenValidationJob.perform_later(github_token.id)
+    rescue => e
+      logger.warn(
+        message: "github_token.auth_failure_check_error",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error_message: e.message.to_s.truncate(200)
+      )
     end
   end
 end

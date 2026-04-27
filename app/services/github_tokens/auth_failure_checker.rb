@@ -28,7 +28,7 @@ module GithubTokens
       /Invalid or expired GitHub token/i,
       /Token is invalid or has been revoked/i,
       /Bad credentials/i,
-      /Unauthorized/i
+      /\bUnauthorized\b/i
     ].freeze
 
     ALL_PATTERNS = (GIT_AUTH_PATTERNS + PROXY_AUTH_PATTERNS + CLIENT_AUTH_PATTERNS).freeze
