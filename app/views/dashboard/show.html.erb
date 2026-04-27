@@ -29,16 +29,6 @@
         <%= render "dashboard/live_stats", stats: @live_stats %>
       </div>
 
-      <div id="queue-health" class="mt-6">
-        <%= render "dashboard/queue_health", queue_depths: @queue_health.queue_depths, healthy: @queue_health.healthy? %>
-      </div>
-
-      <div id="dashboard-alerts" class="mt-6 space-y-3"></div>
-
-      <div class="mt-6">
-        <%= render "dashboard/quality_paused_projects", projects: @quality_paused_projects %>
-      </div>
-
       <div class="mt-6">
         <div class="flex items-center justify-between gap-4">
           <div>
@@ -50,6 +40,16 @@
         <div id="active-runs" class="mt-4">
           <%= render "dashboard/active_runs", active_runs: @active_runs %>
         </div>
+      </div>
+
+      <div id="queue-health" class="mt-6">
+        <%= render "dashboard/queue_health", queue_depths: @queue_health.queue_depths, healthy: @queue_health.healthy? %>
+      </div>
+
+      <div id="dashboard-alerts" class="mt-6 space-y-3"></div>
+
+      <div class="mt-6">
+        <%= render "dashboard/quality_paused_projects", projects: @quality_paused_projects %>
       </div>
     </div>
   </details>
