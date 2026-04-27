@@ -47,7 +47,29 @@ module Activities
         error: error
       )
 
+      check_auth_failure(agent_run, error)
+
       { agent_run_id: agent_run_id }
+    end
+
+    private
+
+    def check_auth_failure(agent_run, error_message)
+      checker = GithubTokens::AuthFailureChecker.new(error_message: error_message)
+      matched_pattern = checker.call
+      return unless matched_pattern
+
+      github_token = agent_run.project&.github_token
+      return unless github_token
+
+      logger.info(
+        message: "github_token.auth_failure_check",
+        agent_run_id: agent_run.id,
+        token_id: github_token.id,
+        error_pattern: matched_pattern.source
+      )
+
+      GithubTokenValidationJob.perform_later(github_token.id)
     end
   end
 end
