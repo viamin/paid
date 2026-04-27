@@ -759,7 +759,7 @@ RSpec.describe "AgentRuns" do
         expect(provider["data-action"]).to include("change->goal-toggle#providerChanged")
       end
 
-      it "pre-selects the goal-specific provider when goal=review" do
+      it "defaults to Inherit in the provider dropdown" do
         owner = project.created_by
         codex = owner.providers.create!(
           provider_key: "codex",
@@ -775,7 +775,8 @@ RSpec.describe "AgentRuns" do
         provider_select = doc.at_css("#provider")
         selected_option = provider_select.at_css("option[selected]")
 
-        expect(selected_option["value"]).to eq(codex.routing_key)
+        expect(selected_option["value"]).to eq("")
+        expect(selected_option.text.strip).to eq("Inherit (from provider settings)")
       end
 
       it "renders enhance_issue as a selectable goal with the issue picker active" do
