@@ -25,12 +25,13 @@ module Activities
           pr = existing_pr
           pr_action = "reused"
         elsif branch_exists
+          pr_body = build_pr_body(issue, agent_run, client: client)
           pr = client.create_pull_request(
             project.full_name,
             base: project.default_branch,
             head: agent_run.branch_name,
             title: pr_title(issue),
-            body: pr_body(issue, agent_run, client: client),
+            body: pr_body.fetch(:body),
             draft: true
           )
           pr_action = "created"
@@ -48,7 +49,15 @@ module Activities
           pr_url: pr.html_url,
           pr_number: pr.number
         )
-        reconcile_pull_request(agent_run, client, project, pr, pr_action, issue: issue)
+        reconcile_pull_request(
+          agent_run,
+          client,
+          project,
+          pr,
+          pr_action,
+          issue: issue,
+          llm_generated_description: pr_body&.fetch(:llm_generated_description, false)
+        )
 
         unless completed
           logger.info(
@@ -132,7 +141,7 @@ module Activities
       )
     end
 
-    def reconcile_pull_request(agent_run, client, project, pr, pr_action, issue:)
+    def reconcile_pull_request(agent_run, client, project, pr, pr_action, issue:, llm_generated_description: false)
       agent_run_id = agent_run.id
 
       # Best-effort post-processing runs even when cancellation wins the
@@ -148,6 +157,12 @@ module Activities
           pull_request_url: pr.html_url
         )
       end
+
+      if llm_generated_description
+        best_effort(agent_run_id, context: "record_pr_description_metric") do
+          record_pr_description_metric(project, pr.number, original_text: pr.body)
+        end
+      end
     end
 
     def pr_title(issue)
@@ -159,18 +174,22 @@ module Activities
       "Fix ##{issue.github_number}: #{issue.title}".truncate(255)
     end
 
-    def pr_body(issue, agent_run, client: nil)
+    def build_pr_body(issue, agent_run, client: nil)
       summary = agent_run.agent_summary
       validate_summary_scope(summary, issue, agent_run, client: client)
       description = generate_description(summary, issue, agent_run_id: agent_run.id)
 
       template = resolve_pr_template(agent_run)
-
-      if template
+      body = if template
         render_pr_template(template, issue, agent_run, description)
       else
         build_default_pr_body(issue, description)
       end
+
+      {
+        body: body,
+        llm_generated_description: description.present?
+      }
     end
 
     def build_default_pr_body(issue, description)
@@ -443,6 +462,17 @@ module Activities
       pull_request.with_lock do
         pull_request.update!(labels: (pull_request.labels + labels).uniq)
       end
+    end
+
+    def record_pr_description_metric(project, pr_number, original_text: nil)
+      LlmOutputMetrics::Record.call(
+        project: project,
+        output_type: "pr_description",
+        prompt_slug: Llm::GeneratePrDescription::PROMPT_SLUG,
+        source_type: "PullRequest",
+        source_id: pr_number,
+        metadata: { "original_text" => original_text }
+      )
     end
   end
 end
