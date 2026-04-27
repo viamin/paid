@@ -163,6 +163,46 @@ upsert_global_prompt.call(
 )
 
 # ----------------------------------------------------------------------------
+# ci.failure_guidance — Data-driven CI failure debugging guidance
+# Used by: Prompts::BuildForPr (rendered and injected into CI failures section)
+# ----------------------------------------------------------------------------
+upsert_global_prompt.call(
+  slug: "ci.failure_guidance",
+  name: "CI Failure Guidance",
+  description: "Provides strategy for debugging CI failures. Rendered with failure_types and workflow_content, then injected into the PR follow-up prompt. A/B testable and evolvable by the meta-agent.",
+  category: "coding",
+  template: <<~'TEMPLATE',
+    ## Debugging Strategy
+
+    First, classify the failure:
+
+    - **Code error** (syntax errors, test assertions, logic bugs): Fix the
+      application code. Reproduce locally using the test command.
+    - **Configuration error** (wrong database config, missing ENV vars in
+      `config/`): Fix the configuration file. Compare how the config is used
+      in CI vs locally.
+    - **CI infrastructure error** (database not created, service unreachable,
+      setup step missing `RAILS_ENV`): Fix the CI workflow file in
+      `.github/workflows/`. These errors often occur because a setup step
+      runs in a different environment (e.g., `development` mode) than the
+      test step (e.g., `test` mode).
+
+    {{failure_type_hints}}
+
+    {{workflow_content_section}}
+
+    **Important:** CI infrastructure errors cannot be reproduced locally — the
+    agent container environment differs from the CI runner environment. Fix the
+    workflow file or configuration directly, commit the change, and do not
+    attempt local reproduction of the infrastructure issue.
+  TEMPLATE
+  variables: [
+    var.call("failure_type_hints", "Targeted hints based on classified failure types", required: false),
+    var.call("workflow_content_section", "CI workflow YAML files when available", required: false)
+  ]
+)
+
+# ----------------------------------------------------------------------------
 # diagnostics.agent_run_failure — Failure diagnosis for failed agent runs
 # Used by: AgentRuns::DiagnoseError
 # ----------------------------------------------------------------------------
