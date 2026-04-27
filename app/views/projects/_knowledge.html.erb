@@ -22,7 +22,10 @@
             end %>
       </span>
     </div>
-    <%= link_to "Search", knowledge_search_path(project_id: project.id), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+    <div class="flex items-center space-x-3">
+      <%= link_to "Browse", project_knowledge_browse_index_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+      <%= link_to "Search", project_knowledge_search_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+    </div>
   </div>
 
   <% if status == 'failed' %>
@@ -54,108 +57,104 @@
     </div>
   <% end %>
 
-  <% embedding_provider_config = project.knowledge_embedding_provider_configuration %>
-  <% if project.semantic_search_available? %>
-    <div class="mt-3 flex items-center rounded-md bg-green-50 px-3 py-2">
-      <svg class="h-4 w-4 flex-shrink-0 text-green-500" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
-      </svg>
-      <p class="ml-2 text-sm text-green-700">
-        Embeddings and semantic search are configured
-        <% if embedding_provider_config&.api_key_record %>
-          using <%= embedding_provider_config.provider_label %> key "<%= embedding_provider_config.api_key_record.name %>".
-        <% else %>
-          via platform <%= embedding_provider_config&.provider_label || "provider" %> configuration.
+  <% if artifact_counts.any? %>
+    <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <% artifact_counts.each do |artifact_type, count| %>
+        <%= link_to project_knowledge_browse_path(project, artifact_type),
+              class: "group rounded-lg bg-white px-4 py-3 shadow hover:shadow-md transition-shadow" do %>
+          <p class="text-xs font-medium text-gray-500 group-hover:text-indigo-600"><%= artifact_type.titleize.pluralize %></p>
+          <p class="mt-1 text-lg font-semibold text-gray-900"><%= number_with_delimiter(count) %></p>
         <% end %>
-      </p>
+      <% end %>
     </div>
-  <% else %>
-    <div class="mt-3 flex items-start rounded-md bg-yellow-50 px-3 py-2">
-      <svg class="h-4 w-4 flex-shrink-0 text-yellow-500 mt-0.5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-        <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
-      </svg>
-      <div class="ml-2">
-        <p class="text-sm text-yellow-700">Embeddings and semantic search are not currently available. Configure a usable knowledge embedding provider to enable them.</p>
-        <p class="mt-1 text-sm">
-          <%= link_to "Add an API key", provider_api_keys_path, class: "font-medium text-yellow-700 underline hover:text-yellow-600" %>
-        </p>
+  <% elsif status != 'failed' %>
+    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-5 text-center text-sm text-gray-500">
+        <% if status == 'pending' %>
+          Knowledge collection has not started yet. It will begin automatically.
+        <% elsif status == 'collecting' %>
+          Knowledge is currently being collected. Check back shortly.
+        <% else %>
+          No knowledge artifacts have been indexed for this project yet.
+        <% end %>
       </div>
     </div>
   <% end %>
 
   <% if collector_runs.any? %>
-    <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
-      <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-          <tr>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Type</th>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Version</th>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
-            <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Duration</th>
-            <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Artifacts</th>
-            <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">When</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200 bg-white">
-          <% collector_runs.each do |run| %>
+    <details class="mt-4">
+      <summary class="cursor-pointer text-sm font-medium text-gray-500 hover:text-gray-700">
+        Collector Runs (<%= collector_runs.size %>)
+      </summary>
+      <div class="mt-2 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
             <tr>
-              <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
-                <%= run.collector_type %>
-              </td>
-              <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
-                <code class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs"><%= run.project_version.commit_sha.first(7) %></code>
-              </td>
-              <td class="whitespace-nowrap px-4 py-3 text-sm">
-                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
-                  <%= case run.status.to_s
-                      when 'completed' then 'bg-green-100 text-green-700'
-                      when 'failed' then 'bg-red-100 text-red-700'
-                      when 'running' then 'bg-blue-100 text-blue-700'
-                      when 'pending' then 'bg-gray-100 text-gray-600'
-                      when 'stale' then 'bg-yellow-100 text-yellow-700'
-                      when 'skipped' then 'bg-orange-100 text-orange-700'
-                      else 'bg-gray-100 text-gray-500'
-                      end %>">
-                  <%= run.status&.capitalize || "Unknown" %>
-                  <% if run.status == "skipped" && run.error_message.present? %>
-                    <span class="ml-1 text-xs font-normal text-orange-800">
-                      (Reason: <%= truncate(redacted_error_message(run.error_message), length: 120) %>)
-                    </span>
-                  <% end %>
-                </span>
-              </td>
-              <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">
-                <% if run.duration_ms %>
-                  <%= format("%.1fs", run.duration_ms / 1000.0) %>
-                <% else %>
-                  --
-                <% end %>
-              </td>
-              <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">
-                <%= run.artifacts_count || 0 %>
-              </td>
-              <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">
-                <% if run.completed_at %>
-                  <%= time_ago_in_words(run.completed_at) %> ago
-                <% elsif run.created_at %>
-                  <%= time_ago_in_words(run.created_at) %> ago
-                <% end %>
-              </td>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Type</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Version</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Duration</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Artifacts</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">When</th>
             </tr>
-            <% if run.status == "failed" && run.error_message.present? %>
-              <tr class="bg-red-50">
-                <td colspan="6" class="px-4 py-2 text-xs text-red-700">
-                  <span class="font-medium">Error:</span> <%= truncate(redacted_error_message(run.error_message), length: 300) %>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white">
+            <% collector_runs.each do |run| %>
+              <tr>
+                <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
+                  <%= run.collector_type %>
+                </td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
+                  <code class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs"><%= run.project_version.commit_sha.first(7) %></code>
+                </td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm">
+                  <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+                    <%= case run.status.to_s
+                        when 'completed' then 'bg-green-100 text-green-700'
+                        when 'failed' then 'bg-red-100 text-red-700'
+                        when 'running' then 'bg-blue-100 text-blue-700'
+                        when 'pending' then 'bg-gray-100 text-gray-600'
+                        when 'stale' then 'bg-yellow-100 text-yellow-700'
+                        when 'skipped' then 'bg-orange-100 text-orange-700'
+                        else 'bg-gray-100 text-gray-500'
+                        end %>">
+                    <%= run.status&.capitalize || "Unknown" %>
+                    <% if run.status == "skipped" && run.error_message.present? %>
+                      <span class="ml-1 text-xs font-normal text-orange-800">
+                        (Reason: <%= truncate(redacted_error_message(run.error_message), length: 120) %>)
+                      </span>
+                    <% end %>
+                  </span>
+                </td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">
+                  <% if run.duration_ms %>
+                    <%= format("%.1fs", run.duration_ms / 1000.0) %>
+                  <% else %>
+                    --
+                  <% end %>
+                </td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">
+                  <%= run.artifacts_count || 0 %>
+                </td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">
+                  <% if run.completed_at %>
+                    <%= time_ago_in_words(run.completed_at) %> ago
+                  <% elsif run.created_at %>
+                    <%= time_ago_in_words(run.created_at) %> ago
+                  <% end %>
                 </td>
               </tr>
+              <% if run.status == "failed" && run.error_message.present? %>
+                <tr class="bg-red-50">
+                  <td colspan="6" class="px-4 py-2 text-xs text-red-700">
+                    <span class="font-medium">Error:</span> <%= truncate(redacted_error_message(run.error_message), length: 300) %>
+                  </td>
+                </tr>
+              <% end %>
             <% end %>
-          <% end %>
-        </tbody>
-      </table>
-    </div>
-  <% else %>
-    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
-      <div class="px-4 py-5 text-sm text-gray-500">No collector runs yet.</div>
-    </div>
+          </tbody>
+        </table>
+      </div>
+    </details>
   <% end %>
 </div>

@@ -3,15 +3,45 @@
 module Knowledge
   class SearchController < ApplicationController
     before_action :authenticate_user!
-    skip_after_action :verify_authorized, only: :index
+    skip_after_action :verify_authorized, only: [ :index, :project_search ]
 
     def index
       @projects = policy_scope(Project).order(:name)
-      @project = @projects.find_by(id: params[:project_id])
-      @results = nil
-      resolve_semantic_search_info
+      @project_artifact_counts = KnowledgeArtifact.active
+        .where(project_id: @projects.select(:id))
+        .group(:project_id, :artifact_type)
+        .count
+        .each_with_object({}) do |((project_id, type), count), hash|
+          (hash[project_id] ||= {})[type] = count
+        end
     end
 
+    def project_search
+      set_project
+      authorize @project, :show?
+      @query = params[:q].to_s.strip
+      resolve_semantic_search_info
+      resolve_artifact_type_filter
+      @results = nil
+    end
+
+    def project_search_results
+      set_project
+      authorize @project, :show?
+      @query = params[:q].to_s.strip
+      resolve_semantic_search_info
+      resolve_artifact_type_filter
+
+      if @query.blank?
+        @error = "Please enter a search query."
+        return render :project_search
+      end
+
+      perform_search
+      render :project_search
+    end
+
+    # Legacy global search endpoint — kept for backward compatibility
     def search
       @projects = policy_scope(Project).order(:name)
       @project = @projects.find_by(id: params[:project_id])
@@ -19,19 +49,31 @@ module Knowledge
 
       if @project.nil?
         skip_authorization
-        resolve_semantic_search_info
-        @error = "Please select a project."
+        @project_artifact_counts = {}
+        @error = "Please select a project to search."
         return render :index
       end
 
       authorize @project, :show?
       resolve_semantic_search_info
+      resolve_artifact_type_filter
 
       if @query.blank?
         @error = "Please enter a search query."
-        return render :index
+        return redirect_to project_knowledge_search_path(@project)
       end
 
+      perform_search
+      render :project_search
+    end
+
+    private
+
+    def set_project
+      @project = policy_scope(Project).find(params[:project_id])
+    end
+
+    def perform_search
       mode = @search_mode
       provider_config = mode == "exact" ? nil : @project.knowledge_embedding_provider_configuration
 
@@ -48,7 +90,7 @@ module Knowledge
         project: @project,
         query: @query,
         mode: mode,
-        artifact_type: params[:type].presence,
+        artifact_type: @artifact_type_filter,
         limit: 20,
         api_key: api_key,
         api_base_url: api_base_url
@@ -56,20 +98,16 @@ module Knowledge
 
       @results = result[:results]
       @meta = result[:meta]
-
-      render :index
     end
 
-    private
-
     def resolve_semantic_search_info
-      normalized_mode = Knowledge::Search::MODES.include?(params[:mode]) ? params[:mode] : nil
+      normalized_mode = ::Knowledge::Search::MODES.include?(params[:mode]) ? params[:mode] : nil
 
       if @project.nil?
         @semantic_search_source = :unknown
         @semantic_search_provider_config = nil
         @semantic_search_api_key_record = nil
-        @search_mode = normalized_mode || Knowledge::Search::DEFAULT_MODE
+        @search_mode = normalized_mode || ::Knowledge::Search::DEFAULT_MODE
         return
       end
 
@@ -88,8 +126,12 @@ module Knowledge
       if @semantic_search_source == :none
         @search_mode = "exact"
       else
-        @search_mode = normalized_mode || Knowledge::Search::DEFAULT_MODE
+        @search_mode = normalized_mode || ::Knowledge::Search::DEFAULT_MODE
       end
+    end
+
+    def resolve_artifact_type_filter
+      @artifact_type_filter = params[:type].presence
     end
   end
 end

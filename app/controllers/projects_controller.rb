@@ -71,6 +71,11 @@ class ProjectsController < ApplicationController
       else
         CollectorRun.none
       end
+    @artifact_counts = KnowledgeArtifact.active
+      .for_project(@project)
+      .group(:artifact_type)
+      .count
+      .sort_by { |_, count| -count }
   end
 
   def new
