@@ -15,8 +15,7 @@ module GithubTokens
       paused_ids = []
 
       projects.find_each do |project|
-        project.scheduler_pause!(reason: pause_reason)
-        paused_ids << project.id
+        paused_ids << project.id if project.scheduler_pause!(reason: pause_reason)
       end
 
       if paused_ids.any?

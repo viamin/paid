@@ -15,6 +15,7 @@ class User < ApplicationRecord
   has_many :provider_api_keys, dependent: :destroy
   has_many :pre_commit_requirements, dependent: :destroy
   has_one :tracker_configuration, as: :configurable, dependent: :destroy
+  has_many :created_chat_sessions, class_name: "ChatSession", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
   has_many :pr_templates, dependent: :destroy
 
   # Include default devise modules. Others available are:
