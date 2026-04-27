@@ -156,6 +156,13 @@ Rails.application.routes.draw do
       post :complete
     end
     post :ensure_labels, on: :member
+
+    # Project-scoped knowledge browsing and search
+    namespace :knowledge do
+      resources :browse, only: [ :index, :show ]
+      get "search", to: "search#project_search", as: :search
+      get "search/results", to: "search#project_search_results", as: :search_results
+    end
   end
 
   # API endpoints for agent containers

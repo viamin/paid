@@ -708,6 +708,64 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       end
     end
 
+    context "with a priority tier" do
+      let(:agent_run) do
+        create(:agent_run, :with_custom_prompt, :with_git_context, :with_metrics,
+          project: project, goal: "create_issue", custom_prompt: "Analyze the auth system",
+          priority_tier: "P1")
+      end
+
+      it "includes the priority label in the create_issue payload" do
+        agent_run.log!("stdout", "# Auth Analysis\n\nDetailed analysis here.")
+
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(labels: a_collection_including("P1"))
+        ).and_return(issue_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "uses the project custom priority label name" do
+        project.update!(priority_labels: { "P1" => "critical" })
+        agent_run.log!("stdout", "# Auth Analysis\n\nDetailed analysis here.")
+
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(labels: a_collection_including("critical"))
+        ).and_return(issue_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "includes both the generated label and priority label when auto_add_labels is enabled" do
+        project.update!(auto_add_labels_enabled: true)
+        agent_run.log!("stdout", "# Auth Analysis\n\nDetailed analysis here.")
+
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(labels: [ project.generated_label_name, "P1" ])
+        ).and_return(issue_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
+    context "without a priority tier" do
+      before { project.update!(auto_add_labels_enabled: false) }
+
+      it "does not include priority labels" do
+        agent_run.log!("stdout", "# Auth Analysis\n\nDetailed analysis here.")
+
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(labels: [])
+        ).and_return(issue_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       expect {
         activity.execute(agent_run_id: -1)

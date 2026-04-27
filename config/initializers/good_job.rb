@@ -20,6 +20,12 @@ module Paid
     def resolve_from_db(key, env_key:, env:, default:)
       TenantSetting.resolve_worker_setting(key, env_key: env_key, env: env, default: default)
     rescue NameError
+      resolve_from_env(env_key, env:, default:)
+    rescue ArgumentError
+      default
+    end
+
+    def resolve_from_env(env_key, env:, default:)
       fallback = env.fetch(env_key, nil)
       return default unless fallback
       begin
@@ -27,8 +33,6 @@ module Paid
       rescue ArgumentError
         fallback
       end
-    rescue ArgumentError
-      default
     end
 
     def poll_interval(env = ENV)
@@ -63,34 +67,8 @@ end
 #
 # See docs/WORKER_POOL_TUNING.md for deployment sizing guidance.
 Rails.application.configure do
-  # Execution mode: async_server runs jobs in the web process (single-server),
-  # external runs a separate worker process (multi-server).
   config.good_job.execution_mode = Paid::GoodJobConfig.execution_mode
 
-  # Worker thread pool size. Each thread holds one DB connection, so this
-  # must not exceed the DB_POOL setting (default 20). The per-queue thread
-  # limits below carve this pool into priority bands so high-priority work
-  # is never starved by bulk low-priority jobs.
-  config.good_job.max_threads = Paid::GoodJobConfig.max_threads
-
-  # Queue string with per-queue thread caps (queue_name:max_threads).
-  # Semicolons create independent queue pools with fixed capacity, which is
-  # exactly what we want here: each queue keeps its own reserved budget and
-  # low-priority bursts cannot consume threads needed by default work.
-  config.good_job.queues = Paid::GoodJobConfig.queues
-
-  # How long to wait between polling the DB for new jobs (seconds).
-  # Lower values reduce latency for enqueued jobs at the cost of more
-  # frequent DB queries. 3s balances responsiveness with DB load.
-  config.good_job.poll_interval = Paid::GoodJobConfig.poll_interval
-
-  # Shutdown timeout — how long to wait for in-flight jobs before forcing exit.
-  config.good_job.shutdown_timeout = Paid::GoodJobConfig.shutdown_timeout
-
-  # Automatically delete finished jobs older than 24 hours. Without this,
-  # completed job records accumulate indefinitely (the metrics collection
-  # self-re-enqueue loop creates ~15K records/day), bloating the good_jobs
-  # and good_job_executions tables and slowing every DB query.
   config.good_job.cleanup_preserved_jobs_before_seconds_ago = 1.day
 
   config.x.good_job_enable_cron = Paid::GoodJobConfig.enable_cron
@@ -185,6 +163,18 @@ Rails.application.configure do
   }
 end
 
+# TenantSetting-dependent config resolved in to_prepare so that the
+# autoloaded TenantSetting model is fully available (not during boot).
+# to_prepare runs after after_initialize on first boot, and again on
+# each code reload in development. GoodJob reads these settings when
+# the scheduler starts (after full boot), so the values are available.
+Rails.application.config.to_prepare do
+  Rails.application.config.good_job.max_threads = Paid::GoodJobConfig.max_threads
+  Rails.application.config.good_job.queues = Paid::GoodJobConfig.queues
+  Rails.application.config.good_job.poll_interval = Paid::GoodJobConfig.poll_interval
+  Rails.application.config.good_job.shutdown_timeout = Paid::GoodJobConfig.shutdown_timeout
+end
+
 # Run orphan cleanup once at startup to catch resources leaked while the app was down.
 # Only enqueue from the server process (not console, rake, or tests) to avoid
 # duplicate startup enqueues across processes. The job's enqueue_limit: 1
@@ -193,6 +183,6 @@ Rails.application.config.after_initialize do
   next unless Rails.application.config.good_job.enable_cron
   next unless defined?(Rails::Server) || ENV["GOOD_JOB_EXECUTION_MODE"] == "async_server"
 
-  DockerOrphanCleanupJob.perform_later
-  PoolReplenishmentJob.perform_later if Containers::PoolManager.enabled?
+  "DockerOrphanCleanupJob".constantize.perform_later
+  "PoolReplenishmentJob".constantize.perform_later if "Containers::PoolManager".constantize.enabled?
 end

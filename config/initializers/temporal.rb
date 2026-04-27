@@ -1,16 +1,5 @@
 # frozen_string_literal: true
 
-# Suppress circular require warnings from temporalio gem's internal dependencies
-# (temporalio/error.rb <-> temporalio/error/failure.rb)
-begin
-  original_verbose = $VERBOSE
-  $VERBOSE = nil
-  require "temporalio/client"
-  require "temporalio/worker"
-ensure
-  $VERBOSE = original_verbose
-end
-
 module Paid
   @temporal_mutex = Mutex.new
 
@@ -19,14 +8,22 @@ module Paid
     # on first call, not during Rails initialization. Thread-safe via Mutex
     # to prevent duplicate connections under concurrent Puma workers.
     #
+    # The heavy temporalio gem (139 MB, native Rust extensions) is only
+    # required when this method is first called, removing it from the
+    # critical boot path.
+    #
     # @return [Temporalio::Client] Connected Temporal client
     # @raise [Temporalio::Error] When connection fails
     def temporal_client
       @temporal_mutex.synchronize do
-        @temporal_client ||= Temporalio::Client.connect(
-          temporal_address,
-          temporal_namespace
-        )
+        unless defined?(@temporal_client)
+          suppress_circular_require_warnings { require "temporalio/client" }
+          @temporal_client = Temporalio::Client.connect(
+            temporal_address,
+            temporal_namespace
+          )
+        end
+        @temporal_client
       end
     end
 
@@ -34,7 +31,7 @@ module Paid
     # Useful for recovering from connection failures or configuration changes.
     def reset_temporal_client!
       @temporal_mutex.synchronize do
-        @temporal_client = nil
+        remove_instance_variable(:@temporal_client) if defined?(@temporal_client)
       end
     end
 
@@ -63,6 +60,16 @@ module Paid
     # Keeps agent workloads on their own activity pool, independent of polling.
     def agent_task_queue
       ENV.fetch("TEMPORAL_AGENT_TASK_QUEUE", "paid-agent-tasks")
+    end
+
+    private
+
+    def suppress_circular_require_warnings
+      original_verbose = $VERBOSE
+      $VERBOSE = nil
+      yield
+    ensure
+      $VERBOSE = original_verbose
     end
   end
 
