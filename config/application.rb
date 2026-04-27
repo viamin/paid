@@ -19,6 +19,10 @@ require "action_cable/engine"
 # Require the gems listed in Gemfile, including any gems
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
+
+# Loaded via require_relative because the middleware must be registered before
+# Zeitwerk autoloading is available. The middleware is stateless so the pinned
+# constant is a low-risk trade-off; use to_prepare for install! re-subscription.
 require_relative "../app/services/database/query_monitor"
 
 module Paid

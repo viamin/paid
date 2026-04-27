@@ -3,6 +3,17 @@
 
 require_relative "../config/environment"
 
+# Explicitly load temporalio — the initializer defers it for web process boot
+# performance, but the worker process needs the full gem loaded upfront.
+begin
+  original_verbose = $VERBOSE
+  $VERBOSE = nil
+  require "temporalio/client"
+  require "temporalio/worker"
+ensure
+  $VERBOSE = original_verbose
+end
+
 # Eagerly load routes before spawning worker threads to avoid a race condition
 # with Rails 8.1's lazy route loading (LazyRouteSet). Turbo broadcasts triggered
 # by activities render partials that use route helpers; without eager loading,

@@ -37,20 +37,25 @@ gem "octokit"
 gem "faraday-retry"
 
 # Temporal workflow orchestration [https://temporal.io]
-gem "temporalio"
+# Defer loading — 139 MB gem with native Rust extensions only needed for
+# Temporal client/worker code, not the web process boot path.
+gem "temporalio", require: false
 
 # Docker API client [https://github.com/upserve/docker-api]
-gem "docker-api"
+# Defer loading — only used by container management services.
+gem "docker-api", require: false
 
 # Qdrant vector database client [https://github.com/patterns-ai-core/qdrant-ruby]
-gem "qdrant-ruby"
+# Defer loading — only used by knowledge/vector search services.
+gem "qdrant-ruby", require: false
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
 # 0.11.0 fixes GithubCopilot provider CLI version detection for 0.1.x subcommand CLIs.
 gem "agent-harness", "~> 0.11.2"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
-gem "ruby-maat"
+# Defer loading — invoked as CLI binary, not via Ruby API.
+gem "ruby-maat", require: false
 
 # Runtime feature flags for staged rollouts
 gem "flipper"

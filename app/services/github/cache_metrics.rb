@@ -16,7 +16,7 @@ module Github
 
     class << self
       def subscribe!
-        EVENTS.each do |event_name|
+        EVENTS.map do |event_name|
           ActiveSupport::Notifications.subscribe(event_name) do |event|
             log_event(event)
           end

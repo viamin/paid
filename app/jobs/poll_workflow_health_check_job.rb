@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "temporalio/client"
+
 # Monitors Temporal poll workflows and restarts any that are not running
 # or appear stuck (RUNNING but not completing poll cycles).
 #

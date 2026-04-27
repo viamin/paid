@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "docker-api"
+
 # Second-chance cleanup for Docker resources after an agent run completes.
 #
 # Enqueued by EnqueueJanitorActivity at the end of AgentExecutionWorkflow.

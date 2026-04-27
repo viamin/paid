@@ -1,0 +1,55 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Detects autoloaded constants referenced during Rails boot.
+# Based on https://island94.org/2024/07/on-the-importance-of-rails-code-reloading
+# and https://gist.github.com/bensheldon/ba6532c4216c11dd9ba03487c5a06ee4
+#
+# Usage: bin/autoload-check
+#
+# This script boots Rails in an instrumented mode that tracks when autoloaded
+# constants are first referenced. If any app/ constants are referenced during
+# boot (before after_initialize), they are pinned and won't reload in development.
+#
+# We use Zeitwerk's on_load callback to passively observe which constants the
+# autoloader resolves during boot, rather than probing with const_get (which
+# would trigger autoload itself and produce false positives).
+
+booted_constants = []
+
+# Hook into Zeitwerk before Rails boots so we capture every autoload that
+# fires during the boot sequence.
+require_relative "../config/application"
+
+Rails.autoloaders.main.on_load do |cpath, _value, abspath|
+  booted_constants << [ cpath, abspath ]
+end
+
+# Now finish booting (runs initializers, to_prepare, etc.)
+Rails.application.initialize!
+
+puts "Checking for autoloaded constants referenced during boot..."
+puts
+
+# Filter to app/ constants only (ignore gems, lib, etc.)
+app_root = Rails.root.to_s
+app_constants = booted_constants.select { |_, abspath| abspath&.start_with?("#{app_root}/app/") }
+
+if app_constants.any?
+  puts "The following autoloaded constants were loaded during boot:"
+  puts "(These may not reload correctly in development)"
+  puts
+  app_constants.sort_by(&:first).each do |cpath, abspath|
+    relative = abspath.sub("#{app_root}/", "")
+    puts "  #{cpath} — #{relative}"
+  end
+  puts
+  puts "Consider using to_prepare instead of after_initialize, or referencing"
+  puts "constants by string to avoid pinning them during boot."
+else
+  puts "No autoload violations detected."
+end
+
+puts
+puts "Autoload paths checked:"
+Rails.autoloaders.main.dirs.each { |p| puts "  #{p}" }
