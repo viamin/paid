@@ -74,12 +74,12 @@ module Activities
           next
         end
 
-        lifecycle = build_lifecycle_signals(project, issue) if explicit_pr_decisions
         result = scan_pr(project, client, issue)
         # Only count as scanned when the scan actually completed — scan_pr
         # returns :skipped when short-circuited (active run exists) or when
         # API failures prevented full evaluation.
         next if result == :skipped
+        lifecycle = build_lifecycle_signals(project, issue) if explicit_pr_decisions
         scanned_count += 1
         issue.update_column(:last_pr_scan_at, Time.current)
         pending_review_states << pending_review_state(issue, result)
