@@ -218,6 +218,32 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
   end
 
+  describe "EvaluateDependabotAutoMergeActivity patch guard" do
+    let(:workflow) { described_class.new }
+
+    before do
+      allow(workflow).to receive(:run_activity).and_return({})
+    end
+
+    it "runs EvaluateDependabotAutoMergeActivity when patched returns true" do
+      allow(Temporalio::Workflow).to receive(:patched).with("add-dependabot-auto-merge-poll-v1").and_return(true)
+
+      workflow.send(:maybe_evaluate_dependabot_auto_merge, 1)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::EvaluateDependabotAutoMergeActivity, { project_id: 1 }, timeout: 30)
+    end
+
+    it "skips EvaluateDependabotAutoMergeActivity when patched returns false" do
+      allow(Temporalio::Workflow).to receive(:patched).with("add-dependabot-auto-merge-poll-v1").and_return(false)
+
+      workflow.send(:maybe_evaluate_dependabot_auto_merge, 1)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::EvaluateDependabotAutoMergeActivity, anything, timeout: anything)
+    end
+  end
+
   describe "ScanSecurityAlertsActivity error handling" do
     let(:workflow) { described_class.new }
 
@@ -1695,6 +1721,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with("add-check-knowledge-staleness-v1").and_return(false)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("add-auto-release-poll-v1").and_return(false)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("add-dependabot-auto-merge-poll-v1").and_return(false)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("queue-agent-run-goal-v1").and_return(true)
       allow(Temporalio::Workflow).to receive(:patched)
