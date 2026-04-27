@@ -1568,7 +1568,8 @@ CREATE TABLE public.issues (
     operational_failure_reset_at timestamp(6) without time zone,
     ci_action_dispatched_at timestamp(6) without time zone,
     deployed_at timestamp(6) without time zone,
-    enhance_issue_rounds integer DEFAULT 0 NOT NULL
+    enhance_issue_rounds integer DEFAULT 0 NOT NULL,
+    ci_retry_requested_at timestamp(6) without time zone
 );
 
 ALTER TABLE ONLY public.issues FORCE ROW LEVEL SECURITY;
@@ -1922,8 +1923,6 @@ CREATE TABLE public.llm_output_metrics (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
 );
-
-ALTER TABLE ONLY public.llm_output_metrics ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE ONLY public.llm_output_metrics FORCE ROW LEVEL SECURITY;
 
@@ -4783,6 +4782,27 @@ CREATE UNIQUE INDEX idx_knowledge_usage_stats_unique ON public.knowledge_usage_s
 
 
 --
+-- Name: idx_llm_output_metrics_project_type_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_llm_output_metrics_project_type_time ON public.llm_output_metrics USING btree (project_id, output_type, created_at);
+
+
+--
+-- Name: idx_llm_output_metrics_slug_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_llm_output_metrics_slug_version ON public.llm_output_metrics USING btree (prompt_slug, prompt_version_id);
+
+
+--
+-- Name: idx_llm_output_metrics_unique_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_llm_output_metrics_unique_source ON public.llm_output_metrics USING btree (project_id, output_type, source_type, source_id);
+
+
+--
 -- Name: idx_on_account_id_config_key_status_a42f39cd2a; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6264,27 +6284,6 @@ CREATE INDEX index_llm_models_on_provider_and_active ON public.llm_models USING 
 --
 
 CREATE INDEX index_llm_models_on_tier ON public.llm_models USING btree (tier);
-
-
---
--- Name: idx_llm_output_metrics_project_type_time; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_llm_output_metrics_project_type_time ON public.llm_output_metrics USING btree (project_id, output_type, created_at);
-
-
---
--- Name: idx_llm_output_metrics_slug_version; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_llm_output_metrics_slug_version ON public.llm_output_metrics USING btree (prompt_slug, prompt_version_id);
-
-
---
--- Name: idx_llm_output_metrics_unique_source; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX idx_llm_output_metrics_unique_source ON public.llm_output_metrics USING btree (project_id, output_type, source_type, source_id);
 
 
 --
@@ -8567,6 +8566,12 @@ ALTER TABLE public.knowledge_usage_stats ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.linear_tokens ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: llm_output_metrics; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.llm_output_metrics ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: mcp_server_definitions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -8883,21 +8888,21 @@ CREATE POLICY tenant_isolation ON public.chat_session_projects USING ((public.pa
 -- Name: chat_sessions tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.chat_sessions USING ((public.paid_tenant_bypass() OR ((chat_sessions.account_id = public.paid_current_account_id()) AND ((chat_sessions.project_id IS NULL) OR (EXISTS ( SELECT 1
+CREATE POLICY tenant_isolation ON public.chat_sessions USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.projects
-  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((chat_sessions.provider_id IS NULL) OR (EXISTS ( SELECT 1
+  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((provider_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.providers
   WHERE ((providers.id = chat_sessions.provider_id) AND (providers.user_id IN ( SELECT users.id
            FROM public.users
-          WHERE (users.account_id = public.paid_current_account_id()))))))) AND ((chat_sessions.created_by_id IS NULL) OR (EXISTS ( SELECT 1
+          WHERE (users.account_id = public.paid_current_account_id()))))))) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.users
-  WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((chat_sessions.account_id = public.paid_current_account_id()) AND ((chat_sessions.project_id IS NULL) OR (EXISTS ( SELECT 1
+  WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.projects
-  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((chat_sessions.provider_id IS NULL) OR (EXISTS ( SELECT 1
+  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((provider_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.providers
   WHERE ((providers.id = chat_sessions.provider_id) AND (providers.user_id IN ( SELECT users.id
            FROM public.users
-          WHERE (users.account_id = public.paid_current_account_id()))))))) AND ((chat_sessions.created_by_id IS NULL) OR (EXISTS ( SELECT 1
+          WHERE (users.account_id = public.paid_current_account_id()))))))) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.users
   WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = public.paid_current_account_id()))))))));
 
@@ -9830,6 +9835,7 @@ SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
 ('20260427143916'),
+('20260427135718'),
 ('20260426231639'),
 ('20260426231603'),
 ('20260426231602'),
@@ -10053,3 +10059,4 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260128004342'),
 ('20260128004305'),
 ('20260127154444');
+
