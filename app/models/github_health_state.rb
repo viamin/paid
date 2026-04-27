@@ -34,6 +34,16 @@ class GithubHealthState < ApplicationRecord
     !state.circuit_open?
   end
 
+  # Checks recovery timeout, then returns true if GitHub is available.
+  # Consolidates the check-then-query pattern used by multiple jobs.
+  def self.github_available_with_recovery?(endpoint: DEFAULT_ENDPOINT)
+    state = find_by(endpoint: endpoint)
+    return true unless state
+
+    state.check_circuit_recovery!
+    !state.unavailable?
+  end
+
   # Records an infrastructure failure and opens the circuit when the
   # threshold is reached.
   def record_failure!(threshold: DEFAULT_FAILURE_THRESHOLD, error_message: nil)
@@ -58,10 +68,14 @@ class GithubHealthState < ApplicationRecord
   end
 
   # Records a successful GitHub API call and resets the circuit.
+  # Only half_open → closed transitions are allowed on success;
+  # an in-flight success while circuit is open must not bypass the
+  # recovery timeout.
   def record_success!
     return if circuit_state == "closed" && failure_count.zero?
+    return if circuit_open?
 
-    was_open = circuit_open? || circuit_half_open?
+    was_half_open = circuit_half_open?
 
     update!(
       failure_count: 0,
@@ -70,7 +84,7 @@ class GithubHealthState < ApplicationRecord
       last_error_message: nil
     )
 
-    if was_open
+    if was_half_open
       Rails.logger.info(
         message: "github_health.circuit_closed",
         endpoint: endpoint

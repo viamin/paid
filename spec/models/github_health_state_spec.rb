@@ -46,6 +46,23 @@ RSpec.describe GithubHealthState do
     end
   end
 
+  describe ".github_available_with_recovery?" do
+    it "returns true when no state exists" do
+      expect(described_class.github_available_with_recovery?).to be true
+    end
+
+    it "returns false when circuit is open and timeout has not elapsed" do
+      create(:github_health_state, circuit_state: "open", circuit_opened_at: 1.minute.ago)
+      expect(described_class.github_available_with_recovery?).to be false
+    end
+
+    it "transitions to half_open and returns true when timeout has elapsed" do
+      state = create(:github_health_state, circuit_state: "open", circuit_opened_at: 10.minutes.ago)
+      expect(described_class.github_available_with_recovery?).to be true
+      expect(state.reload.circuit_state).to eq("half_open")
+    end
+  end
+
   describe "#record_failure!" do
     it "increments failure_count" do
       state = create(:github_health_state, failure_count: 2)
@@ -91,8 +108,8 @@ RSpec.describe GithubHealthState do
   end
 
   describe "#record_success!" do
-    it "resets failure_count and closes the circuit" do
-      state = create(:github_health_state, :circuit_open)
+    it "resets failure_count and closes the circuit from half_open" do
+      state = create(:github_health_state, :circuit_half_open)
       state.record_success!
 
       state.reload
@@ -102,8 +119,8 @@ RSpec.describe GithubHealthState do
       expect(state.last_error_message).to be_nil
     end
 
-    it "logs when closing an open circuit" do
-      state = create(:github_health_state, :circuit_open)
+    it "logs when closing a half_open circuit" do
+      state = create(:github_health_state, :circuit_half_open)
 
       expect(Rails.logger).to receive(:info).with(hash_including(
         message: "github_health.circuit_closed"
@@ -112,11 +129,26 @@ RSpec.describe GithubHealthState do
       state.record_success!
     end
 
+    it "is a no-op when circuit is open (must go through half_open first)" do
+      state = create(:github_health_state, :circuit_open)
+
+      expect(state).not_to receive(:update!)
+      state.record_success!
+    end
+
     it "is a no-op when already closed with zero failures" do
       state = create(:github_health_state)
 
       expect(state).not_to receive(:update!)
       state.record_success!
+    end
+
+    it "resets failure_count when closed but has accumulated failures" do
+      state = create(:github_health_state, failure_count: 3)
+      state.record_success!
+
+      state.reload
+      expect(state.failure_count).to eq(0)
     end
   end
 

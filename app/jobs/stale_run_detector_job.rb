@@ -120,13 +120,8 @@ class StaleRunDetectorJob < ApplicationJob
 
   private
 
-  # Checks whether the GitHub circuit breaker is open (infrastructure outage).
   def github_circuit_open?
-    state = GithubHealthState.find_by(endpoint: GithubHealthState::DEFAULT_ENDPOINT)
-    return false unless state
-
-    state.check_circuit_recovery!
-    state.unavailable?
+    !GithubHealthState.github_available_with_recovery?
   end
 
   # Uses the default timeout rather than per-user maximums. Individual run

@@ -118,11 +118,7 @@ class ProcessRunQueueJob < ApplicationJob
   # Checks GitHub circuit breaker state. Attempts recovery if the
   # timeout has elapsed, allowing a half-open probe.
   def github_circuit_open?
-    state = GithubHealthState.find_by(endpoint: GithubHealthState::DEFAULT_ENDPOINT)
-    return false unless state
-
-    state.check_circuit_recovery!
-    state.unavailable?
+    !GithubHealthState.github_available_with_recovery?
   end
 
   # Checks per-user capacity using an in-memory cache. The active count
