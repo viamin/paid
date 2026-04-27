@@ -836,6 +836,28 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#rerun_workflow_run_failed_jobs" do
+    let(:repo) { "owner/repo" }
+
+    it "posts to the rerun-failed-jobs endpoint" do
+      stub = stub_request(:post, "#{api_base}/repos/#{repo}/actions/runs/12345/rerun-failed-jobs")
+        .to_return(status: 201, body: "{}", headers: { "Content-Type" => "application/json" })
+
+      result = client.rerun_workflow_run_failed_jobs(repo, "12345")
+
+      expect(result).to be true
+      expect(stub).to have_been_requested.once
+    end
+
+    it "raises an error when the API returns 403" do
+      stub_request(:post, "#{api_base}/repos/#{repo}/actions/runs/12345/rerun-failed-jobs")
+        .to_return(status: 403, body: { message: "Forbidden" }.to_json)
+
+      expect { client.rerun_workflow_run_failed_jobs(repo, "12345") }
+        .to raise_error(GithubClient::Error)
+    end
+  end
+
   describe "#issue_comments" do
     let(:repo) { "owner/repo" }
 

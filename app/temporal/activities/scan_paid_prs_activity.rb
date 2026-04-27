@@ -369,7 +369,7 @@ module Activities
       if all_triggers.empty?
         pr_data ||= fetch_pr_data(client, project, issue)
         checks = fetch_check_runs(client, project, pr_data)
-        ci_triggers = ci_failure_triggers(checks || [])
+        ci_triggers = ci_failure_triggers_with_retry(checks || [], client: client, project: project, issue: issue)
         all_triggers.concat(ci_triggers)
       end
 
@@ -662,7 +662,7 @@ module Activities
 
       triggers = []
 
-      triggers.concat(ci_failure_triggers(checks))
+      triggers.concat(ci_failure_triggers_with_retry(checks || [], client: client, project: project, issue: issue))
       triggers.concat(check_review_bot_status(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue))
       triggers.concat(check_non_enabled_bot_reviews(reviews, unresolved_threads,
@@ -695,7 +695,8 @@ module Activities
         draft_review_count: 0,
         pr_followup_count: 0,
         review_goal_retry_count: 0,
-        review_goal_retry_reset_at: Time.current
+        review_goal_retry_reset_at: Time.current,
+        ci_retry_requested_at: nil
       )
 
       logger.info(
@@ -950,16 +951,82 @@ module Activities
       nil
     end
 
+    # Cooldown period after requesting a CI retry. Prevents triggering another
+    # retry or agent run while the rerun is still in progress.
+    CI_RETRY_COOLDOWN = 30.minutes
+
     def ci_failure_triggers(checks)
-      return [] if checks.nil?
-
-      completed = checks.select { |c| c[:conclusion].present? }
-      return [] if completed.empty?
-
-      failed = completed.select { |c| %w[failure cancelled timed_out action_required stale].include?(c[:conclusion]) }
+      failed = failed_checks_from(checks)
       return [] if failed.empty?
 
       [ { type: "ci_failure", details: failed.map { |c| c[:name] } } ]
+    end
+
+    # Wraps ci_failure_triggers with transient failure detection and retry.
+    # When all failed checks appear transient and no retry has been attempted
+    # recently, reruns the failed GitHub Actions jobs and suppresses the
+    # ci_failure trigger so no agent run is started.
+    def ci_failure_triggers_with_retry(checks, client:, project:, issue:)
+      failed_checks = failed_checks_from(checks)
+      return [] if failed_checks.empty?
+
+      triggers = [ { type: "ci_failure", details: failed_checks.map { |c| c[:name] } } ]
+
+      return triggers if ci_retry_cooling_down?(issue)
+      return triggers unless transient_failures?(failed_checks, client, project)
+
+      attempt_ci_rerun(failed_checks, client, project, issue) ? [] : triggers
+    end
+
+    def ci_retry_cooling_down?(issue)
+      issue.ci_retry_requested_at.present? &&
+        issue.ci_retry_requested_at > CI_RETRY_COOLDOWN.ago
+    end
+
+    def failed_checks_from(checks)
+      return [] if checks.nil?
+
+      completed = checks.select { |c| c[:conclusion].present? }
+      completed.select { |c| %w[failure cancelled timed_out action_required stale].include?(c[:conclusion]) }
+    end
+
+    def transient_failures?(failed_checks, client, project)
+      Ci::TransientFailure.call(
+        checks: failed_checks,
+        github_client: client,
+        repo: project.full_name
+      )
+    end
+
+    def attempt_ci_rerun(failed_checks, client, project, issue)
+      run_ids = failed_checks.filter_map { |c| Ci::FailureContext.actions_run_id_from_url(c[:details_url]) }.uniq
+      return false if run_ids.empty?
+
+      rerun_succeeded = false
+      run_ids.each do |run_id|
+        client.rerun_workflow_run_failed_jobs(project.full_name, run_id)
+        rerun_succeeded = true
+      rescue GithubClient::Error => e
+        logger.warn(
+          message: "pr_scanner.ci_rerun_failed",
+          project_id: project.id,
+          issue_id: issue.id,
+          run_id: run_id,
+          error: e.message
+        )
+      end
+
+      if rerun_succeeded
+        issue.update_column(:ci_retry_requested_at, Time.current)
+        logger.info(
+          message: "pr_scanner.transient_ci_retry_requested",
+          project_id: project.id,
+          issue_id: issue.id,
+          run_ids: run_ids
+        )
+      end
+
+      rerun_succeeded
     end
 
     def all_checks_green?(checks)
