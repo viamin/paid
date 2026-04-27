@@ -21,6 +21,7 @@ RSpec.describe ApplicationJob do
       maintenance: %w[
         AgentRunResourceJanitorJob
         DockerOrphanCleanupJob
+        GithubTokenHealthCheckJob
         KnowledgeAuditRetentionJob
         OrphanBranchReaperJob
         PollWorkflowHealthCheckJob
