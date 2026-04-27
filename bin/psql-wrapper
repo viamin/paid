@@ -1,0 +1,47 @@
+#!/usr/bin/env ruby
+# Minimal psql replacement that loads SQL files via the pg gem
+require "pg"
+require "optparse"
+
+file = nil
+db = nil
+quiet = false
+options = {}
+
+# Parse psql-like arguments
+args = ARGV.dup
+i = 0
+while i < args.length
+  case args[i]
+  when "--file", "-f"
+    file = args[i + 1]
+    i += 2
+  when "--set"
+    # ignore --set options like ON_ERROR_STOP=1
+    i += 2
+  when "--quiet", "-q"
+    quiet = true
+    i += 1
+  when "--no-psqlrc"
+    i += 1
+  when "--output", "-o"
+    i += 2
+  else
+    db = args[i]
+    i += 1
+  end
+end
+
+url = ENV["DATABASE_URL"]
+if url
+  conn = PG.connect(url)
+else
+  conn = PG.connect(dbname: db)
+end
+
+if file
+  sql = File.read(file)
+  conn.exec(sql)
+end
+
+conn.close

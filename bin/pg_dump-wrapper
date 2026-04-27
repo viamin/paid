@@ -1,0 +1,27 @@
+#!/usr/bin/env ruby
+# Minimal pg_dump wrapper - the structure.sql is managed in source control,
+# so we just leave it as-is (no-op).
+# Parse args to find --file and just touch it if needed.
+require "fileutils"
+
+output_file = nil
+args = ARGV.dup
+i = 0
+while i < args.length
+  case args[i]
+  when "--file", "-f"
+    output_file = args[i + 1]
+    i += 2
+  else
+    if args[i].start_with?("--file=")
+      output_file = args[i].sub("--file=", "")
+    end
+    i += 1
+  end
+end
+
+# If output file specified and exists, leave it alone
+# If it doesn't exist, create empty file so Rails doesn't error
+if output_file && !File.exist?(output_file)
+  FileUtils.touch(output_file)
+end
