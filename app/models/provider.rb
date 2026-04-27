@@ -48,6 +48,8 @@ class Provider < ApplicationRecord
   belongs_to :user
   belongs_to :provider_api_key, optional: true
 
+  has_many :chat_sessions, dependent: :nullify
+
   scope :for_agent_runs, -> { where(enabled_for_agent_runs: true) }
   scope :for_fallback, -> { where(enabled_for_fallback: true) }
   scope :ordered, -> { order(:provider_key, :auth_type, :name, :id) }
