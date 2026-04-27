@@ -176,6 +176,11 @@ Rails.application.configure do
       cron: "*/5 * * * *",
       class: "Notifications::CheckProviderQuotasJob",
       description: "Publish provider quota exhaustion notifications"
+    },
+    llm_output_metric_feedback: {
+      cron: "0 */6 * * *",
+      class: "LlmOutputMetricFeedbackCollectionJob",
+      description: "Collect feedback for LLM output metrics (decision records)"
     }
   }
 end

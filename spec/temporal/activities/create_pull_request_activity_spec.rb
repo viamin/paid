@@ -9,7 +9,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
   let(:issue) { create(:issue, project: project) }
   let(:agent_run) { create(:agent_run, :with_git_context, :with_metrics, project: project, issue: issue) }
   let(:github_client) { instance_double(GithubClient) }
-  let(:pr_response) { Struct.new(:html_url, :number).new("https://github.com/owner/repo/pull/42", 42) }
+  let(:pr_response) { Struct.new(:html_url, :number, :body).new("https://github.com/owner/repo/pull/42", 42, "PR body") }
   let(:issue_response) do
     OpenStruct.new(
       id: 4242,
@@ -176,6 +176,14 @@ RSpec.describe Activities::CreatePullRequestActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
+    it "does not record a PR description metric when the fallback body is used" do
+      agent_run.log!("stdout", "Here are the changes I made to fix the issue.")
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.not_to change(LlmOutputMetric, :count)
+    end
+
     it "uses templated fallback when no stdout is available" do
       expect(github_client).to receive(:create_pull_request).with(
         anything,
@@ -300,6 +308,24 @@ RSpec.describe Activities::CreatePullRequestActivity do
         activity.execute(agent_run_id: agent_run.id)
       end
 
+      it "records a PR description metric when the LLM generates the description" do
+        agent_run.log!("stdout", "Added OAuth middleware")
+        allow(AgentHarness).to receive(:send_message)
+          .and_return(instance_double(AgentHarness::Response, success?: true, output: llm_description))
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to change(LlmOutputMetric, :count).by(1)
+
+        metric = LlmOutputMetric.last
+        expect(metric.project).to eq(project)
+        expect(metric.output_type).to eq("pr_description")
+        expect(metric.prompt_slug).to eq(Llm::GeneratePrDescription::PROMPT_SLUG)
+        expect(metric.source_type).to eq("PullRequest")
+        expect(metric.source_id).to eq(42)
+        expect(metric.metadata["original_text"]).to eq("PR body")
+      end
+
       it "passes issue context to the LLM service via AgentHarness" do
         agent_run.log!("stdout", "Added OAuth middleware")
         allow(AgentHarness).to receive(:send_message)
@@ -368,6 +394,16 @@ RSpec.describe Activities::CreatePullRequestActivity do
         ).and_return(pr_response)
 
         activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "does not record a PR description metric when the LLM call raises" do
+        agent_run.log!("stdout", "Raw agent output here")
+        allow(AgentHarness).to receive(:send_message)
+          .and_raise(AgentHarness::ProviderError.new("Provider unavailable"))
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.not_to change(LlmOutputMetric, :count)
       end
     end
 

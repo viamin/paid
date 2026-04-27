@@ -27,13 +27,19 @@ Capybara.register_driver(:paid_cuprite) do |app|
   )
 end
 
+SYSTEM_DRIVER = if File.exist?(ENV["CHROMIUM_PATH"] || "/usr/bin/chromium")
+  :paid_cuprite
+else
+  :rack_test
+end
+
 Capybara.server = :puma, { Silent: true }
 Capybara.server_host = "127.0.0.1"
 Capybara.default_max_wait_time = 5
 
 RSpec.configure do |config|
   config.before(:each, type: :system) do
-    driven_by :paid_cuprite
+    driven_by SYSTEM_DRIVER
   end
 
   # System specs drive a real browser, so CSRF must actually be enforced.

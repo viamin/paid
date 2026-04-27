@@ -69,7 +69,9 @@ module Knowledge
         parsed = draft_decision_record(prompt)
         return nil unless parsed
 
-        create_decision_record(parsed)
+        record = create_decision_record(parsed)
+        record_llm_output_metric(record) if record
+        record
       rescue ActiveRecord::RecordInvalid => e
         Rails.logger.error(
           message: "knowledge.decisions.draft_failed",
@@ -289,6 +291,23 @@ module Knowledge
         end
 
         record
+      end
+
+      def record_llm_output_metric(record)
+        LlmOutputMetrics::Record.call(
+          project: agent_run.project,
+          output_type: "decision_record",
+          prompt_slug: PROMPT_SLUG,
+          prompt_project: agent_run.project,
+          source_type: "DecisionRecord",
+          source_id: record.id
+        )
+      rescue StandardError => e
+        Rails.logger.warn(
+          message: "llm_output_metrics.record_decision_record_failed",
+          decision_record_id: record.id,
+          error: e.message
+        )
       end
 
       def create_links(record)

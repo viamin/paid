@@ -97,6 +97,34 @@ RSpec.describe HumanFeedbackCollectionJob do
       end
     end
 
+    context "with create_pr goal and LLM output metric" do
+      let(:agent_run) { create(:agent_run, :completed) }
+
+      before do
+        create(:quality_metric, :automated, agent_run: agent_run)
+        create(:llm_output_metric,
+          project: agent_run.project, output_type: "pr_description",
+          source_type: "PullRequest", source_id: agent_run.pull_request_number,
+          metadata: { "original_text" => "Original description", "recorded_at" => 1.hour.ago.iso8601 })
+        allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+        allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+        allow(github_client).to receive_messages(
+          pull_request_reactions: [ { user_login: "alice", content: "+1", created_at: 1.hour.ago } ],
+          pull_request_reviews: [],
+          pull_request: { body: "Updated description", additions: 100, deletions: 50, review_comments: 0 })
+      end
+
+      it "collects PR description LLM output feedback" do
+        described_class.new.perform(agent_run.id)
+
+        metric = LlmOutputMetric.find_by(
+          project: agent_run.project, output_type: "pr_description",
+          source_id: agent_run.pull_request_number)
+        expect(metric.scores).to include("description_edited")
+        expect(metric.composite_score).to be_present
+      end
+    end
+
     context "with create_issue goal" do
       it "collects issue reactions for completed issue creation" do
         agent_run = create(:agent_run, :with_created_issue, status: "completed",
@@ -114,6 +142,35 @@ RSpec.describe HumanFeedbackCollectionJob do
         expect(metric).to be_present
         expect(metric.scores).to include("reaction_score")
         expect(metric.metadata["feedback_sources"]).to include("issue_reaction")
+      end
+    end
+
+    context "with create_issue goal and LLM output metric" do
+      let(:agent_run) do
+        create(:agent_run, :with_created_issue, status: "completed",
+          started_at: 10.minutes.ago, completed_at: Time.current, duration_seconds: 600)
+      end
+
+      before do
+        create(:llm_output_metric,
+          project: agent_run.project, output_type: "issue_title",
+          source_type: "Issue", source_id: agent_run.created_issue_number,
+          metadata: { "original_text" => "Original title", "recorded_at" => 1.hour.ago.iso8601 })
+        allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+        allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+        allow(github_client).to receive_messages(
+          issue_reactions: [ { user_login: "alice", content: "+1", created_at: 1.hour.ago } ],
+          issue: { title: "Updated title", number: agent_run.created_issue_number })
+      end
+
+      it "collects issue title LLM output feedback" do
+        described_class.new.perform(agent_run.id)
+
+        metric = LlmOutputMetric.find_by(
+          project: agent_run.project, output_type: "issue_title",
+          source_id: agent_run.created_issue_number)
+        expect(metric.scores).to include("title_edited")
+        expect(metric.composite_score).to be_present
       end
     end
 

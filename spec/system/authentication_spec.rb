@@ -42,7 +42,7 @@ RSpec.describe "Authentication", type: :system do
       click_button "Sign in"
       expect(page).to have_button("Sign out")
 
-      click_button "Sign out"
+      first(:button, "Sign out").click
 
       expect(page).not_to have_button("Sign out")
       expect(page).to have_link("Sign in") | have_content("Sign in")
