@@ -196,6 +196,7 @@ class Project < ApplicationRecord
   after_create_commit :start_github_polling
   after_create_commit :enqueue_knowledge_collection
   after_update_commit :toggle_github_polling, if: :saved_change_to_active?
+  after_update_commit :clear_scheduler_pause_on_token_change, if: :saved_change_to_github_token_id?
   after_update_commit :trigger_auto_pick, if: :auto_pick_just_enabled?
   after_destroy_commit :stop_github_polling
   after_destroy_commit :cleanup_qdrant_collection
@@ -620,6 +621,36 @@ class Project < ApplicationRecord
     automation_configuration.auto_review.bot_request_chain
   end
 
+  def scheduler_paused?
+    scheduler_paused_at.present?
+  end
+
+  def scheduler_pause!(reason:)
+    with_lock do
+      return false if scheduler_paused?
+
+      update!(
+        scheduler_paused_at: Time.current,
+        scheduler_pause_reason: reason
+      )
+    end
+
+    true
+  end
+
+  def scheduler_resume!
+    with_lock do
+      return false unless scheduler_paused?
+
+      update!(
+        scheduler_paused_at: nil,
+        scheduler_pause_reason: nil
+      )
+    end
+
+    true
+  end
+
   def quality_paused?
     quality_paused_at.present?
   end
@@ -683,6 +714,17 @@ class Project < ApplicationRecord
   end
 
   private
+
+  def clear_scheduler_pause_on_token_change
+    return unless scheduler_paused?
+
+    scheduler_resume!
+    Rails.logger.info(
+      message: "github_token.auto_resume",
+      project_id: id,
+      new_github_token_id: github_token_id
+    )
+  end
 
   def auto_pick_just_enabled?
     saved_change_to_auto_pick_enabled? && auto_pick_enabled?

@@ -2359,7 +2359,9 @@ CREATE TABLE public.projects (
     enhance_issue_needs_input_label_name character varying DEFAULT 'paid-needs-input'::character varying NOT NULL,
     enhance_issue_enhanced_label_name character varying DEFAULT 'paid-enhanced'::character varying NOT NULL,
     max_enhance_issue_reevaluation_rounds integer DEFAULT 3 NOT NULL,
-    auto_enhance_enabled boolean DEFAULT false NOT NULL
+    auto_enhance_enabled boolean DEFAULT false NOT NULL,
+    scheduler_paused_at timestamp(6) without time zone,
+    scheduler_pause_reason character varying
 );
 
 ALTER TABLE ONLY public.projects FORCE ROW LEVEL SECURITY;
@@ -9429,6 +9431,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260427143916'),
 ('20260426114303'),
 ('20260426011810'),
 ('20260425225105'),
