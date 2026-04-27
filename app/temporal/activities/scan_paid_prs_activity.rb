@@ -79,6 +79,11 @@ module Activities
         # returns :skipped when short-circuited (active run exists) or when
         # API failures prevented full evaluation.
         next if result == :skipped
+        # TODO(#1121): build_lifecycle_signals re-queries gates that scan_pr
+        # already evaluated (operational_failure_breaker?, active_run_exists?,
+        # etc.), roughly doubling gate-check DB queries per PR. Once the
+        # strategy fully owns gate evaluation, scan_pr should stop evaluating
+        # gates itself and defer to the signals/strategy path.
         lifecycle = build_lifecycle_signals(project, issue) if explicit_pr_decisions
         scanned_count += 1
         issue.update_column(:last_pr_scan_at, Time.current)
