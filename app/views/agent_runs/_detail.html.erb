@@ -208,7 +208,7 @@
         "cleanup" => phase_summary[:cleanup_seconds]
       }.each do |phase_group, seconds| %>
         <% is_active = active_phase_group == phase_group %>
-        <% is_completed = phase_group == "queue" ? phases.any? : completed_groups.include?(phase_group) %>
+        <% is_completed = phase_group == "queue" ? (phases.any? || agent_run.status == "running") : completed_groups.include?(phase_group) %>
         <% is_pending = !is_active && !is_completed && active_phase_group.present? %>
         <div class="rounded-lg border px-3 py-3 <%= if is_active
           'border-blue-400 bg-blue-50'
