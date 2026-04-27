@@ -42,6 +42,7 @@ RSpec.describe LlmOutputMetrics::Record do
     end
 
     it "resolves the prompt version from global scope when prompt_project is nil" do
+      Prompt.where(slug: "generation.pr_description", account_id: nil, project_id: nil).destroy_all
       prompt = create(:prompt, :global, :with_version, slug: "generation.pr_description")
 
       metric = described_class.call(
@@ -74,6 +75,7 @@ RSpec.describe LlmOutputMetrics::Record do
     end
 
     it "ignores project overrides when prompt_project is nil" do
+      Prompt.where(slug: "generation.pr_description", account_id: nil, project_id: nil).destroy_all
       global_prompt = create(:prompt, :global, :with_version, slug: "generation.pr_description")
       create(:prompt, :for_project, :with_version,
         slug: "generation.pr_description", project: project)
