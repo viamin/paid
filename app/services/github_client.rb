@@ -1352,7 +1352,9 @@ class GithubClient
   end
 
   def handle_errors
-    yield
+    result = yield
+    record_github_health_success
+    result
   rescue Octokit::Unauthorized => e
     raise AuthenticationError, e.message
   rescue Octokit::NotFound => e
@@ -1366,8 +1368,36 @@ class GithubClient
       raise RateLimitError.new(reset_at)
     end
     raise ApiError.new(e.message, status: 403)
+  rescue Octokit::ServerError => e
+    record_github_health_failure(e.message)
+    status = e.respond_to?(:response_status) ? e.response_status : nil
+    raise ApiError.new(e.message, status: status)
   rescue Octokit::Error => e
     status = e.respond_to?(:response_status) ? e.response_status : nil
     raise ApiError.new(e.message, status: status)
+  rescue Faraday::Error => e
+    record_github_health_failure(e.message)
+    raise
+  end
+
+  def record_github_health_failure(error_message)
+    GithubHealthState.current.record_failure!(error_message: error_message)
+  rescue => e
+    Rails.logger.warn(
+      message: "github_client.health_state_record_failed",
+      error: e.message
+    )
+  end
+
+  def record_github_health_success
+    state = GithubHealthState.find_by(endpoint: GithubHealthState::DEFAULT_ENDPOINT)
+    return unless state && (state.failure_count > 0 || !state.circuit_closed?)
+
+    state.record_success!
+  rescue => e
+    Rails.logger.warn(
+      message: "github_client.health_state_record_failed",
+      error: e.message
+    )
   end
 end

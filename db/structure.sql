@@ -1182,6 +1182,41 @@ ALTER SEQUENCE public.flipper_gates_id_seq OWNED BY public.flipper_gates.id;
 
 
 --
+-- Name: github_health_states; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.github_health_states (
+    id bigint NOT NULL,
+    endpoint character varying(50) DEFAULT 'api'::character varying NOT NULL,
+    circuit_state character varying(20) DEFAULT 'closed'::character varying NOT NULL,
+    failure_count integer DEFAULT 0 NOT NULL,
+    circuit_opened_at timestamp(6) without time zone,
+    last_error_message text,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: github_health_states_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.github_health_states_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: github_health_states_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.github_health_states_id_seq OWNED BY public.github_health_states.id;
+
+
+--
 -- Name: github_tokens; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3487,6 +3522,13 @@ ALTER TABLE ONLY public.flipper_gates ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: github_health_states id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_health_states ALTER COLUMN id SET DEFAULT nextval('public.github_health_states_id_seq'::regclass);
+
+
+--
 -- Name: github_tokens id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4030,6 +4072,14 @@ ALTER TABLE ONLY public.flipper_features
 
 ALTER TABLE ONLY public.flipper_gates
     ADD CONSTRAINT flipper_gates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: github_health_states github_health_states_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_health_states
+    ADD CONSTRAINT github_health_states_pkey PRIMARY KEY (id);
 
 
 --
@@ -5476,6 +5526,13 @@ CREATE UNIQUE INDEX index_flipper_features_on_key ON public.flipper_features USI
 --
 
 CREATE UNIQUE INDEX index_flipper_gates_on_feature_key_and_key_and_value ON public.flipper_gates USING btree (feature_key, key, value);
+
+
+--
+-- Name: index_github_health_states_on_endpoint; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_github_health_states_on_endpoint ON public.github_health_states USING btree (endpoint);
 
 
 --
@@ -9429,6 +9486,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260427141851'),
 ('20260426114303'),
 ('20260426011810'),
 ('20260425225105'),
