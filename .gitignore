@@ -122,6 +122,7 @@ config.status
 .pg-stop.sh
 
 # APT cache and cached package extracts (created during container setup)
+/.apt/
 /.apt-cache/
 /.cache-pkg/
 

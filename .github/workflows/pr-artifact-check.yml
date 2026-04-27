@@ -99,6 +99,7 @@ jobs:
             ".local-deps/"
             ".venv/"
             "__pycache__/"
+            ".apt/"
             ".apt-cache/"
             ".cache-pkg/"
             ".xdg-cache/"
