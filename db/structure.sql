@@ -1753,6 +1753,8 @@ CREATE TABLE public.knowledge_recommendations (
     updated_at timestamp(6) without time zone NOT NULL
 );
 
+ALTER TABLE ONLY public.knowledge_recommendations FORCE ROW LEVEL SECURITY;
+
 
 --
 -- Name: knowledge_recommendations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -8632,6 +8634,12 @@ ALTER TABLE public.knowledge_chunks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.knowledge_links ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: knowledge_recommendations; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.knowledge_recommendations ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: knowledge_runs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -9189,6 +9197,17 @@ CREATE POLICY tenant_isolation ON public.knowledge_links USING ((public.paid_ten
    FROM (public.knowledge_chunks
      JOIN public.projects ON ((projects.id = knowledge_chunks.project_id)))
   WHERE ((knowledge_chunks.id = knowledge_links.target_chunk_id) AND (projects.account_id = public.paid_current_account_id())))))));
+
+
+--
+-- Name: knowledge_recommendations tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.knowledge_recommendations USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = knowledge_recommendations.project_id) AND (projects.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = knowledge_recommendations.project_id) AND (projects.account_id = public.paid_current_account_id()))))));
 
 
 --
@@ -9918,6 +9937,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260427225726'),
 ('20260427223009'),
 ('20260427223003'),
 ('20260427143916'),
