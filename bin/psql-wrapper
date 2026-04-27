@@ -1,5 +1,9 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
+
 # Minimal psql replacement that loads SQL files via the pg gem
+ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
+require "bundler/setup"
 require "pg"
 require "optparse"
 

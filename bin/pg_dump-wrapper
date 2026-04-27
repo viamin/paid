@@ -1,4 +1,6 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
+
 # Minimal pg_dump wrapper - the structure.sql is managed in source control,
 # so we just leave it as-is (no-op).
 # Parse args to find --file and just touch it if needed.
