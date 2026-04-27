@@ -21,6 +21,7 @@ RSpec.describe Models::RulesBasedSelector do
 
     it "selects higher capability models for complex tasks" do
       agent_run.issue.update!(body: "A" * 5000)
+      agent_run.update!(source_pull_request_number: 99)
 
       result = described_class.call(agent_run: agent_run)
 
@@ -58,9 +59,20 @@ RSpec.describe Models::RulesBasedSelector do
         expect(result[:model]).to eq(low_model)
       end
 
+      it "routes simple tasks to the low tier by default" do
+        # Short issue body yields complexity 3.0 which lands in "low" with the
+        # default thresholds (low_max=3, mid_max=7), ensuring we default to
+        # the cheapest appropriate model.
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result[:tier]).to eq("low")
+        expect(result[:model]).to eq(low_model)
+      end
+
       it "routes medium tasks to the mid tier" do
-        # Short issue body yields complexity 4.0 which lands in "mid" with the
-        # default thresholds (low_max=3, mid_max=7).
+        # body > 1000 bumps complexity to 5.0 which lands in "mid"
+        agent_run.issue.update!(body: "A" * 1500)
+
         result = described_class.call(agent_run: agent_run)
 
         expect(result[:tier]).to eq("mid")
@@ -68,8 +80,13 @@ RSpec.describe Models::RulesBasedSelector do
       end
 
       it "routes complex tasks to the high tier" do
+        # body > 3000 + existing_pr → complexity 3+1+1+1+1 = 7.0
+        # Lower mid_max so 7.0 > 6 routes to "high"
         agent_run.issue.update!(body: "A" * 5000)
         agent_run.update!(source_pull_request_number: 99)
+        agent_run.project.update!(
+          model_preferences: { "complexity_thresholds" => { "low_max" => 3, "mid_max" => 6 } }
+        )
 
         result = described_class.call(agent_run: agent_run)
 
@@ -79,21 +96,23 @@ RSpec.describe Models::RulesBasedSelector do
 
       it "respects project excluded_model_ids even within a tier" do
         agent_run.project.update!(
-          model_preferences: { "excluded_model_ids" => [ mid_model.model_id ] }
+          model_preferences: { "excluded_model_ids" => [ low_model.model_id ] }
         )
-        # Default complexity is 5.0 => mid tier. Excluding mid_model should
+        # Default complexity is 3.0 => low tier. Excluding low_model should
         # yield zero tier candidates, so the fallback pool is used instead.
         result = described_class.call(agent_run: agent_run)
 
-        expect(result[:model]).not_to eq(mid_model)
+        expect(result[:model]).not_to eq(low_model)
       end
 
       it "honors project-level threshold overrides" do
+        # body > 1000 gives complexity 5.0 which is "mid" with defaults, but
+        # with low_max=6 it falls into "low".
+        agent_run.issue.update!(body: "A" * 1500)
         agent_run.project.update!(
           model_preferences: { "complexity_thresholds" => { "low_max" => 6, "mid_max" => 8 } }
         )
-        # Complexity 4.0 (short body) now falls into the "low" tier with
-        # low_max=6.
+
         result = described_class.call(agent_run: agent_run)
 
         expect(result[:tier]).to eq("low")
@@ -102,12 +121,12 @@ RSpec.describe Models::RulesBasedSelector do
 
       it "honors provider-level threshold overrides on the agent run" do
         provider = create(:provider, user: agent_run.project.effective_owner)
-        provider.update!(complexity_thresholds: { "low_max" => 3, "mid_max" => 9 })
+        provider.update!(complexity_thresholds: { "low_max" => 2, "mid_max" => 9 })
         agent_run.update!(provider: provider)
+        # Give enough body to bump complexity above low_max=2
+        agent_run.issue.update!(body: "A" * 600)
 
-        # Complexity 4.0 (short body) → above low_max=3, below mid_max=9 →
-        # "mid". With default thresholds (mid_max=7) this would also be "mid",
-        # so the next update below proves thresholds are actually used.
+        # Complexity 4.0 (body > 500) → above low_max=2, below mid_max=9 → "mid"
         result = described_class.call(agent_run: agent_run)
 
         expect(result[:tier]).to eq("mid")
@@ -128,12 +147,60 @@ RSpec.describe Models::RulesBasedSelector do
         high_model.update!(active: false)
         agent_run.issue.update!(body: "A" * 5000)
         agent_run.update!(source_pull_request_number: 99)
+        # Lower mid_max so complexity 7.0 routes to "high"
+        agent_run.project.update!(
+          model_preferences: { "complexity_thresholds" => { "low_max" => 3, "mid_max" => 6 } }
+        )
 
         result = described_class.call(agent_run: agent_run)
 
         expect(result).to be_present
         expect(result[:tier]).to eq("high")
         expect(result[:model]).to eq(untiered_high)
+      end
+    end
+
+    describe "provider tier_model_ids routing" do
+      let!(:low_model)  { create(:llm_model, :cheap, model_id: "tier-low", tier: "low",  capability_score: 4.0) }
+      let!(:mid_model)  { create(:llm_model,         model_id: "tier-mid", tier: "mid",  capability_score: 7.0) }
+      let!(:custom_low) { create(:llm_model, :cheap, model_id: "custom-low", tier: "low", capability_score: 3.5) }
+
+      before do
+        LlmModel.where.not(id: [ low_model.id, mid_model.id, custom_low.id ]).destroy_all
+      end
+
+      it "prefers the provider's configured tier model over the global pool" do
+        provider = create(:provider, user: agent_run.project.effective_owner,
+          tier_model_ids: { "low" => custom_low.model_id })
+        agent_run.update!(provider: provider)
+
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result[:model]).to eq(custom_low)
+      end
+
+      it "falls back to global pool when provider tier model is inactive" do
+        custom_low.update!(active: false)
+        provider = create(:provider, user: agent_run.project.effective_owner,
+          tier_model_ids: { "low" => custom_low.model_id })
+        agent_run.update!(provider: provider)
+
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result[:model]).to eq(low_model)
+      end
+
+      it "respects excluded_model_ids even for provider tier models" do
+        provider = create(:provider, user: agent_run.project.effective_owner,
+          tier_model_ids: { "low" => custom_low.model_id })
+        agent_run.update!(provider: provider)
+        agent_run.project.update!(
+          model_preferences: { "excluded_model_ids" => [ custom_low.model_id ] }
+        )
+
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result[:model]).not_to eq(custom_low)
       end
     end
   end

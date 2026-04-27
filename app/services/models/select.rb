@@ -68,7 +68,7 @@ module Models
       tier = QualityRecovery::ModelEscalation.target_tier(project)
       return nil unless tier
 
-      model = LlmModel.active.by_tier(tier).by_capability.first
+      model = provider_tier_model(tier) || LlmModel.active.by_tier(tier).by_capability.first
       return nil unless model
 
       {
@@ -150,6 +150,13 @@ module Models
         complexity: complexity_score,
         provider: agent_run.provider
       )
+    end
+
+    def provider_tier_model(tier)
+      model_id = agent_run.provider&.tier_model_ids&.dig(tier)
+      return nil if model_id.blank?
+
+      LlmModel.active.find_by(model_id: model_id)
     end
 
     def escalation_reason
