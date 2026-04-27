@@ -76,13 +76,13 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(project.last_code_scanning_scan_at).to be_present
       end
 
-      it "raises ConfigurationError on 403 without advancing last_code_scanning_scan_at" do
+      it "raises CodeScanningPermissionsError on 403 without advancing last_code_scanning_scan_at" do
         allow(github_client).to receive(:code_scanning_alerts)
           .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
 
         expect { activity.execute(project_id: project.id) }
           .to raise_error(Temporalio::Error::ApplicationError) do |e|
-            expect(e.type).to eq("ConfigurationError")
+            expect(e.type).to eq("CodeScanningPermissionsError")
             expect(e.message).to include("security_events")
           end
 

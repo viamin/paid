@@ -22,6 +22,12 @@ module Activities
       scan_code_scanning_alerts(project)
 
       { alerts_to_fix: [] }
+    rescue SecurityAlerts::CodeScanningPermissionsError => e
+      raise Temporalio::Error::ApplicationError.new(
+        e.message,
+        type: "CodeScanningPermissionsError",
+        non_retryable: true
+      )
     rescue SecurityAlerts::ConfigurationError => e
       raise Temporalio::Error::ApplicationError.new(
         e.message,
@@ -96,7 +102,7 @@ module Activities
       nil
     rescue GithubClient::ApiError => e
       if e.status == 403
-        raise SecurityAlerts::ConfigurationError,
+        raise SecurityAlerts::CodeScanningPermissionsError,
           "GitHub token lacks permission to read code scanning alerts for #{project.full_name}. " \
           "Ensure the token includes the security_events scope (classic PAT) or " \
           "code_scanning_alerts:read permission (fine-grained PAT)."

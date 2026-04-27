@@ -247,10 +247,10 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       end
     end
 
-    it "swallows ConfigurationError and continues the poll cycle" do
+    it "swallows CodeScanningPermissionsError and continues the poll cycle" do
       config_error = Temporalio::Error::ApplicationError.new(
         "Token lacks security_events scope",
-        type: "ConfigurationError",
+        type: "CodeScanningPermissionsError",
         non_retryable: true
       )
       activity_error = activity_error_with_cause(config_error)
@@ -267,6 +267,21 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         message: "poll.code_scanning_configuration_error",
         project_id: 1
       ))
+    end
+
+    it "re-raises other ConfigurationErrors" do
+      config_error = Temporalio::Error::ApplicationError.new(
+        "No trusted GitHub usernames configured",
+        type: "ConfigurationError",
+        non_retryable: true
+      )
+      activity_error = activity_error_with_cause(config_error)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ScanSecurityAlertsActivity, anything, timeout: anything)
+        .and_raise(activity_error)
+
+      expect { workflow.send(:maybe_scan_code_scanning_alerts, 1) }
+        .to raise_error(Temporalio::Error::ActivityError)
     end
 
     it "re-raises non-ConfigurationError ActivityErrors" do

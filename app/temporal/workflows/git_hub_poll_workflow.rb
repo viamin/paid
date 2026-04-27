@@ -174,7 +174,7 @@ module Workflows
         { project_id: project_id }, timeout: 120)
     rescue Temporalio::Error::ActivityError => e
       raise unless e.cause.is_a?(Temporalio::Error::ApplicationError) &&
-        e.cause.type == "ConfigurationError"
+        e.cause.type == "CodeScanningPermissionsError"
 
       Temporalio::Workflow.logger.warn(
         message: "poll.code_scanning_configuration_error",
