@@ -7,7 +7,7 @@
 # Differs from GithubTokenValidationJob (single-token, user-triggered) in that:
 # - It iterates all active tokens, skipping recently validated ones
 # - Transient API errors do NOT mark tokens as failed (only auth errors do)
-# - Includes rate-limit-friendly spacing between API calls
+# - Includes structured logging and metrics for batch monitoring
 class GithubTokenHealthCheckJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
@@ -83,7 +83,7 @@ class GithubTokenHealthCheckJob < ApplicationJob
       error: e.message
     )
     false
-  rescue GithubClient::ApiError => e
+  rescue GithubClient::RateLimitError, GithubClient::ApiError => e
     # Transient GitHub errors should not mark the token as failed.
     # Restore to pending so it gets retried next cycle.
     token.update!(validation_status: "pending", validation_error: nil)

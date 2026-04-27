@@ -92,6 +92,29 @@ RSpec.describe GithubTokenHealthCheckJob do
       end
     end
 
+    context "when GitHub returns a rate limit error" do
+      let!(:token) { create(:github_token, :pending_validation, account: account) }
+
+      before do
+        octokit_client = instance_double(Octokit::Client)
+        allow(Octokit::Client).to receive(:new).and_return(octokit_client)
+        allow(octokit_client).to receive(:middleware=)
+        allow(octokit_client).to receive(:user).and_raise(Octokit::TooManyRequests.new({}))
+        rate_limit = instance_double(Octokit::RateLimit, resets_at: Time.now + 3600)
+        allow(octokit_client).to receive(:rate_limit).and_return(rate_limit)
+      end
+
+      it "does not mark token as failed" do
+        described_class.perform_now
+        expect(token.reload.validation_status).not_to eq("failed")
+      end
+
+      it "restores token to pending status" do
+        described_class.perform_now
+        expect(token.reload.validation_status).to eq("pending")
+      end
+    end
+
     context "when token was recently validated" do
       it "skips the token" do
         create(:github_token, account: account, validation_status: "validated", updated_at: 1.hour.ago)
