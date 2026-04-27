@@ -1603,7 +1603,8 @@ CREATE TABLE public.issues (
     operational_failure_reset_at timestamp(6) without time zone,
     ci_action_dispatched_at timestamp(6) without time zone,
     deployed_at timestamp(6) without time zone,
-    enhance_issue_rounds integer DEFAULT 0 NOT NULL
+    enhance_issue_rounds integer DEFAULT 0 NOT NULL,
+    ci_retry_requested_at timestamp(6) without time zone
 );
 
 ALTER TABLE ONLY public.issues FORCE ROW LEVEL SECURITY;
@@ -2519,7 +2520,9 @@ CREATE TABLE public.projects (
     enhance_issue_needs_input_label_name character varying DEFAULT 'paid-needs-input'::character varying NOT NULL,
     enhance_issue_enhanced_label_name character varying DEFAULT 'paid-enhanced'::character varying NOT NULL,
     max_enhance_issue_reevaluation_rounds integer DEFAULT 3 NOT NULL,
-    auto_enhance_enabled boolean DEFAULT false NOT NULL
+    auto_enhance_enabled boolean DEFAULT false NOT NULL,
+    scheduler_paused_at timestamp(6) without time zone,
+    scheduler_pause_reason character varying
 );
 
 ALTER TABLE ONLY public.projects FORCE ROW LEVEL SECURITY;
@@ -6707,6 +6710,13 @@ CREATE INDEX index_projects_on_quality_paused_at ON public.projects USING btree 
 
 
 --
+-- Name: index_projects_on_scheduler_paused_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_projects_on_scheduler_paused_at ON public.projects USING btree (scheduler_paused_at) WHERE (scheduler_paused_at IS NOT NULL);
+
+
+--
 -- Name: index_prompt_versions_on_created_by_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -9877,7 +9887,9 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260427143916'),
 ('20260427141851'),
+('20260427135718'),
 ('20260426231639'),
 ('20260426231603'),
 ('20260426231602'),

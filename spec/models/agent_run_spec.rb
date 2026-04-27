@@ -2645,6 +2645,51 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe "#current_phase_group" do
+    it "returns 'queue' for queued runs" do
+      agent_run = create(:agent_run, status: "queued")
+      expect(agent_run.current_phase_group).to eq("queue")
+    end
+
+    it "returns 'queue' for pending runs" do
+      agent_run = create(:agent_run, status: "pending")
+      expect(agent_run.current_phase_group).to eq("queue")
+    end
+
+    it "returns 'setup' for running runs with no completed phases" do
+      agent_run = create(:agent_run, status: "running", started_at: 1.minute.ago)
+      expect(agent_run.current_phase_group).to eq("setup")
+    end
+
+    it "returns the next phase group after the last completed one" do
+      agent_run = create(:agent_run, status: "running", started_at: 5.minutes.ago)
+      setup_phase = create(:agent_run_phase, agent_run: agent_run, phase_group: "setup",
+        phase_key: "provision_container", started_at: 4.minutes.ago, finished_at: 3.minutes.ago, duration_seconds: 60)
+      prompt_phase = create(:agent_run_phase, agent_run: agent_run, phase_group: "prompt",
+        phase_key: "prepare_pr_prompt", started_at: 3.minutes.ago, finished_at: 2.minutes.ago, duration_seconds: 60)
+
+      expect(agent_run.current_phase_group(phases: [ setup_phase, prompt_phase ])).to eq("agent")
+    end
+
+    it "returns nil for completed runs" do
+      agent_run = create(:agent_run, :completed)
+      expect(agent_run.current_phase_group).to be_nil
+    end
+
+    it "returns nil for failed runs" do
+      agent_run = create(:agent_run, status: "failed", started_at: 5.minutes.ago, completed_at: Time.current, duration_seconds: 300)
+      expect(agent_run.current_phase_group).to be_nil
+    end
+
+    it "returns nil when cleanup is the last completed phase" do
+      agent_run = create(:agent_run, status: "running", started_at: 5.minutes.ago)
+      cleanup_phase = create(:agent_run_phase, agent_run: agent_run, phase_group: "cleanup",
+        phase_key: "cleanup_container", started_at: 2.minutes.ago, finished_at: 1.minute.ago, duration_seconds: 60)
+
+      expect(agent_run.current_phase_group(phases: [ cleanup_phase ])).to be_nil
+    end
+  end
+
   describe "#phase_summary" do
     def set_run_timestamps(agent_run, base_time)
       agent_run.update_columns(
