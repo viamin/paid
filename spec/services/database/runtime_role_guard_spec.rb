@@ -8,6 +8,13 @@ RSpec.describe Database::RuntimeRoleGuard do
   let(:adapter) { "postgresql" }
   let(:role) { { "rolname" => "paid", "rolsuper" => false, "rolbypassrls" => false } }
 
+  around do |example|
+    previous = ENV.delete(described_class::SKIP_ENV)
+    example.run
+  ensure
+    ENV[described_class::SKIP_ENV] = previous if previous
+  end
+
   before do
     allow(ActiveRecord::Base).to receive_messages(connection_db_config: connection_config, connection: connection)
   end

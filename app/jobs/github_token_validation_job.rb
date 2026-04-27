@@ -14,6 +14,7 @@ class GithubTokenValidationJob < ApplicationJob
   private
 
   def validate_token(github_token)
+    was_already_failed = github_token.validation_failed?
     github_token.mark_validating!
     Rails.logger.info(message: "github_token_validation.started", github_token_id: github_token.id)
 
@@ -29,8 +30,13 @@ class GithubTokenValidationJob < ApplicationJob
   rescue GithubClient::AuthenticationError => e
     github_token.mark_validation_failed!("Token is invalid or has been revoked: #{e.message}")
     Rails.logger.error(message: "github_token_validation.auth_failed", github_token_id: github_token.id, error: e.message)
+    auto_pause_projects(github_token) unless was_already_failed
   rescue GithubClient::ApiError => e
     github_token.mark_validation_failed!("GitHub API error: #{e.message}")
     Rails.logger.error(message: "github_token_validation.api_error", github_token_id: github_token.id, error: e.message)
+  end
+
+  def auto_pause_projects(github_token)
+    GithubTokens::AutoPauseProjects.call(github_token: github_token)
   end
 end

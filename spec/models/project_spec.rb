@@ -1603,4 +1603,71 @@ RSpec.describe Project do
       expect(project.auto_merge_dependabot?).to be true
     end
   end
+
+  describe "#scheduler_paused?" do
+    it "returns false by default" do
+      expect(build(:project).scheduler_paused?).to be false
+    end
+
+    it "returns true when scheduler_paused_at is set" do
+      expect(build(:project, scheduler_paused_at: Time.current).scheduler_paused?).to be true
+    end
+  end
+
+  describe "#scheduler_pause!" do
+    let(:project) { create(:project) }
+
+    it "sets scheduler_paused_at and reason" do
+      project.scheduler_pause!(reason: "token expired")
+
+      expect(project.scheduler_paused_at).to be_present
+      expect(project.scheduler_pause_reason).to eq("token expired")
+    end
+
+    it "returns false if already paused" do
+      project.update!(scheduler_paused_at: 1.hour.ago)
+
+      expect(project.scheduler_pause!(reason: "token expired")).to be false
+    end
+  end
+
+  describe "#scheduler_resume!" do
+    let(:project) { create(:project, scheduler_paused_at: 1.hour.ago, scheduler_pause_reason: "token expired") }
+
+    it "clears scheduler_paused_at and reason" do
+      project.scheduler_resume!
+
+      expect(project.scheduler_paused_at).to be_nil
+      expect(project.scheduler_pause_reason).to be_nil
+    end
+
+    it "returns false if not paused" do
+      project.update!(scheduler_paused_at: nil)
+
+      expect(project.scheduler_resume!).to be false
+    end
+  end
+
+  describe "auto-resume on token change" do
+    let(:account) { create(:account) }
+    let(:old_token) { create(:github_token, account: account) }
+    let(:new_token) { create(:github_token, account: account) }
+    let(:project) do
+      create(:project, account: account, github_token: old_token,
+        scheduler_paused_at: 1.hour.ago, scheduler_pause_reason: "token expired")
+    end
+
+    it "clears the scheduler pause when github_token_id changes" do
+      project.update!(github_token: new_token)
+
+      expect(project.reload.scheduler_paused_at).to be_nil
+      expect(project.reload.scheduler_pause_reason).to be_nil
+    end
+
+    it "does not clear pause when other attributes change" do
+      project.update!(name: "New Name")
+
+      expect(project.reload.scheduler_paused_at).to be_present
+    end
+  end
 end
