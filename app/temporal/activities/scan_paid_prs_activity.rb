@@ -967,19 +967,15 @@ module Activities
     # recently, reruns the failed GitHub Actions jobs and suppresses the
     # ci_failure trigger so no agent run is started.
     def ci_failure_triggers_with_retry(checks, client:, project:, issue:)
-      triggers = ci_failure_triggers(checks)
-      return triggers if triggers.empty?
+      failed_checks = failed_checks_from(checks)
+      return [] if failed_checks.empty?
+
+      triggers = [ { type: "ci_failure", details: failed_checks.map { |c| c[:name] } } ]
 
       return triggers if ci_retry_cooling_down?(issue)
-
-      failed_checks = failed_checks_from(checks)
       return triggers unless transient_failures?(failed_checks, client, project)
 
-      if attempt_ci_rerun(failed_checks, client, project, issue)
-        []
-      else
-        triggers
-      end
+      attempt_ci_rerun(failed_checks, client, project, issue) ? [] : triggers
     end
 
     def ci_retry_cooling_down?(issue)

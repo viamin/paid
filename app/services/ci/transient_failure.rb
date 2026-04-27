@@ -23,7 +23,7 @@ module Ci
       /server\s+error.*(?:502|503|504)/i,
 
       # Rate limiting
-      /rate limit|too many requests|429/i,
+      /rate limit|too many requests|HTTP\s+429/i,
       /API rate limit exceeded/i,
 
       # Registry/download failures
