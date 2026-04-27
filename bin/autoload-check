@@ -21,8 +21,8 @@ booted_constants = []
 # fires during the boot sequence.
 require_relative "../config/application"
 
-Rails.autoloaders.main.on_load do |_cpath, _value, abspath|
-  booted_constants << [ _cpath, abspath ]
+Rails.autoloaders.main.on_load do |cpath, _value, abspath|
+  booted_constants << [ cpath, abspath ]
 end
 
 # Now finish booting (runs initializers, to_prepare, etc.)
@@ -33,7 +33,7 @@ puts
 
 # Filter to app/ constants only (ignore gems, lib, etc.)
 app_root = Rails.root.to_s
-app_constants = booted_constants.select { |_cpath, abspath| abspath&.start_with?("#{app_root}/app/") }
+app_constants = booted_constants.select { |_, abspath| abspath&.start_with?("#{app_root}/app/") }
 
 if app_constants.any?
   puts "The following autoloaded constants were loaded during boot:"
