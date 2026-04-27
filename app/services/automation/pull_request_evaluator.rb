@@ -10,8 +10,8 @@ module Automation
       @explicit_pr_decisions = explicit_pr_decisions
     end
 
-    def call(scan: nil)
-      return explicit_scan_decisions(scan) if explicit_pr_decisions
+    def call(scan: nil, lifecycle: nil)
+      return explicit_scan_decisions(scan, lifecycle: lifecycle) if explicit_pr_decisions
 
       label_decision_for(project, record)
     end
@@ -20,16 +20,26 @@ module Automation
 
     attr_reader :record, :project, :explicit_pr_decisions
 
-    # Delegates to {Strategies::AutoReview}. The strategy owns the
-    # per-trigger routing (paid_agent, copilot/codex, manual, ci_action) as
-    # well as escalate / dismiss_escalation / owner_approved / ready /
-    # follow-up composition. Returning early for +nil+ scans preserves the
-    # legacy "no scan, no opinion" behavior callers already depend on.
-    def explicit_scan_decisions(scan)
-      return Result.noop if scan.nil?
+    # Delegates to {Strategies::AutoContinue}, which applies lifecycle
+    # gates (circuit breakers, counter limits, phase transitions) before
+    # forwarding to {Strategies::AutoReview} for scan-based decisions.
+    #
+    # When +lifecycle+ metadata is provided, AutoContinue evaluates
+    # gating signals first. When absent it falls back to AutoReview
+    # directly, preserving the legacy "scan-only" behavior.
+    #
+    # Returning early for +nil+ scans (when no lifecycle data is
+    # present) preserves the "no scan, no opinion" behavior callers
+    # already depend on.
+    def explicit_scan_decisions(scan, lifecycle: nil)
+      return Result.noop if scan.nil? && lifecycle.nil?
 
-      context = Context.build(record: record, project: project, metadata: { scan: scan })
-      Strategies::AutoReview.new.evaluate(context)
+      metadata = {}
+      metadata[:scan] = scan if scan
+      metadata[:lifecycle] = lifecycle if lifecycle
+
+      context = Context.build(record: record, project: project, metadata: metadata)
+      Strategies::AutoContinue.new.evaluate(context)
     end
   end
 end
