@@ -35,9 +35,10 @@ class GithubTokenHealthCheckJob < ApplicationJob
       end
 
       checked += 1
-      check_token(token) ? nil : (failed += 1)
+      failed += 1 unless check_token(token)
     rescue => e
       errors += 1
+      token.update_columns(validation_status: "pending", validation_error: nil) if token.validating?
       Rails.logger.error(
         message: "github_token.health_check.unexpected_error",
         github_token_id: token.id,

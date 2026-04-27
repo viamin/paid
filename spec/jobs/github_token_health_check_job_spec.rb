@@ -174,6 +174,36 @@ RSpec.describe GithubTokenHealthCheckJob do
       end
     end
 
+    context "when an unexpected error occurs during check" do
+      let!(:token) { create(:github_token, :pending_validation, account: account) }
+
+      before do
+        octokit_client = instance_double(Octokit::Client)
+        allow(Octokit::Client).to receive(:new).and_return(octokit_client)
+        allow(octokit_client).to receive(:middleware=)
+        allow(octokit_client).to receive(:user).and_raise(StandardError.new("connection reset"))
+      end
+
+      it "resets token to pending status" do
+        described_class.perform_now
+        expect(token.reload.validation_status).to eq("pending")
+      end
+
+      it "does not abort the batch" do
+        allow(Rails.logger).to receive(:info)
+        allow(Rails.logger).to receive(:error)
+
+        described_class.perform_now
+
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(
+            message: "github_token.health_check.completed",
+            tokens_errored: 1
+          )
+        )
+      end
+    end
+
     it "logs completion with metrics" do
       allow(Rails.logger).to receive(:info)
 
