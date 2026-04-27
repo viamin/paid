@@ -106,6 +106,10 @@ RSpec.describe Containers::Provision do
     it "does not include :network in defaults" do
       expect(described_class::DEFAULTS).not_to have_key(:network)
     end
+
+    it "exports the Codex notify line used for seeded config" do
+      expect(described_class.codex_notify_line).to eq(described_class::CODEX_NOTIFY_LINE)
+    end
   end
 
   describe "#initialize" do
@@ -308,6 +312,7 @@ RSpec.describe Containers::Provision do
 
       it "seeds Codex config with the current notify command shape" do
         service.provision
+        notify_line = described_class.codex_notify_line
 
         expect(mock_container).to have_received(:exec).with(
           [
@@ -316,9 +321,9 @@ RSpec.describe Containers::Provision do
             satisfy { |cmd|
               decoded = decoded_base64_content(cmd)
               cmd.include?("/home/agent/.codex/config.toml") &&
-                decoded.include?('notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]') &&
+                decoded.include?(notify_line) &&
                 decoded.include?("[chatgpt]") &&
-                decoded.index('notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]') < decoded.index("[chatgpt]")
+                decoded.index(notify_line) < decoded.index("[chatgpt]")
             }
           ],
           user: "agent"

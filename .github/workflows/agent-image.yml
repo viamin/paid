@@ -10,6 +10,10 @@ on:
       - scripts/extract-provider-install-contract.rb
       - scripts/test-agent-image.sh
       - scripts/test-agent-image-inner.sh
+      - scripts/test-agent-provider-contracts.sh
+      - scripts/test-agent-provider-contracts-inner.sh
+      - app/services/containers/provision.rb
+      - lib/provider_support.rb
   push:
     branches: [ main ]
     paths:
@@ -20,6 +24,10 @@ on:
       - scripts/extract-provider-install-contract.rb
       - scripts/test-agent-image.sh
       - scripts/test-agent-image-inner.sh
+      - scripts/test-agent-provider-contracts.sh
+      - scripts/test-agent-provider-contracts-inner.sh
+      - app/services/containers/provision.rb
+      - lib/provider_support.rb
 
 permissions:
   contents: read
@@ -149,3 +157,6 @@ jobs:
 
       - name: Smoke test paid-agent image
         run: ./scripts/test-agent-image.sh
+
+      - name: Provider-contract smoke test
+        run: ./scripts/test-agent-provider-contracts.sh
