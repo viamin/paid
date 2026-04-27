@@ -69,6 +69,12 @@ RSpec.describe GithubTokenHealthCheckJob do
         described_class.perform_now
         expect(token.reload.validation_error).to include("revoked or expired")
       end
+
+      it "auto-pauses projects that depend on the token" do
+        allow(GithubTokens::AutoPauseProjects).to receive(:call)
+        described_class.perform_now
+        expect(GithubTokens::AutoPauseProjects).to have_received(:call).with(github_token: token)
+      end
     end
 
     context "when GitHub returns a transient API error" do

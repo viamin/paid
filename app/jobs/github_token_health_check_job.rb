@@ -83,6 +83,7 @@ class GithubTokenHealthCheckJob < ApplicationJob
       github_token_id: token.id,
       error: e.message
     )
+    GithubTokens::AutoPauseProjects.call(github_token: token)
     false
   rescue GithubClient::RateLimitError, GithubClient::ApiError => e
     # Transient GitHub errors should not mark the token as failed.
