@@ -17,6 +17,15 @@
     </div>
   </div>
 
+  <% if @artifact_type_filter.present? %>
+    <div class="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3">
+      <p class="text-sm text-indigo-900">
+        Filtering to <span class="font-medium"><%= artifact_type_label(@artifact_type_filter) %></span>.
+      </p>
+      <%= link_to "Clear filter", project_knowledge_search_path(@project, q: @query, mode: @search_mode), class: "text-sm font-medium text-indigo-700 hover:text-indigo-600" %>
+    </div>
+  <% end %>
+
   <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
     <div class="px-4 py-5 sm:p-6">
       <%= form_with url: project_knowledge_search_results_path(@project), method: :get, data: { turbo_frame: "search-results" } do |f| %>
@@ -37,8 +46,8 @@
             <%= f.submit "Search", class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
           </div>
         </div>
-        <% if params[:type].present? %>
-          <%= f.hidden_field :type, value: params[:type] %>
+        <% if @artifact_type_filter.present? %>
+          <%= f.hidden_field :type, value: @artifact_type_filter %>
         <% end %>
       <% end %>
     </div>

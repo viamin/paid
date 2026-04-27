@@ -18,14 +18,20 @@ module Knowledge
     def show
       authorize @project, :show?
       @artifact_type = params[:id]
-      @artifacts = KnowledgeArtifact.active
+      artifact_scope = KnowledgeArtifact.active
         .for_project(@project)
         .by_type(@artifact_type)
-        .left_joins(:knowledge_chunks)
-        .select("knowledge_artifacts.*, COUNT(knowledge_chunks.id) AS chunks_count")
-        .group("knowledge_artifacts.id")
-        .order(:identifier)
-        .limit(100)
+        .select(<<~SQL.squish)
+          knowledge_artifacts.*,
+          (
+            SELECT COUNT(*)
+            FROM knowledge_chunks
+            WHERE knowledge_chunks.knowledge_artifact_id = knowledge_artifacts.id
+          ) AS chunks_count
+        SQL
+        .order(:identifier, :id)
+
+      @pagy, @artifacts = pagy(artifact_scope, limit: 50)
     end
 
     private

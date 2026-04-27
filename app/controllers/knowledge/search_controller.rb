@@ -19,7 +19,9 @@ module Knowledge
     def project_search
       set_project
       authorize @project, :show?
+      @query = params[:q].to_s.strip
       resolve_semantic_search_info
+      resolve_artifact_type_filter
       @results = nil
     end
 
@@ -28,6 +30,7 @@ module Knowledge
       authorize @project, :show?
       @query = params[:q].to_s.strip
       resolve_semantic_search_info
+      resolve_artifact_type_filter
 
       if @query.blank?
         @error = "Please enter a search query."
@@ -53,6 +56,7 @@ module Knowledge
 
       authorize @project, :show?
       resolve_semantic_search_info
+      resolve_artifact_type_filter
 
       if @query.blank?
         @error = "Please enter a search query."
@@ -86,7 +90,7 @@ module Knowledge
         project: @project,
         query: @query,
         mode: mode,
-        artifact_type: params[:type].presence,
+        artifact_type: @artifact_type_filter,
         limit: 20,
         api_key: api_key,
         api_base_url: api_base_url
@@ -124,6 +128,10 @@ module Knowledge
       else
         @search_mode = normalized_mode || ::Knowledge::Search::DEFAULT_MODE
       end
+    end
+
+    def resolve_artifact_type_filter
+      @artifact_type_filter = params[:type].presence
     end
   end
 end

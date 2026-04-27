@@ -14,7 +14,9 @@
     <div>
       <h1 class="text-2xl font-semibold leading-6 text-gray-900"><%= @artifact_type.titleize.pluralize %></h1>
       <p class="mt-2 text-sm text-gray-700">
-        <%= pluralize(@artifacts.size, "artifact") %> in <span class="font-medium"><%= @project.name %></span>.
+        Showing <span class="font-medium"><%= @pagy.from %></span> to <span class="font-medium"><%= @pagy.to %></span>
+        of <span class="font-medium"><%= @pagy.count %></span> <%= "artifact".pluralize(@pagy.count) %>
+        in <span class="font-medium"><%= @project.name %></span>.
       </p>
     </div>
     <div class="mt-4 sm:mt-0">
@@ -60,6 +62,22 @@
         </tbody>
       </table>
     </div>
+
+    <% if @pagy.pages > 1 %>
+      <div class="mt-4 flex items-center justify-between">
+        <div class="text-sm text-gray-500">
+          Page <span class="font-medium"><%= @pagy.page %></span> of <span class="font-medium"><%= @pagy.pages %></span>
+        </div>
+        <div class="flex items-center gap-2">
+          <% if @pagy.previous %>
+            <%= link_to "Previous", project_knowledge_browse_path(@project, @artifact_type, page: @pagy.previous), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
+          <% end %>
+          <% if @pagy.next %>
+            <%= link_to "Next", project_knowledge_browse_path(@project, @artifact_type, page: @pagy.next), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
   <% else %>
     <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
       <div class="px-4 py-12 text-center">

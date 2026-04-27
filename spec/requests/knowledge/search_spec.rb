@@ -67,6 +67,20 @@ RSpec.describe "Knowledge::Search" do
         expect(response.body).to include(project.name)
       end
 
+      it "shows the active artifact type filter and clear control" do
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
+
+        get project_knowledge_search_path(project), params: { type: "route", q: "users", mode: "hybrid" }
+
+        doc = Nokogiri::HTML(response.body)
+        clear_filter_link = doc.css("a").find { |link| link.text.include?("Clear filter") }
+
+        expect(doc.text).to include("Filtering to")
+        expect(doc.text).to include("Routes")
+        expect(clear_filter_link["href"]).to eq(project_knowledge_search_path(project, q: "users", mode: "exact"))
+      end
+
       it "shows a warning when no knowledge embedding provider is available" do
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
@@ -228,6 +242,51 @@ RSpec.describe "Knowledge::Search" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("(mode: exact)")
       end
+    end
+  end
+
+  describe "GET /projects/:project_id/knowledge/browse/:id" do
+    let(:version) { create(:project_version, project: project) }
+    let(:run) { create(:collector_run, :completed, project_version: version) }
+
+    before do
+      sign_in user
+      51.times do |index|
+        artifact = create(:knowledge_artifact,
+          collector_run: run,
+          project: project,
+          artifact_type: "route",
+          identifier: format("GET /api/%03d", index))
+        create(:knowledge_chunk, knowledge_artifact: artifact, project: project, chunk_type: "definition", content: "chunk #{index}")
+      end
+    end
+
+    it "paginates artifact listings instead of truncating them" do
+      get project_knowledge_browse_path(project, "route")
+
+      expect(response).to have_http_status(:ok)
+      doc = Nokogiri::HTML(response.body)
+      next_link = doc.css("a").find { |link| link.text.include?("Next") }
+
+      expect(doc.text).to include("Showing")
+      expect(doc.text).to include("Page")
+      expect(doc.css("tbody tr").size).to eq(50)
+      expect(next_link["href"]).to eq(project_knowledge_browse_path(project, "route", page: 2))
+      expect(doc.text).to include("GET /api/000")
+      expect(doc.text).not_to include("GET /api/050")
+    end
+
+    it "shows later records on subsequent pages" do
+      get project_knowledge_browse_path(project, "route"), params: { page: 2 }
+
+      expect(response).to have_http_status(:ok)
+      doc = Nokogiri::HTML(response.body)
+      previous_link = doc.css("a").find { |link| link.text.include?("Previous") }
+
+      expect(doc.css("tbody tr").size).to eq(1)
+      expect(doc.text).to include("GET /api/050")
+      expect(doc.text).not_to include("GET /api/000")
+      expect(previous_link["href"]).to eq(project_knowledge_browse_path(project, "route", page: 1))
     end
   end
 end
