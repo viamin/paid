@@ -12,8 +12,6 @@ module ChatSessions
   #     on_chunk: ->(chunk) { ActionCable.server.broadcast(channel, chunk) }
   #   )
   class SendMessage
-    MAX_TOOL_ROUNDS = 10
-
     attr_reader :chat_session, :content, :on_chunk, :llm_client
 
     def initialize(chat_session:, content:, on_chunk: nil, llm_client: nil)

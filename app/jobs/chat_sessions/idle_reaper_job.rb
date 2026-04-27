@@ -19,8 +19,7 @@ module ChatSessions
 
       TenantContext.with_system_access do
         ChatSession.idle_expired.find_each do |session|
-          reap_session(session)
-          reaped += 1
+          reaped += 1 if reap_session(session)
         end
       end
 
@@ -37,12 +36,14 @@ module ChatSessions
         session.update!(status: "idle")
         ChatSessions::Close.call(chat_session: session.reload)
       end
+      true
     rescue => e
       Rails.logger.error(
         message: "chat_session.idle_reaper_failed",
         chat_session_id: session.id,
         error: e.message
       )
+      false
     end
   end
 end
