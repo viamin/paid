@@ -73,7 +73,7 @@ module Models
       excluded = project.model_preferences["excluded_model_ids"]
       provider_model = provider_tier_model(tier)
       provider_model = nil if provider_model && excluded_model?(provider_model, excluded)
-      model = provider_model || LlmModel.active.by_tier(tier).by_capability.first
+      model = provider_model || LlmModel.active.where.not(model_id: excluded.presence).by_tier(tier).by_capability.first
       return nil unless model
 
       {
