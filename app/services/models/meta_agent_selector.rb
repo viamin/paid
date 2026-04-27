@@ -2,6 +2,8 @@
 
 module Models
   class MetaAgentSelector
+    include ProviderTierLookup
+
     MODEL = "claude-haiku-4-5-20251001"
     TIMEOUT = 15
     MAX_BODY_LENGTH = 2000
@@ -61,7 +63,7 @@ module Models
 
       # Prefer the provider's explicitly configured tier model when available
       provider_model = provider_tier_model(tier)
-      if provider_model && !(excluded.is_a?(Array) && excluded.include?(provider_model.model_id))
+      if provider_model && !excluded_model?(provider_model, excluded)
         return [ provider_model ]
       end
 
@@ -73,15 +75,6 @@ module Models
       end
 
       scope.order(Arel.sql("capability_score DESC NULLS LAST")).to_a
-    end
-
-    def provider_tier_model(tier)
-      return nil unless tier
-
-      model_id = agent_run.provider&.tier_model_ids&.dig(tier)
-      return nil if model_id.blank?
-
-      LlmModel.active.find_by(model_id: model_id)
     end
 
     def request_selection(candidates)

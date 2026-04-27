@@ -2,6 +2,8 @@
 
 module Models
   class RulesBasedSelector
+    include ProviderTierLookup
+
     def self.call(...)
       new(...).call
     end
@@ -71,19 +73,6 @@ module Models
       return tier_candidates if tier_candidates.any?
 
       fallback_candidates(scope, complexity)
-    end
-
-    def provider_tier_model(tier)
-      return nil unless tier
-
-      model_id = agent_run.provider&.tier_model_ids&.dig(tier)
-      return nil if model_id.blank?
-
-      LlmModel.active.find_by(model_id: model_id)
-    end
-
-    def excluded_model?(model, excluded)
-      excluded.is_a?(Array) && excluded.include?(model.model_id)
     end
 
     def tier_scope(scope, tier)
