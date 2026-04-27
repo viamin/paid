@@ -190,6 +190,32 @@ RSpec.describe Knowledge::ContextBundle::Build do
       end
     end
 
+    context "with schema artifacts" do
+      before do
+        create(:knowledge_artifact,
+          project: project,
+          collector_run: collector_run,
+          artifact_type: "schema",
+          identifier: "users",
+          content: "users (id bigint, email text)",
+          status: "active")
+      end
+
+      it "includes a schema section" do
+        result = described_class.call(issue: issue, project: project)
+
+        expect(result[:sections]).to include(:schema)
+        expect(result[:content]).to include("Data Model")
+        expect(result[:content]).to include("users (id bigint, email text)")
+      end
+
+      it "includes schema in artifact_type_counts" do
+        result = described_class.call(issue: issue, project: project, agent_run_id: agent_run.id)
+
+        expect(result[:artifact_type_counts]).to include("schema" => 1)
+      end
+    end
+
     context "with full knowledge base" do
       before do
         create(:knowledge_artifact,
@@ -208,6 +234,10 @@ RSpec.describe Knowledge::ContextBundle::Build do
         create(:decision_record, project: project, title: "Use JWT", status: "active")
         create(:knowledge_artifact,
           project: project, collector_run: collector_run,
+          artifact_type: "schema", identifier: "users",
+          content: "users (id bigint, email text)", status: "active")
+        create(:knowledge_artifact,
+          project: project, collector_run: collector_run,
           artifact_type: "language_stat", identifier: "Ruby",
           content: "stats", metadata: { "code" => 10_000, "files" => 100 },
           status: "active")
@@ -216,7 +246,7 @@ RSpec.describe Knowledge::ContextBundle::Build do
       it "includes all section types in correct order" do
         result = described_class.call(issue: issue, project: project)
 
-        expect(result[:sections]).to eq(%i[routes symbols hotspots decisions stats])
+        expect(result[:sections]).to eq(%i[routes symbols schema hotspots decisions stats])
         expect(result[:content]).to include("Codebase Context")
       end
 

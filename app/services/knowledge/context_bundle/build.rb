@@ -156,7 +156,7 @@ module Knowledge
           parts.join("\n")
         end
 
-        { name: :schema, heading: "Data Model", content: lines.join("\n\n") }
+        artifact_section(name: :schema, heading: "Data Model", content: lines.join("\n\n"), artifacts: artifacts)
       end
 
       def build_hotspots_section
@@ -237,6 +237,7 @@ module Knowledge
           routes: "route",
           symbols: "symbol",
           hotspots: "churn_hotspot",
+          schema: "schema",
           stats: "language_stat",
           decisions: "decision_record"
         }.fetch(section_name.to_sym)
