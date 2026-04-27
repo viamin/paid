@@ -65,12 +65,16 @@ end
 # Support all contract shapes:
 # - Shell-based (Claude): {install: {command:, post_install_binary_path:}, supported_versions: {default:}}
 # - npm-based (Codex):    {source: :npm, package:, install_command: [...], version:}
+# - npm-nested (Kilocode): {source: {type: :npm, package:}, install_command: [...], default_version:}
 # - Flat (Gemini):        {install_command_string:, default_version:}
-if contract[:source] == :npm
+source = contract[:source]
+is_npm = source == :npm || (source.is_a?(Hash) && source[:type] == :npm)
+if is_npm
+  package = contract[:package] || (source.is_a?(Hash) && source[:package])
   puts "SOURCE=npm"
-  puts "PACKAGE=#{contract[:package]}"
+  puts "PACKAGE=#{package}"
   puts "INSTALL_COMMAND=#{contract[:install_command]&.join(" ")}"
-  puts "SUPPORTED_VERSION=#{contract[:version]}"
+  puts "SUPPORTED_VERSION=#{contract[:version] || contract[:default_version]}"
 else
   install_command = contract.dig(:install, :command) || contract[:install_command_string]
   post_install_path = contract.dig(:install, :post_install_binary_path)
