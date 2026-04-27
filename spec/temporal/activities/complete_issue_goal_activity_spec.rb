@@ -116,7 +116,7 @@ RSpec.describe Activities::CompleteIssueGoalActivity do
           expect(logs).to include(a_string_including("Applied priority label: P2"))
         end
 
-        it "logs failure but does not raise when label application fails" do
+        it "logs and re-raises when label application fails" do
           allow(github_client).to receive(:add_labels_to_issue)
             .and_raise(GithubClient::Error, "Not Found")
 
@@ -125,10 +125,9 @@ RSpec.describe Activities::CompleteIssueGoalActivity do
             created_issue_url: "https://github.com/example/repo/issues/42",
             created_issue_number: 42)
 
-          result = activity.execute(agent_run_id: agent_run.id)
+          expect { activity.execute(agent_run_id: agent_run.id) }
+            .to raise_error(GithubClient::Error, "Not Found")
 
-          expect(result[:success]).to be true
-          expect(result[:issue_created]).to be true
           logs = agent_run.agent_run_logs.pluck(:content)
           expect(logs).to include(a_string_including("Failed to apply priority label"))
         end

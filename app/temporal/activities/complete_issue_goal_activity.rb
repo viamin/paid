@@ -74,6 +74,8 @@ module Activities
         label: label_name,
         error: e.message
       )
+
+      raise
     end
 
     def result(agent_run)
