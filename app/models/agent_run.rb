@@ -841,8 +841,28 @@ class AgentRun < ApplicationRecord
     }
   end
 
+  PHASE_GROUP_ORDER = %w[queue setup prompt agent post cleanup].freeze
+
   def phase_timeline
     agent_run_phases
+  end
+
+  # Infers which phase group is currently in progress based on the run's
+  # status and completed phases. Returns nil for finished runs or when
+  # the active phase cannot be determined.
+  def current_phase_group(phases: nil)
+    return nil unless status.in?(%w[queued pending running])
+
+    return "queue" if status.in?(%w[queued pending])
+
+    phases ||= phase_timeline.to_a
+    completed_groups = phases.map(&:phase_group).uniq
+    last_completed_index = PHASE_GROUP_ORDER.rindex { |g| completed_groups.include?(g) }
+
+    return "setup" unless last_completed_index
+
+    next_index = last_completed_index + 1
+    PHASE_GROUP_ORDER[next_index] if next_index < PHASE_GROUP_ORDER.size
   end
 
   def phase_summary(phases: nil)
