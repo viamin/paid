@@ -129,7 +129,7 @@ RSpec.describe Ci::FailureContext do
       check = { id: 1, name: "rspec", conclusion: "failure", output_text: "failed", details_url: "https://github.com/owner/repo/actions/runs/12345/job/67890" }
       allow(github_client).to receive(:check_run_log).with(repo, check).and_return("")
 
-      run_response = double(path: ".github/workflows/test.yml")
+      run_response = double(path: ".github/workflows/test.yml@main")
       allow(github_client).to receive(:actions_run)
         .with(repo, "12345")
         .and_return(run_response)
@@ -150,7 +150,7 @@ RSpec.describe Ci::FailureContext do
       check1 = { id: 1, name: "rspec", conclusion: "failure", output_text: "failed", details_url: "https://github.com/owner/repo/actions/runs/111/job/1" }
       check2 = { id: 2, name: "rubocop", conclusion: "failure", output_text: "failed", details_url: "https://github.com/owner/repo/actions/runs/111/job/2" }
 
-      run_response = double(path: ".github/workflows/ci.yml")
+      run_response = double(path: ".github/workflows/ci.yml@main")
       allow(github_client).to receive(:actions_run).with(repo, "111").and_return(run_response)
       allow(github_client).to receive_messages(check_run_log: "", file_content: "name: CI\non: push")
 
@@ -158,6 +158,22 @@ RSpec.describe Ci::FailureContext do
 
       expect(github_client).to have_received(:actions_run).once
       expect(github_client).to have_received(:file_content).once
+    end
+
+    it "strips the @ref suffix from the workflow path returned by the Actions API" do
+      check = { id: 1, name: "rspec", conclusion: "failure", output_text: "failed", details_url: "https://github.com/owner/repo/actions/runs/999/job/1" }
+      allow(github_client).to receive(:check_run_log).with(repo, check).and_return("")
+
+      run_response = double(path: ".github/workflows/deploy.yml@refs/heads/feature")
+      allow(github_client).to receive(:actions_run).with(repo, "999").and_return(run_response)
+      allow(github_client).to receive(:file_content)
+        .with(repo, path: ".github/workflows/deploy.yml", ref: nil)
+        .and_return("name: Deploy")
+
+      context = described_class.call(repo: repo, checks: [ check ], github_client: github_client)
+
+      expect(context.workflow_content).to include(".github/workflows/deploy.yml")
+      expect(context.workflow_content).to include("name: Deploy")
     end
 
     it "returns empty string when no details_url is available" do

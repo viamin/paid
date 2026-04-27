@@ -111,7 +111,7 @@ module Ci
 
     def workflow_path_for_run(run_id)
       run = github_client.actions_run(repo, run_id)
-      run&.path
+      run&.path&.split("@", 2)&.first
     rescue GithubClient::Error
       nil
     end
