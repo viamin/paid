@@ -63,7 +63,10 @@ module Tools
       client = project.github_token&.client
       return [] unless client
 
-      client.pull_request_review_comments(project.full_name, pr.github_number)
+      comments = client.pull_request_review_comments(project.full_name, pr.github_number)
+      comments.map do |c|
+        { user: c.user.login, body: c.body, path: c.path, created_at: c.created_at }
+      end
     rescue StandardError => e
       Rails.logger.warn(message: "mcp.fetch_pr_review_comments_failed", error: e.message, issue_id: pr.id)
       []

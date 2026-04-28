@@ -32,7 +32,7 @@ module Tools
       private
 
       def tools
-        TOOL_CLASSES.each_with_object({}) do |class_name, hash|
+        @tools ||= TOOL_CLASSES.each_with_object({}) do |class_name, hash|
           klass = class_name.constantize
           hash[klass.tool_name] = klass
         end

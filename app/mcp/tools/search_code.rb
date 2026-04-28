@@ -43,7 +43,7 @@ module Tools
     private
 
     def sanitize_like(value)
-      value.gsub(/[%_\\]/) { |m| "\\#{m}" }
+      ActiveRecord::Base.sanitize_sql_like(value)
     end
   end
 end
