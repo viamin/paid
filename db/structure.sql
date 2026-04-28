@@ -7609,7 +7609,7 @@ ALTER TABLE ONLY public.token_usages
 --
 
 ALTER TABLE ONLY public.token_usages
-    ADD CONSTRAINT fk_rails_chat_session_id FOREIGN KEY (chat_session_id) REFERENCES public.chat_sessions(id);
+    ADD CONSTRAINT fk_rails_chat_session_id FOREIGN KEY (chat_session_id) REFERENCES public.chat_sessions(id) ON DELETE CASCADE;
 
 
 --
