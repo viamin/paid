@@ -178,10 +178,14 @@ module Containers
       end
 
       proxy_base = proxy_base_url
+      proxy_token = chat_session.ensure_proxy_token!
+      proxy_credential = "paid-chat-session:#{chat_session.id}:#{proxy_token}"
+
       env << "PAID_MCP_URL=#{proxy_base}/mcp"
       env << "PAID_PROXY_URL=#{proxy_base}"
       env << "CHAT_SESSION_ID=#{chat_session.id}"
-      env << "PROXY_TOKEN=#{chat_session.proxy_token}"
+      env << "PROXY_TOKEN=#{proxy_token}"
+      env << "X_API_KEY=#{proxy_credential}"
 
       env
     end
@@ -217,24 +221,30 @@ module Containers
     # The GitHub token is passed as an ephemeral environment variable for the
     # clone command only, not stored in the container environment.
     # Skipped when no project is associated or the project has no active token.
+    # Raises ProvisionError if the clone fails, since mounting the project repo
+    # is a core acceptance criterion for workspace mode.
     def seed_workspace!
       return unless project
 
       github_token = project.github_token
       return unless github_token&.active?
 
-      clone_cmd = "git clone --depth 1 https://x-access-token:$CLONE_TOKEN@github.com/#{Shellwords.escape(project.full_name)}.git . 2>&1 || true"
+      clone_cmd = "git clone --depth 1 https://x-access-token:$CLONE_TOKEN@github.com/#{Shellwords.escape(project.full_name)}.git . 2>&1"
 
-      @container.exec(
+      result = @container.exec(
         [ "sh", "-c", clone_cmd ],
         user: options[:user],
         wait: CLONE_TIMEOUT,
         Env: [ "CLONE_TOKEN=#{github_token.token}" ]
       )
 
+      exit_code = result.is_a?(Array) ? result[2] : 0
+      if exit_code != 0
+        output = result.is_a?(Array) ? result[0..1].flatten.join("\n").truncate(500) : ""
+        raise ProvisionError, "Workspace clone failed (exit #{exit_code}): #{output}"
+      end
+
       log("provision.workspace_seeded", project_id: project.id)
-    rescue Docker::Error::DockerError => e
-      log("provision.workspace_seed_failed", error: e.message, project_id: project.id)
     end
 
     def proxy_base_url

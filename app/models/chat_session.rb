@@ -27,6 +27,25 @@ class ChatSession < ApplicationRecord
   scope :active, -> { where(status: "active") }
   scope :idle_expired, -> { where(status: "active").where("idle_timeout_at < ?", Time.current) }
 
+  def active?
+    status == "active"
+  end
+
+  def ensure_proxy_token!
+    return proxy_token if proxy_token.present?
+
+    token = SecureRandom.hex(32)
+    updated_rows = self.class.where(id: id, proxy_token: nil).update_all(proxy_token: token)
+
+    if updated_rows == 1
+      self.proxy_token = token
+    else
+      reload
+    end
+
+    proxy_token
+  end
+
   private
 
   def set_external_id

@@ -127,7 +127,7 @@ RSpec.describe Containers::ProvisionForChat do
       described_class.call(chat_session: chat_session)
     end
 
-    it "sets environment variables including proxy token" do
+    it "sets environment variables including proxy credentials" do
       expect(Docker::Container).to receive(:create).with(
         hash_including(
           "Env" => include(
@@ -136,7 +136,8 @@ RSpec.describe Containers::ProvisionForChat do
             "PAID_PROXY_URL=http://web:3000",
             "CHAT_SESSION_ID=#{chat_session.id}",
             "PROJECT_ID=#{project.id}",
-            "PROXY_TOKEN=#{chat_session.proxy_token}"
+            a_string_matching(/\APROXY_TOKEN=\h{64}\z/),
+            a_string_matching(/\AX_API_KEY=paid-chat-session:#{chat_session.id}:\h{64}\z/)
           )
         )
       ).and_return(mock_container)
@@ -198,6 +199,16 @@ RSpec.describe Containers::ProvisionForChat do
         ).and_return([ [], [], 0 ])
 
         described_class.call(chat_session: chat_session)
+      end
+
+      it "raises ProvisionError when clone fails" do
+        allow(mock_container).to receive(:exec).with(
+          [ "sh", "-c", a_string_matching(/git clone/) ],
+          hash_including(user: "agent")
+        ).and_return([ [ "fatal: repository not found" ], [], 128 ])
+
+        expect { described_class.call(chat_session: chat_session) }
+          .to raise_error(Containers::ProvisionForChat::ProvisionError, /Workspace clone failed/)
       end
     end
 

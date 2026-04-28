@@ -38,6 +38,8 @@ module Containers
     # Delegates command building to agent-harness via Providers::HarnessExecutionPlan
     # so the correct CLI is invoked for whatever provider the chat session uses
     # (Claude, Codex, Gemini, etc.) without hard-coding provider-specific commands.
+    # Carries the full execution plan (command, env, preparation) through to the
+    # container exec call, matching how RunAgentActivity applies plans.
     #
     # @param prompt [String] The prompt/task for the agent
     # @param session_id [String, nil] Session ID for resuming a previous session
@@ -45,13 +47,19 @@ module Containers
     def execute_agent_command(prompt:, session_id: nil)
       ensure_container_running!
 
-      command = build_agent_command(prompt: prompt, session_id: session_id)
+      plan = build_execution_plan(prompt: prompt, session_id: session_id)
+      command = Shellwords.join(plan.command)
+
+      apply_preparation!(plan.preparation) if plan.preparation
       stdout_buffer = []
       stderr_buffer = []
 
+      exec_options = { wait: EXECUTE_TIMEOUT }
+      exec_options[:Env] = plan.env.map { |k, v| "#{k}=#{v}" } if plan.env.present?
+
       exec_result = container.exec(
         [ "sh", "-c", command ],
-        wait: EXECUTE_TIMEOUT
+        **exec_options
       ) do |stream_type, chunk|
         case stream_type
         when :stdout then stdout_buffer << chunk
@@ -158,20 +166,40 @@ module Containers
       raise ContainerNotRunning, "Container not found"
     end
 
-    # Builds the agent CLI command using agent-harness execution plans.
-    # Falls back to the provider key from the chat session's provider, or
-    # defaults to "claude" when no provider is configured.
-    def build_agent_command(prompt:, session_id: nil)
-      plan = Providers::HarnessExecutionPlan.for_provider_key(
-        provider_key: effective_provider_key,
-        prompt: prompt,
-        options: session_id.present? ? { session_id: session_id } : {}
-      )
-      Shellwords.join(plan.command)
+    # Builds a full execution plan using agent-harness.
+    # When a Provider record is available, uses HarnessExecutionPlan.call to
+    # include per-provider runtime config (API keys, custom base URLs, etc.).
+    # Falls back to for_provider_key when no Provider record exists.
+    def build_execution_plan(prompt:, session_id: nil)
+      options = session_id.present? ? { session_id: session_id } : {}
+
+      if chat_session.provider.present?
+        Providers::HarnessExecutionPlan.call(
+          provider: chat_session.provider,
+          prompt: prompt,
+          options: options
+        )
+      else
+        Providers::HarnessExecutionPlan.for_provider_key(
+          provider_key: "claude",
+          prompt: prompt,
+          options: options
+        )
+      end
     end
 
-    def effective_provider_key
-      chat_session.provider&.provider_key || "claude"
+    # Materializes preparation file writes inside the container, matching
+    # the same pattern used by Containers::Provision for agent runs.
+    def apply_preparation!(preparation)
+      return if preparation.nil?
+      return unless preparation.respond_to?(:file_writes)
+
+      preparation.file_writes.each do |write|
+        container.exec(
+          [ "sh", "-c", "mkdir -p $(dirname #{Shellwords.escape(write.path)}) && cat > #{Shellwords.escape(write.path)}" ],
+          stdin: StringIO.new(write.content)
+        )
+      end
     end
 
     def extract_session_id(output)

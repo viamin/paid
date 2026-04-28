@@ -27,6 +27,8 @@ RSpec.describe Containers::ChatSessionManager do
 
   let(:mock_volume) { instance_double(Docker::Volume, remove: true) }
   let(:harness_command) { [ "claude", "--print", "Fix the bug" ] }
+  let(:harness_env) { {} }
+  let(:harness_preparation) { nil }
 
   let(:manager) { described_class.new(chat_session) }
 
@@ -35,8 +37,8 @@ RSpec.describe Containers::ChatSessionManager do
       .with("chat-container-abc123")
       .and_return(mock_container)
     allow(Docker::Volume).to receive(:get).and_return(mock_volume)
-    allow(Providers::HarnessExecutionPlan).to receive(:for_provider_key)
-      .and_return(Providers::HarnessExecutionPlan::Result.new(command: harness_command, env: {}, preparation: nil))
+    harness_result = Providers::HarnessExecutionPlan::Result.new(command: harness_command, env: harness_env, preparation: harness_preparation)
+    allow(Providers::HarnessExecutionPlan).to receive_messages(for_provider_key: harness_result, call: harness_result)
   end
 
   describe "#execute_agent_command" do
@@ -75,13 +77,34 @@ RSpec.describe Containers::ChatSessionManager do
       manager.execute_agent_command(prompt: "Continue", session_id: "prev-session-123")
     end
 
-    it "uses the chat session's provider when available" do
+    it "uses HarnessExecutionPlan.call with Provider record when available" do
       provider = create(:provider, user: chat_session.created_by, provider_key: "codex")
       chat_session.update!(provider: provider)
 
-      expect(Providers::HarnessExecutionPlan).to receive(:for_provider_key).with(
-        hash_including(provider_key: provider.provider_key)
+      expect(Providers::HarnessExecutionPlan).to receive(:call).with(
+        provider: provider,
+        prompt: "Fix the bug",
+        options: {}
       )
+
+      manager.execute_agent_command(prompt: "Fix the bug")
+    end
+
+    it "passes plan.env to container exec" do
+      allow(Providers::HarnessExecutionPlan).to receive(:for_provider_key)
+        .and_return(Providers::HarnessExecutionPlan::Result.new(
+          command: harness_command,
+          env: { "OPENAI_API_KEY" => "sk-test", "CUSTOM_VAR" => "value" },
+          preparation: nil
+        ))
+
+      expect(mock_container).to receive(:exec).with(
+        [ "sh", "-c", anything ],
+        hash_including(Env: contain_exactly("OPENAI_API_KEY=sk-test", "CUSTOM_VAR=value"))
+      ) do |_cmd, **_opts, &block|
+        block&.call(:stdout, "done\n")
+        [ [ "done\n" ], [], 0 ]
+      end
 
       manager.execute_agent_command(prompt: "Fix the bug")
     end
