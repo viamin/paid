@@ -1,0 +1,57 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Tools::TriggerAgentRun do
+  let(:account) { create(:account) }
+  let(:user) { create(:user, :member, account: account) }
+  let(:session) { create(:chat_session, account: account, created_by: user) }
+  let(:tool) { described_class.new(user: user, session: session) }
+
+  describe ".write_operation?" do
+    it "returns true" do
+      expect(described_class.write_operation?).to be(true)
+    end
+  end
+
+  describe "#call" do
+    let(:project) { create(:project, account: account) }
+    let(:issue) { create(:issue, project: project) }
+
+    it "creates an agent run when confirmed" do
+      result = tool.call(project_id: project.id, issue_id: issue.id, confirmed: true)
+
+      expect(result[:status]).to eq("queued")
+      expect(result[:goal]).to eq("create_pr")
+      expect(result[:issue_id]).to eq(issue.id)
+    end
+
+    it "raises when not confirmed" do
+      expect {
+        tool.call(project_id: project.id, issue_id: issue.id, confirmed: false)
+      }.to raise_error(ArgumentError, /Confirmation required/)
+    end
+
+    it "raises for project in another account" do
+      other_project = create(:project)
+      other_issue = create(:issue, project: other_project)
+
+      expect {
+        tool.call(project_id: other_project.id, issue_id: other_issue.id, confirmed: true)
+      }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
+    context "with viewer role" do
+      it "raises authorization error for non-member user" do
+        # Ensure project exists first so its factory creates the first user (auto-owner)
+        project
+        viewer = create(:user, account: account)
+        viewer_tool = described_class.new(user: viewer, session: session)
+
+        expect {
+          viewer_tool.call(project_id: project.id, issue_id: issue.id, confirmed: true)
+        }.to raise_error(Pundit::NotAuthorizedError)
+      end
+    end
+  end
+end
