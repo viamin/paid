@@ -47,13 +47,16 @@ module Activities
         hash[stat.artifact_type] = (hash[stat.artifact_type] || 0) + stat.artifact_count
       end
 
+      responded = user_responded?(run)
+
       {
         agent_run_id: run.id,
         issue_title: run.issue&.title,
         questions_asked: questions,
         knowledge_available: knowledge_available,
         sufficient_context: !questions.any?,
-        user_responded: user_responded?(run),
+        user_responded: responded,
+        user_reply_text: responded ? fetch_user_reply_text(run) : nil,
         run_outcome: run_outcome(run)
       }
     end
@@ -67,10 +70,39 @@ module Activities
     end
 
     def user_responded?(run)
-      scores = run.quality_metrics.filter_map(&:scores).last
-      return false unless scores
+      metric = run.quality_metrics.find { |m| m.feedback_source == "enhance_issue_feedback" }
+      return false unless metric&.scores
 
-      scores["author_replied"].to_f > 0
+      metric.scores["author_replied"].to_f > 0
+    end
+
+    def fetch_user_reply_text(run)
+      return nil unless run.issue && run.project.github_token&.client
+
+      client = run.project.github_token.client
+      comments = client.issue_comments(run.project.full_name, run.issue.github_number)
+      enhancement = comments.find { |c| c[:body].to_s.include?(COMMENT_MARKER) }
+      return nil unless enhancement
+
+      author = run.issue.github_creator_login
+      enhanced_at = enhancement[:created_at]
+      return nil unless author.present? && enhanced_at
+
+      replies = comments.select do |c|
+        commented_at = c[:created_at]&.to_time
+        next false unless commented_at && commented_at > enhanced_at.to_time
+
+        (c.dig(:user, :login) || c.dig("user", "login")) == author
+      end
+
+      replies.map { |c| c[:body].to_s.truncate(500) }.join("\n---\n").presence
+    rescue GithubClient::Error, Octokit::Error, Faraday::Error => e
+      logger.warn(
+        message: "knowledge_evolution.reply_fetch_failed",
+        agent_run_id: run.id,
+        error: e.message
+      )
+      nil
     end
 
     def run_outcome(run)

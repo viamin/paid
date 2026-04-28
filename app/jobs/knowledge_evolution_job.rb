@@ -6,7 +6,11 @@
 # run history, then starts a KnowledgeEvolutionWorkflow per eligible project
 # to sample runs, analyze knowledge gaps, and persist recommendations.
 class KnowledgeEvolutionJob < ApplicationJob
+  include GoodJob::ActiveJobExtensions::Concurrency
+
   queue_as :knowledge
+
+  good_job_control_concurrency_with(total_limit: 1)
 
   # Minimum completed enhance_issue runs in the lookback window
   MIN_ENHANCE_RUNS = 5

@@ -65,12 +65,22 @@ module Activities
     end
 
     def dismiss_stale_recommendations(project, flagged_keys)
-      stale = project.knowledge_recommendations.pending.select do |rec|
-        !flagged_keys.include?([ rec.recommendation_type, rec.collector_type ])
+      scope = project.knowledge_recommendations.pending
+
+      if flagged_keys.any?
+        conditions = flagged_keys.map do |rec_type, collector|
+          if collector.nil?
+            scope.sanitize_sql_array([ "(recommendation_type = ? AND collector_type IS NULL)", rec_type ])
+          else
+            scope.sanitize_sql_array([ "(recommendation_type = ? AND collector_type = ?)", rec_type, collector ])
+          end
+        end
+        scope = scope.where("NOT (#{conditions.join(' OR ')})")
       end
 
-      stale.each { |rec| rec.dismiss!(reason: "no_longer_flagged") }
-      stale.size
+      count = scope.count
+      scope.find_each { |rec| rec.dismiss!(reason: "no_longer_flagged") }
+      count
     end
   end
 end

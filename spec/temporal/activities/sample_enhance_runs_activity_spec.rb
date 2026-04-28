@@ -75,22 +75,40 @@ RSpec.describe Activities::SampleEnhanceRunsActivity do
         result = activity.execute(input)
 
         question_run = result[:runs].find { |r| r[:agent_run_id] == run_with_questions.id }
-        expect(question_run).to include(user_responded: false, run_outcome: "pr_created")
+        expect(question_run).to include(user_responded: false, user_reply_text: nil, run_outcome: "pr_created")
       end
 
       context "when the user responded to clarifying questions" do
+        let(:github_client) { instance_double(GithubClient) }
+
         before do
           run_with_questions.quality_metrics.create!(
-            metric_type: "automated",
+            metric_type: "human",
+            feedback_source: "enhance_issue_feedback",
             scores: { "author_replied" => 1.0, "comment_posted" => 1.0 }
           )
+          allow(GithubClient).to receive(:new).and_return(github_client)
+          allow(github_client).to receive(:issue_comments).and_return([])
         end
 
-        it "detects user response from quality metrics" do
+        it "detects user response from the enhance_issue_feedback metric" do
           result = activity.execute(input)
 
           question_run = result[:runs].find { |r| r[:agent_run_id] == run_with_questions.id }
           expect(question_run[:user_responded]).to be true
+          expect(question_run[:user_reply_text]).to be_nil
+        end
+
+        it "fetches user reply text when GitHub API is available" do
+          allow(github_client).to receive(:issue_comments).and_return([
+            { body: "<!-- paid:enhance-issue -->\n## Clarifying questions\n1. How?", created_at: 1.day.ago, user: { login: "bot" } },
+            { body: "The auth uses OAuth2 with PKCE flow", created_at: 1.hour.ago, user: { login: run_with_questions.issue.github_creator_login } }
+          ])
+
+          result = activity.execute(input)
+
+          question_run = result[:runs].find { |r| r[:agent_run_id] == run_with_questions.id }
+          expect(question_run[:user_reply_text]).to include("OAuth2 with PKCE flow")
         end
       end
 
