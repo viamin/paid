@@ -21,6 +21,7 @@ class ChatSession < ApplicationRecord
   validates :mode, inclusion: { in: MODES }
   validates :external_id, uniqueness: true
   validate :provider_must_belong_to_same_account
+  validate :project_must_belong_to_same_account
 
   scope :active, -> { where(status: "active") }
   scope :idle_expired, -> { where(status: "active").where("idle_timeout_at < ?", Time.current) }
@@ -38,5 +39,13 @@ class ChatSession < ApplicationRecord
     return if provider_account_id == account_id
 
     errors.add(:provider, "must belong to the same account")
+  end
+
+  def project_must_belong_to_same_account
+    return unless project && account
+
+    return if project.account_id == account_id
+
+    errors.add(:project, "must belong to the same account")
   end
 end

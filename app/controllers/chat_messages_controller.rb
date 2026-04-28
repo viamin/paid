@@ -73,12 +73,12 @@ class ChatMessagesController < ApplicationController
   rescue IOError
     # Client disconnected — nothing to send
   rescue NotImplementedError => e
-    write_sse_event("error", { message: e.message })
+    write_sse_event("error", { message: e.message }) rescue IOError
   rescue ArgumentError => e
-    write_sse_event("error", { message: e.message })
+    write_sse_event("error", { message: e.message }) rescue IOError
   rescue StandardError => e
     Rails.logger.error(message: "chat_messages.stream_failed", session_id: @chat_session.id, error: e.message)
-    write_sse_event("error", { message: "An unexpected error occurred" })
+    write_sse_event("error", { message: "An unexpected error occurred" }) rescue IOError
   ensure
     response.stream.close
   end
