@@ -68,14 +68,16 @@ module Activities
       scope = project.knowledge_recommendations.pending
 
       if flagged_keys.any?
-        conditions = flagged_keys.map do |rec_type, collector|
-          if collector.nil?
-            scope.sanitize_sql_array([ "(recommendation_type = ? AND collector_type IS NULL)", rec_type ])
+        table = KnowledgeRecommendation.arel_table
+        exclude = flagged_keys.reduce(nil) do |combined, (rec_type, collector)|
+          condition = if collector.nil?
+            table[:recommendation_type].eq(rec_type).and(table[:collector_type].eq(nil))
           else
-            scope.sanitize_sql_array([ "(recommendation_type = ? AND collector_type = ?)", rec_type, collector ])
+            table[:recommendation_type].eq(rec_type).and(table[:collector_type].eq(collector))
           end
+          combined ? combined.or(condition) : condition
         end
-        scope = scope.where("NOT (#{conditions.join(' OR ')})")
+        scope = scope.where.not(exclude)
       end
 
       count = scope.count
