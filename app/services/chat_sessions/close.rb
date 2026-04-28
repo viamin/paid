@@ -46,6 +46,7 @@ module ChatSessions
       chat_session.metadata ||= {}
       chat_session.metadata["total_tokens_input"] = totals[0]
       chat_session.metadata["total_tokens_output"] = totals[1]
+      chat_session.metadata["total_cost_cents"] = chat_session.estimated_cost_cents
       chat_session.metadata["total_messages"] = chat_session.messages.count
       chat_session.metadata["closed_at"] = Time.current.iso8601
     end

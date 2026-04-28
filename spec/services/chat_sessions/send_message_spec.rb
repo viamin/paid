@@ -74,6 +74,58 @@ RSpec.describe ChatSessions::SendMessage do
       }.to raise_error(NotImplementedError, /agent-harness/)
     end
 
+    it "creates a token usage record for the assistant response" do
+      described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+
+      usage = TokenUsage.last
+      expect(usage.chat_session).to eq(chat_session)
+      expect(usage.request_type).to eq("chat_message")
+      expect(usage.input_tokens).to eq(100)
+      expect(usage.output_tokens).to eq(50)
+      expect(usage.llm_model).to eq("gpt-4o")
+      expect(usage.cost_cents).to be >= 0
+    end
+
+    context "when session token limit is reached" do
+      before do
+        create(:tenant_setting, account: account,
+          features: { "chat_settings" => { "chat_session_token_limit" => 100 } })
+        create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 80, tokens_output: 30)
+      end
+
+      it "raises TokenLimitExceededError" do
+        expect {
+          described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+        }.to raise_error(ChatSessions::TokenLimitExceededError, /token limit reached/)
+      end
+
+      it "does not persist the user message" do
+        expect {
+          described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+        }.to raise_error(ChatSessions::TokenLimitExceededError)
+
+        expect(chat_session.messages.where(role: "user", content: "Hello").count).to eq(0)
+      end
+    end
+
+    context "when session token limit is increased after being reached" do
+      before do
+        tenant_setting = create(:tenant_setting, account: account,
+          features: { "chat_settings" => { "chat_session_token_limit" => 100 } })
+        create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 80, tokens_output: 30)
+
+        # Increase the limit
+        tenant_setting.update!(features: { "chat_settings" => { "chat_session_token_limit" => 500 } })
+      end
+
+      it "allows sending messages again" do
+        result = described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+
+        expect(result).to be_a(ChatMessage)
+        expect(result.role).to eq("assistant")
+      end
+    end
+
     it "builds conversation from message history" do
       create(:chat_message, :system, chat_session: chat_session)
       create(:chat_message, chat_session: chat_session, content: "First question")

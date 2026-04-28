@@ -1,10 +1,11 @@
 # frozen_string_literal: true
 
 class TokenUsage < ApplicationRecord
-  REQUEST_TYPES = %w[agent planning evaluation run_summary run_delta knowledge].freeze
+  REQUEST_TYPES = %w[agent planning evaluation run_summary run_delta knowledge chat_message].freeze
 
   belongs_to :agent_run, optional: true
   belongs_to :knowledge_run, optional: true
+  belongs_to :chat_session, optional: true
 
   validates :request_type, presence: true, inclusion: { in: REQUEST_TYPES }
   validates :input_tokens, numericality: { greater_than_or_equal_to: 0 }
@@ -14,9 +15,14 @@ class TokenUsage < ApplicationRecord
   validate :exactly_one_run_present
 
   scope :by_project, lambda { |project_id|
-    left_outer_joins(:agent_run, :knowledge_run)
-      .where("agent_runs.project_id = :project_id OR knowledge_runs.project_id = :project_id", project_id: project_id)
+    left_outer_joins(:agent_run, :knowledge_run, :chat_session)
+      .where(
+        "agent_runs.project_id = :project_id OR knowledge_runs.project_id = :project_id OR chat_sessions.project_id = :project_id",
+        project_id: project_id
+      )
   }
+  scope :by_chat_session, ->(chat_session_id) { where(chat_session_id: chat_session_id) }
+  scope :for_chat, -> { where(request_type: "chat_message") }
   scope :by_model, ->(llm_model) { where(llm_model: llm_model) }
   scope :by_request_type, ->(type) { where(request_type: type) }
   scope :by_time_period, ->(start_time, end_time) { where(created_at: start_time..end_time) }
@@ -69,8 +75,9 @@ class TokenUsage < ApplicationRecord
   private
 
   def exactly_one_run_present
-    return if agent_run.present? ^ knowledge_run.present?
+    present_count = [ agent_run, knowledge_run, chat_session ].count(&:present?)
+    return if present_count == 1
 
-    errors.add(:base, "must belong to exactly one run")
+    errors.add(:base, "must belong to exactly one of agent_run, knowledge_run, or chat_session")
   end
 end

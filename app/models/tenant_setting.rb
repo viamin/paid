@@ -20,6 +20,12 @@ class TenantSetting < ApplicationRecord
     "max_tokens_per_run" => 10_000_000,
     "max_monthly_cost_cents" => nil
   }.freeze
+  DEFAULT_CHAT_SETTINGS = {
+    "chat_session_token_limit" => 100_000,
+    "chat_monthly_token_limit" => nil,
+    "chat_max_concurrent_sessions" => 5,
+    "chat_idle_timeout_minutes" => 30
+  }.freeze
   DEFAULT_QUALITY_THRESHOLDS = Project::DEFAULT_QUALITY_GATE_SETTINGS.freeze
   DEFAULT_AGENT_SETTINGS = {
     "default_goal" => "create_pr",
@@ -73,6 +79,7 @@ class TenantSetting < ApplicationRecord
       "quality_thresholds" => effective_quality_thresholds,
       "agent_settings" => effective_agent_settings,
       "worker_settings" => effective_worker_settings,
+      "chat_settings" => effective_chat_settings,
       "self_repo_full_name" => self_repo_full_name,
       "features" => features
     }
@@ -132,6 +139,18 @@ class TenantSetting < ApplicationRecord
     return goal if AgentRun::GOALS.include?(goal)
 
     DEFAULT_AGENT_SETTINGS.fetch("default_goal")
+  end
+
+  def effective_chat_settings
+    merge_defaults(DEFAULT_CHAT_SETTINGS, features.fetch("chat_settings", {}))
+  end
+
+  def chat_session_token_limit
+    effective_chat_settings["chat_session_token_limit"]
+  end
+
+  def chat_monthly_token_limit
+    effective_chat_settings["chat_monthly_token_limit"]
   end
 
   def cap_max_concurrent_runs(limit)

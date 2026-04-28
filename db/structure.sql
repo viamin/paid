@@ -3232,7 +3232,8 @@ CREATE TABLE public.token_usages (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     knowledge_run_id bigint,
-    CONSTRAINT token_usages_exactly_one_run CHECK (((agent_run_id IS NOT NULL) <> (knowledge_run_id IS NOT NULL)))
+    chat_session_id bigint,
+    CONSTRAINT token_usages_exactly_one_run CHECK ((((agent_run_id IS NOT NULL)::integer + (knowledge_run_id IS NOT NULL)::integer + (chat_session_id IS NOT NULL)::integer) = 1))
 );
 
 ALTER TABLE ONLY public.token_usages FORCE ROW LEVEL SECURITY;
@@ -7248,6 +7249,13 @@ CREATE INDEX index_token_usages_on_knowledge_run_id ON public.token_usages USING
 
 
 --
+-- Name: index_token_usages_on_chat_session_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_token_usages_on_chat_session_id ON public.token_usages USING btree (chat_session_id);
+
+
+--
 -- Name: index_token_usages_on_llm_model; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7594,6 +7602,14 @@ ALTER TABLE ONLY public.configuration_experiments
 
 ALTER TABLE ONLY public.token_usages
     ADD CONSTRAINT fk_rails_2e5496eeab FOREIGN KEY (knowledge_run_id) REFERENCES public.knowledge_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: token_usages fk_rails_chat_session_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.token_usages
+    ADD CONSTRAINT fk_rails_chat_session_id FOREIGN KEY (chat_session_id) REFERENCES public.chat_sessions(id);
 
 
 --
@@ -9994,6 +10010,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260428120000'),
 ('20260428025840'),
 ('20260427225726'),
 ('20260427223009'),

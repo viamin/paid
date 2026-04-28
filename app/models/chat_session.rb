@@ -14,6 +14,7 @@ class ChatSession < ApplicationRecord
   belongs_to :created_by, class_name: "User", optional: true
 
   has_many :messages, class_name: "ChatMessage", dependent: :destroy
+  has_many :token_usages, dependent: :destroy
   has_many :chat_session_projects, dependent: :destroy
   has_many :projects, through: :chat_session_projects
 
@@ -25,6 +26,22 @@ class ChatSession < ApplicationRecord
 
   scope :active, -> { where(status: "active") }
   scope :idle_expired, -> { where(status: "active").where("idle_timeout_at < ?", Time.current) }
+
+  def total_tokens_input
+    messages.sum(:tokens_input)
+  end
+
+  def total_tokens_output
+    messages.sum(:tokens_output)
+  end
+
+  def total_tokens
+    total_tokens_input + total_tokens_output
+  end
+
+  def estimated_cost_cents
+    token_usages.sum(:cost_cents)
+  end
 
   private
 
