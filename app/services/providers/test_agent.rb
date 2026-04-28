@@ -189,6 +189,7 @@ module Providers
       begin
         test_run.with_container do |run|
           executor = Containers::HarnessExecutor.new(run)
+          prepare_kilocode_config!(executor) if kilocode_direct_outbound?
           harness_result = AgentHarness.check_provider(
             harness_provider_name,
             timeout: TIMEOUT,
@@ -230,11 +231,65 @@ module Providers
     # Builds a ProviderRuntime for container-based smoke tests.
     #
     # For direct-outbound providers (e.g. opencode with API key), this returns
-    # the provider's full runtime with env/base_url overrides. For standard
-    # subscription-auth providers, this returns nil (the provider runs through
-    # the Paid proxy with inherited container env).
+    # the provider's full runtime with env/base_url overrides. For kilocode
+    # direct-outbound, this builds a runtime with the upstream API key env
+    # (config file bootstrap is handled by prepare_kilocode_config!).
+    # For standard subscription-auth providers, this returns nil (the provider
+    # runs through the Paid proxy with inherited container env).
     def container_provider_runtime
+      return kilocode_provider_runtime if kilocode_direct_outbound?
+
       provider.agent_harness_provider_runtime
+    end
+
+    # Builds a ProviderRuntime for kilocode direct-outbound smoke tests.
+    #
+    # Kilocode reads its model/provider config from ~/.config/kilo/config.json
+    # (materialized by prepare_kilocode_config!) and picks up the upstream API
+    # key from environment variables. This runtime passes the API key through
+    # the correct env var for the configured upstream provider.
+    def kilocode_provider_runtime
+      api_key = provider.provider_api_key&.api_key.to_s
+      api_provider = provider.kilocode_api_provider
+      api_config = Provider::DIRECT_OUTBOUND_API_PROVIDERS.fetch(
+        api_provider, Provider::DIRECT_OUTBOUND_API_PROVIDERS["anthropic"]
+      )
+
+      # Kilocode delegates to the upstream provider's SDK. The env var name
+      # depends on the chosen upstream: native providers use their own key
+      # (ANTHROPIC_API_KEY), OpenAI-compatible providers use OPENAI_API_KEY.
+      env_var = if api_config[:kilocode_api] && api_config[:kilocode_api] != "openai-compatible"
+        "#{api_provider.upcase}_API_KEY"
+      else
+        "OPENAI_API_KEY"
+      end
+
+      AgentHarness::ProviderRuntime.new(
+        model: provider.kilocode_model_id,
+        api_provider: api_provider,
+        env: { env_var => api_key }
+      )
+    end
+
+    def kilocode_direct_outbound?
+      provider.provider_key == "kilocode" && provider.requires_direct_outbound?
+    end
+
+    # Writes the kilocode config file into the container before the smoke test.
+    #
+    # This preserves the direct-outbound kilocode bootstrap until agent-harness
+    # exposes an equivalent preparation contract for kilocode providers.
+    def prepare_kilocode_config!(executor)
+      config_json = provider.kilocode_config_json
+      preparation = AgentHarness::ExecutionPreparation.new(
+        file_writes: [
+          { path: "/home/agent/.config/kilo/config.json", content: config_json }
+        ]
+      )
+      executor.execute(
+        %w[true],
+        preparation: preparation
+      )
     end
 
     def build_test_run

@@ -42,6 +42,26 @@ RSpec.describe Containers::HarnessExecutor do
       )
     end
 
+    it "shell-escapes env var names in the string-command unset path" do
+      container_result = Containers::Provision::Result.success(
+        stdout: "", stderr: "", exit_code: 0
+      )
+      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+
+      executor.execute(
+        "kilo run test",
+        env: { "SAFE_VAR" => nil }
+      )
+
+      expect(agent_run).to have_received(:execute_in_container).with(
+        [ "sh", "-c", "env -u SAFE_VAR kilo run test" ],
+        timeout: nil,
+        stream: false,
+        env: {},
+        preparation: nil
+      )
+    end
+
     it "maps failed container results to non-zero exit codes" do
       container_result = Containers::Provision::Result.failure(
         error: "auth failed", stdout: "", stderr: "auth failed", exit_code: 1

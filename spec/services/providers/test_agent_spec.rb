@@ -569,6 +569,57 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
+    context "when direct-outbound kilocode is tested" do
+      let(:api_key) { create(:provider_api_key, user: user, api_service_type: "anthropic") }
+      let(:provider_record) do
+        create(
+          :provider,
+          user: user,
+          provider_key: "kilocode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          enabled_for_agent_runs: false,
+          enabled_for_fallback: false,
+          config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-20250514" } }
+        )
+      end
+
+      let(:prep_result) do
+        Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+        allow(test_run).to receive(:execute_in_container).and_return(prep_result)
+        allow(AgentHarness).to receive(:check_provider).and_return(
+          name: :kilocode, status: "ok", message: "Smoke test passed", latency_ms: 30, error_category: nil, check: :smoke_test
+        )
+      end
+
+      it "passes a provider runtime with the upstream API key" do
+        described_class.call(provider: provider)
+
+        expect(AgentHarness).to have_received(:check_provider).with(
+          :kilocode,
+          timeout: 60,
+          executor: an_instance_of(Containers::HarnessExecutor),
+          provider_runtime: an_instance_of(AgentHarness::ProviderRuntime)
+        )
+      end
+
+      it "materializes the kilocode config file before the smoke test" do
+        described_class.call(provider: provider)
+
+        expect(test_run).to have_received(:execute_in_container).with(
+          %w[true],
+          hash_including(preparation: an_instance_of(AgentHarness::ExecutionPreparation))
+        )
+      end
+    end
+
     context "when the provider reports a rate limit via container smoke test" do
       let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
 

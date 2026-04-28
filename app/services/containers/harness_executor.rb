@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "shellwords"
+
 module Containers
   # Adapts container-based command execution to the AgentHarness::CommandExecutor
   # interface, allowing agent-harness smoke tests to run inside provisioned
@@ -74,7 +76,7 @@ module Containers
       if command.is_a?(Array)
         [ "env", *unset_vars.flat_map { |var| [ "-u", var ] }, *command ]
       else
-        unset_flags = unset_vars.map { |var| "-u #{var}" }.join(" ")
+        unset_flags = unset_vars.map { |var| "-u #{Shellwords.shellescape(var)}" }.join(" ")
         [ "sh", "-c", "env #{unset_flags} #{command}" ]
       end
     end
