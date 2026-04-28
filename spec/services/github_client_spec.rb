@@ -2105,4 +2105,43 @@ RSpec.describe GithubClient do
       end
     end
   end
+
+  describe "GitHub health state integration" do
+    it "records a failure on server errors" do
+      stub_request(:get, "#{api_base}/user")
+        .to_return(status: 500,
+          body: { message: "Internal Server Error" }.to_json,
+          headers: { "Content-Type" => "application/json" })
+
+      state = create(:github_health_state)
+
+      expect { client.validate_token }.to raise_error(GithubClient::ApiError)
+      expect(state.reload.failure_count).to be >= 1
+    end
+
+    it "records a success on successful calls" do
+      stub_request(:get, "#{api_base}/user")
+        .to_return(
+          status: 200,
+          body: { login: "testuser", id: 1, name: "Test", email: "t@t.com" }.to_json,
+          headers: { "Content-Type" => "application/json", "X-OAuth-Scopes" => "repo" }
+        )
+
+      state = create(:github_health_state, failure_count: 3)
+
+      client.validate_token
+
+      expect(state.reload.failure_count).to eq(0)
+    end
+
+    it "does not record a failure on 404 errors" do
+      stub_request(:get, "#{api_base}/repos/owner/repo")
+        .to_return(status: 404, body: { message: "Not Found" }.to_json, headers: { "Content-Type" => "application/json" })
+
+      state = create(:github_health_state)
+
+      expect { client.repository("owner/repo") }.to raise_error(GithubClient::NotFoundError)
+      expect(state.reload.failure_count).to eq(0)
+    end
+  end
 end

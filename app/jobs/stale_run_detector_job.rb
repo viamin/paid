@@ -64,7 +64,15 @@ class StaleRunDetectorJob < ApplicationJob
       )
     end
 
+    github_down = github_circuit_open?
+
     stale_pending_runs(pending_threshold).find_each do |agent_run|
+      if github_down
+        skipped += 1
+        log_skip(agent_run, "github_circuit_open")
+        next
+      end
+
       case requeue_stale_pending_run(agent_run)
       when :requeued
         requeued += 1
@@ -111,6 +119,10 @@ class StaleRunDetectorJob < ApplicationJob
   end
 
   private
+
+  def github_circuit_open?
+    !GithubHealthState.github_available_with_recovery?
+  end
 
   # Uses the default timeout rather than per-user maximums. Individual run
   # timeouts are enforced by the Temporal workflow; this job is a safety net

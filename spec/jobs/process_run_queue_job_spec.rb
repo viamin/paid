@@ -450,6 +450,29 @@ RSpec.describe ProcessRunQueueJob do
       expect(normal_run.reload.status).to eq("pending")
     end
 
+    context "when GitHub circuit is open" do
+      it "skips dispatching entirely" do
+        create(:github_health_state, :circuit_open)
+        create(:agent_run, :queued)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+      end
+
+      it "attempts circuit recovery when timeout has elapsed" do
+        state = create(:github_health_state, circuit_state: "open",
+          circuit_opened_at: 10.minutes.ago, failure_count: 5)
+        create(:agent_run, :queued)
+
+        expect(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(state.reload.circuit_state).to eq("half_open")
+      end
+    end
+
     it "includes workflow input fields from the agent run" do
       issue = create(:issue)
       queued_run = create(:agent_run, :queued,
