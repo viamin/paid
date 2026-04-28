@@ -47,8 +47,8 @@ module Containers
 
     # Always returns a truthy path so harness binary-availability checks pass.
     # The actual binary availability is determined by the container image.
-    def which(_binary)
-      "/usr/local/bin/#{_binary}"
+    def which(binary)
+      "/usr/local/bin/#{binary}"
     end
 
     def available?(_binary)
