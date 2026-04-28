@@ -4,12 +4,16 @@ module Activities
   # Merges a pull request using the project's configured merge method.
   # Idempotent: checks if the PR is already merged before attempting.
   # Updates the issue's pr_review_phase to "merged" on success.
-  # Handles expected merge failures (409/405/422) gracefully so the
-  # poll loop can continue and re-scan later.
+  # Handles expected merge failures gracefully so the poll loop can
+  # continue and re-scan later.
+  #
+  # Merge execution is routed through the repository provider
+  # ({Automation::Providers::RepositoryProvider#merge_pull_request}) so
+  # the activity is provider-agnostic — only the provider layer talks
+  # to the source-control host.
   class MergePullRequestActivity < BaseActivity
     activity_name "MergePullRequest"
 
-    EXPECTED_MERGE_STATUSES = [ 405, 409, 422 ].freeze
     PAID_AUTO_MERGED_LABEL = "paid-auto-merged"
     AUTO_MERGE_COMMENT = "This PR was automatically merged by paid's auto-merge feature."
 
@@ -27,10 +31,12 @@ module Activities
         return { merged: false, skipped: true, pr_number: pr_number }
       end
 
-      client = project.github_token.client
-      pr_data = client.pull_request(project.full_name, pr_number)
+      provider = Automation::Providers::Resolver.repository_for(project)
+      repo = project.full_name
 
-      merged = if pr_data.merged_at
+      pr_data = provider.fetch_pull_request(repo: repo, number: pr_number)
+
+      merged = if pr_data.merged
         logger.info(
           message: "pr_review.already_merged",
           project_id: project.id,
@@ -38,16 +44,16 @@ module Activities
         )
         true
       else
-        attempt_merge(client, project, pr_number)
+        attempt_merge(provider, project, repo, pr_number)
       end
 
       if merged
         issue.update!(pr_review_phase: "merged")
         # Only label and comment on PRs that this activity actually merged —
         # already-merged PRs may have been merged manually by a human.
-        unless pr_data.merged_at
-          add_phase_label(client, project, pr_number, PAID_AUTO_MERGED_LABEL)
-          add_merge_comment(client, project, pr_number)
+        unless pr_data.merged
+          add_auto_merge_label(provider, project, repo, pr_number)
+          add_merge_comment(provider, project, repo, pr_number)
         end
       end
 
@@ -56,40 +62,51 @@ module Activities
 
     private
 
-    def add_merge_comment(client, project, pr_number)
-      client.add_comment(project.full_name, pr_number, AUTO_MERGE_COMMENT)
-    rescue GithubClient::Error => e
+    def attempt_merge(provider, project, repo, pr_number)
+      config = Automation::Configuration::AutoMerge.from_project(project)
+
+      result = provider.merge_pull_request(
+        repo: repo,
+        number: pr_number,
+        method: config.merge_method.to_sym
+      )
+      logger.info(
+        message: "pr_review.merged",
+        project_id: project.id,
+        pr_number: pr_number,
+        merge_method: config.merge_method
+      )
+      result.merged
+    rescue Automation::Providers::RepositoryProvider::ProviderError => e
       logger.warn(
-        message: "pr_review.add_comment_failed",
+        message: "pr_review.merge_failed_expected",
+        project_id: project.id,
+        pr_number: pr_number,
+        error: e.message
+      )
+      false
+    end
+
+    def add_auto_merge_label(provider, project, repo, pr_number)
+      provider.add_labels(repo: repo, number: pr_number, labels: [ PAID_AUTO_MERGED_LABEL ])
+    rescue Automation::Providers::RepositoryProvider::ProviderError => e
+      logger.warn(
+        message: "pr_review.add_label_failed",
         project_id: project.id,
         pr_number: pr_number,
         error: e.message
       )
     end
 
-    def attempt_merge(client, project, pr_number)
-      client.merge_pull_request(
-        project.full_name, pr_number,
-        merge_method: project.merge_method
-      )
-      logger.info(
-        message: "pr_review.merged",
-        project_id: project.id,
-        pr_number: pr_number,
-        merge_method: project.merge_method
-      )
-      true
-    rescue GithubClient::ApiError => e
-      raise unless EXPECTED_MERGE_STATUSES.include?(e.status)
-
+    def add_merge_comment(provider, project, repo, pr_number)
+      provider.add_comment(repo: repo, number: pr_number, body: AUTO_MERGE_COMMENT)
+    rescue Automation::Providers::RepositoryProvider::ProviderError => e
       logger.warn(
-        message: "pr_review.merge_failed_expected",
+        message: "pr_review.add_comment_failed",
         project_id: project.id,
         pr_number: pr_number,
-        status: e.status,
         error: e.message
       )
-      false
     end
   end
 end
