@@ -7,7 +7,7 @@ module Automation
       #
       # {AutoPick} (the policy) depends on a +CandidateSource+ for every
       # data-access operation it needs — filtering a project's issues to the
-      # auto-pickable set, ordering them by priority/unblock/tree signals,
+      # auto-pickable set, ordering them by priority/FIFO signals,
       # and answering "is this issue eligible?" questions surfaced in the
       # UI. Keeping those operations behind this seam lets the strategy stay
       # pure policy while still reusing the existing Postgres queries that
