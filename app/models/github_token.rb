@@ -69,14 +69,32 @@ class GithubToken < ApplicationRecord
 
   def mark_validating!
     update!(validation_status: "validating", validation_error: nil)
+    broadcast_validation_status
   end
 
   def mark_validated!
     update!(validation_status: "validated", validation_error: nil)
+    broadcast_validation_status
   end
 
   def mark_validation_failed!(error_message)
     update!(validation_status: "failed", validation_error: error_message)
+    broadcast_validation_status
+  end
+
+  def broadcast_validation_status
+    broadcast_replace_to(
+      self, :validation_status,
+      target: "validation-status",
+      partial: "github_tokens/validation_status",
+      locals: { github_token: self }
+    )
+    broadcast_replace_to(
+      self, :validation_status,
+      target: "status-badge",
+      partial: "github_tokens/status_badge",
+      locals: { github_token: self }
+    )
   end
 
   # Whether this token is a fine-grained personal access token.

@@ -293,6 +293,70 @@ RSpec.describe GithubToken do
         end
       end
     end
+
+    describe "validation status broadcasts" do
+      let(:token) { create(:github_token, :pending_validation) }
+
+      before { allow(token).to receive(:broadcast_replace_to) }
+
+      shared_examples "broadcasts the validation panel and the status badge" do
+        it "replaces the validation-status panel" do
+          expect(token).to have_received(:broadcast_replace_to).with(
+            token, :validation_status,
+            target: "validation-status",
+            partial: "github_tokens/validation_status",
+            locals: { github_token: token }
+          )
+        end
+
+        it "replaces the status-badge in the page header" do
+          expect(token).to have_received(:broadcast_replace_to).with(
+            token, :validation_status,
+            target: "status-badge",
+            partial: "github_tokens/status_badge",
+            locals: { github_token: token }
+          )
+        end
+      end
+
+      describe "#mark_validating!" do
+        before { token.mark_validating! }
+
+        it_behaves_like "broadcasts the validation panel and the status badge"
+      end
+
+      describe "#mark_validated!" do
+        before { token.mark_validated! }
+
+        it_behaves_like "broadcasts the validation panel and the status badge"
+      end
+
+      describe "#mark_validation_failed!" do
+        before { token.mark_validation_failed!("boom") }
+
+        it_behaves_like "broadcasts the validation panel and the status badge"
+      end
+    end
+
+    describe "broadcast_validation_status partial rendering (integration)" do
+      it "renders the pending state through Turbo::StreamsChannel without raising" do
+        token = create(:github_token, :pending_validation)
+
+        expect { token.broadcast_validation_status }.not_to raise_error
+      end
+
+      it "renders the failed state (which contains a button_to retry form) without raising" do
+        token = create(:github_token, :validation_failed)
+
+        expect { token.broadcast_validation_status }.not_to raise_error
+      end
+
+      it "renders the validated state without raising" do
+        token = create(:github_token, validation_status: "validated", accessible_repositories: [ { "id" => 1, "full_name" => "owner/repo" } ])
+
+        expect { token.broadcast_validation_status }.not_to raise_error
+      end
+    end
   end
 
   describe "scopes attribute" do
