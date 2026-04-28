@@ -481,7 +481,7 @@ Deliverables:
 
 **Objective**: Automatically pause work when quality drops.
 
-**Status**: Mostly complete — `QualityGateThreshold` model with configurable per-project thresholds, `QualityAlerts::CheckGate` and `QualityPause::Check` enforce gates and auto-pause. `QualityMetrics::TrendAnalysis` integrated. Only quality recovery workflows (#716) remain (schema table exists, no model/service yet).
+**Status**: Complete — `QualityGateThreshold` model with configurable per-project thresholds, `QualityAlerts::CheckGate` and `QualityPause::Check` enforce gates and auto-pause. `QualityMetrics::TrendAnalysis` integrated. Quality recovery workflows (#716) now fully implemented (see Phase 3.5.5).
 
 Tasks:
 
@@ -489,7 +489,7 @@ Tasks:
 - [x] Implement quality gate checks in workflows (#713)
 - [x] Automatic pause on threshold breach (#714)
 - [x] Alert to user for intervention (#715)
-- [ ] Quality recovery workflows (#716) — schema table exists, model/service pending
+- [x] Quality recovery workflows (#716) — `QualityRecoveryAction` model, `QualityRecovery::ModelEscalation`, `AutoImprove`, `Diagnose`, `SuggestFixes`, `ResumeWithMonitoring`, `ExecuteAction`
 - [x] Quality trend analysis with gate integration (#717)
 
 Deliverables:
@@ -579,19 +579,21 @@ Deliverables:
 
 **Why this phase exists**: Phase 3's core features are built (multi-agent orchestration, prompt evolution, guardrails, scaling infrastructure), but open issues reveal unfinished wiring in Phase 2's intelligence layer and several security/reliability gaps. Phase 4's learning systems require these foundations to be solid — A/B tests must produce real data, multi-provider must work end-to-end, and the system must handle concurrent load without credential leaks or data drift.
 
-**Status**: Not started.
+**Status**: In progress. Sections 3.5.1 through 3.5.3 and 3.5.5 are complete. Section 3.5.6 (Provider Quota Tracking) Steps 1–2 are substantially done. Section 3.5.4 (Performance Fundamentals) and 3.5.6 Steps 3–6 remain.
 
 ### 3.5.1 Security & Reliability
 
 **Objective**: Fix P1 security vulnerabilities and data integrity issues.
 
+**Status**: Complete — All P1 security and data integrity issues resolved.
+
 Tasks:
 
-- [ ] Remove direct provider credential injection from agent runs (#1281)
-- [ ] Fix schema.rb drift from shared database across agent containers (#1280)
-- [ ] Fix container network isolation alignment across provider auth modes (#1284)
-- [ ] Fix GitHub sync incremental watermark permanently skipping issues (#1257)
-- [ ] Fix notification Turbo Frame mismatch ("Content missing") (#1263)
+- [x] Remove direct provider credential injection from agent runs (#1281)
+- [x] Fix schema.rb drift from shared database across agent containers (#1280)
+- [x] Fix container network isolation alignment across provider auth modes (#1284)
+- [x] Fix GitHub sync incremental watermark permanently skipping issues (#1257)
+- [x] Fix notification Turbo Frame mismatch ("Content missing") (#1263)
 
 Deliverables:
 
@@ -604,16 +606,18 @@ Deliverables:
 
 **Objective**: Wire half-built Phase 2 features so they work end-to-end in production.
 
+**Status**: Complete — All Phase 2 features now wired end-to-end in production.
+
 Tasks:
 
-- [ ] Wire A/B test assignment into live agent execution (#1267)
-- [ ] Complete enhance_issue pipeline: knowledge context injection (#1265)
-- [ ] Complete enhance_issue pipeline: quality metrics (#1266)
-- [ ] Complete enhance_issue pipeline: label management and re-evaluation loop (#991)
-- [ ] Add tests for enhance_issue enhancement and re-evaluation workflow (#992)
-- [ ] Replace "primary provider" with "automated provider" and multi-provider modes (#778)
-- [ ] Intelligent model selection based on task complexity (#760)
-- [ ] Add container-authenticated knowledge search endpoint for agent tool access (#1272)
+- [x] Wire A/B test assignment into live agent execution (#1267)
+- [x] Complete enhance_issue pipeline: knowledge context injection (#1265)
+- [x] Complete enhance_issue pipeline: quality metrics (#1266)
+- [x] Complete enhance_issue pipeline: label management and re-evaluation loop (#991)
+- [x] Add tests for enhance_issue enhancement and re-evaluation workflow (#992)
+- [x] Replace "primary provider" with "automated provider" and multi-provider modes (#778)
+- [x] Intelligent model selection based on task complexity (#760)
+- [x] Add container-authenticated knowledge search endpoint for agent tool access (#1272)
 
 Deliverables:
 
@@ -626,10 +630,12 @@ Deliverables:
 
 **Objective**: Prevent any single user or project from monopolizing agent run capacity.
 
+**Status**: Complete — Within-user round-robin and cross-user interleaving both implemented.
+
 Tasks:
 
-- [ ] Implement within-user fair queueing across projects (#1274)
-- [ ] Implement cross-user fair queueing (#1275)
+- [x] Implement within-user fair queueing across projects (#1274)
+- [x] Implement cross-user fair queueing (#1275)
 
 Deliverables:
 
@@ -661,9 +667,11 @@ Deliverables:
 
 **Objective**: Complete the quality gate loop — when quality gates pause work, provide a clear path to resume.
 
+**Status**: Complete — `QualityRecoveryAction` model with `QualityRecovery::ModelEscalation`, `AutoImprove`, `Diagnose`, `SuggestFixes`, `ResumeWithMonitoring`, and `ExecuteAction` services. Integrated into `QualityPause::Check`, `Models::Select`, and `CheckQualityGateActivity`.
+
 Tasks:
 
-- [ ] Implement quality recovery workflows (#716) — build model and service for `quality_recovery_actions` table
+- [x] Implement quality recovery workflows (#716) — `QualityRecoveryAction` model, `QualityRecovery::ModelEscalation`, `AutoImprove`, `Diagnose`, `SuggestFixes`, `ResumeWithMonitoring`, `ExecuteAction` services
 
 Deliverables:
 
@@ -686,10 +694,10 @@ Display per-provider aggregations from data Paid already collects — no new cre
 
 Tasks:
 
-- [ ] Create `Providers::UsageStats` service — aggregate `TokenUsage` by `AgentRun.effective_provider` for 7-day and 30-day windows
-- [ ] Add per-provider spend column to `/providers` index (tokens, cost, run count)
-- [ ] Add per-provider fallback frequency display (from `providers_attempted` JSON)
-- [ ] Add per-provider rate-limit event count (from `AgentRun` statuses)
+- [x] Create `Providers::UsageStats` service — aggregate `TokenUsage` by `AgentRun.effective_provider` for 7-day and 30-day windows
+- [x] Add per-provider spend column to `/providers` index (tokens, cost, run count)
+- [x] Add per-provider fallback frequency display (from `providers_attempted` JSON)
+- [x] Add per-provider rate-limit event count (from `AgentRun` statuses)
 - [ ] Add per-provider circuit breaker history (recent transitions from `ProviderState`)
 
 Deliverables:
@@ -704,17 +712,17 @@ Move existing provider-specific logic from Paid into agent-harness where it belo
 
 Tasks:
 
-- [ ] Move `AUTH_EXPIRED_PATTERNS` (Codex-specific) to agent-harness Codex provider class
-- [ ] Move `PROVIDER_ABORT_PATTERNS` to agent-harness provider classes
-- [ ] Deduplicate and move `parse_rate_limit_reset` to agent-harness provider classes
-- [ ] Move `api_key_env_var_names_for` / `api_key_unset_vars_for` / `SUBSCRIPTION_AUTH_UNSET_VARS` to agent-harness provider classes as `env_var_names` / `subscription_unset_vars`
-- [ ] Move Codex config TOML format (`wire_api`, `model_provider`) to agent-harness Codex provider class
-- [ ] Move Gemini-specific env vars (`GEMINI_SANDBOX`, `GEMINI_CLI_DISABLE_RETRIES`) to agent-harness Gemini provider class
-- [ ] Move Codex OAuth lockfile mechanism to agent-harness Codex provider class
-- [ ] Move provider-specific test command flags to agent-harness provider classes
-- [ ] Move secrets proxy token extraction (Anthropic/OpenAI/Google response shapes) to agent-harness provider classes
-- [ ] Move TestAgent error patterns to agent-harness provider classes
-- [ ] Replace all Paid hard-coded arrays/methods with agent-harness calls
+- [x] Move `AUTH_EXPIRED_PATTERNS` (Codex-specific) to agent-harness Codex provider class
+- [x] Move `PROVIDER_ABORT_PATTERNS` to agent-harness provider classes
+- [x] Deduplicate and move `parse_rate_limit_reset` to agent-harness provider classes
+- [x] Move `api_key_env_var_names_for` / `api_key_unset_vars_for` / `SUBSCRIPTION_AUTH_UNSET_VARS` to agent-harness provider classes as `env_var_names` / `subscription_unset_vars`
+- [x] Move Codex config TOML format (`wire_api`, `model_provider`) to agent-harness Codex provider class
+- [x] Move Gemini-specific env vars (`GEMINI_SANDBOX`, `GEMINI_CLI_DISABLE_RETRIES`) to agent-harness Gemini provider class
+- [x] Move Codex OAuth lockfile mechanism to agent-harness Codex provider class — config path upstreamed; flock-based locking remains in Paid (infrastructure concern)
+- [x] Move provider-specific test command flags to agent-harness provider classes
+- [x] Move secrets proxy token extraction (Anthropic/OpenAI/Google response shapes) to agent-harness provider classes
+- [x] Move TestAgent error patterns to agent-harness provider classes
+- [x] Replace all Paid hard-coded arrays/methods with agent-harness calls — remaining Paid-side arrays are proxy infrastructure, not provider execution knowledge
 
 Deliverables:
 
@@ -801,15 +809,111 @@ Deliverables:
 
 ### Phase 3.5 Completion Criteria
 
-- [ ] Zero P1 security or data integrity issues open
-- [ ] A/B tests produce data from live agent runs
-- [ ] enhance_issue goal works end-to-end
-- [ ] Multi-provider with automatic selection works
-- [ ] Fair queueing prevents capacity starvation
+- [x] Zero P1 security or data integrity issues open
+- [x] A/B tests produce data from live agent runs
+- [x] enhance_issue goal works end-to-end
+- [x] Multi-provider with automatic selection works
+- [x] Fair queueing prevents capacity starvation
 - [ ] Performance handles 10+ concurrent projects with benchmarks
-- [ ] Provider quota tracking: per-provider usage visible on /providers page
-- [ ] Provider-specific code upstreamed to agent-harness
+- [x] Provider quota tracking: per-provider usage visible on /providers page
+- [x] Provider-specific code upstreamed to agent-harness
 - [ ] Upstream quota polling wired for at least one provider
+
+### 3.5.7 Interactive Chat
+
+**Objective**: Provide a conversational interface for users to interact with Paid's knowledge and agent capabilities in real time.
+
+**RDR**: [RDR-028](rdrs/RDR-028-interactive-chat.md)
+
+Tasks:
+
+- [x] Create chat sessions and messages database schema (#1485) — `chat_sessions`, `chat_messages`, `chat_session_projects`
+- [x] Create chat session service layer (#1514) — `ChatSessions::Create`, `SendMessage`, `Close`
+- [x] Add chat system prompt and context injection (#1521) — `ChatSessions::BuildSystemPrompt`
+- [x] Add chat API endpoints with SSE streaming (#1523) — `ChatController` with real-time streaming
+- [x] Add chat cost tracking and limits (#1522) — token usage and spending caps per session
+
+Deliverables:
+
+- Users can start chat sessions linked to projects
+- Real-time streaming responses via SSE
+- Chat context includes project knowledge base
+- Token usage tracked and capped per session
+
+### 3.5.8 Knowledge Evolution
+
+**Objective**: Automatically evolve the knowledge base by analyzing agent run outcomes and identifying gaps.
+
+**RDR**: [RDR-027](rdrs/RDR-027-auto-enhance-knowledge-evolution.md)
+
+Tasks:
+
+- [x] Add `KnowledgeRecommendation` model with lifecycle states (#1513) — pending/accepted/dismissed/implemented
+- [x] Add `knowledge_evolution_enabled` project setting (#1513)
+- [x] Create `KnowledgeEvolutionJob` (GoodJob cron), `KnowledgeEvolutionWorkflow` (Temporal), and activities (#1524) — `SampleEnhanceRuns`, `AnalyzeKnowledgeGaps`, `RecordKnowledgeRecommendations`
+- [x] Add `Knowledge::UsageStats` service and dashboard integration (#1504)
+- [x] Add `KnowledgeUsageStat` model for per-artifact-type usage tracking (#1448)
+
+Deliverables:
+
+- Knowledge base evolves based on agent run feedback
+- Per-artifact usage stats visible in dashboard
+- Knowledge gaps surfaced as actionable recommendations
+
+### 3.5.9 Configuration Experiments
+
+**Objective**: Generalize A/B testing beyond prompts to any configuration parameter.
+
+Tasks:
+
+- [x] Extend A/B testing to non-prompt configuration experiments (#1410) — `ConfigurationExperiment`, `ConfigurationExperimentVariant`, `ConfigurationExperimentAssignment` models with full lifecycle
+- [x] Integrate configuration experiments into `Knowledge::ContextBundle::Build` and `QualityMetrics::Collect`
+
+Deliverables:
+
+- Any configuration parameter can be A/B tested
+- Results feed into quality metrics and knowledge context
+
+### 3.5.10 Automation Strategy Extraction
+
+**Objective**: Extract hardcoded automation policies into modular strategy classes for extensibility and future Phase 4 learned strategies.
+
+**RDR**: [RDR-023](rdrs/RDR-023-automation-modularization-architecture.md)
+
+Tasks:
+
+- [x] Extract auto-merge into `Automation::Strategies::AutoMerge` strategy module (#1120, #1510)
+- [x] Extract auto-continue into `Automation::Strategies::AutoContinue` strategy module (#1121, #1515)
+- [x] Integrate `analyze_issue` gate into auto-pick strategy (#1475)
+
+Deliverables:
+
+- Automation policies are modular and independently testable
+- New strategies can be added without modifying orchestration workflows
+- Foundation laid for Phase 4 learned orchestration strategies
+
+### 3.5.11 Operational Infrastructure
+
+**Objective**: Improve operational visibility and safe deployment capabilities.
+
+Tasks:
+
+- [x] Add operational alert rules for stalled PRs, runaway loops, and quota exhaustion (#1451)
+- [x] Expose Flipper percentage rollout with progressive deployment UI (#1460) — `FeatureFlags.enable_percentage_of_actors`, `TenantConfigurationsController`
+- [x] Add quality escalation to higher model tier (#1450) — `QualityRecovery::ModelEscalation` with learned defaults
+- [x] Add tier usage and tier-vs-quality dashboards (#1455)
+- [x] Add GitHub circuit breaker to pause dispatching during outages (#1502)
+- [x] Add periodic GitHub token health check job (#1503)
+- [x] Auto-pause projects when GitHub token is confirmed expired (#1505)
+- [x] Add provider-contract smoke test for paid-agent image (#1318, #1487)
+- [x] Surface in-progress phase in agent run timeline (#1509)
+- [x] Move active runs above queue health in live dashboard (#1499)
+
+Deliverables:
+
+- Operators receive proactive alerts for operational issues
+- Progressive feature rollouts enable safe deployments
+- Model tier escalation improves quality without manual intervention
 
 ---
 
