@@ -808,21 +808,24 @@ module Activities
     # `updated_at` on GitHub. Without this escape hatch the skip-unchanged
     # optimization prevents the scanner from ever reconsidering them.
     #
-    # Human-authored ready-phase PRs with auto-merge enabled face the same
-    # problem: CI transitions from pending to green (or owner approvals
-    # arriving) don't always bump `github_updated_at`, so the PR is never
-    # re-evaluated and sits stuck in "ready" despite meeting all auto-merge
-    # conditions.
+    # Human-authored ready/escalated PRs with auto_merge_mode "all" face the
+    # same problem: CI transitions from pending to green do not update the
+    # PR's `updated_at` on GitHub. Owner approvals do update it, but if the
+    # owner approves before CI settles, the scan stamps `last_pr_scan_at`
+    # while CI is still pending, and the subsequent green transition never
+    # triggers a rescan. Restricted to auto_merge_mode "all" (not
+    # "dependabot_only") because only "all" enables auto-merge for
+    # non-Dependabot PRs.
     def scan_age_exceeds_ceiling?(project, issue)
       draft_or_restarted = issue.pr_review_phase.in?(%w[draft restarted])
       bot_ready_for_merge = issue.pr_review_phase == "ready" &&
         bot_user?(issue.github_creator_login) &&
         project.auto_merge_dependabot?
-      human_ready_auto_merge = issue.pr_review_phase == "ready" &&
+      human_auto_merge = issue.pr_review_phase.in?(%w[ready escalated]) &&
         !bot_user?(issue.github_creator_login) &&
-        project.auto_merge_enabled?
+        project.auto_merge_mode == "all"
 
-      return false unless draft_or_restarted || bot_ready_for_merge || human_ready_auto_merge
+      return false unless draft_or_restarted || bot_ready_for_merge || human_auto_merge
 
       ceiling = SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
       stale = issue.last_pr_scan_at < ceiling.seconds.ago
