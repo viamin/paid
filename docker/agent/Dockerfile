@@ -185,10 +185,32 @@ RUN if [ -z "${GEMINI_CLI_INSTALL_COMMAND}" ]; then \
     && echo "Installing Gemini CLI via agent-harness contract: ${GEMINI_CLI_INSTALL_COMMAND}" \
     && eval "${GEMINI_CLI_INSTALL_COMMAND}"
 
-RUN npm install -g --ignore-scripts @kilocode/cli@7.1.3
+# Kilocode CLI: version is owned by agent-harness (installation_contract).
+# KILOCODE_INSTALL_COMMAND is extracted from agent-harness at build time by
+# build-agent-image.sh / agent-image.yml — Paid no longer pins this version.
+# Supply-chain hardening: enforce --ignore-scripts regardless of what the
+# contract returns, matching the policy applied to every other npm install above.
+ARG KILOCODE_INSTALL_COMMAND
+RUN if [ -z "${KILOCODE_INSTALL_COMMAND}" ]; then \
+        echo "ERROR: KILOCODE_INSTALL_COMMAND not set; aborting build" >&2; \
+        exit 1; \
+    fi \
+    && case "${KILOCODE_INSTALL_COMMAND}" in \
+        *--ignore-scripts*) ;; \
+        *) echo "ERROR: KILOCODE_INSTALL_COMMAND must include --ignore-scripts for supply-chain safety" >&2; exit 1 ;; \
+    esac \
+    && echo "Installing Kilocode CLI via agent-harness contract: ${KILOCODE_INSTALL_COMMAND}" \
+    && eval "${KILOCODE_INSTALL_COMMAND}"
 
-# NOTE: End-to-end execution depends on agent-harness build_command support (agent-harness#32).
-RUN npm install -g --ignore-scripts opencode-ai@1.3.2
+# OpenCode CLI: version is owned by agent-harness (installation_contract).
+# OPENCODE_PACKAGE is extracted from agent-harness at build time by
+# build-agent-image.sh / agent-image.yml — Paid no longer pins this version.
+ARG OPENCODE_PACKAGE
+RUN if [ -z "${OPENCODE_PACKAGE}" ]; then \
+        echo "ERROR: OPENCODE_PACKAGE build-arg is required (sourced from agent-harness)" >&2; \
+        exit 1; \
+    fi \
+    && npm install -g --ignore-scripts "${OPENCODE_PACKAGE}"
 
 # NOTE: @githubnext/github-copilot-cli@0.1.0 publishes a broken package that
 # declares the github-copilot-cli bin without shipping the target file,
