@@ -30,14 +30,22 @@ module Tools
 
       issue = project.issues.find(issue_id)
 
+      provider_id, agent_type = AgentRuns::ProviderResolver.call(
+        project: project,
+        goal: goal
+      )
+
       run = AgentRun.create!(
-        project:,
-        issue:,
-        agent_type: "claude_code",
-        goal:,
+        project: project,
+        issue: issue,
+        provider_id: provider_id,
+        agent_type: agent_type,
+        goal: goal,
         status: "queued",
         trigger_type: "manual"
       )
+
+      ProcessRunQueueJob.perform_later
 
       {
         id: run.id,

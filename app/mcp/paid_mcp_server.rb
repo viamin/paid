@@ -82,8 +82,13 @@ class PaidMcpServer
   def check_rate_limit!
     key = "mcp:rate_limit:#{session.id}"
     count = Rails.cache.increment(key, 1, expires_in: RATE_LIMIT_PERIOD)
-    count ||= 1
+    count ||= initialize_rate_limit_count(key)
     raise RateLimitExceeded if count > RATE_LIMIT_MAX
+  end
+
+  def initialize_rate_limit_count(key)
+    Rails.cache.write(key, 1, expires_in: RATE_LIMIT_PERIOD)
+    1
   end
 
   def jsonrpc_response(id:, result:)

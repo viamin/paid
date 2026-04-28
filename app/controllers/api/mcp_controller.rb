@@ -5,6 +5,7 @@ module Api
     include ActionController::Live
 
     before_action :authenticate_session!
+    after_action :teardown_tenant_context
 
     # GET /api/mcp/sse - SSE endpoint for MCP client connections
     def sse
@@ -22,6 +23,7 @@ module Api
     rescue IOError, ActionController::Live::ClientDisconnected
       # Client disconnected
     ensure
+      TenantContext.clear!
       response.stream.close
     end
 
@@ -62,6 +64,10 @@ module Api
       end
 
       TenantContext.apply!(@current_user.account)
+    end
+
+    def teardown_tenant_context
+      TenantContext.clear!
     end
 
     def extract_session_token

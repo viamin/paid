@@ -24,6 +24,15 @@ RSpec.describe Tools::TriggerAgentRun do
       expect(result[:status]).to eq("queued")
       expect(result[:goal]).to eq("create_pr")
       expect(result[:issue_id]).to eq(issue.id)
+
+      run = AgentRun.find(result[:id])
+      expect(run.agent_type).to be_present
+    end
+
+    it "enqueues ProcessRunQueueJob" do
+      expect {
+        tool.call(project_id: project.id, issue_id: issue.id, confirmed: true)
+      }.to have_enqueued_job(ProcessRunQueueJob)
     end
 
     it "raises when not confirmed" do

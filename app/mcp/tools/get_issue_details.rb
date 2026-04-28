@@ -36,6 +36,7 @@ module Tools
         github_creator_login: issue.github_creator_login,
         is_pull_request: issue.is_pull_request,
         parent_issue_id: issue.parent_issue_id,
+        comments: fetch_comments(project, issue),
         agent_runs: issue.agent_runs.recent.limit(5).map { |r| run_summary(r) },
         github_created_at: issue.github_created_at,
         github_updated_at: issue.github_updated_at
@@ -43,6 +44,19 @@ module Tools
     end
 
     private
+
+    def fetch_comments(project, issue)
+      client = project.github_token&.client
+      return [] unless client
+
+      comments = client.issue_comments(project.full_name, issue.github_number)
+      comments.map do |c|
+        { user: c.user.login, body: c.body, created_at: c.created_at }
+      end
+    rescue StandardError => e
+      Rails.logger.warn(message: "mcp.fetch_comments_failed", error: e.message, issue_id: issue.id)
+      []
+    end
 
     def run_summary(run)
       {

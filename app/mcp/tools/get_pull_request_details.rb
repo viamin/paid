@@ -36,6 +36,8 @@ module Tools
         labels: pr.labels,
         github_creator_login: pr.github_creator_login,
         github_url: pr.github_url,
+        comments: fetch_comments(project, pr),
+        review_comments: fetch_review_comments(project, pr),
         agent_runs: pr.agent_runs.recent.limit(5).map { |r| run_summary(r) },
         github_created_at: pr.github_created_at,
         github_updated_at: pr.github_updated_at
@@ -43,6 +45,29 @@ module Tools
     end
 
     private
+
+    def fetch_comments(project, pr)
+      client = project.github_token&.client
+      return [] unless client
+
+      comments = client.issue_comments(project.full_name, pr.github_number)
+      comments.map do |c|
+        { user: c.user.login, body: c.body, created_at: c.created_at }
+      end
+    rescue StandardError => e
+      Rails.logger.warn(message: "mcp.fetch_pr_comments_failed", error: e.message, issue_id: pr.id)
+      []
+    end
+
+    def fetch_review_comments(project, pr)
+      client = project.github_token&.client
+      return [] unless client
+
+      client.pull_request_review_comments(project.full_name, pr.github_number)
+    rescue StandardError => e
+      Rails.logger.warn(message: "mcp.fetch_pr_review_comments_failed", error: e.message, issue_id: pr.id)
+      []
+    end
 
     def run_summary(run)
       {

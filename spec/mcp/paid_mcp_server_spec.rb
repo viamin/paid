@@ -93,6 +93,24 @@ RSpec.describe PaidMcpServer do
       expect(result[:error][:code]).to eq(-32029)
     end
 
+    it "initializes counter when increment returns nil" do
+      allow(Rails.cache).to receive(:increment).and_return(nil)
+      allow(Rails.cache).to receive(:write)
+
+      create(:project, account: account)
+
+      result = server.handle_request(
+        method: "tools/call",
+        params: { "name" => "list_projects", "arguments" => {} },
+        id: 1
+      )
+
+      expect(Rails.cache).to have_received(:write).with(
+        "mcp:rate_limit:#{chat_session.id}", 1, expires_in: 1.minute
+      )
+      expect(result[:result]).to be_present
+    end
+
     it "does not rate limit non-tool-call methods" do
       allow(Rails.cache).to receive(:increment).and_return(PaidMcpServer::RATE_LIMIT_MAX + 1)
 
