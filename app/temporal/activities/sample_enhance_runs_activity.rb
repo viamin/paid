@@ -33,7 +33,7 @@ module Activities
       AgentRun
         .where(project: project, goal: "enhance_issue", status: "completed")
         .where(completed_at: lookback_days.days.ago..)
-        .includes(:agent_run_logs, :knowledge_usage_stats, :issue)
+        .includes(:agent_run_logs, :knowledge_usage_stats, :quality_metrics, :issue)
         .order(completed_at: :desc)
     end
 
@@ -52,7 +52,9 @@ module Activities
         issue_title: run.issue&.title,
         questions_asked: questions,
         knowledge_available: knowledge_available,
-        sufficient_context: !questions.any?
+        sufficient_context: !questions.any?,
+        user_responded: user_responded?(run),
+        run_outcome: run_outcome(run)
       }
     end
 
@@ -62,6 +64,23 @@ module Activities
       section = content.split("## Clarifying questions").last.to_s
       section = section.split(/^## /).first.to_s
       section.scan(/^\d+\.\s+(.+)$/).flatten.map(&:strip)
+    end
+
+    def user_responded?(run)
+      scores = run.quality_metrics.filter_map(&:scores).last
+      return false unless scores
+
+      scores["author_replied"].to_f > 0
+    end
+
+    def run_outcome(run)
+      if run.pull_request_url.present?
+        "pr_created"
+      elsif run.result_commit_sha.present?
+        "commit_created"
+      else
+        "enhancement_only"
+      end
     end
 
     def build_artifact_usage(project, lookback_days)

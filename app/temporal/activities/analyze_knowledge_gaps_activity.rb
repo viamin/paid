@@ -103,6 +103,8 @@ module Activities
         parts << "  Questions: #{run[:questions_asked].join('; ')}" if run[:questions_asked].present?
         parts << "  Knowledge available: #{run[:knowledge_available]}" if run[:knowledge_available].present?
         parts << "  Sufficient context: #{run[:sufficient_context]}"
+        parts << "  User responded: #{run[:user_responded]}" unless run[:user_responded].nil?
+        parts << "  Outcome: #{run[:run_outcome]}" if run[:run_outcome].present?
         parts.join("\n")
       end.join("\n")
     end

@@ -43,6 +43,7 @@ RSpec.describe ApplicationJob do
       knowledge: %w[
         EmbedChunksJob
         EnqueueKnowledgeCollectionJob
+        KnowledgeEvolutionJob
         RunCollectorsJob
         StyleGuideCompressionJob
         StyleGuideExtractionJob

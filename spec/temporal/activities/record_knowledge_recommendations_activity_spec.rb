@@ -106,7 +106,41 @@ RSpec.describe Activities::RecordKnowledgeRecommendationsActivity do
         [ { recommendation_type: "add_collector", collector_type: "", priority: "high", description: "Missing type" } ]
       end
 
-      it "skips recommendations without collector_type" do
+      it "skips non-gap recommendations without collector_type" do
+        result = activity.execute(input)
+
+        expect(result[:created_count]).to eq(0)
+      end
+    end
+
+    context "with knowledge_gap recommendation without collector_type" do
+      let(:recommendations) do
+        [
+          {
+            recommendation_type: "knowledge_gap",
+            collector_type: nil,
+            priority: "high",
+            description: "Missing database schema context for migration questions"
+          }
+        ]
+      end
+
+      it "creates the recommendation with nil collector_type" do
+        result = activity.execute(input)
+
+        expect(result[:created_count]).to eq(1)
+        rec = project.knowledge_recommendations.pending.find_by(recommendation_type: "knowledge_gap")
+        expect(rec.collector_type).to be_nil
+        expect(rec.description).to eq("Missing database schema context for migration questions")
+      end
+
+      it "deduplicates against existing nil-collector pending recommendations" do
+        create(:knowledge_recommendation,
+          project: project,
+          recommendation_type: "knowledge_gap",
+          collector_type: nil,
+          status: "pending")
+
         result = activity.execute(input)
 
         expect(result[:created_count]).to eq(0)

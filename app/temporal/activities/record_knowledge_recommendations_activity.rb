@@ -19,7 +19,7 @@ module Activities
 
       Array(recommendations).each do |rec|
         rec_type = rec[:recommendation_type].to_s
-        collector = rec[:collector_type].to_s
+        collector = rec[:collector_type].presence
         next unless valid_recommendation?(rec_type, collector)
 
         flagged_keys << [ rec_type, collector ]
@@ -58,8 +58,10 @@ module Activities
     private
 
     def valid_recommendation?(rec_type, collector_type)
-      KnowledgeRecommendation::RECOMMENDATION_TYPES.include?(rec_type) &&
-        collector_type.present?
+      return false unless KnowledgeRecommendation::RECOMMENDATION_TYPES.include?(rec_type)
+
+      # knowledge_gap recommendations may not be tied to a specific collector
+      rec_type == "knowledge_gap" || collector_type.present?
     end
 
     def dismiss_stale_recommendations(project, flagged_keys)

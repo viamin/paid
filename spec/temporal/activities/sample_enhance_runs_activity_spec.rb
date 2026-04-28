@@ -71,6 +71,42 @@ RSpec.describe Activities::SampleEnhanceRunsActivity do
         expect(question_run[:knowledge_available]).to include("route" => 15)
       end
 
+      it "includes run outcome fields" do
+        result = activity.execute(input)
+
+        question_run = result[:runs].find { |r| r[:agent_run_id] == run_with_questions.id }
+        expect(question_run).to include(user_responded: false, run_outcome: "pr_created")
+      end
+
+      context "when the user responded to clarifying questions" do
+        before do
+          run_with_questions.quality_metrics.create!(
+            metric_type: "automated",
+            scores: { "author_replied" => 1.0, "comment_posted" => 1.0 }
+          )
+        end
+
+        it "detects user response from quality metrics" do
+          result = activity.execute(input)
+
+          question_run = result[:runs].find { |r| r[:agent_run_id] == run_with_questions.id }
+          expect(question_run[:user_responded]).to be true
+        end
+      end
+
+      context "when a run only produced an enhancement (no PR or commit)" do
+        before do
+          run_with_questions.update!(pull_request_url: nil, result_commit_sha: nil)
+        end
+
+        it "reflects the enhancement_only outcome" do
+          result = activity.execute(input)
+
+          question_run = result[:runs].find { |r| r[:agent_run_id] == run_with_questions.id }
+          expect(question_run[:run_outcome]).to eq("enhancement_only")
+        end
+      end
+
       it "includes artifact usage statistics" do
         result = activity.execute(input)
 
