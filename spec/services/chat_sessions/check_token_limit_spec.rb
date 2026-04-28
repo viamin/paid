@@ -25,7 +25,7 @@ RSpec.describe ChatSessions::CheckTokenLimit do
       end
 
       it "returns within limit when under the limit" do
-        create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 200, tokens_output: 100)
+        create(:token_usage, :chat, chat_session: chat_session, input_tokens: 200, output_tokens: 100)
 
         result = described_class.call(chat_session: chat_session)
 
@@ -36,7 +36,7 @@ RSpec.describe ChatSessions::CheckTokenLimit do
       end
 
       it "returns exceeded when at the limit" do
-        create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 600, tokens_output: 400)
+        create(:token_usage, :chat, chat_session: chat_session, input_tokens: 600, output_tokens: 400)
 
         result = described_class.call(chat_session: chat_session)
 
@@ -46,7 +46,7 @@ RSpec.describe ChatSessions::CheckTokenLimit do
       end
 
       it "returns exceeded when over the limit" do
-        create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 800, tokens_output: 500)
+        create(:token_usage, :chat, chat_session: chat_session, input_tokens: 800, output_tokens: 500)
 
         result = described_class.call(chat_session: chat_session)
 
@@ -100,7 +100,7 @@ RSpec.describe ChatSessions::CheckTokenLimit do
       end
 
       it "returns the more restrictive limit" do
-        create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 200, tokens_output: 100)
+        create(:token_usage, :chat, chat_session: chat_session, input_tokens: 200, output_tokens: 100)
 
         result = described_class.call(chat_session: chat_session)
 

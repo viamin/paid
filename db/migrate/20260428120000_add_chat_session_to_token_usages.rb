@@ -6,7 +6,7 @@ class AddChatSessionToTokenUsages < ActiveRecord::Migration[8.1]
 
     add_index :token_usages, :chat_session_id
 
-    add_foreign_key :token_usages, :chat_sessions
+    add_foreign_key :token_usages, :chat_sessions, on_delete: :cascade
 
     # Replace the old exactly-one-run constraint with a new one that allows
     # exactly one of agent_run, knowledge_run, or chat_session.

@@ -35,7 +35,7 @@ module ChatSessions
       limit = session_token_limit
       return unlimited_result("session") if limit.nil?
 
-      used = chat_session.total_tokens
+      used = chat_session.token_usages.sum(Arel.sql("input_tokens + output_tokens"))
       remaining = [ limit - used, 0 ].max
 
       {

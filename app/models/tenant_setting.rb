@@ -22,9 +22,7 @@ class TenantSetting < ApplicationRecord
   }.freeze
   DEFAULT_CHAT_SETTINGS = {
     "chat_session_token_limit" => 100_000,
-    "chat_monthly_token_limit" => nil,
-    "chat_max_concurrent_sessions" => 5,
-    "chat_idle_timeout_minutes" => 30
+    "chat_monthly_token_limit" => nil
   }.freeze
   DEFAULT_QUALITY_THRESHOLDS = Project::DEFAULT_QUALITY_GATE_SETTINGS.freeze
   DEFAULT_AGENT_SETTINGS = {

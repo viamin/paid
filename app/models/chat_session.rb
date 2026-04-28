@@ -36,7 +36,7 @@ class ChatSession < ApplicationRecord
   end
 
   def total_tokens
-    total_tokens_input + total_tokens_output
+    messages.pick(Arel.sql("COALESCE(SUM(tokens_input), 0) + COALESCE(SUM(tokens_output), 0)"))
   end
 
   def estimated_cost_cents

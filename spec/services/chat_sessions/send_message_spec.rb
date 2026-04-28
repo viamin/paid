@@ -90,7 +90,7 @@ RSpec.describe ChatSessions::SendMessage do
       before do
         create(:tenant_setting, account: account,
           features: { "chat_settings" => { "chat_session_token_limit" => 100 } })
-        create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 80, tokens_output: 30)
+        create(:token_usage, :chat, chat_session: chat_session, input_tokens: 80, output_tokens: 30)
       end
 
       it "raises TokenLimitExceededError" do
@@ -112,7 +112,7 @@ RSpec.describe ChatSessions::SendMessage do
       before do
         tenant_setting = create(:tenant_setting, account: account,
           features: { "chat_settings" => { "chat_session_token_limit" => 100 } })
-        create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 80, tokens_output: 30)
+        create(:token_usage, :chat, chat_session: chat_session, input_tokens: 80, output_tokens: 30)
 
         # Increase the limit
         tenant_setting.update!(features: { "chat_settings" => { "chat_session_token_limit" => 500 } })
