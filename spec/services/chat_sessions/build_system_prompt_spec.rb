@@ -177,6 +177,23 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         end
       end
 
+      context "with oversized style guides" do
+        before do
+          3.times do |i|
+            create(:style_guide, :for_project, project: project, account: account,
+              raw_content: "Guide #{i}: #{"x" * 6000}")
+          end
+        end
+
+        it "truncates combined style guide content to stay within budget" do
+          style_guide_max = described_class::STYLE_GUIDE_MAX_CHARS
+          # Extract just the style guide section (between "### Style Guide" and the next "##" or end)
+          style_section = prompt[/### Style Guide\n(.+?)(?=\n##|\z)/m, 1]
+          # The combined content (excluding the "### Style Guide\n" header) should respect the cap
+          expect(style_section.length).to be <= style_guide_max + 5
+        end
+      end
+
       context "with no issues or runs" do
         it "omits empty sections" do
           expect(prompt).not_to include("Recent Issues")

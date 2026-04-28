@@ -19,6 +19,7 @@ module ChatSessions
     MAX_PROMPT_CHARS = MAX_TOKENS * CHARS_PER_TOKEN
 
     README_MAX_CHARS = 2000
+    STYLE_GUIDE_MAX_CHARS = MAX_PROMPT_CHARS / 4
     RECENT_ISSUES_LIMIT = 5
     RECENT_RUNS_LIMIT = 5
     CROSS_PROJECT_SUMMARY_MAX_CHARS = 500
@@ -175,7 +176,10 @@ module ChatSessions
       contents = guides.filter_map(&:content_for_prompt)
       return nil if contents.empty?
 
-      "### Style Guide\n#{contents.join("\n\n")}"
+      combined = contents.join("\n\n")
+      combined = truncate(combined, STYLE_GUIDE_MAX_CHARS)
+
+      "### Style Guide\n#{combined}"
     end
 
     def project_summary(project)
