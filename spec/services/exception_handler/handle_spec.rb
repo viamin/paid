@@ -58,12 +58,15 @@ RSpec.describe ExceptionHandler::Handle do
       end
 
       it "files an issue when project has a GitHub token" do
-        github_token = instance_double(GithubToken, client: instance_double(GithubClient))
-        allow(project).to receive(:github_token).and_return(github_token)
-        allow(Project).to receive(:find_by).with(id: project.id).and_return(project)
-
+        client = instance_double(GithubClient)
         gh_issue = double(html_url: "https://github.com/o/r/issues/1", number: 1)
-        allow(github_token.client).to receive(:create_issue).and_return(gh_issue)
+        allow(client).to receive(:create_issue).and_return(gh_issue)
+        allow(ExceptionHandler::IssueFiler).to receive(:call).and_wrap_original do |method, **args|
+          allow(args[:project]).to receive(:github_token).and_return(
+            instance_double(GithubToken, client: client)
+          )
+          method.call(**args)
+        end
 
         result = described_class.call(
           exception: error,

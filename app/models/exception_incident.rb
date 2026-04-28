@@ -28,9 +28,22 @@ class ExceptionIncident < ApplicationRecord
   end
 
   def record_occurrence!(new_context: {})
-    self.occurrence_count += 1
-    self.last_occurred_at = Time.current
-    self.context = context.merge("latest_occurrence" => new_context) if new_context.present?
-    save!
+    now = Time.current
+    updates = [
+      "occurrence_count = occurrence_count + 1",
+      sanitize_sql([ "last_occurred_at = ?", now ])
+    ]
+    if new_context.present?
+      merged = context.merge("latest_occurrence" => new_context)
+      updates << sanitize_sql([ "context = ?::jsonb", merged.to_json ])
+    end
+    self.class.where(id: id).update_all(updates.join(", "))
+    reload
+  end
+
+  private
+
+  def sanitize_sql(args)
+    self.class.sanitize_sql_array(args)
   end
 end

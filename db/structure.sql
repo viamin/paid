@@ -2005,7 +2005,7 @@ CREATE TABLE public.llm_models (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     tier character varying(10),
-    CONSTRAINT llm_models_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text]))))
+    CONSTRAINT llm_models_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[]))))
 );
 
 
@@ -2132,8 +2132,8 @@ CREATE TABLE public.model_selections (
     tier character varying(10),
     escalated_from_tier character varying(10),
     escalated_reason character varying(255),
-    CONSTRAINT model_selections_escalated_from_tier_check CHECK (((escalated_from_tier IS NULL) OR ((escalated_from_tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text])))),
-    CONSTRAINT model_selections_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text]))))
+    CONSTRAINT model_selections_escalated_from_tier_check CHECK (((escalated_from_tier IS NULL) OR ((escalated_from_tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[])))),
+    CONSTRAINT model_selections_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[]))))
 );
 
 ALTER TABLE ONLY public.model_selections FORCE ROW LEVEL SECURITY;
@@ -3401,7 +3401,7 @@ CREATE TABLE public.user_settings (
     fair_queue_across_projects boolean DEFAULT true NOT NULL,
     CONSTRAINT chk_max_issues_per_page_bounds CHECK (((max_issues_per_page >= 5) AND (max_issues_per_page <= 200))),
     CONSTRAINT chk_max_prs_per_page_bounds CHECK (((max_prs_per_page >= 5) AND (max_prs_per_page <= 200))),
-    CONSTRAINT chk_provider_selection_mode CHECK (((provider_selection_mode)::text = ANY (ARRAY[('single'::character varying)::text, ('round_robin'::character varying)::text, ('random'::character varying)::text])))
+    CONSTRAINT chk_provider_selection_mode CHECK (((provider_selection_mode)::text = ANY ((ARRAY['single'::character varying, 'round_robin'::character varying, 'random'::character varying])::text[])))
 );
 
 ALTER TABLE ONLY public.user_settings FORCE ROW LEVEL SECURITY;

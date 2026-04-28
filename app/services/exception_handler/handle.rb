@@ -67,7 +67,7 @@ module ExceptionHandler
       project_id = @context[:project_id]
       return nil unless project_id
 
-      Project.find_by(id: project_id)
+      @account.projects.find_by(id: project_id)
     end
 
     def log_exception(classification)
