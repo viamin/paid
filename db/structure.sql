@@ -1568,7 +1568,8 @@ CREATE TABLE public.issues (
     operational_failure_reset_at timestamp(6) without time zone,
     ci_action_dispatched_at timestamp(6) without time zone,
     deployed_at timestamp(6) without time zone,
-    enhance_issue_rounds integer DEFAULT 0 NOT NULL
+    enhance_issue_rounds integer DEFAULT 0 NOT NULL,
+    ci_retry_requested_at timestamp(6) without time zone
 );
 
 ALTER TABLE ONLY public.issues FORCE ROW LEVEL SECURITY;
@@ -1731,6 +1732,47 @@ CREATE SEQUENCE public.knowledge_links_id_seq
 --
 
 ALTER SEQUENCE public.knowledge_links_id_seq OWNED BY public.knowledge_links.id;
+
+
+--
+-- Name: knowledge_recommendations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.knowledge_recommendations (
+    id bigint NOT NULL,
+    project_id bigint NOT NULL,
+    recommendation_type character varying(50) NOT NULL,
+    collector_type character varying(100),
+    priority character varying(20) DEFAULT 'medium'::character varying NOT NULL,
+    description text,
+    evidence jsonb DEFAULT '{}'::jsonb NOT NULL,
+    status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
+    dismissed_at timestamp(6) without time zone,
+    dismissal_reason text,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.knowledge_recommendations FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: knowledge_recommendations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.knowledge_recommendations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: knowledge_recommendations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.knowledge_recommendations_id_seq OWNED BY public.knowledge_recommendations.id;
 
 
 --
@@ -1922,8 +1964,6 @@ CREATE TABLE public.llm_output_metrics (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
 );
-
-ALTER TABLE ONLY public.llm_output_metrics ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE ONLY public.llm_output_metrics FORCE ROW LEVEL SECURITY;
 
@@ -2486,7 +2526,8 @@ CREATE TABLE public.projects (
     max_enhance_issue_reevaluation_rounds integer DEFAULT 3 NOT NULL,
     auto_enhance_enabled boolean DEFAULT false NOT NULL,
     scheduler_paused_at timestamp(6) without time zone,
-    scheduler_pause_reason character varying
+    scheduler_pause_reason character varying,
+    knowledge_evolution_enabled boolean DEFAULT false NOT NULL
 );
 
 ALTER TABLE ONLY public.projects FORCE ROW LEVEL SECURITY;
@@ -3684,6 +3725,13 @@ ALTER TABLE ONLY public.knowledge_links ALTER COLUMN id SET DEFAULT nextval('pub
 
 
 --
+-- Name: knowledge_recommendations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_recommendations ALTER COLUMN id SET DEFAULT nextval('public.knowledge_recommendations_id_seq'::regclass);
+
+
+--
 -- Name: knowledge_runs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4309,6 +4357,14 @@ ALTER TABLE ONLY public.knowledge_links
 
 
 --
+-- Name: knowledge_recommendations knowledge_recommendations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_recommendations
+    ADD CONSTRAINT knowledge_recommendations_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: knowledge_runs knowledge_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4783,6 +4839,27 @@ CREATE UNIQUE INDEX idx_knowledge_usage_stats_unique ON public.knowledge_usage_s
 
 
 --
+-- Name: idx_llm_output_metrics_project_type_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_llm_output_metrics_project_type_time ON public.llm_output_metrics USING btree (project_id, output_type, created_at);
+
+
+--
+-- Name: idx_llm_output_metrics_slug_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_llm_output_metrics_slug_version ON public.llm_output_metrics USING btree (prompt_slug, prompt_version_id);
+
+
+--
+-- Name: idx_llm_output_metrics_unique_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_llm_output_metrics_unique_source ON public.llm_output_metrics USING btree (project_id, output_type, source_type, source_id);
+
+
+--
 -- Name: idx_on_account_id_config_key_status_a42f39cd2a; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4815,6 +4892,13 @@ CREATE INDEX idx_on_configuration_experiment_id_6532d1a5ed ON public.configurati
 --
 
 CREATE INDEX idx_on_configuration_experiment_variant_id_9de5ff7df6 ON public.configuration_experiment_assignments USING btree (configuration_experiment_variant_id);
+
+
+--
+-- Name: idx_on_project_id_recommendation_type_333faaed2e; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_project_id_recommendation_type_333faaed2e ON public.knowledge_recommendations USING btree (project_id, recommendation_type);
 
 
 --
@@ -6148,6 +6232,20 @@ CREATE INDEX index_knowledge_links_on_target_chunk_id ON public.knowledge_links 
 
 
 --
+-- Name: index_knowledge_recommendations_on_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_knowledge_recommendations_on_project_id ON public.knowledge_recommendations USING btree (project_id);
+
+
+--
+-- Name: index_knowledge_recommendations_on_project_id_and_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_knowledge_recommendations_on_project_id_and_status ON public.knowledge_recommendations USING btree (project_id, status);
+
+
+--
 -- Name: index_knowledge_runs_on_project_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6264,27 +6362,6 @@ CREATE INDEX index_llm_models_on_provider_and_active ON public.llm_models USING 
 --
 
 CREATE INDEX index_llm_models_on_tier ON public.llm_models USING btree (tier);
-
-
---
--- Name: idx_llm_output_metrics_project_type_time; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_llm_output_metrics_project_type_time ON public.llm_output_metrics USING btree (project_id, output_type, created_at);
-
-
---
--- Name: idx_llm_output_metrics_slug_version; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_llm_output_metrics_slug_version ON public.llm_output_metrics USING btree (prompt_slug, prompt_version_id);
-
-
---
--- Name: idx_llm_output_metrics_unique_source; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX idx_llm_output_metrics_unique_source ON public.llm_output_metrics USING btree (project_id, output_type, source_type, source_id);
 
 
 --
@@ -8103,6 +8180,14 @@ ALTER TABLE ONLY public.agent_run_logs
 
 
 --
+-- Name: knowledge_recommendations fk_rails_d08a6763c1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_recommendations
+    ADD CONSTRAINT fk_rails_d08a6763c1 FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
 -- Name: user_settings fk_rails_d1371c6356; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8549,6 +8634,12 @@ ALTER TABLE public.knowledge_chunks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.knowledge_links ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: knowledge_recommendations; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.knowledge_recommendations ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: knowledge_runs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -8565,6 +8656,12 @@ ALTER TABLE public.knowledge_usage_stats ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.linear_tokens ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: llm_output_metrics; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.llm_output_metrics ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: mcp_server_definitions; Type: ROW SECURITY; Schema: public; Owner: -
@@ -8883,21 +8980,21 @@ CREATE POLICY tenant_isolation ON public.chat_session_projects USING ((public.pa
 -- Name: chat_sessions tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.chat_sessions USING ((public.paid_tenant_bypass() OR ((chat_sessions.account_id = public.paid_current_account_id()) AND ((chat_sessions.project_id IS NULL) OR (EXISTS ( SELECT 1
+CREATE POLICY tenant_isolation ON public.chat_sessions USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.projects
-  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((chat_sessions.provider_id IS NULL) OR (EXISTS ( SELECT 1
+  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((provider_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.providers
   WHERE ((providers.id = chat_sessions.provider_id) AND (providers.user_id IN ( SELECT users.id
            FROM public.users
-          WHERE (users.account_id = public.paid_current_account_id()))))))) AND ((chat_sessions.created_by_id IS NULL) OR (EXISTS ( SELECT 1
+          WHERE (users.account_id = public.paid_current_account_id()))))))) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.users
-  WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((chat_sessions.account_id = public.paid_current_account_id()) AND ((chat_sessions.project_id IS NULL) OR (EXISTS ( SELECT 1
+  WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.projects
-  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((chat_sessions.provider_id IS NULL) OR (EXISTS ( SELECT 1
+  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((provider_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.providers
   WHERE ((providers.id = chat_sessions.provider_id) AND (providers.user_id IN ( SELECT users.id
            FROM public.users
-          WHERE (users.account_id = public.paid_current_account_id()))))))) AND ((chat_sessions.created_by_id IS NULL) OR (EXISTS ( SELECT 1
+          WHERE (users.account_id = public.paid_current_account_id()))))))) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.users
   WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = public.paid_current_account_id()))))))));
 
@@ -9100,6 +9197,17 @@ CREATE POLICY tenant_isolation ON public.knowledge_links USING ((public.paid_ten
    FROM (public.knowledge_chunks
      JOIN public.projects ON ((projects.id = knowledge_chunks.project_id)))
   WHERE ((knowledge_chunks.id = knowledge_links.target_chunk_id) AND (projects.account_id = public.paid_current_account_id())))))));
+
+
+--
+-- Name: knowledge_recommendations tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.knowledge_recommendations USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = knowledge_recommendations.project_id) AND (projects.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = knowledge_recommendations.project_id) AND (projects.account_id = public.paid_current_account_id()))))));
 
 
 --
@@ -9829,7 +9937,12 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260428025840'),
+('20260427225726'),
+('20260427223009'),
+('20260427223003'),
 ('20260427143916'),
+('20260427135718'),
 ('20260426231639'),
 ('20260426231603'),
 ('20260426231602'),
@@ -10053,3 +10166,4 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260128004342'),
 ('20260128004305'),
 ('20260127154444');
+

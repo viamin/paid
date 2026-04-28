@@ -164,6 +164,11 @@ Rails.application.configure do
       cron: "0 6 * * *",
       class: "GithubTokenHealthCheckJob",
       description: "Validate all active GitHub tokens and flag revoked/expired ones"
+    },
+    chat_idle_reaper: {
+      cron: "*/5 * * * *",
+      class: "ChatSessions::IdleReaperJob",
+      description: "Close idle chat sessions past their timeout"
     }
   }
 end

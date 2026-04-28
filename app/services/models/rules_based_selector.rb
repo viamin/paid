@@ -2,6 +2,8 @@
 
 module Models
   class RulesBasedSelector
+    include ProviderTierLookup
+
     def self.call(...)
       new(...).call
     end
@@ -33,13 +35,18 @@ module Models
     # Public so collaborators (e.g. MetaAgentSelector) can reuse the same
     # heuristic to establish an initial tier before the LLM meta-agent runs.
     def estimate_complexity
-      score = 5.0
+      # Start low so that simple tasks default to the cheapest appropriate tier.
+      # Signals that indicate genuine complexity bump the score upward.
+      score = 3.0
 
       if agent_run.issue.present?
         body_length = agent_run.issue.body.to_s.length
+        score += 1.0 if body_length > 500
         score += 1.0 if body_length > 1000
-        score += 1.0 if body_length > 3000
-        score -= 1.0 if body_length < 200
+        # Heavily-specified issues (>3000 chars) get a larger bump so the
+        # "high" tier remains reachable through rules-based selection even
+        # with the low default base (max score: 3+1+1+2+1 = 8 > mid_max).
+        score += 2.0 if body_length > 3000
       end
 
       score += 1.0 if agent_run.existing_pr?
@@ -58,6 +65,10 @@ module Models
       # Exclude models the project has excluded
       excluded = agent_run.project.model_preferences["excluded_model_ids"]
       scope = scope.where.not(model_id: excluded) if excluded.present?
+
+      # Prefer the provider's explicitly configured tier model when available
+      provider_model = provider_tier_model(tier)
+      return [ provider_model ] if provider_model && !excluded_model?(provider_model, excluded)
 
       tier_candidates = tier ? tier_scope(scope, tier).to_a : []
       # Fall back to the broader pool when the tier has no active models, so a
