@@ -329,6 +329,30 @@
     </div>
   <% end %>
 
+<% if agent_run.paused? %>
+  <%
+    violation_type = agent_run.guardrail_violation_type.presence ||
+      agent_run.guardrail_context&.dig("violation_type").presence
+    violation_label = violation_type&.tr("_", " ")&.capitalize || "Guardrail violation"
+    violation_detail = agent_run.guardrail_context&.dig("details").presence
+  %>
+  <div class="mt-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+    <h2 class="text-sm font-semibold text-yellow-800">Run Paused</h2>
+    <p class="mt-1 text-sm text-yellow-700">
+      This agent run has been paused due to a <%= violation_label.downcase %>.
+      <% if violation_detail.present? %>
+        <br><span class="text-yellow-600"><%= violation_detail %></span>
+      <% end %>
+      <% if agent_run.paused_at.present? %>
+        <br>Paused <%= time_ago_in_words(agent_run.paused_at) %> ago.
+      <% end %>
+      <% if agent_run.error_message.present? %>
+        <br><span class="text-yellow-600"><%= agent_run.error_message %></span>
+      <% end %>
+    </p>
+  </div>
+<% end %>
+
 <% if agent_run.token_limit_exceeded? %>
   <div class="mt-6 rounded-lg border border-red-200 bg-red-50 p-4">
     <h2 class="text-sm font-semibold text-red-800">Token Limit Exceeded</h2>
