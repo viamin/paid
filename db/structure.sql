@@ -774,7 +774,8 @@ CREATE TABLE public.chat_sessions (
     created_by_id bigint,
     title character varying,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    proxy_token character varying(64)
 );
 
 ALTER TABLE ONLY public.chat_sessions FORCE ROW LEVEL SECURITY;
@@ -5638,6 +5639,13 @@ CREATE INDEX index_chat_sessions_on_status ON public.chat_sessions USING btree (
 
 
 --
+-- Name: index_chat_sessions_on_proxy_token; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_chat_sessions_on_proxy_token ON public.chat_sessions USING btree (proxy_token);
+
+
+--
 -- Name: index_collector_runs_on_project_version_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -9994,6 +10002,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260428093730'),
 ('20260428025840'),
 ('20260427225726'),
 ('20260427223009'),

@@ -26,6 +26,7 @@ RSpec.describe Containers::ChatSessionManager do
   end
 
   let(:mock_volume) { instance_double(Docker::Volume, remove: true) }
+  let(:harness_command) { [ "claude", "--print", "Fix the bug" ] }
 
   let(:manager) { described_class.new(chat_session) }
 
@@ -34,6 +35,8 @@ RSpec.describe Containers::ChatSessionManager do
       .with("chat-container-abc123")
       .and_return(mock_container)
     allow(Docker::Volume).to receive(:get).and_return(mock_volume)
+    allow(Providers::HarnessExecutionPlan).to receive(:for_provider_key)
+      .and_return(Providers::HarnessExecutionPlan::Result.new(command: harness_command, env: {}, preparation: nil))
   end
 
   describe "#execute_agent_command" do
@@ -52,28 +55,35 @@ RSpec.describe Containers::ChatSessionManager do
       expect(result[:exit_code]).to eq(0)
     end
 
-    it "builds correct agent CLI command" do
-      expect(mock_container).to receive(:exec).with(
-        [ "sh", "-c", /claude --print Fix\\ the\\ bug/ ],
-        hash_including(wait: described_class::EXECUTE_TIMEOUT)
-      ) do |_cmd, **_opts, &block|
-        block&.call(:stdout, "output\n")
-        [ [ "output\n" ], [], 0 ]
-      end
+    it "delegates command building to agent-harness" do
+      expect(Providers::HarnessExecutionPlan).to receive(:for_provider_key).with(
+        provider_key: "claude",
+        prompt: "Fix the bug",
+        options: {}
+      )
 
       manager.execute_agent_command(prompt: "Fix the bug")
     end
 
-    it "includes --resume flag when session_id is provided" do
-      expect(mock_container).to receive(:exec).with(
-        [ "sh", "-c", /claude --print --resume prev-session-123/ ],
-        anything
-      ) do |_cmd, **_opts, &block|
-        block&.call(:stdout, "resumed\n")
-        [ [ "resumed\n" ], [], 0 ]
-      end
+    it "passes session_id to harness when resuming" do
+      expect(Providers::HarnessExecutionPlan).to receive(:for_provider_key).with(
+        provider_key: "claude",
+        prompt: "Continue",
+        options: { session_id: "prev-session-123" }
+      )
 
       manager.execute_agent_command(prompt: "Continue", session_id: "prev-session-123")
+    end
+
+    it "uses the chat session's provider when available" do
+      provider = create(:provider, user: chat_session.created_by, provider_key: "codex")
+      chat_session.update!(provider: provider)
+
+      expect(Providers::HarnessExecutionPlan).to receive(:for_provider_key).with(
+        hash_including(provider_key: provider.provider_key)
+      )
+
+      manager.execute_agent_command(prompt: "Fix the bug")
     end
 
     it "extends idle timeout after execution" do
@@ -246,6 +256,16 @@ RSpec.describe Containers::ChatSessionManager do
       chat_session.reload
       expect(chat_session.container_id).to be_nil
       expect(chat_session.workspace_volume).to be_nil
+    end
+
+    it "clears the memoized container reference" do
+      manager.cleanup!
+
+      # After cleanup, health_check should report no container rather than
+      # trying to use the stale @container reference
+      result = manager.health_check
+      expect(result[:healthy]).to be false
+      expect(result[:message]).to eq("No container assigned")
     end
 
     context "with preserve_state: true" do

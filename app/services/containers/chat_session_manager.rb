@@ -33,6 +33,10 @@ module Containers
 
     # Executes an agent CLI command inside the container.
     #
+    # Delegates command building to agent-harness via Providers::HarnessExecutionPlan
+    # so the correct CLI is invoked for whatever provider the chat session uses
+    # (Claude, Codex, Gemini, etc.) without hard-coding provider-specific commands.
+    #
     # @param prompt [String] The prompt/task for the agent
     # @param session_id [String, nil] Session ID for resuming a previous session
     # @return [Result] with stdout, stderr, exit_code, and extracted session_id
@@ -132,6 +136,7 @@ module Containers
       end
 
       chat_session.update!(container_id: nil, workspace_volume: nil)
+      @container = nil
       log("cleanup.success")
     end
 
@@ -151,11 +156,20 @@ module Containers
       raise ContainerNotRunning, "Container not found"
     end
 
+    # Builds the agent CLI command using agent-harness execution plans.
+    # Falls back to the provider key from the chat session's provider, or
+    # defaults to "claude" when no provider is configured.
     def build_agent_command(prompt:, session_id: nil)
-      parts = [ "claude", "--print" ]
-      parts << "--resume" << session_id if session_id.present?
-      parts << prompt
-      Shellwords.join(parts)
+      plan = Providers::HarnessExecutionPlan.for_provider_key(
+        provider_key: effective_provider_key,
+        prompt: prompt,
+        options: session_id.present? ? { session_id: session_id } : {}
+      )
+      Shellwords.join(plan.command)
+    end
+
+    def effective_provider_key
+      chat_session.provider&.provider_key || "claude"
     end
 
     def extract_session_id(output)

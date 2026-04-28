@@ -8,6 +8,7 @@ class ChatSession < ApplicationRecord
   IDLE_TIMEOUT_DURATION = 30.minutes
 
   before_validation :set_external_id, on: :create
+  before_create :generate_proxy_token
 
   belongs_to :project, optional: true
   belongs_to :provider, optional: true
@@ -30,6 +31,10 @@ class ChatSession < ApplicationRecord
 
   def set_external_id
     self.external_id ||= SecureRandom.uuid
+  end
+
+  def generate_proxy_token
+    self.proxy_token ||= SecureRandom.hex(32)
   end
 
   def provider_must_belong_to_same_account

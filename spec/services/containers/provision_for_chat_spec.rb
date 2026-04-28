@@ -127,7 +127,7 @@ RSpec.describe Containers::ProvisionForChat do
       described_class.call(chat_session: chat_session)
     end
 
-    it "sets environment variables including MCP URL" do
+    it "sets environment variables including proxy token" do
       expect(Docker::Container).to receive(:create).with(
         hash_including(
           "Env" => include(
@@ -135,7 +135,8 @@ RSpec.describe Containers::ProvisionForChat do
             "PAID_MCP_URL=http://web:3000/mcp",
             "PAID_PROXY_URL=http://web:3000",
             "CHAT_SESSION_ID=#{chat_session.id}",
-            "PROJECT_ID=#{project.id}"
+            "PROJECT_ID=#{project.id}",
+            "PROXY_TOKEN=#{chat_session.proxy_token}"
           )
         )
       ).and_return(mock_container)
@@ -152,6 +153,11 @@ RSpec.describe Containers::ProvisionForChat do
         expected_cmd,
         user: "root"
       ).ordered.and_return([ [], [], 0 ])
+      # seed_workspace! exec call
+      allow(mock_container).to receive(:exec).with(
+        array_including("sh"),
+        hash_including(user: "agent")
+      ).and_return([ [], [], 0 ])
 
       described_class.call(chat_session: chat_session)
     end
@@ -174,6 +180,27 @@ RSpec.describe Containers::ProvisionForChat do
       described_class.call(chat_session: chat_session)
     end
 
+    context "when project has an active GitHub token" do
+      let(:github_token) { instance_double(GithubToken, active?: true, token: "ghp_test123") }
+
+      before do
+        allow(project).to receive(:github_token).and_return(github_token)
+      end
+
+      it "seeds the workspace by cloning the project repo" do
+        expect(mock_container).to receive(:exec).with(
+          [ "sh", "-c", anything ],
+          hash_including(
+            user: "agent",
+            wait: described_class::CLONE_TIMEOUT,
+            Env: [ "CLONE_TOKEN=ghp_test123" ]
+          )
+        ).and_return([ [], [], 0 ])
+
+        described_class.call(chat_session: chat_session)
+      end
+    end
+
     context "when provisioning fails" do
       it "cleans up container and volumes on Docker error" do
         allow(mock_container).to receive(:start).and_raise(Docker::Error::DockerError, "start failed")
@@ -192,6 +219,12 @@ RSpec.describe Containers::ProvisionForChat do
       it "provisions successfully without project-scoped env vars" do
         result = described_class.call(chat_session: chat_session)
         expect(result).to be_success
+      end
+
+      it "skips workspace seeding" do
+        # Only expect chown exec, not git clone
+        expect(mock_container).to receive(:exec).once.and_return([ [], [], 0 ])
+        described_class.call(chat_session: chat_session)
       end
     end
   end

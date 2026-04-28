@@ -8,7 +8,7 @@ module Containers
   # Chat containers differ from agent run containers:
   # - Lower resource defaults (2GB RAM, 1 CPU vs 4GB/2 CPU)
   # - Persistent named volume for agent CLI state (~/.claude, ~/.codex, etc.)
-  # - Workspace volume or git worktree for project files
+  # - Workspace volume seeded from the project's git repo (when project is present)
   # - Idle timeout management (30 min default)
   # - Network access to Paid MCP server
   #
@@ -37,6 +37,8 @@ module Containers
       /home/agent/.cache
     ].freeze
 
+    CLONE_TIMEOUT = 300 # 5 minutes
+
     class Error < StandardError; end
     class ProvisionError < Error; end
 
@@ -64,6 +66,7 @@ module Containers
       )
       @container.start
       fix_ownership!
+      seed_workspace!
 
       chat_session.update!(
         container_id: @container.id,
@@ -176,6 +179,7 @@ module Containers
       env << "PAID_MCP_URL=#{proxy_base}/mcp"
       env << "PAID_PROXY_URL=#{proxy_base}"
       env << "CHAT_SESSION_ID=#{chat_session.id}"
+      env << "PROXY_TOKEN=#{chat_session.proxy_token}"
 
       env
     end
@@ -205,6 +209,31 @@ module Containers
       dirs = [ options[:workspace_mount] ] + STATE_VOLUME_DIRS
       cmd_args = [ "chown", "-R", "#{options[:user]}:#{options[:user]}" ] + dirs
       @container.exec(cmd_args, user: "root")
+    end
+
+    # Seeds the workspace volume by cloning the project's git repository.
+    # The GitHub token is passed as an ephemeral environment variable for the
+    # clone command only, not stored in the container environment.
+    # Skipped when no project is associated or the project has no active token.
+    def seed_workspace!
+      return unless project
+
+      github_token = project.github_token
+      return unless github_token&.active?
+
+      url = "https://x-access-token:$CLONE_TOKEN@github.com/#{project.full_name}.git"
+      clone_cmd = "git clone --depth 1 #{Shellwords.escape(url)} . 2>&1 || true"
+
+      @container.exec(
+        [ "sh", "-c", clone_cmd ],
+        user: options[:user],
+        wait: CLONE_TIMEOUT,
+        Env: [ "CLONE_TOKEN=#{github_token.token}" ]
+      )
+
+      log("provision.workspace_seeded", project_id: project.id)
+    rescue Docker::Error::DockerError => e
+      log("provision.workspace_seed_failed", error: e.message, project_id: project.id)
     end
 
     def proxy_base_url
