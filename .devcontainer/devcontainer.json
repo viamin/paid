@@ -14,8 +14,7 @@
     "ghcr.io/devcontainers/features/node:1": {},
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
       "moby": false
-    },
-    "ghcr.io/rails/devcontainer/features/postgres-client": {}
+    }
   },
   "containerEnv": {
     "TZ": "${localEnv:TZ:UTC}",
