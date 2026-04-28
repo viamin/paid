@@ -27,10 +27,12 @@ module ChatSessions
 
     def call
       validate!
+      check_token_limit!
 
       persist_user_message
       conversation = build_conversation
       assistant_message = execute_agent(conversation)
+      track_token_usage(assistant_message)
       update_session_activity
       assistant_message
     end
@@ -40,6 +42,18 @@ module ChatSessions
     def validate!
       raise ArgumentError, "chat session must be active" unless chat_session.status == "active"
       raise ArgumentError, "content cannot be blank" if content.blank?
+    end
+
+    def check_token_limit!
+      result = ChatSessions::CheckTokenLimit.call(chat_session: chat_session)
+      return if result[:within_limit]
+
+      raise TokenLimitExceededError.new(
+        "Chat token limit reached (#{result[:limit_type]}): #{result[:limit]} tokens",
+        remaining: 0,
+        limit: result[:limit],
+        limit_type: result[:limit_type]
+      )
     end
 
     def persist_user_message
@@ -145,6 +159,23 @@ module ChatSessions
       # Placeholder for MCP tool execution via PaidMcpServer.
       # Each tool call is dispatched and its result returned.
       { status: "not_implemented" }
+    end
+
+    def track_token_usage(assistant_message)
+      return unless assistant_message.tokens_input.to_i.positive? || assistant_message.tokens_output.to_i.positive?
+
+      input_tokens = assistant_message.tokens_input.to_i
+      output_tokens = assistant_message.tokens_output.to_i
+      cost_cents = TokenUsageTracker.calculate_cost(input_tokens, output_tokens, llm_model: assistant_message.model)
+
+      TokenUsage.create!(
+        chat_session: chat_session,
+        input_tokens: input_tokens,
+        output_tokens: output_tokens,
+        cost_cents: cost_cents,
+        llm_model: assistant_message.model,
+        request_type: "chat_message"
+      )
     end
 
     def update_session_activity

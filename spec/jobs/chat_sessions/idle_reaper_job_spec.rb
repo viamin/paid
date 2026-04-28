@@ -35,7 +35,7 @@ RSpec.describe ChatSessions::IdleReaperJob do
         account: account,
         created_by: user,
         idle_timeout_at: 1.minute.ago)
-      create(:chat_message, :assistant, chat_session: session, tokens_input: 50, tokens_output: 25)
+      create(:token_usage, :chat, chat_session: session, input_tokens: 50, output_tokens: 25, cost_cents: 0)
 
       described_class.new.perform
 
