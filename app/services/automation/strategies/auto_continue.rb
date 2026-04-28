@@ -69,9 +69,9 @@ module Automation
       private
 
       def check_lifecycle_gates(signals)
-        # Operational failure breaker (fires for ready phase only —
-        # draft/restarted have their own breaker, escalated is excluded
-        # by the signal producer).
+        # Operational failure breaker — fires for any phase. The check
+        # runs before phase-specific gates so that persistent provider
+        # exhaustion/timeout failures always surface an escalation.
         if signals.operational_failure_breaker
           return escalate_result(signals)
         end
