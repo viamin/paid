@@ -6198,6 +6198,66 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(unchanged_pr.reload.last_pr_scan_at).to be < ceiling.seconds.ago
       end
 
+      it "rescans stale human-authored ready PRs when auto-merge mode is all" do
+        ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
+        project.update!(auto_merge_mode: "all")
+        unchanged_pr.update!(pr_review_phase: "ready")
+        unchanged_pr.update_columns(
+          github_updated_at: (ceiling + 60).seconds.ago,
+          last_pr_scan_at: (ceiling + 30).seconds.ago
+        )
+        stub_github_for_pr
+
+        activity.execute(project_id: project.id)
+
+        expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
+      end
+
+      it "rescans stale human-authored escalated PRs when auto-merge mode is all" do
+        ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
+        project.update!(auto_merge_mode: "all")
+        unchanged_pr.update!(pr_review_phase: "escalated")
+        unchanged_pr.update_columns(
+          github_updated_at: (ceiling + 60).seconds.ago,
+          last_pr_scan_at: (ceiling + 30).seconds.ago
+        )
+        stub_github_for_pr
+
+        activity.execute(project_id: project.id)
+
+        expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
+      end
+
+      it "does not rescan stale human-authored ready PRs when auto-merge is dependabot_only" do
+        ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
+        project.update!(auto_merge_mode: "dependabot_only")
+        unchanged_pr.update!(pr_review_phase: "ready")
+        unchanged_pr.update_columns(
+          github_updated_at: (ceiling + 60).seconds.ago,
+          last_pr_scan_at: (ceiling + 30).seconds.ago
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+        expect(unchanged_pr.reload.last_pr_scan_at).to be < ceiling.seconds.ago
+      end
+
+      it "does not rescan stale human-authored ready PRs when auto-merge is off" do
+        ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
+        project.update!(auto_merge_mode: "off")
+        unchanged_pr.update!(pr_review_phase: "ready")
+        unchanged_pr.update_columns(
+          github_updated_at: (ceiling + 60).seconds.ago,
+          last_pr_scan_at: (ceiling + 30).seconds.ago
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+        expect(unchanged_pr.reload.last_pr_scan_at).to be < ceiling.seconds.ago
+      end
+
       it "scans ready PRs for merge conflicts when auto-fix is enabled" do
         project.update!(auto_fix_merge_conflicts: true)
         unchanged_pr.update!(pr_review_phase: "ready")
