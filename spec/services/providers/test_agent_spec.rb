@@ -21,17 +21,12 @@ RSpec.describe Providers::TestAgent do
   let!(:project) { create(:project, account: account, github_token: github_token, created_by: user) }
   let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude") }
   let(:provider) { provider_record }
-  let(:execution_result) do
-    Containers::Provision::Result.success(stdout: "PING OK", stderr: "", exit_code: 0)
-  end
   let(:test_run) do
     instance_double(
       AgentRun,
       id: 1,
-      with_container: execution_result,
       persisted?: true,
-      destroy!: true,
-      execute_in_container: execution_result
+      destroy!: true
     )
   end
   let(:insert_result) { double(first: { "id" => 1 }) }
@@ -47,15 +42,23 @@ RSpec.describe Providers::TestAgent do
     allow(credentials).to receive(:dig).with(:llm, :"#{provider_name}_api_key").and_return(value)
   end
 
+  # Stub the container path: provisions container, creates HarnessExecutor, calls check_provider
+  def stub_container_smoke_test(harness_result)
+    stub_insert_all
+    allow(test_run).to receive(:with_container).and_yield(test_run)
+    allow(AgentHarness).to receive(:check_provider).and_return(harness_result)
+  end
+
   describe ".call" do
-    context "when claude is tested through the container runtime path" do
+    context "when claude smoke test succeeds via container" do
       let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        stub_container_smoke_test(
+          name: :claude, status: "ok", message: "Smoke test passed", latency_ms: 42, error_category: nil, check: :smoke_test
+        )
       end
 
       it "returns a successful result" do
@@ -66,112 +69,31 @@ RSpec.describe Providers::TestAgent do
         expect(result.error_type).to be_nil
       end
 
-      it "executes the claude cli inside the container with harness-generated flags" do
+      it "delegates to AgentHarness.check_provider with a container executor" do
         described_class.call(provider: provider)
 
-        expect(test_run).to have_received(:execute_in_container).with(
-          array_including("claude", "--print", "--dangerously-skip-permissions", "Respond with exactly: PING OK"),
+        expect(AgentHarness).to have_received(:check_provider).with(
+          :claude,
           timeout: 60,
-          stream: false,
-          env: {}
+          executor: an_instance_of(Containers::HarnessExecutor),
+          provider_runtime: nil
         )
       end
     end
 
-    context "when claude returns JSON envelope output from the container runtime path" do
+    context "when claude returns an auth error via container smoke test" do
       let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
-      let(:execution_result) do
-        Containers::Provision::Result.success(
-          stdout: JSON.generate("result" => "PING OK", "is_error" => false, "session_id" => "abc123"),
-          stderr: "",
-          exit_code: 0
-        )
-      end
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
-      end
-
-      it "extracts the result from the JSON envelope and returns success" do
-        result = described_class.call(provider: provider)
-
-        expect(result).to be_success
-        expect(result.message).to eq("Agent is healthy")
-      end
-    end
-
-    context "when kilocode returns JSONL output from the container runtime path" do
-      let(:provider_record) { create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
-      let(:execution_result) do
-        jsonl = [
-          JSON.generate("type" => "text", "part" => { "text" => "PING OK" }),
-          JSON.generate("type" => "result", "result" => "PING OK")
-        ].join("\n")
-        Containers::Provision::Result.success(stdout: jsonl, stderr: "", exit_code: 0)
-      end
-
-      before do
-        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
-      end
-
-      it "extracts text from JSONL events and returns success" do
-        result = described_class.call(provider: provider)
-
-        expect(result).to be_success
-        expect(result.message).to eq("Agent is healthy")
-      end
-    end
-
-    context "when opencode returns migration noise with the ping response" do
-      let(:provider_record) { create(:provider, user: user, provider_key: "opencode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
-      let(:execution_result) do
-        Containers::Provision::Result.success(
-          stdout: "Performing one time database migration, may take a few minutes...\nPING OK",
-          stderr: "",
-          exit_code: 0
+        stub_container_smoke_test(
+          name: :claude, status: "error", message: "No authentication token found",
+          latency_ms: 10, error_category: :auth_expired, check: :smoke_test
         )
       end
 
-      before do
-        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "opencode")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
-      end
-
-      it "strips the migration noise and returns success" do
-        result = described_class.call(provider: provider)
-
-        expect(result).to be_success
-        expect(result.message).to eq("Agent is healthy")
-      end
-    end
-
-    context "when claude returns an auth error from the container runtime path" do
-      let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
-      let(:execution_result) do
-        Containers::Provision::Result.failure(
-          error: "No authentication token found",
-          stdout: "",
-          stderr: "No authentication token found",
-          exit_code: 1
-        )
-      end
-
-      before do
-        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
-      end
-
-      it "maps the health check failure to an authentication error" do
+      it "maps the harness error category to an authentication error" do
         result = described_class.call(provider: provider)
 
         expect(result).not_to be_success
@@ -180,22 +102,16 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
-    context "when claude returns a rate limit error from the container runtime path" do
+    context "when claude returns a rate limit error via container smoke test" do
       let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
-      let(:execution_result) do
-        Containers::Provision::Result.failure(
-          error: "Rate limit exceeded",
-          stdout: "",
-          stderr: "Rate limit exceeded. Retry after 120",
-          exit_code: 1
-        )
-      end
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        stub_container_smoke_test(
+          name: :claude, status: "error", message: "Rate limit exceeded. Retry after 120",
+          latency_ms: 10, error_category: :rate_limited, check: :smoke_test
+        )
       end
 
       it "persists the provider rate limit state" do
@@ -211,22 +127,17 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
-    context "when claude returns a capacity-exhausted message from the container runtime path" do
+    context "when claude returns a capacity-exhausted message" do
       let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
-      let(:execution_result) do
-        Containers::Provision::Result.failure(
-          error: "exit 1",
-          stdout: "",
-          stderr: "You have exhausted your capacity on this model.",
-          exit_code: 1
-        )
-      end
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        stub_container_smoke_test(
+          name: :claude, status: "error",
+          message: "You have exhausted your capacity on this model.",
+          latency_ms: 10, error_category: :rate_limited, check: :smoke_test
+        )
       end
 
       it "classifies the result as rate limited and persists provider state" do
@@ -240,20 +151,15 @@ RSpec.describe Providers::TestAgent do
 
     context "when claude returns the current subscription limit wording" do
       let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
-      let(:execution_result) do
-        Containers::Provision::Result.failure(
-          error: "exit 1",
-          stdout: "",
-          stderr: "You've hit your limit · resets Apr 6, 10pm (UTC)",
-          exit_code: 1
-        )
-      end
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        stub_container_smoke_test(
+          name: :claude, status: "error",
+          message: "You've hit your limit · resets Apr 6, 10pm (UTC)",
+          latency_ms: 10, error_category: :rate_limited, check: :smoke_test
+        )
       end
 
       it "classifies the result as rate limited and parses the reset time" do
@@ -406,38 +312,30 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
-    context "when codex needs the repo trust check disabled for provider tests" do
+    context "when codex smoke test succeeds via container" do
       let(:provider_record) { create(:provider, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false) }
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "codex")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        stub_container_smoke_test(
+          name: :codex, status: "ok", message: "Smoke test passed", latency_ms: 30, error_category: nil, check: :smoke_test
+        )
       end
 
-      it "adds the skip git repo check flag before the prompt" do
+      it "delegates to the harness smoke test contract" do
         described_class.call(provider: provider)
 
-        expect(test_run).to have_received(:execute_in_container).with(
-          [
-            "sh",
-            "-c",
-            a_string_matching(/--skip-git-repo-check\s+--output-last-message\s+\$tmp_output\s+"\$1"/)
-              .and(include("-u OPENAI_API_KEY"))
-              .and(include("codex"))
-              .and(include("exec")),
-            "--",
-            Providers::TestAgent::PROMPT
-          ],
+        expect(AgentHarness).to have_received(:check_provider).with(
+          :codex,
           timeout: 60,
-          stream: false,
-          env: {}
+          executor: an_instance_of(Containers::HarnessExecutor),
+          provider_runtime: nil
         )
       end
     end
 
-    context "when a stale codex provider state exists and the test succeeds" do
+    context "when a stale codex provider state exists and the container test succeeds" do
       let(:provider_record) { create(:provider, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false) }
       let!(:provider_state) do
         create(
@@ -452,8 +350,9 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "codex")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        stub_container_smoke_test(
+          name: :codex, status: "ok", message: "Smoke test passed", latency_ms: 30, error_category: nil, check: :smoke_test
+        )
       end
 
       it "clears the stale provider state" do
@@ -469,146 +368,17 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
-    context "when gemini is tested with optional subscription auth" do
+    context "when gemini smoke test fails via container with auth error" do
       let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
-
-      before do
-        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true)
-        allow(ProviderSupport).to receive(:harness_provider_key_for).and_call_original
-        allow(ProviderSupport).to receive(:harness_provider_key_for).with("gemini").and_return("gemini")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
-      end
-
-      it "unsets Gemini proxy env vars when subscription auth is available" do
-        described_class.call(provider: provider)
-
-        expect(test_run).to have_received(:execute_in_container).with(
-          [
-            "sh",
-            "-c",
-            a_string_including('if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]')
-              .and(include("-u GEMINI_API_KEY"))
-              .and(include("-u GOOGLE_GEMINI_BASE_URL"))
-              .and(include("gemini"))
-              .and(include('grep -q "Error when talking to Gemini API"'))
-              .and(include('cat "$after_report"')),
-            "--",
-            Providers::TestAgent::PROMPT
-          ],
-          timeout: 60,
-          stream: false,
-          env: {}
-        )
-      end
-    end
-
-    context "when kilocode is tested in automation mode" do
-      let(:provider_record) { create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
-
-      before do
-        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true)
-        allow(ProviderSupport).to receive(:harness_provider_key_for).and_call_original
-        allow(ProviderSupport).to receive(:harness_provider_key_for).with("kilocode").and_return("kilocode")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
-      end
-
-      it "adds the auto approval flag" do
-        described_class.call(provider: provider)
-
-        expect(test_run).to have_received(:execute_in_container).with(
-          [
-            "sh",
-            "-c",
-            a_string_including('-u OPENAI_API_KEY')
-              .and(include('timeout 20s kilo run --format json --auto --print-logs "$1"')),
-            "--",
-            Providers::TestAgent::PROMPT
-          ],
-          timeout: 60,
-          stream: false,
-          env: {}
-        )
-      end
-    end
-
-    context "when agent returns a failure response" do
-      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
-      let(:execution_result) do
-        Containers::Provision::Result.failure(
-          error: "Process exited abnormally",
-          stdout: "",
-          stderr: "Process exited abnormally",
-          exit_code: 1
-        )
-      end
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
-      end
-
-      it "returns an unexpected error" do
-        result = described_class.call(provider: provider)
-
-        expect(result).not_to be_success
-        expect(result.error_type).to eq(:unexpected)
-        expect(result.message).to include("Process exited abnormally")
-      end
-    end
-
-    context "when agent-harness parses a provider-specific container error type" do
-      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
-      let(:execution_result) do
-        Containers::Provision::Result.failure(
-          error: "Process exited abnormally",
-          stdout: "",
-          stderr: "Process exited abnormally",
-          exit_code: 1
+        stub_container_smoke_test(
+          name: :gemini, status: "error",
+          message: "Please set an Auth method in your /home/agent/.gemini/settings.json or specify one of the following environment variables before running: GEMINI_API_KEY, GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_GENAI_USE_GCA",
+          latency_ms: 10, error_category: :auth_expired, check: :smoke_test
         )
-      end
-
-      before do
-        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
-      end
-
-      it "prefers the harness-classified error type" do
-        service = described_class.new(provider: provider)
-        allow(service).to receive_messages(
-          parse_provider_test_error: { message: "Process exited abnormally", type: :rate_limited },
-          rate_limit_reset_at: 1.hour.from_now
-        )
-        result = service.call
-
-        expect(result).not_to be_success
-        expect(result.error_type).to eq(:rate_limited)
-      end
-    end
-
-    context "when gemini exits with an auth setup error in stderr" do
-      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
-      let(:execution_result) do
-        Containers::Provision::Result.failure(
-          error: "Please set an Auth method in your /home/agent/.gemini/settings.json or specify one of the following environment variables before running: GEMINI_API_KEY, GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_GENAI_USE_GCA",
-          stdout: "",
-          stderr: "Please set an Auth method in your /home/agent/.gemini/settings.json or specify one of the following environment variables before running: GEMINI_API_KEY, GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_GENAI_USE_GCA",
-          exit_code: 1
-        )
-      end
-
-      before do
-        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
       it "returns an authentication error" do
@@ -620,44 +390,17 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
-    context "when gemini returns a validation-required stack trace" do
+    context "when gemini returns a validation-required error" do
       let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
-      let(:execution_result) do
-        Containers::Provision::Result.failure(
-          error: <<~ERROR,
-            Keychain initialization encountered an error: Cannot autolaunch D-Bus without X11 $DISPLAY
-            Using FileKeychain fallback for secure storage.
-            Loaded cached credentials.
-            Validation handler failed: ValidationRequiredError: Verify your account to continue.
-                at classifyValidationRequiredError (file:///tmp/googleQuotaErrors.js:141:12)
-            Error when talking to Gemini API
-            Full report available at: /tmp/gemini-client-error.json
-            ValidationRequiredError: Verify your account to continue.
-                at Turn.run (file:///tmp/turn.js:71:30)
-            An unexpected critical error occurred:[object Object]
-          ERROR
-          stdout: "",
-          stderr: <<~ERROR,
-            Keychain initialization encountered an error: Cannot autolaunch D-Bus without X11 $DISPLAY
-            Using FileKeychain fallback for secure storage.
-            Loaded cached credentials.
-            Validation handler failed: ValidationRequiredError: Verify your account to continue.
-                at classifyValidationRequiredError (file:///tmp/googleQuotaErrors.js:141:12)
-            Error when talking to Gemini API
-            Full report available at: /tmp/gemini-client-error.json
-            ValidationRequiredError: Verify your account to continue.
-                at Turn.run (file:///tmp/turn.js:71:30)
-            An unexpected critical error occurred:[object Object]
-          ERROR
-          exit_code: 1
-        )
-      end
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        stub_container_smoke_test(
+          name: :gemini, status: "error",
+          message: "Verify your account to continue.",
+          latency_ms: 10, error_category: :auth_expired, check: :smoke_test
+        )
       end
 
       it "returns a concise authentication error" do
@@ -671,20 +414,15 @@ RSpec.describe Providers::TestAgent do
 
     context "when gemini hits the proxy without a configured upstream key" do
       let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
-      let(:execution_result) do
-        Containers::Provision::Result.failure(
-          error: "[API Error: {\"error\":\"API key not configured for google\"}]",
-          stdout: "",
-          stderr: "[API Error: {\"error\":\"API key not configured for google\"}]",
-          exit_code: 1
-        )
-      end
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        stub_container_smoke_test(
+          name: :gemini, status: "error",
+          message: "[API Error: {\"error\":\"API key not configured for google\"}]",
+          latency_ms: 10, error_category: :authentication, check: :smoke_test
+        )
       end
 
       it "returns a concise authentication error" do
@@ -698,20 +436,15 @@ RSpec.describe Providers::TestAgent do
 
     context "when codex cannot authenticate to the Paid proxy" do
       let(:provider_record) { create(:provider, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false) }
-      let(:execution_result) do
-        Containers::Provision::Result.failure(
-          error: "Unauthorized: {\"error\":\"Missing agent run ID\"}, url: http://web:3000/api/proxy/openai/responses",
-          stdout: "",
-          stderr: "Unauthorized: {\"error\":\"Missing agent run ID\"}, url: http://web:3000/api/proxy/openai/responses",
-          exit_code: 1
-        )
-      end
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "codex")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        stub_container_smoke_test(
+          name: :codex, status: "error",
+          message: "Unauthorized: {\"error\":\"Missing agent run ID\"}, url: http://web:3000/api/proxy/openai/responses",
+          latency_ms: 10, error_category: :auth_expired, check: :smoke_test
+        )
       end
 
       it "returns a concise authentication error" do
@@ -725,20 +458,15 @@ RSpec.describe Providers::TestAgent do
 
     context "when opencode emits ansi noise before an auth failure" do
       let(:provider_record) { create(:provider, user: user, provider_key: "opencode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
-      let(:execution_result) do
-        Containers::Provision::Result.failure(
-          error: "\e[0m▄\e[0m\n[API Error: {\"error\":\"API key not configured for openai\"}]",
-          stdout: "",
-          stderr: "\e[0m▄\e[0m\n[API Error: {\"error\":\"API key not configured for openai\"}]",
-          exit_code: 1
-        )
-      end
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "opencode")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        stub_container_smoke_test(
+          name: :opencode, status: "error",
+          message: "\e[0m▄\e[0m\n[API Error: {\"error\":\"API key not configured for openai\"}]",
+          latency_ms: 10, error_category: :auth_expired, check: :smoke_test
+        )
       end
 
       it "returns the translated auth error instead of ansi noise" do
@@ -752,23 +480,15 @@ RSpec.describe Providers::TestAgent do
 
     context "when copilot is missing from an outdated agent image" do
       let(:provider_record) { create(:provider, user: user, provider_key: "copilot", enabled_for_agent_runs: false, enabled_for_fallback: false) }
-      # NOTE: The double-quote characters inside these single-quoted Ruby strings are plain literal
-      # `"`, not backslash-escaped. Ruby single quotes only treat `\\` and `\'` as escape sequences,
-      # so `"` here is just a regular character and matches the regex in translate_known_provider_errors.
-      let(:execution_result) do
-        Containers::Provision::Result.failure(
-          error: 'OCI runtime exec failed: exec failed: unable to start container process: exec: "github-copilot-cli": executable file not found in $PATH',
-          stdout: "",
-          stderr: 'OCI runtime exec failed: exec failed: unable to start container process: exec: "github-copilot-cli": executable file not found in $PATH',
-          exit_code: 126
-        )
-      end
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "github_copilot")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        stub_container_smoke_test(
+          name: :github_copilot, status: "error",
+          message: 'OCI runtime exec failed: exec failed: unable to start container process: exec: "github-copilot-cli": executable file not found in $PATH',
+          latency_ms: 10, error_category: :installation, check: :smoke_test
+        )
       end
 
       it "returns a concise installation error" do
@@ -780,24 +500,26 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
-    context "when opencode is tested" do
+    context "when opencode smoke test succeeds via container" do
       let(:provider_record) { create(:provider, user: user, provider_key: "opencode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "opencode")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        stub_container_smoke_test(
+          name: :opencode, status: "ok", message: "Smoke test passed", latency_ms: 30, error_category: nil, check: :smoke_test
+        )
       end
 
-      it "uses the current opencode run command" do
-        described_class.call(provider: provider)
+      it "delegates to the harness smoke test" do
+        result = described_class.call(provider: provider)
 
-        expect(test_run).to have_received(:execute_in_container).with(
-          array_including("opencode", "run", "Respond with exactly: PING OK"),
+        expect(result).to be_success
+        expect(AgentHarness).to have_received(:check_provider).with(
+          :opencode,
           timeout: 60,
-          stream: false,
-          env: {}
+          executor: an_instance_of(Containers::HarnessExecutor),
+          provider_runtime: nil
         )
       end
     end
@@ -820,38 +542,19 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "opencode")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        stub_container_smoke_test(
+          name: :opencode, status: "ok", message: "Smoke test passed", latency_ms: 30, error_category: nil, check: :smoke_test
+        )
       end
 
-      it "passes agent-harness runtime preparation into the container exec" do
+      it "passes the provider runtime to the harness check" do
         described_class.call(provider: provider)
 
-        expect(test_run).to have_received(:execute_in_container).with(
-          [ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", Providers::TestAgent::PROMPT ],
+        expect(AgentHarness).to have_received(:check_provider).with(
+          :opencode,
           timeout: 60,
-          stream: false,
-          env: hash_including("OPENAI_API_KEY", "OPENAI_BASE_URL"),
-          preparation: have_attributes(
-            file_writes: [
-              have_attributes(path: "~/.config/opencode/opencode.json")
-            ]
-          )
-        )
-      end
-
-      it "keeps multi-line prompts intact in the wrapped harness command" do
-        test_agent = described_class.new(provider: provider)
-        allow(test_agent).to receive(:direct_outbound_execution_plan).and_return(
-          Providers::HarnessExecutionPlan::Result.new(
-            command: [ "opencode", "run", "line 1\nline 2" ],
-            env: {},
-            preparation: nil
-          )
-        )
-
-        expect(test_agent.send(:harness_runtime_command)).to eq(
-          [ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", "line 1\nline 2" ]
+          executor: an_instance_of(Containers::HarnessExecutor),
+          provider_runtime: an_instance_of(AgentHarness::ProviderRuntime)
         )
       end
 
@@ -866,22 +569,68 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
-    context "when the provider reports a rate limit message on stdout" do
-      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
-      let(:execution_result) do
-        Containers::Provision::Result.failure(
-          error: "Command exited with code 1",
-          stdout: "You're out of extra usage · resets 8am (UTC)\n",
-          stderr: "",
-          exit_code: 1
+    context "when direct-outbound kilocode is tested" do
+      let(:api_key) { create(:provider_api_key, user: user, api_service_type: "anthropic") }
+      let(:provider_record) do
+        create(
+          :provider,
+          user: user,
+          provider_key: "kilocode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          enabled_for_agent_runs: false,
+          enabled_for_fallback: false,
+          config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-20250514" } }
         )
+      end
+
+      let(:prep_result) do
+        Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
       end
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
+          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
         stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
+        allow(test_run).to receive(:execute_in_container).and_return(prep_result)
+        allow(AgentHarness).to receive(:check_provider).and_return(
+          name: :kilocode, status: "ok", message: "Smoke test passed", latency_ms: 30, error_category: nil, check: :smoke_test
+        )
+      end
+
+      it "passes a provider runtime with the upstream API key" do
+        described_class.call(provider: provider)
+
+        expect(AgentHarness).to have_received(:check_provider).with(
+          :kilocode,
+          timeout: 60,
+          executor: an_instance_of(Containers::HarnessExecutor),
+          provider_runtime: an_instance_of(AgentHarness::ProviderRuntime)
+        )
+      end
+
+      it "materializes the kilocode config file before the smoke test" do
+        described_class.call(provider: provider)
+
+        expect(test_run).to have_received(:execute_in_container).with(
+          %w[true],
+          hash_including(preparation: an_instance_of(AgentHarness::ExecutionPreparation))
+        )
+      end
+    end
+
+    context "when the provider reports a rate limit via container smoke test" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
+        stub_container_smoke_test(
+          name: :gemini, status: "error",
+          message: "You're out of extra usage · resets 8am (UTC)",
+          latency_ms: 10, error_category: :rate_limited, check: :smoke_test
+        )
       end
 
       it "returns a rate limited error with the provider message" do
@@ -893,22 +642,17 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
-    context "when the provider returns a binary encoded rate limit message" do
+    context "when the harness returns a binary encoded rate limit message" do
       let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
-      let(:execution_result) do
-        Containers::Provision::Result.failure(
-          error: "Command exited with code 1",
-          stdout: "You're out of extra usage \xB7 resets 8am (UTC)\x00\n".b,
-          stderr: "",
-          exit_code: 1
-        )
-      end
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        stub_container_smoke_test(
+          name: :gemini, status: "error",
+          message: "You're out of extra usage \xB7 resets 8am (UTC)\x00\n".b,
+          latency_ms: 10, error_category: :rate_limited, check: :smoke_test
+        )
       end
 
       it "normalizes the output before classification" do
@@ -940,25 +684,20 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
-    context "when the container response falls back to a binary encoded error message" do
+    context "when the harness returns a binary encoded error message" do
       let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
-      let(:execution_result) do
-        Containers::Provision::Result.failure(
-          error: "Invalid API key \xFF\x00".b,
-          stdout: "",
-          stderr: "",
-          exit_code: 1
-        )
-      end
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        stub_insert_all
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        stub_container_smoke_test(
+          name: :gemini, status: "error",
+          message: "Invalid API key \xFF\x00".b,
+          latency_ms: 10, error_category: :auth_expired, check: :smoke_test
+        )
       end
 
-      it "normalizes response.error before classification" do
+      it "normalizes the message before classification" do
         result = described_class.call(provider: provider)
 
         expect(result).not_to be_success
@@ -1109,6 +848,50 @@ RSpec.describe Providers::TestAgent do
         expect(result).not_to be_success
         expect(result.error_type).to eq(:unexpected)
         expect(result.message).to eq("Something went wrong �")
+      end
+    end
+
+    context "when the harness error_category maps to a known error type" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
+      end
+
+      it "prefers the harness-classified error category over pattern matching" do
+        stub_container_smoke_test(
+          name: :gemini, status: "error",
+          message: "Process exited abnormally",
+          latency_ms: 10, error_category: :rate_limited, check: :smoke_test
+        )
+
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+      end
+    end
+
+    context "when the harness returns a generic failure without error_category" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
+        stub_container_smoke_test(
+          name: :gemini, status: "error",
+          message: "Process exited abnormally",
+          latency_ms: 10, error_category: nil, check: :smoke_test
+        )
+      end
+
+      it "falls back to pattern-based classification" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:unexpected)
+        expect(result.message).to include("Process exited abnormally")
       end
     end
   end
