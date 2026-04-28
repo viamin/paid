@@ -2,12 +2,27 @@
 
 module ChatSessions
   # Constructs a system prompt from session context including base identity,
-  # project context, and workspace information.
+  # tool definitions, project context, cross-project context, workspace info,
+  # and user preferences. Manages total size to stay under token limits by
+  # dropping lower-priority sections first.
+  #
+  # Section priority (highest to lowest):
+  #   base_identity > project_context > tool_definitions > cross_project > workspace
   #
   # @example
   #   ChatSessions::BuildSystemPrompt.call(chat_session: session)
-  #   # => "You are Paid, an AI development assistant..."
+  #   # => "You are an AI assistant helping manage software projects via Paid..."
   class BuildSystemPrompt
+    # Approximate chars-per-token ratio for size estimation.
+    CHARS_PER_TOKEN = 4
+    MAX_TOKENS = 4000
+    MAX_PROMPT_CHARS = MAX_TOKENS * CHARS_PER_TOKEN
+
+    README_MAX_CHARS = 2000
+    RECENT_ISSUES_LIMIT = 5
+    RECENT_RUNS_LIMIT = 5
+    CROSS_PROJECT_SUMMARY_MAX_CHARS = 500
+
     attr_reader :chat_session
 
     def initialize(chat_session:)
@@ -19,46 +34,166 @@ module ChatSessions
     end
 
     def call
-      sections = [ base_identity ]
-      sections << paid_capabilities
-      sections << primary_project_context if primary_project
-      sections << cross_project_context if reference_projects.any?
-      sections << workspace_context if chat_session.mode == "workspace"
-      sections.compact.join("\n\n")
+      assemble_with_budget(build_sections)
     end
 
     private
 
+    # Returns sections ordered by priority (highest first).
+    # Lower-priority sections are dropped first when the prompt exceeds the budget.
+    def build_sections
+      sections = []
+      sections << { priority: 0, content: base_identity }
+      sections << { priority: 1, content: project_context } if primary_project
+      sections << { priority: 2, content: tool_definitions } if mcp_tools.any?
+      sections << { priority: 3, content: cross_project_context } if reference_projects.any?
+      sections << { priority: 4, content: workspace_context } if chat_session.mode == "workspace"
+      sections << { priority: 5, content: user_preferences }
+      sections
+    end
+
+    # Joins sections respecting the character budget. Drops lowest-priority
+    # sections (highest priority number) first when the total is too large.
+    def assemble_with_budget(sections)
+      # Sort by priority ascending so we can pop from the end (lowest priority)
+      sorted = sections.sort_by { |s| s[:priority] }
+
+      loop do
+        total = sorted.sum { |s| s[:content].length }
+        break if total <= MAX_PROMPT_CHARS || sorted.size <= 1
+
+        sorted.pop
+      end
+
+      sorted.map { |s| s[:content] }.join("\n\n")
+    end
+
     def base_identity
-      "You are Paid, an AI development assistant. You help users design, build, " \
-        "debug, and manage software projects. Be concise, accurate, and proactive."
+      <<~PROMPT.strip
+        You are an AI assistant helping manage software projects via Paid, a platform for AI-driven development.
+        You can help with:
+        - Designing features and discussing implementation approaches
+        - Debugging issues by inspecting code, logs, and running commands
+        - Managing projects, issues, and agent runs through Paid's tools
+        - Answering questions about codebases and project status
+
+        When the user asks you to perform actions (trigger runs, list projects, etc.), use the available tools.
+        Be concise and technical. Ask clarifying questions when the request is ambiguous.
+      PROMPT
     end
 
-    def paid_capabilities
-      "You have access to Paid's tools for managing projects, agent runs, " \
-        "code search, and account settings via MCP."
+    def tool_definitions
+      lines = mcp_tools.map { |tool| "- [#{tool[:name]}] #{tool[:description]}" }
+
+      <<~PROMPT.strip
+        ## Available Tools
+
+        You have access to the following Paid tools:
+        #{lines.join("\n")}
+
+        To use a tool, call it explicitly. For example, if the user asks "what projects do I have?", call list_projects.
+      PROMPT
     end
 
-    def primary_project_context
+    def project_context
       project = primary_project
-      parts = [ "## Primary Project: #{project.name}" ]
-      parts << "Repository: #{project.repo_full_name}" if project.respond_to?(:repo_full_name) && project.repo_full_name.present?
-      parts << "Description: #{project.description}" if project.respond_to?(:description) && project.description.present?
-      parts.join("\n")
+      parts = []
+      parts << "## Current Project: #{project.name} (#{project.owner}/#{project.repo})"
+      parts << readme_section(project)
+      parts << recent_issues_section(project)
+      parts << recent_runs_section(project)
+      parts << style_guide_section(project)
+      parts.compact.join("\n\n")
     end
 
     def cross_project_context
-      names = reference_projects.map(&:name).join(", ")
-      "## Reference Projects\nYou also have context from: #{names}"
+      summaries = reference_projects.map { |project| project_summary(project) }
+
+      <<~PROMPT.strip
+        ## Referenced Projects
+
+        #{summaries.join("\n\n")}
+      PROMPT
     end
 
     def workspace_context
-      "## Workspace Mode\nYou have access to a persistent workspace container. " \
-        "You can read and write files, run commands, and make code changes directly."
+      <<~PROMPT.strip
+        ## Workspace
+        You have access to a workspace with the project's git repository checked out.
+        You can read and modify files, run commands, and execute git operations.
+      PROMPT
     end
 
-    # Primary project is the canonical project_id FK on ChatSession.
-    # chat_session_projects is reserved for reference projects only.
+    def user_preferences
+      <<~PROMPT.strip
+        ## Preferences
+        Prefer concise, technical responses. Show code when relevant. Ask before making destructive changes.
+      PROMPT
+    end
+
+    # --- Section helpers ---
+
+    def readme_section(project)
+      return nil unless project.respond_to?(:readme_content) && project.readme_content.present?
+
+      content = truncate(project.readme_content, README_MAX_CHARS)
+      "### Repository Overview\n#{content}"
+    end
+
+    def recent_issues_section(project)
+      issues = project.issues
+        .where(is_pull_request: false)
+        .order(github_updated_at: :desc)
+        .limit(RECENT_ISSUES_LIMIT)
+        .select(:github_number, :title, :github_state)
+
+      return nil if issues.empty?
+
+      lines = issues.map do |issue|
+        "- ##{issue.github_number}: #{issue.title} [#{issue.github_state}]"
+      end
+
+      "### Recent Issues\n#{lines.join("\n")}"
+    end
+
+    def recent_runs_section(project)
+      runs = project.agent_runs
+        .order(created_at: :desc)
+        .limit(RECENT_RUNS_LIMIT)
+        .select(:id, :goal, :status, :tokens_input, :tokens_output)
+
+      return nil if runs.empty?
+
+      lines = runs.map do |run|
+        tokens = (run.tokens_input.to_i + run.tokens_output.to_i)
+        "- Run ##{run.id}: #{run.goal} → #{run.status} (tokens: #{tokens})"
+      end
+
+      "### Recent Agent Runs\n#{lines.join("\n")}"
+    end
+
+    def style_guide_section(project)
+      guides = StyleGuide.resolve_for(project).limit(3)
+      return nil if guides.empty?
+
+      contents = guides.filter_map(&:content_for_prompt)
+      return nil if contents.empty?
+
+      "### Style Guide\n#{contents.join("\n\n")}"
+    end
+
+    def project_summary(project)
+      desc = if project.respond_to?(:description) && project.description.present?
+        truncate(project.description, CROSS_PROJECT_SUMMARY_MAX_CHARS)
+      else
+        "No description available"
+      end
+
+      "### #{project.owner}/#{project.repo}\n#{desc}"
+    end
+
+    # --- Data accessors ---
+
     def primary_project
       @primary_project ||= chat_session.project
     end
@@ -68,6 +203,25 @@ module ChatSessions
         .where(context_type: "reference")
         .includes(:project)
         .map(&:project)
+    end
+
+    def mcp_tools
+      @mcp_tools ||= load_mcp_tools
+    end
+
+    def load_mcp_tools
+      project = primary_project
+      return [] unless project
+
+      project.mcp_server_definitions.enabled.map do |server|
+        { name: server.name, description: server.command.to_s }
+      end
+    end
+
+    def truncate(text, max_chars)
+      return text if text.length <= max_chars
+
+      text[0, max_chars] + "..."
     end
   end
 end
