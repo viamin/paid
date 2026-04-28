@@ -206,6 +206,8 @@ RSpec.describe Containers::Provision do
           metadata: hash_including(network: NetworkPolicy::NETWORK_NAME)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.ownership_batch_fixed",
           metadata: hash_including(dirs_count: 12)).ordered
+        expect(agent_run).to receive(:log!).with("system", "container.opencode_database_seeded",
+          metadata: {}).ordered
         expect(agent_run).to receive(:log!).with("system", "container.codex_config_seeded",
           metadata: {}).ordered
         expect(agent_run).to receive(:log!).with("system", "container.firewall.applied",
@@ -1492,6 +1494,76 @@ RSpec.describe Containers::Provision do
         expect(NetworkPolicy).not_to receive(:apply_firewall_rules)
 
         service.provision
+      end
+    end
+  end
+
+  describe "#seed_opencode_database!" do
+    let(:service) { described_class.new(agent_run: agent_run, worktree_path: worktree_path) }
+
+    before do
+      allow(Docker::Container).to receive(:create).and_return(mock_container)
+      allow(mock_container).to receive(:start)
+      allow(NetworkPolicy).to receive_messages(ensure_network!: mock_network, apply_firewall_rules: nil)
+      allow(Docker::Volume).to receive(:create).and_return(mock_volume)
+      allow(Docker::Volume).to receive(:get).and_raise(Docker::Error::NotFoundError)
+      allow(agent_run).to receive(:log!)
+    end
+
+    it "copies pre-seeded database from /opt/opencode-seed into the tmpfs" do
+      service.provision
+
+      expect(mock_container).to have_received(:exec).with(
+        [ "sh", "-c",
+          satisfy { |script|
+            script.include?("/opt/opencode-seed") &&
+              script.include?("/home/agent/.local/share/opencode")
+          } ],
+        user: "root"
+      )
+    end
+
+    it "logs the seeding success" do
+      service.provision
+
+      expect(agent_run).to have_received(:log!).with("system", "container.opencode_database_seeded",
+        metadata: {})
+    end
+
+    context "when Docker exec fails during opencode seed" do
+      before do
+        allow(mock_container).to receive(:exec) do |cmd, **opts|
+          if cmd.is_a?(Array) && cmd[0] == "sh" && cmd[1] == "-c" && cmd.last.include?("/opt/opencode-seed")
+            raise Docker::Error::DockerError, "copy failed"
+          end
+          nil
+        end
+      end
+
+      it "logs the failure but does not raise" do
+        expect { service.provision }.not_to raise_error
+
+        expect(agent_run).to have_received(:log!).with("system", "container.opencode_database_seed_failed",
+          metadata: hash_including(error: "copy failed"))
+      end
+    end
+
+    context "when the cp command exits non-zero" do
+      before do
+        allow(mock_container).to receive(:exec) do |cmd, **opts|
+          if cmd.is_a?(Array) && cmd[0] == "sh" && cmd[1] == "-c" && cmd.last.include?("/opt/opencode-seed")
+            [ [], [], 1 ]
+          else
+            nil
+          end
+        end
+      end
+
+      it "logs the failure with the exit code" do
+        expect { service.provision }.not_to raise_error
+
+        expect(agent_run).to have_received(:log!).with("system", "container.opencode_database_seed_failed",
+          metadata: hash_including(error: "opencode database seed exited with 1"))
       end
     end
   end

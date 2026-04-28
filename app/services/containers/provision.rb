@@ -175,6 +175,7 @@ module Containers
       @container = create_container
       start_container
       fix_all_ownership!
+      seed_opencode_database!
       seed_codex_credentials!
       seed_gemini_credentials!
       seed_copilot_credentials!
@@ -874,6 +875,29 @@ module Containers
         f.flock(File::LOCK_UN)
         log_system("container.codex_auth_lock.released", lockfile: lockfile)
       end
+    end
+
+    def seed_opencode_database!
+      return unless container_executable_opencode?
+
+      result = container.exec(
+        [ "sh", "-c",
+          "if [ -d /opt/opencode-seed ]; then " \
+          "cp -a /opt/opencode-seed/. /home/agent/.local/share/opencode/ && " \
+          "chown -R agent:agent /home/agent/.local/share/opencode; " \
+          "fi" ],
+        user: "root"
+      )
+      exit_code = result.is_a?(Array) ? result[2].to_i : 0
+      raise Docker::Error::DockerError, "opencode database seed exited with #{exit_code}" unless exit_code == 0
+
+      log_system("container.opencode_database_seeded")
+    rescue Docker::Error::DockerError => e
+      log_system("container.opencode_database_seed_failed", error: e.message)
+    end
+
+    def container_executable_opencode?
+      ProviderSupport.container_executable_provider_key?("opencode")
     end
 
     def seed_gemini_credentials!
