@@ -5,6 +5,7 @@ class ChatSession < ApplicationRecord
 
   STATUSES = %w[active idle closed archived].freeze
   MODES = %w[api workspace].freeze
+  IDLE_TIMEOUT_DURATION = 30.minutes
 
   before_validation :set_external_id, on: :create
 
