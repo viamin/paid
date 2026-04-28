@@ -67,7 +67,12 @@ module Containers
         end
       end
 
-      exit_code = exec_result.is_a?(Array) ? exec_result[2] : 0
+      exit_code = if exec_result.is_a?(Array)
+        exec_result[2]
+      else
+        log("execute.unexpected_result", result_class: exec_result.class.name)
+        -1
+      end
       stdout = stdout_buffer.join
       stderr = stderr_buffer.join
 

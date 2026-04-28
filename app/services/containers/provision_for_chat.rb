@@ -238,7 +238,12 @@ module Containers
         Env: [ "CLONE_TOKEN=#{github_token.token}" ]
       )
 
-      exit_code = result.is_a?(Array) ? result[2] : 0
+      exit_code = if result.is_a?(Array)
+        result[2]
+      else
+        log("provision.unexpected_exec_result", result_class: result.class.name)
+        -1
+      end
       if exit_code != 0
         output = result.is_a?(Array) ? result[0..1].flatten.join("\n").truncate(500) : ""
         raise ProvisionError, "Workspace clone failed (exit #{exit_code}): #{output}"
