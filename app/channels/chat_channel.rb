@@ -18,27 +18,29 @@ class ChatChannel < ApplicationCable::Channel
   def send_message(data)
     return unless @chat_session
 
-    content = data["content"]
-    return if content.blank?
+    TenantContext.with(current_user.account) do
+      content = data["content"]
+      return if content.blank?
 
-    message_id = SecureRandom.uuid
-    broadcast_event("message_start", { message_id: message_id, model: @chat_session.model })
+      message_id = SecureRandom.uuid
+      broadcast_event("message_start", { message_id: message_id, model: @chat_session.model })
 
-    assistant_message = ChatSessions::SendMessage.call(
-      chat_session: @chat_session,
-      content: content,
-      on_chunk: ->(chunk) {
-        broadcast_event("message_chunk", { message_id: message_id, content: chunk })
-      }
-    )
+      assistant_message = ChatSessions::SendMessage.call(
+        chat_session: @chat_session,
+        content: content,
+        on_chunk: ->(chunk) {
+          broadcast_event("message_chunk", { message_id: message_id, content: chunk })
+        }
+      )
 
-    broadcast_event("message_complete", {
-      message_id: message_id,
-      tokens: {
-        input: assistant_message.tokens_input,
-        output: assistant_message.tokens_output
-      }
-    })
+      broadcast_event("message_complete", {
+        message_id: message_id,
+        tokens: {
+          input: assistant_message.tokens_input,
+          output: assistant_message.tokens_output
+        }
+      })
+    end
   rescue ArgumentError => e
     broadcast_event("error", { message: e.message })
   rescue StandardError => e
