@@ -65,9 +65,16 @@ module AgentRuns
       {
         tokens_input: tokens_input,
         tokens_output: tokens_output,
-        llm_model: response.model,
+        llm_model: llm_model_label,
         request_type: request_type
       }
+    end
+
+    # Falls back to the provider name when the harness response has no model
+    # id — common for Claude Code runs where the CLI selects the model at
+    # runtime rather than the runtime override pinning one.
+    def llm_model_label
+      response.model.presence || response.provider.to_s.presence
     end
 
     def run_input
