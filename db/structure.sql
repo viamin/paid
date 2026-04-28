@@ -9616,13 +9616,17 @@ CREATE POLICY tenant_isolation ON public.token_usages USING ((public.paid_tenant
   WHERE ((agent_runs.id = token_usages.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((knowledge_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.knowledge_runs
      JOIN public.projects ON ((projects.id = knowledge_runs.project_id)))
-  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR (((agent_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
+  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((chat_session_id IS NOT NULL) AND (EXISTS ( SELECT 1
+   FROM public.chat_sessions
+  WHERE ((chat_sessions.id = token_usages.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR (((agent_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.agent_runs
      JOIN public.projects ON ((projects.id = agent_runs.project_id)))
   WHERE ((agent_runs.id = token_usages.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((knowledge_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.knowledge_runs
      JOIN public.projects ON ((projects.id = knowledge_runs.project_id)))
-  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))))));
+  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((chat_session_id IS NOT NULL) AND (EXISTS ( SELECT 1
+   FROM public.chat_sessions
+  WHERE ((chat_sessions.id = token_usages.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id()))))))));
 
 
 --
@@ -10010,6 +10014,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260428130904'),
 ('20260428120000'),
 ('20260428025840'),
 ('20260427225726'),

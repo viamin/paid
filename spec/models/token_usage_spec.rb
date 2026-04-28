@@ -6,6 +6,7 @@ RSpec.describe TokenUsage do
   describe "associations" do
     it { is_expected.to belong_to(:agent_run).optional }
     it { is_expected.to belong_to(:knowledge_run).optional }
+    it { is_expected.to belong_to(:chat_session).optional }
   end
 
   describe "validations" do
