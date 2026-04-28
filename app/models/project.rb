@@ -88,7 +88,9 @@ class Project < ApplicationRecord
     { label: "Inherit Priority Labels", attribute: :inherit_priority_labels,
      description: "When Paid creates a PR for an issue, copy any user-defined priority labels (P1/P2/P3) from the issue onto the new PR." }.freeze,
     { label: "Auto-enhance before PR", attribute: :auto_enhance_enabled,
-     description: "Analyze issue context readiness before auto-pick creates a PR run" }.freeze
+     description: "Analyze issue context readiness before auto-pick creates a PR run" }.freeze,
+    { label: "Knowledge evolution", attribute: :knowledge_evolution_enabled,
+     description: "Weekly analysis of knowledge gaps and collector effectiveness" }.freeze
   ].freeze
 
   AUTO_MERGE_MODE_OPTIONS = [
@@ -145,6 +147,7 @@ class Project < ApplicationRecord
   has_many :context_intake_sessions, dependent: :destroy
   has_one :tracker_configuration, as: :configurable, dependent: :destroy
   has_many :quality_pause_events, dependent: :destroy
+  has_many :knowledge_recommendations, dependent: :destroy
 
   encrypts :webhook_secret
 

@@ -6,6 +6,7 @@ require Rails.root.join("db/migrate/20260425113212_enable_rls_on_knowledge_usage
 require Rails.root.join("db/migrate/20260425060000_enable_rls_on_notification_rule_states")
 require Rails.root.join("db/migrate/20260426011810_enable_rls_on_llm_output_metrics")
 require Rails.root.join("db/migrate/20260426231639_enable_rls_on_chat_tables")
+require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recommendations")
 
 RSpec.describe TenantContext, :tenant_isolation do
   around do |example|
@@ -142,6 +143,7 @@ RSpec.describe TenantContext, :tenant_isolation do
 
   def install_tenant_policies
     ActiveRecord::Migration.suppress_messages do
+      EnableRlsOnKnowledgeRecommendations.new.down if knowledge_recommendations_has_rls?
       EnableRlsOnChatTables.new.down if chat_tables_have_rls?
       EnableRlsOnLlmOutputMetrics.new.down if llm_output_metrics_has_rls?
       EnableRlsOnKnowledgeUsageStats.new.down if knowledge_usage_stats_has_rls?
@@ -152,6 +154,7 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnKnowledgeUsageStats.new.up unless knowledge_usage_stats_has_rls?
       EnableRlsOnLlmOutputMetrics.new.up unless llm_output_metrics_has_rls?
       EnableRlsOnChatTables.new.up unless chat_tables_have_rls?
+      EnableRlsOnKnowledgeRecommendations.new.up unless knowledge_recommendations_has_rls?
     end
     ActiveRecord::Base.connection.execute("RESET ROLE")
     cleanup_restricted_role
@@ -165,12 +168,19 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.execute("RESET ROLE")
     cleanup_restricted_role
     ActiveRecord::Migration.suppress_messages do
+      EnableRlsOnKnowledgeRecommendations.new.down if knowledge_recommendations_has_rls?
       EnableRlsOnChatTables.new.down if chat_tables_have_rls?
       EnableRlsOnLlmOutputMetrics.new.down if llm_output_metrics_has_rls?
       EnableRlsOnKnowledgeUsageStats.new.down if knowledge_usage_stats_has_rls?
       EnableRlsOnNotificationRuleStates.new.down
       EnableTenantRowLevelSecurity.new.down
     end
+  end
+
+  def knowledge_recommendations_has_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'knowledge_recommendations' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
   end
 
   def knowledge_usage_stats_has_rls?
