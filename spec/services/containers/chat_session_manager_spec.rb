@@ -93,6 +93,24 @@ RSpec.describe Containers::ChatSessionManager do
       expect(result[:stderr]).to include("warning: something")
     end
 
+    context "when agent CLI exits with non-zero code" do
+      before do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block&.call(:stderr, "Error: something went wrong\n")
+          [ [], [ "Error: something went wrong\n" ], 1 ]
+        end
+      end
+
+      it "returns a failure result" do
+        result = manager.execute_agent_command(prompt: "Fix the bug")
+
+        expect(result).to be_failure
+        expect(result.error).to eq("Agent command exited with code 1")
+        expect(result[:exit_code]).to eq(1)
+        expect(result[:stderr]).to include("something went wrong")
+      end
+    end
+
     context "when container is not assigned" do
       let(:chat_session) do
         create(:chat_session, account: account, container_id: nil)

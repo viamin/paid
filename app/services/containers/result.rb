@@ -3,7 +3,8 @@
 module Containers
   # Simple result object for container service method returns.
   #
-  # Shared by ProvisionForChat, ChatSessionManager, and Provision.
+  # Used by ProvisionForChat and ChatSessionManager. Note: Provision
+  # defines its own nested Result class (Containers::Provision::Result).
   class Result
     attr_reader :data, :error
 

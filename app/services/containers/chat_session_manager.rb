@@ -60,12 +60,22 @@ module Containers
 
       log("execute.complete", exit_code: exit_code)
 
-      Result.success(
-        stdout: stdout,
-        stderr: stderr,
-        exit_code: exit_code,
-        session_id: extract_session_id(stdout) || session_id
-      )
+      if exit_code == 0
+        Result.success(
+          stdout: stdout,
+          stderr: stderr,
+          exit_code: exit_code,
+          session_id: extract_session_id(stdout) || session_id
+        )
+      else
+        Result.failure(
+          error: "Agent command exited with code #{exit_code}",
+          stdout: stdout,
+          stderr: stderr,
+          exit_code: exit_code,
+          session_id: session_id
+        )
+      end
     rescue Docker::Error::DockerError => e
       log("execute.failed", error: e.message)
       raise ExecutionError, "Docker exec error: #{e.message}"
