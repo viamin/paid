@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
 module Containers
-  # Simple result object for container service method returns.
+  # Shared result object for all container service method returns.
   #
-  # Used by ProvisionForChat and ChatSessionManager. Note: Provision
-  # defines its own nested Result class (Containers::Provision::Result).
+  # Used by Provision, ProvisionForChat, and ChatSessionManager.
+  # Provision::Result is an alias for this class.
   class Result
     attr_reader :data, :error
 

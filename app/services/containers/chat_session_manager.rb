@@ -23,6 +23,7 @@ module Containers
     class ExecutionError < Error; end
 
     EXECUTE_TIMEOUT = 1.hour.to_i
+    MAX_SESSION_DURATION = 4.hours
 
     attr_reader :chat_session
 
@@ -81,11 +82,14 @@ module Containers
       raise ExecutionError, "Docker exec error: #{e.message}"
     end
 
-    # Resets the idle timeout on the chat session.
+    # Resets the idle timeout on the chat session, clamped to MAX_SESSION_DURATION
+    # from the session's creation time to prevent unbounded container lifetimes.
     #
     # @param duration [ActiveSupport::Duration] Timeout duration (default: 30 minutes)
     def extend_idle_timeout!(duration: 30.minutes)
-      chat_session.update!(idle_timeout_at: duration.from_now)
+      max_timeout_at = chat_session.created_at + MAX_SESSION_DURATION
+      new_timeout_at = [ duration.from_now, max_timeout_at ].min
+      chat_session.update!(idle_timeout_at: new_timeout_at)
     end
 
     # Checks if the container is running and responsive.

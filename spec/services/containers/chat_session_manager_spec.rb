@@ -161,6 +161,15 @@ RSpec.describe Containers::ChatSessionManager do
       chat_session.reload
       expect(chat_session.idle_timeout_at).to be_within(1.minute).of(1.hour.from_now)
     end
+
+    it "clamps timeout to MAX_SESSION_DURATION from session creation" do
+      max_at = chat_session.created_at + described_class::MAX_SESSION_DURATION
+
+      manager.extend_idle_timeout!(duration: 24.hours)
+
+      chat_session.reload
+      expect(chat_session.idle_timeout_at).to be_within(1.second).of(max_at)
+    end
   end
 
   describe "#health_check" do
