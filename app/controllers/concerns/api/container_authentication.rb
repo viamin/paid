@@ -124,6 +124,10 @@ module Api
       agent_run_match = value.to_s.match(/\A#{AGENT_RUN_PROXY_CREDENTIAL_PREFIX}:(\d+):([0-9a-f]+)\z/i)
       return [ :agent_run, agent_run_match[1], agent_run_match[2] ] if agent_run_match
 
+      # Gate-after-match pattern: regex runs unconditionally for consistency across all
+      # credential types, but the gate check ensures credentials are only accepted by
+      # controllers that explicitly enable that authentication type. Unmatched credentials
+      # fall through to nil safely.
       knowledge_run_match = value.to_s.match(/\A#{KNOWLEDGE_RUN_PROXY_CREDENTIAL_PREFIX}:(\d+):([0-9a-f]+)\z/i)
       return [ :knowledge_run, knowledge_run_match[1], knowledge_run_match[2] ] if knowledge_run_authentication_enabled? && knowledge_run_match
 
