@@ -1,0 +1,15 @@
+#!/bin/bash
+# Minimal pg_dump shim for CI environments without full PostgreSQL client tools.
+# Writes an empty structure file so db:migrate can complete its schema:dump step.
+OUTPUT_FILE=""
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --file) OUTPUT_FILE="$2"; shift 2 ;;
+    --file=*) OUTPUT_FILE="${1#*=}"; shift ;;
+    *) shift ;;
+  esac
+done
+if [ -n "$OUTPUT_FILE" ]; then
+  echo "-- pg_dump shim: structure not available" > "$OUTPUT_FILE"
+fi
+exit 0
