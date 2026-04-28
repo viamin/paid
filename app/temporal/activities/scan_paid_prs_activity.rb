@@ -79,12 +79,18 @@ module Activities
         # returns :skipped when short-circuited (active run exists) or when
         # API failures prevented full evaluation.
         next if result == :skipped
+        # TODO(#1121): build_lifecycle_signals re-queries gates that scan_pr
+        # already evaluated (operational_failure_breaker?, active_run_exists?,
+        # etc.), roughly doubling gate-check DB queries per PR. Once the
+        # strategy fully owns gate evaluation, scan_pr should stop evaluating
+        # gates itself and defer to the signals/strategy path.
+        lifecycle = build_lifecycle_signals(project, issue) if explicit_pr_decisions
         scanned_count += 1
         issue.update_column(:last_pr_scan_at, Time.current)
         pending_review_states << pending_review_state(issue, result)
         if result
           collect_scan_result(issue, result, prs_to_trigger, automation_results,
-            explicit_pr_decisions:)
+            explicit_pr_decisions:, lifecycle: lifecycle)
         end
       rescue Temporalio::Error::ApplicationError => e
         raise unless e.type == "RateLimit"
@@ -117,12 +123,50 @@ module Activities
 
     private
 
-    def collect_scan_result(issue, result, prs_to_trigger, automation_results, explicit_pr_decisions:)
+    def collect_scan_result(issue, result, prs_to_trigger, automation_results,
+      explicit_pr_decisions:, lifecycle: nil)
       if explicit_pr_decisions
-        automation_results << Automation::Evaluator.for(issue, explicit_pr_decisions: true).call(scan: result).to_h
+        automation_results << Automation::Evaluator.for(issue, explicit_pr_decisions: true)
+          .call(scan: result, lifecycle: lifecycle).to_h
       else
         prs_to_trigger << result
       end
+    end
+
+    def build_lifecycle_signals(project, issue)
+      op_breaker = operational_failure_breaker?(project, issue)
+      draft_limit = draft_review_limit_reached?(project, issue)
+      draft_failures = consecutive_draft_failures_breaker?(project, issue)
+      retry_escalation = review_goal_retry_limit_requires_escalation?(project, issue)
+
+      reason = if op_breaker
+        "Consecutive operational failures " \
+          "(#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} runs failed due to provider exhaustion/timeout)"
+      elsif retry_escalation
+        "Review-goal retry limit reached " \
+          "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)"
+      elsif draft_limit
+        "Draft review limit reached"
+      elsif draft_failures
+        "Consecutive draft follow-up failures " \
+          "(#{MAX_CONSECUTIVE_DRAFT_FAILURES} runs with no output)"
+      end
+
+      {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        phase: issue.pr_review_phase,
+        active_run_exists: active_run_exists?(project, issue),
+        operational_failure_breaker: op_breaker,
+        draft_review_limit_reached: draft_limit,
+        consecutive_draft_failures_breaker: draft_failures,
+        review_goal_retry_limit_requires_escalation: retry_escalation,
+        followup_limit_reached: followup_limit_reached?(project, issue),
+        escalation_dismissed: escalation_dismissed?(issue),
+        owner_reviewer_login: project.owner_reviewer_login,
+        escalation_reason: reason,
+        draft: issue.pr_review_phase.in?(%w[draft restarted])
+      }
     end
 
     def pending_review_state(issue, result)
