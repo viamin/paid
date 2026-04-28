@@ -11,8 +11,7 @@ module ApplicationCable
     private
 
     def find_verified_user
-      default = [ [ nil ] ]
-      user_id = request.session.fetch("warden.user.user.key", default)[0][0]
+      user_id = request.env["warden"]&.user&.id
       if user_id && (user = User.find_by(id: user_id))
         user
       else

@@ -25,9 +25,10 @@ RSpec.describe "ChatSessions" do
         expect(response).to have_http_status(:ok)
 
         body = response.parsed_body
-        expect(body.length).to eq(2)
-        expect(body.first["id"]).to eq(new_session.id)
-        expect(body.last["id"]).to eq(old_session.id)
+        expect(body["sessions"].length).to eq(2)
+        expect(body["sessions"].first["id"]).to eq(new_session.id)
+        expect(body["sessions"].last["id"]).to eq(old_session.id)
+        expect(body["pagination"]).to include("page", "pages", "count")
       end
 
       it "does not include sessions from other accounts" do
@@ -36,7 +37,20 @@ RSpec.describe "ChatSessions" do
         create(:chat_session, account: account, created_by: user)
 
         get chat_sessions_path
-        expect(response.parsed_body.length).to eq(1)
+        expect(response.parsed_body["sessions"].length).to eq(1)
+      end
+
+      it "paginates sessions" do
+        26.times do |index|
+          create(:chat_session, account: account, created_by: user, updated_at: index.minutes.ago)
+        end
+
+        get chat_sessions_path
+        expect(response).to have_http_status(:ok)
+
+        body = response.parsed_body
+        expect(body["sessions"].length).to eq(25)
+        expect(body["pagination"]).to include("page" => 1, "pages" => 2, "count" => 26)
       end
     end
   end

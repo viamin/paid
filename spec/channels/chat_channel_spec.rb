@@ -52,5 +52,15 @@ RSpec.describe ChatChannel do
       expect(ChatSessions::SendMessage).not_to receive(:call)
       perform :send_message, content: ""
     end
+
+    it "broadcasts an error when sending fails" do
+      allow(ChatSessions::SendMessage).to receive(:call)
+        .and_raise(StandardError, "provider failed")
+
+      expect {
+        perform :send_message, content: "Hello"
+      }.to have_broadcasted_to("chat_session:#{chat_session.id}")
+        .with(hash_including(type: "error", message: "provider failed"))
+    end
   end
 end

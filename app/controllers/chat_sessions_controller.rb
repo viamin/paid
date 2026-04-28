@@ -10,9 +10,14 @@ class ChatSessionsController < ApplicationController
     only: :create
 
   def index
-    sessions = policy_scope(ChatSession)
-      .order(updated_at: :desc)
-    render json: sessions.map { |s| session_json(s) }
+    pagy, sessions = pagy(
+      policy_scope(ChatSession).order(updated_at: :desc),
+      limit: 25
+    )
+    render json: {
+      sessions: sessions.map { |s| session_json(s) },
+      pagination: pagination_meta(pagy)
+    }
   end
 
   def create

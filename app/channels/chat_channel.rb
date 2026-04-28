@@ -39,7 +39,7 @@ class ChatChannel < ApplicationCable::Channel
         output: assistant_message.tokens_output
       }
     })
-  rescue ArgumentError => e
+  rescue StandardError => e
     broadcast_event("error", { message: e.message })
   end
 
