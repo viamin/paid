@@ -24,7 +24,7 @@ class ChatMessagesController < ApplicationController
   end
 
   def create
-    authorize @chat_session.messages.build(chat_session: @chat_session), policy_class: ChatMessagePolicy
+    authorize ChatMessage.new(chat_session: @chat_session), policy_class: ChatMessagePolicy
 
     if params[:content].blank?
       render json: { error: "content is required" }, status: :unprocessable_content

@@ -21,7 +21,7 @@ class ChatSessionsController < ApplicationController
   end
 
   def create
-    authorize current_account.chat_sessions.build, :create?
+    authorize ChatSession.new(account: current_account), :create?
     session = ChatSessions::Create.call(
       account: current_account,
       user: current_user,
