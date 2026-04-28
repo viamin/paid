@@ -39,6 +39,7 @@ RUN NODE_VERSION=22.13.0 \
     && rm "${TARBALL}"
 
 # Install Ruby build dependencies, runtime deps, Python, PostgreSQL client libs, and ShellCheck
+# Keep client tools on the same Postgres major as the pinned server image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     autoconf \
     bison \
@@ -49,6 +50,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     libgdbm-dev \
     libpq-dev \
+    postgresql-client-16 \
     rustc \
     shellcheck \
     python3 \
@@ -75,7 +77,7 @@ RUN RUBY_VERSION=3.4.8 \
 # Remove some build-only dependencies to reduce image size and attack surface.
 # We intentionally keep the corresponding *-dev packages (libssl-dev, libreadline-dev, zlib1g-dev,
 # libyaml-dev, libffi-dev, libgdbm-dev, libpq-dev) so native extensions (e.g., Ruby gems like pg)
-# can be compiled inside this agent image.
+# can be compiled inside this agent image. We also keep postgresql-client-16 for schema dumps.
 RUN apt-get update && apt-get purge -y --auto-remove \
     autoconf \
     bison \
