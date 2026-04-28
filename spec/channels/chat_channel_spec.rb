@@ -53,14 +53,24 @@ RSpec.describe ChatChannel do
       perform :send_message, content: ""
     end
 
-    it "broadcasts an error when sending fails" do
+    it "broadcasts a generic error for unexpected failures" do
       allow(ChatSessions::SendMessage).to receive(:call)
         .and_raise(StandardError, "provider failed")
 
       expect {
         perform :send_message, content: "Hello"
       }.to have_broadcasted_to("chat_session:#{chat_session.id}")
-        .with(hash_including(type: "error", message: "provider failed"))
+        .with(hash_including(type: "error", message: "An unexpected error occurred"))
+    end
+
+    it "broadcasts the original message for argument errors" do
+      allow(ChatSessions::SendMessage).to receive(:call)
+        .and_raise(ArgumentError, "chat session must be active")
+
+      expect {
+        perform :send_message, content: "Hello"
+      }.to have_broadcasted_to("chat_session:#{chat_session.id}")
+        .with(hash_including(type: "error", message: "chat session must be active"))
     end
   end
 end

@@ -72,6 +72,9 @@ class ChatMessagesController < ApplicationController
     })
   rescue ArgumentError => e
     write_sse_event("error", { message: e.message })
+  rescue StandardError => e
+    Rails.logger.error(message: "chat_messages.stream_failed", session_id: @chat_session.id, error: e.message)
+    write_sse_event("error", { message: "An unexpected error occurred" })
   ensure
     response.stream.close
   end
@@ -84,6 +87,9 @@ class ChatMessagesController < ApplicationController
     render json: message_json(assistant_message), status: :created
   rescue ArgumentError => e
     render json: { error: e.message }, status: :unprocessable_content
+  rescue StandardError => e
+    Rails.logger.error(message: "chat_messages.send_failed", session_id: @chat_session.id, error: e.message)
+    render json: { error: "An unexpected error occurred" }, status: :internal_server_error
   end
 
   def write_sse_event(event, data)

@@ -39,8 +39,11 @@ class ChatChannel < ApplicationCable::Channel
         output: assistant_message.tokens_output
       }
     })
-  rescue StandardError => e
+  rescue ArgumentError => e
     broadcast_event("error", { message: e.message })
+  rescue StandardError => e
+    Rails.logger.error(message: "chat_channel.send_message_failed", session_id: @chat_session.id, error: e.message)
+    broadcast_event("error", { message: "An unexpected error occurred" })
   end
 
   private
