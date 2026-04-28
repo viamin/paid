@@ -511,15 +511,8 @@ module Activities
 
       reviews = fetch_reviews(client, project, issue)
 
-      if project.auto_merge_enabled? &&
-          pr_data.present? &&
-          owner_approved_or_self_authored?(project, reviews, pr_data) &&
-          !checks.nil? &&
-          all_checks_green?(checks) &&
-          mergeable == true &&
-          no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks, pr_data: pr_data) &&
-          all_blocking_review_methods_complete?(project, reviews, checks, pr_data: pr_data) &&
-          !review_stale_for_head?(client, project, issue, pr_data, reviews)
+      if auto_merge_eligible?(project, client, issue,
+           pr_data: pr_data, checks: checks, reviews: reviews)
         return owner_approved_trigger(issue)
       end
 
@@ -581,22 +574,17 @@ module Activities
       # Owner approval on an escalated PR unblocks auto-merge.
       if project.auto_merge_enabled? && pr_data.present?
         checks = fetch_check_runs(client, project, pr_data)
-        mergeable = pr_data[:mergeable]
 
         if bot_user?(issue.github_creator_login)
-          if project.auto_merge_dependabot? && !checks.nil? && checks.any? && all_checks_green?(checks) && mergeable == true
+          if auto_merge_eligible_bot?(project, issue,
+               checks: checks, mergeable: pr_data[:mergeable])
             return owner_approved_trigger(issue)
           end
         else
           reviews = fetch_reviews(client, project, issue)
 
-          if owner_approved_or_self_authored?(project, reviews, pr_data) &&
-              !checks.nil? &&
-              all_checks_green?(checks) &&
-              mergeable == true &&
-              no_outstanding_review_feedback?(project, client, issue, reviews, checks: checks, pr_data: pr_data) &&
-              all_blocking_review_methods_complete?(project, reviews, checks, pr_data: pr_data) &&
-              !review_stale_for_head?(client, project, issue, pr_data, reviews)
+          if auto_merge_eligible?(project, client, issue,
+               pr_data: pr_data, checks: checks, reviews: reviews)
             return owner_approved_trigger(issue)
           end
         end
@@ -2339,6 +2327,57 @@ module Activities
         pr_number: issue.github_number,
         error: error.message
       )
+    end
+
+    # --- Auto-merge strategy delegation ---
+
+    # Evaluates human-authored PR merge eligibility via the AutoMerge
+    # strategy. Collects signals from provider data and delegates the
+    # decision to {Automation::Strategies::AutoMerge}.
+    def auto_merge_eligible?(project, client, issue, pr_data:, checks:, reviews:)
+      return false unless project.auto_merge_enabled? && pr_data.present?
+
+      signals = Automation::Strategies::AutoMerge::Signals.build(
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        owner_approved: owner_approved_or_self_authored?(project, reviews, pr_data),
+        checks_green: !checks.nil? && all_checks_green?(checks),
+        mergeable: pr_data[:mergeable] == true,
+        review_feedback_clear: no_outstanding_review_feedback?(
+          project, client, issue, reviews, checks: checks, pr_data: pr_data
+        ),
+        blocking_reviews_complete: all_blocking_review_methods_complete?(
+          project, reviews, checks, pr_data: pr_data
+        ),
+        reviews_fresh: !review_stale_for_head?(client, project, issue, pr_data, reviews)
+      )
+
+      evaluate_auto_merge(project, signals)
+    end
+
+    # Evaluates bot-authored PR merge eligibility via the AutoMerge
+    # strategy. Bot PRs skip owner-approval and review-feedback gates.
+    def auto_merge_eligible_bot?(project, issue, checks:, mergeable:)
+      signals = Automation::Strategies::AutoMerge::Signals.build(
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        bot_authored: true,
+        dependabot_eligible: project.auto_merge_dependabot?,
+        checks_green: !checks.nil? && checks.any? && all_checks_green?(checks),
+        mergeable: mergeable == true
+      )
+
+      evaluate_auto_merge(project, signals)
+    end
+
+    def evaluate_auto_merge(project, signals)
+      context = Automation::Context.build(
+        record: nil,
+        project: project,
+        metadata: { Automation::Strategies::AutoMerge::SIGNALS_KEY => signals }
+      )
+      result = Automation::Strategies::AutoMerge.new.evaluate(context)
+      result.decisions.any? { |d| d.type == "merge" }
     end
 
     def log_triggers(project, issue, triggers)
