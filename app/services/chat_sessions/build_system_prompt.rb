@@ -57,12 +57,10 @@ module ChatSessions
     def assemble_with_budget(sections)
       # Sort by priority ascending so we can pop from the end (lowest priority)
       sorted = sections.sort_by { |s| s[:priority] }
+      total = sorted.sum { |s| s[:content].length }
 
-      loop do
-        total = sorted.sum { |s| s[:content].length }
-        break if total <= MAX_PROMPT_CHARS || sorted.size <= 1
-
-        sorted.pop
+      while total > MAX_PROMPT_CHARS && sorted.size > 1
+        total -= sorted.pop[:content].length
       end
 
       sorted.map { |s| s[:content] }.join("\n\n")
@@ -85,14 +83,10 @@ module ChatSessions
     def tool_definitions
       lines = mcp_tools.map { |tool| "- [#{tool[:name]}] #{tool[:description]}" }
 
-      <<~PROMPT.strip
-        ## Available Tools
-
-        You have access to the following Paid tools:
-        #{lines.join("\n")}
-
-        To use a tool, call it explicitly. For example, if the user asks "what projects do I have?", call list_projects.
-      PROMPT
+      "## Available Tools\n\n" \
+        "You have access to the following Paid tools:\n" \
+        "#{lines.join("\n")}\n\n" \
+        "To use a tool, call it explicitly. For example, if the user asks \"what projects do I have?\", call list_projects."
     end
 
     def project_context
@@ -109,11 +103,7 @@ module ChatSessions
     def cross_project_context
       summaries = reference_projects.map { |project| project_summary(project) }
 
-      <<~PROMPT.strip
-        ## Referenced Projects
-
-        #{summaries.join("\n\n")}
-      PROMPT
+      "## Referenced Projects\n\n#{summaries.join("\n\n")}"
     end
 
     def workspace_context
