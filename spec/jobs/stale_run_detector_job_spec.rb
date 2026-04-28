@@ -424,6 +424,31 @@ RSpec.describe StaleRunDetectorJob do
       end
     end
 
+    context "when GitHub circuit is open" do
+      it "skips requeuing stale pending runs" do
+        create(:github_health_state, :circuit_open)
+
+        stale_run = create(:agent_run, status: "pending")
+        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+
+        described_class.perform_now
+
+        expect(stale_run.reload.status).to eq("pending")
+      end
+
+      it "still resolves stale running runs" do
+        create(:github_health_state, :circuit_open)
+
+        stale_run = create(:agent_run, :running, started_at: (running_threshold + 60).seconds.ago)
+        allow(Containers::ServiceProvisioner).to receive(:new)
+          .and_return(instance_double(Containers::ServiceProvisioner, cleanup: nil))
+
+        described_class.perform_now
+
+        expect(stale_run.reload.status).to eq("timeout")
+      end
+    end
+
     context "with stale paused runs" do
       it "requeues a stale paused run that has not exhausted requeue budget" do
         stale_run = create(:agent_run, :paused, paused_at: (paused_threshold + 60).seconds.ago)

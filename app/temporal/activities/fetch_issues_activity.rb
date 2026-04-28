@@ -10,6 +10,15 @@ module Activities
 
     def execute(input)
       project_id = input[:project_id]
+
+      unless GithubHealthState.github_available?
+        logger.info(
+          message: "fetch_issues.skipped_github_circuit_open",
+          project_id: project_id
+        )
+        return { issues: [], project_id: project_id, github_circuit_open: true }
+      end
+
       project = Project.find_by(id: project_id)
       return { issues: [], project_id: project_id, project_missing: true } unless project
 
