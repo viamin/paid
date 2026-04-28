@@ -110,14 +110,20 @@ RSpec.describe Containers::ProvisionForChat do
       described_class.call(chat_session: chat_session)
     end
 
-    it "mounts workspace and state volumes" do
+    it "mounts workspace volume and state volume subpaths at agent CLI dirs" do
+      expected_binds = [
+        "paid-chat-workspace-#{chat_session.id}:/workspace:rw",
+        "paid-chat-state-#{chat_session.id}:/home/agent/.claude:rw,subpath=.claude",
+        "paid-chat-state-#{chat_session.id}:/home/agent/.codex:rw,subpath=.codex",
+        "paid-chat-state-#{chat_session.id}:/home/agent/.gemini:rw,subpath=.gemini",
+        "paid-chat-state-#{chat_session.id}:/home/agent/.cursor-agent:rw,subpath=.cursor-agent",
+        "paid-chat-state-#{chat_session.id}:/home/agent/.cache:rw,subpath=.cache"
+      ]
+
       expect(Docker::Container).to receive(:create).with(
         hash_including(
           "HostConfig" => hash_including(
-            "Binds" => contain_exactly(
-              "paid-chat-workspace-#{chat_session.id}:/workspace:rw",
-              "paid-chat-state-#{chat_session.id}:/home/agent/.agent-state:rw"
-            )
+            "Binds" => match_array(expected_binds)
           )
         )
       ).and_return(mock_container)

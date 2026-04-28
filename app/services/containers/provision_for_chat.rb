@@ -145,17 +145,11 @@ module Containers
 
     def host_config(workspace_volume, state_volume)
       binds = [
-        "#{workspace_volume}:#{options[:workspace_mount]}:rw",
-        "#{state_volume}:/home/agent/.agent-state:rw"
-      ]
+        "#{workspace_volume}:#{options[:workspace_mount]}:rw"
+      ] + state_volume_binds(state_volume)
 
       tmpfs = {
-        "/tmp" => "exec,size=#{512 * 1024 * 1024},mode=1777",
-        "/home/agent/.cache" => "size=#{256 * 1024 * 1024},mode=0755",
-        "/home/agent/.claude" => "size=#{256 * 1024 * 1024},mode=0700",
-        "/home/agent/.codex" => "size=#{64 * 1024 * 1024},mode=0700",
-        "/home/agent/.gemini" => "size=#{64 * 1024 * 1024},mode=0700",
-        "/home/agent/.cursor-agent" => "size=#{64 * 1024 * 1024},mode=0700"
+        "/tmp" => "exec,size=#{512 * 1024 * 1024},mode=1777"
       }
 
       {
@@ -201,8 +195,15 @@ module Containers
       labels
     end
 
+    def state_volume_binds(state_volume)
+      STATE_VOLUME_DIRS.map do |dir|
+        subdir = File.basename(dir)
+        "#{state_volume}:#{dir}:rw,subpath=#{subdir}"
+      end
+    end
+
     def fix_ownership!
-      dirs = [ options[:workspace_mount], "/home/agent/.agent-state" ] + STATE_VOLUME_DIRS
+      dirs = [ options[:workspace_mount] ] + STATE_VOLUME_DIRS
       cmd = "chown -R #{options[:user]}:#{options[:user]} #{dirs.join(' ')}"
       @container.exec([ "sh", "-c", cmd ], user: "root")
     end
@@ -242,36 +243,6 @@ module Containers
         project_id: project&.id,
         **metadata
       )
-    end
-
-    class Result
-      attr_reader :data, :error
-
-      def initialize(success:, data: {}, error: nil)
-        @success = success
-        @data = data
-        @error = error
-      end
-
-      def success?
-        @success
-      end
-
-      def failure?
-        !@success
-      end
-
-      def [](key)
-        data[key]
-      end
-
-      def self.success(**data)
-        new(success: true, data: data)
-      end
-
-      def self.failure(error:, **data)
-        new(success: false, data: data, error: error)
-      end
     end
   end
 end
