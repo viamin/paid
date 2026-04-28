@@ -366,10 +366,10 @@ RSpec.describe Issues::AutoPick do
       expect(result.issue).to eq(standalone)
     end
 
-    it "prefers issues that unblock more downstream work" do
-      # leaf_a unblocks 2 issues, leaf_b unblocks 1 issue
-      leaf_a = create(:issue, project: project, github_number: 10)
+    it "picks the oldest issue regardless of unblock count" do
+      # leaf_b is older (lower number) but unblocks fewer issues
       leaf_b = create(:issue, project: project, github_number: 5)
+      leaf_a = create(:issue, project: project, github_number: 10)
       downstream1 = create(:issue, project: project, github_number: 20)
       downstream2 = create(:issue, project: project, github_number: 21)
       downstream3 = create(:issue, project: project, github_number: 22)
@@ -380,27 +380,27 @@ RSpec.describe Issues::AutoPick do
 
       result = described_class.new(project).call
 
-      # leaf_a unblocks 2, leaf_b unblocks 1 — pick leaf_a despite higher number
-      expect(result.issue).to eq(leaf_a)
+      # FIFO wins: leaf_b (#5) is older than leaf_a (#10)
+      expect(result.issue).to eq(leaf_b)
     end
 
-    it "prefers issues in partially-complete dependency trees" do
-      # Tree 1: partially complete (sibling_closed is done)
+    it "picks the oldest issue regardless of tree progress" do
+      # tree2_issue is older (lower number) but NOT in a started tree
+      tree2_issue = create(:issue, project: project, github_number: 1)
+      tree2_downstream = create(:issue, project: project, github_number: 30)
+      create(:issue_dependency, issue: tree2_downstream, depends_on_issue: tree2_issue)
+
+      # tree1_issue is newer but IS in a started tree (sibling closed)
       tree1_issue = create(:issue, project: project, github_number: 10)
       sibling_closed = create(:issue, :closed, project: project, github_number: 11)
       downstream = create(:issue, project: project, github_number: 20)
       create(:issue_dependency, issue: downstream, depends_on_issue: tree1_issue)
       create(:issue_dependency, issue: downstream, depends_on_issue: sibling_closed)
 
-      # Tree 2: not started (standalone unblocking issue)
-      tree2_issue = create(:issue, project: project, github_number: 1)
-      tree2_downstream = create(:issue, project: project, github_number: 30)
-      create(:issue_dependency, issue: tree2_downstream, depends_on_issue: tree2_issue)
-
       result = described_class.new(project).call
 
-      # tree1_issue is in a started tree — prefer it over tree2_issue
-      expect(result.issue).to eq(tree1_issue)
+      # FIFO wins: tree2_issue (#1) is older than tree1_issue (#10)
+      expect(result.issue).to eq(tree2_issue)
     end
 
     it "selects dependency tree issues in correct order" do
@@ -415,8 +415,7 @@ RSpec.describe Issues::AutoPick do
       create(:issue_dependency, issue: issue_b, depends_on_issue: issue_d)
 
       # A and B are blocked; only C and D are eligible.
-      # Both have 1 direct unblock (C -> A, D -> B) and neither is in a
-      # started tree, so github_number breaks the tie: C (#3) before D (#4).
+      # github_number ASC picks C (#3) before D (#4).
       result = described_class.new(project).call
       expect(result.issue).to eq(issue_c)
     end
