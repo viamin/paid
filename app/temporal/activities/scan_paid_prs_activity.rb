@@ -808,16 +808,21 @@ module Activities
     # `updated_at` on GitHub. Without this escape hatch the skip-unchanged
     # optimization prevents the scanner from ever reconsidering them.
     #
-    # Human-authored ready/escalated PRs already have a targeted rescan path
-    # via `merge_conflict_rescan_needed?`; expanding that would regress the
-    # optimization back into full per-PR scans.
+    # Human-authored ready-phase PRs with auto-merge enabled face the same
+    # problem: CI transitions from pending to green (or owner approvals
+    # arriving) don't always bump `github_updated_at`, so the PR is never
+    # re-evaluated and sits stuck in "ready" despite meeting all auto-merge
+    # conditions.
     def scan_age_exceeds_ceiling?(project, issue)
       draft_or_restarted = issue.pr_review_phase.in?(%w[draft restarted])
       bot_ready_for_merge = issue.pr_review_phase == "ready" &&
         bot_user?(issue.github_creator_login) &&
         project.auto_merge_dependabot?
+      human_ready_auto_merge = issue.pr_review_phase == "ready" &&
+        !bot_user?(issue.github_creator_login) &&
+        project.auto_merge_enabled?
 
-      return false unless draft_or_restarted || bot_ready_for_merge
+      return false unless draft_or_restarted || bot_ready_for_merge || human_ready_auto_merge
 
       ceiling = SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
       stale = issue.last_pr_scan_at < ceiling.seconds.ago
