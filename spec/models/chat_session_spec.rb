@@ -75,19 +75,18 @@ RSpec.describe ChatSession do
     let(:session) { create(:chat_session, account: account, created_by: user) }
 
     before do
-      create(:chat_message, :assistant, chat_session: session, tokens_input: 100, tokens_output: 50)
-      create(:chat_message, :assistant, chat_session: session, tokens_input: 200, tokens_output: 75)
-      create(:chat_message, chat_session: session) # user message with nil tokens
+      create(:token_usage, :chat, chat_session: session, input_tokens: 100, output_tokens: 50, cost_cents: 0)
+      create(:token_usage, :chat, chat_session: session, input_tokens: 200, output_tokens: 75, cost_cents: 0)
     end
 
     describe "#total_tokens_input" do
-      it "sums tokens_input across messages" do
+      it "sums input_tokens across token_usages" do
         expect(session.total_tokens_input).to eq(300)
       end
     end
 
     describe "#total_tokens_output" do
-      it "sums tokens_output across messages" do
+      it "sums output_tokens across token_usages" do
         expect(session.total_tokens_output).to eq(125)
       end
     end

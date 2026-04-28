@@ -28,15 +28,15 @@ class ChatSession < ApplicationRecord
   scope :idle_expired, -> { where(status: "active").where("idle_timeout_at < ?", Time.current) }
 
   def total_tokens_input
-    messages.sum(:tokens_input)
+    token_usages.sum(:input_tokens)
   end
 
   def total_tokens_output
-    messages.sum(:tokens_output)
+    token_usages.sum(:output_tokens)
   end
 
   def total_tokens
-    messages.pick(Arel.sql("COALESCE(SUM(tokens_input), 0) + COALESCE(SUM(tokens_output), 0)"))
+    token_usages.sum(Arel.sql("input_tokens + output_tokens"))
   end
 
   def estimated_cost_cents
