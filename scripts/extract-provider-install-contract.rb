@@ -50,7 +50,7 @@ rescue AgentHarness::ConfigurationError
   # Some providers (e.g., Codex) use the class-level installation_contract
   # instead of the generic registry method. Fall back to that API.
   begin
-    provider_class = AgentHarness::Providers.const_get(provider.capitalize)
+    provider_class = AgentHarness::Providers.const_get(provider.split("_").map(&:capitalize).join)
     contract = provider_class.installation_contract
   rescue NameError, NoMethodError => e
     warn "No install contract found for provider: #{provider} (#{e.message})"
