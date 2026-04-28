@@ -50,11 +50,11 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
 
         before do
           mcp = create(:mcp_server_definition, account: account, name: "list_projects",
-            command: "List your accessible projects")
+            metadata: { "description" => "List your accessible projects" })
           create(:project_mcp_server, project: project, mcp_server_definition: mcp)
 
           mcp2 = create(:mcp_server_definition, account: account, name: "trigger_agent_run",
-            command: "Start an agent run on an issue")
+            metadata: { "description" => "Start an agent run on an issue" })
           create(:project_mcp_server, project: project, mcp_server_definition: mcp2)
         end
 
@@ -67,13 +67,27 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
           expect(prompt).to include("[trigger_agent_run]")
         end
 
-        it "includes tool descriptions" do
+        it "includes tool descriptions from metadata" do
           expect(prompt).to include("List your accessible projects")
           expect(prompt).to include("Start an agent run on an issue")
         end
 
         it "includes usage instructions" do
           expect(prompt).to include("call list_projects")
+        end
+      end
+
+      context "when MCP tool metadata has no description" do
+        let(:project) { create(:project, account: account) }
+        let(:chat_session) { create(:chat_session, account: account, created_by: user, project: project) }
+
+        before do
+          mcp = create(:mcp_server_definition, account: account, name: "fallback_tool", metadata: {})
+          create(:project_mcp_server, project: project, mcp_server_definition: mcp)
+        end
+
+        it "falls back to server name as description" do
+          expect(prompt).to include("[fallback_tool] fallback_tool")
         end
       end
 
@@ -230,6 +244,38 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("read and modify files")
         expect(prompt).to include("git operations")
       end
+
+      context "with git state in metadata" do
+        let(:chat_session) do
+          create(:chat_session, :workspace, account: account, created_by: user,
+            metadata: {
+              "current_branch" => "feat/login-page",
+              "git_status" => "M app/models/user.rb",
+              "working_directory" => "/workspace/my-app"
+            })
+        end
+
+        it "includes current branch" do
+          expect(prompt).to include("Current branch: feat/login-page")
+        end
+
+        it "includes git status" do
+          expect(prompt).to include("Git status:")
+          expect(prompt).to include("M app/models/user.rb")
+        end
+
+        it "includes working directory" do
+          expect(prompt).to include("Working directory: /workspace/my-app")
+        end
+      end
+
+      context "without git state in metadata" do
+        it "omits git state details" do
+          expect(prompt).not_to include("Current branch:")
+          expect(prompt).not_to include("Git status:")
+          expect(prompt).not_to include("Working directory:")
+        end
+      end
     end
 
     describe "workspace context omitted for API mode" do
@@ -277,7 +323,7 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
       before do
         # MCP tools
         mcp = create(:mcp_server_definition, account: account, name: "list_projects",
-          command: "List accessible projects")
+          metadata: { "description" => "List accessible projects" })
         create(:project_mcp_server, project: project, mcp_server_definition: mcp)
 
         # Issues

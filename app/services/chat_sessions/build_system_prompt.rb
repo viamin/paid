@@ -7,7 +7,7 @@ module ChatSessions
   # dropping lower-priority sections first.
   #
   # Section priority (highest to lowest):
-  #   base_identity > project_context > tool_definitions > cross_project > workspace
+  #   base_identity > project_context > tool_definitions > cross_project > workspace > user_preferences
   #
   # @example
   #   ChatSessions::BuildSystemPrompt.call(chat_session: session)
@@ -117,11 +117,17 @@ module ChatSessions
     end
 
     def workspace_context
-      <<~PROMPT.strip
-        ## Workspace
-        You have access to a workspace with the project's git repository checked out.
-        You can read and modify files, run commands, and execute git operations.
-      PROMPT
+      parts = []
+      parts << "## Workspace"
+      parts << "You have access to a workspace with the project's git repository checked out."
+      parts << "You can read and modify files, run commands, and execute git operations."
+
+      ws = chat_session.metadata&.slice("current_branch", "git_status", "working_directory") || {}
+      parts << "Current branch: #{ws["current_branch"]}" if ws["current_branch"].present?
+      parts << "Git status:\n#{ws["git_status"]}" if ws["git_status"].present?
+      parts << "Working directory: #{ws["working_directory"]}" if ws["working_directory"].present?
+
+      parts.join("\n").strip
     end
 
     def user_preferences
@@ -214,7 +220,7 @@ module ChatSessions
       return [] unless project
 
       project.mcp_server_definitions.enabled.map do |server|
-        { name: server.name, description: server.command.to_s }
+        { name: server.name, description: server.metadata&.dig("description") || server.name }
       end
     end
 
