@@ -275,6 +275,7 @@ class ProjectsController < ApplicationController
       :auto_add_labels_enabled, :automation_on_label_enabled, :pr_aggregation_enabled,
       :inherit_priority_labels,
       :auto_enhance_enabled,
+      :knowledge_evolution_enabled,
       :auto_release_granularity,
       allowed_github_usernames: [],
       priority_labels: Project::PRIORITY_TIERS)
