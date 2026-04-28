@@ -169,6 +169,11 @@ Rails.application.configure do
       cron: "*/5 * * * *",
       class: "ChatSessions::IdleReaperJob",
       description: "Close idle chat sessions past their timeout"
+    },
+    knowledge_evolution: {
+      cron: "0 3 * * 2",
+      class: "KnowledgeEvolutionJob",
+      description: "Analyze knowledge gaps and recommend collector improvements (weekly)"
     }
   }
 end
