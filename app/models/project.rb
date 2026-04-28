@@ -148,6 +148,7 @@ class Project < ApplicationRecord
   has_one :tracker_configuration, as: :configurable, dependent: :destroy
   has_many :quality_pause_events, dependent: :destroy
   has_many :knowledge_recommendations, dependent: :destroy
+  has_many :exception_incidents, dependent: :destroy
 
   encrypts :webhook_secret
 

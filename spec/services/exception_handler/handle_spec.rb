@@ -1,0 +1,133 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe ExceptionHandler::Handle do
+  let(:account) { create(:account) }
+  let(:project) { create(:project, account: account) }
+
+  describe ".call" do
+    context "with a transient exception" do
+      it "logs but does not create an incident" do
+        error = Net::OpenTimeout.new("execution expired")
+        error.set_backtrace([ "/app/foo.rb:1:in `bar'" ])
+
+        result = described_class.call(
+          exception: error,
+          account: account,
+          context: { subsystem: :knowledge }
+        )
+
+        expect(result).to be_success
+        expect(result.action).to eq("logged")
+        expect(ExceptionIncident.count).to eq(0)
+      end
+    end
+
+    context "with an actionable exception" do
+      let(:error) do
+        e = RuntimeError.new("collection failed unexpectedly")
+        e.set_backtrace([ "/app/services/knowledge/collector_runner.rb:95:in `collect'" ])
+        e
+      end
+
+      it "creates an exception incident" do
+        allow(ExceptionHandler::IssueFiler).to receive(:call)
+        expect {
+          described_class.call(
+            exception: error,
+            account: account,
+            context: { subsystem: :knowledge, project_id: project.id }
+          )
+        }.to change(ExceptionIncident, :count).by(1)
+      end
+
+      it "returns a successful result with the incident" do
+        allow(ExceptionHandler::IssueFiler).to receive(:call)
+
+        result = described_class.call(
+          exception: error,
+          account: account,
+          context: { subsystem: :knowledge, project_id: project.id }
+        )
+
+        expect(result).to be_success
+        expect(result.incident).to be_a(ExceptionIncident)
+        expect(result.incident.subsystem).to eq("knowledge")
+        expect(result.incident.exception_class).to eq("RuntimeError")
+      end
+
+      it "files an issue when project has a GitHub token" do
+        github_token = instance_double(GithubToken, client: instance_double(GithubClient))
+        allow(project).to receive(:github_token).and_return(github_token)
+        allow(Project).to receive(:find_by).with(id: project.id).and_return(project)
+
+        gh_issue = double(html_url: "https://github.com/o/r/issues/1", number: 1)
+        allow(github_token.client).to receive(:create_issue).and_return(gh_issue)
+
+        result = described_class.call(
+          exception: error,
+          account: account,
+          context: { subsystem: :knowledge, project_id: project.id }
+        )
+
+        expect(result).to be_success
+        expect(result.incident.github_issue_url).to eq("https://github.com/o/r/issues/1")
+      end
+
+      it "publishes a notification" do
+        allow(Notifications::Publish).to receive(:call)
+
+        described_class.call(
+          exception: error,
+          account: account,
+          context: { subsystem: :knowledge }
+        )
+
+        expect(Notifications::Publish).to have_received(:call).with(
+          a_hash_including(
+            account: account,
+            source: "exception_handler",
+            severity: :warning
+          )
+        )
+      end
+    end
+
+    context "with a duplicate exception" do
+      let(:error) do
+        e = RuntimeError.new("collection failed unexpectedly")
+        e.set_backtrace([ "/app/services/knowledge/collector_runner.rb:95:in `collect'" ])
+        e
+      end
+
+      it "increments occurrence count instead of creating a new incident" do
+        described_class.call(exception: error, account: account, context: { subsystem: :knowledge })
+
+        expect {
+          described_class.call(exception: error, account: account, context: { subsystem: :knowledge })
+        }.not_to change(ExceptionIncident, :count)
+
+        expect(ExceptionIncident.last.occurrence_count).to eq(2)
+      end
+    end
+
+    context "when the handler itself fails" do
+      it "returns a failure result without raising" do
+        allow(ExceptionHandler::Fingerprinter).to receive(:call).and_raise("handler bug")
+
+        error = RuntimeError.new("original error")
+        error.set_backtrace([])
+
+        result = described_class.call(
+          exception: error,
+          account: account,
+          context: { subsystem: :knowledge }
+        )
+
+        expect(result).to be_failure
+        expect(result.message).to include("handler bug")
+      end
+    end
+  end
+end

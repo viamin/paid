@@ -31,6 +31,7 @@ class Account < ApplicationRecord
   has_many :service_containers, dependent: :destroy
   has_many :chat_sessions, dependent: :destroy
   has_many :quality_thresholds, dependent: :destroy
+  has_many :exception_incidents, dependent: :destroy
 
   validates :name, presence: true
   validates :plan, presence: true, inclusion: { in: PLANS }
