@@ -32,6 +32,8 @@ module Activities
         respect_requested: input.key?(:agent_type) || input.key?(:provider_id)
       )
 
+      validate_runnable_provider!(provider_id, agent_type)
+
       # Resolve and render prompt version if no custom prompt is provided.
       # Skip for untrusted issues to match the safety behavior in AgentRun#prompt_for_issue.
       prompt_version = nil
@@ -252,6 +254,19 @@ module Activities
       Prompts::LanguageCommands::LANGUAGE_LINT_COMMANDS.fetch(
         Prompts::LanguageCommands.detected_language(project),
         "echo \"No lint command configured\""
+      )
+    end
+
+    def validate_runnable_provider!(provider_id, agent_type)
+      return if provider_id.present?
+
+      provider_key = ProviderSupport.provider_key_for_agent_type(agent_type)
+      return if ProviderSupport.container_executable_provider_key?(provider_key)
+
+      raise Temporalio::Error::ApplicationError.new(
+        "No runnable provider available for project (agent_type=#{agent_type})",
+        type: "NoRunnableProvider",
+        non_retryable: true
       )
     end
   end
