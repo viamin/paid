@@ -39,6 +39,8 @@ module Containers
 
     CLONE_TIMEOUT = 300 # 5 minutes
 
+    Result = Containers::Provision::Result
+
     class Error < StandardError; end
     class ProvisionError < Error; end
 
@@ -221,8 +223,7 @@ module Containers
       github_token = project.github_token
       return unless github_token&.active?
 
-      url = "https://x-access-token:$CLONE_TOKEN@github.com/#{project.full_name}.git"
-      clone_cmd = "git clone --depth 1 #{Shellwords.escape(url)} . 2>&1 || true"
+      clone_cmd = "git clone --depth 1 https://x-access-token:$CLONE_TOKEN@github.com/#{project.full_name}.git . 2>&1 || true"
 
       @container.exec(
         [ "sh", "-c", clone_cmd ],

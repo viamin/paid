@@ -18,6 +18,8 @@ module Containers
   #     session_id: "previous-session-id"
   #   )
   class ChatSessionManager
+    Result = Containers::Provision::Result
+
     class Error < StandardError; end
     class ContainerNotRunning < Error; end
     class ExecutionError < Error; end
