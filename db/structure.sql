@@ -1601,10 +1601,10 @@ CREATE TABLE public.issues (
     relationships_parsed_at timestamp(6) without time zone,
     review_goal_retry_count integer DEFAULT 0 NOT NULL,
     review_goal_retry_reset_at timestamp(6) without time zone,
-    operational_failure_reset_at timestamp(6) without time zone,
     ci_action_dispatched_at timestamp(6) without time zone,
     deployed_at timestamp(6) without time zone,
     enhance_issue_rounds integer DEFAULT 0 NOT NULL,
+    operational_failure_reset_at timestamp(6) without time zone,
     ci_retry_requested_at timestamp(6) without time zone
 );
 
@@ -3233,7 +3233,8 @@ CREATE TABLE public.token_usages (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     knowledge_run_id bigint,
-    CONSTRAINT token_usages_exactly_one_run CHECK (((agent_run_id IS NOT NULL) <> (knowledge_run_id IS NOT NULL)))
+    chat_session_id bigint,
+    CONSTRAINT token_usages_exactly_one_run CHECK ((((((agent_run_id IS NOT NULL))::integer + ((knowledge_run_id IS NOT NULL))::integer) + ((chat_session_id IS NOT NULL))::integer) = 1))
 );
 
 ALTER TABLE ONLY public.token_usages FORCE ROW LEVEL SECURITY;
@@ -5632,17 +5633,17 @@ CREATE INDEX index_chat_sessions_on_provider_id ON public.chat_sessions USING bt
 
 
 --
--- Name: index_chat_sessions_on_status; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_chat_sessions_on_status ON public.chat_sessions USING btree (status);
-
-
---
 -- Name: index_chat_sessions_on_proxy_token; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX index_chat_sessions_on_proxy_token ON public.chat_sessions USING btree (proxy_token);
+
+
+--
+-- Name: index_chat_sessions_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_chat_sessions_on_status ON public.chat_sessions USING btree (status);
 
 
 --
@@ -7242,6 +7243,13 @@ CREATE INDEX index_token_usages_on_agent_run_id_and_request_type ON public.token
 
 
 --
+-- Name: index_token_usages_on_chat_session_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_token_usages_on_chat_session_id ON public.token_usages USING btree (chat_session_id);
+
+
+--
 -- Name: index_token_usages_on_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8058,6 +8066,14 @@ ALTER TABLE ONLY public.configuration_experiment_variants
 
 ALTER TABLE ONLY public.container_pool_entries
     ADD CONSTRAINT fk_rails_a75e8d53a7 FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id) ON DELETE SET NULL;
+
+
+--
+-- Name: token_usages fk_rails_a7aa4b3af0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.token_usages
+    ADD CONSTRAINT fk_rails_a7aa4b3af0 FOREIGN KEY (chat_session_id) REFERENCES public.chat_sessions(id) ON DELETE CASCADE;
 
 
 --
@@ -9608,13 +9624,17 @@ CREATE POLICY tenant_isolation ON public.token_usages USING ((public.paid_tenant
   WHERE ((agent_runs.id = token_usages.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((knowledge_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.knowledge_runs
      JOIN public.projects ON ((projects.id = knowledge_runs.project_id)))
-  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR (((agent_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
+  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((chat_session_id IS NOT NULL) AND (EXISTS ( SELECT 1
+   FROM public.chat_sessions
+  WHERE ((chat_sessions.id = token_usages.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR (((agent_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.agent_runs
      JOIN public.projects ON ((projects.id = agent_runs.project_id)))
   WHERE ((agent_runs.id = token_usages.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((knowledge_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.knowledge_runs
      JOIN public.projects ON ((projects.id = knowledge_runs.project_id)))
-  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))))));
+  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((chat_session_id IS NOT NULL) AND (EXISTS ( SELECT 1
+   FROM public.chat_sessions
+  WHERE ((chat_sessions.id = token_usages.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id()))))))));
 
 
 --
@@ -10002,6 +10022,8 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260428130904'),
+('20260428120000'),
 ('20260428093730'),
 ('20260428025840'),
 ('20260427225726'),

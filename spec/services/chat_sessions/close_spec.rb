@@ -15,8 +15,8 @@ RSpec.describe ChatSessions::Close do
     end
 
     it "computes token totals in metadata" do
-      create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 100, tokens_output: 50)
-      create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 200, tokens_output: 75)
+      create(:token_usage, :chat, chat_session: chat_session, input_tokens: 100, output_tokens: 50)
+      create(:token_usage, :chat, chat_session: chat_session, input_tokens: 200, output_tokens: 75)
 
       described_class.call(chat_session: chat_session)
 

@@ -188,16 +188,17 @@ module Containers
       end
     end
 
-    # Materializes preparation file writes inside the container, matching
-    # the same pattern used by Containers::Provision for agent runs.
+    # Materializes preparation file writes inside the container using
+    # base64-encoded env vars, matching the pattern in Containers::Provision.
     def apply_preparation!(preparation)
       return if preparation.nil?
       return unless preparation.respond_to?(:file_writes)
 
       preparation.file_writes.each do |write|
+        encoded = Base64.strict_encode64(write.content)
         container.exec(
-          [ "sh", "-c", "mkdir -p $(dirname #{Shellwords.escape(write.path)}) && cat > #{Shellwords.escape(write.path)}" ],
-          stdin: StringIO.new(write.content)
+          [ "sh", "-c", "mkdir -p $(dirname #{Shellwords.escape(write.path)}) && echo $PAID_PREPARATION_B64 | base64 -d > #{Shellwords.escape(write.path)}" ],
+          Env: [ "PAID_PREPARATION_B64=#{encoded}" ]
         )
       end
     end

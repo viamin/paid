@@ -15,6 +15,7 @@ class ChatSession < ApplicationRecord
   belongs_to :created_by, class_name: "User", optional: true
 
   has_many :messages, class_name: "ChatMessage", dependent: :destroy
+  has_many :token_usages, dependent: :destroy
   has_many :chat_session_projects, dependent: :destroy
   has_many :projects, through: :chat_session_projects
 
@@ -44,6 +45,22 @@ class ChatSession < ApplicationRecord
     end
 
     proxy_token
+  end
+
+  def total_tokens_input
+    token_usages.sum(:input_tokens)
+  end
+
+  def total_tokens_output
+    token_usages.sum(:output_tokens)
+  end
+
+  def total_tokens
+    token_usages.sum(Arel.sql("input_tokens + output_tokens"))
+  end
+
+  def estimated_cost_cents
+    token_usages.sum(:cost_cents)
   end
 
   private
