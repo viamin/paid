@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.33.0](https://github.com/viamin/paid/compare/v0.32.0...v0.33.0) (2026-04-28)
+
+
+### Features
+
+* add chat session service layer ([#1514](https://github.com/viamin/paid/issues/1514)) ([ef68dcb](https://github.com/viamin/paid/commit/ef68dcb2f2f167b0d3276cf32394a8796cf0cccb))
+* add chat sessions and messages database schema ([#1485](https://github.com/viamin/paid/issues/1485)) ([f9b2234](https://github.com/viamin/paid/commit/f9b2234d7d61ded4018d6afcb9f50411ebfed22d))
+* **agent-runs:** add GitHub circuit breaker to pause dispatching during outages ([#1502](https://github.com/viamin/paid/issues/1502)) ([07f4afb](https://github.com/viamin/paid/commit/07f4afbbec1e0c5a03758159df35090683f92e9a))
+* **agent-runs:** intelligent model selection based on task complexity ([#1511](https://github.com/viamin/paid/issues/1511)) ([b24881c](https://github.com/viamin/paid/commit/b24881cf48a3c427f40a1b52249ff99b6a5845c6))
+* **auto-merge:** extract auto-merge into strategy module ([#1120](https://github.com/viamin/paid/issues/1120)) ([#1510](https://github.com/viamin/paid/issues/1510)) ([ee70c6a](https://github.com/viamin/paid/commit/ee70c6a62326ef2443ea727eef84617b7b33d3ec))
+* **dashboard:** move active runs above queue health in live view ([#1499](https://github.com/viamin/paid/issues/1499)) ([8a6df10](https://github.com/viamin/paid/commit/8a6df10e1d90233e2dea1d61e1947b2f7a4c1a8b))
+* **dependabot:** evaluate auto-merge from poll loop so webhooks are optional ([#1482](https://github.com/viamin/paid/issues/1482)) ([b29ec8a](https://github.com/viamin/paid/commit/b29ec8a64c1e50dc442dd1306ce0363cbc6e7f50))
+* **github-tokens:** add periodic token health check job ([#1503](https://github.com/viamin/paid/issues/1503)) ([c6dc8eb](https://github.com/viamin/paid/commit/c6dc8eb3f9dca9146d9953440472a17271667dcd))
+* **github-tokens:** trigger focused token validation on auth-related run failures ([#1506](https://github.com/viamin/paid/issues/1506)) ([6112c55](https://github.com/viamin/paid/commit/6112c5547fcad775ac618b985a3875920dd8e81e))
+* **knowledge:** add Knowledge::UsageStats service and dashboard integration ([#1504](https://github.com/viamin/paid/issues/1504)) ([1f497e3](https://github.com/viamin/paid/commit/1f497e3c2c67140e0fe583ca54930fda9b4a230e)), closes [#1418](https://github.com/viamin/paid/issues/1418)
+* **knowledge:** add KnowledgeRecommendation model and knowledge_evolution_enabled project setting ([#1513](https://github.com/viamin/paid/issues/1513)) ([3430b38](https://github.com/viamin/paid/commit/3430b387d569ff1e94a6dd1e08138aa7b653c178))
+* **knowledge:** add schema/data model collector ([#1467](https://github.com/viamin/paid/issues/1467)) ([9d6c2e9](https://github.com/viamin/paid/commit/9d6c2e9fa8efb2621078ccebde18216da3de0bd7))
+* **knowledge:** instrument ContextBundle::Build and Knowledge::Search with agent_run tracking ([#1461](https://github.com/viamin/paid/issues/1461)) ([5275bab](https://github.com/viamin/paid/commit/5275bab80886099697b22c41eacb56866721a3e7))
+* **projects:** auto-pause projects when GitHub token is confirmed expired ([#1505](https://github.com/viamin/paid/issues/1505)) ([c5b0c59](https://github.com/viamin/paid/commit/c5b0c59d6da69bd8b334c124fd155b03f13791c7))
+* **prompts:** add data-driven CI failure debugging guidance ([#1489](https://github.com/viamin/paid/issues/1489)) ([4eb1752](https://github.com/viamin/paid/commit/4eb1752a8826c22e08d0937d4d2c026a421893ba))
+* **providers:** simplify agent-run provider selection into single mode selector ([#1456](https://github.com/viamin/paid/issues/1456)) ([#1508](https://github.com/viamin/paid/issues/1508)) ([e339a67](https://github.com/viamin/paid/commit/e339a67a1591772baff5720a7562ab4b120716bc))
+* **quality:** add quality metrics for secondary LLM outputs (PR descriptions, issue titles, decision records) ([#1458](https://github.com/viamin/paid/issues/1458)) ([b3a6325](https://github.com/viamin/paid/commit/b3a6325cd83ddaa68969caf2f88faf7a7ff44f2f))
+* **ux:** show in-progress phase in agent run timeline ([#1509](https://github.com/viamin/paid/issues/1509)) ([357c1e9](https://github.com/viamin/paid/commit/357c1e9b731b9b871a81fc57e57b43d2a2fcf591))
+
+
+### Bug Fixes
+
+* 1121: Extract auto-continue into strategy modules ([#1515](https://github.com/viamin/paid/issues/1515)) ([f2e4535](https://github.com/viamin/paid/commit/f2e453547d72cc6621e32522c7cf9adc9e34e418))
+* 1318: Add provider-contract smoke test for paid-agent image ([#1487](https://github.com/viamin/paid/issues/1487)) ([974f3fe](https://github.com/viamin/paid/commit/974f3fe747b9f2e1c41a33feebaaae56c0466ea0))
+* 1321: Fix PR escalation dismissal UX and reset operational retry boundary ([#1481](https://github.com/viamin/paid/issues/1481)) ([00e1242](https://github.com/viamin/paid/commit/00e1242903023cec783c42ecf5c2f73df0a56572))
+* 1327: Create-issue runs should deterministically apply selected priority labels ([#1486](https://github.com/viamin/paid/issues/1486)) ([48664a8](https://github.com/viamin/paid/commit/48664a8fef459d980a4c74e6091501457ed1abeb))
+* 1330: Make the Knowledge page browsable and project-scoped ([#1488](https://github.com/viamin/paid/issues/1488)) ([b2d0802](https://github.com/viamin/paid/commit/b2d0802f83418ba948f635cce410d2dd95a6a40a))
+* 1399: Retry transient CI failures before starting another agent run ([#1500](https://github.com/viamin/paid/issues/1500)) ([240aad5](https://github.com/viamin/paid/commit/240aad5f26c7c20c41570a0ac20c3eef4bd2c470))
+* 1438: Dashboard shows paused/failure context that Agent Run detail page does not surface consistently ([#1507](https://github.com/viamin/paid/issues/1507)) ([7b9506e](https://github.com/viamin/paid/commit/7b9506edb5a8f36cf223ec8eadc7598a0956b8d6))
+* **agent-runs:** add row locking to fail! and cancel! for race condition safety ([#1501](https://github.com/viamin/paid/issues/1501)) ([bfdd69e](https://github.com/viamin/paid/commit/bfdd69ec27b6d666fae7d91ac05ec558334fbe36)), closes [#1394](https://github.com/viamin/paid/issues/1394)
+* **agent-runs:** mount /tmp tmpfs with exec so bundle install can build native gems ([#1497](https://github.com/viamin/paid/issues/1497)) ([be5b142](https://github.com/viamin/paid/commit/be5b142ab42edcf8eea237c1184138b454615ba6))
+* **cost-dashboard:** label token usages by provider when model id is absent ([#1519](https://github.com/viamin/paid/issues/1519)) ([8d00088](https://github.com/viamin/paid/commit/8d00088d741ba94d4670a6e72ecd30e12512cf39))
+* **knowledge:** prevent TypeError from nil artifact_count in schema section ([#1498](https://github.com/viamin/paid/issues/1498)) ([97da6d0](https://github.com/viamin/paid/commit/97da6d010dab0fb766f8fe47d7e3d1c7ed3ca51d))
+* **pr-descriptions:** use agent summary as fallback when LLM generation fails ([#1496](https://github.com/viamin/paid/issues/1496)) ([40ea48c](https://github.com/viamin/paid/commit/40ea48c1d9ba2453a84122c28a11732ddf5a6c7c))
+* **pr-scanner:** rescan ready/escalated PRs when auto-merge is enabled ([#1528](https://github.com/viamin/paid/issues/1528)) ([9f15164](https://github.com/viamin/paid/commit/9f151646c93d6fd270727f557913a76963a32695))
+* **security:** surface code scanning 403 permission errors instead of silently failing ([#1483](https://github.com/viamin/paid/issues/1483)) ([32ed9b5](https://github.com/viamin/paid/commit/32ed9b5bd277ff427517e93f2d86057c4f43a517))
+* **ui:** show Cancel and Resume buttons for paused agent runs ([#1477](https://github.com/viamin/paid/issues/1477)) ([6a8d1d2](https://github.com/viamin/paid/commit/6a8d1d258d4481fcae98f39b7a9951ef230f2cef))
+
+
+### Performance Improvements
+
+* defer heavy gem loading and fix initializer reload correctness ([#1491](https://github.com/viamin/paid/issues/1491)) ([8422b70](https://github.com/viamin/paid/commit/8422b7045b7af6398f23a2a51a5c8a669ab2eaed))
+
 ## [0.32.0](https://github.com/viamin/paid/compare/v0.31.0...v0.32.0) (2026-04-26)
 
 
