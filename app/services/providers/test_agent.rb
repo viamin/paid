@@ -1,11 +1,14 @@
 # frozen_string_literal: true
 
-require "shellwords"
-require "tempfile"
-
 module Providers
   # Sends a lightweight test prompt to a provider's agent to verify
   # installation, authentication, and responsiveness.
+  #
+  # Delegates smoke-test execution to agent-harness via two paths:
+  # 1. Harness health check — lightweight API-level check when a Paid-managed
+  #    API key is configured (e.g. Codex/Gemini with proxy keys).
+  # 2. Container smoke test — runs the harness smoke_test contract inside a
+  #    provisioned Docker container via Containers::HarnessExecutor.
   #
   # @example
   #   result = Providers::TestAgent.call(provider: provider)
@@ -15,8 +18,6 @@ module Providers
     NotContainerExecutableError = Class.new(StandardError)
     MissingProjectContextError = Class.new(StandardError)
 
-    PROMPT = "Respond with exactly: PING OK"
-    EXPECTED_OUTPUT = "PING OK"
     TIMEOUT = 60
     RATE_LIMIT_PATTERNS = Activities::RunAgentActivity::RATE_LIMIT_PATTERNS
     # Base authentication patterns shared across all providers. Provider-specific
@@ -100,6 +101,21 @@ module Providers
       /userHandled:/i
     ].freeze
 
+    # Maps agent-harness error_category symbols to app-level error_type symbols.
+    HARNESS_ERROR_CATEGORY_MAP = {
+      rate_limit: :rate_limited,
+      rate_limited: :rate_limited,
+      quota: :rate_limited,
+      quota_exceeded: :rate_limited,
+      authentication: :authentication,
+      auth_expired: :authentication,
+      installation: :installation,
+      timeout: :timeout,
+      transient: :connection,
+      configuration: :unexpected,
+      unknown: :unexpected
+    }.freeze
+
     attr_reader :provider
 
     def initialize(provider:)
@@ -115,8 +131,7 @@ module Providers
       result = if harness_health_check_supported?
         process_harness_result(execute_harness_health_check)
       else
-        response = execute_container_test
-        process_container_response(response)
+        execute_container_smoke_test
       end
 
       update_provider_state!(result)
@@ -164,20 +179,23 @@ module Providers
       AgentHarness.check_provider(harness_provider_name, timeout: TIMEOUT)
     end
 
-    def execute_container_test
+    # Runs the agent-harness smoke_test contract inside a provisioned container.
+    #
+    # Instead of building provider-specific CLI commands locally, this delegates
+    # to the harness provider's smoke_test method with a container-backed executor.
+    def execute_container_smoke_test
       test_run = build_test_run
-      context = container_test_context
 
       begin
         test_run.with_container do |run|
-          exec_options = {
+          executor = Containers::HarnessExecutor.new(run)
+          harness_result = AgentHarness.check_provider(
+            harness_provider_name,
             timeout: TIMEOUT,
-            stream: false,
-            env: context.fetch(:env)
-          }
-          exec_options[:preparation] = context[:preparation] if context[:preparation]
-
-          run.execute_in_container(context.fetch(:command), **exec_options)
+            executor: executor,
+            provider_runtime: container_provider_runtime
+          )
+          process_harness_result(harness_result)
         end
       ensure
         test_run.destroy! if test_run&.persisted?
@@ -191,113 +209,32 @@ module Providers
       if status == "ok"
         Result.new(success: true, error_type: nil, message: "Agent is healthy")
       else
+        error_type = map_harness_error_category(result[:error_category]) ||
+          classify_failed_response(message)
+        translated_message = translate_and_extract_error(message)
+
         Result.new(
-          success: false,
-          error_type: classify_failed_response(message),
-          message: message
-        )
-      end
-    end
-
-    def process_container_response(response)
-      unless response.success?
-        stderr = normalize_output_text(response[:stderr])
-        stdout = normalize_output_text(response[:stdout])
-        raw_message = stderr.presence || stdout.presence || normalize_output_text(response.error)
-        parsed_error = parse_provider_test_error(raw_message)
-        provider_message = parsed_error&.fetch(:message, nil).presence || raw_message
-        message = extract_user_facing_error(provider_message)
-        error_type = parsed_error&.fetch(:type, nil) || classify_failed_response(provider_message.presence || message)
-
-        return Result.new(
           success: false,
           error_type: error_type,
-          message: message.presence || "Agent exited with code #{response.exit_code}"
-        )
-      end
-
-      output = extract_ping_output(response[:stdout])
-
-      if output.include?(EXPECTED_OUTPUT)
-        Result.new(success: true, error_type: nil, message: "Agent is healthy")
-      else
-        Result.new(
-          success: false,
-          error_type: :unexpected,
-          message: "Agent responded but output did not match expected ping"
+          message: translated_message.presence || message
         )
       end
     end
 
-    # Extracts the agent text response from stdout, handling multiple output
-    # formats that providers produce:
+    def map_harness_error_category(category)
+      return nil unless category
+
+      HARNESS_ERROR_CATEGORY_MAP[category.to_sym]
+    end
+
+    # Builds a ProviderRuntime for container-based smoke tests.
     #
-    # - Plain text ("PING OK") — direct match
-    # - JSON envelope (Claude --output-format=json) — extracts "result" field
-    # - JSONL (Kilocode --format json) — extracts "text" from structured events
-    # - Noisy output (OpenCode migration, tool banners) — strips known noise
-    def extract_ping_output(stdout)
-      raw = normalize_output_text(stdout).strip
-      return raw if raw == EXPECTED_OUTPUT
-
-      extract_from_json_envelope(raw) ||
-        extract_from_jsonl(raw) ||
-        strip_noise_from_output(raw)
-    end
-
-    def extract_from_json_envelope(raw)
-      parsed = JSON.parse(raw)
-      return nil unless parsed.is_a?(Hash)
-
-      result = parsed["result"]
-      result.is_a?(String) ? result.strip : nil
-    rescue JSON::ParserError
-      nil
-    end
-
-    def extract_from_jsonl(raw)
-      text_parts = []
-      raw.each_line do |line|
-        line = line.strip
-        next if line.empty?
-
-        begin
-          event = JSON.parse(line)
-          next unless event.is_a?(Hash)
-
-          text = extract_text_from_jsonl_event(event)
-          text_parts << text if text
-        rescue JSON::ParserError
-          text_parts << line
-        end
-      end
-
-      text_parts.any? ? text_parts.join.strip : nil
-    end
-
-    def extract_text_from_jsonl_event(event)
-      case event["type"]
-      when "text"
-        event.dig("part", "text") || event["text"]
-      when "result"
-        event["result"] || event.dig("part", "text") || event["text"] || event["message"]
-      end
-    end
-
-    OUTPUT_NOISE_PATTERNS = [
-      /Performing one time database migration/i,
-      /npm warn/i
-    ].freeze
-
-    def strip_noise_from_output(raw)
-      cleaned = raw.lines
-        .map(&:strip)
-        .reject(&:empty?)
-        .reject { |line| OUTPUT_NOISE_PATTERNS.any? { |p| p.match?(line) } }
-        .join(" ")
-        .strip
-
-      cleaned.presence || raw
+    # For direct-outbound providers (e.g. opencode with API key), this returns
+    # the provider's full runtime with env/base_url overrides. For standard
+    # subscription-auth providers, this returns nil (the provider runs through
+    # the Paid proxy with inherited container env).
+    def container_provider_runtime
+      provider.agent_harness_provider_runtime
     end
 
     def build_test_run
@@ -313,7 +250,7 @@ module Providers
           status: "pending",
           goal: "create_pr",
           trigger_type: "manual",
-          custom_prompt: PROMPT,
+          custom_prompt: "smoke_test",
           proxy_token: SecureRandom.hex(32),
           created_at: now,
           updated_at: now
@@ -397,190 +334,6 @@ module Providers
         .gsub(/reset.?at:?\s*(\d+)/i, 'reset at \1')
     end
 
-    def container_test_context
-      {
-        command: test_command,
-        env: test_command_env,
-        preparation: test_command_preparation
-      }
-    end
-
-    def test_command
-      unless ProviderSupport.container_executable_provider_key?(provider.provider_key)
-        raise UnsupportedProviderError, "Unsupported provider: #{provider.provider_key}"
-      end
-
-      return harness_runtime_command if provider.agent_harness_runtime?
-
-      plan = harness_test_plan
-      if provider.requires_direct_outbound?
-        provider.direct_outbound_exec_command(command_prefix: plan.command[0..-2], prompt: PROMPT)
-      else
-        container_test_command
-      end
-    end
-
-    def test_command_env
-      return direct_outbound_execution_plan.env if provider.agent_harness_runtime?
-
-      provider.direct_outbound_exec_env
-    end
-
-    def test_command_preparation
-      return nil unless provider.agent_harness_runtime?
-
-      direct_outbound_execution_plan.preparation
-    end
-
-    def direct_outbound_execution_plan
-      @direct_outbound_execution_plan ||= Providers::HarnessExecutionPlan.call(
-        provider: provider,
-        prompt: PROMPT
-      )
-    end
-
-    def harness_test_plan
-      @harness_test_plan ||= Providers::HarnessExecutionPlan.for_provider_key(
-        provider_key: provider.provider_key,
-        prompt: PROMPT,
-        options: { dangerous_mode: true }
-      )
-    end
-
-    # Wraps the harness execution plan command with `env -u` to strip
-    # proxy-specific headers inherited from container startup.
-    def harness_runtime_command
-      plan = direct_outbound_execution_plan
-      unset_vars = ProviderSupport.harness_runtime_unset_vars_for(provider.provider_key)
-      ProviderSupport.command_with_unset_env(plan.command, unset_vars)
-    end
-
-    def container_test_command
-      return kilocode_test_command_wrapper if kilocode_test_command?
-      return shell_wrapped_test_command if shell_wrapped_test_command?
-
-      test_command_prefix + [ PROMPT ]
-    end
-
-    def test_command_prefix(output_file: nil)
-      base_command = harness_test_plan.command[0..-2]
-      overrides = provider_test_command_overrides.dup
-
-      if output_file
-        output_flag_index = overrides.index("--output-last-message")
-        overrides.insert(output_flag_index + 1, output_file) if output_flag_index
-      end
-
-      separator_index = base_command.index("--") || base_command.length
-      base_command[0...separator_index] + overrides + base_command[separator_index..]
-    end
-
-    def shell_wrapped_test_command?
-      codex_test_output_capture? || gemini_test_error_capture?
-    end
-
-    def shell_wrapped_test_command
-      command_prefix = shell_join_command(test_command_prefix(output_file: "$tmp_output"))
-      unset_vars = provider_test_unset_vars
-      env_flag = "PAID_#{provider.provider_key.upcase}_SUBSCRIPTION_AUTH"
-      wrapped_command = if unset_vars.any?
-        %(if [ "$#{env_flag}" = "1" ]; then env #{unset_vars.map { |var| "-u #{var}" }.join(" ")} #{command_prefix} "$1"; else #{command_prefix} "$1"; fi)
-      else
-        %(#{command_prefix} "$1")
-      end
-
-      script = if gemini_test_error_capture?
-        <<~SH.squish
-          tmp_output="$(mktemp)" &&
-          tmp_error="$(mktemp)" &&
-          before_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1 || true)" &&
-          #{wrapped_command} >"$tmp_output" 2>"$tmp_error";
-          status=$?;
-          after_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1 || true)";
-          if [ "$status" -eq 0 ] && grep -q "Error when talking to Gemini API" "$tmp_error"; then
-            if [ -n "$after_report" ] && [ "$after_report" != "$before_report" ]; then
-              cat "$after_report" 2>/dev/null || cat "$tmp_error" 2>/dev/null;
-            else
-              cat "$tmp_error" 2>/dev/null;
-            fi;
-            exit 1;
-          fi;
-          if [ "$status" -eq 0 ]; then
-            cat "$tmp_output" 2>/dev/null;
-          else
-            cat "$tmp_error" 2>/dev/null;
-          fi;
-          exit $status
-        SH
-      else
-        <<~SH.squish
-          tmp_output="$(mktemp)" &&
-          tmp_error="$(mktemp)" &&
-          #{wrapped_command} >/dev/null 2>"$tmp_error";
-          status=$?;
-          if [ "$status" -eq 0 ]; then
-            cat "$tmp_output" 2>/dev/null;
-          else
-            cat "$tmp_error" 2>/dev/null;
-          fi;
-          exit $status
-        SH
-      end
-
-      [ "sh", "-c", script, "--", PROMPT ]
-    end
-
-    def kilocode_test_command?
-      provider.provider_key == "kilocode"
-    end
-
-    def kilocode_test_command_wrapper
-      unset_vars = ProviderSupport.subscription_auth_unset_vars.values.flatten.uniq
-      unset_flags = unset_vars.map { |var| "-u #{var}" }.join(" ")
-      command_prefix = shell_join_command(test_command_prefix)
-      script = <<~SH.squish
-        env #{unset_flags}
-        timeout 20s #{command_prefix} "$1"
-      SH
-      [ "sh", "-c", script, "--", PROMPT ]
-    end
-
-    def provider_test_command_overrides
-      harness_provider.test_command_overrides
-    end
-
-    def provider_test_unset_vars
-      harness_provider.subscription_unset_vars
-    end
-
-    def codex_test_output_capture?
-      provider_test_command_overrides.include?("--output-last-message")
-    end
-
-    def gemini_test_error_capture?
-      provider.provider_key == "gemini"
-    end
-
-    def parse_provider_test_error(output)
-      provider_error = harness_provider.parse_test_error(output: output)
-      return provider_error if provider_error
-
-      Tempfile.create([ "#{provider.provider_key}-client-error-", ".json" ]) do |file|
-        file.write(output.to_s)
-        file.flush
-        harness_provider.parse_test_error(output: output, files: { report: file.path })
-      end
-    end
-
-    def shell_join_command(tokens)
-      tokens.map { |token| shell_escape_token(token) }.join(" ")
-    end
-
-    def shell_escape_token(token)
-      value = token.to_s
-      value.start_with?("$") ? value : Shellwords.escape(value)
-    end
-
     def classify_failed_response(error_message)
       message = error_message.to_s
 
@@ -593,11 +346,18 @@ module Providers
       :unexpected
     end
 
+    def translate_and_extract_error(error_message)
+      translated = translate_known_provider_errors(error_message)
+      return translated if translated
+
+      extract_user_facing_error(error_message)
+    end
+
     def extract_user_facing_error(error_message)
       message = sanitize_error_message(error_message)
       return message if message.empty?
 
-      translated = translate_known_provider_errors(message)
+      translated = ProviderSupport.translate_provider_error(provider.provider_key, message)
       return translated if translated
 
       extracted = USER_FACING_ERROR_EXTRACTORS.find { |pattern| pattern.match?(message) }
@@ -635,11 +395,7 @@ module Providers
       # Paid-specific translations that reference container/proxy infrastructure
       # take priority since they provide more actionable context than generic
       # agent-harness translations.
-      paid_translation = translate_paid_specific_errors(message)
-      return paid_translation if paid_translation
-
-      # Fall back to the agent-harness provider's translate_error.
-      ProviderSupport.translate_provider_error(provider.provider_key, message)
+      translate_paid_specific_errors(message)
     end
 
     def translate_paid_specific_errors(message)
