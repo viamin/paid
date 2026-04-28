@@ -33,8 +33,8 @@ module Tools
         {
           id: artifact.id,
           artifact_type: artifact.artifact_type,
-          name: artifact.name,
-          path: artifact.path,
+          name: artifact.identifier,
+          path: artifact.scope_path,
           content_preview: artifact.content&.truncate(500)
         }
       end
