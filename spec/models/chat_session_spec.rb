@@ -33,6 +33,15 @@ RSpec.describe ChatSession do
       expect(session).not_to be_valid
       expect(session.errors[:provider]).to include("must belong to the same account")
     end
+
+    it "rejects a project from a different account" do
+      other_account = create(:account)
+      other_project = create(:project, account: other_account)
+
+      session = build(:chat_session, project: other_project)
+      expect(session).not_to be_valid
+      expect(session.errors[:project]).to include("must belong to the same account")
+    end
   end
 
   describe "scopes" do

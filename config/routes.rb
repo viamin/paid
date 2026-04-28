@@ -190,6 +190,11 @@ Rails.application.routes.draw do
     get "billing/invoices/:id", to: "billing#show_invoice", as: :billing_invoice
   end
 
+  # Chat sessions and messages
+  resources :chat_sessions, path: "chat", only: %i[index create show update destroy] do
+    resources :chat_messages, path: "messages", only: %i[index create]
+  end
+
   # Defines the root path route ("/")
   root "dashboard#show"
 end
