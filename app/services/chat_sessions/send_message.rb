@@ -28,7 +28,7 @@ module ChatSessions
     def call
       validate!
 
-      user_message = persist_user_message
+      persist_user_message
       conversation = build_conversation
       assistant_message = execute_agent(conversation)
       update_session_activity
