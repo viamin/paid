@@ -43,10 +43,6 @@ RSpec.describe Containers::ProvisionForChat do
     it "defines idle timeout of 30 minutes" do
       expect(described_class::CHAT_DEFAULTS[:idle_timeout]).to eq(30.minutes)
     end
-
-    it "defines wall clock timeout of 4 hours" do
-      expect(described_class::CHAT_DEFAULTS[:wall_clock_timeout]).to eq(4.hours)
-    end
   end
 
   describe ".call" do
@@ -148,9 +144,12 @@ RSpec.describe Containers::ProvisionForChat do
     end
 
     it "fixes ownership after starting container" do
+      expected_cmd = [ "chown", "-R", "agent:agent", "/workspace" ] +
+        described_class::STATE_VOLUME_DIRS
+
       expect(mock_container).to receive(:start).ordered
       expect(mock_container).to receive(:exec).with(
-        [ "sh", "-c", /chown -R agent:agent/ ],
+        expected_cmd,
         user: "root"
       ).ordered.and_return([ [], [], 0 ])
 

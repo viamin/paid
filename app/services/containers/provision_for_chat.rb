@@ -9,7 +9,7 @@ module Containers
   # - Lower resource defaults (2GB RAM, 1 CPU vs 4GB/2 CPU)
   # - Persistent named volume for agent CLI state (~/.claude, ~/.codex, etc.)
   # - Workspace volume or git worktree for project files
-  # - Idle timeout management (30 min idle, 4 hour max)
+  # - Idle timeout management (30 min default)
   # - Network access to Paid MCP server
   #
   # @example
@@ -24,7 +24,6 @@ module Containers
       cpu_quota: 100_000,                       # 1 CPU (vs 2 for agent runs)
       pids_limit: 500,
       idle_timeout: 30.minutes,
-      wall_clock_timeout: 4.hours,
       image: "paid-agent:latest",
       user: "agent",
       workspace_mount: "/workspace"
@@ -204,8 +203,8 @@ module Containers
 
     def fix_ownership!
       dirs = [ options[:workspace_mount] ] + STATE_VOLUME_DIRS
-      cmd = "chown -R #{options[:user]}:#{options[:user]} #{dirs.join(' ')}"
-      @container.exec([ "sh", "-c", cmd ], user: "root")
+      cmd_args = [ "chown", "-R", "#{options[:user]}:#{options[:user]}" ] + dirs
+      @container.exec(cmd_args, user: "root")
     end
 
     def proxy_base_url
