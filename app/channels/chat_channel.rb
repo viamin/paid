@@ -41,6 +41,8 @@ class ChatChannel < ApplicationCable::Channel
         }
       })
     end
+  rescue NotImplementedError => e
+    broadcast_event("error", { message: e.message })
   rescue ArgumentError => e
     broadcast_event("error", { message: e.message })
   rescue StandardError => e

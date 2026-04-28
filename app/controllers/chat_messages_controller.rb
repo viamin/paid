@@ -70,6 +70,10 @@ class ChatMessagesController < ApplicationController
         output: assistant_message.tokens_output
       }
     })
+  rescue IOError
+    # Client disconnected — nothing to send
+  rescue NotImplementedError => e
+    write_sse_event("error", { message: e.message })
   rescue ArgumentError => e
     write_sse_event("error", { message: e.message })
   rescue StandardError => e
@@ -85,6 +89,8 @@ class ChatMessagesController < ApplicationController
       content: params[:content]
     )
     render json: message_json(assistant_message), status: :created
+  rescue NotImplementedError => e
+    render json: { error: e.message }, status: :service_unavailable
   rescue ArgumentError => e
     render json: { error: e.message }, status: :unprocessable_content
   rescue StandardError => e
