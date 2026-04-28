@@ -17,6 +17,7 @@ module Activities
       project = Project.find(project_id)
       runs = fetch_enhance_runs(project, lookback_days)
 
+      @issue_comments_cache = {}
       sampled_runs = runs.first(MAX_RUNS).filter_map { |run| build_run_data(run) }
       artifact_usage = build_artifact_usage(project, lookback_days)
 
@@ -76,11 +77,18 @@ module Activities
       metric.scores["author_replied"].to_f > 0
     end
 
+    def fetch_issue_comments(run)
+      issue_key = [ run.project_id, run.issue_id ]
+      @issue_comments_cache[issue_key] ||= begin
+        client = run.project.github_token.client
+        client.issue_comments(run.project.full_name, run.issue.github_number)
+      end
+    end
+
     def fetch_user_reply_text(run)
       return nil unless run.issue && run.project.github_token&.client
 
-      client = run.project.github_token.client
-      comments = client.issue_comments(run.project.full_name, run.issue.github_number)
+      comments = fetch_issue_comments(run)
       enhancement = comments.find { |c| c[:body].to_s.include?(COMMENT_MARKER) }
       return nil unless enhancement
 
