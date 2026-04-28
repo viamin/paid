@@ -250,8 +250,8 @@ module Automation
       private
 
       def select_next(candidates)
-        # Priority: partially-complete dependency trees first,
-        # then by unblock count, then by number ascending.
+        # Priority: priority label tier first, then by
+        # github_number ascending (FIFO — oldest first).
         # (Extracted from current Issues::AutoPick logic)
       end
     end
