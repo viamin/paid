@@ -32,5 +32,17 @@ class CreateExceptionIncidents < ActiveRecord::Migration[8.1]
 
     add_foreign_key :exception_incidents, :accounts
     add_foreign_key :exception_incidents, :projects
+
+    reversible do |dir|
+      dir.up do
+        execute <<~SQL
+          ALTER TABLE exception_incidents ENABLE ROW LEVEL SECURITY;
+          ALTER TABLE exception_incidents FORCE ROW LEVEL SECURITY;
+          CREATE POLICY tenant_isolation ON exception_incidents
+            USING (paid_tenant_bypass() OR account_id = paid_current_account_id())
+            WITH CHECK (paid_tenant_bypass() OR account_id = paid_current_account_id());
+        SQL
+      end
+    end
   end
 end

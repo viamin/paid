@@ -1243,6 +1243,54 @@ ALTER SEQUENCE public.decision_records_id_seq OWNED BY public.decision_records.i
 
 
 --
+-- Name: exception_incidents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.exception_incidents (
+    id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    project_id bigint,
+    fingerprint character varying NOT NULL,
+    exception_class character varying NOT NULL,
+    message text NOT NULL,
+    backtrace text,
+    subsystem character varying NOT NULL,
+    severity character varying DEFAULT 'p2'::character varying NOT NULL,
+    action_taken character varying DEFAULT 'logged'::character varying NOT NULL,
+    status character varying DEFAULT 'open'::character varying NOT NULL,
+    github_issue_url character varying,
+    github_issue_number integer,
+    occurrence_count integer DEFAULT 1 NOT NULL,
+    context jsonb DEFAULT '{}'::jsonb NOT NULL,
+    last_occurred_at timestamp(6) without time zone NOT NULL,
+    resolved_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.exception_incidents FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: exception_incidents_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.exception_incidents_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: exception_incidents_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.exception_incidents_id_seq OWNED BY public.exception_incidents.id;
+
+
+--
 -- Name: flipper_features; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1957,7 +2005,7 @@ CREATE TABLE public.llm_models (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     tier character varying(10),
-    CONSTRAINT llm_models_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[]))))
+    CONSTRAINT llm_models_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text]))))
 );
 
 
@@ -2084,8 +2132,8 @@ CREATE TABLE public.model_selections (
     tier character varying(10),
     escalated_from_tier character varying(10),
     escalated_reason character varying(255),
-    CONSTRAINT model_selections_escalated_from_tier_check CHECK (((escalated_from_tier IS NULL) OR ((escalated_from_tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[])))),
-    CONSTRAINT model_selections_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[]))))
+    CONSTRAINT model_selections_escalated_from_tier_check CHECK (((escalated_from_tier IS NULL) OR ((escalated_from_tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text])))),
+    CONSTRAINT model_selections_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text]))))
 );
 
 ALTER TABLE ONLY public.model_selections FORCE ROW LEVEL SECURITY;
@@ -3353,7 +3401,7 @@ CREATE TABLE public.user_settings (
     fair_queue_across_projects boolean DEFAULT true NOT NULL,
     CONSTRAINT chk_max_issues_per_page_bounds CHECK (((max_issues_per_page >= 5) AND (max_issues_per_page <= 200))),
     CONSTRAINT chk_max_prs_per_page_bounds CHECK (((max_prs_per_page >= 5) AND (max_prs_per_page <= 200))),
-    CONSTRAINT chk_provider_selection_mode CHECK (((provider_selection_mode)::text = ANY ((ARRAY['single'::character varying, 'round_robin'::character varying, 'random'::character varying])::text[])))
+    CONSTRAINT chk_provider_selection_mode CHECK (((provider_selection_mode)::text = ANY (ARRAY[('single'::character varying)::text, ('round_robin'::character varying)::text, ('random'::character varying)::text])))
 );
 
 ALTER TABLE ONLY public.user_settings FORCE ROW LEVEL SECURITY;
@@ -3694,6 +3742,13 @@ ALTER TABLE ONLY public.decision_record_links ALTER COLUMN id SET DEFAULT nextva
 --
 
 ALTER TABLE ONLY public.decision_records ALTER COLUMN id SET DEFAULT nextval('public.decision_records_id_seq'::regclass);
+
+
+--
+-- Name: exception_incidents id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exception_incidents ALTER COLUMN id SET DEFAULT nextval('public.exception_incidents_id_seq'::regclass);
 
 
 --
@@ -4279,6 +4334,14 @@ ALTER TABLE ONLY public.decision_records
 
 
 --
+-- Name: exception_incidents exception_incidents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exception_incidents
+    ADD CONSTRAINT exception_incidents_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: flipper_features flipper_features_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4752,14 +4815,14 @@ CREATE INDEX idx_agent_runs_project_status_created_at_desc ON public.agent_runs 
 -- Name: idx_agent_runs_unique_active_issue; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_agent_runs_unique_active_issue ON public.agent_runs USING btree (project_id, issue_id, goal) WHERE ((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])));
+CREATE UNIQUE INDEX idx_agent_runs_unique_active_issue ON public.agent_runs USING btree (project_id, issue_id, goal) WHERE ((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])));
 
 
 --
 -- Name: idx_agent_runs_unique_active_pr; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_agent_runs_unique_active_pr ON public.agent_runs USING btree (project_id, source_pull_request_number, goal) WHERE ((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])));
+CREATE UNIQUE INDEX idx_agent_runs_unique_active_pr ON public.agent_runs USING btree (project_id, source_pull_request_number, goal) WHERE ((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])));
 
 
 --
@@ -5866,6 +5929,41 @@ CREATE INDEX index_decision_records_on_superseded_by_id ON public.decision_recor
 --
 
 CREATE INDEX index_decision_records_on_tags ON public.decision_records USING gin (tags);
+
+
+--
+-- Name: index_exception_incidents_on_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_exception_incidents_on_dedup ON public.exception_incidents USING btree (account_id, fingerprint);
+
+
+--
+-- Name: index_exception_incidents_on_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_exception_incidents_on_project ON public.exception_incidents USING btree (project_id);
+
+
+--
+-- Name: index_exception_incidents_on_severity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_exception_incidents_on_severity ON public.exception_incidents USING btree (severity);
+
+
+--
+-- Name: index_exception_incidents_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_exception_incidents_on_status ON public.exception_incidents USING btree (account_id, status);
+
+
+--
+-- Name: index_exception_incidents_on_subsystem; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_exception_incidents_on_subsystem ON public.exception_incidents USING btree (account_id, subsystem);
 
 
 --
@@ -8077,6 +8175,14 @@ ALTER TABLE ONLY public.quality_metrics
 
 
 --
+-- Name: exception_incidents fk_rails_ae66d2c5ca; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exception_incidents
+    ADD CONSTRAINT fk_rails_ae66d2c5ca FOREIGN KEY (project_id) REFERENCES public.projects(id);
+
+
+--
 -- Name: context_intake_sessions fk_rails_ae8a55b482; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8338,6 +8444,14 @@ ALTER TABLE ONLY public.quality_thresholds
 
 ALTER TABLE ONLY public.issue_dependencies
     ADD CONSTRAINT fk_rails_dd269fd4f1 FOREIGN KEY (depends_on_issue_id) REFERENCES public.issues(id) ON DELETE CASCADE;
+
+
+--
+-- Name: exception_incidents fk_rails_dfbab0a98f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exception_incidents
+    ADD CONSTRAINT fk_rails_dfbab0a98f FOREIGN KEY (account_id) REFERENCES public.accounts(id);
 
 
 --
@@ -8641,6 +8755,12 @@ ALTER TABLE public.decision_record_links ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.decision_records ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: exception_incidents; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.exception_incidents ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: github_tokens; Type: ROW SECURITY; Schema: public; Owner: -
@@ -9150,6 +9270,13 @@ CREATE POLICY tenant_isolation ON public.decision_records USING ((public.paid_te
   WHERE ((projects.id = decision_records.project_id) AND (projects.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
    FROM public.projects
   WHERE ((projects.id = decision_records.project_id) AND (projects.account_id = public.paid_current_account_id()))))));
+
+
+--
+-- Name: exception_incidents tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.exception_incidents USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
 
 
 --
@@ -9990,240 +10117,6 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 --
 -- PostgreSQL database dump complete
 --
-
-SET search_path TO "$user", public;
-
-INSERT INTO "schema_migrations" (version) VALUES
-('20260428025840'),
-('20260427225726'),
-('20260427223009'),
-('20260427223003'),
-('20260427143916'),
-('20260427141851'),
-('20260427135718'),
-('20260426231639'),
-('20260426231603'),
-('20260426231602'),
-('20260426231558'),
-('20260426114303'),
-('20260426011810'),
-('20260425225105'),
-('20260425164954'),
-('20260425114721'),
-('20260425113212'),
-('20260425061110'),
-('20260425060000'),
-('20260425052958'),
-('20260425050134'),
-('20260425045424'),
-('20260423132408'),
-('20260423130627'),
-('20260421162139'),
-('20260421162135'),
-('20260421161445'),
-('20260421155244'),
-('20260421110831'),
-('20260421083918'),
-('20260421082052'),
-('20260421080223'),
-('20260421050706'),
-('20260418233122'),
-('20260418175716'),
-('20260417204111'),
-('20260417072332'),
-('20260417061353'),
-('20260417052710'),
-('20260417052653'),
-('20260417035334'),
-('20260417031455'),
-('20260417023648'),
-('20260417023644'),
-('20260417023639'),
-('20260417023634'),
-('20260417023631'),
-('20260417023620'),
-('20260417020855'),
-('20260417020845'),
-('20260417004908'),
-('20260417004855'),
-('20260417003646'),
-('20260417002917'),
-('20260417002757'),
-('20260417002747'),
-('20260416225105'),
-('20260416225057'),
-('20260416221827'),
-('20260416221824'),
-('20260416221700'),
-('20260416221630'),
-('20260416185458'),
-('20260416185455'),
-('20260416183113'),
-('20260416173627'),
-('20260416170203'),
-('20260416170200'),
-('20260416050235'),
-('20260416020545'),
-('20260415224710'),
-('20260415224705'),
-('20260415181029'),
-('20260414154102'),
-('20260414092756'),
-('20260413193745'),
-('20260413193654'),
-('20260413191016'),
-('20260413191015'),
-('20260413190906'),
-('20260412165456'),
-('20260411163526'),
-('20260411080344'),
-('20260411022311'),
-('20260411012931'),
-('20260410204751'),
-('20260409231400'),
-('20260409184503'),
-('20260408194803'),
-('20260408170459'),
-('20260408105320'),
-('20260408042539'),
-('20260408032317'),
-('20260408004407'),
-('20260407230341'),
-('20260407230340'),
-('20260407143249'),
-('20260407081149'),
-('20260407072915'),
-('20260407071652'),
-('20260407071634'),
-('20260404161335'),
-('20260404062147'),
-('20260403062026'),
-('20260403062020'),
-('20260402162737'),
-('20260402144014'),
-('20260402144009'),
-('20260402082402'),
-('20260402081327'),
-('20260402072439'),
-('20260402063805'),
-('20260402050141'),
-('20260401135652'),
-('20260401124101'),
-('20260401121911'),
-('20260331210524'),
-('20260331121200'),
-('20260331085647'),
-('20260331085518'),
-('20260331004430'),
-('20260331004223'),
-('20260329230136'),
-('20260329230135'),
-('20260329170336'),
-('20260329170311'),
-('20260329155927'),
-('20260329095600'),
-('20260328194042'),
-('20260328151609'),
-('20260328101939'),
-('20260328101928'),
-('20260328060002'),
-('20260328060001'),
-('20260328060000'),
-('20260328055556'),
-('20260328002528'),
-('20260328002514'),
-('20260328002231'),
-('20260327215948'),
-('20260327215947'),
-('20260327015930'),
-('20260327000516'),
-('20260326180754'),
-('20260326070000'),
-('20260326060000'),
-('20260326050122'),
-('20260326044241'),
-('20260326012903'),
-('20260326011329'),
-('20260326005130'),
-('20260325233029'),
-('20260325230902'),
-('20260325230858'),
-('20260325230853'),
-('20260325230847'),
-('20260325230842'),
-('20260325162327'),
-('20260325120000'),
-('20260325081039'),
-('20260325080816'),
-('20260325080812'),
-('20260325074842'),
-('20260325040417'),
-('20260325034844'),
-('20260324023748'),
-('20260323000000'),
-('20260322000000'),
-('20260320000000'),
-('20260318000000'),
-('20260314000002'),
-('20260314000001'),
-('20260310200000'),
-('20260309200000'),
-('20260308200003'),
-('20260308200002'),
-('20260308200000'),
-('20260308100000'),
-('20260308000001'),
-('20260308000000'),
-('20260307140000'),
-('20260307130000'),
-('20260307120000'),
-('20260307010138'),
-('20260306120000'),
-('20260304100002'),
-('20260304100001'),
-('20260304100000'),
-('20260304000000'),
-('20260302090000'),
-('20260301210000'),
-('20260301205144'),
-('20260301000000'),
-('20260228130000'),
-('20260228120000'),
-('20260228091506'),
-('20260226120000'),
-('20260225100000'),
-('20260223205823'),
-('20260223000001'),
-('20260222020000'),
-('20260222010000'),
-('20260221000002'),
-('20260221000001'),
-('20260220030250'),
-('20260219051249'),
-('20260214070851'),
-('20260214070737'),
-('20260214015307'),
-('20260214012342'),
-('20260208130000'),
-('20260208120000'),
-('20260208100000'),
-('20260208063656'),
-('20260208005438'),
-('20260201042103'),
-('20260129230315'),
-('20260129222211'),
-('20260129214933'),
-('20260129214932'),
-('20260129043009'),
-('20260129031603'),
-('20260129022148'),
-('20260129013551'),
-('20260129004830'),
-('20260128161602'),
-('20260128034216'),
-('20260128004342'),
-('20260128004305'),
-('20260127154444');
 
 SET search_path TO "$user", public;
 
