@@ -182,7 +182,7 @@ class TenantSetting < ApplicationRecord
   def self.read_worker_setting_from_db(key)
     return nil unless table_exists?
 
-    setting = Account.first&.tenant_setting
+    setting = (Current.account || Account.first)&.tenant_setting
     return nil unless setting
 
     value = setting.worker_settings&.dig(key.to_s)

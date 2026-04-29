@@ -160,6 +160,8 @@ module Containers
       @pool_mode = options.delete(:pool_mode) { false }
       @options = DEFAULTS.merge(resolve_user_setting_overrides).merge(options)
       @container = nil
+      @heartbeat_age_cache = {}
+      @heartbeat_age_cache_mutex = Mutex.new
     end
 
     # Provisions a new container with security hardening.
@@ -1979,62 +1981,69 @@ module Containers
 
       Thread.new do
         loop do
-          sleep watchdog_poll_interval
+          begin
+            sleep watchdog_poll_interval
 
-          # Read heartbeat mtime outside the mutex to avoid holding the lock
-          # across slow filesystem operations. The value is a wall-clock age
-          # in seconds, comparable with elapsed durations inside the mutex.
-          heartbeat_age = heartbeat_age_seconds(ctx.heartbeat_path)
+            # Read heartbeat mtime outside the mutex to avoid holding the lock
+            # across slow filesystem operations.
+            heartbeat_age = heartbeat_age_seconds(ctx.heartbeat_path)
 
-          should_fire = ctx.mutex.synchronize do
-            if ctx.exec_completed_ref.call
-              false
-            else
-              now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-              elapsed = now - ctx.last_activity_ref.call
-              total_elapsed = now - ctx.started_at_ref.call
-              output_received = ctx.output_received_ref.call
-
-              # A heartbeat file touched during the current exec counts as
-              # activity equivalent to stdout output, so a working-but-silent
-              # agent does not trip startup/idle timeouts. Wall-clock is still
-              # enforced regardless of heartbeats.
-              if heartbeat_age && heartbeat_age <= total_elapsed
-                output_received = true
-                elapsed = heartbeat_age if heartbeat_age < elapsed
-              end
-
-              reason = if !output_received && ctx.startup_timeout && elapsed >= ctx.startup_timeout
-                :startup
-              elsif output_received && ctx.idle_timeout && elapsed >= ctx.idle_timeout
-                :idle
-              elsif ctx.wall_clock_timeout && total_elapsed >= ctx.wall_clock_timeout
-                :wall_clock
-              end
-
-              if reason
-                ctx.timeout_reason_setter.call(reason)
-                true
-              else
+            should_fire = ctx.mutex.synchronize do
+              if ctx.exec_completed_ref.call
                 false
+              else
+                now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+                elapsed = now - ctx.last_activity_ref.call
+                total_elapsed = now - ctx.started_at_ref.call
+                output_received = ctx.output_received_ref.call
+
+                # A heartbeat file touched during the current exec counts as
+                # activity equivalent to stdout output, so a working-but-silent
+                # agent does not trip startup/idle timeouts. Wall-clock is still
+                # enforced regardless of heartbeats.
+                if heartbeat_age && heartbeat_age <= total_elapsed
+                  output_received = true
+                  elapsed = heartbeat_age if heartbeat_age < elapsed
+                end
+
+                reason = if !output_received && ctx.startup_timeout && elapsed >= ctx.startup_timeout
+                  :startup
+                elsif output_received && ctx.idle_timeout && elapsed >= ctx.idle_timeout
+                  :idle
+                elsif ctx.wall_clock_timeout && total_elapsed >= ctx.wall_clock_timeout
+                  :wall_clock
+                end
+
+                if reason
+                  ctx.timeout_reason_setter.call(reason)
+                  true
+                else
+                  false
+                end
               end
             end
+
+            next unless should_fire
+
+            # Re-check exec_completed under the mutex to close the race window
+            # between should_fire computation and container.stop — exec may have
+            # returned between releasing the mutex above and reaching here.
+            break if ctx.mutex.synchronize { ctx.exec_completed_ref.call }
+
+            begin
+              ctx.container.stop(timeout: 0)
+            rescue Docker::Error::DockerError => e
+              log_system("container.watchdog.stop_failed", error: e.message)
+            end
+
+            break
+          rescue => e
+            log_system(
+              "container.watchdog.poll_failed",
+              error: e.message,
+              error_class: e.class.name
+            )
           end
-
-          next unless should_fire
-
-          # Re-check exec_completed under the mutex to close the race window
-          # between should_fire computation and container.stop — exec may have
-          # returned between releasing the mutex above and reaching here.
-          break if ctx.mutex.synchronize { ctx.exec_completed_ref.call }
-
-          begin
-            ctx.container.stop(timeout: 0)
-          rescue Docker::Error::DockerError => e
-            log_system("container.watchdog.stop_failed", error: e.message)
-          end
-
-          break
         end
       end
     end
@@ -2045,15 +2054,34 @@ module Containers
       1
     end
 
-    # Returns the wall-clock age in seconds of the heartbeat file at
-    # +heartbeat_path+, or +nil+ when no path is configured or the file is
-    # unreadable. Callers compare this against elapsed durations from the
-    # monotonic clock; the two are close enough over a watchdog window that
-    # any NTP-induced drift is negligible.
+    # Returns the age in seconds of the heartbeat file at +heartbeat_path+, or
+    # +nil+ when no path is configured or the file is unreadable.
+    #
+    # File mtimes are wall-clock timestamps, so we sample their initial age
+    # once and then advance that age using the monotonic clock while the mtime
+    # remains unchanged. This avoids repeated exposure to wall-clock jumps
+    # during watchdog polling.
     def heartbeat_age_seconds(heartbeat_path)
       return nil if heartbeat_path.blank?
 
-      Time.now - File.mtime(heartbeat_path)
+      mtime = File.mtime(heartbeat_path)
+      observed_at_monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      observed_age = Time.now - mtime
+
+      @heartbeat_age_cache_mutex.synchronize do
+        cached = @heartbeat_age_cache[heartbeat_path]
+
+        if cached && cached[:mtime] == mtime
+          cached[:age_seconds] + (observed_at_monotonic - cached[:observed_at_monotonic])
+        else
+          @heartbeat_age_cache[heartbeat_path] = {
+            mtime: mtime,
+            age_seconds: observed_age,
+            observed_at_monotonic: observed_at_monotonic
+          }
+          observed_age
+        end
+      end
     rescue Errno::ENOENT, Errno::EACCES, Errno::ENOTDIR
       nil
     end
