@@ -277,10 +277,18 @@ RUN useradd -m -s /bin/bash agent \
 # into stdout, which breaks the Test Agent ping response matching.
 # The opencode binary creates its DB on first run; this step discards the
 # network-dependent output and only keeps the migrated SQLite file.
+#
+# The pre-seeded DB is copied to /opt/opencode-seed so it survives the tmpfs
+# mount that Provision#host_config places at /home/agent/.local/share/opencode
+# at runtime. Containers::Provision#seed_opencode_database! copies it from
+# /opt into the tmpfs after the container starts.
 USER agent
 RUN mkdir -p /home/agent/.local/share/opencode \
     && timeout 10s opencode run "OK" > /dev/null 2>&1 || true
 USER root
+RUN mkdir -p /opt/opencode-seed \
+    && cp -a /home/agent/.local/share/opencode/. /opt/opencode-seed/ \
+    && chown -R agent:agent /opt/opencode-seed
 
 # Set up working directory
 WORKDIR /workspace
