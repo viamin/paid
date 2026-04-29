@@ -2324,6 +2324,83 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  describe "#start_watchdog" do
+    let(:watchdog_mutex) { Mutex.new }
+    let(:watchdog_state) { { exec_completed: false, timeout_reason: nil } }
+    let(:watchdog_ctx) do
+      described_class::WatchdogContext.new(
+        container: mock_container,
+        mutex: watchdog_mutex,
+        output_received_ref: -> { false },
+        last_activity_ref: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) },
+        exec_completed_ref: -> { watchdog_state[:exec_completed] },
+        timeout_reason_setter: ->(reason) { watchdog_state[:timeout_reason] = reason },
+        startup_timeout: 10,
+        idle_timeout: nil,
+        wall_clock_timeout: nil,
+        started_at_ref: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) },
+        heartbeat_path: "/tmp/heartbeat"
+      )
+    end
+
+    before do
+      service.provision
+      allow(service).to receive(:watchdog_poll_interval).and_return(0.05)
+    end
+
+    it "logs unexpected poll errors and keeps running" do
+      allow(service).to receive(:log_system)
+      heartbeat_checks = 0
+      allow(service).to receive(:heartbeat_age_seconds).with("/tmp/heartbeat") do
+        heartbeat_checks += 1
+        raise Errno::ELOOP, "/tmp/heartbeat" if heartbeat_checks == 1
+
+        nil
+      end
+
+      watchdog = service.send(:start_watchdog, watchdog_ctx)
+
+      sleep 0.12
+      watchdog_state[:exec_completed] = true
+      service.send(:stop_watchdog, watchdog)
+
+      expect(service).to have_received(:log_system).with(
+        "container.watchdog.poll_failed",
+        error: anything,
+        error_class: "Errno::ELOOP"
+      )
+      expect(heartbeat_checks).to be >= 2
+      expect(watchdog_state[:timeout_reason]).to be_nil
+    end
+  end
+
+  describe "#heartbeat_age_seconds" do
+    let(:heartbeat_dir) { Dir.mktmpdir("heartbeat-age") }
+    let(:heartbeat_path) { File.join(heartbeat_dir, "heartbeat") }
+
+    after { FileUtils.remove_entry(heartbeat_dir) if File.directory?(heartbeat_dir) }
+
+    it "advances a cached heartbeat age with monotonic time when wall clock moves backward" do
+      File.write(heartbeat_path, "")
+      heartbeat_mtime = Time.utc(2026, 4, 29, 12, 0, 0)
+      service
+
+      allow(File).to receive(:mtime).with(heartbeat_path).and_return(heartbeat_mtime)
+      allow(Process).to receive(:clock_gettime).and_call_original
+      allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC).and_return(100.0, 105.0)
+      allow(Time).to receive(:now).and_return(
+        heartbeat_mtime + 10,
+        heartbeat_mtime - 60
+      )
+
+      first_age = service.send(:heartbeat_age_seconds, heartbeat_path)
+      second_age = service.send(:heartbeat_age_seconds, heartbeat_path)
+
+      expect(first_age).to eq(10.0)
+      expect(second_age).to eq(15.0)
+    end
+  end
+
   describe "#strip_codex_project_sections" do
     let(:service) { described_class.new(agent_run: agent_run, project: project) }
 
