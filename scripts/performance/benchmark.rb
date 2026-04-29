@@ -9,6 +9,16 @@ require_relative "../../config/environment"
 
 require "json"
 
+def run_benchmarks(seed_ci_data:)
+  TenantContext.with_system_access do
+    if seed_ci_data
+      benchmark_with_ci_data
+    else
+      PerformanceBenchmarks::Runner.call
+    end
+  end
+end
+
 def benchmark_with_ci_data
   report = nil
 
@@ -46,11 +56,7 @@ OptionParser.new do |parser|
   end
 end.parse!
 
-report = if options[:seed_ci_data]
-  benchmark_with_ci_data
-else
-  PerformanceBenchmarks::Runner.call
-end
+report = run_benchmarks(seed_ci_data: options[:seed_ci_data])
 json = JSON.pretty_generate(report.to_h)
 
 FileUtils.mkdir_p(File.dirname(options.fetch(:output)))

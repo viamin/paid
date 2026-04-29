@@ -4,7 +4,7 @@ module PerformanceBenchmarks
   module Benchmarks
     class SearchLatency
       KEY = "search_latency"
-      ITERATIONS = 5
+      ITERATIONS = 10
 
       def self.call(...)
         new(...).call
