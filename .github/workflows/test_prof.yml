@@ -1,0 +1,102 @@
+name: Test Prof
+
+on:
+  workflow_dispatch:
+    inputs:
+      profiler:
+        description: "Profiler to run"
+        required: true
+        default: factory_prof
+        type: choice
+        options:
+          - factory_prof
+          - factory_doctor
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16.13
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      qdrant:
+        image: qdrant/qdrant:v1.13.2
+        ports:
+          - 6333:6333
+
+    env:
+      BUNDLE_FROZEN: "true"
+      RAILS_ENV: test
+      DB_HOST: localhost
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      QDRANT_URL: http://localhost:6333
+      COVERAGE: "false"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@c4e5b1316158f92e3d49443a9d58b31d25ac0f8f
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version-file: .tool-versions
+          cache: "yarn"
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install JavaScript dependencies
+        run: yarn install --frozen-lockfile && bin/yarn-postinstall
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+
+      - name: Set up database
+        run: bin/rails db:prepare
+
+      - name: Verify Qdrant health
+        run: |
+          curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused "$QDRANT_URL/healthz"
+
+      - name: Run test-prof
+        run: |
+          set -o pipefail
+          mkdir -p tmp/test_prof
+          case "${{ inputs.profiler }}" in
+            factory_prof)
+              FPROF=1 bin/rspec --exclude-pattern "spec/performance/**/*_spec.rb,spec/system/**/*_spec.rb" | tee tmp/test_prof/factory_prof.log
+              ;;
+            factory_doctor)
+              FDOC=1 bin/rspec --exclude-pattern "spec/performance/**/*_spec.rb,spec/system/**/*_spec.rb" | tee tmp/test_prof/factory_doctor.log
+              ;;
+          esac
+
+      - name: Upload test-prof artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-prof-${{ inputs.profiler }}
+          path: tmp/test_prof/**
+          if-no-files-found: warn
+          retention-days: 7

@@ -84,6 +84,7 @@ GEM
     bcrypt (3.1.22)
     bcrypt_pbkdf (1.1.2)
     bcrypt_pbkdf (1.1.2-arm64-darwin)
+    benchmark (0.5.0)
     bigdecimal (4.1.2)
     bindex (0.8.1)
     bootsnap (1.24.1)
@@ -160,6 +161,10 @@ GEM
       concurrent-ruby (~> 1.1)
       webrick (~> 1.7)
       websocket-driver (~> 0.7)
+    fixture_kit (0.14.0)
+      activerecord (>= 8.0)
+      activesupport (>= 8.0)
+      benchmark
     flipper (1.4.1)
       concurrent-ruby (< 2)
     flipper-active_record (1.4.1)
@@ -468,6 +473,7 @@ GEM
     temporalio (1.3.0-x86_64-linux-musl)
       google-protobuf (>= 3.25.0)
       logger
+    test-prof (1.6.1)
     thor (1.5.0)
     thruster (0.1.20)
     thruster (0.1.20-aarch64-linux)
@@ -532,6 +538,7 @@ DEPENDENCIES
   factory_bot_rails
   faker
   faraday-retry
+  fixture_kit
   flipper
   flipper-active_record
   good_job (~> 4.18)
@@ -556,6 +563,7 @@ DEPENDENCIES
   solid_cache
   stimulus-rails
   temporalio
+  test-prof
   thruster
   turbo-rails
   tzinfo-data
@@ -582,6 +590,7 @@ CHECKSUMS
   bcrypt (3.1.22) sha256=1f0072e88c2d705d94aff7f2c5cb02eb3f1ec4b8368671e19112527489f29032
   bcrypt_pbkdf (1.1.2) sha256=c2414c23ce66869b3eb9f643d6a3374d8322dfb5078125c82792304c10b94cf6
   bcrypt_pbkdf (1.1.2-arm64-darwin) sha256=afdd6feb6ed5a97b8e44caacb3f2d641b98af78e6a516d4a3520b69af5cf9fea
+  benchmark (0.5.0) sha256=465df122341aedcb81a2a24b4d3bd19b6c67c1530713fd533f3ff034e419236c
   bigdecimal (4.1.2) sha256=53d217666027eab4280346fba98e7d5b66baaae1b9c3c1c0ffe89d48188a3fbd
   bindex (0.8.1) sha256=7b1ecc9dc539ed8bccfc8cb4d2732046227b09d6f37582ff12e50a5047ceb17e
   bootsnap (1.24.1) sha256=d7faea1dc24aa5b22dacc049c9236b64ebf60b14dd49c615e15d8402375d39ef
@@ -616,6 +625,7 @@ CHECKSUMS
   faraday-net_http (3.4.2) sha256=f147758260d3526939bf57ecf911682f94926a3666502e24c69992765875906c
   faraday-retry (2.4.0) sha256=7b79c48fb7e56526faf247b12d94a680071ff40c9fda7cf1ec1549439ad11ebe
   ferrum (0.17.2) sha256=2c2540a850b211a46f4d81de21bfd62048f507e4c327d1807225c3823c17e6ee
+  fixture_kit (0.14.0) sha256=e58f642b0813e1fe630e323e9b8e7f6bd7619412cae9ac0b671d4b2211c393c7
   flipper (1.4.1) sha256=05843240fb3093c7037549e34b046b636c765120f22e0a6268212daf44166e4d
   flipper-active_record (1.4.1) sha256=5197481ad0976a12c481b1778927d873738640f4023300bdb0d71b6e21245a37
   fugit (1.12.1) sha256=5898f478ede9b415f0804e42b8f3fd53f814bd85eebffceebdbc34e1107aaf68
@@ -732,6 +742,7 @@ CHECKSUMS
   temporalio (1.3.0-arm64-darwin) sha256=22c1f0fbbbfacf7c61ddd0d75e9ffc86590ba39ccbabb87f670821c9152fff7a
   temporalio (1.3.0-x86_64-linux) sha256=5122f3c2bd2b540565fc9ec4e2083401c00a7056c8408cd9922ebe570b366eef
   temporalio (1.3.0-x86_64-linux-musl) sha256=0b9c19a94d6703155618d02facf46481467bde1cdcd86ccb6b4f38896d847560
+  test-prof (1.6.1) sha256=0332d9c39a7c118ed942b2db582f055d9f24964d150004ec6b964d2fa262499e
   thor (1.5.0) sha256=e3a9e55fe857e44859ce104a84675ab6e8cd59c650a49106a05f55f136425e73
   thruster (0.1.20) sha256=c05f2fbcae527bbe093a6e6d84fb12d9d680617e7c162325d9b97e8e9d4b5201
   thruster (0.1.20-aarch64-linux) sha256=754f1701061235235165dde31e7a3bc87ec88066a02981ff4241fcda0d76d397

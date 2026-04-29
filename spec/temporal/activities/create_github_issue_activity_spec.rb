@@ -3,12 +3,12 @@
 require "rails_helper"
 
 RSpec.describe Activities::CreateGithubIssueActivity do
+  fixture "activities/create_github_issue/base"
+
   let(:activity) { described_class.new }
-  let(:project) { create(:project) }
-  let(:agent_run) do
-    create(:agent_run, :with_custom_prompt, :with_git_context, :with_metrics,
-      project: project, goal: "create_issue", custom_prompt: "Analyze the auth system")
-  end
+  let(:fixture_repository) { instance_variable_get(:@_fixture_kit_repository) }
+  let(:project) { fixture_repository.project }
+  let(:agent_run) { fixture_repository.agent_run }
   let(:github_client) { instance_double(GithubClient) }
   let(:issue_response) do
     Struct.new(:html_url, :number, :id, :title, :body, :state, :user, :labels, :pull_request, :created_at, :updated_at).new(
