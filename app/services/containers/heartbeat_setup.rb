@@ -10,53 +10,48 @@ module Containers
   # then uses the file's mtime to distinguish "agent is thinking" from "agent
   # is stuck", suppressing idle/startup timeouts while the agent is active.
   #
+  # The heartbeat file lives on a dedicated bind-mounted directory
+  # (/paid-heartbeat inside the container) so it is visible to both the
+  # container-side hooks and the host-side watchdog.
+  #
   # @example
-  #   setup = Containers::HeartbeatSetup.new(provider: "claude", worktree_path: "/var/paid/ws/123")
-  #   setup.heartbeat_path       # => "/var/paid/ws/123/.paid-heartbeat"
-  #   setup.preparation          # => AgentHarness::ExecutionPreparation (with file writes)
-  #   setup.env                  # => { "AGENT_HEARTBEAT_PATH" => "/workspace/.paid-heartbeat" }
+  #   setup = Containers::HeartbeatSetup.new(
+  #     provider: "claude",
+  #     worktree_path: "/workspace",
+  #     host_heartbeat_path: "/tmp/paid-heartbeat-abc123/.paid-heartbeat"
+  #   )
+  #   setup.heartbeat_path  # => "/tmp/paid-heartbeat-abc123/.paid-heartbeat"
+  #   setup.preparation     # => AgentHarness::ExecutionPreparation (with file writes)
+  #   setup.env             # => { "AGENT_HEARTBEAT_PATH" => "/paid-heartbeat/.paid-heartbeat" }
   class HeartbeatSetup
     HEARTBEAT_FILENAME = ".paid-heartbeat"
 
-    # Container-side path where the heartbeat file is touched.
-    CONTAINER_HEARTBEAT_PATH = "/workspace/#{HEARTBEAT_FILENAME}"
+    CONTAINER_HEARTBEAT_PATH = "/paid-heartbeat/#{HEARTBEAT_FILENAME}"
 
-    # Providers that support heartbeat hooks.
-    # Codex heartbeat is handled by Provision#seed_codex_notify_hook! which
-    # appends a notify command to the full config.toml written during
-    # container provisioning. HeartbeatSetup still advertises availability so
-    # the container watchdog checks the host-visible heartbeat file.
     SUPPORTED_PROVIDERS = %w[claude codex].freeze
 
-    attr_reader :provider, :worktree_path
+    attr_reader :provider, :worktree_path, :host_heartbeat_path
 
-    def initialize(provider:, worktree_path:)
+    def initialize(provider:, worktree_path:, host_heartbeat_path: nil)
       @provider = provider.to_s
       @worktree_path = worktree_path
+      @host_heartbeat_path = host_heartbeat_path
     end
 
-    # Host-visible path the watchdog checks via File.mtime.
-    # Returns nil when the workspace is not bind-mounted (Docker volume).
     def heartbeat_path
-      return nil unless worktree_path.present?
-
-      File.join(worktree_path, HEARTBEAT_FILENAME)
+      host_heartbeat_path
     end
 
-    # Whether this provider/workspace combination supports heartbeat.
     def available?
-      heartbeat_path.present? && SUPPORTED_PROVIDERS.include?(canonical_provider)
+      host_heartbeat_path.present? && SUPPORTED_PROVIDERS.include?(canonical_provider)
     end
 
-    # Environment variables to inject into the agent command.
     def env
       return {} unless available?
 
       { "AGENT_HEARTBEAT_PATH" => CONTAINER_HEARTBEAT_PATH }
     end
 
-    # Execution preparation with provider-specific config file writes.
-    # Returns nil when heartbeat is not available.
     def preparation
       return nil unless available?
 
