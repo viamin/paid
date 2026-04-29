@@ -4,14 +4,11 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe Activities::ScanPaidPrsActivity do
+  fixture "activities/scan_paid_prs/base"
+
   let(:activity) { described_class.new }
-  let(:project) do
-    create(:project,
-      auto_scan_prs: true,
-      max_pr_followup_runs: 3,
-      pr_action_labels: [],
-      auto_fix_merge_conflicts: false)
-  end
+  let(:fixture_repository) { instance_variable_get(:@_fixture_kit_repository) }
+  let(:project) { fixture_repository.project }
   let(:octokit_client) { instance_double(Octokit::Client) }
   let(:github_client) { instance_double(GithubClient, client: octokit_client) }
 

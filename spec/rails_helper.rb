@@ -7,7 +7,9 @@ require_relative "../config/environment"
 
 # Prevent database truncation if the environment is production
 abort("The Rails environment is running in production mode!") if Rails.env.production?
+require "fixture_kit/rspec"
 require "rspec/rails"
+require "test_prof/recipes/rspec/factory_default"
 
 # Add additional requires below this line. Rails is not loaded until this point!
 
