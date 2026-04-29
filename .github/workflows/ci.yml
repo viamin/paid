@@ -170,7 +170,6 @@ jobs:
 
   performance:
     runs-on: ubuntu-latest
-    if: vars.PAID_PERFORMANCE_BENCHMARKS == 'true'
 
     services:
       postgres:

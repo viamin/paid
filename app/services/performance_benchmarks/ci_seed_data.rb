@@ -16,11 +16,19 @@ module PerformanceBenchmarks
       @now = now
     end
 
+    FIXTURE_RUNS = [
+      { offset_minutes: 10, duration_seconds: 540, provision_seconds: 10, commit: "b" * 40, pr_number: 1 },
+      { offset_minutes: 60, duration_seconds: 420, provision_seconds: 8,  commit: "c" * 40, pr_number: 2 },
+      { offset_minutes: 180, duration_seconds: 600, provision_seconds: 12, commit: "d" * 40, pr_number: 3 },
+      { offset_minutes: 360, duration_seconds: 480, provision_seconds: 9,  commit: "e" * 40, pr_number: 4 },
+      { offset_minutes: 720, duration_seconds: 510, provision_seconds: 11, commit: "f" * 40, pr_number: 5 }
+    ].freeze
+
     def call
       raise "Performance benchmark CI seed data is only supported in test." unless Rails.env.test?
 
       ActiveRecord::Base.transaction do
-        seed_agent_run
+        seed_agent_runs
         seed_knowledge_artifact
       end
     end
@@ -29,36 +37,39 @@ module PerformanceBenchmarks
 
     attr_reader :now
 
-    def seed_agent_run
-      run = AgentRun.find_or_initialize_by(
-        project: project,
-        custom_prompt: "Benchmark workflow latency fixture"
-      )
-      run.assign_attributes(
-        agent_type: "claude_code",
-        trigger_type: "manual",
-        status: "completed",
-        goal: "create_pr",
-        created_at: now - 10.minutes,
-        started_at: now - 9.minutes,
-        completed_at: now - 1.minute,
-        duration_seconds: 540,
-        result_commit_sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        pull_request_url: "https://github.com/paid/performance-benchmarks/pull/1",
-        pull_request_number: 1
-      )
-      run.save!
-
-      AgentRunPhase.find_or_initialize_by(agent_run: run, phase_key: "provision_container").tap do |phase|
-        phase.assign_attributes(
-          phase_group: "setup",
-          status: "completed",
-          started_at: now - 9.minutes,
-          finished_at: now - 8.minutes - 50.seconds,
-          duration_seconds: 10,
-          metadata: { source: "performance_benchmark_ci_seed" }
+    def seed_agent_runs
+      FIXTURE_RUNS.each do |fixture|
+        run = AgentRun.find_or_initialize_by(
+          project: project,
+          custom_prompt: "Benchmark fixture ##{fixture.fetch(:pr_number)}"
         )
-        phase.save!
+        run.assign_attributes(
+          agent_type: "claude_code",
+          trigger_type: "manual",
+          status: "completed",
+          goal: "create_pr",
+          created_at: now - fixture.fetch(:offset_minutes).minutes,
+          started_at: now - fixture.fetch(:offset_minutes).minutes + 1.minute,
+          completed_at: now - fixture.fetch(:offset_minutes).minutes + fixture.fetch(:duration_seconds).seconds,
+          duration_seconds: fixture.fetch(:duration_seconds),
+          result_commit_sha: fixture.fetch(:commit),
+          pull_request_url: "https://github.com/paid/performance-benchmarks/pull/#{fixture.fetch(:pr_number)}",
+          pull_request_number: fixture.fetch(:pr_number)
+        )
+        run.save!
+
+        provision_start = now - fixture.fetch(:offset_minutes).minutes + 1.minute
+        AgentRunPhase.find_or_initialize_by(agent_run: run, phase_key: "provision_container").tap do |phase|
+          phase.assign_attributes(
+            phase_group: "setup",
+            status: "completed",
+            started_at: provision_start,
+            finished_at: provision_start + fixture.fetch(:provision_seconds).seconds,
+            duration_seconds: fixture.fetch(:provision_seconds),
+            metadata: { source: "performance_benchmark_ci_seed" }
+          )
+          phase.save!
+        end
       end
     end
 

@@ -4,7 +4,7 @@ module PerformanceBenchmarks
   module Benchmarks
     class DashboardLoadTime
       KEY = "dashboard_load_time"
-      ITERATIONS = 5
+      ITERATIONS = 10
 
       def self.call(...)
         new(...).call

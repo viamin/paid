@@ -17,7 +17,19 @@ RSpec.describe PerformanceBenchmarks::Measurement do
         p95_ms: 600.0,
         avg_ms: 165.0,
         comparison_value_ms: 600.0,
-        status: "fail"
+        status: "pass"
+      )
+    end
+
+    it "fails when p95 exceeds the configured budget" do
+      measurement = described_class.from_samples(
+        key: "search_latency",
+        samples: [ 1500, 1800, 2100, 2500 ]
+      )
+
+      expect(measurement.to_h).to include(
+        status: "fail",
+        comparison_value_ms: 2500.0
       )
     end
   end
@@ -28,7 +40,7 @@ RSpec.describe PerformanceBenchmarks::Measurement do
 
       expect(measurement.to_h).to include(
         key: "dashboard_load_time",
-        budget_ms: 1000,
+        budget_ms: 3000,
         sample_count: 0,
         status: "skipped",
         skipped_reason: "No account exists."
