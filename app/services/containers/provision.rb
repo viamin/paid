@@ -309,21 +309,23 @@ module Containers
           when :stderr
             stderr_buffer << normalized_chunk
             log_output(:stderr, normalized_chunk) if stream
+          end
 
-            # Check stderr against abort patterns — if the CLI emits a fatal
-            # error but hangs instead of exiting, stop the container immediately
-            # rather than waiting for the idle/wall-clock timeout.
-            if abort_patterns&.any? && abort_matched_output.nil?
-              matched = abort_patterns.any? { |pat| normalized_chunk.match?(pat) }
-              if matched
-                abort_matched_output = normalized_chunk
-                log_system("container.execute.abort_pattern_matched",
-                  output: normalized_chunk.truncate(200))
-                begin
-                  container.stop(timeout: 0)
-                rescue Docker::Error::DockerError => e
-                  log_system("container.execute.abort_stop_failed", error: e.message)
-                end
+          # Check both stdout and stderr against abort patterns — if the CLI
+          # emits a fatal error but hangs instead of exiting, stop the container
+          # immediately rather than waiting for the idle/wall-clock timeout.
+          # JSON-mode CLIs (e.g. Codex --json) may emit fatal errors on stdout.
+          if abort_patterns&.any? && abort_matched_output.nil?
+            matched = abort_patterns.any? { |pat| normalized_chunk.match?(pat) }
+            if matched
+              abort_matched_output = normalized_chunk
+              log_system("container.execute.abort_pattern_matched",
+                stream: stream_type.to_s,
+                output: normalized_chunk.truncate(200))
+              begin
+                container.stop(timeout: 0)
+              rescue Docker::Error::DockerError => e
+                log_system("container.execute.abort_stop_failed", error: e.message)
               end
             end
           end
@@ -380,7 +382,11 @@ module Containers
       rescue StartupTimeoutError, IdleTimeoutError => e
         log_partial_output(stdout_buffer, stderr_buffer)
         timeout_value = e.is_a?(StartupTimeoutError) ? startup_timeout : idle_timeout
-        log_system("container.execute.timeout", timeout_type: e.class.name.demodulize, timeout: timeout_value)
+        log_system("container.execute.timeout",
+          timeout_type: e.class.name.demodulize,
+          timeout: timeout_value,
+          **timeout_diagnostics(started_at, output_received, last_activity_at, heartbeat_path),
+          **output_summary_diagnostics(stdout_buffer, stderr_buffer))
         raise
       rescue TimeoutError
         log_partial_output(stdout_buffer, stderr_buffer)
@@ -405,7 +411,9 @@ module Containers
           log_system(
             "container.execute.timeout",
             timeout_type: timeout_error.class.name.demodulize,
-            timeout: timeout_value
+            timeout: timeout_value,
+            **timeout_diagnostics(started_at, output_received, last_activity_at, heartbeat_path),
+            **output_summary_diagnostics(stdout_buffer, stderr_buffer)
           )
           raise
         end
@@ -420,7 +428,9 @@ module Containers
           log_system(
             "container.execute.timeout",
             timeout_type: timeout_error.class.name.demodulize,
-            timeout: timeout_value
+            timeout: timeout_value,
+            **timeout_diagnostics(started_at, output_received, last_activity_at, heartbeat_path),
+            **output_summary_diagnostics(stdout_buffer, stderr_buffer)
           )
           raise
         end
@@ -889,19 +899,57 @@ module Containers
     # Serializes only Codex CLI executions that share a host-backed auth.json.
     # Other container commands keep full parallelism, and different credential
     # directories map to different lockfiles.
+    #
+    # Uses a non-blocking lock with retries instead of indefinite blocking to
+    # prevent a hung container from stalling all other runs sharing the same
+    # auth.json. After lock_timeout_seconds, logs a warning and proceeds
+    # without the lock — a concurrent OAuth refresh may fail with
+    # refresh_token_reused, which Paid classifies as auth_expired and handles
+    # via the standard provider fallback path.
     def with_codex_auth_lock(command)
       return yield unless codex_auth_lock_required?(command)
 
       lockfile = codex_auth_lockfile_path
-      log_system("container.codex_auth_lock.waiting")
+      lock_timeout = codex_auth_lock_timeout
+
       File.open(lockfile, File::WRONLY | File::CREAT, 0o600) do |f|
-        f.flock(File::LOCK_EX)
-        log_system("container.codex_auth_lock.acquired", lockfile: lockfile)
-        yield
+        log_system("container.codex_auth_lock.waiting", lockfile: lockfile, lock_timeout_seconds: lock_timeout)
+
+        acquired = false
+        acquired = acquire_lock_with_timeout(f, lock_timeout)
+
+        if acquired
+          log_system("container.codex_auth_lock.acquired", lockfile: lockfile)
+          yield
+        else
+          log_system("container.codex_auth_lock.timeout",
+            lockfile: lockfile,
+            lock_timeout_seconds: lock_timeout)
+          yield
+        end
       ensure
-        f.flock(File::LOCK_UN)
-        log_system("container.codex_auth_lock.released", lockfile: lockfile)
+        if acquired
+          f.flock(File::LOCK_UN)
+          acquired = false
+          log_system("container.codex_auth_lock.released", lockfile: lockfile)
+        end
       end
+    end
+
+    def acquire_lock_with_timeout(file, timeout)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+      loop do
+        return true if file.flock(File::LOCK_EX | File::LOCK_NB)
+        remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        return false if remaining <= 0
+        sleep [ remaining, 0.5 ].min
+      end
+    end
+
+    def codex_auth_lock_timeout
+      config = codex_harness_provider.auth_lock_config
+      timeout = config&.dig(:timeout)
+      timeout.is_a?(Numeric) ? timeout : 30
     end
 
     def seed_opencode_database!
@@ -2029,7 +2077,14 @@ module Containers
       when :idle
         raise IdleTimeoutError, "No output received for #{timeout_check.idle_timeout} seconds"
       when :wall_clock
-        log_system("container.execute.timeout", timeout_type: "wall_clock", timeout: timeout_check.timeout)
+        elapsed_seconds = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - timeout_check.started_at)).round(1)
+        hb_age = heartbeat_age_seconds(timeout_check.heartbeat_path)
+        log_system("container.execute.timeout",
+          timeout_type: "wall_clock",
+          timeout: timeout_check.timeout,
+          elapsed_seconds: elapsed_seconds,
+          heartbeat_active: hb_age && hb_age <= elapsed_seconds,
+          heartbeat_age_seconds: hb_age&.round(1))
         raise TimeoutError, "Command timed out after #{timeout_check.timeout} seconds"
       end
     end
@@ -2063,7 +2118,10 @@ module Containers
       elsif output_received && tc.idle_timeout && elapsed_since_activity >= tc.idle_timeout
         raise IdleTimeoutError, "No output received for #{tc.idle_timeout} seconds"
       elsif tc.timeout && elapsed_since_start >= tc.timeout
-        log_system("container.execute.timeout", timeout_type: "wall_clock", timeout: tc.timeout)
+        log_system("container.execute.timeout",
+          timeout_type: "wall_clock",
+          timeout: tc.timeout,
+          **timeout_diagnostics_from_elapsed(elapsed_since_start, elapsed_since_activity, output_received, tc.heartbeat_path, heartbeat_age))
         raise TimeoutError, "Command timed out after #{tc.timeout} seconds"
       end
     end
@@ -2157,6 +2215,40 @@ module Containers
     # Extracted as a method so tests can override with a shorter interval.
     def watchdog_poll_interval
       1
+    end
+
+    def timeout_diagnostics(started_at, output_received, last_activity_at, heartbeat_path)
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      elapsed_since_start = (now - started_at).round(1)
+      elapsed_since_activity = output_received ? (now - last_activity_at).round(1) : nil
+      hb_age = heartbeat_age_seconds(heartbeat_path)
+
+      {
+        elapsed_seconds: elapsed_since_start,
+        idle_seconds: elapsed_since_activity,
+        output_received: output_received,
+        heartbeat_active: hb_age && hb_age <= elapsed_since_start,
+        heartbeat_age_seconds: hb_age&.round(1)
+      }
+    end
+
+    def timeout_diagnostics_from_elapsed(elapsed_since_start, elapsed_since_activity, output_received, heartbeat_path, heartbeat_age)
+      {
+        elapsed_seconds: elapsed_since_start.round(1),
+        idle_seconds: output_received ? elapsed_since_activity.round(1) : nil,
+        output_received: output_received,
+        heartbeat_active: heartbeat_age && heartbeat_age <= elapsed_since_start,
+        heartbeat_age_seconds: heartbeat_age&.round(1)
+      }
+    end
+
+    def output_summary_diagnostics(stdout_buffer, stderr_buffer)
+      stderr_text = stderr_buffer.join
+      {
+        stdout_bytes: stdout_buffer.sum(&:bytesize),
+        stderr_bytes: stderr_buffer.sum(&:bytesize),
+        last_stderr: stderr_text.present? ? stderr_text.last(200).encode("UTF-8", invalid: :replace) : nil
+      }
     end
 
     # Returns the age in seconds of the heartbeat file at +heartbeat_path+, or

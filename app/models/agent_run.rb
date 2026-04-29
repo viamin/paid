@@ -1225,13 +1225,14 @@ class AgentRun < ApplicationRecord
   # @param provider [String] The provider name
   # @param success [Boolean] Whether the attempt succeeded
   # @param error_type [String, nil] Type of error if failed (e.g., "rate_limited", "error")
-  def record_provider_attempt(provider, success:, error_type: nil)
+  def record_provider_attempt(provider, success:, error_type: nil, duration_seconds: nil)
     attempt = {
       "provider" => provider,
       "success" => success,
       "attempted_at" => Time.current.iso8601
     }
     attempt["error_type"] = error_type if error_type.present?
+    attempt["duration_seconds"] = duration_seconds if duration_seconds.present?
 
     self.providers_attempted = (providers_attempted || []) + [ attempt ]
     save!
