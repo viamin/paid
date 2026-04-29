@@ -1567,7 +1567,9 @@ module Activities
       return false if agent_run.container_id.blank?
 
       container_service = reconnect_container(agent_run) rescue nil
-      !container_service&.container_running?
+      return false unless container_service
+
+      !container_service.container_running?
     end
 
     def container_exit_diagnostics(container_service)

@@ -460,6 +460,7 @@ module Containers
     # @param force [Boolean] Force kill if container doesn't stop gracefully
     # @return [void]
     def cleanup(force: false)
+      cleanup_heartbeat_dir!
       return unless container
 
       log_system("container.cleanup.start", container_id: container.id)
@@ -479,7 +480,6 @@ module Containers
         @container = nil
         cleanup_workspace_volume
         cleanup_claimed_pool_entry
-        cleanup_heartbeat_dir!
       end
     end
 
@@ -1214,9 +1214,12 @@ module Containers
     end
 
     def valid_heartbeat_dir?(path)
-      return false unless path.start_with?("#{Dir.tmpdir}/")
+      return false unless path.is_a?(String) && path.start_with?("#{Dir.tmpdir}/")
 
-      File.basename(path).match?(HEARTBEAT_DIR_PATTERN)
+      realpath = File.realpath(path) rescue nil
+      return false unless realpath && realpath.start_with?("#{Dir.tmpdir}/")
+
+      File.basename(realpath).match?(HEARTBEAT_DIR_PATTERN)
     end
 
     def cleanup_workspace_volume
