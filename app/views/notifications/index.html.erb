@@ -8,7 +8,7 @@
       <p class="mt-1 text-sm text-gray-500">Review and manage system notifications.</p>
     </div>
     <div class="mt-4 sm:mt-0">
-      <%= button_to "Mark all read", mark_all_read_notifications_path, method: :post, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500", form: { data: { turbo: false } } %>
+      <%= button_to "Mark all read", mark_all_read_notifications_path, method: :post, params: request.query_parameters.slice("filter", "severity", "source"), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500", form: { data: { turbo: false } } %>
     </div>
   </div>
 
