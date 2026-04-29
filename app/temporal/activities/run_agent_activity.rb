@@ -496,9 +496,12 @@ module Activities
     end
 
     def default_provider_candidates(agent_run, user_settings)
+      first_key = ProviderSupport.container_executable_provider_keys.first
+      default_fallback = first_key ? ProviderSupport.agent_type_for(first_key) : "claude_code"
+
       candidates = [
         user_settings.default_provider_identifier_for_goal(agent_run.goal),
-        "claude_code"
+        default_fallback
       ].compact_blank
 
       seen = Set.new
@@ -687,6 +690,8 @@ module Activities
         "Rate limited by #{provider}: #{e.matched_output.to_s.truncate(200)}",
         reset_at: reset_at
       )
+    rescue Containers::Provision::ExecutionError => e
+      raise ProviderExecutionError, "Docker exec error: #{e.message}"
     end
 
     # Checks if the agent run is stuck in an infinite loop by analyzing

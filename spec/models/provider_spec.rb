@@ -392,24 +392,28 @@ RSpec.describe Provider do
 
     it "creates the default provider when missing" do
       user.providers.delete_all
+      default_key = described_class.default_provider_key
 
       expect { described_class.ensure_default_for(user) }
-        .to change { user.providers.where(provider_key: "claude").count }
+        .to change { user.providers.where(provider_key: default_key).count }
         .from(0).to(1)
     end
 
     it "creates a subscription provider by default" do
       user.providers.delete_all
+      default_key = described_class.default_provider_key
 
       described_class.ensure_default_for(user)
-      provider = user.providers.find_by(provider_key: "claude")
+      provider = user.providers.find_by(provider_key: default_key)
 
       expect(provider.auth_type).to eq("subscription")
     end
 
     it "is idempotent" do
+      default_key = described_class.default_provider_key
+
       expect { described_class.ensure_default_for(user) }
-        .not_to change { user.providers.where(provider_key: "claude").count }
+        .not_to change { user.providers.where(provider_key: default_key).count }
     end
   end
 
