@@ -26,6 +26,7 @@ RSpec.describe Activities::RunAgentActivity do
     allow(Containers::Provision).to receive(:reconnect)
       .with(agent_run: agent_run, container_id: "abc123")
       .and_return(container_service)
+    allow(container_service).to receive_messages(container_running?: true, container: nil, heartbeat_host_path: "/tmp/paid-heartbeat-test/.paid-heartbeat")
     allow(Containers::GitOperations).to receive(:new)
       .with(container_service: container_service, agent_run: agent_run)
       .and_return(git_ops)
@@ -1832,7 +1833,7 @@ RSpec.describe Activities::RunAgentActivity do
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
             idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
-            heartbeat_path: File.join(agent_run.worktree_path, ".paid-heartbeat")
+            heartbeat_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
           )
         ).and_return(exec_success)
 

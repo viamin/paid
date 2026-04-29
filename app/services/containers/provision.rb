@@ -3,6 +3,7 @@
 require "base64"
 require "digest"
 require "docker-api"
+require "securerandom"
 require "shellwords"
 
 module Containers
@@ -28,7 +29,8 @@ module Containers
   #   end
   #
   class Provision
-    CODEX_NOTIFY_LINE = 'notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]'
+    CODEX_NOTIFY_LINE = 'notify = ["sh", "-lc", "date +%s > /paid-heartbeat/.paid-heartbeat"]'
+    HEARTBEAT_MOUNT_POINT = "/paid-heartbeat"
 
     # Base error for all container service errors
     class Error < StandardError; end
@@ -122,7 +124,7 @@ module Containers
       workspace_mount: "/workspace"
     }.freeze
 
-    attr_reader :agent_run, :project, :worktree_path, :container, :options, :workspace_volume, :pool_entry
+    attr_reader :agent_run, :project, :worktree_path, :container, :options, :workspace_volume, :pool_entry, :heartbeat_dir_host
 
     def self.network_for(agent_run:)
       new(agent_run: agent_run).network_name
@@ -162,6 +164,7 @@ module Containers
       @container = nil
       @heartbeat_age_cache = {}
       @heartbeat_age_cache_mutex = Mutex.new
+      @heartbeat_dir_host = nil
     end
 
     # Provisions a new container with security hardening.
@@ -172,6 +175,7 @@ module Containers
     def provision
       log_system("container.provision.start", image: options[:image])
 
+      prepare_heartbeat_dir!
       prepare_workspace!
       ensure_network!
       @container = create_container
@@ -421,6 +425,19 @@ module Containers
         end
 
         log_system("container.execute.failed", error: e.message)
+
+        begin
+          container.refresh!
+          cstate = container.info["State"] || {}
+          log_system("container.execute.container_state",
+            running: cstate["Running"],
+            exit_code: cstate["ExitCode"],
+            oom_killed: cstate["OOMKilled"],
+            error: cstate["Error"],
+            finished_at: cstate["FinishedAt"])
+        rescue Docker::Error::DockerError
+        end
+
         raise ExecutionError.new("Docker exec error: #{e.message}")
       ensure
         watchdog_mutex.synchronize { exec_completed = true }
@@ -462,6 +479,7 @@ module Containers
         @container = nil
         cleanup_workspace_volume
         cleanup_claimed_pool_entry
+        cleanup_heartbeat_dir!
       end
     end
 
@@ -477,6 +495,12 @@ module Containers
       false
     end
 
+    def heartbeat_host_path
+      return nil unless heartbeat_dir_host.present?
+
+      File.join(heartbeat_dir_host, HeartbeatSetup::HEARTBEAT_FILENAME)
+    end
+
     # Attaches an existing Docker container to this service instance.
     # Used by .reconnect to rehydrate container state without reaching into ivars.
     #
@@ -486,6 +510,7 @@ module Containers
       @container = container
       @workspace_volume = workspace_volume if workspace_volume.present?
       @pool_entry = pool_entry if pool_entry.present?
+      restore_heartbeat_dir!
       self
     end
 
@@ -1150,6 +1175,50 @@ module Containers
       container.exec([ "sh", "-lc", cmd ], user: "agent")
     end
 
+    def prepare_heartbeat_dir!
+      dir = File.join(Dir.tmpdir, "paid-heartbeat-#{SecureRandom.hex(8)}")
+      FileUtils.mkdir_p(dir)
+      @heartbeat_dir_host = dir
+      File.chmod(0o777, dir)
+      log_system("container.heartbeat_dir_prepared", path: dir)
+    end
+
+    HEARTBEAT_DIR_PATTERN = /\Apaid-heartbeat-[0-9a-f]{16}\z/
+
+    def restore_heartbeat_dir!
+      return if @heartbeat_dir_host.present?
+
+      label = container.info&.dig("Config", "Labels", "paid.heartbeat_dir")
+      return unless label.present? && valid_heartbeat_dir?(label)
+
+      @heartbeat_dir_host = label
+    rescue => e
+      Rails.logger.warn(
+        message: "container_manager.heartbeat_dir_restore_failed",
+        agent_run_id: agent_run&.id,
+        error: e.message
+      )
+    end
+
+    def cleanup_heartbeat_dir!
+      return unless @heartbeat_dir_host && valid_heartbeat_dir?(@heartbeat_dir_host)
+
+      FileUtils.rm_rf(@heartbeat_dir_host)
+      @heartbeat_dir_host = nil
+    rescue => e
+      Rails.logger.warn(
+        message: "container_manager.heartbeat_cleanup_failed",
+        agent_run_id: agent_run&.id,
+        error: e.message
+      )
+    end
+
+    def valid_heartbeat_dir?(path)
+      return false unless path.start_with?("#{Dir.tmpdir}/")
+
+      File.basename(path).match?(HEARTBEAT_DIR_PATTERN)
+    end
+
     def cleanup_workspace_volume
       volume_name = @workspace_volume
       volume_name ||= "paid-workspace-#{agent_run.id}" if worktree_path.blank? && agent_run.present? && !pooled_container?
@@ -1202,6 +1271,7 @@ module Containers
         labels["paid.agent_run_id"] = agent_run.id.to_s
       end
 
+      labels["paid.heartbeat_dir"] = heartbeat_dir_host if heartbeat_dir_host
       labels
     end
 
@@ -1215,6 +1285,7 @@ module Containers
 
     # Writable directories inside the container:
     #   /workspace          - bind mount of workspace dir (rw, for git clone and code changes)
+    #   /paid-heartbeat     - bind mount of host temp dir (rw, for heartbeat file shared with watchdog)
     #   /tmp                - tmpfs (1GB, for scratch files)
     #   /home/agent/.cache  - tmpfs (512MB, for tool caches: Codex CLI, npm, etc.)
     #   /home/agent/.claude - tmpfs (256MB, for Claude CLI session/project data)
@@ -1255,6 +1326,8 @@ module Containers
       elsif worktree_path.present?
         binds << "#{worktree_path}:#{options[:workspace_mount]}:rw"
       end
+
+      binds << "#{heartbeat_dir_host}:#{HEARTBEAT_MOUNT_POINT}:rw" if heartbeat_dir_host
 
       # Mount the host's Claude config as read-only at a staging path.
       # Credentials are copied into the writable /home/agent/.claude tmpfs
