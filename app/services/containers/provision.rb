@@ -878,7 +878,7 @@ module Containers
     end
 
     def seed_opencode_database!
-      return unless container_executable_opencode?
+      return unless opencode_provider_requested?
 
       result = container.exec(
         [ "sh", "-c",
@@ -896,8 +896,13 @@ module Containers
       log_system("container.opencode_database_seed_failed", error: e.message)
     end
 
-    def container_executable_opencode?
-      ProviderSupport.container_executable_provider_key?("opencode")
+    def opencode_provider_requested?
+      return false unless agent_run
+
+      providers = resolved_run_provider_candidates
+      return providers.any? { |provider| provider.provider_key == "opencode" } if providers.any?
+
+      ProviderSupport.provider_key_for_agent_type(agent_run.agent_type) == "opencode"
     end
 
     def seed_gemini_credentials!
@@ -1649,14 +1654,14 @@ module Containers
     def codex_subscription_provider_requested?
       return false unless agent_run
 
-      providers = codex_resolved_provider_candidates
+      providers = resolved_run_provider_candidates
       return providers.any? { |provider| provider.provider_key == "codex" && provider.subscription? } if providers.any?
 
       ProviderSupport.provider_key_for_agent_type(agent_run.agent_type) == "codex"
     end
 
-    def codex_resolved_provider_candidates
-      return codex_run_provider_candidates if agent_run.provider
+    def resolved_run_provider_candidates
+      return run_provider_candidates if agent_run.provider
 
       settings = resolved_user_settings
       return [] unless settings
@@ -1670,7 +1675,7 @@ module Containers
       providers_for_identifiers(identifiers, user: settings.user)
     end
 
-    def codex_run_provider_candidates
+    def run_provider_candidates
       providers = [ agent_run.provider ]
       settings = resolved_user_settings
       if settings&.fallback_enabled?

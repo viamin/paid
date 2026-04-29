@@ -206,8 +206,6 @@ RSpec.describe Containers::Provision do
           metadata: hash_including(network: NetworkPolicy::NETWORK_NAME)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.ownership_batch_fixed",
           metadata: hash_including(dirs_count: 12)).ordered
-        expect(agent_run).to receive(:log!).with("system", "container.opencode_database_seeded",
-          metadata: {}).ordered
         expect(agent_run).to receive(:log!).with("system", "container.codex_config_seeded",
           metadata: {}).ordered
         expect(agent_run).to receive(:log!).with("system", "container.firewall.applied",
@@ -216,6 +214,15 @@ RSpec.describe Containers::Provision do
           metadata: hash_including(container_id: "abc123container")).ordered
 
         service.provision
+      end
+
+      it "skips OpenCode database seeding when the run does not resolve to opencode" do
+        service.provision
+
+        expect(mock_container).not_to have_received(:exec).with(
+          [ "sh", "-c", include("/opt/opencode-seed") ],
+          user: "root"
+        )
       end
 
       it "batches all ownership fixes into a single exec call" do
@@ -1499,9 +1506,21 @@ RSpec.describe Containers::Provision do
   end
 
   describe "#seed_opencode_database!" do
+    let(:api_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
+    let!(:opencode_provider) do
+      create(
+        :provider,
+        :api_key,
+        user: project.created_by,
+        provider_key: "opencode",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2.5" } }
+      )
+    end
     let(:service) { described_class.new(agent_run: agent_run, worktree_path: worktree_path) }
 
     before do
+      project.created_by.settings.update!(default_agent_provider: opencode_provider.routing_key)
       allow(Docker::Container).to receive(:create).and_return(mock_container)
       allow(mock_container).to receive(:start)
       allow(NetworkPolicy).to receive_messages(ensure_network!: mock_network, apply_firewall_rules: nil)
@@ -1528,6 +1547,17 @@ RSpec.describe Containers::Provision do
 
       expect(agent_run).to have_received(:log!).with("system", "container.opencode_database_seeded",
         metadata: {})
+    end
+
+    it "does not seed when the run resolves to a different provider" do
+      project.created_by.settings.update!(default_agent_provider: "claude")
+
+      service.provision
+
+      expect(mock_container).not_to have_received(:exec).with(
+        [ "sh", "-c", include("/opt/opencode-seed") ],
+        user: "root"
+      )
     end
 
     context "when Docker exec fails during opencode seed" do
