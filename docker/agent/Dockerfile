@@ -39,6 +39,7 @@ RUN NODE_VERSION=22.13.0 \
     && rm "${TARBALL}"
 
 # Install Ruby build dependencies, runtime deps, Python, PostgreSQL client libs, and ShellCheck
+# Keep client tools on the same Postgres major as the pinned server image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     autoconf \
     bison \
@@ -49,6 +50,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     libgdbm-dev \
     libpq-dev \
+    postgresql-client-16 \
     rustc \
     shellcheck \
     python3 \
@@ -75,7 +77,7 @@ RUN RUBY_VERSION=3.4.8 \
 # Remove some build-only dependencies to reduce image size and attack surface.
 # We intentionally keep the corresponding *-dev packages (libssl-dev, libreadline-dev, zlib1g-dev,
 # libyaml-dev, libffi-dev, libgdbm-dev, libpq-dev) so native extensions (e.g., Ruby gems like pg)
-# can be compiled inside this agent image.
+# can be compiled inside this agent image. We also keep postgresql-client-16 for schema dumps.
 RUN apt-get update && apt-get purge -y --auto-remove \
     autoconf \
     bison \
@@ -275,10 +277,18 @@ RUN useradd -m -s /bin/bash agent \
 # into stdout, which breaks the Test Agent ping response matching.
 # The opencode binary creates its DB on first run; this step discards the
 # network-dependent output and only keeps the migrated SQLite file.
+#
+# The pre-seeded DB is copied to /opt/opencode-seed so it survives the tmpfs
+# mount that Provision#host_config places at /home/agent/.local/share/opencode
+# at runtime. Containers::Provision#seed_opencode_database! copies it from
+# /opt into the tmpfs after the container starts.
 USER agent
 RUN mkdir -p /home/agent/.local/share/opencode \
     && timeout 10s opencode run "OK" > /dev/null 2>&1 || true
 USER root
+RUN mkdir -p /opt/opencode-seed \
+    && cp -a /home/agent/.local/share/opencode/. /opt/opencode-seed/ \
+    && chown -R agent:agent /opt/opencode-seed
 
 # Set up working directory
 WORKDIR /workspace

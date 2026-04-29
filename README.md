@@ -366,7 +366,7 @@ Paid is inspired by [aidp](https://github.com/viamin/aidp), a CLI tool for AI-dr
 
 ## Status
 
-Phase 2 (Intelligence) is complete. Phase 3 (Scale) is next. See [ROADMAP.md](docs/ROADMAP.md) for the current implementation phases.
+Phase 2 (Intelligence) is complete. Phase 3.5 (Completion & Hardening) is in progress — security, core features, fair queueing, and quality recovery are done; performance fundamentals and provider quota polling remain. See [ROADMAP.md](docs/ROADMAP.md) for the current implementation phases.
 
 ## License
 
