@@ -74,6 +74,74 @@ RSpec.describe Containers::HarnessExecutor do
       expect(result).to be_failed
     end
 
+    it "injects --auto and --print-logs for kilocode commands" do
+      container_result = Containers::Provision::Result.success(
+        stdout: "", stderr: "", exit_code: 0
+      )
+      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+
+      executor.execute(%w[kilo run --format json hello])
+
+      expect(agent_run).to have_received(:execute_in_container).with(
+        %w[kilo run --auto --print-logs --format json hello],
+        timeout: nil,
+        stream: false,
+        env: {},
+        preparation: nil
+      )
+    end
+
+    it "does not double-inject --auto when already present" do
+      container_result = Containers::Provision::Result.success(
+        stdout: "", stderr: "", exit_code: 0
+      )
+      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+
+      executor.execute(%w[kilo run --auto --format json hello])
+
+      expect(agent_run).to have_received(:execute_in_container).with(
+        %w[kilo run --auto --format json hello],
+        timeout: nil,
+        stream: false,
+        env: {},
+        preparation: nil
+      )
+    end
+
+    it "does not inject flags for non-kilo commands" do
+      container_result = Containers::Provision::Result.success(
+        stdout: "", stderr: "", exit_code: 0
+      )
+      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+
+      executor.execute(%w[codex exec test])
+
+      expect(agent_run).to have_received(:execute_in_container).with(
+        %w[codex exec test],
+        timeout: nil,
+        stream: false,
+        env: {},
+        preparation: nil
+      )
+    end
+
+    it "injects flags even when kilo command is wrapped by env -u" do
+      container_result = Containers::Provision::Result.success(
+        stdout: "", stderr: "", exit_code: 0
+      )
+      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+
+      executor.execute(%w[kilo run --format json hello], env: { "STAY" => "val", "REMOVE" => nil })
+
+      expect(agent_run).to have_received(:execute_in_container).with(
+        %w[env -u REMOVE kilo run --auto --print-logs --format json hello],
+        timeout: nil,
+        stream: false,
+        env: { "STAY" => "val" },
+        preparation: nil
+      )
+    end
+
     it "forwards preparation to the container" do
       container_result = Containers::Provision::Result.success(
         stdout: "", stderr: "", exit_code: 0

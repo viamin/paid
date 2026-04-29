@@ -3,34 +3,20 @@
 require "shellwords"
 
 module Containers
-  # Adapts container-based command execution to the AgentHarness::CommandExecutor
-  # interface, allowing agent-harness smoke tests to run inside provisioned
-  # Docker containers transparently.
-  #
-  # @example
-  #   test_run.with_container do |run|
-  #     executor = Containers::HarnessExecutor.new(run)
-  #     provider.smoke_test(timeout: 60, executor: executor)
-  #   end
   class HarnessExecutor
+    KILOCODE_AUTO_FLAGS = %w[--auto --print-logs].freeze
+    private_constant :KILOCODE_AUTO_FLAGS
+
     def initialize(agent_run)
       @agent_run = agent_run
     end
 
-    # Executes a command inside the container, conforming to the
-    # AgentHarness::CommandExecutor#execute contract.
-    #
-    # @param command [Array<String>, String] command to execute
-    # @param timeout [Integer, nil] timeout in seconds
-    # @param env [Hash] environment variables (nil values trigger unset)
-    # @param preparation [ExecutionPreparation, nil] request-scoped bootstrap
-    # @return [AgentHarness::CommandExecutor::Result]
     def execute(command, timeout: nil, env: {}, preparation: nil, **)
       unset_vars, set_vars = partition_env(env)
-      wrapped_command = unset_vars.any? ? command_with_unset_env(command, unset_vars) : command
+      effective_command = inject_kilocode_auto_flags(wrapped_command(command, unset_vars))
 
       result = @agent_run.execute_in_container(
-        wrapped_command,
+        effective_command,
         timeout: timeout,
         stream: false,
         env: set_vars,
@@ -45,8 +31,6 @@ module Containers
       )
     end
 
-    # Always returns a truthy path so harness binary-availability checks pass.
-    # The actual binary availability is determined by the container image.
     def which(binary)
       "/usr/local/bin/#{binary}"
     end
@@ -56,6 +40,24 @@ module Containers
     end
 
     private
+
+    def wrapped_command(command, unset_vars)
+      unset_vars.any? ? command_with_unset_env(command, unset_vars) : command
+    end
+
+    def inject_kilocode_auto_flags(command)
+      return command unless command.is_a?(Array) && command.length >= 2
+
+      kilo_idx = command.index("kilo")
+      return command unless kilo_idx
+
+      run_idx = command.index("run")
+      return command unless run_idx && run_idx > kilo_idx
+
+      return command if command.include?("--auto")
+
+      command[0..run_idx] + KILOCODE_AUTO_FLAGS + command[(run_idx + 1)..]
+    end
 
     def partition_env(env)
       unset = []
