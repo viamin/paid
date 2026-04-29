@@ -30,6 +30,13 @@ Paid exports worker and infrastructure metrics at `GET /api/metrics` in Promethe
 
 Container resource metrics (CPU, memory) are derived from the most recent sample per container within a 5-minute window. They are only present when at least one active container has recorded metrics.
 
+## Container Pool Metrics
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `paid_container_pool_entries_total` | gauge | `status` | Warm container pool entries by status |
+| `paid_container_pool_target` | gauge | — | Target pool size for warm containers |
+
 ## Service Container Metrics
 
 | Metric | Type | Labels | Description |

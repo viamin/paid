@@ -12,7 +12,7 @@ Paid is composed of four main subsystems that work together to orchestrate AI-dr
 │  │                         RAILS APPLICATION                              │ │
 │  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐  │ │
 │  │  │   Web UI     │ │  API Layer   │ │  Background  │ │   Database   │  │ │
-│  │  │  (Hotwire)   │ │  (Internal)  │ │  Jobs (SJ)   │ │ (PostgreSQL) │  │ │
+│  │  │  (Hotwire)   │ │  (Internal)  │ │  Jobs (GJ)   │ │ (PostgreSQL) │  │ │
 │  │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘  │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 │                                    │                                         │
@@ -43,8 +43,8 @@ Paid is composed of four main subsystems that work together to orchestrate AI-dr
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
 │  │                      EXTERNAL INTEGRATIONS                             │ │
 │  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐  │ │
-│  │  │   GitHub     │ │  LLM APIs    │ │  Agent CLIs  │ │  ruby-llm    │  │ │
-│  │  │   (PAT)      │ │  (proxied)   │ │  (in-cont.)  │ │  (registry)  │  │ │
+│  │  │   GitHub     │ │  LLM APIs    │ │  Agent CLIs  │ │  agent-harness    │  │ │
+│  │  │   (PAT)      │ │  (proxied)   │ │  (in-cont.)  │ │  (LLM iface) │  │ │
 │  │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘  │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -68,7 +68,7 @@ Paid is composed of four main subsystems that work together to orchestrate AI-dr
 | Component | Technology | Rationale |
 |-----------|------------|-----------|
 | Workflow Engine | Temporal.io | Durable workflows, built-in retry, observability |
-| Temporal Client | temporalio-ruby | Official Ruby SDK |
+| Temporal Client | temporalio | Official Ruby SDK |
 | Worker Pool | Fixed pool (configurable) | Simplicity first, auto-scale later |
 
 ### Agent Execution
@@ -76,8 +76,8 @@ Paid is composed of four main subsystems that work together to orchestrate AI-dr
 | Component | Technology | Rationale |
 |-----------|------------|-----------|
 | Containers | Docker | Industry standard, aidp compatibility |
-| Agent CLIs | Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode | Extracted to shared gem |
-| API Calls | ruby-llm gem | Model registry, unified interface |
+| Agent CLIs | Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode, MistralVibe | Extracted to shared gem |
+| API Calls | agent-harness gem | Unified LLM interface, model registry |
 | Isolation | Git worktrees | Parallel work without conflicts |
 
 ### External Services
@@ -85,7 +85,7 @@ Paid is composed of four main subsystems that work together to orchestrate AI-dr
 | Component | Technology | Rationale |
 |-----------|------------|-----------|
 | Source Control | GitHub (PAT) | Projects V2 integration, issue tracking |
-| LLM Providers | Anthropic, OpenAI, Google, OpenRouter, etc. | Via ruby-llm abstraction |
+| LLM Providers | Anthropic, OpenAI, Google, OpenRouter, etc. | Via agent-harness abstraction |
 
 ## Component Details
 
@@ -111,7 +111,7 @@ The Rails app is the control plane for Paid. It manages:
 
 #### Background Jobs (GoodJob)
 
-- GitHub polling (lightweight, frequent)
+- GitHub polling (runs via Temporal GitHubPollWorkflow, not GoodJob cron)
 - Metric aggregation
 - Prompt evolution processing
 - Container health checks
@@ -152,19 +152,31 @@ Temporal handles long-running, stateful workflows. The Rails app schedules workf
 - Runs A/B tests
 - Promotes winning prompts
 
+**ParallelAgentExecutionWorkflow**
+
+- Manages multiple AgentExecutionWorkflows running concurrently
+- Coordinates resource allocation across parallel agent runs
+- Aggregates results from parallel executions
+
+**KnowledgeEvolutionWorkflow**
+
+- Triggers knowledge base re-collection when codebases change
+- Manages incremental updates to vector embeddings
+- Coordinates artifact and chunk updates across collectors
+
 #### Activities
 
 Activities are the units of work executed by workers:
 
 | Activity | Description |
 |----------|-------------|
-| `CloneRepositoryActivity` | Clone/fetch repo into container |
+| `CloneRepoActivity` | Clone/fetch repo into container |
 | `CreateWorktreeActivity` | Set up isolated worktree for agent |
 | `RunAgentActivity` | Execute agent CLI or API call |
 | `CreatePullRequestActivity` | Open PR with agent's changes |
-| `UpdateIssueActivity` | Update GitHub issue status/labels |
-| `EvaluateQualityActivity` | Run quality metrics on agent output |
-| `SelectModelActivity` | Meta-agent model selection |
+| `UpdateIssueWithPrActivity` | Update GitHub issue status/labels |
+
+> The codebase has 60+ activities covering repo operations, container management, knowledge base collection, prompt evolution, and more.
 
 #### Worker Pool
 
@@ -200,7 +212,7 @@ Each agent runs in an isolated Docker container with:
 Based on aidp's devcontainer approach:
 
 - Base: Ruby + Node + common dev tools
-- Pre-installed: Agent CLIs (Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode)
+- Pre-installed: Agent CLIs (Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode, MistralVibe)
 - Firewall: Allowlist-only network access
 - No secrets: API keys not passed to container
 
@@ -272,7 +284,7 @@ The knowledge base provides agents with persistent, semantic understanding of th
 │  ┌────────────────┐  ┌───────────────┐  ┌────────────────┐  │
 │  │   Collector    │  │  PostgreSQL   │  │    Qdrant      │  │
 │  │   Framework    │  │  (canonical   │  │  (vector       │  │
-│  │  (7 types)     │  │   store)      │  │   index)       │  │
+│  │  (9 types)     │  │   store)      │  │   index)       │  │
 │  └───────┬────────┘  └───────┬───────┘  └───────┬────────┘  │
 │          │                   │                   │           │
 │          ▼                   ▼                   ▼           │
@@ -286,7 +298,7 @@ The knowledge base provides agents with persistent, semantic understanding of th
 
 Key components:
 
-- **Collectors**: Seven collector types analyze codebases (routes, symbols, dependencies, language stats, churn hotspots, config keys, AST structures)
+- **Collectors**: Nine collector types analyze codebases (routes, symbols, dependencies, language stats, churn hotspots, config keys, AST structures, decision records, schema)
 - **PostgreSQL**: Canonical store for artifacts, chunks, links, and audit events
 - **Qdrant**: Vector database for semantic search (one collection per project, cosine similarity)
 - **Embedding Pipeline**: Generates 3,072-dimensional vectors via OpenAI text-embedding-3-large
@@ -319,12 +331,12 @@ Two modes of agent execution:
 
 **CLI Mode** (via agent-harness gem):
 
-- Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode
+- Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode, MistralVibe
 - Runs in container with proxied API access
 - Orchestration handles fallbacks, rate limits, and health checks
 - Output and token usage captured via `AgentHarness::Response`/token tracker
 
-**API Mode** (via ruby-llm):
+**API Mode** (via agent-harness):
 
 - Direct API calls for simpler tasks
 - Model registry provides capabilities/costs
@@ -340,7 +352,7 @@ The meta-agent chooses models based on:
 │                                                              │
 │  ┌─────────────────┐    ┌─────────────────┐                 │
 │  │  Task Context   │    │  Model Registry │                 │
-│  │  - Complexity   │    │  (ruby-llm)     │                 │
+│  │  - Complexity   │    │  Model Registry (LlmModel ActiveRecord)     │                 │
 │  │  - Token est.   │    │  - Capabilities │                 │
 │  │  - Budget       │    │  - Costs        │                 │
 │  │  - History      │    │  - Limits       │                 │
@@ -480,19 +492,19 @@ Starts:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Multi-Tenancy Preparation
+## Multi-Tenancy
 
-Phase 1 uses account-scoped data but assumes a single account by default; the architecture supports future multi-tenancy:
+Multi-tenancy is implemented via Row-Level Security (RLS). The `TenantContext` service sets the current account context for each request, and RLS migrations enforce tenant isolation at the database level:
 
-| Concern | Current | Multi-Tenant Ready |
-|---------|---------|-------------------|
-| Data isolation | Single database | Schema per tenant or row-level security |
-| Secrets | Single encrypted store | Per-tenant encryption keys |
-| Containers | Shared Docker host | Per-tenant container quotas |
-| Temporal | Shared namespace | Per-tenant namespaces |
-| Billing | Per-project tracking | Per-tenant aggregation |
+| Concern | Implementation |
+|---------|----------------|
+| Data isolation | Row-Level Security (RLS) via PostgreSQL policies, enforced by `TenantContext` service |
+| Secrets | Per-tenant encrypted store |
+| Containers | Per-tenant container quotas |
+| Temporal | Per-tenant namespaces |
+| Billing | Per-tenant aggregation |
 
-The key is that everything is already per-project, and tenants own projects.
+RLS migrations add `WITH CHECK` and `USING` clauses on core tables (agent_runs, projects, issues, etc.) to ensure queries are scoped to the current tenant. The `TenantContext` service provides `with_system_access` for administrative operations that must bypass tenant filtering.
 
 ## Performance Considerations
 

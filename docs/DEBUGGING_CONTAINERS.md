@@ -210,7 +210,7 @@ tctl workflow list --query "WorkflowType='AgentExecutionWorkflow'"
 tctl workflow show --workflow_id <workflow_id>
 
 # Check workflow history (useful for seeing which activities ran and their results)
-tctl workflow showid <workflow_id> --print_raw_time
+tctl workflow show --workflow_id <workflow_id> --print_raw_time
 ```
 
 Or use the Temporal UI at `http://localhost:8080` to browse workflow executions, activity results, and error details.

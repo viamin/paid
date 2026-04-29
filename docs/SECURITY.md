@@ -23,8 +23,8 @@ Multiple layers of protection ensure that a breach in one layer doesn't compromi
 │  └─────────────────────────────────────────────────────────────────────────┘│
 │                                    │                                         │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │ Layer 3: Secrets Proxy                                                  ││
-│  │ Proxy-compatible API-key calls keep provider keys outside containers     ││
+│  │ Layer 3: Secrets Proxy (Rails Controller)                                ││
+│  │ Api::SecretsProxyController keeps provider keys outside containers        ││
 │  └─────────────────────────────────────────────────────────────────────────┘│
 │                                    │                                         │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
@@ -64,16 +64,28 @@ Agents are treated as potentially compromised:
 
 ```dockerfile
 # Dockerfile.agent
-FROM ruby:3.4-slim-bookworm
+FROM ubuntu:24.04
 
-# Minimal package installation
+# Ruby 3.4.8 compiled from source (no pre-built Ruby image)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     ca-certificates \
     iptables \
+    build-essential \
+    libssl-dev \
+    libreadline-dev \
+    zlib1g-dev \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
+
+# Compile and install Ruby 3.4.8 from source
+RUN curl -fsSL https://cache.ruby-lang.org/pub/ruby/3.4/ruby-3.4.8.tar.gz | tar -xzC /tmp \
+    && cd /tmp/ruby-3.4.8 \
+    && ./configure --disable-install-doc \
+    && make -j$(nproc) \
+    && make install \
+    && rm -rf /tmp/ruby-3.4.8
 
 # Remove unnecessary tools that could aid attacks
 RUN rm -rf /usr/bin/wget /usr/bin/nc /usr/bin/ncat
@@ -92,7 +104,7 @@ WORKDIR /workspace
 ### Container Runtime Security
 
 ```ruby
-class ContainerService
+class Containers::Provision
   def provision(project_id)
     container = docker_client.containers.create(
       image: "paid-agent:latest",
@@ -109,12 +121,23 @@ class ContainerService
       memory: 4.gigabytes,
       memory_swap: 4.gigabytes,         # No swap
       cpu_quota: 200_000,               # 2 CPUs max
-      pids_limit: 256,                  # Process limit
+      pids_limit: 500,                  # Process limit
 
-      # Writable areas via tmpfs
+      # Writable areas via tmpfs (13 mounts covering all runtime needs)
       tmpfs: {
         "/tmp" => "size=1G,mode=1777",
-        "/home/agent/.cache" => "size=512M,mode=0755"
+        "/home/agent" => "size=512M,mode=0755",
+        "/home/agent/.cache" => "size=512M,mode=0755",
+        "/home/agent/.local" => "size=256M,mode=0755",
+        "/home/agent/.config" => "size=64M,mode=0755",
+        "/home/agent/.npm" => "size=256M,mode=0755",
+        "/home/agent/.yarn" => "size=256M,mode=0755",
+        "/home/agent/.node-gyp" => "size=128M,mode=0755",
+        "/home/agent/.gem" => "size=128M,mode=0755",
+        "/home/agent/.bundle" => "size=128M,mode=0755",
+        "/run" => "size=64M,mode=0755",
+        "/var/run" => "size=64M,mode=0755",
+        "/workspace/.git" => "size=256M,mode=0755"
       },
 
       # Workspace volume (only area agent can write to)
@@ -126,7 +149,7 @@ class ContainerService
       },
 
       # Network
-      network_mode: "paid-agent-network",
+      network_mode: "paid_agent",
 
       # Environment (no secrets!)
       env: {
@@ -137,7 +160,7 @@ class ContainerService
     )
 
     container.start
-    apply_firewall_rules(container)
+    NetworkPolicy.apply(container)
     container
   end
 end
@@ -158,47 +181,42 @@ Service containers are attached to the same Docker network selected for the agen
 Proxy-mode containers use a dedicated network with strict egress rules:
 
 ```ruby
-class FirewallService
-  ALLOWLIST = [
-    # LLM providers (via proxy)
-    "paid-proxy",
-
-    # Git operations
-    "github.com",
-    "api.github.com",
-
-    # Package registries (for agent CLIs)
-    "registry.npmjs.org",
-    "rubygems.org",
-
-    # Agent-specific endpoints (keep in sync with agent-harness provider firewall_requirements)
-    "api.anthropic.com",                 # Claude Code, Aider
-    "claude.ai",
-    "console.anthropic.com",
-    "api.openai.com",                    # Codex, Aider, OpenCode
-    "openai.com",
-    "api.cursor.sh",                     # Cursor
-    "cursor.com",
-    "www.cursor.com",
-    "downloads.cursor.com",
-    "cursor.sh",
-    "app.cursor.sh",
-    "www.cursor.sh",
-    "auth.cursor.sh",
-    "auth0.com",
-    "generativelanguage.googleapis.com", # Gemini
-    "oauth2.googleapis.com",
-    "accounts.google.com",
-    "www.googleapis.com",
-    "api.githubcopilot.com",             # GitHub Copilot
-    "copilot-proxy.githubusercontent.com",
-    "copilot-completions.githubusercontent.com",
-    "copilot-telemetry.githubusercontent.com",
-    "default.exp-tas.com"
-  ].freeze
+# app/services/network_policy.rb
+class NetworkPolicy
+  GITHUB_IP_RANGES_URI = "https://api.github.com/meta".freeze
+  LOG_PREFIX = "PAID_AGENT_BLOCK".freeze
 
   def apply(container)
-    rules = <<~IPTABLES
+    cidrs = fetch_allowed_cidrs
+    rules = build_iptables_rules(cidrs)
+    container.exec(["sh", "-c", rules])
+  end
+
+  private
+
+  def fetch_allowed_cidrs
+    response = Faraday.get(GITHUB_IP_RANGES_URI)
+    meta = JSON.parse(response.body)
+
+    cidrs = []
+    %w[git ssh_keys web hooks api pages importer actions dependabot].each do |key|
+      cidrs.concat(meta["#{key}_#{key == 'git' ? 'ssh' : 'ssh_keys' ? 'keys' : key}"]) if meta.key?("#{key}_#{key}")
+    end
+
+    cidrs.concat(meta["ssh_keys"] || [])
+    cidrs.concat(meta["web"] || [])
+    cidrs.concat(meta["api"] || [])
+    cidrs.concat(meta["hooks"] || [])
+    cidrs.concat(meta["actions"] || [])
+    cidrs.concat(meta["dependabot"] || [])
+
+    cidrs.uniq
+  rescue StandardError
+    []
+  end
+
+  def build_iptables_rules(cidrs)
+    <<~IPTABLES
       # Default policy: drop all outbound
       iptables -P OUTPUT DROP
 
@@ -211,30 +229,15 @@ class FirewallService
       # Allow DNS (for resolution)
       iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
 
-      # Allow specific domains
-      #{allowlist_rules}
+      # Allow secrets proxy (Paid host on Docker network)
+      iptables -A OUTPUT -d ${PAID_PROXY_HOST:-172.17.0.1} -p tcp --dport 3001 -j ACCEPT
 
-      # Log dropped packets (for debugging)
-      iptables -A OUTPUT -j LOG --log-prefix "PAID_DROPPED: "
+      # Allow GitHub IPs via CIDR ranges
+      #{cidrs.map { |cidr| "iptables -A OUTPUT -d #{cidr} -j ACCEPT" }.join("\n      ")}
+
+      # Log dropped packets
+      iptables -A OUTPUT -j LOG --log-prefix "#{LOG_PREFIX}: "
     IPTABLES
-
-    container.exec(["sh", "-c", rules])
-  end
-
-  private
-
-  def allowlist_rules
-    ALLOWLIST.map do |domain|
-      "iptables -A OUTPUT -d #{resolve_domain(domain)} -j ACCEPT"
-    end.join("\n")
-  end
-
-  def resolve_domain(domain)
-    # Resolve to IP for iptables
-    # In production, use DNS-based rules or maintain IP lists
-    Resolv.getaddress(domain)
-  rescue Resolv::ResolvError
-    domain  # Return as-is if can't resolve
   end
 end
 ```
@@ -299,7 +302,7 @@ end
 
 ## Secrets Proxy
 
-The secrets proxy is the only component that handles raw API keys. Agents make unauthenticated requests; the proxy adds credentials.
+The secrets proxy is the only component that handles raw API keys. Agents authenticate with cryptographic proxy tokens; the controller validates tokens and adds credentials.
 
 ### Proxy Architecture
 
@@ -307,10 +310,11 @@ The secrets proxy is the only component that handles raw API keys. Agents make u
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           SECRETS PROXY                                      │
 │                                                                              │
-│  ┌─────────────┐                    ┌─────────────┐                         │
-│  │   Agent     │ ──── HTTP ────────►│   Proxy     │                         │
-│  │ (Container) │   No auth header   │  (Paid)     │                         │
-│  └─────────────┘                    └──────┬──────┘                         │
+│  ┌─────────────┐                    ┌──────────────────────┐                │
+│  │   Agent     │ ──── HTTP ────────►│   Proxy              │                │
+│  │ (Container) │  Proxy token auth  │  (Api::SecretsProxy  │                │
+│  └─────────────┘                    │   Controller)        │                │
+│                                     └──────┬───────────────┘                │
 │                                            │                                 │
 │                                            │ Add API key                     │
 │                                            ▼                                 │
@@ -321,7 +325,7 @@ The secrets proxy is the only component that handles raw API keys. Agents make u
 │                                                                              │
 │  Security guarantees:                                                       │
 │  • Agent never sees API key                                                 │
-│  • Proxy validates request format                                           │
+│  • ContainerAuthentication validates proxy tokens                           │
 │  • Proxy logs all requests for auditing                                     │
 │  • Proxy enforces rate limits and quotas                                    │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -329,77 +333,68 @@ The secrets proxy is the only component that handles raw API keys. Agents make u
 
 ### Proxy Implementation
 
+The secrets proxy is implemented as a Rails controller (`Api::SecretsProxyController`) with provider-specific routes:
+
+- `/api/proxy/anthropic/*path` — Anthropic API
+- `/api/proxy/openai/*path` — OpenAI API
+- `/api/proxy/google/*path` — Google AI API
+
+Authentication uses cryptographic proxy tokens validated by `Api::ContainerAuthentication` (not IP allowlisting). Each agent run receives a unique proxy token; the controller verifies the token before forwarding requests.
+
 ```ruby
-# app/services/secrets_proxy.rb
-class SecretsProxy
-  PROVIDER_HOSTS = {
-    "api.anthropic.com" => :anthropic,
-    "api.openai.com" => :openai,
-    "generativelanguage.googleapis.com" => :google
+# app/controllers/api/secrets_proxy_controller.rb
+class Api::SecretsProxyController < ApplicationController
+  skip_before_action :verify_authenticity_token
+  before_action :authenticate_container!
+  before_action :validate_path!
+
+  PROVIDER_ROUTES = {
+    "anthropic" => { host: "api.anthropic.com", key_method: :anthropic },
+    "openai" => { host: "api.openai.com", key_method: :openai },
+    "google" => { host: "generativelanguage.googleapis.com", key_method: :google }
   }.freeze
 
-  def initialize(app)
-    @app = app
-  end
+  def proxy
+    provider_config = PROVIDER_ROUTES[params[:provider]]
+    return render json: { error: "Unknown provider" }, status: :forbidden unless provider_config
 
-  def call(env)
-    request = Rack::Request.new(env)
+    api_key = resolve_api_key(provider_config[:key_method])
+    return render json: { error: "Provider not configured" }, status: :service_unavailable unless api_key
 
-    # Only handle proxy requests
-    return @app.call(env) unless request.path.start_with?("/proxy/")
-
-    # Extract target from path: /proxy/api.anthropic.com/v1/messages
-    target_path = request.path.sub("/proxy/", "")
-    target_host = target_path.split("/").first
-    remaining_path = "/" + target_path.split("/")[1..].join("/")
-
-    provider = PROVIDER_HOSTS[target_host]
-    return [403, {}, ["Unknown provider"]] unless provider
-
-    # Verify request comes from container
-    return [403, {}, ["Unauthorized"]] unless valid_container_request?(request)
-
-    # Get project context for quota tracking
-    project_id = request.get_header("X-Paid-Project-Id")
-    return [400, {}, ["Missing project ID"]] unless project_id
-
-    # Check quota
-    return [429, {}, ["Quota exceeded"]] if quota_exceeded?(project_id, provider)
-
-    # Forward request with credentials
     response = forward_request(
-      provider: provider,
-      host: target_host,
-      path: remaining_path,
-      method: request.request_method,
+      host: provider_config[:host],
+      path: "/#{params[:path]}",
+      method: request.method,
       body: request.body.read,
-      headers: extract_safe_headers(request)
+      api_key: api_key,
+      provider: provider_config[:key_method]
     )
 
-    # Log for auditing and cost tracking
-    log_request(project_id, provider, response)
-
-    [response.status, response.headers.to_h, [response.body]]
+    log_request(response)
+    render status: response.status, json: JSON.parse(response.body)
   end
 
   private
 
-  def valid_container_request?(request)
-    # Verify request comes from container network
-    # In production, validate source IP is in container network range
-    request.ip.start_with?("172.") || request.ip == "127.0.0.1"
+  def authenticate_container!
+    @agent_run = Api::ContainerAuthentication.authenticate!(request)
+  rescue Api::ContainerAuthentication::AuthenticationError
+    render json: { error: "Unauthorized" }, status: :unauthorized
   end
 
-  def quota_exceeded?(project_id, provider)
-    budget = CostBudget.find_by(project_id: project_id)
-    return false unless budget&.daily_limit_cents
-
-    budget.current_daily_cents >= budget.daily_limit_cents
+  def validate_path!
+    return if params[:path].present?
+    render json: { error: "Missing path" }, status: :bad_request
   end
 
-  def forward_request(provider:, host:, path:, method:, body:, headers:)
-    api_key = LLMCredentials.for_provider(provider)
+  def resolve_api_key(provider)
+    # API key chain: ProviderApiKey → Rails credentials → ENV
+    ProviderApiKey.for_provider(provider) ||
+      Rails.application.credentials.dig(:llm, "#{provider}_api_key".to_sym) ||
+      ENV["#{provider.upcase}_API_KEY"]
+  end
 
+  def forward_request(host:, path:, method:, body:, api_key:, provider:)
     conn = Faraday.new(url: "https://#{host}") do |f|
       f.request :json
       f.response :json
@@ -414,28 +409,17 @@ class SecretsProxy
       { "x-goog-api-key" => api_key }
     end
 
-    conn.run_request(method.downcase.to_sym, path, body, headers.merge(auth_header))
+    conn.run_request(method.downcase.to_sym, path, body, auth_header)
   end
 
-  def extract_safe_headers(request)
-    # Only forward safe headers
-    safe_headers = %w[Content-Type Accept]
-    safe_headers.each_with_object({}) do |header, hash|
-      value = request.get_header("HTTP_#{header.upcase.tr('-', '_')}")
-      hash[header] = value if value
-    end
-  end
-
-  def log_request(project_id, provider, response)
-    # Extract token usage from response
-    usage = extract_usage(provider, response)
-
+  def log_request(response)
+    usage = extract_usage(response)
     TokenUsage.create!(
-      project_id: project_id,
-      provider: provider,
+      project_id: @agent_run.project_id,
+      provider: params[:provider],
       tokens_input: usage[:input],
       tokens_output: usage[:output],
-      cost_cents: calculate_cost(provider, usage)
+      cost_cents: calculate_cost(params[:provider], usage)
     )
   end
 end
@@ -447,8 +431,8 @@ Agents are configured to use the proxy instead of direct API calls:
 
 ```ruby
 # In container environment
-ENV["ANTHROPIC_BASE_URL"] = "http://paid-proxy:3001/proxy/api.anthropic.com"
-ENV["OPENAI_BASE_URL"] = "http://paid-proxy:3001/proxy/api.openai.com"
+ENV["ANTHROPIC_BASE_URL"] = "http://paid-proxy:3001/api/proxy/anthropic"
+ENV["OPENAI_BASE_URL"] = "http://paid-proxy:3001/api/proxy/openai"
 
 # No provider API keys in environment - the proxy adds them.
 # Some CLIs require an API-key-shaped value; Paid uses a run-scoped
@@ -504,23 +488,34 @@ class GithubTokenSetupService
 end
 ```
 
-### Token Rotation Reminders
+### Token Health Monitoring
 
 ```ruby
 class GithubToken < ApplicationRecord
-  # Remind users to rotate tokens periodically
-  scope :rotation_due, -> {
-    where("created_at < ?", 90.days.ago)
-      .where(rotation_reminder_sent_at: nil)
+  scope :health_check_due, -> {
+    where("last_validated_at < ? OR last_validated_at IS NULL", 7.days.ago)
   }
 end
 
-class TokenRotationReminderJob < ApplicationJob
+class GithubTokenHealthCheckJob < ApplicationJob
   def perform
-    GithubToken.rotation_due.find_each do |token|
-      UserMailer.token_rotation_reminder(token.user, token).deliver_later
-      token.update!(rotation_reminder_sent_at: Time.current)
+    GithubToken.health_check_due.find_each do |token|
+      GithubTokenValidationJob.perform_later(token)
     end
+  end
+end
+
+class GithubTokenValidationJob < ApplicationJob
+  def perform(github_token)
+    client = github_token.client
+    client.user
+    github_token.update!(last_validated_at: Time.current, status: :active)
+  rescue Octokit::Unauthorized
+    github_token.update!(status: :invalid)
+    UserMailer.token_invalid(github_token.user, github_token).deliver_later
+  rescue Octokit::Forbidden
+    github_token.update!(status: :expired)
+    UserMailer.token_expired(github_token.user, github_token).deliver_later
   end
 end
 ```
@@ -534,27 +529,33 @@ end
 Agents can create PRs but cannot merge them:
 
 ```ruby
-class PullRequestService
+class Activities::CreatePullRequestActivity
   def create(project:, worktree:, issue:, result:)
     client = project.github_token.client
 
-    # Create PR
+    pr_body = generate_pr_body(result, issue)
+
     pr = client.create_pull_request(
       "#{project.github_owner}/#{project.github_repo}",
       project.github_default_branch,
       worktree.branch_name,
       "#{issue.title} (fixes ##{issue.github_number})",
-      generate_pr_body(result, issue)
+      pr_body,
+      draft: true
     )
 
-    # Add label indicating AI-generated
-    client.add_labels_to_an_issue(
-      "#{project.github_owner}/#{project.github_repo}",
-      pr.number,
-      ["ai-generated", "needs-review"]
-    )
+    labels = [
+      project.generated_label_name,
+      project.automation_label_name
+    ].compact
+    if labels.any?
+      client.add_labels_to_an_issue(
+        "#{project.github_owner}/#{project.github_repo}",
+        pr.number,
+        labels
+      )
+    end
 
-    # Link to issue
     client.add_comment(
       "#{project.github_owner}/#{project.github_repo}",
       issue.github_number,
@@ -562,47 +563,17 @@ class PullRequestService
     )
 
     pr
-
-    # NOTE: We deliberately do NOT merge the PR
-    # Human review is required
   end
 
   private
 
   def generate_pr_body(result, issue)
-    <<~BODY
-      ## Summary
-      This PR was generated by Paid to address ##{issue.github_number}.
-
-      ## Changes
-      #{result.summary}
-
-      ## Agent Details
-      - Agent: #{result.agent_type}
-      - Model: #{result.model}
-      - Iterations: #{result.iterations}
-
-      ---
-      ⚠️ **This PR was AI-generated and requires human review before merging.**
-    BODY
+    result.llm_generated_body
   end
 end
 ```
 
-### PR Review Checklist
-
-Generated PRs include a review checklist:
-
-```markdown
-## Review Checklist
-
-- [ ] Code logic is correct
-- [ ] Tests are adequate
-- [ ] No security vulnerabilities introduced
-- [ ] Follows project conventions
-- [ ] No unnecessary changes
-- [ ] Documentation updated if needed
-```
+All PRs are created as **drafts**, requiring explicit human action to mark ready for review and merge. Labels are configurable per-project via `project.generated_label_name` and `project.automation_label_name`. PR bodies are generated by the LLM agent, not from a fixed template.
 
 ---
 
@@ -621,40 +592,37 @@ Generated PRs include a review checklist:
 
 ### Audit Log Implementation
 
-```ruby
-class AuditLog < ApplicationRecord
-  # Separate table for compliance
-  self.table_name = "audit_logs"
+General-purpose audit logging does not exist in Paid. The only audit-scoped model is `KnowledgeAuditEvent`, which logs events specific to the knowledge base (document uploads, indexing, etc.):
 
-  encrypts :details  # Encrypt sensitive details
+```ruby
+class KnowledgeAuditEvent < ApplicationRecord
+  self.table_name = "knowledge_audit_events"
+
+  encrypts :details
 
   enum event_type: {
-    token_created: 0,
-    token_rotated: 1,
-    agent_run_started: 10,
-    agent_run_completed: 11,
-    pr_created: 20,
-    proxy_request: 30,
-    user_login: 40,
-    permission_change: 50
+    document_uploaded: 0,
+    document_indexed: 1,
+    document_deleted: 2,
+    search_performed: 3,
+    index_rebuilt: 4
   }
 
-  def self.log(event_type, actor:, resource:, details: {})
+  def self.log(event_type, actor:, knowledge_base:, details: {})
     create!(
       event_type: event_type,
       actor_type: actor.class.name,
       actor_id: actor.id,
-      resource_type: resource.class.name,
-      resource_id: resource.id,
+      knowledge_base_id: knowledge_base.id,
       details: details.merge(
-        ip_address: Current.ip_address,
-        user_agent: Current.user_agent,
         timestamp: Time.current.iso8601
       )
     )
   end
 end
 ```
+
+> **Note**: For broader audit needs (agent runs, PRs, proxy requests, token usage), Paid relies on structured Rails logs and database records in their respective tables — not a centralized audit log table.
 
 ---
 
@@ -672,6 +640,9 @@ end
 | Token stolen from DB | Encrypted at rest, access logged |
 | Proxy compromised | Defense in depth; tokens still encrypted |
 | Infinite loop burns money | Guardrails: iteration, token, cost limits |
+| Service containers as lateral movement vector | Service containers (database, Redis, browser) share the agent Docker network; a compromised agent could probe these endpoints. Mitigated by network segmentation and service authentication requirements |
+| Docker socket exposure (Docker-over-Docker) | If the Docker socket is bind-mounted into a container, the agent gains host-level container management access. Paid never mounts the Docker socket into agent containers |
+| Subscription auth credential exposure | Subscription-auth mode mounts CLI login state files from the host into the container runtime, creating a credential exposure surface. Mitigated by scoped filesystem mounts and container isolation |
 
 ### What Paid Does NOT Protect Against
 
@@ -693,13 +664,13 @@ end
 - [ ] Firewall rules tested
 - [ ] Proxy authentication verified
 - [ ] Audit logging enabled
-- [ ] Token rotation reminders configured
+- [ ] Token health monitoring configured
 - [ ] Cost limits configured per project
 - [ ] Admin account uses strong authentication
 
 ### Ongoing
 
-- [ ] Review audit logs weekly
+- [ ] Review knowledge audit events weekly
 - [ ] Update container base images monthly
 - [ ] Rotate Paid's own API keys quarterly
 - [ ] Review token scopes on rotation

@@ -91,8 +91,8 @@ Total web threads = `WEB_CONCURRENCY × RAILS_MAX_THREADS`.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GOOD_JOB_EXECUTION_MODE` | `async_server` | `async_server` (in-process) or `external` (dedicated worker) |
-| `GOOD_JOB_MAX_THREADS` | `10` | Total job worker threads |
-| `GOOD_JOB_QUEUES` | `default:3;maintenance:2;metrics:2;knowledge:2;low_priority:1` | Per-queue thread caps |
+| `GOOD_JOB_MAX_THREADS` | `11` | Total job worker threads |
+| `GOOD_JOB_QUEUES` | `default:3;maintenance:2;metrics:2;knowledge:3;low_priority:1` | Per-queue thread caps |
 | `GOOD_JOB_POLL_INTERVAL` | `3` | Seconds between DB polls |
 | `GOOD_JOB_SHUTDOWN_TIMEOUT` | `25` | Graceful shutdown timeout (seconds) |
 | `GOOD_JOB_ENABLE_CRON` | `true` | Enable cron-scheduled jobs |

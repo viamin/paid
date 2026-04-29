@@ -40,15 +40,15 @@ current_version:
     You are implementing a GitHub issue for a software project.
 
     ## Issue Details
-    Title: {{issue.title}}
-    Description: {{issue.body}}
+    Title: {{issue_title}}
+    Description: {{issue_body}}
 
     ## Project Context
-    Repository: {{project.github_owner}}/{{project.github_repo}}
-    Language: {{project.primary_language}}
+    Repository: {{project_repo}}
+    Language: {{project_language}}
 
     ## Style Guide
-    {{style_guide.compressed}}
+    {{style_guide}}
 
     ## Instructions
     1. Analyze the issue requirements carefully
@@ -63,12 +63,11 @@ current_version:
     - Keep changes focused and reviewable
 
   variables:
-    - issue.title
-    - issue.body
-    - project.github_owner
-    - project.github_repo
-    - project.primary_language
-    - style_guide.compressed
+    - issue_title
+    - issue_body
+    - project_repo
+    - project_language
+    - style_guide
 
   system_prompt: |
     You are an expert software developer. You write clean, maintainable code
@@ -80,22 +79,26 @@ current_version:
 Variables in templates are resolved at runtime:
 
 ```ruby
-class PromptResolver
+# app/services/prompts/resolve.rb
+class Prompts::Resolve
   def resolve(prompt_version, context)
     template = prompt_version.template
 
-    prompt_version.variables.each do |var_path|
-      value = dig_value(context, var_path)
-      template = template.gsub("{{#{var_path}}}", value.to_s)
+    prompt_version.variables.each do |key|
+      value = context[key.to_sym] || context[key]
+      template = template.gsub("{{#{key}}}", value.to_s)
     end
 
     template
   end
+end
 
-  private
-
-  def dig_value(context, path)
-    path.split(".").reduce(context) { |obj, key| obj[key.to_sym] || obj[key] }
+# app/services/prompts/render.rb
+class Prompts::Render
+  def render(slug, context)
+    prompt = Prompt.active.find_by!(slug: slug)
+    version = prompt.current_version
+    Prompts::Resolve.new.resolve(version, context)
   end
 end
 ```
@@ -107,8 +110,7 @@ end
 | `planning` | Feature decomposition, task planning | `planning.feature_decomposition`, `planning.estimate_complexity` |
 | `coding` | Implementation, bug fixes | `coding.implement_issue`, `coding.fix_bug` |
 | `review` | Code review, PR analysis | `review.pr_review`, `review.security_audit` |
-| `evolution` | Meta-prompts for evolving other prompts | `evolution.analyze_failures`, `evolution.generate_mutation` |
-| `selection` | Model selection reasoning | `selection.choose_model` |
+| `testing` | Test generation, test analysis | `testing.generate_tests`, `testing.analyze_coverage` |
 
 ---
 
@@ -119,30 +121,41 @@ end
 Versions are immutable. Every change creates a new version:
 
 ```ruby
-class PromptVersionService
-  def create_version(prompt, template:, change_notes:, created_by:)
-    current = prompt.current_version
-
-    new_version = prompt.versions.create!(
-      version: (current&.version || 0) + 1,
+# Prompt#create_version! always auto-promotes the new version
+class Prompt
+  def create_version!(template:, change_notes:, created_by:)
+    new_version = versions.create!(
+      version: (current_version&.version || 0) + 1,
       template: template,
       variables: extract_variables(template),
-      system_prompt: current&.system_prompt,  # Inherit unless explicitly changed
+      system_prompt: current_version&.system_prompt,
       change_notes: change_notes,
       created_by: created_by,
-      parent_version_id: current&.id
+      parent_version_id: current_version&.id
     )
 
-    # Don't automatically promote - let A/B testing decide
-    # prompt.update!(current_version: new_version)
+    update!(current_version: new_version)
 
     new_version
+  end
+
+  # create_pending_version! skips promotion — use for A/B test variants
+  def create_pending_version!(template:, change_notes:, created_by:)
+    versions.create!(
+      version: (current_version&.version || 0) + 1,
+      template: template,
+      variables: extract_variables(template),
+      system_prompt: current_version&.system_prompt,
+      change_notes: change_notes,
+      created_by: created_by,
+      parent_version_id: current_version&.id
+    )
   end
 
   private
 
   def extract_variables(template)
-    template.scan(/\{\{([^}]+)\}\}/).flatten.uniq
+    template.scan(/\{\{(\w+)\}\}/).flatten.uniq
   end
 end
 ```
@@ -197,44 +210,39 @@ Collected from GitHub interactions:
 ### Composite Quality Score
 
 ```ruby
-class QualityScorer
-  WEIGHTS = {
-    pr_merged: 0.30,          # Strongest signal
-    ci_passed: 0.20,
-    human_vote: 0.20,
-    iterations_normalized: 0.15,  # Inverted: fewer = better
-    lint_clean: 0.10,
-    tests_passing: 0.05
+class QualityMetric
+  SCORE_WEIGHTS = {
+    pr_created: 0.25,
+    ci_passed: 0.15,
+    pr_merged: 0.25,
+    iterations: 0.10,
+    lint_clean: 0.05,
+    tests_pass: 0.05,
+    review_comment_count: 0.05,
+    agent_rerun_count: 0.10
   }.freeze
 
-  def score(quality_metric)
-    scores = {
-      pr_merged: quality_metric.pr_merged ? 1.0 : 0.0,
-      ci_passed: quality_metric.ci_passed ? 1.0 : 0.0,
-      human_vote: normalize_vote(quality_metric.human_vote),
-      iterations_normalized: normalize_iterations(quality_metric.iterations_to_complete),
-      lint_clean: quality_metric.lint_errors.zero? ? 1.0 : 0.0,
-      tests_passing: quality_metric.test_failures.zero? ? 1.0 : 0.0
-    }
+  GOAL_WEIGHTS = {
+    create_issue: { pr_merged: 0.40, ci_passed: 0.20, tests_pass: 0.20, lint_clean: 0.10, iterations: 0.10 },
+    review: { review_comment_count: 0.40, agent_rerun_count: 0.30, pr_merged: 0.15, iterations: 0.15 },
+    enhance_issue: { pr_created: 0.30, pr_merged: 0.25, ci_passed: 0.15, tests_pass: 0.15, lint_clean: 0.15 }
+  }.freeze
 
-    WEIGHTS.sum { |metric, weight| scores[metric] * weight }
+  def composite_score(goal: nil)
+    weights = GOAL_WEIGHTS.fetch(goal, SCORE_WEIGHTS)
+    weights.sum { |metric, weight| normalized_value(metric) * weight }
   end
 
   private
 
-  def normalize_vote(vote)
-    case vote
-    when 1 then 1.0
-    when 0 then 0.5
-    when -1 then 0.0
-    else 0.5  # No feedback
+  def normalized_value(metric)
+    case metric
+    when :iterations, :agent_rerun_count, :review_comment_count
+      raw = send(metric) || 0
+      [1.0 - (raw * 0.1), 0.0].max
+    else
+      send(metric) ? 1.0 : 0.0
     end
-  end
-
-  def normalize_iterations(iterations)
-    return 0.5 if iterations.nil?
-    # 1 iteration = 1.0, 5 iterations = 0.5, 10+ = 0.0
-    [1.0 - ((iterations - 1) * 0.1), 0.0].max
   end
 end
 ```
@@ -246,7 +254,7 @@ end
 ### Test Setup
 
 ```ruby
-class ABTestService
+class AbTests::Create
   def create_test(prompt:, control_version:, variant_versions:, name:)
     test = ABTest.create!(
       prompt: prompt,
@@ -255,14 +263,12 @@ class ABTestService
       min_sample_size: 30
     )
 
-    # Control variant
     test.variants.create!(
       prompt_version: control_version,
       name: "control",
       weight: 50
     )
 
-    # Test variants
     variant_versions.each_with_index do |version, i|
       test.variants.create!(
         prompt_version: version,
@@ -285,7 +291,7 @@ end
 When an agent run needs a prompt, the A/B system assigns a variant:
 
 ```ruby
-class ABTestAssigner
+class AbTests::Assign
   def assign(prompt, agent_run)
     active_test = prompt.ab_tests.running.first
     return prompt.current_version unless active_test
@@ -324,7 +330,7 @@ end
 ### Statistical Analysis
 
 ```ruby
-class ABTestAnalyzer
+class AbTests::Analyze
   # Minimum samples per variant before analysis
   MIN_SAMPLES = 30
 
@@ -402,11 +408,10 @@ end
 ### Test Completion
 
 ```ruby
-class ABTestCompleter
-  def complete(test, analysis)
+class AbTests::PromoteWinner
+  def promote(test, analysis)
     case analysis[:status]
     when :winner_found
-      # Promote winning variant to current version
       winning_version = analysis[:winner].prompt_version
       test.prompt.update!(current_version: winning_version)
 
@@ -417,7 +422,6 @@ class ABTestCompleter
         completed_at: Time.current
       )
     when :control_wins
-      # Keep current version
       test.update!(
         status: :completed,
         winner_variant: test.variants.find_by(name: "control"),
@@ -425,9 +429,17 @@ class ABTestCompleter
         completed_at: Time.current
       )
     when :no_significant_difference
-      # Extend test or close without winner
       test.update!(status: :completed, completed_at: Time.current)
     end
+  end
+end
+
+class AbTests::RecordResult
+  def record(agent_run, quality_metric)
+    assignment = ABTestAssignment.find_by(agent_run: agent_run)
+    return unless assignment
+
+    assignment.update!(quality_metric: quality_metric)
   end
 end
 ```
@@ -441,25 +453,28 @@ end
 A specialized LLM-based agent that improves prompts:
 
 ```ruby
-class PromptEvolutionAgent
+# app/services/prompt_evolution/mutate.rb
+class PromptEvolution::Mutate
+  DEFAULT_MODEL = "claude-sonnet-4-6"
+
   EVOLUTION_PROMPT = <<~PROMPT
     You are a prompt engineer analyzing and improving prompts for an AI-driven
     software development system.
 
     ## Current Prompt
-    {{prompt.template}}
+    {{prompt_template}}
 
     ## Performance Analysis
-    Average quality score: {{analysis.avg_quality_score}}
-    Average iterations: {{analysis.avg_iterations}}
+    Average quality score: {{avg_quality_score}}
+    Average iterations: {{avg_iterations}}
     Common failure patterns:
-    {{analysis.failure_patterns}}
+    {{failure_patterns}}
 
     ## Sample Failures (low quality runs)
-    {{analysis.failure_samples}}
+    {{failure_samples}}
 
     ## Sample Successes (high quality runs)
-    {{analysis.success_samples}}
+    {{success_samples}}
 
     ## Your Task
     Generate 3 improved versions of this prompt that address the identified
@@ -483,19 +498,20 @@ class PromptEvolutionAgent
   PROMPT
 
   def generate_mutations(prompt:, analysis:, mutation_count: 3)
-    resolved_prompt = PromptResolver.new.resolve(
+    resolved_prompt = Prompts::Resolve.new.resolve(
       PromptVersion.new(template: EVOLUTION_PROMPT),
-      { prompt: prompt.current_version, analysis: analysis }
+      {
+        prompt_template: prompt.current_version.template,
+        avg_quality_score: analysis.avg_quality_score.to_s,
+        avg_iterations: analysis.avg_iterations.to_s,
+        failure_patterns: analysis.failure_patterns,
+        failure_samples: analysis.failure_samples.map(&:to_s).join("\n"),
+        success_samples: analysis.success_samples.map(&:to_s).join("\n")
+      }
     )
 
-    # Select model for prompt evolution (creative task, medium complexity)
-    model = ModelSelectionService.select(
-      task_type: :prompt_evolution,
-      complexity: :medium
-    )
-
-    response = RubyLLM.client.chat(
-      model: model,
+    response = AgentHarness.send_message(
+      model: DEFAULT_MODEL,
       messages: [{ role: "user", content: resolved_prompt }],
       response_format: { type: "json_object" }
     )
@@ -529,43 +545,40 @@ class PromptEvolutionWorkflow
       .where("created_at > ?", 30.days.ago)
       .includes(:quality_metric)
 
-    return { status: :insufficient_data } if recent_runs.count < 20
+    return { status: :insufficient_data } if recent_runs.count < 5
 
     # Analyze performance
     analysis = analyze_performance(recent_runs)
 
     # Check if evolution is needed
-    if analysis.avg_quality_score >= 0.85
+    if analysis.avg_quality_score >= 0.7
       return { status: :satisfactory, score: analysis.avg_quality_score }
     end
 
     # Generate mutations
-    evolution_agent = PromptEvolutionAgent.new
+    evolution_agent = PromptEvolution::Mutate.new
     mutations = evolution_agent.generate_mutations(
       prompt: prompt,
       analysis: analysis,
       mutation_count: 3
     )
 
-    # Create new versions from mutations
     new_versions = mutations.map do |mutation|
-      PromptVersionService.new.create_version(
-        prompt,
+      prompt.create_pending_version!(
         template: mutation.template,
         change_notes: mutation.reasoning,
         created_by: :evolution
       )
     end
 
-    # Create A/B test
-    test = ABTestService.new.create_test(
+    test = AbTests::Create.new.create_test(
       prompt: prompt,
       control_version: prompt.current_version,
       variant_versions: new_versions,
       name: "Evolution #{Time.current.strftime('%Y-%m-%d')}"
     )
 
-    ABTestService.new.start_test(test)
+    AbTests::Create.new.start_test(test)
 
     prompt.update!(last_evolved_at: Time.current)
 
@@ -591,7 +604,6 @@ class PromptEvolutionWorkflow
     patterns << "High iteration count" if low_quality_metrics.any? { |m| m.iterations_to_complete > 5 }
     patterns << "CI failures" if low_quality_metrics.any? { |m| !m.ci_passed }
     patterns << "Lint errors" if low_quality_metrics.any? { |m| m.lint_errors > 0 }
-    patterns << "Negative human feedback" if low_quality_metrics.any? { |m| m.human_vote == -1 }
     patterns.join(", ")
   end
 end
@@ -604,7 +616,7 @@ Evolution runs periodically for all prompts:
 ```ruby
 # Scheduled via GoodJob
 class PromptEvolutionJob < ApplicationJob
-  queue_as :evolution
+  queue_as :maintenance
 
   def perform
     Prompt.active.find_each do |prompt|
@@ -623,7 +635,7 @@ Rails.application.configure do
   config.good_job.enable_cron = true
   config.good_job.cron = {
     evolution_check: {
-      cron: "0 2 * * *",
+      cron: "0 3 * * 1",
       class: "PromptEvolutionJob"
     }
   }
@@ -643,25 +655,26 @@ class PromptsController < ApplicationController
   def update
     prompt = Prompt.find(params[:id])
 
-    new_version = PromptVersionService.new.create_version(
-      prompt,
-      template: params[:template],
-      change_notes: params[:change_notes],
-      created_by: :user
-    )
-
-    # Option to immediately promote or A/B test
     if params[:promote_immediately]
-      prompt.update!(current_version: new_version)
+      new_version = prompt.create_version!(
+        template: params[:template],
+        change_notes: params[:change_notes],
+        created_by: :user
+      )
       flash[:notice] = "Prompt updated and promoted"
     else
-      test = ABTestService.new.create_test(
+      new_version = prompt.create_pending_version!(
+        template: params[:template],
+        change_notes: params[:change_notes],
+        created_by: :user
+      )
+      test = AbTests::Create.new.create_test(
         prompt: prompt,
         control_version: prompt.current_version,
         variant_versions: [new_version],
         name: "Manual edit #{Time.current.strftime('%Y-%m-%d')}"
       )
-      ABTestService.new.start_test(test)
+      AbTests::Create.new.start_test(test)
       flash[:notice] = "A/B test started for your changes"
     end
 
@@ -676,28 +689,29 @@ Optional gate before evolution results are promoted:
 
 ```ruby
 class ABTestsController < ApplicationController
-  def approve_winner
+  def promote
     test = ABTest.find(params[:id])
 
-    # Admin manually approves the winner
     winning_version = test.winner_variant.prompt_version
     test.prompt.update!(current_version: winning_version)
+    test.update!(review_status: :approved)
 
     flash[:notice] = "Evolved prompt promoted"
     redirect_to prompt_path(test.prompt)
   end
 
-  def reject_winner
+  def cancel
     test = ABTest.find(params[:id])
 
-    # Keep current version, mark test as rejected
-    test.update!(status: :rejected)
+    test.update!(status: :rejected, review_status: :rejected)
 
     flash[:notice] = "Evolution rejected, keeping current prompt"
     redirect_to prompt_path(test.prompt)
   end
 end
 ```
+
+Each A/B test has a `review_status` field (`pending`, `approved`, `rejected`) and a `requires_review` flag. When `requires_review` is true, the evolution workflow pauses after analysis and waits for human approval before promoting any winner.
 
 ---
 
