@@ -4,10 +4,13 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe Activities::CreatePullRequestActivity do
+  fixture "activities/create_pull_request/base"
+
   let(:activity) { described_class.new }
-  let(:project) { create(:project) }
-  let(:issue) { create(:issue, project: project) }
-  let(:agent_run) { create(:agent_run, :with_git_context, :with_metrics, project: project, issue: issue) }
+  let(:fixture_repository) { instance_variable_get(:@_fixture_kit_repository) }
+  let(:project) { fixture_repository.project }
+  let(:issue) { fixture_repository.issue }
+  let(:agent_run) { fixture_repository.agent_run }
   let(:github_client) { instance_double(GithubClient) }
   let(:pr_response) { Struct.new(:html_url, :number, :body).new("https://github.com/owner/repo/pull/42", 42, "PR body") }
   let(:issue_response) do
@@ -283,6 +286,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         create(:project, priority_labels: { "P1" => "critical", "P2" => "high", "P3" => "low" })
       end
       let(:issue) { create(:issue, project: project, labels: [ "critical", "bug" ]) }
+      let(:agent_run) { create(:agent_run, :with_git_context, :with_metrics, project: project, issue: issue) }
 
       it "copies matching priority labels from the issue to the PR" do
         activity.execute(agent_run_id: agent_run.id)

@@ -10,6 +10,13 @@ if ENV.fetch("COVERAGE", "true") != "false"
   end
 end
 
+require "test_prof"
+
+TestProf.configure do |config|
+  config.output_dir = "tmp/test_prof"
+  config.timestamps = true
+end
+
 RSpec.configure do |config|
   config.example_status_persistence_file_path = "spec/.examples.txt"
 

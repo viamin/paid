@@ -104,6 +104,8 @@ group :test do
   gem "simplecov", require: false
   gem "capybara"
   gem "cuprite"
+  gem "fixture_kit"
+  gem "test-prof"
   gem "webmock"
 end
 
