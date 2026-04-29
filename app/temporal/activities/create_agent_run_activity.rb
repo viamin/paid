@@ -4,6 +4,8 @@ module Activities
   class CreateAgentRunActivity < BaseActivity
     activity_name "CreateAgentRun"
 
+    NON_CONTAINER_GOALS = %w[enhance_issue analyze_issue].freeze
+
     def execute(input)
       agent_run_id = input[:agent_run_id]
 
@@ -32,7 +34,7 @@ module Activities
         respect_requested: input.key?(:agent_type) || input.key?(:provider_id)
       )
 
-      validate_runnable_provider!(provider_id, agent_type)
+      validate_runnable_provider!(provider_id, agent_type, goal: goal)
 
       # Resolve and render prompt version if no custom prompt is provided.
       # Skip for untrusted issues to match the safety behavior in AgentRun#prompt_for_issue.
@@ -257,7 +259,9 @@ module Activities
       )
     end
 
-    def validate_runnable_provider!(provider_id, agent_type)
+    def validate_runnable_provider!(provider_id, agent_type, goal:)
+      return if goal.in?(NON_CONTAINER_GOALS)
+
       return if provider_id.present?
 
       provider_key = ProviderSupport.provider_key_for_agent_type(agent_type)
