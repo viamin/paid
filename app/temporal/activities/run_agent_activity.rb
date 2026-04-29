@@ -1563,7 +1563,7 @@ module Activities
     end
 
     def container_dead_after_exec_error?(agent_run, error)
-      return false unless error.message.include?("container") && error.message.include?("is not running")
+      return false unless error.message.match?(/container.*is not running/i)
       return false if agent_run.container_id.blank?
 
       container_service = reconnect_container(agent_run) rescue nil
