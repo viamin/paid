@@ -247,13 +247,12 @@ class Provider < ApplicationRecord
   end
 
   # Returns the provider key that must always exist and remain enabled for
-  # agent runs. Prefers "claude" when container-executable, otherwise falls
-  # back to the first available container-executable provider. Returns nil
-  # when no container-executable providers are available, so callers can
-  # surface a user-facing error instead of a 500.
+  # agent runs. Returns the first container-executable provider key in
+  # supported order, with no hardcoded preference for any specific provider.
+  # Returns nil when no container-executable providers are available, so
+  # callers can surface a user-facing error instead of a 500.
   def self.default_provider_key
-    executable_keys = ProviderSupport.container_executable_provider_keys
-    executable_keys.include?("claude") ? "claude" : executable_keys.first
+    ProviderSupport.container_executable_provider_keys.first
   end
 
   def self.ensure_default_for(user)
@@ -263,6 +262,13 @@ class Provider < ApplicationRecord
     user.providers.find_or_create_by!(provider_key: key, auth_type: "subscription")
   rescue ActiveRecord::RecordNotUnique
     user.providers.find_by!(provider_key: key, auth_type: "subscription")
+  end
+
+  def self.first_enabled_for_owner(owner)
+    return unless owner
+
+    executable_keys = ProviderSupport.container_executable_provider_keys
+    owner.providers.for_agent_runs.where(provider_key: executable_keys).ordered.first
   end
 
   def self.display_name_for(provider_key)

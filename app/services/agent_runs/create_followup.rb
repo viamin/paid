@@ -42,7 +42,7 @@ module AgentRuns
         project: agent_run.project,
         issue: agent_run.issue,
         provider: provider,
-        agent_type: provider ? Provider.agent_type_for(provider.provider_key) : "claude_code",
+        agent_type: provider ? Provider.agent_type_for(provider.provider_key) : fallback_agent_type,
         status: "queued",
         trigger_type: "automatic",
         auto_pick: true,
@@ -55,6 +55,14 @@ module AgentRuns
 
       provider_id, = AgentRuns::ProviderResolver.call(project: agent_run.project, goal: goal)
       Provider.find_by(id: provider_id) if provider_id
+    end
+
+    def fallback_agent_type
+      enabled = Provider.first_enabled_for_owner(agent_run.project.effective_owner)
+      return Provider.agent_type_for(enabled.provider_key) if enabled
+
+      first_key = ProviderSupport.container_executable_provider_keys.first
+      first_key ? Provider.agent_type_for(first_key) : "claude_code"
     end
 
     def handle_duplicate

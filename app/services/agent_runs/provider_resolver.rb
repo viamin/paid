@@ -25,7 +25,7 @@ module AgentRuns
       provider = default_provider
       return [ provider.id, Provider.agent_type_for(provider.provider_key) ] if provider
 
-      [ nil, "claude_code" ]
+      fallback_from_settings
     end
 
     private
@@ -117,6 +117,15 @@ module AgentRuns
         requested_provider_id: requested_provider_id,
         requested_agent_type: requested_agent_type
       )
+    end
+
+    def fallback_from_settings
+      enabled = Provider.first_enabled_for_owner(project.effective_owner)
+      return [ enabled.id, Provider.agent_type_for(enabled.provider_key) ] if enabled
+
+      first_key = ProviderSupport.container_executable_provider_keys.first
+      agent_type = first_key ? Provider.agent_type_for(first_key) : "claude_code"
+      [ nil, agent_type ]
     end
   end
 end
