@@ -38,14 +38,10 @@ module ChatSessions
     end
 
     def compute_totals
-      totals = chat_session.messages.where.not(tokens_input: nil).pick(
-        Arel.sql("COALESCE(SUM(tokens_input), 0)"),
-        Arel.sql("COALESCE(SUM(tokens_output), 0)")
-      )
-
       chat_session.metadata ||= {}
-      chat_session.metadata["total_tokens_input"] = totals[0]
-      chat_session.metadata["total_tokens_output"] = totals[1]
+      chat_session.metadata["total_tokens_input"] = chat_session.total_tokens_input
+      chat_session.metadata["total_tokens_output"] = chat_session.total_tokens_output
+      chat_session.metadata["total_cost_cents"] = chat_session.estimated_cost_cents
       chat_session.metadata["total_messages"] = chat_session.messages.count
       chat_session.metadata["closed_at"] = Time.current.iso8601
     end
