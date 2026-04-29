@@ -563,7 +563,7 @@ DEPENDENCIES
   solid_cache
   stimulus-rails
   temporalio
-  test-prof (~> 1.0)
+  test-prof
   thruster
   turbo-rails
   tzinfo-data
