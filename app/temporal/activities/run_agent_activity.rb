@@ -291,6 +291,16 @@ module Activities
             record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "error")
             logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message)
+
+            if container_dead_after_exec_error?(agent_run, e)
+              logger.error(
+                message: "agent_execution.container_dead_breaking_provider_loop",
+                agent_run_id: agent_run.id,
+                container_id: agent_run.container_id,
+                error: e.message
+              )
+              break
+            end
           end
 
           index += 1
@@ -540,6 +550,13 @@ module Activities
     # @return [Hash] The pre-agent SHA and whether output was present
     def run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
       container_service = reconnect_container(agent_run)
+
+      unless container_service.container_running?
+        container_exit_info = container_exit_diagnostics(container_service)
+        raise ProviderExecutionError,
+          "Container #{agent_run.container_id} is not running. #{container_exit_info}"
+      end
+
       provider = provider_command_key(provider_candidate, agent_run, user_settings.user)
 
       unless self.class.container_executable?(provider)
@@ -567,7 +584,8 @@ module Activities
 
       heartbeat = Containers::HeartbeatSetup.new(
         provider: provider,
-        worktree_path: agent_run.worktree_path
+        worktree_path: agent_run.worktree_path,
+        host_heartbeat_path: container_service.heartbeat_host_path
       )
       if heartbeat.available?
         command_env = command_env.merge(heartbeat.env)
@@ -1542,6 +1560,38 @@ module Activities
       error_or_cause_matches?(error, Containers::Provision::ProvisionError) do |candidate|
         candidate.message.start_with?("Failed to reconnect to container:")
       end
+    end
+
+    def container_dead_after_exec_error?(agent_run, error)
+      return false unless error.message.match?(/container.*is not running/i)
+      return false if agent_run.container_id.blank?
+
+      container_service = reconnect_container(agent_run) rescue nil
+      return false unless container_service
+
+      !container_service.container_running?
+    end
+
+    def container_exit_diagnostics(container_service)
+      container = container_service.container
+      return "Container object unavailable." unless container
+
+      container.refresh!
+      state = container.info["State"] || {}
+      exit_code = state["ExitCode"]
+      oom_killed = state["OOMKilled"]
+      error_msg = state["Error"]
+      finished_at = state["FinishedAt"]
+
+      reasons = []
+      reasons << "OOM killed" if oom_killed
+      reasons << "exit code #{exit_code}" if exit_code && exit_code != 0
+      reasons << "error: #{error_msg}" if error_msg.present?
+      reasons << "finished at #{finished_at}" if finished_at.present?
+
+      "Container state: #{reasons.join(', ').presence || 'unknown'}"
+    rescue Docker::Error::DockerError => e
+      "Could not inspect container: #{e.message}"
     end
 
     def error_or_cause_matches?(error, klass, &block)

@@ -202,6 +202,8 @@ RSpec.describe Containers::Provision do
       it "logs the provision start and success" do
         expect(agent_run).to receive(:log!).with("system", "container.provision.start",
           metadata: hash_including(image: "paid-agent:latest")).ordered
+        expect(agent_run).to receive(:log!).with("system", "container.heartbeat_dir_prepared",
+          metadata: hash_including(:path)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.network.ready",
           metadata: hash_including(network: NetworkPolicy::NETWORK_NAME)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.ownership_batch_fixed",
