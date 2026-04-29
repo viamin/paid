@@ -181,6 +181,7 @@ module Containers
       @container = create_container
       start_container
       fix_all_ownership!
+      seed_opencode_database!
       seed_codex_credentials!
       seed_gemini_credentials!
       seed_copilot_credentials!
@@ -901,6 +902,34 @@ module Containers
         f.flock(File::LOCK_UN)
         log_system("container.codex_auth_lock.released", lockfile: lockfile)
       end
+    end
+
+    def seed_opencode_database!
+      return unless opencode_provider_requested?
+
+      result = container.exec(
+        [ "sh", "-c",
+          "if [ -d /opt/opencode-seed ]; then " \
+          "cp -a /opt/opencode-seed/. /home/agent/.local/share/opencode/ && " \
+          "chown -R agent:agent /home/agent/.local/share/opencode; " \
+          "fi" ],
+        user: "root"
+      )
+      exit_code = result.is_a?(Array) ? result[2].to_i : 0
+      raise Docker::Error::DockerError, "opencode database seed exited with #{exit_code}" unless exit_code == 0
+
+      log_system("container.opencode_database_seeded")
+    rescue Docker::Error::DockerError => e
+      log_system("container.opencode_database_seed_failed", error: e.message)
+    end
+
+    def opencode_provider_requested?
+      return false unless agent_run
+
+      providers = resolved_run_provider_candidates
+      return providers.any? { |provider| provider.provider_key == "opencode" } if providers.any?
+
+      ProviderSupport.provider_key_for_agent_type(agent_run.agent_type) == "opencode"
     end
 
     def seed_gemini_credentials!
@@ -1703,14 +1732,14 @@ module Containers
     def codex_subscription_provider_requested?
       return false unless agent_run
 
-      providers = codex_resolved_provider_candidates
+      providers = resolved_run_provider_candidates
       return providers.any? { |provider| provider.provider_key == "codex" && provider.subscription? } if providers.any?
 
       ProviderSupport.provider_key_for_agent_type(agent_run.agent_type) == "codex"
     end
 
-    def codex_resolved_provider_candidates
-      return codex_run_provider_candidates if agent_run.provider
+    def resolved_run_provider_candidates
+      return run_provider_candidates if agent_run.provider
 
       settings = resolved_user_settings
       return [] unless settings
@@ -1724,7 +1753,7 @@ module Containers
       providers_for_identifiers(identifiers, user: settings.user)
     end
 
-    def codex_run_provider_candidates
+    def run_provider_candidates
       providers = [ agent_run.provider ]
       settings = resolved_user_settings
       if settings&.fallback_enabled?
