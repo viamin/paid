@@ -121,6 +121,23 @@ RSpec.describe "Notifications" do
       expect(n2.reload.read_at).to be_present
       expect(already_read.reload.read_at).to be_present
     end
+
+    it "preserves the current query params in the mark all read form" do
+      get notifications_path(filter: "unread", severity: "error", source: "quality_gate")
+
+      doc = Nokogiri::HTML(response.body)
+      form = doc.at_css("form.button_to[action='#{mark_all_read_notifications_path}']")
+
+      expect(form.at_css("input[name='filter']")["value"]).to eq("unread")
+      expect(form.at_css("input[name='severity']")["value"]).to eq("error")
+      expect(form.at_css("input[name='source']")["value"]).to eq("quality_gate")
+    end
+
+    it "redirects back to the filtered index for HTML requests" do
+      post mark_all_read_notifications_path, params: { filter: "unread", severity: "error", source: "quality_gate" }
+
+      expect(response).to redirect_to(notifications_path(filter: "unread", severity: "error", source: "quality_gate"))
+    end
   end
 
   describe "multi-tenant scoping" do
