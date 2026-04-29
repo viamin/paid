@@ -20,7 +20,7 @@ The system follows a four-stage pipeline: **Collect → Store → Embed → Retr
 │  └──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘  │
 │         │                  │                  │                  │            │
 │         ▼                  ▼                  ▼                  ▼            │
-│    7 collector        Artifacts,         Qdrant vector      Agent prompts    │
+│    9 collector        Artifacts,         Qdrant vector      Agent prompts    │
 │    types              Chunks, Links      index               enriched with   │
 │                                                              codebase        │
 │                                                              context         │
@@ -122,6 +122,8 @@ Collectors are the data ingestion layer. Each collector analyzes one aspect of a
 | `ChurnHotspotCollector` | `churn_hotspot` | `churn_hotspot` | Git churn analysis for change-heavy files |
 | `ConfigKeyCollector` | `config_key` | `config_key` | Configuration keys and constants |
 | `TreeSitterCollector` | `tree_sitter` | `structure` | Generic AST-based extraction |
+| `DecisionRecordCollector` | `decision_records` | `decision_record` | Indexes architectural decision records |
+| `SchemaCollector` | `schema` | `schema` | Database schema structure extraction |
 
 ### Idempotency
 
@@ -264,7 +266,7 @@ qdrant:
 
 | Job | Queue | Responsibility |
 |-----|-------|----------------|
-| `RunCollectorsJob` | default | Trigger collection for a project |
+| `RunCollectorsJob` | knowledge | Trigger collection for a project |
 | `QdrantCollectionCleanupJob` | default | Clean up Qdrant on project deletion |
 | `KnowledgeAuditRetentionJob` | maintenance | Prune old audit events |
 
