@@ -317,6 +317,18 @@ module Containers
       stripped.match?(/\A\{\s*(?:"|\z)/)
     end
 
+    private def final_abort_pattern_candidate(stdout_buffer)
+      return nil if stdout_buffer.blank?
+
+      if structured_jsonl_line?(stdout_buffer)
+        structured_jsonl_abort_candidate(stdout_buffer)
+      elsif stdout_buffer.lstrip.start_with?("{")
+        stdout_buffer
+      else
+        stdout_buffer
+      end
+    end
+
     private def structured_jsonl_failure_text(payload)
       [
         payload["message"],
@@ -421,6 +433,21 @@ module Containers
                 log_system("container.execute.abort_stop_failed", error: e.message)
               end
               break
+            end
+          end
+        end
+
+        if abort_patterns&.any? && abort_matched_output.nil?
+          candidate = final_abort_pattern_candidate(stdout_abort_buffer)
+          if candidate.present? && abort_patterns.any? { |pat| candidate.match?(pat) }
+            abort_matched_output = candidate
+            log_system("container.execute.abort_pattern_matched",
+              stream: "stdout",
+              output: candidate.truncate(200))
+            begin
+              container.stop(timeout: 0)
+            rescue Docker::Error::DockerError => e
+              log_system("container.execute.abort_stop_failed", error: e.message)
             end
           end
         end
