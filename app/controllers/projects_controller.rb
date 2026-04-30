@@ -266,7 +266,8 @@ class ProjectsController < ApplicationController
     github_token_id = params_hash[:github_token_id].presence
     return unless github_token_id
 
-    project.github_token = TenantContext.with_system_access { GithubToken.find_by(id: github_token_id) }
+    project.github_token = current_account.github_tokens.find_by(id: github_token_id)
+    project.errors.add(:github_token, "must belong to the same account") if project.github_token.blank?
   end
 
   def set_project
