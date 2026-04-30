@@ -20,6 +20,7 @@ class GithubTokenValidationJob < ApplicationJob
 
     result = github_token.validate_with_github!
     github_token.mark_validated!
+    auto_resume_projects(github_token) if was_already_failed
 
     Rails.logger.info(
       message: "github_token_validation.completed",
@@ -38,5 +39,9 @@ class GithubTokenValidationJob < ApplicationJob
 
   def auto_pause_projects(github_token)
     GithubTokens::AutoPauseProjects.call(github_token: github_token)
+  end
+
+  def auto_resume_projects(github_token)
+    GithubTokens::AutoResumeProjects.call(github_token: github_token)
   end
 end

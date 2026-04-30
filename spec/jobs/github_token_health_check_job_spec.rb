@@ -53,6 +53,28 @@ RSpec.describe GithubTokenHealthCheckJob do
         described_class.perform_now
         expect(token.reload.validation_error).to be_nil
       end
+
+      it "does not auto-resume projects when the token was not previously failed" do
+        allow(GithubTokens::AutoResumeProjects).to receive(:call)
+
+        described_class.perform_now
+
+        expect(GithubTokens::AutoResumeProjects).not_to have_received(:call)
+      end
+    end
+
+    context "when a previously failed token becomes valid again" do
+      let!(:token) { create(:github_token, :validation_failed, account: account) }
+
+      before { stub_valid_octokit }
+
+      it "auto-resumes projects paused by the token failure" do
+        allow(GithubTokens::AutoResumeProjects).to receive(:call)
+
+        described_class.perform_now
+
+        expect(GithubTokens::AutoResumeProjects).to have_received(:call).with(github_token: token)
+      end
     end
 
     context "when token has been revoked (auth error)" do

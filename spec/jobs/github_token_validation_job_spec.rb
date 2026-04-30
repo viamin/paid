@@ -32,6 +32,39 @@ RSpec.describe GithubTokenValidationJob do
         described_class.perform_now(github_token.id)
         expect(github_token.reload.validation_error).to be_nil
       end
+
+      it "does not auto-resume projects when the token was not previously failed" do
+        allow(GithubTokens::AutoResumeProjects).to receive(:call)
+
+        described_class.perform_now(github_token.id)
+
+        expect(GithubTokens::AutoResumeProjects).not_to have_received(:call)
+      end
+    end
+
+    context "when a previously failed token becomes valid again" do
+      let(:github_token) { create(:github_token, :validation_failed, account: account) }
+
+      before do
+        octokit_client = instance_double(Octokit::Client)
+        allow(Octokit::Client).to receive(:new).and_return(octokit_client)
+        allow(octokit_client).to receive_messages(
+          user: OpenStruct.new(login: "testuser", id: 12345, name: "Test User", email: "test@example.com"),
+          scopes: [ "repo", "read:org" ],
+          last_response: OpenStruct.new(headers: {})
+        )
+        allow(octokit_client).to receive(:middleware=)
+        allow(octokit_client).to receive_messages(auto_paginate: false, repositories: [])
+        allow(octokit_client).to receive(:auto_paginate=)
+      end
+
+      it "auto-resumes projects paused by the token failure" do
+        allow(GithubTokens::AutoResumeProjects).to receive(:call)
+
+        described_class.perform_now(github_token.id)
+
+        expect(GithubTokens::AutoResumeProjects).to have_received(:call).with(github_token: github_token)
+      end
     end
 
     context "when token is invalid (auth error)" do
