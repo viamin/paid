@@ -30,7 +30,12 @@ module Tools
         raise ArgumentError, "Agent run is not active (current status: #{run.status})"
       end
 
-      run.cancel!
+      run.with_lock do
+        return { id: run.id, status: run.status, note: "Run already finished" } unless run.cancellable?
+        run.cancel!
+      end
+
+      AgentRunCancellationJob.perform_later(run.id)
 
       {
         id: run.id,

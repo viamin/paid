@@ -63,7 +63,7 @@ module Api
         return
       end
 
-      TenantContext.apply!(@current_user.account)
+      TenantContext.apply!(@chat_session.account)
     end
 
     def teardown_tenant_context

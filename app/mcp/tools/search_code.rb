@@ -24,26 +24,28 @@ module Tools
       project = policy_scope(Project).find(project_id)
       authorize project, :show?
 
-      results = KnowledgeArtifact
-        .where(project_id: project.id)
-        .where("knowledge_artifacts.content ILIKE ?", "%#{sanitize_like(query)}%")
-        .limit([ limit.to_i, 50 ].min)
+      search_limit = [ limit.to_i, 50 ].min
+      provider_config = project.knowledge_embedding_provider_configuration
 
-      results.map do |artifact|
+      result = Knowledge::Search.call(
+        project: project,
+        query: query,
+        mode: "hybrid",
+        limit: search_limit,
+        api_key: provider_config&.api_key,
+        api_base_url: provider_config&.api_base_url
+      )
+
+      result[:results].map do |r|
         {
-          id: artifact.id,
-          artifact_type: artifact.artifact_type,
-          name: artifact.identifier,
-          path: artifact.scope_path,
-          content_preview: artifact.content&.truncate(500)
+          id: r[:id],
+          artifact_type: r[:artifact_type],
+          name: r[:identifier],
+          path: r[:scope_path],
+          score: r[:score],
+          content_preview: r[:content].to_s.truncate(500)
         }
       end
-    end
-
-    private
-
-    def sanitize_like(value)
-      ActiveRecord::Base.sanitize_sql_like(value)
     end
   end
 end
