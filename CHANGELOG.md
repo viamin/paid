@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.34.0](https://github.com/viamin/paid/compare/v0.33.0...v0.34.0) (2026-04-30)
+
+
+### Features
+
+* add chat API endpoints with SSE streaming ([#1523](https://github.com/viamin/paid/issues/1523)) ([a814edf](https://github.com/viamin/paid/commit/a814edf32d9ea4c924eaa337a032835ac98a8476))
+* add chat cost tracking and limits ([#1522](https://github.com/viamin/paid/issues/1522)) ([b444bee](https://github.com/viamin/paid/commit/b444beedb01f90f64bbbe02a5f38c30e39836cc1))
+* add chat system prompt and context injection ([#1521](https://github.com/viamin/paid/issues/1521)) ([789a30b](https://github.com/viamin/paid/commit/789a30b140791a6760ee7b8b9024a412f00fb1ef))
+* **knowledge:** create KnowledgeEvolutionJob, workflow, and activities ([#1524](https://github.com/viamin/paid/issues/1524)) ([7c24871](https://github.com/viamin/paid/commit/7c2487101eaac6de9b62c735cc50aa6eed739428))
+* **performance:** ungate CI performance benchmarks and improve reliability ([#1559](https://github.com/viamin/paid/issues/1559)) ([d088349](https://github.com/viamin/paid/commit/d08834944553ec4db6a6fe35cac70dc094bba9b3))
+* **test:** add fixture-kit and test-prof profiling ([#1560](https://github.com/viamin/paid/issues/1560)) ([6664e8f](https://github.com/viamin/paid/commit/6664e8f49d9697e3114a91c5f716ad317161998c))
+
+
+### Bug Fixes
+
+* **agent-runs:** extend idle timeout for providers with coarse heartbeat signals ([#1572](https://github.com/viamin/paid/issues/1572)) ([94a1d93](https://github.com/viamin/paid/commit/94a1d93e4262509c18e41a6fbebded61552e83cc))
+* **agent-runs:** improve provider fallback diagnostics ([#1577](https://github.com/viamin/paid/issues/1577)) ([e1eeb7d](https://github.com/viamin/paid/commit/e1eeb7d81bb0495b7a208fe87ac417ed1e16aa43))
+* **agent-runs:** improve timeout observability, extend abort to stdout, fix auth lock contention ([#1568](https://github.com/viamin/paid/issues/1568)) ([f4d5b72](https://github.com/viamin/paid/commit/f4d5b729c76476d3eadcfdfef46158162e1c82a9))
+* **agent-runs:** remove hardcoded Claude preference from provider fallback paths ([#1551](https://github.com/viamin/paid/issues/1551)) ([48ddd4a](https://github.com/viamin/paid/commit/48ddd4abf05ece8f26532bf5339373d9b5651f87))
+* **auto-pick:** order equal-priority issues oldest-first instead of newest-first ([#1526](https://github.com/viamin/paid/issues/1526)) ([86921d9](https://github.com/viamin/paid/commit/86921d9697f4fe833f00bd809ee5fef617507f49))
+* **containers:** mount host-visible heartbeat directory into container ([#1558](https://github.com/viamin/paid/issues/1558)) ([01701e1](https://github.com/viamin/paid/commit/01701e1335175b6ae23b21d893d896e057a21f64))
+* **devcontainer:** remove redundant PG 15 feature and add pg_dump to agent container ([#1534](https://github.com/viamin/paid/issues/1534)) ([93c7515](https://github.com/viamin/paid/commit/93c7515bf5bd7be5a63719540bc39d78cd70042d))
+* **github-tokens:** broadcast validation state instead of polling ([#1529](https://github.com/viamin/paid/issues/1529)) ([9131e0d](https://github.com/viamin/paid/commit/9131e0d5fb91031c2eb99f62484342056ce54bcf))
+* **kilocode:** inject PAID_KILOCODE_CONFIG_B64 into container env for direct-outbound providers ([#1571](https://github.com/viamin/paid/issues/1571)) ([4e06484](https://github.com/viamin/paid/commit/4e064843295a99dbecf6e16fc9867125a7239e53))
+* **kilocode:** resolve test-agent timeout for kilocode providers with direct-outbound API keys ([#1570](https://github.com/viamin/paid/issues/1570)) ([8dd72bf](https://github.com/viamin/paid/commit/8dd72bf073f4ac4612f560b2087b0adc6dc4affd))
+* **notifications:** fix Pagy pagination crash and mark-all-read UX ([#1536](https://github.com/viamin/paid/issues/1536)) ([8835804](https://github.com/viamin/paid/commit/88358042f4505fd11c792f64121aa5097a299e1c))
+* **opencode:** pre-seed opencode database into container tmpfs ([#1539](https://github.com/viamin/paid/issues/1539)) ([e6b2e6e](https://github.com/viamin/paid/commit/e6b2e6efbf172eeebe181b629c142f8bfc7d86c8))
+* **tests:** stabilize request-spec tenant context ([#1573](https://github.com/viamin/paid/issues/1573)) ([8471014](https://github.com/viamin/paid/commit/84710143ccf0cd78b64421503198a5c738b2bc59))
+* Watchdog thread dies silently on unexpected exceptions ([#1554](https://github.com/viamin/paid/issues/1554)) ([f82be06](https://github.com/viamin/paid/commit/f82be06971eb3b2d9df4fd12d51d7a19597d61cc))
+
 ## [0.33.0](https://github.com/viamin/paid/compare/v0.32.0...v0.33.0) (2026-04-28)
 
 
