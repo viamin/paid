@@ -642,7 +642,7 @@ module Activities
         container_service.execute(
           command,
           timeout: effective_timeout,
-          idle_timeout: heartbeat.available? ? effective_idle_timeout : nil,
+          idle_timeout: heartbeat.idle_timeout_for(effective_idle_timeout),
           env: command_env,
           preparation: command_preparation,
           heartbeat_path: heartbeat.available? ? heartbeat.heartbeat_path : nil,

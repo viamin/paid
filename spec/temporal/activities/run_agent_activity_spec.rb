@@ -1874,17 +1874,19 @@ RSpec.describe Activities::RunAgentActivity do
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "applies idle timeout and heartbeat path to codex" do
+      it "applies extended idle timeout to codex for coarse heartbeat" do
         agent_run.update!(agent_type: "codex")
         project.update!(max_execution_seconds: 86_400)
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
 
+        expected_idle = described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT * Containers::HeartbeatSetup::COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER
+
         expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
-            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
+            idle_timeout: expected_idle,
             heartbeat_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
           )
         ).and_return(exec_success)
