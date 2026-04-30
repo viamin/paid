@@ -1845,6 +1845,22 @@ RSpec.describe Containers::Provision do
         expect(mock_container).not_to have_received(:stop)
       end
 
+      it "buffers a partial structured event until the type field arrives" do
+        partial_start = "{\"item\":{\"aggregated_output\":\"Free tier limit reached. Please upgrade to a paid plan.\"}"
+        partial_end = ",\"type\":\"item.completed\"}\n"
+
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, partial_start) if block
+          block.call(:stdout, partial_end) if block
+          [ [ partial_start, partial_end ], [], 0 ]
+        end
+
+        result = service.execute("codex exec --json", abort_patterns: abort_patterns)
+
+        expect(result.success?).to be true
+        expect(mock_container).not_to have_received(:stop)
+      end
+
       it "still aborts on structured stdout failure events" do
         structured_error = {
           "type" => "response.failed",
