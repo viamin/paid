@@ -1211,8 +1211,6 @@ class AgentRun < ApplicationRecord
     owner = project&.effective_owner
     return {} unless owner
 
-    return {} unless provider_switches.positive?
-
     routing_ids = providers_attempted.filter_map do |attempt|
       Provider.id_from_routing_key(attempt["provider"])
     end

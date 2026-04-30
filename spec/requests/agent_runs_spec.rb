@@ -641,7 +641,9 @@ RSpec.describe "AgentRuns" do
 
         expect(response.body).to include("Provider Attempts")
         expect(response.body).to include("1 attempt")
+        expect(response.body).to include(initial_provider.display_name)
         expect(response.body).to include("Skipped due to cached rate limit until 2026-04-30T05:59:15Z")
+        expect(response.body).not_to include("Deleted provider entry")
       end
 
       it "shows auth type in provider section when provider record exists" do
