@@ -158,5 +158,9 @@ module Api
     def authenticated_account
       @authenticated_run&.project&.account || @authenticated_run.try(:account)
     end
+
+    def authenticated_project
+      @authenticated_run&.project
+    end
   end
 end

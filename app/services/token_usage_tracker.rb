@@ -16,20 +16,22 @@ class TokenUsageTracker
   # @param enforce_guardrails [Boolean] when false, updates aggregates without
   #   applying in-flight token/cost hard-stop behavior. Use for end-of-run
   #   summary reconciliation after the provider process has already exited.
-  def self.track(agent_run: nil, knowledge_run: nil, usage:, update_aggregates: true, enforce_guardrails: true)
-    tracked_run = resolve_tracked_run!(agent_run:, knowledge_run:)
+  def self.track(agent_run: nil, knowledge_run: nil, chat_session: nil, usage:, update_aggregates: true, enforce_guardrails: true)
+    tracked_run = resolve_tracked_run!(agent_run:, knowledge_run:, chat_session:)
     tokens_input  = usage.fetch(:tokens_input, 0).to_i
     tokens_output = usage.fetch(:tokens_output, 0).to_i
     llm_model     = usage[:llm_model]
     request_type  = usage.fetch(:request_type, nil).presence || default_request_type_for(tracked_run)
     metadata      = usage.fetch(:metadata, nil).presence || {}
     cost_cents    = calculate_cost(tokens_input, tokens_output, llm_model: llm_model)
-    resolved_hard_limit = tracked_run.effective_max_tokens_per_run if update_aggregates
+    chat_session_run = tracked_run.is_a?(ChatSession)
+    resolved_hard_limit = tracked_run.effective_max_tokens_per_run if update_aggregates && !chat_session_run
 
     ActiveRecord::Base.transaction do
       record_per_request_usage(
         agent_run: agent_run,
         knowledge_run: knowledge_run,
+        chat_session: chat_session,
         input_tokens: tokens_input,
         output_tokens: tokens_output,
         cost_cents: cost_cents,
@@ -38,13 +40,15 @@ class TokenUsageTracker
         metadata: metadata
       )
 
-      if update_aggregates
+      if update_aggregates && !chat_session_run
         tracked_run.with_lock do
           update_run_aggregates(tracked_run, tokens_input:, tokens_output:, cost_cents:)
           apply_token_limit_status(tracked_run, hard_limit: resolved_hard_limit)
           tracked_run.save!
         end
+      end
 
+      if tracked_run.project
         tracked_run.project.increment_metrics!(
           cost_cents: cost_cents,
           tokens_used: tokens_input + tokens_output
@@ -114,7 +118,8 @@ class TokenUsageTracker
     {
       message: message,
       agent_run_id: tracked_run.is_a?(AgentRun) ? tracked_run.id : nil,
-      knowledge_run_id: tracked_run.is_a?(KnowledgeRun) ? tracked_run.id : nil
+      knowledge_run_id: tracked_run.is_a?(KnowledgeRun) ? tracked_run.id : nil,
+      chat_session_id: tracked_run.is_a?(ChatSession) ? tracked_run.id : nil
     }.merge(extra)
   end
   private_class_method :log_payload_for
@@ -156,10 +161,11 @@ class TokenUsageTracker
   end
   private_class_method :lookup_model
 
-  def self.record_per_request_usage(agent_run:, knowledge_run:, input_tokens:, output_tokens:, cost_cents:, llm_model:, request_type:, metadata:)
+  def self.record_per_request_usage(agent_run:, knowledge_run:, chat_session: nil, input_tokens:, output_tokens:, cost_cents:, llm_model:, request_type:, metadata:)
     TokenUsage.create!(
       agent_run: agent_run,
       knowledge_run: knowledge_run,
+      chat_session: chat_session,
       input_tokens: input_tokens,
       output_tokens: output_tokens,
       cost_cents: cost_cents,
@@ -170,11 +176,12 @@ class TokenUsageTracker
   end
   private_class_method :record_per_request_usage
 
-  def self.resolve_tracked_run!(agent_run:, knowledge_run:)
-    return agent_run if agent_run.present? && knowledge_run.blank?
-    return knowledge_run if knowledge_run.present? && agent_run.blank?
+  def self.resolve_tracked_run!(agent_run:, knowledge_run:, chat_session: nil)
+    return agent_run if agent_run.present? && knowledge_run.blank? && chat_session.blank?
+    return knowledge_run if knowledge_run.present? && agent_run.blank? && chat_session.blank?
+    return chat_session if chat_session.present? && agent_run.blank? && knowledge_run.blank?
 
-    raise ArgumentError, "expected exactly one of agent_run or knowledge_run"
+    raise ArgumentError, "expected exactly one of agent_run, knowledge_run, or chat_session"
   end
   private_class_method :resolve_tracked_run!
 
@@ -190,7 +197,11 @@ class TokenUsageTracker
   private_class_method :update_run_aggregates
 
   def self.default_request_type_for(tracked_run)
-    tracked_run.is_a?(KnowledgeRun) ? "knowledge" : "agent"
+    case tracked_run
+    when KnowledgeRun then "knowledge"
+    when ChatSession then "chat"
+    else "agent"
+    end
   end
   private_class_method :default_request_type_for
 
@@ -229,7 +240,11 @@ class TokenUsageTracker
   private_class_method :record_limit_log
 
   def self.logging_component_for(tracked_run)
-    tracked_run.is_a?(KnowledgeRun) ? "knowledge_execution" : "agent_execution"
+    case tracked_run
+    when KnowledgeRun then "knowledge_execution"
+    when ChatSession then "chat_execution"
+    else "agent_execution"
+    end
   end
   private_class_method :logging_component_for
 

@@ -220,14 +220,16 @@ module Containers
     # Seeds the workspace volume by cloning the project's git repository.
     # The GitHub token is passed as an ephemeral environment variable for the
     # clone command only, not stored in the container environment.
-    # Skipped when no project is associated or the project has no active token.
-    # Raises ProvisionError if the clone fails, since mounting the project repo
-    # is a core acceptance criterion for workspace mode.
+    # Skipped when no project is associated.
+    # Raises ProvisionError if the project has no active token or the clone fails,
+    # since mounting the project repo is a core acceptance criterion for workspace mode.
     def seed_workspace!
       return unless project
 
       github_token = project.github_token
-      return unless github_token&.active?
+      unless github_token&.active?
+        raise ProvisionError, "Project #{project.full_name} has no active GitHub token; cannot seed workspace"
+      end
 
       clone_cmd = "git clone --depth 1 https://x-access-token:$CLONE_TOKEN@github.com/#{Shellwords.escape(project.full_name)}.git . 2>&1"
 

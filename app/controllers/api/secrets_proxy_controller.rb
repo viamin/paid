@@ -4,6 +4,7 @@ module Api
   class SecretsProxyController < ActionController::API
     include Api::ContainerAuthentication
     allow_knowledge_run_authentication!
+    allow_chat_session_authentication!
 
     before_action :check_rate_limit
 
@@ -126,6 +127,7 @@ module Api
       TokenUsageTracker.track(
         agent_run: @agent_run,
         knowledge_run: @knowledge_run,
+        chat_session: @chat_session,
         usage: {
           tokens_input: usage[:input_tokens],
           tokens_output: usage[:output_tokens],
@@ -196,10 +198,15 @@ module Api
     end
 
     def resolve_max_tokens_per_run
-      @max_tokens_per_run ||= authenticated_run.effective_max_tokens_per_run
+      return @max_tokens_per_run if defined?(@max_tokens_per_run)
+      return @max_tokens_per_run = Float::INFINITY unless @agent_run || @knowledge_run
+
+      authenticated_run.effective_max_tokens_per_run
     end
 
     def mark_token_limit_exceeded!(current_tokens:, limit:)
+      return unless @agent_run || @knowledge_run
+
       status_changed = false
 
       authenticated_run.with_lock do
@@ -225,6 +232,7 @@ module Api
         message: "#{logging_component}.token_limit_exceeded",
         agent_run_id: @agent_run&.id,
         knowledge_run_id: @knowledge_run&.id,
+        chat_session_id: @chat_session&.id,
         current_tokens: current_tokens,
         hard_limit: limit
       )
@@ -235,20 +243,21 @@ module Api
         message: message,
         agent_run_id: @agent_run&.id,
         knowledge_run_id: @knowledge_run&.id,
+        chat_session_id: @chat_session&.id,
         error: error
       )
     end
 
     def authenticated_run
-      @authenticated_run ||= @knowledge_run || @agent_run
+      @authenticated_run ||= @chat_session || @knowledge_run || @agent_run
     end
 
     def authenticated_run_name
-      @knowledge_run ? "knowledge run" : "agent run"
+      @chat_session ? "chat session" : (@knowledge_run ? "knowledge run" : "agent run")
     end
 
     def logging_component
-      @knowledge_run ? "knowledge_execution" : "agent_execution"
+      @chat_session ? "chat_execution" : (@knowledge_run ? "knowledge_execution" : "agent_execution")
     end
 
     def knowledge_run_api_key(provider)
@@ -268,13 +277,13 @@ module Api
     end
 
     def token_usage_request_type
-      @knowledge_run ? "knowledge" : "agent"
+      @chat_session ? "chat" : (@knowledge_run ? "knowledge" : "agent")
     end
 
     def token_usage_metadata
-      return {} unless @knowledge_run
+      return { operation_type: @knowledge_run.operation_type } if @knowledge_run
 
-      { operation_type: @knowledge_run.operation_type }
+      {}
     end
   end
 end
