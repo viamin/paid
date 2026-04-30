@@ -61,6 +61,31 @@ RSpec.describe HandleExceptionJob do
       expect(captured_exception).to be_a(RuntimeError)
     end
 
+    it "falls back to RuntimeError when exception class requires extra arguments" do
+      stub_const("StrictError", Class.new(StandardError) do
+        def initialize(provider:)
+          super("provider #{provider} expired")
+        end
+      end)
+
+      captured_exception = nil
+      allow(ExceptionHandler::Handle).to receive(:call) { |exception:, **|
+        captured_exception = exception
+        ExceptionHandler::Handle::Result.new(success: true, action: "logged")
+      }
+
+      described_class.perform_now(
+        account_id: account.id,
+        exception_class: "StrictError",
+        exception_message: "provider expired",
+        exception_backtrace: [ "/app/baz.rb:10" ]
+      )
+
+      expect(captured_exception).to be_a(RuntimeError)
+      expect(captured_exception.message).to eq("[StrictError] provider expired")
+      expect(captured_exception.backtrace).to eq([ "/app/baz.rb:10" ])
+    end
+
     it "discards on missing account" do
       expect {
         described_class.perform_now(

@@ -21,7 +21,11 @@ class HandleExceptionJob < ApplicationJob
 
   def reconstruct_exception(klass_name, message, backtrace)
     klass = klass_name.safe_constantize || RuntimeError
-    exception = klass.new(message)
+    exception = begin
+      klass.new(message)
+    rescue ArgumentError
+      RuntimeError.new("[#{klass_name}] #{message}")
+    end
     exception.set_backtrace(Array(backtrace))
     exception
   end
