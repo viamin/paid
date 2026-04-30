@@ -1893,6 +1893,24 @@ RSpec.describe Activities::RunAgentActivity do
 
         activity.execute(agent_run_id: agent_run.id)
       end
+
+      it "falls back to the container heartbeat path for volume-backed workspaces" do
+        agent_run.update!(worktree_path: nil)
+        project.update!(max_execution_seconds: 86_400)
+        allow(container_service).to receive_messages(execute: exec_success, heartbeat_host_path: nil)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(
+            timeout: AGENT_TIMEOUT_DEFAULT,
+            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
+            heartbeat_path: Containers::HeartbeatSetup::CONTAINER_HEARTBEAT_PATH
+          )
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
     end
 
     context "with fallback enabled" do
