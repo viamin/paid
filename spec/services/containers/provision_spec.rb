@@ -2467,7 +2467,7 @@ RSpec.describe Containers::Provision do
         result = service.execute(
           "working_silently",
           timeout: 10,
-          idle_timeout: 1.1,
+          idle_timeout: 0.2,
           heartbeat_path: heartbeat_path
         )
         expect(result).to be_success
