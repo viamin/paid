@@ -54,12 +54,12 @@ RSpec.describe GithubTokenHealthCheckJob do
         expect(token.reload.validation_error).to be_nil
       end
 
-      it "does not auto-resume projects when the token was not previously failed" do
+      it "always calls auto-resume after successful validation" do
         allow(GithubTokens::AutoResumeProjects).to receive(:call)
 
         described_class.perform_now
 
-        expect(GithubTokens::AutoResumeProjects).not_to have_received(:call)
+        expect(GithubTokens::AutoResumeProjects).to have_received(:call).with(github_token: token)
       end
     end
 

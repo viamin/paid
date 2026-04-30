@@ -64,12 +64,11 @@ class GithubTokenHealthCheckJob < ApplicationJob
   end
 
   def check_token(token)
-    was_already_failed = token.validation_failed?
     token.mark_validating!
 
     result = token.validate_with_github!
     token.mark_validated!
-    GithubTokens::AutoResumeProjects.call(github_token: token) if was_already_failed
+    GithubTokens::AutoResumeProjects.call(github_token: token)
 
     Rails.logger.info(
       message: "github_token.health_check.token_valid",

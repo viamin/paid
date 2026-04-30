@@ -33,12 +33,12 @@ RSpec.describe GithubTokenValidationJob do
         expect(github_token.reload.validation_error).to be_nil
       end
 
-      it "does not auto-resume projects when the token was not previously failed" do
+      it "always calls auto-resume after successful validation" do
         allow(GithubTokens::AutoResumeProjects).to receive(:call)
 
         described_class.perform_now(github_token.id)
 
-        expect(GithubTokens::AutoResumeProjects).not_to have_received(:call)
+        expect(GithubTokens::AutoResumeProjects).to have_received(:call).with(github_token: github_token)
       end
     end
 
@@ -94,13 +94,14 @@ RSpec.describe GithubTokenValidationJob do
         expect(project.reload.scheduler_pause_reason).to include("failed validation")
       end
 
-      it "does not auto-pause when token was already in failed state" do
+      it "auto-pauses projects even when token was already in failed state" do
         github_token.update!(validation_status: "failed", validation_error: "old error")
         project = create(:project, account: account, github_token: github_token)
 
         described_class.perform_now(github_token.id)
 
-        expect(project.reload.scheduler_paused_at).to be_nil
+        expect(project.reload.scheduler_paused_at).to be_present
+        expect(project.reload.scheduler_pause_reason).to include("failed validation")
       end
     end
 
