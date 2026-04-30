@@ -2,6 +2,12 @@
 
 class AgentRun < ApplicationRecord
   MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500
+  PROVIDER_ATTEMPT_SECRET_PATTERNS = [
+    [ /\bsk-[A-Za-z0-9][A-Za-z0-9_-]{10,}\b/, "[REDACTED:api_key]" ],
+    [ /\b(?:ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[oushr]_[A-Za-z0-9]{36,})\b/, "[REDACTED:github_token]" ],
+    [ %r{x-access-token:[^@/\s]+@github\.com}, "x-access-token:[REDACTED]@github.com" ],
+    [ /(Bearer\s)[A-Za-z0-9\-._~+\/]+=*/i, "\\1[REDACTED]" ]
+  ].freeze
   STATUSES = %w[queued pending running paused completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
@@ -1409,7 +1415,14 @@ class AgentRun < ApplicationRecord
 
     normalized = normalize_log_content(message)
     redacted = Knowledge::Redaction::Redactor.call(text: normalized).clean_text
+    redacted = redact_provider_attempt_secrets(redacted)
     redacted.truncate(MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH)
+  end
+
+  def redact_provider_attempt_secrets(text)
+    PROVIDER_ATTEMPT_SECRET_PATTERNS.reduce(text) do |result, (pattern, replacement)|
+      result.gsub(pattern, replacement)
+    end
   end
 
   def logs_text(log_type:, limit:)
