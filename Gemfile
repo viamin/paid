@@ -105,6 +105,7 @@ group :test do
   gem "capybara"
   gem "cuprite"
   gem "fixture_kit"
+  gem "rspec-github", "~> 3.0", require: false
   gem "test-prof"
   gem "webmock"
 end

@@ -38,12 +38,22 @@ module ChatSessions
     end
 
     def compute_totals
-      chat_session.metadata ||= {}
-      chat_session.metadata["total_tokens_input"] = chat_session.total_tokens_input
-      chat_session.metadata["total_tokens_output"] = chat_session.total_tokens_output
-      chat_session.metadata["total_cost_cents"] = chat_session.estimated_cost_cents
-      chat_session.metadata["total_messages"] = chat_session.messages.count
-      chat_session.metadata["closed_at"] = Time.current.iso8601
+      totals = TenantContext.with_system_access do
+        [
+          TokenUsage.where(chat_session_id: chat_session.id).sum(:input_tokens),
+          TokenUsage.where(chat_session_id: chat_session.id).sum(:output_tokens),
+          TokenUsage.where(chat_session_id: chat_session.id).sum(:cost_cents),
+          ChatMessage.where(chat_session_id: chat_session.id).count
+        ]
+      end
+
+      chat_session.metadata = (chat_session.metadata || {}).merge(
+        "total_tokens_input" => totals[0],
+        "total_tokens_output" => totals[1],
+        "total_cost_cents" => totals[2],
+        "total_messages" => totals[3],
+        "closed_at" => Time.current.iso8601
+      )
     end
 
     def transition_to_closed

@@ -404,6 +404,7 @@ RSpec.describe "Projects" do
           }
           expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include("must belong to the same account")
+          expect(GithubClient).not_to have_received(:new)
         end
       end
     end
