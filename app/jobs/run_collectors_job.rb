@@ -37,7 +37,7 @@ class RunCollectorsJob < ApplicationJob
     update_knowledge_status(project, result)
   rescue ActiveRecord::RecordNotFound
     raise # Re-raise so discard_on can handle it above the StandardError rescue
-  rescue StandardError
+  rescue StandardError => e
     begin
       project&.update(knowledge_status: "failed") unless project&.knowledge_status == "failed"
     rescue StandardError => update_error
@@ -47,6 +47,7 @@ class RunCollectorsJob < ApplicationJob
         error: update_error.message
       )
     end
+    report_exception(e, project)
     raise
   end
 
@@ -72,5 +73,19 @@ class RunCollectorsJob < ApplicationJob
   rescue StandardError => e
     Rails.logger.error(message: "knowledge.status_update_failed", project_id: project.id, error: e.message)
     raise
+  end
+
+  def report_exception(exception, project)
+    return unless project&.account
+
+    HandleExceptionJob.perform_later(
+      account_id: project.account_id,
+      exception_class: exception.class.name,
+      exception_message: exception.message,
+      exception_backtrace: exception.backtrace&.first(20),
+      context: { subsystem: "knowledge", project_id: project.id }
+    )
+  rescue StandardError => e
+    Rails.logger.warn(message: "knowledge.exception_report_failed", error: e.message)
   end
 end
