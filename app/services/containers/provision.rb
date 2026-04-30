@@ -3,6 +3,7 @@
 require "base64"
 require "digest"
 require "docker-api"
+require "json"
 require "securerandom"
 require "shellwords"
 
@@ -238,6 +239,33 @@ module Containers
       network_contract.network
     end
 
+    private def abort_pattern_candidates(stream_type, normalized_chunk, stdout_buffer:)
+      return [ normalized_chunk ] unless stream_type == :stdout
+
+      combined = stdout_buffer << normalized_chunk.to_s
+      lines = combined.lines(chomp: true)
+      complete_lines = combined.end_with?("\n") ? lines : lines[0...-1]
+      stdout_buffer.replace(combined.end_with?("\n") ? "" : lines.last.to_s)
+
+      candidates = complete_lines.reject { |line| structured_jsonl_line?(line) }
+      if stdout_buffer.present? && !stdout_buffer.lstrip.start_with?("{")
+        candidates << stdout_buffer.dup
+        stdout_buffer.clear
+      end
+
+      candidates
+    end
+
+    private def structured_jsonl_line?(line)
+      stripped = line.to_s.strip
+      return false if stripped.blank?
+
+      parsed = JSON.parse(stripped)
+      parsed.is_a?(Hash) && parsed["type"].present?
+    rescue JSON::ParserError, TypeError
+      false
+    end
+
     private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil)
       timeout ||= options[:timeout_seconds]
       cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
@@ -265,6 +293,7 @@ module Containers
       timeout_reason = nil # :startup, :idle, or :wall_clock, set by watchdog
       timeout_reason_ref = -> { timeout_reason }
       abort_matched_output = nil # set when an abort_pattern matches stderr
+      stdout_abort_buffer = +""
       watchdog = nil
 
       timeout_check = TimeoutCheckState.new(
@@ -316,17 +345,19 @@ module Containers
           # immediately rather than waiting for the idle/wall-clock timeout.
           # JSON-mode CLIs (e.g. Codex --json) may emit fatal errors on stdout.
           if abort_patterns&.any? && abort_matched_output.nil?
-            matched = abort_patterns.any? { |pat| normalized_chunk.match?(pat) }
-            if matched
-              abort_matched_output = normalized_chunk
+            abort_pattern_candidates(stream_type, normalized_chunk, stdout_buffer: stdout_abort_buffer).each do |candidate|
+              next unless abort_patterns.any? { |pat| candidate.match?(pat) }
+
+              abort_matched_output = candidate
               log_system("container.execute.abort_pattern_matched",
                 stream: stream_type.to_s,
-                output: normalized_chunk.truncate(200))
+                output: candidate.truncate(200))
               begin
                 container.stop(timeout: 0)
               rescue Docker::Error::DockerError => e
                 log_system("container.execute.abort_stop_failed", error: e.message)
               end
+              break
             end
           end
         end

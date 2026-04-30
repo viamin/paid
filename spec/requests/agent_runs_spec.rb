@@ -599,6 +599,51 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Provider Switches")
       end
 
+      it "shows provider attempt error details in the fallback panel" do
+        owner = project.effective_owner
+        initial_provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+        fallback_provider = create_opencode_fallback_provider(user: owner, name: "Kimi K2", model: "moonshotai/kimi-k2-0905")
+        agent_run = create(
+          :agent_run,
+          :failed,
+          project: project,
+          agent_type: "claude_code",
+          provider: initial_provider,
+          provider_switches: 1,
+          providers_attempted: [
+            provider_attempt(initial_provider.routing_key, "rate_limited", "Skipped due to cached rate limit until 2026-04-30T05:59:15Z"),
+            provider_attempt(fallback_provider.routing_key, "error", "Configuration is invalid at /home/agent/.config/opencode/opencode.json")
+          ]
+        )
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Skipped due to cached rate limit until 2026-04-30T05:59:15Z")
+        expect(response.body).to include("Configuration is invalid at /home/agent/.config/opencode/opencode.json")
+      end
+
+      it "shows provider attempts even when no fallback switch occurred" do
+        owner = project.effective_owner
+        initial_provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+        agent_run = create(
+          :agent_run,
+          :failed,
+          project: project,
+          agent_type: "claude_code",
+          provider: initial_provider,
+          provider_switches: 0,
+          providers_attempted: [
+            provider_attempt(initial_provider.routing_key, "rate_limited", "Skipped due to cached rate limit until 2026-04-30T05:59:15Z")
+          ]
+        )
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Provider Attempts")
+        expect(response.body).to include("1 attempt")
+        expect(response.body).to include("Skipped due to cached rate limit until 2026-04-30T05:59:15Z")
+      end
+
       it "shows auth type in provider section when provider record exists" do
         owner = project.effective_owner
         provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
@@ -2089,6 +2134,20 @@ RSpec.describe "AgentRuns" do
       config: { "opencode" => { "api_provider" => "openrouter", "model" => model } },
       **attrs
     )
+  end
+
+  def create_opencode_fallback_provider(user:, name:, model:)
+    api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+    create_opencode_provider_entry(user: user, api_key: api_key, name: name, model: model)
+  end
+
+  def provider_attempt(provider, error_type, error_message)
+    {
+      "provider" => provider,
+      "success" => false,
+      "error_type" => error_type,
+      "error_message" => error_message
+    }
   end
 
   describe "POST /projects/:project_id/agent_runs/:id/diagnose_error" do

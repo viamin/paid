@@ -1796,6 +1796,56 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "when stdout is structured JSONL that embeds abort-like text" do
+      let(:abort_patterns) { [ /free tier limit reached/i ] }
+      let(:jsonl_chunk) do
+        {
+          "type" => "item.completed",
+          "item" => {
+            "id" => "item_1",
+            "type" => "command_execution",
+            "aggregated_output" => "spec text: Free tier limit reached. Please upgrade to a paid plan."
+          }
+        }.to_json + "\n"
+      end
+
+      before do
+        allow(mock_container).to receive(:stop)
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, jsonl_chunk) if block
+          [ [ jsonl_chunk ], [], 0 ]
+        end
+      end
+
+      it "does not raise OutputAbortError" do
+        result = service.execute("codex exec --json", abort_patterns: abort_patterns)
+
+        expect(result.success?).to be true
+      end
+
+      it "does not stop the container" do
+        service.execute("codex exec --json", abort_patterns: abort_patterns)
+
+        expect(mock_container).not_to have_received(:stop)
+      end
+
+      it "does not abort when a JSONL line is split across stdout chunks" do
+        partial_start = "{\"type\":\"item.completed\",\"item\":{\"aggregated_output\":\"Free tier "
+        partial_end = "limit reached. Please upgrade to a paid plan.\"}}\n"
+
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, partial_start) if block
+          block.call(:stdout, partial_end) if block
+          [ [ partial_start, partial_end ], [], 0 ]
+        end
+
+        result = service.execute("codex exec --json", abort_patterns: abort_patterns)
+
+        expect(result.success?).to be true
+        expect(mock_container).not_to have_received(:stop)
+      end
+    end
+
     context "when container is not provisioned" do
       let(:unprovisioned_service) { described_class.new(agent_run: agent_run, worktree_path: worktree_path) }
 

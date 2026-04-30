@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
+  MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500
   STATUSES = %w[queued pending running paused completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
@@ -1225,13 +1226,15 @@ class AgentRun < ApplicationRecord
   # @param provider [String] The provider name
   # @param success [Boolean] Whether the attempt succeeded
   # @param error_type [String, nil] Type of error if failed (e.g., "rate_limited", "error")
-  def record_provider_attempt(provider, success:, error_type: nil, duration_seconds: nil)
+  def record_provider_attempt(provider, success:, error_type: nil, error_message: nil, duration_seconds: nil)
     attempt = {
       "provider" => provider,
       "success" => success,
       "attempted_at" => Time.current.iso8601
     }
     attempt["error_type"] = error_type if error_type.present?
+    sanitized_error_message = sanitize_provider_attempt_error_message(error_message)
+    attempt["error_message"] = sanitized_error_message if sanitized_error_message.present?
     attempt["duration_seconds"] = duration_seconds if duration_seconds.present?
 
     self.providers_attempted = (providers_attempted || []) + [ attempt ]
@@ -1401,6 +1404,14 @@ class AgentRun < ApplicationRecord
     return text.delete("\x00") if text.encoding == Encoding::UTF_8 && text.valid_encoding?
 
     text.dup.force_encoding(Encoding::UTF_8).scrub.delete("\x00")
+  end
+
+  def sanitize_provider_attempt_error_message(message)
+    return nil if message.blank?
+
+    normalized = normalize_log_content(message)
+    redacted = Knowledge::Redaction::Redactor.call(text: normalized).clean_text
+    redacted.truncate(MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH)
   end
 
   def logs_text(log_type:, limit:)

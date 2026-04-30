@@ -163,7 +163,17 @@ module Activities
             state = provider_states[provider_state_name]
             error_type = state&.rate_limited? ? "rate_limited" : "unavailable"
             skipped_rate_limited_count += 1 if error_type == "rate_limited"
-            agent_run.record_provider_attempt(attempt_label, success: false, error_type: error_type)
+            error_message = if error_type == "rate_limited" && state&.rate_limited_until.present?
+              "Skipped due to cached rate limit until #{state.rate_limited_until.iso8601}"
+            elsif error_type == "unavailable" && state&.circuit_open?
+              "Skipped because provider circuit is open"
+            end
+            agent_run.record_provider_attempt(
+              attempt_label,
+              success: false,
+              error_type: error_type,
+              error_message: error_message
+            )
             index += 1
             next
           end
@@ -233,7 +243,13 @@ module Activities
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             rate_limit_reset_at = [ rate_limit_reset_at, e.reset_at ].compact.min
             persist_rate_limit(user_settings, provider_state_name, provider_states, e.reset_at)
-            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "rate_limited", duration_seconds: attempt_duration)
+            agent_run.record_provider_attempt(
+              attempt_label,
+              success: false,
+              error_type: "rate_limited",
+              error_message: e.message,
+              duration_seconds: attempt_duration
+            )
             logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id, duration_seconds: attempt_duration)
             insert_rate_limit_fallbacks!(
               providers: providers,
@@ -250,7 +266,13 @@ module Activities
               break
             end
             record_provider_failure(user_settings, provider_state_name, provider_states)
-            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "infinite_loop", duration_seconds: attempt_duration)
+            agent_run.record_provider_attempt(
+              attempt_label,
+              success: false,
+              error_type: "infinite_loop",
+              error_message: e.message,
+              duration_seconds: attempt_duration
+            )
             logger.warn(message: "agent_execution.infinite_loop_detected", agent_run_id: agent_run.id, reason: e.message, duration_seconds: attempt_duration)
 
             result = Guardrails::ViolationHandler.call(
@@ -277,7 +299,13 @@ module Activities
               break
             end
             record_provider_failure(user_settings, provider_state_name, provider_states)
-            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "timeout", duration_seconds: attempt_duration)
+            agent_run.record_provider_attempt(
+              attempt_label,
+              success: false,
+              error_type: "timeout",
+              error_message: e.message,
+              duration_seconds: attempt_duration
+            )
             logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
             break
           rescue ProviderAuthExpiredError => e
@@ -285,7 +313,13 @@ module Activities
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             auth_provider = ProviderSupport.harness_provider_key_for(e.provider)
             agent_run.auth_expire!(error: e.message, provider: auth_provider)
-            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "auth_expired", duration_seconds: attempt_duration)
+            agent_run.record_provider_attempt(
+              attempt_label,
+              success: false,
+              error_type: "auth_expired",
+              error_message: e.message,
+              duration_seconds: attempt_duration
+            )
             logger.warn(message: "agent_execution.auth_expired", provider: provider, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
             break
           rescue ProviderExecutionError => e
@@ -296,7 +330,13 @@ module Activities
               break
             end
             record_provider_failure(user_settings, provider_state_name, provider_states)
-            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "error", duration_seconds: attempt_duration)
+            agent_run.record_provider_attempt(
+              attempt_label,
+              success: false,
+              error_type: "error",
+              error_message: e.message,
+              duration_seconds: attempt_duration
+            )
             logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
 
             if container_dead_after_exec_error?(agent_run, e)
