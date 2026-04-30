@@ -1886,6 +1886,22 @@ RSpec.describe Containers::Provision do
 
         expect(mock_container).to have_received(:stop).with(timeout: 0)
       end
+
+      it "falls back to raw stdout matching for malformed brace-prefixed fatal output" do
+        malformed_error = "{Error: Free tier limit reached. Please upgrade to a paid plan."
+
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, malformed_error) if block
+          [ [ malformed_error ], [], 1 ]
+        end
+
+        expect { service.execute("codex exec --json", abort_patterns: abort_patterns) }
+          .to raise_error(described_class::OutputAbortError) { |e|
+            expect(e.matched_output).to include("Free tier limit reached")
+          }
+
+        expect(mock_container).to have_received(:stop).with(timeout: 0)
+      end
     end
 
     context "when container is not provisioned" do

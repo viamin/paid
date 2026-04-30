@@ -260,6 +260,8 @@ module Containers
             candidate = structured_jsonl_abort_candidate(stdout_buffer)
             candidates << candidate if candidate.present?
             stdout_buffer.clear
+          elsif !buffered_structured_json_transcript?(stdout_buffer)
+            candidates << stdout_buffer.dup
           end
         else
           candidates << stdout_buffer.dup
@@ -297,6 +299,13 @@ module Containers
       parsed
     rescue JSON::ParserError, TypeError
       nil
+    end
+
+    private def buffered_structured_json_transcript?(text)
+      type = text.to_s.match(/"type"\s*:\s*"([^"]*)/)&.captures&.first
+      return false if type.blank?
+
+      !type.match?(/(?:^|[._-])(error|failed|failure|rate_limit|rate_limited)(?:$|[._-])/i)
     end
 
     private def structured_jsonl_failure_text(payload)
