@@ -31,6 +31,16 @@ RSpec.describe ExceptionHandler::Classifier do
       expect(result.action).to eq("issue_filed")
     end
 
+    it "classifies PG subclasses as P1 via ancestry" do
+      error = PG::ConnectionBad.new("could not connect")
+
+      result = described_class.call(exception: error, subsystem: "knowledge")
+
+      expect(result.severity).to eq("p1")
+      expect(result.action).to eq("issue_filed")
+      expect(result.reason).to eq("database connection failure")
+    end
+
     it "does not classify DB pool exhaustion as transient" do
       error = ActiveRecord::ConnectionTimeoutError.new("could not obtain a connection from the pool")
 

@@ -19,7 +19,8 @@ module ExceptionHandler
     P1_PATTERNS = [
       { class_pattern: /ActiveRecord::StatementInvalid/i, reason: "database statement error" },
       { message_pattern: /migration|schema/i, reason: "database schema issue" },
-      { class_pattern: /PG::Error|ActiveRecord::ConnectionNotEstablished|ActiveRecord::ConnectionTimeoutError/i, reason: "database connection failure" },
+      { base_class: "PG::Error", reason: "database connection failure" },
+      { base_class: "ActiveRecord::ConnectionNotEstablished", reason: "database connection failure" },
       { message_pattern: /data.?(?:loss|corrupt)/i, reason: "potential data integrity issue" }
     ].freeze
 
@@ -77,6 +78,11 @@ module ExceptionHandler
     end
 
     def matches?(pattern)
+      if pattern[:base_class]
+        return false unless ancestor_match?(pattern[:base_class])
+        return true unless pattern[:class_pattern] || pattern[:message_pattern]
+      end
+
       class_matches = pattern[:class_pattern].nil? ||
         @exception.class.name.match?(pattern[:class_pattern])
       message_matches = pattern[:message_pattern].nil? ||
@@ -89,6 +95,13 @@ module ExceptionHandler
       else
         message_matches
       end
+    end
+
+    def ancestor_match?(base_class_name)
+      klass = base_class_name.safe_constantize
+      return false unless klass
+
+      @exception.is_a?(klass)
     end
   end
 end
