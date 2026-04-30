@@ -1243,6 +1243,54 @@ ALTER SEQUENCE public.decision_records_id_seq OWNED BY public.decision_records.i
 
 
 --
+-- Name: exception_incidents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.exception_incidents (
+    id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    project_id bigint,
+    fingerprint character varying NOT NULL,
+    exception_class character varying NOT NULL,
+    message text NOT NULL,
+    backtrace text,
+    subsystem character varying NOT NULL,
+    severity character varying DEFAULT 'p2'::character varying NOT NULL,
+    action_taken character varying DEFAULT 'logged'::character varying NOT NULL,
+    status character varying DEFAULT 'open'::character varying NOT NULL,
+    github_issue_url character varying,
+    github_issue_number integer,
+    occurrence_count integer DEFAULT 1 NOT NULL,
+    context jsonb DEFAULT '{}'::jsonb NOT NULL,
+    last_occurred_at timestamp(6) without time zone NOT NULL,
+    resolved_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.exception_incidents FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: exception_incidents_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.exception_incidents_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: exception_incidents_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.exception_incidents_id_seq OWNED BY public.exception_incidents.id;
+
+
+--
 -- Name: flipper_features; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1957,7 +2005,7 @@ CREATE TABLE public.llm_models (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     tier character varying(10),
-    CONSTRAINT llm_models_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[]))))
+    CONSTRAINT llm_models_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text]))))
 );
 
 
@@ -2084,8 +2132,8 @@ CREATE TABLE public.model_selections (
     tier character varying(10),
     escalated_from_tier character varying(10),
     escalated_reason character varying(255),
-    CONSTRAINT model_selections_escalated_from_tier_check CHECK (((escalated_from_tier IS NULL) OR ((escalated_from_tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[])))),
-    CONSTRAINT model_selections_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[]))))
+    CONSTRAINT model_selections_escalated_from_tier_check CHECK (((escalated_from_tier IS NULL) OR ((escalated_from_tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text])))),
+    CONSTRAINT model_selections_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text]))))
 );
 
 ALTER TABLE ONLY public.model_selections FORCE ROW LEVEL SECURITY;
@@ -3233,7 +3281,7 @@ CREATE TABLE public.token_usages (
     updated_at timestamp(6) without time zone NOT NULL,
     knowledge_run_id bigint,
     chat_session_id bigint,
-    CONSTRAINT token_usages_exactly_one_run CHECK ((((agent_run_id IS NOT NULL)::integer + (knowledge_run_id IS NOT NULL)::integer + (chat_session_id IS NOT NULL)::integer) = 1))
+    CONSTRAINT token_usages_exactly_one_run CHECK ((((((agent_run_id IS NOT NULL))::integer + ((knowledge_run_id IS NOT NULL))::integer) + ((chat_session_id IS NOT NULL))::integer) = 1))
 );
 
 ALTER TABLE ONLY public.token_usages FORCE ROW LEVEL SECURITY;
@@ -3354,7 +3402,7 @@ CREATE TABLE public.user_settings (
     fair_queue_across_projects boolean DEFAULT true NOT NULL,
     CONSTRAINT chk_max_issues_per_page_bounds CHECK (((max_issues_per_page >= 5) AND (max_issues_per_page <= 200))),
     CONSTRAINT chk_max_prs_per_page_bounds CHECK (((max_prs_per_page >= 5) AND (max_prs_per_page <= 200))),
-    CONSTRAINT chk_provider_selection_mode CHECK (((provider_selection_mode)::text = ANY ((ARRAY['single'::character varying, 'round_robin'::character varying, 'random'::character varying])::text[])))
+    CONSTRAINT chk_provider_selection_mode CHECK (((provider_selection_mode)::text = ANY (ARRAY[('single'::character varying)::text, ('round_robin'::character varying)::text, ('random'::character varying)::text])))
 );
 
 ALTER TABLE ONLY public.user_settings FORCE ROW LEVEL SECURITY;
@@ -3695,6 +3743,13 @@ ALTER TABLE ONLY public.decision_record_links ALTER COLUMN id SET DEFAULT nextva
 --
 
 ALTER TABLE ONLY public.decision_records ALTER COLUMN id SET DEFAULT nextval('public.decision_records_id_seq'::regclass);
+
+
+--
+-- Name: exception_incidents id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exception_incidents ALTER COLUMN id SET DEFAULT nextval('public.exception_incidents_id_seq'::regclass);
 
 
 --
@@ -4280,6 +4335,14 @@ ALTER TABLE ONLY public.decision_records
 
 
 --
+-- Name: exception_incidents exception_incidents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exception_incidents
+    ADD CONSTRAINT exception_incidents_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: flipper_features flipper_features_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4753,14 +4816,14 @@ CREATE INDEX idx_agent_runs_project_status_created_at_desc ON public.agent_runs 
 -- Name: idx_agent_runs_unique_active_issue; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_agent_runs_unique_active_issue ON public.agent_runs USING btree (project_id, issue_id, goal) WHERE ((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])));
+CREATE UNIQUE INDEX idx_agent_runs_unique_active_issue ON public.agent_runs USING btree (project_id, issue_id, goal) WHERE ((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])));
 
 
 --
 -- Name: idx_agent_runs_unique_active_pr; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_agent_runs_unique_active_pr ON public.agent_runs USING btree (project_id, source_pull_request_number, goal) WHERE ((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])));
+CREATE UNIQUE INDEX idx_agent_runs_unique_active_pr ON public.agent_runs USING btree (project_id, source_pull_request_number, goal) WHERE ((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])));
 
 
 --
@@ -5867,6 +5930,41 @@ CREATE INDEX index_decision_records_on_superseded_by_id ON public.decision_recor
 --
 
 CREATE INDEX index_decision_records_on_tags ON public.decision_records USING gin (tags);
+
+
+--
+-- Name: index_exception_incidents_on_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_exception_incidents_on_dedup ON public.exception_incidents USING btree (account_id, fingerprint);
+
+
+--
+-- Name: index_exception_incidents_on_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_exception_incidents_on_project ON public.exception_incidents USING btree (project_id);
+
+
+--
+-- Name: index_exception_incidents_on_severity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_exception_incidents_on_severity ON public.exception_incidents USING btree (severity);
+
+
+--
+-- Name: index_exception_incidents_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_exception_incidents_on_status ON public.exception_incidents USING btree (account_id, status);
+
+
+--
+-- Name: index_exception_incidents_on_subsystem; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_exception_incidents_on_subsystem ON public.exception_incidents USING btree (account_id, subsystem);
 
 
 --
@@ -7235,6 +7333,13 @@ CREATE INDEX index_token_usages_on_agent_run_id_and_request_type ON public.token
 
 
 --
+-- Name: index_token_usages_on_chat_session_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_token_usages_on_chat_session_id ON public.token_usages USING btree (chat_session_id);
+
+
+--
 -- Name: index_token_usages_on_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7246,13 +7351,6 @@ CREATE INDEX index_token_usages_on_created_at ON public.token_usages USING btree
 --
 
 CREATE INDEX index_token_usages_on_knowledge_run_id ON public.token_usages USING btree (knowledge_run_id);
-
-
---
--- Name: index_token_usages_on_chat_session_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_token_usages_on_chat_session_id ON public.token_usages USING btree (chat_session_id);
 
 
 --
@@ -7602,14 +7700,6 @@ ALTER TABLE ONLY public.configuration_experiments
 
 ALTER TABLE ONLY public.token_usages
     ADD CONSTRAINT fk_rails_2e5496eeab FOREIGN KEY (knowledge_run_id) REFERENCES public.knowledge_runs(id) ON DELETE CASCADE;
-
-
---
--- Name: token_usages fk_rails_chat_session_id; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.token_usages
-    ADD CONSTRAINT fk_rails_chat_session_id FOREIGN KEY (chat_session_id) REFERENCES public.chat_sessions(id) ON DELETE CASCADE;
 
 
 --
@@ -8093,6 +8183,14 @@ ALTER TABLE ONLY public.quality_metrics
 
 
 --
+-- Name: exception_incidents fk_rails_ae66d2c5ca; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exception_incidents
+    ADD CONSTRAINT fk_rails_ae66d2c5ca FOREIGN KEY (project_id) REFERENCES public.projects(id);
+
+
+--
 -- Name: context_intake_sessions fk_rails_ae8a55b482; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8269,6 +8367,14 @@ ALTER TABLE ONLY public.agent_run_logs
 
 
 --
+-- Name: token_usages fk_rails_chat_session_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.token_usages
+    ADD CONSTRAINT fk_rails_chat_session_id FOREIGN KEY (chat_session_id) REFERENCES public.chat_sessions(id) ON DELETE CASCADE;
+
+
+--
 -- Name: knowledge_recommendations fk_rails_d08a6763c1; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8354,6 +8460,14 @@ ALTER TABLE ONLY public.quality_thresholds
 
 ALTER TABLE ONLY public.issue_dependencies
     ADD CONSTRAINT fk_rails_dd269fd4f1 FOREIGN KEY (depends_on_issue_id) REFERENCES public.issues(id) ON DELETE CASCADE;
+
+
+--
+-- Name: exception_incidents fk_rails_dfbab0a98f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exception_incidents
+    ADD CONSTRAINT fk_rails_dfbab0a98f FOREIGN KEY (account_id) REFERENCES public.accounts(id);
 
 
 --
@@ -8657,6 +8771,12 @@ ALTER TABLE public.decision_record_links ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.decision_records ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: exception_incidents; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.exception_incidents ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: github_tokens; Type: ROW SECURITY; Schema: public; Owner: -
@@ -9169,6 +9289,13 @@ CREATE POLICY tenant_isolation ON public.decision_records USING ((public.paid_te
 
 
 --
+-- Name: exception_incidents tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.exception_incidents USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+
+
+--
 -- Name: github_tokens tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -9616,17 +9743,13 @@ CREATE POLICY tenant_isolation ON public.token_usages USING ((public.paid_tenant
   WHERE ((agent_runs.id = token_usages.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((knowledge_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.knowledge_runs
      JOIN public.projects ON ((projects.id = knowledge_runs.project_id)))
-  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((chat_session_id IS NOT NULL) AND (EXISTS ( SELECT 1
-   FROM public.chat_sessions
-  WHERE ((chat_sessions.id = token_usages.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR (((agent_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
+  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR (((agent_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.agent_runs
      JOIN public.projects ON ((projects.id = agent_runs.project_id)))
   WHERE ((agent_runs.id = token_usages.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((knowledge_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.knowledge_runs
      JOIN public.projects ON ((projects.id = knowledge_runs.project_id)))
-  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((chat_session_id IS NOT NULL) AND (EXISTS ( SELECT 1
-   FROM public.chat_sessions
-  WHERE ((chat_sessions.id = token_usages.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id()))))))));
+  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))))));
 
 
 --
@@ -10014,6 +10137,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260428140000'),
 ('20260428130904'),
 ('20260428120000'),
 ('20260428025840'),
