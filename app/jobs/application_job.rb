@@ -38,6 +38,11 @@ class ApplicationJob < ActiveJob::Base
       ServiceContainer.find_by(id: arguments.first)&.account
     when QdrantCollectionCleanupJob
       Account.find_by(id: arguments.second)
+    when HandleExceptionJob
+      hash = arguments.first
+      return unless hash.is_a?(Hash)
+
+      Account.find_by(id: hash[:account_id] || hash["account_id"])
     when AbTestAnalysisJob
       AbTest.includes(:prompt).find_by(id: arguments.first)&.prompt&.account
     else

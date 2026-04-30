@@ -9,6 +9,13 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+--
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
+--
+
+-- *not* creating schema, since initdb creates it
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -41,9 +48,9 @@ CREATE TABLE public.schema_migrations (
 CREATE TABLE public.solid_cable_messages (
     id bigint NOT NULL,
     channel bytea NOT NULL,
-    payload bytea NOT NULL,
+    channel_hash bigint NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    channel_hash bigint NOT NULL
+    payload bytea NOT NULL
 );
 
 
@@ -125,4 +132,6 @@ CREATE INDEX index_solid_cable_messages_on_created_at ON public.solid_cable_mess
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
-('20260301000001');
+('20260301000001'),
+('1');
+

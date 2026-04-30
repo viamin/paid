@@ -27,6 +27,15 @@ RSpec.describe ApplicationJob do
 
       expect(job.send(:tenant_account)).to eq(account)
     end
+
+    it "extracts account_id from serialized HandleExceptionJob arguments" do
+      account = instance_double(Account)
+      job = HandleExceptionJob.new("account_id" => 123, "exception_class" => "RuntimeError")
+
+      allow(Account).to receive(:find_by).with(id: 123).and_return(account)
+
+      expect(job.send(:tenant_account)).to eq(account)
+    end
   end
 
   describe "tenant context restoration" do
