@@ -247,7 +247,13 @@ module Containers
       complete_lines = combined.end_with?("\n") ? lines : lines[0...-1]
       stdout_buffer.replace(combined.end_with?("\n") ? "" : lines.last.to_s)
 
-      candidates = complete_lines.reject { |line| structured_jsonl_line?(line) }
+      candidates = complete_lines.filter_map do |line|
+        if structured_jsonl_line?(line)
+          structured_jsonl_abort_candidate(line)
+        else
+          line
+        end
+      end
       if stdout_buffer.present? && !stdout_buffer.lstrip.start_with?("{")
         candidates << stdout_buffer.dup
         stdout_buffer.clear
@@ -257,13 +263,44 @@ module Containers
     end
 
     private def structured_jsonl_line?(line)
+      structured_jsonl_payload(line).present?
+    end
+
+    private def structured_jsonl_abort_candidate(line)
+      payload = structured_jsonl_payload(line)
+      return nil unless payload
+
+      type = payload["type"].to_s
+      failure_text = structured_jsonl_failure_text(payload)
+      return nil if failure_text.blank?
+
+      return failure_text if type.match?(/(?:^|[._-])(error|failed|failure|rate_limit|rate_limited)(?:$|[._-])/i)
+
+      nil
+    end
+
+    private def structured_jsonl_payload(line)
       stripped = line.to_s.strip
-      return false if stripped.blank?
+      return nil if stripped.blank?
 
       parsed = JSON.parse(stripped)
-      parsed.is_a?(Hash) && parsed["type"].present?
+      return nil unless parsed.is_a?(Hash) && parsed["type"].present?
+
+      parsed
     rescue JSON::ParserError, TypeError
-      false
+      nil
+    end
+
+    private def structured_jsonl_failure_text(payload)
+      [
+        payload["message"],
+        payload.dig("error", "message"),
+        payload["output"],
+        payload["stderr"],
+        payload.dig("item", "output"),
+        payload.dig("item", "stderr"),
+        payload.dig("item", "message")
+      ].find(&:present?)
     end
 
     private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil)

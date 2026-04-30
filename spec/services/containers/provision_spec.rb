@@ -1844,6 +1844,27 @@ RSpec.describe Containers::Provision do
         expect(result.success?).to be true
         expect(mock_container).not_to have_received(:stop)
       end
+
+      it "still aborts on structured stdout failure events" do
+        structured_error = {
+          "type" => "response.failed",
+          "error" => {
+            "message" => "Error: Free tier limit reached. Please upgrade to a paid plan."
+          }
+        }.to_json + "\n"
+
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, structured_error) if block
+          [ [ structured_error ], [], 1 ]
+        end
+
+        expect { service.execute("codex exec --json", abort_patterns: abort_patterns) }
+          .to raise_error(described_class::OutputAbortError) { |e|
+            expect(e.matched_output).to include("Free tier limit reached")
+          }
+
+        expect(mock_container).to have_received(:stop).with(timeout: 0)
+      end
     end
 
     context "when container is not provisioned" do
