@@ -254,9 +254,17 @@ module Containers
           line
         end
       end
-      if stdout_buffer.present? && !stdout_buffer.lstrip.start_with?("{")
-        candidates << stdout_buffer.dup
-        stdout_buffer.clear
+      if stdout_buffer.present?
+        if stdout_buffer.lstrip.start_with?("{")
+          if structured_jsonl_line?(stdout_buffer)
+            candidate = structured_jsonl_abort_candidate(stdout_buffer)
+            candidates << candidate if candidate.present?
+            stdout_buffer.clear
+          end
+        else
+          candidates << stdout_buffer.dup
+          stdout_buffer.clear
+        end
       end
 
       candidates
