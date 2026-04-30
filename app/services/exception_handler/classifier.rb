@@ -9,18 +9,17 @@ module ExceptionHandler
     Classification = Data.define(:severity, :action, :reason)
 
     TRANSIENT_PATTERNS = [
-      { class_pattern: /Timeout|TimeoutError/i, reason: "transient timeout" },
+      { class_pattern: /Net::OpenTimeout|Net::ReadTimeout|Timeout::Error/i, reason: "transient network timeout" },
       { class_pattern: /ConnectionReset|ConnectionRefused|BrokenPipe/i, reason: "transient network error" },
       { message_pattern: /rate.?limit/i, reason: "rate limiting" },
       { message_pattern: /temporarily unavailable/i, reason: "service temporarily unavailable" },
-      { message_pattern: /connection timed out/i, reason: "connection timeout" },
-      { class_pattern: /Net::OpenTimeout|Net::ReadTimeout/i, reason: "network timeout" }
+      { message_pattern: /connection timed out/i, reason: "connection timeout" }
     ].freeze
 
     P1_PATTERNS = [
       { class_pattern: /ActiveRecord::StatementInvalid/i, reason: "database statement error" },
       { message_pattern: /migration|schema/i, reason: "database schema issue" },
-      { class_pattern: /PG::Error|ActiveRecord::ConnectionNotEstablished/i, reason: "database connection failure" },
+      { class_pattern: /PG::Error|ActiveRecord::ConnectionNotEstablished|ActiveRecord::ConnectionTimeoutError/i, reason: "database connection failure" },
       { message_pattern: /data.?(?:loss|corrupt)/i, reason: "potential data integrity issue" }
     ].freeze
 

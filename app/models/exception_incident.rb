@@ -38,6 +38,8 @@ class ExceptionIncident < ApplicationRecord
       merged = context.merge("latest_occurrence" => new_context)
       updates << sanitize_sql([ "context = ?::jsonb", merged.to_json ])
     end
+    updates << sanitize_sql([ "status = ?", "open" ])
+    updates << "resolved_at = NULL"
     self.class.where(id: id).update_all(updates.join(", "))
     reload
   end

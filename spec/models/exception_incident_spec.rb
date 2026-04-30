@@ -60,6 +60,15 @@ RSpec.describe ExceptionIncident do
         expect(incident.context).to include("latest_occurrence" => { "detail" => "retry" })
       end
     end
+
+    it "reopens resolved incidents on recurrence" do
+      incident = create(:exception_incident, :resolved, resolved_at: 1.day.ago)
+
+      incident.record_occurrence!
+
+      expect(incident).not_to be_resolved
+      expect(incident.resolved_at).to be_nil
+    end
   end
 
   describe "#resolved?" do

@@ -31,6 +31,15 @@ RSpec.describe ExceptionHandler::Classifier do
       expect(result.action).to eq("issue_filed")
     end
 
+    it "does not classify DB pool exhaustion as transient" do
+      error = ActiveRecord::ConnectionTimeoutError.new("could not obtain a connection from the pool")
+
+      result = described_class.call(exception: error, subsystem: "knowledge")
+
+      expect(result.action).to eq("issue_filed")
+      expect(result.severity).to eq("p1")
+    end
+
     it "classifies agent_runs subsystem errors as P1" do
       error = RuntimeError.new("agent execution failed")
 
