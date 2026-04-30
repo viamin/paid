@@ -801,12 +801,21 @@ module Activities
         .any? { |pattern| output.match?(pattern) }
     end
 
+    QUOTA_ERROR_MAX_OUTPUT_LENGTH = 500
+
     # Detects provider-level credit/quota exhaustion errors surfaced as
     # agent output. Used in the successful-exit-code path to catch cases
     # where a provider (e.g. OpenRouter) returns a billing error as the
     # only stdout content with exit code 0.
+    #
+    # Real billing/quota errors are short standalone messages. If the
+    # sanitized output exceeds QUOTA_ERROR_MAX_OUTPUT_LENGTH, the agent
+    # clearly produced substantial work and should not be misclassified
+    # as a quota error even if a pattern substring appears in structured
+    # output (e.g. JSONL streaming events containing rspec test names).
     def insufficient_credits_error?(output)
       return false if output.blank?
+      return false if output.length > QUOTA_ERROR_MAX_OUTPUT_LENGTH
 
       ProviderSupport.aggregated_error_classification_patterns(:quota)
         .any? { |pattern| output.match?(pattern) }
