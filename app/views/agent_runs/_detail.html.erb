@@ -497,17 +497,18 @@
     </div>
   <% end %>
 
-  <% if agent_run.provider_switches > 0 %>
+  <% provider_attempts = Array(agent_run.providers_attempted) %>
+  <% if provider_attempts.any? %>
     <% attempted_providers_by_routing_key = local_assigns.fetch(:attempted_providers_by_routing_key, {}) %>
     <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
       <div class="flex items-center justify-between">
-        <h2 class="text-sm font-semibold text-amber-800">Provider Fallback</h2>
+        <h2 class="text-sm font-semibold text-amber-800"><%= agent_run.provider_switches.positive? ? "Provider Fallback" : "Provider Attempts" %></h2>
         <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-          <%= pluralize(agent_run.provider_switches, "switch") %>
+          <%= agent_run.provider_switches.positive? ? pluralize(agent_run.provider_switches, "switch") : pluralize(provider_attempts.size, "attempt") %>
         </span>
       </div>
       <div class="mt-3 flex flex-wrap items-center gap-2">
-        <% agent_run.providers_attempted.each_with_index do |attempt, index| %>
+        <% provider_attempts.each_with_index do |attempt, index| %>
           <% if index > 0 %>
             <svg class="h-4 w-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
@@ -522,6 +523,18 @@
           </span>
         <% end %>
       </div>
+      <% attempt_failures = provider_attempts.filter { |attempt| !attempt["success"] && attempt["error_message"].present? } %>
+      <% if attempt_failures.any? %>
+        <div class="mt-3 space-y-2">
+          <% attempt_failures.each do |attempt| %>
+            <% attempt_provider = attempted_providers_by_routing_key[attempt["provider"]] %>
+            <div class="rounded-md border border-amber-200 bg-white/70 px-3 py-2">
+              <p class="text-xs font-medium text-amber-900"><%= provider_label.call(attempt["provider"], attempt_provider) %></p>
+              <p class="mt-1 text-xs text-amber-800"><%= truncate(redacted_error_message(attempt["error_message"]), length: 300) %></p>
+            </div>
+          <% end %>
+        </div>
+      <% end %>
       <% if agent_run.final_provider.present? %>
         <p class="mt-2 text-xs text-amber-700">
           <% final_prov = attempted_providers_by_routing_key[agent_run.final_provider] %>

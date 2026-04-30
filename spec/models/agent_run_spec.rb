@@ -2232,6 +2232,26 @@ RSpec.describe AgentRun do
       expect(attempt["error_type"]).to eq("rate_limited")
     end
 
+    it "records error_message for failed attempts" do
+      agent_run = create(:agent_run)
+      agent_run.record_provider_attempt("claude", success: false, error_type: "error", error_message: "Configuration is invalid")
+
+      attempt = agent_run.reload.providers_attempted.last
+      expect(attempt["error_message"]).to eq("Configuration is invalid")
+    end
+
+    it "redacts and truncates error_message for failed attempts" do
+      agent_run = create(:agent_run)
+      secret = "sk-test-super-secret-value"
+      long_message = "Error: #{secret} " + ("x" * 600)
+
+      agent_run.record_provider_attempt("claude", success: false, error_type: "error", error_message: long_message)
+
+      attempt = agent_run.reload.providers_attempted.last
+      expect(attempt["error_message"]).not_to include(secret)
+      expect(attempt["error_message"].length).to be <= AgentRun::MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH
+    end
+
     it "accumulates multiple attempts" do
       agent_run = create(:agent_run)
       agent_run.record_provider_attempt("claude", success: false, error_type: "rate_limited")
