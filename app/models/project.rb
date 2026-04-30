@@ -409,7 +409,20 @@ class Project < ApplicationRecord
       self, :project_updates,
       target: ActionView::RecordIdentifier.dom_id(self, :stats),
       partial: "projects/stats",
-      locals: { project: self }
+      locals: { project: self, budgets: cost_budgets.load }
+    )
+  end
+
+  def broadcast_cost_snapshot_update
+    budgets = cost_budgets.load
+    broadcast_replace_to(
+      self, :project_updates,
+      target: ActionView::RecordIdentifier.dom_id(self, :cost_snapshot),
+      partial: "projects/cost_snapshot",
+      locals: {
+        project: self,
+        summary: Projects::StatsSummary.call(project: self, budgets: budgets)
+      }
     )
   end
 

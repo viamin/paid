@@ -1631,6 +1631,10 @@ class AgentRun < ApplicationRecord
       project.broadcast_agent_runs_update
       project.broadcast_agent_runs_list_update
       project.broadcast_stats_update
+      project.broadcast_cost_snapshot_update
+      # Only broadcast issues updates when they can affect auto-pick eligibility
+      # or when the associated issue/agent type changes. This avoids redundant
+      # re-renders during intermediate status transitions (e.g., queued→pending→running).
       if issue_id.present?
         should_broadcast_issues = false
 
