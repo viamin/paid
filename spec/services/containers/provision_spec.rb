@@ -1796,6 +1796,146 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "when stdout is structured JSONL that embeds abort-like text" do
+      let(:abort_patterns) { [ /free tier limit reached/i ] }
+      let(:jsonl_chunk) do
+        {
+          "type" => "item.completed",
+          "item" => {
+            "id" => "item_1",
+            "type" => "command_execution",
+            "aggregated_output" => "spec text: Free tier limit reached. Please upgrade to a paid plan."
+          }
+        }.to_json + "\n"
+      end
+
+      before do
+        allow(mock_container).to receive(:stop)
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, jsonl_chunk) if block
+          [ [ jsonl_chunk ], [], 0 ]
+        end
+      end
+
+      it "does not raise OutputAbortError" do
+        result = service.execute("codex exec --json", abort_patterns: abort_patterns)
+
+        expect(result.success?).to be true
+      end
+
+      it "does not stop the container" do
+        service.execute("codex exec --json", abort_patterns: abort_patterns)
+
+        expect(mock_container).not_to have_received(:stop)
+      end
+
+      it "does not abort when a JSONL line is split across stdout chunks" do
+        partial_start = "{\"type\":\"item.completed\",\"item\":{\"aggregated_output\":\"Free tier "
+        partial_end = "limit reached. Please upgrade to a paid plan.\"}}\n"
+
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, partial_start) if block
+          block.call(:stdout, partial_end) if block
+          [ [ partial_start, partial_end ], [], 0 ]
+        end
+
+        result = service.execute("codex exec --json", abort_patterns: abort_patterns)
+
+        expect(result.success?).to be true
+        expect(mock_container).not_to have_received(:stop)
+      end
+
+      it "buffers a partial structured event until the type field arrives" do
+        partial_start = "{\"item\":{\"aggregated_output\":\"Free tier limit reached. Please upgrade to a paid plan.\"}"
+        partial_end = ",\"type\":\"item.completed\"}\n"
+
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, partial_start) if block
+          block.call(:stdout, partial_end) if block
+          [ [ partial_start, partial_end ], [], 0 ]
+        end
+
+        result = service.execute("codex exec --json", abort_patterns: abort_patterns)
+
+        expect(result.success?).to be true
+        expect(mock_container).not_to have_received(:stop)
+      end
+
+      it "still aborts on structured stdout failure events" do
+        structured_error = {
+          "type" => "response.failed",
+          "error" => {
+            "message" => "Error: Free tier limit reached. Please upgrade to a paid plan."
+          }
+        }.to_json + "\n"
+
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, structured_error) if block
+          [ [ structured_error ], [], 1 ]
+        end
+
+        expect { service.execute("codex exec --json", abort_patterns: abort_patterns) }
+          .to raise_error(described_class::OutputAbortError) { |e|
+            expect(e.matched_output).to include("Free tier limit reached")
+          }
+
+        expect(mock_container).to have_received(:stop).with(timeout: 0)
+      end
+
+      it "aborts on a complete structured stdout failure event without a trailing newline" do
+        structured_error = {
+          "type" => "response.failed",
+          "error" => {
+            "message" => "Error: Free tier limit reached. Please upgrade to a paid plan."
+          }
+        }.to_json
+
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, structured_error) if block
+          [ [ structured_error ], [], 1 ]
+        end
+
+        expect { service.execute("codex exec --json", abort_patterns: abort_patterns) }
+          .to raise_error(described_class::OutputAbortError) { |e|
+            expect(e.matched_output).to include("Free tier limit reached")
+          }
+
+        expect(mock_container).to have_received(:stop).with(timeout: 0)
+      end
+
+      it "falls back to raw stdout matching for malformed brace-prefixed fatal output" do
+        malformed_error = "{Error: Free tier limit reached. Please upgrade to a paid plan."
+
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, malformed_error) if block
+          [ [ malformed_error ], [], 1 ]
+        end
+
+        expect { service.execute("codex exec --json", abort_patterns: abort_patterns) }
+          .to raise_error(described_class::OutputAbortError) { |e|
+            expect(e.matched_output).to include("Free tier limit reached")
+          }
+
+        expect(mock_container).to have_received(:stop).with(timeout: 0)
+      end
+
+      it "checks a buffered brace-prefixed fatal fragment when the stream ends" do
+        truncated_error = "{\"error\":\"Free tier limit reached. Please upgrade to a paid plan."
+
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, truncated_error) if block
+          [ [ truncated_error ], [], 1 ]
+        end
+
+        expect { service.execute("codex exec --json", abort_patterns: abort_patterns) }
+          .to raise_error(described_class::OutputAbortError) { |e|
+            expect(e.matched_output).to include("Free tier limit reached")
+          }
+
+        expect(mock_container).to have_received(:stop).with(timeout: 0)
+      end
+    end
+
     context "when container is not provisioned" do
       let(:unprovisioned_service) { described_class.new(agent_run: agent_run, worktree_path: worktree_path) }
 
