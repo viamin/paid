@@ -22,6 +22,15 @@ RSpec.describe "Api::McpController" do
         expect(body["result"]["serverInfo"]["name"]).to eq("paid-mcp-server")
       end
 
+      it "accepts initialized notifications without a response body" do
+        post "/api/mcp/call", params: {
+          jsonrpc: "2.0", method: "notifications/initialized", params: {}
+        }.to_json, headers: headers
+
+        expect(response).to have_http_status(:no_content)
+        expect(response.body).to be_blank
+      end
+
       it "handles tools/list request" do
         post "/api/mcp/call", params: {
           jsonrpc: "2.0", id: 2, method: "tools/list", params: {}

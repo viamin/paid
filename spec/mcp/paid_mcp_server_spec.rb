@@ -17,6 +17,12 @@ RSpec.describe PaidMcpServer do
       expect(result[:result][:capabilities][:tools]).to eq({ listChanged: false })
     end
 
+    it "accepts initialized notifications" do
+      result = server.handle_request(method: "notifications/initialized")
+
+      expect(result).to be_nil
+    end
+
     it "handles tools/list" do
       result = server.handle_request(method: "tools/list", id: 2)
 

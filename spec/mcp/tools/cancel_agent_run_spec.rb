@@ -25,6 +25,22 @@ RSpec.describe Tools::CancelAgentRun do
       expect(result[:status]).to eq("cancelled")
     end
 
+    it "cancels a queued agent run" do
+      run = create(:agent_run, :queued, project: project)
+
+      result = tool.call(agent_run_id: run.id, confirmed: true)
+
+      expect(result[:status]).to eq("cancelled")
+    end
+
+    it "cancels a paused agent run" do
+      run = create(:agent_run, :paused, project: project)
+
+      result = tool.call(agent_run_id: run.id, confirmed: true)
+
+      expect(result[:status]).to eq("cancelled")
+    end
+
     it "raises when not confirmed" do
       run = create(:agent_run, :running, project: project)
 
@@ -33,12 +49,12 @@ RSpec.describe Tools::CancelAgentRun do
       }.to raise_error(ArgumentError, /Confirmation required/)
     end
 
-    it "raises when run is not active" do
+    it "raises when run is not cancellable" do
       run = create(:agent_run, :completed, project: project)
 
       expect {
         tool.call(agent_run_id: run.id, confirmed: true)
-      }.to raise_error(ArgumentError, /not active/)
+      }.to raise_error(ArgumentError, /not cancellable/)
     end
   end
 end

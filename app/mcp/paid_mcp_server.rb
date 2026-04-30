@@ -18,6 +18,8 @@ class PaidMcpServer
     check_rate_limit! if method == "tools/call"
 
     result = case method
+    when "notifications/initialized"
+      return nil
     when "initialize"
       handle_initialize
     when "tools/list"

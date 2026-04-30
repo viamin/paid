@@ -39,6 +39,8 @@ module Api
         id: body["id"]
       )
 
+      return head :no_content if result.nil?
+
       render json: result, status: :ok
     end
 

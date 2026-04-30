@@ -26,8 +26,8 @@ module Tools
       run = policy_scope(AgentRun).find(agent_run_id)
       authorize run, :cancel?
 
-      unless run.active?
-        raise ArgumentError, "Agent run is not active (current status: #{run.status})"
+      unless run.cancellable?
+        raise ArgumentError, "Agent run is not cancellable (current status: #{run.status})"
       end
 
       run.with_lock do
