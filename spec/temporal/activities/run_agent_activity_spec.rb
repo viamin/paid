@@ -2181,6 +2181,34 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
       end
 
+      it "detects a real quota error returned with exit code 0" do
+        quota_success = Containers::Provision::Result.success(
+          stdout: "Error: Your billing limit has been reached. Please add credits.", stderr: "", exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(quota_success)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("error")
+        expect(agent_run.providers_attempted.first["error_message"]).to include("credit/quota error")
+      end
+
+      it "does not misclassify substantial agent output as a quota error when pattern appears in test descriptions" do
+        long_stdout = (1..40).map { |i| "includes test case number #{i} for the billing and rate limit patterns" }.join("\n")
+        long_output_success = Containers::Provision::Result.success(
+          stdout: long_stdout, stderr: "", exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(long_output_success)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
+      end
+
       it "preserves timeout handling when the timeout happens before provider execution starts" do
         allow(activity).to receive(:augment_prompt_for_goal)
           .and_raise(Containers::Provision::TimeoutError, "took too long before exec")
