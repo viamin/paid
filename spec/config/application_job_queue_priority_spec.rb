@@ -12,6 +12,7 @@ RSpec.describe ApplicationJob do
         DependabotAutoMergeJob
         DiagnoseErrorJob
         GithubTokenValidationJob
+        HandleExceptionJob
         HumanFeedbackCollectionJob
         ModelsSyncJob
         ProcessRunQueueJob

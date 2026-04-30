@@ -134,20 +134,20 @@ module ExceptionHandler
     def file_or_update_issue(incident, classification)
       return if classification.action == "logged"
 
-      issue_project = incident.project
-      return unless issue_project
+      target_project = @project
+      return unless target_project
 
-      if incident.github_issue_url.present? && issue_project.id != @project&.id
+      if incident.github_issue_url.present? && incident.project_id != target_project.id
         Rails.logger.info(
           message: "exception_handler.skipped_cross_project_issue",
           incident_id: incident.id,
-          original_project_id: issue_project.id,
-          current_project_id: @project&.id
+          original_project_id: incident.project_id,
+          current_project_id: target_project.id
         )
         return
       end
 
-      IssueFiler.call(incident: incident, project: issue_project)
+      IssueFiler.call(incident: incident, project: target_project)
     end
 
     def notify_if_needed(incident, classification)
