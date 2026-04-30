@@ -86,6 +86,7 @@ class ProjectsController < ApplicationController
 
   def create
     @project = current_account.projects.build(project_params)
+    assign_selected_github_token(@project)
     @project.created_by = current_user
     @project.allowed_github_usernames = [ @project.owner ] if @project.allowed_github_usernames.blank?
     authorize @project
@@ -117,6 +118,7 @@ class ProjectsController < ApplicationController
     update_params = project_params
     update_params = update_params.merge(allowed_github_usernames: parse_usernames_csv) if params.dig(:project, :allowed_github_usernames_csv)
     update_params = update_params.merge(review_settings: build_review_settings) if params.dig(:project, :review_settings)
+    assign_selected_github_token(@project, update_params)
 
     if @project.update(update_params)
       redirect_to @project, notice: "Project was successfully updated."
@@ -258,6 +260,14 @@ class ProjectsController < ApplicationController
     return CollectorRun.none unless latest_version_id
 
     CollectorRun.failed.where(project_version_id: latest_version_id)
+  end
+
+  def assign_selected_github_token(project, params_hash = project_params)
+    github_token_id = params_hash[:github_token_id].presence
+    return unless github_token_id
+
+    project.github_token = current_account.github_tokens.find_by(id: github_token_id)
+    project.errors.add(:github_token, "must belong to the same account") if project.github_token.blank?
   end
 
   def set_project

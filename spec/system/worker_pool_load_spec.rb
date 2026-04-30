@@ -28,11 +28,11 @@ RSpec.describe "Worker pool load behavior" do
       GOOD_JOB_QUEUES
     ].each { |key| ENV.delete(key) }
 
-    good_job.execution_mode = Paid::GoodJobConfig.execution_mode
-    good_job.max_threads = Paid::GoodJobConfig.max_threads
-    good_job.poll_interval = Paid::GoodJobConfig.poll_interval
-    good_job.shutdown_timeout = Paid::GoodJobConfig.shutdown_timeout
-    good_job.queues = Paid::GoodJobConfig.queues
+    good_job.execution_mode = original_config[:execution_mode]
+    good_job.max_threads = original_config[:max_threads]
+    good_job.poll_interval = original_config[:poll_interval]
+    good_job.shutdown_timeout = original_config[:shutdown_timeout]
+    good_job.queues = original_config[:queues]
 
     example.run
   ensure
