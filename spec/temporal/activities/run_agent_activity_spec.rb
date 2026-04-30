@@ -499,6 +499,39 @@ RSpec.describe Activities::RunAgentActivity do
         expect(command).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", prompt ])
       end
     end
+
+    context "with a direct-outbound kilocode provider" do
+      it "includes PAID_KILOCODE_CONFIG_B64 in command env alongside PAID_PROVIDER_ID" do
+        context = build_kilocode_context(user)
+
+        command = activity.send(:build_command, context, "ping")
+        env = activity.send(:command_env_for, context, "ping")
+
+        expect(command[0]).to eq("sh")
+        expect(command[1]).to eq("-lc")
+        expect(command[2]).to include("PAID_KILOCODE_CONFIG_B64")
+        expect(command[2]).to include("kilo run --format json")
+        expect(command.last).to eq("ping")
+
+        expect(env).to have_key("PAID_KILOCODE_CONFIG_B64")
+        expect(env).to have_key("PAID_PROVIDER_ID")
+        config_json = JSON.parse(Base64.strict_decode64(env["PAID_KILOCODE_CONFIG_B64"]))
+        expect(config_json["model"]).to eq("claude-sonnet-4-20250514")
+      end
+
+      it "does not include PAID_KILOCODE_CONFIG_B64 for subscription kilocode providers" do
+        subscription_provider = create(:provider, user: user, provider_key: "kilocode", auth_type: "subscription")
+        context = described_class::CommandContext.new(
+          provider_candidate: subscription_provider.routing_key,
+          provider: "kilocode",
+          user: user
+        )
+
+        env = activity.send(:command_env_for, context, "ping")
+
+        expect(env).not_to have_key("PAID_KILOCODE_CONFIG_B64")
+      end
+    end
   end
 
   describe "#provider_entry_for" do
@@ -765,6 +798,25 @@ RSpec.describe Activities::RunAgentActivity do
     described_class::CommandContext.new(
       provider_candidate: provider.routing_key,
       provider: "opencode",
+      user: user
+    )
+  end
+
+  def build_kilocode_context(user)
+    api_key = create(:provider_api_key, user: user, api_service_type: "anthropic", api_key: "sk-anthropic-secret")
+    provider = create(
+      :provider,
+      user: user,
+      auth_type: "api_key",
+      provider_api_key: api_key,
+      provider_key: "kilocode",
+      name: "Kilocode Claude",
+      config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-20250514" } }
+    )
+
+    described_class::CommandContext.new(
+      provider_candidate: provider.routing_key,
+      provider: "kilocode",
       user: user
     )
   end
