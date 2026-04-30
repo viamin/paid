@@ -10,6 +10,13 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
+--
+
+-- *not* creating schema, since initdb creates it
+
+
+--
 -- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
 --
 
@@ -208,18 +215,18 @@ ALTER SEQUENCE public.account_memberships_id_seq OWNED BY public.account_members
 
 CREATE TABLE public.accounts (
     id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
     name character varying NOT NULL,
     slug character varying NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     default_max_tokens_per_run integer DEFAULT 10000000 NOT NULL,
     scheduler_paused_at timestamp(6) without time zone,
-    status integer DEFAULT 0 NOT NULL,
-    suspended_at timestamp(6) without time zone,
-    deactivated_at timestamp(6) without time zone,
     plan character varying DEFAULT 'trial'::character varying NOT NULL,
     onboarding_completed_at timestamp(6) without time zone,
-    trial_ends_at timestamp(6) without time zone
+    trial_ends_at timestamp(6) without time zone,
+    status integer DEFAULT 0 NOT NULL,
+    suspended_at timestamp(6) without time zone,
+    deactivated_at timestamp(6) without time zone
 );
 
 ALTER TABLE ONLY public.accounts FORCE ROW LEVEL SECURITY;
@@ -431,14 +438,14 @@ CREATE TABLE public.agent_runs (
     container_id character varying(128),
     custom_prompt text,
     source_pull_request_number integer,
-    prompt_version_id bigint,
     goal character varying(50) DEFAULT 'create_pr'::character varying NOT NULL,
     created_issue_url character varying(500),
     created_issue_number integer,
+    prompt_version_id bigint,
     service_container_ids jsonb DEFAULT '[]'::jsonb,
     service_environment jsonb DEFAULT '{}'::jsonb,
-    auth_provider character varying(50),
     trigger_type character varying(50) DEFAULT 'automatic'::character varying NOT NULL,
+    auth_provider character varying(50),
     providers_attempted jsonb DEFAULT '[]'::jsonb NOT NULL,
     final_provider character varying(50),
     provider_switches integer DEFAULT 0 NOT NULL,
@@ -452,18 +459,18 @@ CREATE TABLE public.agent_runs (
     container_metrics_count integer DEFAULT 0 NOT NULL,
     auto_pick boolean DEFAULT false NOT NULL,
     mcp_server_snapshot jsonb DEFAULT '[]'::jsonb NOT NULL,
+    container_retained_until timestamp(6) without time zone,
     diagnosis_status character varying(50),
     diagnosis_issue_url character varying(500),
-    container_retained_until timestamp(6) without time zone,
     provider_id bigint,
     stale_requeue_count integer DEFAULT 0 NOT NULL,
     parent_workflow_id character varying(255),
-    token_limit_status character varying(50),
+    count_toward_draft_review_round boolean DEFAULT false NOT NULL,
+    expected_draft_review_count integer,
     guardrail_violation_type character varying(50),
     guardrail_context jsonb,
     paused_at timestamp(6) without time zone,
-    count_toward_draft_review_round boolean DEFAULT false NOT NULL,
-    expected_draft_review_count integer,
+    token_limit_status character varying(50),
     priority_tier character varying(10),
     cross_repo_issues jsonb DEFAULT '[]'::jsonb,
     stale_skip_count integer DEFAULT 0 NOT NULL
@@ -1396,14 +1403,14 @@ ALTER SEQUENCE public.github_health_states_id_seq OWNED BY public.github_health_
 CREATE TABLE public.github_tokens (
     id bigint NOT NULL,
     account_id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
     created_by_id bigint,
-    name character varying NOT NULL,
-    token text NOT NULL,
-    scopes jsonb DEFAULT '[]'::jsonb NOT NULL,
     expires_at timestamp(6) without time zone,
     last_used_at timestamp(6) without time zone,
+    name character varying NOT NULL,
     revoked_at timestamp(6) without time zone,
-    created_at timestamp(6) without time zone NOT NULL,
+    scopes jsonb DEFAULT '[]'::jsonb NOT NULL,
+    token text NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     accessible_repositories jsonb DEFAULT '[]'::jsonb NOT NULL,
     repositories_synced_at timestamp(6) without time zone,
@@ -1440,19 +1447,19 @@ ALTER SEQUENCE public.github_tokens_id_seq OWNED BY public.github_tokens.id;
 
 CREATE TABLE public.good_job_batches (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
+    callback_priority integer,
+    callback_queue_name text,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL,
     description text,
-    serialized_properties jsonb,
+    discarded_at timestamp(6) without time zone,
+    enqueued_at timestamp(6) without time zone,
+    finished_at timestamp(6) without time zone,
+    jobs_finished_at timestamp(6) without time zone,
+    on_discard text,
     on_finish text,
     on_success text,
-    on_discard text,
-    callback_queue_name text,
-    callback_priority integer,
-    enqueued_at timestamp(6) without time zone,
-    discarded_at timestamp(6) without time zone,
-    finished_at timestamp(6) without time zone,
-    jobs_finished_at timestamp(6) without time zone
+    serialized_properties jsonb,
+    updated_at timestamp(6) without time zone NOT NULL
 );
 
 
@@ -1462,19 +1469,19 @@ CREATE TABLE public.good_job_batches (
 
 CREATE TABLE public.good_job_executions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL,
     active_job_id uuid NOT NULL,
-    job_class text,
-    queue_name text,
-    serialized_params jsonb,
-    scheduled_at timestamp(6) without time zone,
-    finished_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    duration interval,
     error text,
-    error_event smallint,
     error_backtrace text[],
+    error_event smallint,
+    finished_at timestamp(6) without time zone,
+    job_class text,
     process_id uuid,
-    duration interval
+    queue_name text,
+    scheduled_at timestamp(6) without time zone,
+    serialized_params jsonb,
+    updated_at timestamp(6) without time zone NOT NULL
 );
 
 
@@ -1485,9 +1492,9 @@ CREATE TABLE public.good_job_executions (
 CREATE TABLE public.good_job_processes (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL,
+    lock_type smallint,
     state jsonb,
-    lock_type smallint
+    updated_at timestamp(6) without time zone NOT NULL
 );
 
 
@@ -1498,8 +1505,8 @@ CREATE TABLE public.good_job_processes (
 CREATE TABLE public.good_job_settings (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL,
     key text,
+    updated_at timestamp(6) without time zone NOT NULL,
     value jsonb
 );
 
@@ -1510,29 +1517,29 @@ CREATE TABLE public.good_job_settings (
 
 CREATE TABLE public.good_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    queue_name text,
-    priority integer,
-    serialized_params jsonb,
-    scheduled_at timestamp(6) without time zone,
-    performed_at timestamp(6) without time zone,
-    finished_at timestamp(6) without time zone,
-    error text,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL,
     active_job_id uuid,
-    concurrency_key text,
-    cron_key text,
-    retried_good_job_id uuid,
-    cron_at timestamp(6) without time zone,
-    batch_id uuid,
     batch_callback_id uuid,
-    is_discrete boolean,
-    executions_count integer,
-    job_class text,
+    batch_id uuid,
+    concurrency_key text,
+    created_at timestamp(6) without time zone NOT NULL,
+    cron_at timestamp(6) without time zone,
+    cron_key text,
+    error text,
     error_event smallint,
+    executions_count integer,
+    finished_at timestamp(6) without time zone,
+    is_discrete boolean,
+    job_class text,
     labels text[],
+    locked_at timestamp(6) without time zone,
     locked_by_id uuid,
-    locked_at timestamp(6) without time zone
+    performed_at timestamp(6) without time zone,
+    priority integer,
+    queue_name text,
+    retried_good_job_id uuid,
+    scheduled_at timestamp(6) without time zone,
+    serialized_params jsonb,
+    updated_at timestamp(6) without time zone NOT NULL
 );
 
 
@@ -1644,14 +1651,14 @@ CREATE TABLE public.issues (
     draft_review_count integer DEFAULT 0 NOT NULL,
     source character varying DEFAULT 'github'::character varying NOT NULL,
     auto_continue_paused boolean DEFAULT false NOT NULL,
-    last_pr_scan_at timestamp(6) without time zone,
     relationships_parsed_at timestamp(6) without time zone,
+    last_pr_scan_at timestamp(6) without time zone,
     review_goal_retry_count integer DEFAULT 0 NOT NULL,
     review_goal_retry_reset_at timestamp(6) without time zone,
-    operational_failure_reset_at timestamp(6) without time zone,
     ci_action_dispatched_at timestamp(6) without time zone,
     deployed_at timestamp(6) without time zone,
     enhance_issue_rounds integer DEFAULT 0 NOT NULL,
+    operational_failure_reset_at timestamp(6) without time zone,
     ci_retry_requested_at timestamp(6) without time zone
 );
 
@@ -2005,7 +2012,7 @@ CREATE TABLE public.llm_models (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     tier character varying(10),
-    CONSTRAINT llm_models_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text]))))
+    CONSTRAINT llm_models_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[]))))
 );
 
 
@@ -2132,8 +2139,8 @@ CREATE TABLE public.model_selections (
     tier character varying(10),
     escalated_from_tier character varying(10),
     escalated_reason character varying(255),
-    CONSTRAINT model_selections_escalated_from_tier_check CHECK (((escalated_from_tier IS NULL) OR ((escalated_from_tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text])))),
-    CONSTRAINT model_selections_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text]))))
+    CONSTRAINT model_selections_escalated_from_tier_check CHECK (((escalated_from_tier IS NULL) OR ((escalated_from_tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[])))),
+    CONSTRAINT model_selections_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[]))))
 );
 
 ALTER TABLE ONLY public.model_selections FORCE ROW LEVEL SECURITY;
@@ -2553,30 +2560,30 @@ ALTER SEQUENCE public.project_versions_id_seq OWNED BY public.project_versions.i
 CREATE TABLE public.projects (
     id bigint NOT NULL,
     account_id bigint NOT NULL,
-    github_token_id bigint NOT NULL,
-    created_by_id bigint,
-    github_id bigint NOT NULL,
-    owner character varying NOT NULL,
-    repo character varying NOT NULL,
-    default_branch character varying DEFAULT 'main'::character varying NOT NULL,
-    name character varying NOT NULL,
     active boolean DEFAULT true NOT NULL,
-    poll_interval_seconds integer DEFAULT 60 NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    created_by_id bigint,
+    default_branch character varying DEFAULT 'main'::character varying NOT NULL,
+    github_id bigint NOT NULL,
+    github_token_id bigint NOT NULL,
     label_mappings jsonb DEFAULT '{}'::jsonb NOT NULL,
+    name character varying NOT NULL,
+    owner character varying NOT NULL,
+    poll_interval_seconds integer DEFAULT 60 NOT NULL,
+    repo character varying NOT NULL,
     total_cost_cents bigint DEFAULT 0 NOT NULL,
     total_tokens_used bigint DEFAULT 0 NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     allowed_github_usernames jsonb DEFAULT '[]'::jsonb NOT NULL,
     auto_scan_prs boolean DEFAULT true NOT NULL,
     max_pr_followup_runs integer DEFAULT 8 NOT NULL,
     pr_action_labels jsonb DEFAULT '[]'::jsonb NOT NULL,
     auto_fix_merge_conflicts boolean DEFAULT true NOT NULL,
-    last_agent_run_at timestamp(6) without time zone,
-    last_github_activity_at timestamp(6) without time zone,
     owner_reviewer_login character varying,
     merge_method character varying DEFAULT 'squash'::character varying NOT NULL,
     max_draft_review_rounds integer DEFAULT 10 NOT NULL,
+    last_agent_run_at timestamp(6) without time zone,
+    last_github_activity_at timestamp(6) without time zone,
     last_polled_at timestamp(6) without time zone,
     auto_pick_enabled boolean DEFAULT false NOT NULL,
     model_preferences jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -2591,18 +2598,18 @@ CREATE TABLE public.projects (
     last_code_scanning_scan_at timestamp(6) without time zone,
     code_scanning_interval_hours integer DEFAULT 72 NOT NULL,
     review_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
+    max_execution_seconds integer DEFAULT 3600 NOT NULL,
     pr_aggregation_enabled boolean DEFAULT false NOT NULL,
     max_tokens_per_run integer,
     token_limit_warning_threshold integer DEFAULT 80 NOT NULL,
-    max_execution_seconds integer DEFAULT 3600 NOT NULL,
-    last_issue_sync_at timestamp(6) without time zone,
     priority_labels jsonb DEFAULT '{"P1": "P1", "P2": "P2", "P3": "P3"}'::jsonb NOT NULL,
     inherit_priority_labels boolean DEFAULT true NOT NULL,
+    last_issue_sync_at timestamp(6) without time zone,
     auto_release_granularity character varying DEFAULT 'off'::character varying NOT NULL,
-    fitness_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
+    quality_gate_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
     quality_paused_at timestamp(6) without time zone,
     quality_pause_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
-    quality_gate_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
+    fitness_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
     auto_merge_mode character varying DEFAULT 'off'::character varying NOT NULL,
     enhance_issue_needs_input_label_name character varying DEFAULT 'paid-needs-input'::character varying NOT NULL,
     enhance_issue_enhanced_label_name character varying DEFAULT 'paid-enhanced'::character varying NOT NULL,
@@ -2654,11 +2661,11 @@ CREATE TABLE public.prompt_versions (
     avg_quality_score numeric(4,2),
     avg_iterations numeric(4,2),
     created_at timestamp(6) without time zone NOT NULL,
-    retired_at timestamp(6) without time zone,
     review_status character varying(20),
     reviewed_by_user_id bigint,
     reviewed_at timestamp(6) without time zone,
-    review_notes text
+    review_notes text,
+    retired_at timestamp(6) without time zone
 );
 
 ALTER TABLE ONLY public.prompt_versions FORCE ROW LEVEL SECURITY;
@@ -3371,7 +3378,7 @@ CREATE TABLE public.user_settings (
     retry_max_delay double precision DEFAULT 60.0 NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    allowed_service_images jsonb DEFAULT '["postgres:16.13", "redis:7-alpine", "selenium/standalone-chromium:latest"]'::jsonb NOT NULL,
+    allowed_service_images jsonb DEFAULT '["postgres:16.13", "redis:7-alpine", "selenium/standalone-chromium:latest"]'::jsonb,
     fallback_providers jsonb DEFAULT '[]'::jsonb NOT NULL,
     fallback_enabled boolean DEFAULT false NOT NULL,
     max_concurrent_runs integer DEFAULT 2 NOT NULL,
@@ -3395,14 +3402,14 @@ CREATE TABLE public.user_settings (
     kb_chat_provider character varying DEFAULT 'claude'::character varying NOT NULL,
     kb_chat_fallback_providers jsonb DEFAULT '[]'::jsonb NOT NULL,
     max_auto_pick_open_prs integer DEFAULT 1 NOT NULL,
+    theme_preference character varying DEFAULT 'system'::character varying NOT NULL,
+    create_pr_idle_timeout_seconds integer DEFAULT 300 NOT NULL,
     provider_selection_mode character varying(20) DEFAULT 'single'::character varying NOT NULL,
     provider_round_robin_state jsonb DEFAULT '{}'::jsonb NOT NULL,
-    create_pr_idle_timeout_seconds integer DEFAULT 300 NOT NULL,
-    theme_preference character varying DEFAULT 'system'::character varying NOT NULL,
     fair_queue_across_projects boolean DEFAULT true NOT NULL,
     CONSTRAINT chk_max_issues_per_page_bounds CHECK (((max_issues_per_page >= 5) AND (max_issues_per_page <= 200))),
     CONSTRAINT chk_max_prs_per_page_bounds CHECK (((max_prs_per_page >= 5) AND (max_prs_per_page <= 200))),
-    CONSTRAINT chk_provider_selection_mode CHECK (((provider_selection_mode)::text = ANY (ARRAY[('single'::character varying)::text, ('round_robin'::character varying)::text, ('random'::character varying)::text])))
+    CONSTRAINT chk_provider_selection_mode CHECK (((provider_selection_mode)::text = ANY ((ARRAY['single'::character varying, 'round_robin'::character varying, 'random'::character varying])::text[])))
 );
 
 ALTER TABLE ONLY public.user_settings FORCE ROW LEVEL SECURITY;
@@ -3434,13 +3441,13 @@ ALTER SEQUENCE public.user_settings_id_seq OWNED BY public.user_settings.id;
 CREATE TABLE public.users (
     id bigint NOT NULL,
     account_id bigint NOT NULL,
-    name character varying,
+    created_at timestamp(6) without time zone NOT NULL,
     email character varying DEFAULT ''::character varying NOT NULL,
     encrypted_password character varying DEFAULT ''::character varying NOT NULL,
-    reset_password_token character varying,
-    reset_password_sent_at timestamp(6) without time zone,
+    name character varying,
     remember_created_at timestamp(6) without time zone,
-    created_at timestamp(6) without time zone NOT NULL,
+    reset_password_sent_at timestamp(6) without time zone,
+    reset_password_token character varying,
     updated_at timestamp(6) without time zone NOT NULL
 );
 
@@ -4816,14 +4823,14 @@ CREATE INDEX idx_agent_runs_project_status_created_at_desc ON public.agent_runs 
 -- Name: idx_agent_runs_unique_active_issue; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_agent_runs_unique_active_issue ON public.agent_runs USING btree (project_id, issue_id, goal) WHERE ((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])));
+CREATE UNIQUE INDEX idx_agent_runs_unique_active_issue ON public.agent_runs USING btree (project_id, issue_id, goal) WHERE ((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])));
 
 
 --
 -- Name: idx_agent_runs_unique_active_pr; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_agent_runs_unique_active_pr ON public.agent_runs USING btree (project_id, source_pull_request_number, goal) WHERE ((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])));
+CREATE UNIQUE INDEX idx_agent_runs_unique_active_pr ON public.agent_runs USING btree (project_id, source_pull_request_number, goal) WHERE ((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])));
 
 
 --
@@ -8159,6 +8166,14 @@ ALTER TABLE ONLY public.container_pool_entries
 
 
 --
+-- Name: token_usages fk_rails_a7aa4b3af0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.token_usages
+    ADD CONSTRAINT fk_rails_a7aa4b3af0 FOREIGN KEY (chat_session_id) REFERENCES public.chat_sessions(id) ON DELETE CASCADE;
+
+
+--
 -- Name: pr_templates fk_rails_a9254e0b41; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8364,14 +8379,6 @@ ALTER TABLE ONLY public.pre_commit_requirements
 
 ALTER TABLE ONLY public.agent_run_logs
     ADD CONSTRAINT fk_rails_cf53eb38e2 FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id) ON DELETE CASCADE;
-
-
---
--- Name: token_usages fk_rails_chat_session_id; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.token_usages
-    ADD CONSTRAINT fk_rails_chat_session_id FOREIGN KEY (chat_session_id) REFERENCES public.chat_sessions(id) ON DELETE CASCADE;
 
 
 --
@@ -9743,13 +9750,17 @@ CREATE POLICY tenant_isolation ON public.token_usages USING ((public.paid_tenant
   WHERE ((agent_runs.id = token_usages.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((knowledge_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.knowledge_runs
      JOIN public.projects ON ((projects.id = knowledge_runs.project_id)))
-  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR (((agent_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
+  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((chat_session_id IS NOT NULL) AND (EXISTS ( SELECT 1
+   FROM public.chat_sessions
+  WHERE ((chat_sessions.id = token_usages.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR (((agent_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.agent_runs
      JOIN public.projects ON ((projects.id = agent_runs.project_id)))
   WHERE ((agent_runs.id = token_usages.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((knowledge_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.knowledge_runs
      JOIN public.projects ON ((projects.id = knowledge_runs.project_id)))
-  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))))));
+  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((chat_session_id IS NOT NULL) AND (EXISTS ( SELECT 1
+   FROM public.chat_sessions
+  WHERE ((chat_sessions.id = token_usages.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id()))))))));
 
 
 --
@@ -10174,6 +10185,7 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260421080223'),
 ('20260421050706'),
 ('20260418233122'),
+('20260418230411'),
 ('20260418175716'),
 ('20260417204111'),
 ('20260417072332'),
@@ -10215,6 +10227,7 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260415181029'),
 ('20260414154102'),
 ('20260414092756'),
+('20260413202214'),
 ('20260413193745'),
 ('20260413193654'),
 ('20260413191016'),
@@ -10241,6 +10254,7 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260407072915'),
 ('20260407071652'),
 ('20260407071634'),
+('20260405195806'),
 ('20260404161335'),
 ('20260404062147'),
 ('20260403062026'),
