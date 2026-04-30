@@ -16,8 +16,8 @@ class TenantContext
 
     def clear!
       Current.account = nil
-      set_config("paid.current_account_id", nil)
-      set_config("paid.bypass_tenant_rls", false)
+      safe_set_config("paid.current_account_id", nil)
+      safe_set_config("paid.bypass_tenant_rls", false)
     end
 
     def bypass_enabled?
