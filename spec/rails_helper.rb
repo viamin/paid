@@ -7,7 +7,9 @@ require_relative "../config/environment"
 
 # Prevent database truncation if the environment is production
 abort("The Rails environment is running in production mode!") if Rails.env.production?
+require "fixture_kit/rspec"
 require "rspec/rails"
+require "test_prof/recipes/rspec/factory_default"
 
 # Add additional requires below this line. Rails is not loaded until this point!
 
@@ -82,7 +84,13 @@ RSpec.configure do |config|
       example.run
     end
   ensure
-    TenantContext.clear! if database_available
+    next unless database_available
+
+    begin
+      TenantContext.clear!
+    rescue ActiveRecord::StatementInvalid => error
+      raise unless error.cause.is_a?(PG::InFailedSqlTransaction)
+    end
   end
 
   # When running without a database (ALLOW_DBLESS_SPECS=true), automatically skip

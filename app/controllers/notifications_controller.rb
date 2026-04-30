@@ -61,12 +61,15 @@ class NotificationsController < ApplicationController
         render turbo_stream: [
           turbo_stream.replace("notification_bell", partial: "notifications/bell", locals: { account: current_account }),
           turbo_stream.replace("notification_nav_badges", partial: "notifications/nav_badges", locals: { account: current_account }),
-          turbo_stream.replace("notifications_list") {
+          turbo_stream.update("notifications_list") {
             render_to_string(partial: "notifications/notification", collection: @notifications, as: :notification)
           }
         ]
       end
-      format.html { redirect_to notifications_path, notice: "All notifications marked as read." }
+      format.html do
+        redirect_params = { filter: params[:filter], severity: params[:severity], source: params[:source] }.compact_blank
+        redirect_to notifications_path(**redirect_params), notice: "All notifications marked as read."
+      end
     end
   end
 end

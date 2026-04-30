@@ -614,9 +614,26 @@ RSpec.describe Providers::TestAgent do
         described_class.call(provider: provider)
 
         expect(test_run).to have_received(:execute_in_container).with(
-          %w[true],
-          hash_including(preparation: an_instance_of(AgentHarness::ExecutionPreparation))
+          [ "sh", "-c", a_string_including("mkdir -p /home/agent/.config/kilo") ],
+          hash_including(timeout: 30, env: hash_including("KILOCODE_CONFIG_B64"))
         )
+      end
+
+      it "generates a v7.1.3-compatible config with provider as a record" do
+        captured_env = nil
+        allow(test_run).to receive(:execute_in_container) do |cmd, **kwargs|
+          captured_env = kwargs[:env] if cmd.is_a?(Array) && cmd.join.include?("config.json")
+          prep_result
+        end
+
+        described_class.call(provider: provider)
+
+        expect(captured_env).to include("KILOCODE_CONFIG_B64")
+        config = JSON.parse(Base64.strict_decode64(captured_env["KILOCODE_CONFIG_B64"]))
+        expect(config).to eq({
+          "provider" => { "anthropic" => {} },
+          "model" => "anthropic/claude-sonnet-4-20250514"
+        })
       end
     end
 

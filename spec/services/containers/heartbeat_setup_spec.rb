@@ -153,4 +153,51 @@ RSpec.describe Containers::HeartbeatSetup do
       end
     end
   end
+
+  describe "#reliable_heartbeat?" do
+    it "returns true for claude" do
+      setup = described_class.new(provider: "claude", worktree_path: worktree_path, host_heartbeat_path: host_heartbeat_path)
+      expect(setup).to be_reliable_heartbeat
+    end
+
+    it "returns true for claude_code" do
+      setup = described_class.new(provider: "claude_code", worktree_path: worktree_path, host_heartbeat_path: host_heartbeat_path)
+      expect(setup).to be_reliable_heartbeat
+    end
+
+    it "returns false for codex" do
+      setup = described_class.new(provider: "codex", worktree_path: worktree_path, host_heartbeat_path: host_heartbeat_path)
+      expect(setup).not_to be_reliable_heartbeat
+    end
+  end
+
+  describe "#idle_timeout_for" do
+    let(:base_timeout) { 300 }
+
+    it "returns nil for unsupported providers" do
+      setup = described_class.new(provider: "gemini", worktree_path: worktree_path, host_heartbeat_path: host_heartbeat_path)
+      expect(setup.idle_timeout_for(base_timeout)).to be_nil
+    end
+
+    it "returns nil without host_heartbeat_path" do
+      setup = described_class.new(provider: "claude", worktree_path: worktree_path, host_heartbeat_path: nil)
+      expect(setup.idle_timeout_for(base_timeout)).to be_nil
+    end
+
+    it "returns base timeout for reliable heartbeat providers" do
+      setup = described_class.new(provider: "claude", worktree_path: worktree_path, host_heartbeat_path: host_heartbeat_path)
+      expect(setup.idle_timeout_for(base_timeout)).to eq(300)
+    end
+
+    it "returns extended timeout for coarse heartbeat providers" do
+      setup = described_class.new(provider: "codex", worktree_path: worktree_path, host_heartbeat_path: host_heartbeat_path)
+      expected = base_timeout * described_class::COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER
+      expect(setup.idle_timeout_for(base_timeout)).to eq(expected)
+    end
+
+    it "returns nil for coarse heartbeat provider with nil base timeout" do
+      setup = described_class.new(provider: "codex", worktree_path: worktree_path, host_heartbeat_path: host_heartbeat_path)
+      expect(setup.idle_timeout_for(nil)).to be_nil
+    end
+  end
 end

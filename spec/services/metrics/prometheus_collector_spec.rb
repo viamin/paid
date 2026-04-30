@@ -156,7 +156,15 @@ RSpec.describe Metrics::PrometheusCollector do
       end
 
       it "reports workflow utilization" do
-        expect(output).to include("paid_temporal_workflow_utilization_percent 10.0")
+        workflow_slots = TenantSetting.resolve_worker_setting(
+          "temporal_workflow_slots",
+          env_key: "TEMPORAL_WORKFLOW_SLOTS",
+          env: ENV,
+          default: 20
+        )
+        expected_utilization = (2.0 / workflow_slots * 100).round(2)
+
+        expect(output).to include("paid_temporal_workflow_utilization_percent #{expected_utilization}")
       end
     end
 

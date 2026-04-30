@@ -30,6 +30,16 @@ module Containers
 
     SUPPORTED_PROVIDERS = %w[claude codex].freeze
 
+    # Providers with per-tool heartbeat hooks (e.g. Claude PostToolUse)
+    # that fire frequently enough to suppress idle timeouts reliably
+    # during long subprocess execution. Providers in SUPPORTED_PROVIDERS
+    # but NOT listed here use coarser heartbeat signals that only fire
+    # between CLI turns, so they need a longer idle timeout to avoid
+    # false positives during long-running commands like `bundle exec rspec`.
+    RELIABLE_HEARTBEAT_PROVIDERS = %w[claude].freeze
+
+    COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER = 3
+
     attr_reader :provider, :worktree_path, :host_heartbeat_path
 
     def initialize(provider:, worktree_path:, host_heartbeat_path: nil)
@@ -44,6 +54,20 @@ module Containers
 
     def available?
       host_heartbeat_path.present? && SUPPORTED_PROVIDERS.include?(canonical_provider)
+    end
+
+    # Returns the effective idle timeout for this provider given a base
+    # timeout selected by goal type. Returns nil for providers without
+    # heartbeat support (idle timeout disabled entirely).
+    def idle_timeout_for(base_timeout)
+      return nil unless available?
+      return base_timeout if reliable_heartbeat? || base_timeout.nil?
+
+      base_timeout * COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER
+    end
+
+    def reliable_heartbeat?
+      RELIABLE_HEARTBEAT_PROVIDERS.include?(canonical_provider)
     end
 
     def env

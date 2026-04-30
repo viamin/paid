@@ -1,5 +1,9 @@
 # Paid Observability
 
+## Implementation Status
+
+Sections marked **[IMPLEMENTED]** reflect the current codebase. Sections marked **[PLANNED]** describe future architecture that has not been built yet.
+
 This document describes the observability strategy for Paid, covering metrics collection, logging, dashboards, and alerting.
 
 ## Overview
@@ -25,175 +29,99 @@ Observability in Paid has three pillars:
 
 ---
 
-## Metrics (Prometheus)
+## Metrics (Prometheus) [IMPLEMENTED]
 
 ### Stack
 
 | Component | Purpose |
 |-----------|---------|
 | Prometheus | Time-series metrics storage and alerting |
-| Grafana | Visualization and dashboards |
-| prometheus-client (gem) | Ruby metrics exposition |
+| `Metrics::PrometheusCollector` | Hand-rolled Ruby metrics exposition (`app/services/metrics/prometheus_collector.rb`) |
 | Temporal metrics | Workflow and activity metrics |
 
-### Metrics Categories
+### Metrics Definitions [IMPLEMENTED]
 
-#### Application Metrics
+Metrics are defined in `Metrics::PrometheusCollector` and rendered in Prometheus text exposition format. The collector queries the database directly and caches results for 15 seconds.
 
-```ruby
-# config/initializers/prometheus.rb
-require 'prometheus/client'
+#### Agent Run Metrics
 
-PROMETHEUS = Prometheus::Client.registry
+| Metric | Type | Description |
+|--------|------|-------------|
+| `paid_agent_runs_total` | gauge | Number of agent runs by status |
+| `paid_agent_runs_active` | gauge | Currently active agent runs |
+| `paid_agent_runs_queued` | gauge | Agent runs waiting in queue |
 
-# Counters
-AGENT_RUNS_TOTAL = PROMETHEUS.counter(
-  :paid_agent_runs_total,
-  docstring: 'Total agent runs',
-  labels: [:project_id, :agent_type, :status]
-)
+#### GoodJob Queue Metrics
 
-TOKENS_USED_TOTAL = PROMETHEUS.counter(
-  :paid_tokens_used_total,
-  docstring: 'Total tokens consumed',
-  labels: [:project_id, :model, :direction]  # direction: input/output
-)
+| Metric | Type | Description |
+|--------|------|-------------|
+| `paid_goodjob_queue_depth` | gauge | Unfinished jobs per queue |
+| `paid_goodjob_jobs_unfinished` | gauge | Total unfinished GoodJob jobs |
+| `paid_goodjob_jobs_running` | gauge | GoodJob jobs currently executing |
+| `paid_goodjob_jobs_errored` | gauge | GoodJob jobs in error state |
 
-PR_CREATED_TOTAL = PROMETHEUS.counter(
-  :paid_prs_created_total,
-  docstring: 'Total PRs created by agents',
-  labels: [:project_id]
-)
+#### Container Metrics
 
-# Gauges
-ACTIVE_WORKFLOWS = PROMETHEUS.gauge(
-  :paid_active_workflows,
-  docstring: 'Currently running workflows',
-  labels: [:workflow_type]
-)
+| Metric | Type | Description |
+|--------|------|-------------|
+| `paid_containers_active` | gauge | Containers running agent work |
+| `paid_containers_avg_cpu_percent` | gauge | Average CPU usage across active containers |
+| `paid_containers_avg_memory_percent` | gauge | Average memory usage across active containers |
+| `paid_containers_total_memory_bytes` | gauge | Total memory used by active containers |
 
-ACTIVE_CONTAINERS = PROMETHEUS.gauge(
-  :paid_active_containers,
-  docstring: 'Currently running agent containers',
-  labels: [:project_id]
-)
+#### Container Pool Metrics
 
-WORKTREE_COUNT = PROMETHEUS.gauge(
-  :paid_worktrees_total,
-  docstring: 'Active git worktrees',
-  labels: [:project_id]
-)
+| Metric | Type | Description |
+|--------|------|-------------|
+| `paid_container_pool_entries_total` | gauge | Warm container pool entries by status |
+| `paid_container_pool_target` | gauge | Target warm container pool size |
 
-# Histograms
-AGENT_RUN_DURATION = PROMETHEUS.histogram(
-  :paid_agent_run_duration_seconds,
-  docstring: 'Agent run duration',
-  labels: [:project_id, :agent_type],
-  buckets: [30, 60, 120, 300, 600, 1200, 1800, 3600]
-)
+#### Service Container Metrics
 
-CONTAINER_STARTUP_DURATION = PROMETHEUS.histogram(
-  :paid_container_startup_seconds,
-  docstring: 'Container startup time',
-  buckets: [1, 2, 5, 10, 20, 30, 60]
-)
+| Metric | Type | Description |
+|--------|------|-------------|
+| `paid_service_containers_total` | gauge | Service containers by status |
+| `paid_service_containers_avg_cpu_percent` | gauge | Average CPU across running service containers |
+| `paid_service_containers_avg_memory_percent` | gauge | Average memory across running service containers |
 
-LLM_REQUEST_DURATION = PROMETHEUS.histogram(
-  :paid_llm_request_seconds,
-  docstring: 'LLM API request duration',
-  labels: [:provider, :model],
-  buckets: [0.5, 1, 2, 5, 10, 30, 60, 120]
-)
-```
+#### Temporal Configuration Metrics
 
-#### Business Metrics
+| Metric | Type | Description |
+|--------|------|-------------|
+| `paid_temporal_workflow_slots_total` | gauge | Configured Temporal workflow slots |
+| `paid_temporal_activity_slots_total` | gauge | Configured Temporal activity slots |
+| `paid_temporal_workflows_running` | gauge | Temporal workflows currently running |
+| `paid_temporal_workflow_utilization_percent` | gauge | Workflow slot utilization percentage |
 
-```ruby
-# Cost tracking
-COST_CENTS = PROMETHEUS.counter(
-  :paid_cost_cents_total,
-  docstring: 'Total cost in cents',
-  labels: [:project_id, :model]
-)
-
-# Quality metrics
-QUALITY_SCORE = PROMETHEUS.histogram(
-  :paid_quality_score,
-  docstring: 'Agent run quality scores',
-  labels: [:project_id, :prompt_slug],
-  buckets: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-)
-
-ITERATIONS_TO_COMPLETE = PROMETHEUS.histogram(
-  :paid_iterations_to_complete,
-  docstring: 'Iterations needed to complete task',
-  labels: [:project_id, :agent_type],
-  buckets: [1, 2, 3, 4, 5, 7, 10, 15, 20]
-)
-
-PR_MERGE_RATE = PROMETHEUS.gauge(
-  :paid_pr_merge_rate,
-  docstring: 'PR merge rate (rolling 7 days)',
-  labels: [:project_id]
-)
-```
-
-#### Infrastructure Metrics
-
-```ruby
-# GitHub API
-GITHUB_API_CALLS = PROMETHEUS.counter(
-  :paid_github_api_calls_total,
-  docstring: 'GitHub API calls',
-  labels: [:endpoint, :status]
-)
-
-GITHUB_RATE_LIMIT_REMAINING = PROMETHEUS.gauge(
-  :paid_github_rate_limit_remaining,
-  docstring: 'GitHub API rate limit remaining',
-  labels: [:token_id]
-)
-
-# Disk usage
-DISK_USAGE_BYTES = PROMETHEUS.gauge(
-  :paid_disk_usage_bytes,
-  docstring: 'Disk usage',
-  labels: [:type]  # repos, worktrees, logs, containers
-)
-```
-
-### Metrics Exposition
+### Metrics Exposition [IMPLEMENTED]
 
 ```ruby
 # config/routes.rb
 Rails.application.routes.draw do
-  # Prometheus scrape endpoint
-  get '/metrics', to: 'metrics#index'
+  namespace :api do
+    get 'metrics', to: 'metrics#show'
+  end
 end
 
-# app/controllers/metrics_controller.rb
-class MetricsController < ApplicationController
-  skip_before_action :authenticate_user!
+# app/controllers/api/metrics_controller.rb
+class Api::MetricsController < ActionController::API
+  before_action :authenticate_metrics_token!, if: -> { ENV["METRICS_TOKEN"].present? }
 
-  def index
-    # Optional: restrict to internal network
-    unless request.local? || internal_network?
-      head :forbidden
-      return
-    end
-
-    render plain: Prometheus::Client::Formats::Text.marshal(PROMETHEUS),
-           content_type: 'text/plain; version=0.0.4'
+  def show
+    render plain: Metrics::PrometheusCollector.call,
+           content_type: "text/plain; version=0.0.4; charset=utf-8"
   end
 
   private
 
-  def internal_network?
-    # Check if request comes from Prometheus server
-    request.ip.start_with?('10.', '172.16.', '192.168.')
+  def authenticate_metrics_token!
+    provided = request.authorization&.delete_prefix("Bearer ")
+    head :unauthorized unless ActiveSupport::SecurityUtils.secure_compare(provided.to_s, ENV["METRICS_TOKEN"])
   end
 end
 ```
+
+Authentication uses a `METRICS_TOKEN` bearer token. When the `METRICS_TOKEN` environment variable is set, scrapers must send `Authorization: Bearer <token>`. If `METRICS_TOKEN` is not set, the endpoint is unauthenticated (intended for VPC-internal use only).
 
 ### Prometheus Configuration
 
@@ -217,7 +145,7 @@ scrape_configs:
   - job_name: 'paid'
     static_configs:
       - targets: ['paid-web:3000']
-    metrics_path: '/metrics'
+    metrics_path: '/api/metrics'
 
   # Temporal server
   - job_name: 'temporal'
@@ -237,80 +165,24 @@ scrape_configs:
 
 ---
 
-## Structured Logging
+## Logging [IMPLEMENTED]
 
 ### Log Format
 
-All logs use structured JSON format for easy parsing:
+Paid uses Rails `ActiveSupport::TaggedLogging` with `config.log_tags = [:request_id]`. This prepends the request ID to each log line for correlation across a request lifecycle.
 
 ```ruby
-# config/initializers/logging.rb
-Rails.application.configure do
-  config.log_formatter = proc do |severity, timestamp, progname, msg|
-    log_entry = {
-      timestamp: timestamp.iso8601(3),
-      level: severity,
-      message: msg.is_a?(Hash) ? msg[:message] : msg,
-      **extract_metadata(msg)
-    }
-    "#{log_entry.to_json}\n"
-  end
-end
-```
-
-### Log Schema
-
-```json
-{
-  "timestamp": "2024-01-15T10:30:00.123Z",
-  "level": "INFO",
-  "message": "agent_execution.completed",
-  "trace_id": "abc123",
-  "span_id": "def456",
-  "context": {
-    "agent_run_id": 42,
-    "project_id": 7,
-    "workflow_id": "execution-42-xyz"
-  },
-  "metrics": {
-    "duration_ms": 45000,
-    "iterations": 3,
-    "tokens_used": 15000
-  }
-}
+# config/application.rb (or environment config)
+config.log_tags = [:request_id]
 ```
 
 ### Correlation IDs
 
-Every request and workflow gets a trace ID for correlation:
+`Current.request_id` (provided by Rails) is used for correlation within a request. There is no custom `RequestIdMiddleware` — Rails sets `request_id` automatically via `ActionDispatch::RequestId`.
 
-```ruby
-# app/middleware/request_id_middleware.rb
-class RequestIdMiddleware
-  def initialize(app)
-    @app = app
-  end
+### Log Aggregation [PLANNED]
 
-  def call(env)
-    trace_id = env['HTTP_X_REQUEST_ID'] || SecureRandom.uuid
-    Current.trace_id = trace_id
-
-    status, headers, response = @app.call(env)
-
-    headers['X-Request-ID'] = trace_id
-    [status, headers, response]
-  end
-end
-
-# app/models/current.rb
-class Current < ActiveSupport::CurrentAttributes
-  attribute :trace_id, :user, :account
-end
-```
-
-### Log Aggregation
-
-Logs are collected and shipped to Grafana Loki:
+Logs are planned to be collected and shipped to Grafana Loki:
 
 ```yaml
 # docker-compose.yml (logging section)
@@ -355,10 +227,10 @@ The Temporal UI (port 8080) provides:
 - Error details and stack traces
 - Workflow search and filtering
 
-### Custom Workflow Metrics
+### Custom Workflow Metrics [PLANNED]
 
 ```ruby
-# app/workflows/concerns/observable.rb
+# app/workflows/concerns/observable.rb [PLANNED]
 module Observable
   extend ActiveSupport::Concern
 
@@ -385,7 +257,7 @@ end
 
 ---
 
-## Dashboards (Grafana)
+## Dashboards (Grafana) [PLANNED]
 
 ### Dashboard Structure
 
@@ -451,9 +323,9 @@ Panels:
 
 ---
 
-## Alerting
+## Alerting [PLANNED]
 
-### Alert Rules
+### Alert Rules [PLANNED]
 
 ```yaml
 # prometheus/rules/paid.yml
@@ -529,7 +401,7 @@ groups:
           summary: "Quality score dropped significantly"
 ```
 
-### Alert Routing
+### Alert Routing [PLANNED]
 
 ```yaml
 # alertmanager/alertmanager.yml
@@ -567,229 +439,39 @@ receivers:
 
 ---
 
-## Resource Cleanup
+## Resource Cleanup [IMPLEMENTED]
 
 ### Worktree Cleanup Strategy
 
-Worktrees consume disk space and must be cleaned up after use:
+Worktrees consume disk space and must be cleaned up after use. Orphaned worktrees are cleaned up periodically by `WorktreeOrphanCleanupJob`:
 
 ```ruby
-# app/services/worktree_cleanup_service.rb
-class WorktreeCleanupService
+# app/jobs/worktree_orphan_cleanup_job.rb
+class WorktreeOrphanCleanupJob < ApplicationJob
   # Cleanup triggers:
   # 1. Immediately after PR created (success path)
   # 2. Immediately after agent failure (failure path)
-  # 3. Periodically for orphaned worktrees (background job)
+  # 3. Periodically for orphaned worktrees (this job)
 
   ORPHAN_THRESHOLD = 24.hours
 
-  def cleanup_for_agent_run(agent_run)
-    return unless agent_run.worktree_path.present?
-
-    container = agent_run.container
-    worktree_path = agent_run.worktree_path
-    branch_name = agent_run.branch_name
-
-    # Remove worktree
-    container.exec([
-      "git", "-C", repo_path(agent_run.project),
-      "worktree", "remove", "--force", worktree_path
-    ])
-
-    # Delete branch if PR not created
-    unless agent_run.pull_request_url.present?
-      container.exec([
-        "git", "-C", repo_path(agent_run.project),
-        "branch", "-D", branch_name
-      ])
-    end
-
-    # Update metrics
-    WORKTREE_COUNT.decrement(labels: { project_id: agent_run.project_id })
-
-    Rails.logger.info(
-      message: "worktree.cleaned",
-      agent_run_id: agent_run.id,
-      worktree_path: worktree_path
-    )
-  end
-
-  def cleanup_orphaned_worktrees
-    Project.active.find_each do |project|
-      cleanup_orphaned_for_project(project)
-    end
-  end
-
-  private
-
-  def cleanup_orphaned_for_project(project)
-    container = ContainerService.new.get_or_provision(project)
-    repo_path = repo_path(project)
-
-    # List all worktrees
-    result = container.exec(["git", "-C", repo_path, "worktree", "list", "--porcelain"])
-    worktrees = parse_worktree_list(result.output)
-
-    # Find active agent runs
-    active_worktrees = AgentRun
-      .where(project: project, status: [:pending, :running])
-      .pluck(:worktree_path)
-      .compact
-
-    # Identify orphans (worktrees without active runs)
-    orphans = worktrees.reject { |w| active_worktrees.include?(w[:path]) }
-
-    orphans.each do |worktree|
-      # Check age
-      next if worktree[:created_at] > ORPHAN_THRESHOLD.ago
-
-      Rails.logger.warn(
-        message: "worktree.orphan_detected",
-        project_id: project.id,
-        worktree_path: worktree[:path],
-        age_hours: ((Time.current - worktree[:created_at]) / 1.hour).round
-      )
-
-      # Clean up
-      container.exec(["git", "-C", repo_path, "worktree", "remove", "--force", worktree[:path]])
-      WORKTREE_COUNT.decrement(labels: { project_id: project.id })
-    end
+  def perform
+    # ... cleans up worktrees older than ORPHAN_THRESHOLD
+    # that have no active agent runs
   end
 end
 ```
 
 ### Container Cleanup
 
-```ruby
-# app/services/container_cleanup_service.rb
-class ContainerCleanupService
-  IDLE_THRESHOLD = 30.minutes
-  MAX_CONTAINER_AGE = 24.hours
-
-  def cleanup_idle_containers
-    Container.where(status: :idle)
-      .where("last_used_at < ?", IDLE_THRESHOLD.ago)
-      .find_each do |container|
-        stop_and_remove(container)
-      end
-  end
-
-  def cleanup_old_containers
-    Container.where("created_at < ?", MAX_CONTAINER_AGE.ago)
-      .find_each do |container|
-        stop_and_remove(container)
-      end
-  end
-
-  def cleanup_orphaned_containers
-    # Find Docker containers not tracked in database
-    docker_containers = docker_client.containers.all(
-      filters: { label: ["paid.managed=true"] }
-    )
-
-    tracked_ids = Container.pluck(:docker_id)
-
-    docker_containers.each do |dc|
-      next if tracked_ids.include?(dc.id)
-
-      Rails.logger.warn(
-        message: "container.orphan_detected",
-        docker_id: dc.id,
-        name: dc.info["Names"].first
-      )
-
-      dc.stop
-      dc.remove
-    end
-  end
-
-  private
-
-  def stop_and_remove(container)
-    docker_container = docker_client.containers.get(container.docker_id)
-    docker_container.stop(timeout: 10)
-    docker_container.remove
-
-    ACTIVE_CONTAINERS.decrement(labels: { project_id: container.project_id })
-
-    container.destroy
-
-    Rails.logger.info(
-      message: "container.removed",
-      container_id: container.id,
-      docker_id: container.docker_id
-    )
-  rescue Docker::Error::NotFoundError
-    # Container already gone
-    container.destroy
-  end
-end
-```
-
-### Disk Space Monitoring
+Orphaned Docker containers are cleaned up by `DockerOrphanCleanupJob`:
 
 ```ruby
-# app/jobs/disk_cleanup_job.rb
-class DiskCleanupJob < ApplicationJob
-  queue_as :maintenance
-
-  THRESHOLDS = {
-    warning: 0.75,
-    critical: 0.85,
-    emergency: 0.95
-  }.freeze
-
+# app/jobs/docker_orphan_cleanup_job.rb
+class DockerOrphanCleanupJob < ApplicationJob
   def perform
-    usage = calculate_disk_usage
-
-    # Update metrics
-    usage.each do |type, bytes|
-      DISK_USAGE_BYTES.set(bytes, labels: { type: type })
-    end
-
-    utilization = usage[:total].to_f / disk_capacity
-
-    case utilization
-    when THRESHOLDS[:emergency]..1.0
-      emergency_cleanup!
-    when THRESHOLDS[:critical]...THRESHOLDS[:emergency]
-      aggressive_cleanup!
-    when THRESHOLDS[:warning]...THRESHOLDS[:critical]
-      routine_cleanup!
-    end
-  end
-
-  private
-
-  def routine_cleanup!
-    Rails.logger.info(message: "disk_cleanup.routine")
-    WorktreeCleanupService.new.cleanup_orphaned_worktrees
-    ContainerCleanupService.new.cleanup_idle_containers
-    cleanup_old_logs(older_than: 30.days)
-  end
-
-  def aggressive_cleanup!
-    Rails.logger.warn(message: "disk_cleanup.aggressive")
-    routine_cleanup!
-    ContainerCleanupService.new.cleanup_old_containers
-    cleanup_old_logs(older_than: 7.days)
-    prune_docker_images!
-  end
-
-  def emergency_cleanup!
-    Rails.logger.error(message: "disk_cleanup.emergency")
-    aggressive_cleanup!
-    cleanup_old_logs(older_than: 1.day)
-    # Stop accepting new agent runs until space is freed
-    Rails.cache.write("disk_emergency", true, expires_in: 1.hour)
-  end
-
-  def cleanup_old_logs(older_than:)
-    AgentRunLog.where("created_at < ?", older_than.ago).delete_all
-  end
-
-  def prune_docker_images!
-    docker_client.images.prune(filters: { dangling: ["true"] })
+    # ... finds Docker containers not tracked in the database
+    # and removes them
   end
 end
 ```
@@ -801,21 +483,13 @@ end
 Rails.application.configure do
   config.good_job.enable_cron = true
   config.good_job.cron = {
-    disk_cleanup: {
-      cron: "0 * * * *",
-      class: "DiskCleanupJob"
-    },
     worktree_cleanup: {
       cron: "0 */6 * * *",
       class: "WorktreeOrphanCleanupJob"
     },
     container_cleanup: {
       cron: "*/30 * * * *",
-      class: "ContainerCleanupJob"
-    },
-    log_retention: {
-      cron: "0 3 * * *",
-      class: "LogRetentionJob"
+      class: "DockerOrphanCleanupJob"
     }
   }
 end
@@ -823,7 +497,7 @@ end
 
 ---
 
-## Docker Compose (Observability Stack)
+## Docker Compose (Observability Stack) [PLANNED]
 
 ```yaml
 # docker-compose.observability.yml
@@ -900,60 +574,68 @@ volumes:
 
 ---
 
-## Health Checks
+## Health Checks [IMPLEMENTED]
 
 ```ruby
 # app/controllers/health_controller.rb
-class HealthController < ApplicationController
-  skip_before_action :authenticate_user!
-
-  # GET /health - Basic liveness
+class HealthController < ActionController::Base
+  # GET /health/services — Qdrant service health
   def show
-    head :ok
+    qdrant_healthy = begin
+      Paid.qdrant_client.healthy?
+    rescue StandardError
+      false
+    end
+
+    status = qdrant_healthy ? :ok : :service_unavailable
+    render json: {
+      status: qdrant_healthy ? "ok" : "degraded",
+      services: { qdrant: qdrant_healthy ? "ok" : "unavailable" }
+    }, status: status
   end
 
-  # GET /health/ready - Readiness (dependencies)
-  def ready
+  # GET /health/liveness — always returns 200 if Rails process is up
+  def liveness
+    render json: { status: "alive" }, status: :ok
+  end
+
+  # GET /health/readiness — checks database connectivity and pending migrations
+  def readiness
     checks = {
-      database: check_database,
-      temporal: check_temporal,
-      redis: check_redis,
-      docker: check_docker
+      database: database_healthy?,
+      migrations: migrations_current?
     }
 
-    if checks.values.all?
-      render json: { status: 'ok', checks: checks }
-    else
-      render json: { status: 'degraded', checks: checks }, status: :service_unavailable
-    end
+    all_healthy = checks.values.all?
+    status = all_healthy ? :ok : :service_unavailable
+    render json: {
+      status: all_healthy ? "ready" : "not_ready",
+      checks: checks.transform_values { |v| v ? "ok" : "failing" }
+    }, status: status
   end
 
   private
 
-  def check_database
-    ActiveRecord::Base.connection.execute('SELECT 1')
+  def database_healthy?
+    ActiveRecord::Base.connection.execute("SELECT 1")
     true
-  rescue
+  rescue StandardError
     false
   end
 
-  def check_temporal
-    Paid::TemporalClient.instance.connection.get_system_info
+  def migrations_current?
+    ActiveRecord::Migration.check_all_pending!
     true
-  rescue
-    false
-  end
-
-  def check_redis
-    Rails.cache.redis.ping == 'PONG'
-  rescue
-    false
-  end
-
-  def check_docker
-    Docker.ping == 'OK'
-  rescue
+  rescue StandardError
     false
   end
 end
 ```
+
+Endpoints:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /health/services` | Qdrant service health (degraded if unavailable) |
+| `GET /health/liveness` | Always returns 200 if Rails process is alive |
+| `GET /health/readiness` | Database connectivity + pending migrations check |

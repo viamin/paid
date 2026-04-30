@@ -10,10 +10,15 @@ require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recom
 
 RSpec.describe TenantContext, :tenant_isolation do
   around do |example|
+    setup_complete = false
+
+    skip "requires CREATE ROLE privilege for RLS policy checks" unless can_manage_roles?
+
     install_tenant_policies
+    setup_complete = true
     example.run
   ensure
-    uninstall_tenant_policies
+    uninstall_tenant_policies if setup_complete
   end
 
   let(:account_a) { create(:account) }
@@ -206,6 +211,16 @@ RSpec.describe TenantContext, :tenant_isolation do
 
     ActiveRecord::Base.connection.execute("DROP OWNED BY paid_rls_spec")
     ActiveRecord::Base.connection.execute("DROP ROLE IF EXISTS paid_rls_spec")
+  end
+
+  def can_manage_roles?
+    ActiveModel::Type::Boolean.new.cast(
+      ActiveRecord::Base.connection.select_value(<<~SQL.squish)
+        SELECT rolcreaterole
+        FROM pg_roles
+        WHERE rolname = current_user
+      SQL
+    )
   end
 
   def expect_rls_rejection

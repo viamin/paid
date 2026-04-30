@@ -284,6 +284,75 @@ end
 - Uses API mode for analysis and mutation
 - Creates audit trail of evolution decisions
 
+#### ParallelAgentExecutionWorkflow
+
+Runs multiple agents concurrently on independent sub-issues within a feature.
+
+```ruby
+class ParallelAgentExecutionWorkflow
+  def execute(issue_ids, options = {})
+    results = issue_ids.map do |issue_id|
+      workflow.start_child(
+        AgentExecutionWorkflow,
+        issue_id: issue_id,
+        options: options,
+        task_queue: Paid.agent_task_queue
+      )
+    end
+
+    # Wait for all child workflows to complete
+    outcomes = results.map(&:result)
+
+    {
+      total: outcomes.size,
+      succeeded: outcomes.count { |o| o[:status] == :success },
+      failed: outcomes.count { |o| o[:status] == :failed }
+    }
+  end
+end
+```
+
+**Characteristics:**
+
+- Fan-out/fan-in pattern for independent issues
+- Each child runs in its own container and worktree (no conflicts)
+- Parent workflow tracks aggregate progress
+
+#### KnowledgeEvolutionWorkflow
+
+Evolves the project's knowledge base by ingesting new patterns from completed runs.
+
+```ruby
+class KnowledgeEvolutionWorkflow
+  def execute(project_id)
+    project = Project.find(project_id)
+
+    # Sample recent completed runs
+    samples = activity.sample_agent_runs(
+      project_id: project_id,
+      count: 50,
+      min_age_hours: 24
+    )
+
+    return { status: :insufficient_data } if samples.size < 10
+
+    # Analyze patterns across runs
+    patterns = activity.analyze_run_patterns(samples, project.knowledge_base)
+
+    # Update knowledge base with new patterns
+    activity.update_knowledge_base(project.knowledge_base, patterns)
+
+    { status: :evolved, patterns_found: patterns.size }
+  end
+end
+```
+
+**Characteristics:**
+
+- Runs periodically (weekly or after N completed runs)
+- Feeds insights back into future agent executions
+- Maintains project-specific knowledge artifacts
+
 ### Workflow Coordination
 
 When multiple agents work on related issues:
@@ -323,11 +392,9 @@ Activities are the building blocks that workflows compose. Each activity is:
 | Activity | Description | Typical Duration |
 |----------|-------------|------------------|
 | `FetchIssuesActivity` | Get issues with specific labels from GitHub | 1-5 seconds |
-| `FetchIssueActivity` | Get single issue details | <1 second |
 | `CreateSubIssuesActivity` | Create multiple GitHub issues | 2-10 seconds |
-| `UpdateIssueLabelActivity` | Add/remove labels on issue | <1 second |
-| `AddIssueCommentActivity` | Post comment to issue | <1 second |
 | `CreatePullRequestActivity` | Create PR with changes | 2-5 seconds |
+| `UpdatePlanningLabelsActivity` | Update labels during planning workflow | <1 second |
 
 ### Agent Activities
 
@@ -338,52 +405,47 @@ Activities are the building blocks that workflows compose. Each activity is:
 | `RunAgentActivity` | Execute agent CLI or API call | 1-30 minutes |
 | `CleanupWorktreeActivity` | Remove worktree after completion | 1-5 seconds |
 | `ReleaseContainerActivity` | Mark container as available | <1 second |
+| `CleanupContainerActivity` | Stop and remove container resources | 1-5 seconds |
 
 ### Intelligence Activities
 
 | Activity | Description | Typical Duration |
 |----------|-------------|------------------|
-| `SelectModelActivity` | Choose model via meta-agent | 1-5 seconds |
-| `GeneratePlanActivity` | Create implementation plan | 10-60 seconds |
-| `EvaluateQualityActivity` | Calculate quality metrics | 1-10 seconds |
+| `DecomposeFeatureActivity` | Decompose feature request into sub-issues | 10-60 seconds |
 | `GenerateMutationsActivity` | Create prompt variants | 10-30 seconds |
-| `CheckBudgetActivity` | Verify cost limits not exceeded | <1 second |
+| `CheckQualityGateActivity` | Evaluate quality metrics against thresholds | 1-10 seconds |
+| `SampleRunsActivity` | Sample recent agent runs for analysis | 1-5 seconds |
+
+> **Note**: Model selection is handled by the `Models::MetaAgentSelector` service (not an activity). Cost/budget tracking is handled by the `TokenUsageTracker` service (not an activity).
 
 ### Activity Implementation Pattern
 
 ```ruby
 class RunAgentActivity < Paid::Activity
   def execute(params)
-    container = params[:container]
-    agent_type = params[:agent_type]
-    prompt = resolve_prompt(params[:prompt_slug], params[:issue])
+    agent_run = AgentRun.find(params[:agent_run_id])
+    project = agent_run.project
 
-    # Set up monitoring
-    monitor = AgentMonitor.new(
-      max_iterations: params[:max_iterations],
-      max_tokens: params[:max_tokens],
-      timeout: params[:timeout_minutes].minutes
-    )
+    provider = AgentHarness.provider(params[:agent_type])
 
-    # Get the provider
-    provider = AgentHarness.provider(agent_type)
-
-    # Run with monitoring
-    response = monitor.run do
+    response = Timeout.timeout(project.max_execution_seconds) do
       provider.send_message(
-        prompt: prompt,
+        prompt: resolve_prompt(params[:prompt_slug], params[:issue]),
         model: params[:model]
       )
     end
 
-    # Record metrics
     record_token_usage(response.tokens)
     record_quality_metrics(response)
 
-    result
-  rescue AgentMonitor::LimitExceeded => e
-    # Graceful handling of guardrails
-    AgentResult.new(success: false, error: e.message, partial_output: e.partial_output)
+    response
+  rescue Timeout::Error
+    Guardrails::ViolationHandler.new.handle(
+      violation_type: :time_limit,
+      agent_run: agent_run,
+      details: { max_seconds: project.max_execution_seconds }
+    )
+    AgentResult.new(success: false, error: "Time limit exceeded")
   end
 end
 ```
@@ -394,41 +456,26 @@ end
 
 ### Container Image
 
-Based on aidp's devcontainer, customized for Paid:
+Based on `ubuntu:24.04` with Ruby 3.4.8 compiled from source and Node.js 22.13.0 from binary:
 
 ```dockerfile
 # Dockerfile.agent
-FROM ruby:3.4-bookworm
+FROM ubuntu:24.04
 
-# System dependencies
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    build-essential \
-    libpq-dev \
-    nodejs \
-    npm \
-    iptables \
-    && rm -rf /var/lib/apt/lists/*
+# Ruby 3.4.8 compiled from source; Node.js 22.13.0 from binary archive
 
-# Install agent CLIs
-RUN npm install -g @anthropic/claude-code \
-    && npm install -g cursor-cli \
-    && pip install openai-codex-cli \
-    && gh extension install github/gh-copilot
+# Agent CLIs installed via build args from agent-harness
+ARG CLAUDE_CODE_VERSION
+ARG CURSOR_VERSION
+# ... additional agent CLI versions passed as build args
 
-# Firewall setup script
-COPY scripts/setup-firewall.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/setup-firewall.sh
+# Additional tools: ast-grep, scc, ruby-maat, git-credential-paid
 
 # Non-root user for agent execution
 RUN useradd -m -s /bin/bash agent
 USER agent
 
 WORKDIR /workspace
-
-# No secrets in image - they come via proxy
-ENV PAID_PROXY_URL=http://host.docker.internal:3001
 ```
 
 ### Container Lifecycle
@@ -455,81 +502,57 @@ ENV PAID_PROXY_URL=http://host.docker.internal:3001
 ### Container Provisioning
 
 ```ruby
-class ContainerService
-  def provision(project_id)
-    project = Project.find(project_id)
+# app/services/containers/provision.rb
+class Containers::Provision
+  def call(agent_run:)
+    project = agent_run.project
 
     # Check for available container
-    container = find_available_container(project_id)
+    container = find_available_container(project.id)
     return container if container
 
     # Start new container
     container = docker_client.containers.create(
       image: "paid-agent:latest",
-      name: "paid-#{project_id}-#{SecureRandom.hex(4)}",
+      name: "paid-#{project.id}-#{SecureRandom.hex(4)}",
       env: {
-        "PAID_PROXY_URL" => paid_proxy_url,
-        "PROJECT_ID" => project_id.to_s
+        "PROJECT_ID" => project.id.to_s
       },
       volumes: {
         workspace_path(project) => { "bind" => "/workspace", "mode" => "rw" }
       },
       network_mode: "paid-network",
-      # Resource limits
       memory: "4g",
-      cpu_quota: 200_000  # 2 CPUs
+      cpu_quota: 200_000
     )
 
     container.start
 
-    # Clone repo if not already present
-    ensure_repo_cloned(container, project)
-
-    # Apply firewall rules
-    apply_firewall(container)
-
     Container.create!(
-      project_id: project_id,
+      project_id: project.id,
       docker_id: container.id,
       status: :running
     )
-  end
-
-  private
-
-  def apply_firewall(container)
-    # Allowlist only necessary domains
-    allowlist = [
-      "api.anthropic.com",
-      "api.openai.com",
-      "generativelanguage.googleapis.com",
-      "api.github.com",
-      "github.com",
-      # Paid proxy (for API key injection)
-      "host.docker.internal"
-    ]
-
-    container.exec(["/usr/local/bin/setup-firewall.sh", *allowlist])
   end
 end
 ```
 
 ### Git Worktree Management
 
-Each agent works in an isolated worktree:
+Worktree operations run on the **host filesystem**, not inside containers. Container-based git clone and worktree setup uses `Containers::GitOperations` instead.
 
 ```ruby
+# Host-side worktree management
 class WorktreeService
-  def create(container:, branch_name:)
-    project = container.project
-    repo_path = "/workspace/repo"
-    worktree_path = "/workspace/worktrees/#{branch_name}"
+  def create(project:, branch_name:)
+    repo_path = host_repo_path(project)
+    worktree_path = "#{repo_path}/../worktrees/#{branch_name}"
 
-    # Fetch latest from remote
-    container.exec(["git", "-C", repo_path, "fetch", "origin"])
+    # Fetch latest from remote (on host)
+    system("git -C #{repo_path} fetch origin")
 
-    # Create worktree from latest main
-    container.exec([
+    # Create worktree from latest main (on host)
+    system([
       "git", "-C", repo_path, "worktree", "add",
       "-b", branch_name,
       worktree_path,
@@ -537,7 +560,7 @@ class WorktreeService
     ])
 
     Worktree.create!(
-      container_id: container.id,
+      project_id: project.id,
       path: worktree_path,
       branch_name: branch_name,
       status: :active
@@ -545,24 +568,17 @@ class WorktreeService
   end
 
   def cleanup(worktree)
-    container = worktree.container
+    repo_path = File.dirname(worktree.path)
 
-    # Remove worktree
-    container.exec([
-      "git", "-C", "/workspace/repo", "worktree", "remove",
-      "--force", worktree.path
-    ])
-
-    # Delete branch
-    container.exec([
-      "git", "-C", "/workspace/repo", "branch", "-D",
-      worktree.branch_name
-    ])
+    system(["git", "-C", repo_path, "worktree", "remove", "--force", worktree.path])
+    system(["git", "-C", repo_path, "branch", "-D", worktree.branch_name])
 
     worktree.update!(status: :cleaned)
   end
 end
 ```
+
+For container-internal git operations (clone, commit, push), see `Containers::GitOperations`.
 
 ---
 
@@ -626,7 +642,7 @@ end
 
 ### API Mode (Outside agent-harness)
 
-Paid uses ruby-llm directly for planning, quality evaluation, and other non-CLI tasks.
+Paid uses `AgentHarness.send_message` directly for planning, quality evaluation, and other non-CLI tasks (e.g., PR description generation, issue analysis, prompt evolution).
 
 ---
 
@@ -756,63 +772,41 @@ Every agent run is monitored for:
 
 ### Implementation
 
+Guardrails are enforced by separate, focused services:
+
+- **`AgentRuns::DetectInfiniteLoop`** — detects repeated identical output patterns
+- **`TokenUsageTracker`** — enforces cost/token limits per project and per run
+- **`Guardrails::ViolationHandler`** — unified handler that processes violations and transitions agent runs to appropriate terminal states
+
+`RunAgentActivity` checks `project.max_execution_seconds` for time limits and wraps agent execution in a timeout.
+
 ```ruby
-class AgentMonitor
-  class LimitExceeded < StandardError
-    attr_reader :partial_output
-    def initialize(message, partial_output = nil)
-      super(message)
-      @partial_output = partial_output
-    end
-  end
+# Guardrails::ViolationHandler handles these violation types:
+# - :loop_detected   → AgentRuns::DetectInfiniteLoop
+# - :token_limit     → TokenUsageTracker
+# - :cost_limit      → TokenUsageTracker
+# - :time_limit      → RunAgentActivity (project.max_execution_seconds)
+# - :anomaly         → heuristic anomaly detection
 
-  def initialize(max_iterations:, max_tokens:, timeout:, cost_limit_cents: nil)
-    @max_iterations = max_iterations
-    @max_tokens = max_tokens
-    @timeout = timeout
-    @cost_limit_cents = cost_limit_cents
-    @checkpoint = Checkpoint.new
-  end
+module Guardrails
+  class ViolationHandler
+    VIOLATION_TYPES = %i[loop_detected token_limit cost_limit time_limit anomaly].freeze
 
-  def run(&block)
-    Timeout.timeout(@timeout) do
-      block.call(@checkpoint)
-    end
-  rescue Timeout::Error
-    raise LimitExceeded.new("Timeout exceeded", @checkpoint.partial_output)
-  end
+    def handle(violation_type:, agent_run:, details: {})
+      raise ArgumentError, "Unknown violation: #{violation_type}" unless VIOLATION_TYPES.include?(violation_type)
 
-  class Checkpoint
-    attr_reader :partial_output
+      agent_run.update!(
+        status: :failed,
+        failure_reason: violation_type,
+        failure_details: details
+      )
 
-    def initialize
-      @iterations = 0
-      @tokens = 0
-      @recent_outputs = []
-      @partial_output = ""
-    end
-
-    def record_iteration(output)
-      @iterations += 1
-      @partial_output = output
-
-      # Check for infinite loop (same output repeated)
-      @recent_outputs << output.hash
-      @recent_outputs = @recent_outputs.last(5)
-      if @recent_outputs.uniq.size == 1 && @recent_outputs.size >= 3
-        raise LimitExceeded.new("Infinite loop detected", output)
-      end
-
-      if @iterations > @max_iterations
-        raise LimitExceeded.new("Iteration limit exceeded", output)
-      end
-    end
-
-    def record_usage(usage)
-      @tokens += usage.total
-      if @tokens > @max_tokens
-        raise LimitExceeded.new("Token limit exceeded", @partial_output)
-      end
+      Rails.logger.info(
+        message: "guardrails.violation",
+        agent_run_id: agent_run.id,
+        violation_type: violation_type,
+        details: details
+      )
     end
   end
 end
@@ -915,9 +909,7 @@ class RunAgentActivity < Paid::Activity
       max_interval: 1.minute,
       max_attempts: 3,
       non_retryable_error_types: [
-        AgentMonitor::LimitExceeded,  # Don't retry guardrail violations
-        BudgetExceeded,               # Don't retry budget issues
-        GitConflict                   # Needs human intervention
+        "ApplicationError"  # non_retryable: true errors are never retried
       ]
     }
   )
@@ -931,35 +923,18 @@ class AgentExecutionWorkflow
   def execute(issue_id)
     begin
       # ... normal flow ...
-    rescue AgentMonitor::LimitExceeded => e
-      handle_limit_exceeded(e)
-    rescue BudgetExceeded => e
-      handle_budget_exceeded(e)
-    rescue => e
-      handle_unexpected_error(e)
+    rescue ApplicationError => e
+      if e.non_retryable
+        activity.mark_agent_run_failed(agent_run, e)
+      else
+        raise  # let Temporal retry
+      end
     end
-  end
-
-  private
-
-  def handle_limit_exceeded(error)
-    activity.add_issue_comment(
-      @issue,
-      "Agent stopped: #{error.message}\n\nPartial progress saved."
-    )
-    activity.update_issue_labels(@issue, add: [:needs_input])
-    { status: :limit_exceeded, partial_output: error.partial_output }
-  end
-
-  def handle_budget_exceeded(error)
-    activity.add_issue_comment(
-      @issue,
-      "Budget limit reached for this project. Please increase budget or wait for reset."
-    )
-    { status: :budget_exceeded }
   end
 end
 ```
+
+`MarkAgentRunFailedActivity` is the centralized activity for recording failures: it updates the agent run status, records failure details, and triggers any required notifications.
 
 ---
 
@@ -979,28 +954,27 @@ end
 
 ### Dashboard Integration
 
-The live dashboard receives updates via Action Cable:
+The live dashboard receives updates via Action Cable, triggered by agent run status change callbacks through `LiveDashboardBroadcastJob`:
 
 ```ruby
-class AgentRunBroadcaster
-  def initialize(agent_run)
-    @agent_run = agent_run
-    @channel = "agent_run_#{agent_run.id}"
-  end
+class LiveDashboardBroadcastJob < ApplicationJob
+  def perform(agent_run_id)
+    agent_run = AgentRun.find(agent_run_id)
 
-  def broadcast_update(data)
-    ActionCable.server.broadcast(@channel, {
-      agent_run_id: @agent_run.id,
-      status: @agent_run.status,
-      provider: data[:provider],
-      duration_seconds: data[:duration_seconds],
-      tokens_used: data[:tokens_used],
-      current_output: data[:output]&.last(500),  # Last 500 chars
+    ActionCable.server.broadcast("agent_run_#{agent_run.id}", {
+      agent_run_id: agent_run.id,
+      status: agent_run.status,
+      provider: agent_run.provider,
+      duration_seconds: agent_run.duration_seconds,
+      tokens_used: agent_run.total_tokens_used,
+      current_output: agent_run.latest_output&.last(500),
       timestamp: Time.current.iso8601
     })
   end
 end
 ```
+
+`LiveDashboardBroadcastJob` is enqueued automatically when an agent run's status changes (via an `after_commit` callback on the `AgentRun` model).
 
 ### Temporal UI
 

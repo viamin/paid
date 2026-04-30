@@ -10,8 +10,20 @@ if ENV.fetch("COVERAGE", "true") != "false"
   end
 end
 
+require "test_prof"
+
+TestProf.configure do |config|
+  config.output_dir = "tmp/test_prof"
+  config.timestamps = true
+end
+
 RSpec.configure do |config|
   config.example_status_persistence_file_path = "spec/.examples.txt"
+
+  if ENV["GITHUB_ACTIONS"] == "true"
+    require "rspec/github"
+    config.add_formatter RSpec::Github::Formatter
+  end
 
   # rspec-expectations config goes here.
   config.expect_with :rspec do |expectations|
