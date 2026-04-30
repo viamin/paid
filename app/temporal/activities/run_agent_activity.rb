@@ -1170,9 +1170,11 @@ module Activities
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
       return direct_outbound_execution_plan(provider_entry, prompt).env if provider_entry&.agent_harness_runtime?
       return {} unless provider_entry
-      return api_key_command_env(provider_entry) if provider_entry.api_key?
 
-      {}
+      env = {}
+      env.merge!(provider_entry.direct_outbound_exec_env) if provider_entry.requires_direct_outbound?
+      env.merge!(api_key_command_env(provider_entry)) if provider_entry.api_key?
+      env
     end
 
     def command_preparation_for(command_context, prompt)
