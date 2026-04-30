@@ -189,7 +189,7 @@ module Providers
       begin
         test_run.with_container do |run|
           executor = Containers::HarnessExecutor.new(run)
-          prepare_kilocode_config!(executor) if kilocode_direct_outbound?
+          prepare_kilocode_config!(run) if kilocode_direct_outbound?
           harness_result = AgentHarness.check_provider(
             harness_provider_name,
             timeout: TIMEOUT,
@@ -255,19 +255,23 @@ module Providers
         api_provider, Provider::DIRECT_OUTBOUND_API_PROVIDERS["anthropic"]
       )
 
-      # Kilocode delegates to the upstream provider's SDK. The env var name
-      # depends on the chosen upstream: native providers use their own key
-      # (ANTHROPIC_API_KEY), OpenAI-compatible providers use OPENAI_API_KEY.
       env_var = if api_config[:kilocode_api] && api_config[:kilocode_api] != "openai-compatible"
         "#{api_provider.upcase}_API_KEY"
       else
         "OPENAI_API_KEY"
       end
 
+      env = { env_var => api_key }
+      base_url = api_config[:base_url]
+      if base_url && !api_config[:kilocode_api]
+        default_openai_url = Provider::DIRECT_OUTBOUND_API_PROVIDERS.dig("openai", :base_url)
+        env["OPENAI_BASE_URL"] = base_url if base_url != default_openai_url
+      end
+
       AgentHarness::ProviderRuntime.new(
         model: provider.kilocode_model_id,
         api_provider: api_provider,
-        env: { env_var => api_key }
+        env: env
       )
     end
 
@@ -277,19 +281,42 @@ module Providers
 
     # Writes the kilocode config file into the container before the smoke test.
     #
-    # This preserves the direct-outbound kilocode bootstrap until agent-harness
-    # exposes an equivalent preparation contract for kilocode providers.
-    def prepare_kilocode_config!(executor)
-      config_json = provider.kilocode_config_json
-      preparation = AgentHarness::ExecutionPreparation.new(
-        file_writes: [
-          { path: "/home/agent/.config/kilo/config.json", content: config_json }
-        ]
+    # Uses a direct container exec instead of ExecutionPreparation because
+    # ExecutionPreparation cleans up files after each execute call (see
+    # provision.rb ensure block), which removes the config before the
+    # subsequent smoke test runs.
+    def prepare_kilocode_config!(run)
+      config_json = kilocode_container_config_json
+      run.execute_in_container(
+        [ "sh", "-c",
+          "mkdir -p /home/agent/.config/kilo && " \
+          "printf '%s' \"$KILOCODE_CONFIG_B64\" | base64 -d > /home/agent/.config/kilo/config.json" ],
+        timeout: 30,
+        env: { "KILOCODE_CONFIG_B64" => Base64.strict_encode64(config_json) }
       )
-      executor.execute(
-        %w[true],
-        preparation: preparation
+    end
+
+    # Generates a kilo CLI config JSON compatible with v7.1.3.
+    #
+    # The kilo CLI expects provider to be a record (e.g. {"openai": {}}),
+    # not a string. For OpenAI-compatible backends (z.ai, DeepSeek, etc.),
+    # the "openai" provider is used with OPENAI_BASE_URL overridden via env.
+    def kilocode_container_config_json
+      api_provider = provider.kilocode_api_provider
+      api_config = Provider::DIRECT_OUTBOUND_API_PROVIDERS.fetch(
+        api_provider, Provider::DIRECT_OUTBOUND_API_PROVIDERS["anthropic"]
       )
+
+      kilocode_provider_key = if api_config[:kilocode_api]
+        api_config[:kilocode_api]
+      else
+        "openai"
+      end
+
+      {
+        provider: { kilocode_provider_key => {} },
+        model: "#{kilocode_provider_key}/#{provider.kilocode_model_id}"
+      }.to_json
     end
 
     def build_test_run

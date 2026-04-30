@@ -20,6 +20,10 @@ class TenantSetting < ApplicationRecord
     "max_tokens_per_run" => 10_000_000,
     "max_monthly_cost_cents" => nil
   }.freeze
+  DEFAULT_CHAT_SETTINGS = {
+    "chat_session_token_limit" => 100_000,
+    "chat_monthly_token_limit" => nil
+  }.freeze
   DEFAULT_QUALITY_THRESHOLDS = Project::DEFAULT_QUALITY_GATE_SETTINGS.freeze
   DEFAULT_AGENT_SETTINGS = {
     "default_goal" => "create_pr",
@@ -73,6 +77,7 @@ class TenantSetting < ApplicationRecord
       "quality_thresholds" => effective_quality_thresholds,
       "agent_settings" => effective_agent_settings,
       "worker_settings" => effective_worker_settings,
+      "chat_settings" => effective_chat_settings,
       "self_repo_full_name" => self_repo_full_name,
       "features" => features
     }
@@ -134,6 +139,18 @@ class TenantSetting < ApplicationRecord
     DEFAULT_AGENT_SETTINGS.fetch("default_goal")
   end
 
+  def effective_chat_settings
+    merge_defaults(DEFAULT_CHAT_SETTINGS, features.fetch("chat_settings", {}))
+  end
+
+  def chat_session_token_limit
+    effective_chat_settings["chat_session_token_limit"]
+  end
+
+  def chat_monthly_token_limit
+    effective_chat_settings["chat_monthly_token_limit"]
+  end
+
   def cap_max_concurrent_runs(limit)
     [ limit, max_concurrent_runs ].compact.min
   end
@@ -165,7 +182,7 @@ class TenantSetting < ApplicationRecord
   def self.read_worker_setting_from_db(key)
     return nil unless table_exists?
 
-    setting = Account.first&.tenant_setting
+    setting = (Current.account || Account.first)&.tenant_setting
     return nil unless setting
 
     value = setting.worker_settings&.dig(key.to_s)

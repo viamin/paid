@@ -39,6 +39,7 @@ RUN NODE_VERSION=22.13.0 \
     && rm "${TARBALL}"
 
 # Install Ruby build dependencies, runtime deps, Python, PostgreSQL client libs, and ShellCheck
+# Keep client tools on the same Postgres major as the pinned server image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     autoconf \
     bison \
@@ -49,6 +50,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     libgdbm-dev \
     libpq-dev \
+    postgresql-client-16 \
     rustc \
     shellcheck \
     python3 \
@@ -75,7 +77,7 @@ RUN RUBY_VERSION=3.4.8 \
 # Remove some build-only dependencies to reduce image size and attack surface.
 # We intentionally keep the corresponding *-dev packages (libssl-dev, libreadline-dev, zlib1g-dev,
 # libyaml-dev, libffi-dev, libgdbm-dev, libpq-dev) so native extensions (e.g., Ruby gems like pg)
-# can be compiled inside this agent image.
+# can be compiled inside this agent image. We also keep postgresql-client-16 for schema dumps.
 RUN apt-get update && apt-get purge -y --auto-remove \
     autoconf \
     bison \
@@ -239,19 +241,16 @@ RUN if [ -z "${CURSOR_ARTIFACT_URL}" ]; then echo "ERROR: CURSOR_ARTIFACT_URL bu
     && ln -sf "/opt/cursor-agent/${CURSOR_BINARY_NAME}" "${CURSOR_GLOBAL_PATH}" \
     && rm -rf /tmp/cursor-artifact.tar.gz /tmp/dist-package
 
-# Install Aider CLI.
-# Follow the official Aider "Install with uv" flow so the tool lives in its own
-# isolated environment instead of the system Python:
-# https://aider.chat/docs/install.html#install-with-uv
-# Pin both uv and aider-chat for reproducible builds.
-ARG UV_VERSION=0.8.17
-ARG AIDER_CHAT_VERSION=0.86.2
-ENV UV_TOOL_BIN_DIR=/usr/local/bin
-ENV UV_TOOL_DIR=/opt/uv/tools
-ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python
-RUN mkdir -p "${UV_TOOL_DIR}" "${UV_PYTHON_INSTALL_DIR}" \
-    && python3 -m pip install --no-cache-dir --break-system-packages "uv==${UV_VERSION}" \
-    && uv tool install --force --python python3.12 --with pip "aider-chat==${AIDER_CHAT_VERSION}"
+# Install Aider CLI via agent-harness install contract.
+# agent-harness owns the Aider install recipe, uv bootstrap, and version pin.
+# The install command is extracted at build time by
+# scripts/build-agent-image.sh / agent-image.yml — Paid no longer pins these versions.
+ARG AIDER_INSTALL_COMMAND
+RUN if [ -z "${AIDER_INSTALL_COMMAND}" ]; then \
+        echo "ERROR: AIDER_INSTALL_COMMAND build-arg is required (sourced from agent-harness)" >&2; \
+        exit 1; \
+    fi \
+    && eval "${AIDER_INSTALL_COMMAND}"
 
 # Install git credential helper for proxy-based authentication.
 # This allows git clone/push inside the container without exposing GitHub tokens.
@@ -275,10 +274,18 @@ RUN useradd -m -s /bin/bash agent \
 # into stdout, which breaks the Test Agent ping response matching.
 # The opencode binary creates its DB on first run; this step discards the
 # network-dependent output and only keeps the migrated SQLite file.
+#
+# The pre-seeded DB is copied to /opt/opencode-seed so it survives the tmpfs
+# mount that Provision#host_config places at /home/agent/.local/share/opencode
+# at runtime. Containers::Provision#seed_opencode_database! copies it from
+# /opt into the tmpfs after the container starts.
 USER agent
 RUN mkdir -p /home/agent/.local/share/opencode \
     && timeout 10s opencode run "OK" > /dev/null 2>&1 || true
 USER root
+RUN mkdir -p /opt/opencode-seed \
+    && cp -a /home/agent/.local/share/opencode/. /opt/opencode-seed/ \
+    && chown -R agent:agent /opt/opencode-seed
 
 # Set up working directory
 WORKDIR /workspace

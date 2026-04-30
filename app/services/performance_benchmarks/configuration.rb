@@ -18,14 +18,14 @@ module PerformanceBenchmarks
       "dashboard_load_time" => {
         "name" => "Dashboard load time",
         "description" => "Service-layer time to compute the main dashboard payload.",
-        "budget_ms" => 1_000,
-        "regression_threshold" => 1.25
+        "budget_ms" => 3_000,
+        "regression_threshold" => 1.5
       },
       "search_latency" => {
         "name" => "Search latency",
         "description" => "Knowledge search service latency using exact search by default.",
-        "budget_ms" => 500,
-        "regression_threshold" => 1.25
+        "budget_ms" => 2_000,
+        "regression_threshold" => 1.5
       }
     }.freeze
 

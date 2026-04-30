@@ -11,11 +11,10 @@
   // Features to add to the dev container. More info: https://containers.dev/features.
   "features": {
     "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/devcontainers/features/node:1": {},
+    "ghcr.io/devcontainers/features/node:2": {},
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
       "moby": false
-    },
-    "ghcr.io/rails/devcontainer/features/postgres-client": {}
+    }
   },
   "containerEnv": {
     "TZ": "${localEnv:TZ:UTC}",

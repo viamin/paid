@@ -3,6 +3,7 @@
 require "base64"
 require "digest"
 require "docker-api"
+require "securerandom"
 require "shellwords"
 
 module Containers
@@ -28,7 +29,8 @@ module Containers
   #   end
   #
   class Provision
-    CODEX_NOTIFY_LINE = 'notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]'
+    CODEX_NOTIFY_LINE = 'notify = ["sh", "-lc", "date +%s > /paid-heartbeat/.paid-heartbeat"]'
+    HEARTBEAT_MOUNT_POINT = "/paid-heartbeat"
 
     # Base error for all container service errors
     class Error < StandardError; end
@@ -122,7 +124,7 @@ module Containers
       workspace_mount: "/workspace"
     }.freeze
 
-    attr_reader :agent_run, :project, :worktree_path, :container, :options, :workspace_volume, :pool_entry
+    attr_reader :agent_run, :project, :worktree_path, :container, :options, :workspace_volume, :pool_entry, :heartbeat_dir_host
 
     def self.network_for(agent_run:)
       new(agent_run: agent_run).network_name
@@ -160,6 +162,9 @@ module Containers
       @pool_mode = options.delete(:pool_mode) { false }
       @options = DEFAULTS.merge(resolve_user_setting_overrides).merge(options)
       @container = nil
+      @heartbeat_age_cache = {}
+      @heartbeat_age_cache_mutex = Mutex.new
+      @heartbeat_dir_host = nil
     end
 
     # Provisions a new container with security hardening.
@@ -170,11 +175,13 @@ module Containers
     def provision
       log_system("container.provision.start", image: options[:image])
 
+      prepare_heartbeat_dir!
       prepare_workspace!
       ensure_network!
       @container = create_container
       start_container
       fix_all_ownership!
+      seed_opencode_database!
       seed_codex_credentials!
       seed_gemini_credentials!
       seed_copilot_credentials!
@@ -302,21 +309,23 @@ module Containers
           when :stderr
             stderr_buffer << normalized_chunk
             log_output(:stderr, normalized_chunk) if stream
+          end
 
-            # Check stderr against abort patterns — if the CLI emits a fatal
-            # error but hangs instead of exiting, stop the container immediately
-            # rather than waiting for the idle/wall-clock timeout.
-            if abort_patterns&.any? && abort_matched_output.nil?
-              matched = abort_patterns.any? { |pat| normalized_chunk.match?(pat) }
-              if matched
-                abort_matched_output = normalized_chunk
-                log_system("container.execute.abort_pattern_matched",
-                  output: normalized_chunk.truncate(200))
-                begin
-                  container.stop(timeout: 0)
-                rescue Docker::Error::DockerError => e
-                  log_system("container.execute.abort_stop_failed", error: e.message)
-                end
+          # Check both stdout and stderr against abort patterns — if the CLI
+          # emits a fatal error but hangs instead of exiting, stop the container
+          # immediately rather than waiting for the idle/wall-clock timeout.
+          # JSON-mode CLIs (e.g. Codex --json) may emit fatal errors on stdout.
+          if abort_patterns&.any? && abort_matched_output.nil?
+            matched = abort_patterns.any? { |pat| normalized_chunk.match?(pat) }
+            if matched
+              abort_matched_output = normalized_chunk
+              log_system("container.execute.abort_pattern_matched",
+                stream: stream_type.to_s,
+                output: normalized_chunk.truncate(200))
+              begin
+                container.stop(timeout: 0)
+              rescue Docker::Error::DockerError => e
+                log_system("container.execute.abort_stop_failed", error: e.message)
               end
             end
           end
@@ -373,7 +382,11 @@ module Containers
       rescue StartupTimeoutError, IdleTimeoutError => e
         log_partial_output(stdout_buffer, stderr_buffer)
         timeout_value = e.is_a?(StartupTimeoutError) ? startup_timeout : idle_timeout
-        log_system("container.execute.timeout", timeout_type: e.class.name.demodulize, timeout: timeout_value)
+        log_system("container.execute.timeout",
+          timeout_type: e.class.name.demodulize,
+          timeout: timeout_value,
+          **timeout_diagnostics(started_at, output_received, last_activity_at, heartbeat_path),
+          **output_summary_diagnostics(stdout_buffer, stderr_buffer))
         raise
       rescue TimeoutError
         log_partial_output(stdout_buffer, stderr_buffer)
@@ -398,7 +411,9 @@ module Containers
           log_system(
             "container.execute.timeout",
             timeout_type: timeout_error.class.name.demodulize,
-            timeout: timeout_value
+            timeout: timeout_value,
+            **timeout_diagnostics(started_at, output_received, last_activity_at, heartbeat_path),
+            **output_summary_diagnostics(stdout_buffer, stderr_buffer)
           )
           raise
         end
@@ -413,12 +428,27 @@ module Containers
           log_system(
             "container.execute.timeout",
             timeout_type: timeout_error.class.name.demodulize,
-            timeout: timeout_value
+            timeout: timeout_value,
+            **timeout_diagnostics(started_at, output_received, last_activity_at, heartbeat_path),
+            **output_summary_diagnostics(stdout_buffer, stderr_buffer)
           )
           raise
         end
 
         log_system("container.execute.failed", error: e.message)
+
+        begin
+          container.refresh!
+          cstate = container.info["State"] || {}
+          log_system("container.execute.container_state",
+            running: cstate["Running"],
+            exit_code: cstate["ExitCode"],
+            oom_killed: cstate["OOMKilled"],
+            error: cstate["Error"],
+            finished_at: cstate["FinishedAt"])
+        rescue Docker::Error::DockerError
+        end
+
         raise ExecutionError.new("Docker exec error: #{e.message}")
       ensure
         watchdog_mutex.synchronize { exec_completed = true }
@@ -441,6 +471,7 @@ module Containers
     # @param force [Boolean] Force kill if container doesn't stop gracefully
     # @return [void]
     def cleanup(force: false)
+      cleanup_heartbeat_dir!
       return unless container
 
       log_system("container.cleanup.start", container_id: container.id)
@@ -475,6 +506,12 @@ module Containers
       false
     end
 
+    def heartbeat_host_path
+      return nil unless heartbeat_dir_host.present?
+
+      File.join(heartbeat_dir_host, HeartbeatSetup::HEARTBEAT_FILENAME)
+    end
+
     # Attaches an existing Docker container to this service instance.
     # Used by .reconnect to rehydrate container state without reaching into ivars.
     #
@@ -484,6 +521,7 @@ module Containers
       @container = container
       @workspace_volume = workspace_volume if workspace_volume.present?
       @pool_entry = pool_entry if pool_entry.present?
+      restore_heartbeat_dir!
       self
     end
 
@@ -861,19 +899,85 @@ module Containers
     # Serializes only Codex CLI executions that share a host-backed auth.json.
     # Other container commands keep full parallelism, and different credential
     # directories map to different lockfiles.
+    #
+    # Uses a non-blocking lock with retries instead of indefinite blocking to
+    # prevent a hung container from stalling all other runs sharing the same
+    # auth.json. After lock_timeout_seconds, logs a warning and proceeds
+    # without the lock — a concurrent OAuth refresh may fail with
+    # refresh_token_reused, which Paid classifies as auth_expired and handles
+    # via the standard provider fallback path.
     def with_codex_auth_lock(command)
       return yield unless codex_auth_lock_required?(command)
 
       lockfile = codex_auth_lockfile_path
-      log_system("container.codex_auth_lock.waiting")
+      lock_timeout = codex_auth_lock_timeout
+
       File.open(lockfile, File::WRONLY | File::CREAT, 0o600) do |f|
-        f.flock(File::LOCK_EX)
-        log_system("container.codex_auth_lock.acquired", lockfile: lockfile)
-        yield
+        log_system("container.codex_auth_lock.waiting", lockfile: lockfile, lock_timeout_seconds: lock_timeout)
+
+        acquired = false
+        acquired = acquire_lock_with_timeout(f, lock_timeout)
+
+        if acquired
+          log_system("container.codex_auth_lock.acquired", lockfile: lockfile)
+          yield
+        else
+          log_system("container.codex_auth_lock.timeout",
+            lockfile: lockfile,
+            lock_timeout_seconds: lock_timeout)
+          yield
+        end
       ensure
-        f.flock(File::LOCK_UN)
-        log_system("container.codex_auth_lock.released", lockfile: lockfile)
+        if acquired
+          f.flock(File::LOCK_UN)
+          acquired = false
+          log_system("container.codex_auth_lock.released", lockfile: lockfile)
+        end
       end
+    end
+
+    def acquire_lock_with_timeout(file, timeout)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+      loop do
+        return true if file.flock(File::LOCK_EX | File::LOCK_NB)
+        remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        return false if remaining <= 0
+        sleep [ remaining, 0.5 ].min
+      end
+    end
+
+    def codex_auth_lock_timeout
+      config = codex_harness_provider.auth_lock_config
+      timeout = config&.dig(:timeout)
+      timeout.is_a?(Numeric) ? timeout : 30
+    end
+
+    def seed_opencode_database!
+      return unless opencode_provider_requested?
+
+      result = container.exec(
+        [ "sh", "-c",
+          "if [ -d /opt/opencode-seed ]; then " \
+          "cp -a /opt/opencode-seed/. /home/agent/.local/share/opencode/ && " \
+          "chown -R agent:agent /home/agent/.local/share/opencode; " \
+          "fi" ],
+        user: "root"
+      )
+      exit_code = result.is_a?(Array) ? result[2].to_i : 0
+      raise Docker::Error::DockerError, "opencode database seed exited with #{exit_code}" unless exit_code == 0
+
+      log_system("container.opencode_database_seeded")
+    rescue Docker::Error::DockerError => e
+      log_system("container.opencode_database_seed_failed", error: e.message)
+    end
+
+    def opencode_provider_requested?
+      return false unless agent_run
+
+      providers = resolved_run_provider_candidates
+      return providers.any? { |provider| provider.provider_key == "opencode" } if providers.any?
+
+      ProviderSupport.provider_key_for_agent_type(agent_run.agent_type) == "opencode"
     end
 
     def seed_gemini_credentials!
@@ -1148,6 +1252,53 @@ module Containers
       container.exec([ "sh", "-lc", cmd ], user: "agent")
     end
 
+    def prepare_heartbeat_dir!
+      dir = File.join(Dir.tmpdir, "paid-heartbeat-#{SecureRandom.hex(8)}")
+      FileUtils.mkdir_p(dir)
+      @heartbeat_dir_host = dir
+      File.chmod(0o777, dir)
+      log_system("container.heartbeat_dir_prepared", path: dir)
+    end
+
+    HEARTBEAT_DIR_PATTERN = /\Apaid-heartbeat-[0-9a-f]{16}\z/
+
+    def restore_heartbeat_dir!
+      return if @heartbeat_dir_host.present?
+
+      label = container.info&.dig("Config", "Labels", "paid.heartbeat_dir")
+      return unless label.present? && valid_heartbeat_dir?(label)
+
+      @heartbeat_dir_host = label
+    rescue => e
+      Rails.logger.warn(
+        message: "container_manager.heartbeat_dir_restore_failed",
+        agent_run_id: agent_run&.id,
+        error: e.message
+      )
+    end
+
+    def cleanup_heartbeat_dir!
+      return unless @heartbeat_dir_host && valid_heartbeat_dir?(@heartbeat_dir_host)
+
+      FileUtils.rm_rf(@heartbeat_dir_host)
+      @heartbeat_dir_host = nil
+    rescue => e
+      Rails.logger.warn(
+        message: "container_manager.heartbeat_cleanup_failed",
+        agent_run_id: agent_run&.id,
+        error: e.message
+      )
+    end
+
+    def valid_heartbeat_dir?(path)
+      return false unless path.is_a?(String) && path.start_with?("#{Dir.tmpdir}/")
+
+      realpath = File.realpath(path) rescue nil
+      return false unless realpath && realpath.start_with?("#{Dir.tmpdir}/")
+
+      File.basename(realpath).match?(HEARTBEAT_DIR_PATTERN)
+    end
+
     def cleanup_workspace_volume
       volume_name = @workspace_volume
       volume_name ||= "paid-workspace-#{agent_run.id}" if worktree_path.blank? && agent_run.present? && !pooled_container?
@@ -1200,6 +1351,7 @@ module Containers
         labels["paid.agent_run_id"] = agent_run.id.to_s
       end
 
+      labels["paid.heartbeat_dir"] = heartbeat_dir_host if heartbeat_dir_host
       labels
     end
 
@@ -1213,6 +1365,7 @@ module Containers
 
     # Writable directories inside the container:
     #   /workspace          - bind mount of workspace dir (rw, for git clone and code changes)
+    #   /paid-heartbeat     - bind mount of host temp dir (rw, for heartbeat file shared with watchdog)
     #   /tmp                - tmpfs (1GB, for scratch files)
     #   /home/agent/.cache  - tmpfs (512MB, for tool caches: Codex CLI, npm, etc.)
     #   /home/agent/.claude - tmpfs (256MB, for Claude CLI session/project data)
@@ -1253,6 +1406,8 @@ module Containers
       elsif worktree_path.present?
         binds << "#{worktree_path}:#{options[:workspace_mount]}:rw"
       end
+
+      binds << "#{heartbeat_dir_host}:#{HEARTBEAT_MOUNT_POINT}:rw" if heartbeat_dir_host
 
       # Mount the host's Claude config as read-only at a staging path.
       # Credentials are copied into the writable /home/agent/.claude tmpfs
@@ -1625,14 +1780,14 @@ module Containers
     def codex_subscription_provider_requested?
       return false unless agent_run
 
-      providers = codex_resolved_provider_candidates
+      providers = resolved_run_provider_candidates
       return providers.any? { |provider| provider.provider_key == "codex" && provider.subscription? } if providers.any?
 
       ProviderSupport.provider_key_for_agent_type(agent_run.agent_type) == "codex"
     end
 
-    def codex_resolved_provider_candidates
-      return codex_run_provider_candidates if agent_run.provider
+    def resolved_run_provider_candidates
+      return run_provider_candidates if agent_run.provider
 
       settings = resolved_user_settings
       return [] unless settings
@@ -1646,7 +1801,7 @@ module Containers
       providers_for_identifiers(identifiers, user: settings.user)
     end
 
-    def codex_run_provider_candidates
+    def run_provider_candidates
       providers = [ agent_run.provider ]
       settings = resolved_user_settings
       if settings&.fallback_enabled?
@@ -1922,7 +2077,14 @@ module Containers
       when :idle
         raise IdleTimeoutError, "No output received for #{timeout_check.idle_timeout} seconds"
       when :wall_clock
-        log_system("container.execute.timeout", timeout_type: "wall_clock", timeout: timeout_check.timeout)
+        elapsed_seconds = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - timeout_check.started_at)).round(1)
+        hb_age = heartbeat_age_seconds(timeout_check.heartbeat_path)
+        log_system("container.execute.timeout",
+          timeout_type: "wall_clock",
+          timeout: timeout_check.timeout,
+          elapsed_seconds: elapsed_seconds,
+          heartbeat_active: hb_age && hb_age <= elapsed_seconds,
+          heartbeat_age_seconds: hb_age&.round(1))
         raise TimeoutError, "Command timed out after #{timeout_check.timeout} seconds"
       end
     end
@@ -1956,7 +2118,10 @@ module Containers
       elsif output_received && tc.idle_timeout && elapsed_since_activity >= tc.idle_timeout
         raise IdleTimeoutError, "No output received for #{tc.idle_timeout} seconds"
       elsif tc.timeout && elapsed_since_start >= tc.timeout
-        log_system("container.execute.timeout", timeout_type: "wall_clock", timeout: tc.timeout)
+        log_system("container.execute.timeout",
+          timeout_type: "wall_clock",
+          timeout: tc.timeout,
+          **timeout_diagnostics_from_elapsed(elapsed_since_start, elapsed_since_activity, output_received, tc.heartbeat_path, heartbeat_age))
         raise TimeoutError, "Command timed out after #{tc.timeout} seconds"
       end
     end
@@ -1979,62 +2144,69 @@ module Containers
 
       Thread.new do
         loop do
-          sleep watchdog_poll_interval
+          begin
+            sleep watchdog_poll_interval
 
-          # Read heartbeat mtime outside the mutex to avoid holding the lock
-          # across slow filesystem operations. The value is a wall-clock age
-          # in seconds, comparable with elapsed durations inside the mutex.
-          heartbeat_age = heartbeat_age_seconds(ctx.heartbeat_path)
+            # Read heartbeat mtime outside the mutex to avoid holding the lock
+            # across slow filesystem operations.
+            heartbeat_age = heartbeat_age_seconds(ctx.heartbeat_path)
 
-          should_fire = ctx.mutex.synchronize do
-            if ctx.exec_completed_ref.call
-              false
-            else
-              now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-              elapsed = now - ctx.last_activity_ref.call
-              total_elapsed = now - ctx.started_at_ref.call
-              output_received = ctx.output_received_ref.call
-
-              # A heartbeat file touched during the current exec counts as
-              # activity equivalent to stdout output, so a working-but-silent
-              # agent does not trip startup/idle timeouts. Wall-clock is still
-              # enforced regardless of heartbeats.
-              if heartbeat_age && heartbeat_age <= total_elapsed
-                output_received = true
-                elapsed = heartbeat_age if heartbeat_age < elapsed
-              end
-
-              reason = if !output_received && ctx.startup_timeout && elapsed >= ctx.startup_timeout
-                :startup
-              elsif output_received && ctx.idle_timeout && elapsed >= ctx.idle_timeout
-                :idle
-              elsif ctx.wall_clock_timeout && total_elapsed >= ctx.wall_clock_timeout
-                :wall_clock
-              end
-
-              if reason
-                ctx.timeout_reason_setter.call(reason)
-                true
-              else
+            should_fire = ctx.mutex.synchronize do
+              if ctx.exec_completed_ref.call
                 false
+              else
+                now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+                elapsed = now - ctx.last_activity_ref.call
+                total_elapsed = now - ctx.started_at_ref.call
+                output_received = ctx.output_received_ref.call
+
+                # A heartbeat file touched during the current exec counts as
+                # activity equivalent to stdout output, so a working-but-silent
+                # agent does not trip startup/idle timeouts. Wall-clock is still
+                # enforced regardless of heartbeats.
+                if heartbeat_age && heartbeat_age <= total_elapsed
+                  output_received = true
+                  elapsed = heartbeat_age if heartbeat_age < elapsed
+                end
+
+                reason = if !output_received && ctx.startup_timeout && elapsed >= ctx.startup_timeout
+                  :startup
+                elsif output_received && ctx.idle_timeout && elapsed >= ctx.idle_timeout
+                  :idle
+                elsif ctx.wall_clock_timeout && total_elapsed >= ctx.wall_clock_timeout
+                  :wall_clock
+                end
+
+                if reason
+                  ctx.timeout_reason_setter.call(reason)
+                  true
+                else
+                  false
+                end
               end
             end
+
+            next unless should_fire
+
+            # Re-check exec_completed under the mutex to close the race window
+            # between should_fire computation and container.stop — exec may have
+            # returned between releasing the mutex above and reaching here.
+            break if ctx.mutex.synchronize { ctx.exec_completed_ref.call }
+
+            begin
+              ctx.container.stop(timeout: 0)
+            rescue Docker::Error::DockerError => e
+              log_system("container.watchdog.stop_failed", error: e.message)
+            end
+
+            break
+          rescue => e
+            log_system(
+              "container.watchdog.poll_failed",
+              error: e.message,
+              error_class: e.class.name
+            )
           end
-
-          next unless should_fire
-
-          # Re-check exec_completed under the mutex to close the race window
-          # between should_fire computation and container.stop — exec may have
-          # returned between releasing the mutex above and reaching here.
-          break if ctx.mutex.synchronize { ctx.exec_completed_ref.call }
-
-          begin
-            ctx.container.stop(timeout: 0)
-          rescue Docker::Error::DockerError => e
-            log_system("container.watchdog.stop_failed", error: e.message)
-          end
-
-          break
         end
       end
     end
@@ -2045,15 +2217,68 @@ module Containers
       1
     end
 
-    # Returns the wall-clock age in seconds of the heartbeat file at
-    # +heartbeat_path+, or +nil+ when no path is configured or the file is
-    # unreadable. Callers compare this against elapsed durations from the
-    # monotonic clock; the two are close enough over a watchdog window that
-    # any NTP-induced drift is negligible.
+    def timeout_diagnostics(started_at, output_received, last_activity_at, heartbeat_path)
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      elapsed_since_start = (now - started_at).round(1)
+      elapsed_since_activity = output_received ? (now - last_activity_at).round(1) : nil
+      hb_age = heartbeat_age_seconds(heartbeat_path)
+
+      {
+        elapsed_seconds: elapsed_since_start,
+        idle_seconds: elapsed_since_activity,
+        output_received: output_received,
+        heartbeat_active: hb_age && hb_age <= elapsed_since_start,
+        heartbeat_age_seconds: hb_age&.round(1)
+      }
+    end
+
+    def timeout_diagnostics_from_elapsed(elapsed_since_start, elapsed_since_activity, output_received, heartbeat_path, heartbeat_age)
+      {
+        elapsed_seconds: elapsed_since_start.round(1),
+        idle_seconds: output_received ? elapsed_since_activity.round(1) : nil,
+        output_received: output_received,
+        heartbeat_active: heartbeat_age && heartbeat_age <= elapsed_since_start,
+        heartbeat_age_seconds: heartbeat_age&.round(1)
+      }
+    end
+
+    def output_summary_diagnostics(stdout_buffer, stderr_buffer)
+      stderr_text = stderr_buffer.join
+      {
+        stdout_bytes: stdout_buffer.sum(&:bytesize),
+        stderr_bytes: stderr_buffer.sum(&:bytesize),
+        last_stderr: stderr_text.present? ? stderr_text.last(200).encode("UTF-8", invalid: :replace) : nil
+      }
+    end
+
+    # Returns the age in seconds of the heartbeat file at +heartbeat_path+, or
+    # +nil+ when no path is configured or the file is unreadable.
+    #
+    # File mtimes are wall-clock timestamps, so we sample their initial age
+    # once and then advance that age using the monotonic clock while the mtime
+    # remains unchanged. This avoids repeated exposure to wall-clock jumps
+    # during watchdog polling.
     def heartbeat_age_seconds(heartbeat_path)
       return nil if heartbeat_path.blank?
 
-      Time.now - File.mtime(heartbeat_path)
+      mtime = File.mtime(heartbeat_path)
+      observed_at_monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      observed_age = Time.now - mtime
+
+      @heartbeat_age_cache_mutex.synchronize do
+        cached = @heartbeat_age_cache[heartbeat_path]
+
+        if cached && cached[:mtime] == mtime
+          cached[:age_seconds] + (observed_at_monotonic - cached[:observed_at_monotonic])
+        else
+          @heartbeat_age_cache[heartbeat_path] = {
+            mtime: mtime,
+            age_seconds: observed_age,
+            observed_at_monotonic: observed_at_monotonic
+          }
+          observed_age
+        end
+      end
     rescue Errno::ENOENT, Errno::EACCES, Errno::ENOTDIR
       nil
     end

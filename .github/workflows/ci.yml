@@ -56,18 +56,20 @@ jobs:
           dev=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .devcontainer/compose.yaml | head -1 | awk '{print $NF}')
           compose=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' docker-compose.yml | head -1 | awk '{print $NF}')
           ci=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/ci.yml | head -1 | awk '{print $NF}')
+          systest=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/system_tests.yml | head -1 | awk '{print $NF}')
           major=${compose#postgres:}
           major=${major%%.*}
-          echo "devcontainer/compose.yaml: ${dev:-<none>}"
-          echo "docker-compose.yml:        ${compose:-<none>}"
-          echo ".github/workflows/ci.yml:  ${ci:-<none>}"
-          echo "expected client major:     ${major:-<none>}"
-          if [ -z "$dev" ] || [ -z "$compose" ] || [ -z "$ci" ]; then
+          echo "devcontainer/compose.yaml:       ${dev:-<none>}"
+          echo "docker-compose.yml:              ${compose:-<none>}"
+          echo ".github/workflows/ci.yml:        ${ci:-<none>}"
+          echo ".github/workflows/system_tests:  ${systest:-<none>}"
+          echo "expected client major:           ${major:-<none>}"
+          if [ -z "$dev" ] || [ -z "$compose" ] || [ -z "$ci" ] || [ -z "$systest" ]; then
             echo "::error::Postgres image pin missing in one or more files"
             exit 1
           fi
-          if [ "$dev" != "$compose" ] || [ "$compose" != "$ci" ]; then
-            echo "::error::Postgres image pins are out of sync. Update all three together."
+          if [ "$dev" != "$compose" ] || [ "$compose" != "$ci" ] || [ "$ci" != "$systest" ]; then
+            echo "::error::Postgres image pins are out of sync. Update all four together."
             exit 1
           fi
           if ! grep -q "postgresql-client-${major}" .devcontainer/Dockerfile; then
@@ -78,8 +80,16 @@ jobs:
             echo "::error::Dockerfile is not pinned to postgresql-client-${major}"
             exit 1
           fi
+          if ! grep -q "postgresql-client-${major}" docker/agent/Dockerfile; then
+            echo "::error::docker/agent/Dockerfile is not pinned to postgresql-client-${major}"
+            exit 1
+          fi
           if ! grep -q "postgresql-client-${major}" .github/workflows/ci.yml; then
             echo "::error::.github/workflows/ci.yml is not pinned to postgresql-client-${major}"
+            exit 1
+          fi
+          if ! grep -q "postgresql-client-${major}" .github/workflows/system_tests.yml; then
+            echo "::error::.github/workflows/system_tests.yml is not pinned to postgresql-client-${major}"
             exit 1
           fi
 
@@ -160,7 +170,6 @@ jobs:
 
   performance:
     runs-on: ubuntu-latest
-    if: vars.PAID_PERFORMANCE_BENCHMARKS == 'true'
 
     services:
       postgres:

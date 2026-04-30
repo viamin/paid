@@ -26,6 +26,7 @@ RSpec.describe Activities::RunAgentActivity do
     allow(Containers::Provision).to receive(:reconnect)
       .with(agent_run: agent_run, container_id: "abc123")
       .and_return(container_service)
+    allow(container_service).to receive_messages(container_running?: true, container: nil, heartbeat_host_path: "/tmp/paid-heartbeat-test/.paid-heartbeat")
     allow(Containers::GitOperations).to receive(:new)
       .with(container_service: container_service, agent_run: agent_run)
       .and_return(git_ops)
@@ -498,6 +499,39 @@ RSpec.describe Activities::RunAgentActivity do
         expect(command).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", prompt ])
       end
     end
+
+    context "with a direct-outbound kilocode provider" do
+      it "includes PAID_KILOCODE_CONFIG_B64 in command env alongside PAID_PROVIDER_ID" do
+        context = build_kilocode_context(user)
+
+        command = activity.send(:build_command, context, "ping")
+        env = activity.send(:command_env_for, context, "ping")
+
+        expect(command[0]).to eq("sh")
+        expect(command[1]).to eq("-lc")
+        expect(command[2]).to include("PAID_KILOCODE_CONFIG_B64")
+        expect(command[2]).to include("kilo run --format json")
+        expect(command.last).to eq("ping")
+
+        expect(env).to have_key("PAID_KILOCODE_CONFIG_B64")
+        expect(env).to have_key("PAID_PROVIDER_ID")
+        config_json = JSON.parse(Base64.strict_decode64(env["PAID_KILOCODE_CONFIG_B64"]))
+        expect(config_json["model"]).to eq("claude-sonnet-4-20250514")
+      end
+
+      it "does not include PAID_KILOCODE_CONFIG_B64 for subscription kilocode providers" do
+        subscription_provider = create(:provider, user: user, provider_key: "kilocode", auth_type: "subscription")
+        context = described_class::CommandContext.new(
+          provider_candidate: subscription_provider.routing_key,
+          provider: "kilocode",
+          user: user
+        )
+
+        env = activity.send(:command_env_for, context, "ping")
+
+        expect(env).not_to have_key("PAID_KILOCODE_CONFIG_B64")
+      end
+    end
   end
 
   describe "#provider_entry_for" do
@@ -764,6 +798,25 @@ RSpec.describe Activities::RunAgentActivity do
     described_class::CommandContext.new(
       provider_candidate: provider.routing_key,
       provider: "opencode",
+      user: user
+    )
+  end
+
+  def build_kilocode_context(user)
+    api_key = create(:provider_api_key, user: user, api_service_type: "anthropic", api_key: "sk-anthropic-secret")
+    provider = create(
+      :provider,
+      user: user,
+      auth_type: "api_key",
+      provider_api_key: api_key,
+      provider_key: "kilocode",
+      name: "Kilocode Claude",
+      config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-20250514" } }
+    )
+
+    described_class::CommandContext.new(
+      provider_candidate: provider.routing_key,
+      provider: "kilocode",
       user: user
     )
   end
@@ -1821,18 +1874,20 @@ RSpec.describe Activities::RunAgentActivity do
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "applies idle timeout and heartbeat path to codex" do
+      it "applies extended idle timeout to codex for coarse heartbeat" do
         agent_run.update!(agent_type: "codex")
         project.update!(max_execution_seconds: 86_400)
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
 
+        expected_idle = described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT * Containers::HeartbeatSetup::COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER
+
         expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
-            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
-            heartbeat_path: File.join(agent_run.worktree_path, ".paid-heartbeat")
+            idle_timeout: expected_idle,
+            heartbeat_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
           )
         ).and_return(exec_success)
 

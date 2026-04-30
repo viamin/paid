@@ -225,12 +225,14 @@ RSpec.describe TenantSetting do
       account = create(:account)
       create(:tenant_setting, account: account, worker_settings: { "temporal_workflow_slots" => 50 })
 
-      result = described_class.resolve_worker_setting(
-        "temporal_workflow_slots",
-        env_key: "TEMPORAL_WORKFLOW_SLOTS",
-        env: { "TEMPORAL_WORKFLOW_SLOTS" => "30" },
-        default: 20
-      )
+      result = TenantContext.with(account) do
+        described_class.resolve_worker_setting(
+          "temporal_workflow_slots",
+          env_key: "TEMPORAL_WORKFLOW_SLOTS",
+          env: { "TEMPORAL_WORKFLOW_SLOTS" => "30" },
+          default: 20
+        )
+      end
       expect(result).to eq(50)
     end
 

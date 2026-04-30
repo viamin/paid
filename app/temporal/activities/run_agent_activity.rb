@@ -177,13 +177,15 @@ module Activities
 
           begin
             last_attempted_label = attempt_label
+            attempt_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
             provider_result = run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
+            attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             pre_agent_sha = provider_result.fetch(:pre_agent_sha)
 
             # Success - heartbeat and record final provider
             heartbeat("provider_completed", provider)
             record_provider_success(user_settings, provider_state_name, provider_states)
-            agent_run.record_provider_attempt(attempt_label, success: true)
+            agent_run.record_provider_attempt(attempt_label, success: true, duration_seconds: attempt_duration)
             # Persist the routing key so multiple entries sharing the same
             # provider_key (e.g. several OpenCode API-key entries with
             # different models) remain distinguishable in UI and retry logic.
@@ -228,10 +230,11 @@ module Activities
             }
           rescue ProviderRateLimitError => e
             last_error = "rate_limited"
+            attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             rate_limit_reset_at = [ rate_limit_reset_at, e.reset_at ].compact.min
             persist_rate_limit(user_settings, provider_state_name, provider_states, e.reset_at)
-            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "rate_limited")
-            logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id)
+            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "rate_limited", duration_seconds: attempt_duration)
+            logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id, duration_seconds: attempt_duration)
             insert_rate_limit_fallbacks!(
               providers: providers,
               index: index,
@@ -241,13 +244,14 @@ module Activities
             )
           rescue InfiniteLoopError => e
             last_error = "infinite_loop"
+            attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             if cancelled_by_cleanup?(agent_run)
               record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
               break
             end
             record_provider_failure(user_settings, provider_state_name, provider_states)
-            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "infinite_loop")
-            logger.warn(message: "agent_execution.infinite_loop_detected", agent_run_id: agent_run.id, reason: e.message)
+            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "infinite_loop", duration_seconds: attempt_duration)
+            logger.warn(message: "agent_execution.infinite_loop_detected", agent_run_id: agent_run.id, reason: e.message, duration_seconds: attempt_duration)
 
             result = Guardrails::ViolationHandler.call(
               agent_run: agent_run,
@@ -266,31 +270,44 @@ module Activities
             )
           rescue ProviderTimeoutError => e
             last_error = "timeout"
+            attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             timeout_error ||= e.message
             if cancelled_by_cleanup?(agent_run)
               record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
               break
             end
             record_provider_failure(user_settings, provider_state_name, provider_states)
-            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "timeout")
-            logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message)
+            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "timeout", duration_seconds: attempt_duration)
+            logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
             break
           rescue ProviderAuthExpiredError => e
             last_error = "auth_expired"
+            attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             auth_provider = ProviderSupport.harness_provider_key_for(e.provider)
             agent_run.auth_expire!(error: e.message, provider: auth_provider)
-            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "auth_expired")
-            logger.warn(message: "agent_execution.auth_expired", provider: provider, agent_run_id: agent_run.id, error: e.message)
+            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "auth_expired", duration_seconds: attempt_duration)
+            logger.warn(message: "agent_execution.auth_expired", provider: provider, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
             break
           rescue ProviderExecutionError => e
             last_error = "error"
+            attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             if cancelled_by_cleanup?(agent_run)
               record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
               break
             end
             record_provider_failure(user_settings, provider_state_name, provider_states)
-            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "error")
-            logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message)
+            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "error", duration_seconds: attempt_duration)
+            logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
+
+            if container_dead_after_exec_error?(agent_run, e)
+              logger.error(
+                message: "agent_execution.container_dead_breaking_provider_loop",
+                agent_run_id: agent_run.id,
+                container_id: agent_run.container_id,
+                error: e.message
+              )
+              break
+            end
           end
 
           index += 1
@@ -496,9 +513,12 @@ module Activities
     end
 
     def default_provider_candidates(agent_run, user_settings)
+      first_key = ProviderSupport.container_executable_provider_keys.first
+      default_fallback = first_key ? ProviderSupport.agent_type_for(first_key) : "claude_code"
+
       candidates = [
         user_settings.default_provider_identifier_for_goal(agent_run.goal),
-        "claude_code"
+        default_fallback
       ].compact_blank
 
       seen = Set.new
@@ -537,6 +557,13 @@ module Activities
     # @return [Hash] The pre-agent SHA and whether output was present
     def run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
       container_service = reconnect_container(agent_run)
+
+      unless container_service.container_running?
+        container_exit_info = container_exit_diagnostics(container_service)
+        raise ProviderExecutionError,
+          "Container #{agent_run.container_id} is not running. #{container_exit_info}"
+      end
+
       provider = provider_command_key(provider_candidate, agent_run, user_settings.user)
 
       unless self.class.container_executable?(provider)
@@ -564,7 +591,8 @@ module Activities
 
       heartbeat = Containers::HeartbeatSetup.new(
         provider: provider,
-        worktree_path: agent_run.worktree_path
+        worktree_path: agent_run.worktree_path,
+        host_heartbeat_path: container_service.heartbeat_host_path
       )
       if heartbeat.available?
         command_env = command_env.merge(heartbeat.env)
@@ -614,7 +642,7 @@ module Activities
         container_service.execute(
           command,
           timeout: effective_timeout,
-          idle_timeout: heartbeat.available? ? effective_idle_timeout : nil,
+          idle_timeout: heartbeat.idle_timeout_for(effective_idle_timeout),
           env: command_env,
           preparation: command_preparation,
           heartbeat_path: heartbeat.available? ? heartbeat.heartbeat_path : nil,
@@ -687,6 +715,8 @@ module Activities
         "Rate limited by #{provider}: #{e.matched_output.to_s.truncate(200)}",
         reset_at: reset_at
       )
+    rescue Containers::Provision::ExecutionError => e
+      raise ProviderExecutionError, "Docker exec error: #{e.message}"
     end
 
     # Checks if the agent run is stuck in an infinite loop by analyzing
@@ -836,8 +866,15 @@ module Activities
       AgentHarness.provider(harness_key)
     end
 
+    CODEX_SANDBOX_ABORT_PATTERNS = [
+      /bwrap.*no permissions/i,
+      /no permissions to create a new namespace/i,
+      /unprivileged.*namespace/i
+    ].freeze
+
     def aggregated_abort_patterns
-      ProviderSupport.aggregated_error_classification_patterns(:abort)
+      base = ProviderSupport.aggregated_error_classification_patterns(:abort)
+      (base + CODEX_SANDBOX_ABORT_PATTERNS).uniq
     end
 
     def track_harness_tokens(agent_run, provider_candidate, provider_key, user, result, execution_started_at)
@@ -1133,9 +1170,11 @@ module Activities
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
       return direct_outbound_execution_plan(provider_entry, prompt).env if provider_entry&.agent_harness_runtime?
       return {} unless provider_entry
-      return api_key_command_env(provider_entry) if provider_entry.api_key?
 
-      {}
+      env = {}
+      env.merge!(provider_entry.direct_outbound_exec_env) if provider_entry.requires_direct_outbound?
+      env.merge!(api_key_command_env(provider_entry)) if provider_entry.api_key?
+      env
     end
 
     def command_preparation_for(command_context, prompt)
@@ -1537,6 +1576,38 @@ module Activities
       error_or_cause_matches?(error, Containers::Provision::ProvisionError) do |candidate|
         candidate.message.start_with?("Failed to reconnect to container:")
       end
+    end
+
+    def container_dead_after_exec_error?(agent_run, error)
+      return false unless error.message.match?(/container.*is not running/i)
+      return false if agent_run.container_id.blank?
+
+      container_service = reconnect_container(agent_run) rescue nil
+      return false unless container_service
+
+      !container_service.container_running?
+    end
+
+    def container_exit_diagnostics(container_service)
+      container = container_service.container
+      return "Container object unavailable." unless container
+
+      container.refresh!
+      state = container.info["State"] || {}
+      exit_code = state["ExitCode"]
+      oom_killed = state["OOMKilled"]
+      error_msg = state["Error"]
+      finished_at = state["FinishedAt"]
+
+      reasons = []
+      reasons << "OOM killed" if oom_killed
+      reasons << "exit code #{exit_code}" if exit_code && exit_code != 0
+      reasons << "error: #{error_msg}" if error_msg.present?
+      reasons << "finished at #{finished_at}" if finished_at.present?
+
+      "Container state: #{reasons.join(', ').presence || 'unknown'}"
+    rescue Docker::Error::DockerError => e
+      "Could not inspect container: #{e.message}"
     end
 
     def error_or_cause_matches?(error, klass, &block)

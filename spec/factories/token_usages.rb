@@ -25,6 +25,12 @@ FactoryBot.define do
       request_type { "knowledge" }
     end
 
+    trait :chat do
+      agent_run { nil }
+      chat_session
+      request_type { "chat_message" }
+    end
+
     trait :large do
       input_tokens { 1_000_000 }
       output_tokens { 500_000 }
