@@ -1,6 +1,13 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
+  MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500
+  PROVIDER_ATTEMPT_SECRET_PATTERNS = [
+    [ /\bsk-[A-Za-z0-9][A-Za-z0-9_-]{10,}\b/, "[REDACTED:api_key]" ],
+    [ /\b(?:ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[oushr]_[A-Za-z0-9]{36,})\b/, "[REDACTED:github_token]" ],
+    [ %r{x-access-token:[^@/\s]+@github\.com}, "x-access-token:[REDACTED]@github.com" ],
+    [ /(Bearer\s)[A-Za-z0-9\-._~+\/]+=*/i, "\\1[REDACTED]" ]
+  ].freeze
   STATUSES = %w[queued pending running paused completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
@@ -1210,8 +1217,6 @@ class AgentRun < ApplicationRecord
     owner = project&.effective_owner
     return {} unless owner
 
-    return {} unless provider_switches.positive?
-
     routing_ids = providers_attempted.filter_map do |attempt|
       Provider.id_from_routing_key(attempt["provider"])
     end
@@ -1225,13 +1230,15 @@ class AgentRun < ApplicationRecord
   # @param provider [String] The provider name
   # @param success [Boolean] Whether the attempt succeeded
   # @param error_type [String, nil] Type of error if failed (e.g., "rate_limited", "error")
-  def record_provider_attempt(provider, success:, error_type: nil, duration_seconds: nil)
+  def record_provider_attempt(provider, success:, error_type: nil, error_message: nil, duration_seconds: nil)
     attempt = {
       "provider" => provider,
       "success" => success,
       "attempted_at" => Time.current.iso8601
     }
     attempt["error_type"] = error_type if error_type.present?
+    sanitized_error_message = sanitize_provider_attempt_error_message(error_message)
+    attempt["error_message"] = sanitized_error_message if sanitized_error_message.present?
     attempt["duration_seconds"] = duration_seconds if duration_seconds.present?
 
     self.providers_attempted = (providers_attempted || []) + [ attempt ]
@@ -1401,6 +1408,21 @@ class AgentRun < ApplicationRecord
     return text.delete("\x00") if text.encoding == Encoding::UTF_8 && text.valid_encoding?
 
     text.dup.force_encoding(Encoding::UTF_8).scrub.delete("\x00")
+  end
+
+  def sanitize_provider_attempt_error_message(message)
+    return nil if message.blank?
+
+    normalized = normalize_log_content(message)
+    redacted = Knowledge::Redaction::Redactor.call(text: normalized).clean_text
+    redacted = redact_provider_attempt_secrets(redacted)
+    redacted.truncate(MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH)
+  end
+
+  def redact_provider_attempt_secrets(text)
+    PROVIDER_ATTEMPT_SECRET_PATTERNS.reduce(text) do |result, (pattern, replacement)|
+      result.gsub(pattern, replacement)
+    end
   end
 
   def logs_text(log_type:, limit:)
