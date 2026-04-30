@@ -84,7 +84,13 @@ RSpec.configure do |config|
       example.run
     end
   ensure
-    TenantContext.clear! if database_available
+    next unless database_available
+
+    begin
+      TenantContext.clear!
+    rescue ActiveRecord::StatementInvalid => error
+      raise unless error.cause.is_a?(PG::InFailedSqlTransaction)
+    end
   end
 
   # When running without a database (ALLOW_DBLESS_SPECS=true), automatically skip

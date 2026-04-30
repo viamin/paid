@@ -20,7 +20,7 @@ module Api
 
     # GET /api/knowledge/search?project_id=X&q=...&mode=exact|semantic|hybrid&type=route&version=abc123&limit=20
     def search
-      @project = Project.find(params[:project_id])
+      @project = TenantContext.with_system_access { Project.find(params[:project_id]) }
       authorize @project, :search?, policy_class: KnowledgeSearchPolicy
 
       mode = params[:mode]

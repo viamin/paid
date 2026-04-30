@@ -376,6 +376,8 @@ GEM
     rspec-expectations (3.13.5)
       diff-lcs (>= 1.2.0, < 2.0)
       rspec-support (~> 3.13.0)
+    rspec-github (3.0.0)
+      rspec-core (~> 3.0)
     rspec-mocks (3.13.8)
       diff-lcs (>= 1.2.0, < 2.0)
       rspec-support (~> 3.13.0)
@@ -455,22 +457,22 @@ GEM
     stimulus-rails (1.3.4)
       railties (>= 6.0.0)
     stringio (3.2.0)
-    temporalio (1.3.0)
+    temporalio (1.4.0)
       google-protobuf (>= 3.25.0)
       logger
-    temporalio (1.3.0-aarch64-linux)
+    temporalio (1.4.0-aarch64-linux)
       google-protobuf (>= 3.25.0)
       logger
-    temporalio (1.3.0-aarch64-linux-musl)
+    temporalio (1.4.0-aarch64-linux-musl)
       google-protobuf (>= 3.25.0)
       logger
-    temporalio (1.3.0-arm64-darwin)
+    temporalio (1.4.0-arm64-darwin)
       google-protobuf (>= 3.25.0)
       logger
-    temporalio (1.3.0-x86_64-linux)
+    temporalio (1.4.0-x86_64-linux)
       google-protobuf (>= 3.25.0)
       logger
-    temporalio (1.3.0-x86_64-linux-musl)
+    temporalio (1.4.0-x86_64-linux-musl)
       google-protobuf (>= 3.25.0)
       logger
     test-prof (1.6.1)
@@ -553,6 +555,7 @@ DEPENDENCIES
   qdrant-ruby
   rails (~> 8.1.3)
   ransack
+  rspec-github (~> 3.0)
   rspec-rails
   rubocop-rails-omakase
   rubocop-rspec
@@ -714,6 +717,7 @@ CHECKSUMS
   rover-df (0.5.0) sha256=4c886d3c7208f7b21fc3fe051cee0e3d5cd46ae414f1f63e8c2cef8818916035
   rspec-core (3.13.6) sha256=a8823c6411667b60a8bca135364351dda34cd55e44ff94c4be4633b37d828b2d
   rspec-expectations (3.13.5) sha256=33a4d3a1d95060aea4c94e9f237030a8f9eae5615e9bd85718fe3a09e4b58836
+  rspec-github (3.0.0) sha256=46af3cd8cad3e4434c20598752b6e721c5325e73d7e36e256379f0d3a85968af
   rspec-mocks (3.13.8) sha256=086ad3d3d17533f4237643de0b5c42f04b66348c28bf6b9c2d3f4a3b01af1d47
   rspec-rails (8.0.4) sha256=06235692fc0892683d3d34977e081db867434b3a24ae0dd0c6f3516bad4e22df
   rspec-support (3.13.7) sha256=0640e5570872aafefd79867901deeeeb40b0c9875a36b983d85f54fb7381c47c
@@ -736,12 +740,12 @@ CHECKSUMS
   sshkit (1.25.0) sha256=c8c6543cdb60f91f1d277306d585dd11b6a064cb44eab0972827e4311ff96744
   stimulus-rails (1.3.4) sha256=765676ffa1f33af64ce026d26b48e8ffb2e0b94e0f50e9119e11d6107d67cb06
   stringio (3.2.0) sha256=c37cb2e58b4ffbd33fe5cd948c05934af997b36e0b6ca6fdf43afa234cf222e1
-  temporalio (1.3.0) sha256=672260631f419d1ec01a2230cc6a72d665ef9d385c5d96351bc68f639dbdc704
-  temporalio (1.3.0-aarch64-linux) sha256=1ec4230251bc1771455fa20f1d1e9006639f3da3657ce4d15d09e27970d5a248
-  temporalio (1.3.0-aarch64-linux-musl) sha256=135a676e60ba8ee6f49c7fa793505fee7479b78a3c0b31298073845560a32aed
-  temporalio (1.3.0-arm64-darwin) sha256=22c1f0fbbbfacf7c61ddd0d75e9ffc86590ba39ccbabb87f670821c9152fff7a
-  temporalio (1.3.0-x86_64-linux) sha256=5122f3c2bd2b540565fc9ec4e2083401c00a7056c8408cd9922ebe570b366eef
-  temporalio (1.3.0-x86_64-linux-musl) sha256=0b9c19a94d6703155618d02facf46481467bde1cdcd86ccb6b4f38896d847560
+  temporalio (1.4.0) sha256=d77ad399c423126b524ed88ce669fff7aa6056a01256aee9af27453efb84ccc9
+  temporalio (1.4.0-aarch64-linux) sha256=5c4edf19f5946d4772cb35895fa5633e1c842031f72518a7f0e96ca579fec7e9
+  temporalio (1.4.0-aarch64-linux-musl) sha256=7dfd2f89e48e2b76dbe405fdc3988190b5043cf4d49d9b9fc7e2ded6b8865143
+  temporalio (1.4.0-arm64-darwin) sha256=bf0a5385f226a1bed1fa90c78202da969c376aaf229fc8b978210c27fee6e1ab
+  temporalio (1.4.0-x86_64-linux) sha256=b9dbf45cef7d04ef0dd623b26ace17ea61d5db38509c4843ca9fdc02740f0959
+  temporalio (1.4.0-x86_64-linux-musl) sha256=a06b5601f5c0ad0b7dad6c0ce2e6d56de24b9ca75c79037bd064436f5754f9e1
   test-prof (1.6.1) sha256=0332d9c39a7c118ed942b2db582f055d9f24964d150004ec6b964d2fa262499e
   thor (1.5.0) sha256=e3a9e55fe857e44859ce104a84675ab6e8cd59c650a49106a05f55f136425e73
   thruster (0.1.20) sha256=c05f2fbcae527bbe093a6e6d84fb12d9d680617e7c162325d9b97e8e9d4b5201
