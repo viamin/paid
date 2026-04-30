@@ -44,6 +44,7 @@ module ExceptionHandler
       @incident.update!(
         github_issue_url: gh_issue.html_url,
         github_issue_number: gh_issue.number,
+        project: @project,
         action_taken: "issue_filed"
       )
 
