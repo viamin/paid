@@ -16,8 +16,8 @@ class TenantContext
 
     def clear!
       Current.account = nil
-      safe_set_config("paid.current_account_id", nil)
-      safe_set_config("paid.bypass_tenant_rls", false)
+      set_config("paid.current_account_id", nil)
+      set_config("paid.bypass_tenant_rls", false)
     end
 
     def bypass_enabled?
@@ -63,12 +63,24 @@ class TenantContext
       connection.select_value(
         ActiveRecord::Base.sanitize_sql_array([ "SELECT NULLIF(current_setting(?, true), '')", key ])
       )
+    rescue ActiveRecord::StatementInvalid => e
+      raise unless transaction_aborted?(e)
+
+      nil
     end
 
     def set_config(key, value)
       connection.execute(
         ActiveRecord::Base.sanitize_sql_array([ "SELECT set_config(?, ?, false)", key, value.to_s ])
       )
+    rescue ActiveRecord::StatementInvalid => e
+      raise unless transaction_aborted?(e)
+
+      nil
+    end
+
+    def transaction_aborted?(error)
+      error.cause.is_a?(PG::InFailedSqlTransaction)
     end
 
     def connection
