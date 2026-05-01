@@ -61,21 +61,8 @@ module Projects
     end
 
     def period_cost_from_sources(period_start)
-      agent_run_cost_cents(period_start) +
-        knowledge_run_cost_cents(period_start) +
-        chat_session_cost_cents(period_start)
-    end
-
-    def agent_run_cost_cents(period_start)
       TokenUsage.billable
-        .where(agent_run_id: project.agent_runs.select(:id))
-        .by_time_period(period_start, now)
-        .total_cost_cents
-    end
-
-    def knowledge_run_cost_cents(period_start)
-      TokenUsage.billable
-        .where(knowledge_run_id: project.knowledge_runs.select(:id))
+        .by_project(project.id)
         .by_time_period(period_start, now)
         .total_cost_cents
     end

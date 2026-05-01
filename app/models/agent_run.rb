@@ -915,11 +915,11 @@ class AgentRun < ApplicationRecord
 
     {
       queue_seconds: queue_seconds,
-      setup_seconds: grouped.fetch("setup", 0),
-      prompt_seconds: grouped.fetch("prompt", 0),
-      agent_seconds: grouped.fetch("agent", 0),
-      post_seconds: grouped.fetch("post", 0),
-      cleanup_seconds: grouped.fetch("cleanup", 0),
+      setup_seconds: grouped.fetch("setup") { 0 },
+      prompt_seconds: grouped.fetch("prompt") { 0 },
+      agent_seconds: grouped.fetch("agent") { 0 },
+      post_seconds: grouped.fetch("post") { 0 },
+      cleanup_seconds: grouped.fetch("cleanup") { 0 },
       observed_seconds: ordered_phases.sum(&:duration_seconds),
       first_phase_at: first_phase.started_at,
       last_phase_at: ordered_phases.last.finished_at

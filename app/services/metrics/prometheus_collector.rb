@@ -29,7 +29,7 @@ module Metrics
       lines << "# HELP paid_agent_runs_total Number of agent runs by status."
       lines << "# TYPE paid_agent_runs_total gauge"
       AgentRun::STATUSES.each do |status|
-        lines << "paid_agent_runs_total{status=\"#{status}\"} #{counts.fetch(status, 0)}"
+        lines << "paid_agent_runs_total{status=\"#{status}\"} #{counts.fetch(status) { 0 }}"
       end
 
       active = counts.values_at(*AgentRun::ACTIVE_STATUSES).compact.sum
@@ -37,7 +37,7 @@ module Metrics
       lines << "# TYPE paid_agent_runs_active gauge"
       lines << "paid_agent_runs_active #{active}"
 
-      queued = counts.fetch("queued", 0)
+      queued = counts.fetch("queued") { 0 }
       lines << "# HELP paid_agent_runs_queued Agent runs waiting in queue."
       lines << "# TYPE paid_agent_runs_queued gauge"
       lines << "paid_agent_runs_queued #{queued}"
@@ -110,7 +110,7 @@ module Metrics
       lines << "# HELP paid_container_pool_entries_total Warm container pool entries by status."
       lines << "# TYPE paid_container_pool_entries_total gauge"
       ContainerPoolEntry::STATUSES.each do |status|
-        lines << "paid_container_pool_entries_total{status=\"#{status}\"} #{status_counts.fetch(status, 0)}"
+        lines << "paid_container_pool_entries_total{status=\"#{status}\"} #{status_counts.fetch(status) { 0 }}"
       end
 
       target = Containers::PoolManager.target_size * Project.active.count
@@ -125,7 +125,7 @@ module Metrics
       lines << "# HELP paid_service_containers_total Service containers by status."
       lines << "# TYPE paid_service_containers_total gauge"
       ServiceContainer::STATUSES.each do |status|
-        lines << "paid_service_containers_total{status=\"#{status}\"} #{status_counts.fetch(status, 0)}"
+        lines << "paid_service_containers_total{status=\"#{status}\"} #{status_counts.fetch(status) { 0 }}"
       end
 
       running_ids = ServiceContainer.where(status: "running").select(:id)
