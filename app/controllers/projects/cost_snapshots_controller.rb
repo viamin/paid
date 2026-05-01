@@ -6,7 +6,7 @@ module Projects
 
     def show
       authorize @project
-      @summary = StatsSummary.call(project: @project, budgets: @project.cost_budgets.load)
+      @summary = StatsSummary.call(project: @project)
     end
 
     private

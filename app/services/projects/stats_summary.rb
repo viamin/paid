@@ -7,23 +7,13 @@ module Projects
     TODAY_CACHE_TTL = 5.minutes
     MONTH_CACHE_TTL = 15.minutes
 
-    def initialize(project:, budgets: project.cost_budgets.load, now: Time.current)
+    def initialize(project:, now: Time.current)
       @project = project
-      @budgets = Array(budgets)
       @now = now
     end
 
     def self.call(...)
       new(...).call
-    end
-
-    def self.bust_cache!(project_id)
-      now = Time.current
-      %w[daily monthly].each do |budget_type|
-        period_start = budget_type == "daily" ? now.beginning_of_day : now.beginning_of_month
-        key = [ "projects", project_id, "stats_summary", budget_type, period_start.to_date.iso8601 ]
-        Rails.cache.delete(key)
-      end
     end
 
     def call
@@ -35,16 +25,10 @@ module Projects
 
     private
 
-    attr_reader :budgets
-
     def period_cost_cents(budget_type, period_start, ttl)
-      compute_and_cache(period_cache_key(budget_type, period_start), ttl) do
+      Rails.cache.fetch(period_cache_key(budget_type, period_start), expires_in: ttl) do
         period_cost_from_sources(period_start)
       end
-    end
-
-    def compute_and_cache(key, ttl, &)
-      Rails.cache.fetch(key, expires_in: ttl, &)
     end
 
     def period_cache_key(budget_type, period_start)
