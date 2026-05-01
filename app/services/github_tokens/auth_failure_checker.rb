@@ -2,11 +2,18 @@
 
 module GithubTokens
   class AuthFailureChecker
+    RATE_LIMIT_PATTERNS = [
+      /secondary rate limit/i,
+      /rate limit exceeded/i,
+      /too many requests/i,
+      /retry-after/i
+    ].freeze
+
     # Git clone / fetch authentication failures
     GIT_AUTH_PATTERNS = [
       /Authentication failed/i,
       /fatal: could not read Username/i,
-      /HTTP 403/,
+      /HTTP 403(?::|\b).*(access denied|authentication failed|bad credentials|invalid credentials)/i,
       /HTTP 401/,
       /could not read Password/i,
       /Invalid credentials/i,
@@ -16,10 +23,9 @@ module GithubTokens
 
     # Proxy 503 responses from credential/proxy controllers
     PROXY_AUTH_PATTERNS = [
-      /proxy.*503/i,
-      /GitCredentials.*503/i,
-      /GithubProxy.*503/i,
-      /Service Unavailable.*credential/i
+      /GitCredentials.*Project GitHub token is missing or inactive/i,
+      /GithubProxy.*GitHub token not available/i,
+      /Service Unavailable.*(GitHub token not available|Project GitHub token is missing or inactive)/i
     ].freeze
 
     # GithubClient errors
@@ -43,12 +49,19 @@ module GithubTokens
 
     def call
       return nil if @error_message.blank?
+      return nil if rate_limited?
 
       ALL_PATTERNS.find { |pattern| @error_message.match?(pattern) }
     end
 
     def auth_failure?
       call.present?
+    end
+
+    private
+
+    def rate_limited?
+      RATE_LIMIT_PATTERNS.any? { |pattern| @error_message.match?(pattern) }
     end
   end
 end
