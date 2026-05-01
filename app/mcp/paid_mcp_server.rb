@@ -39,13 +39,15 @@ class PaidMcpServer
     jsonrpc_error(id:, code: -32602, message: e.message)
   rescue ActiveRecord::RecordNotFound => e
     jsonrpc_error(id:, code: -32602, message: "Record not found: #{e.message}")
+  rescue ActiveRecord::RecordInvalid => e
+    jsonrpc_error(id:, code: -32602, message: "Validation failed: #{e.record.errors.full_messages.join(', ')}")
   rescue StandardError => e
     Rails.logger.error(message: "mcp.tool_call_failed", error: e.message, session_id: session.id)
     jsonrpc_error(id:, code: -32603, message: "Internal error")
   end
 
   def tool_definitions
-    Tools::Registry.definitions_for(user:, session:)
+    Tools::Registry.definitions_for(user:)
   end
 
   def call_tool(name:, arguments:)

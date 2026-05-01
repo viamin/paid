@@ -30,9 +30,8 @@ module Tools
         raise ArgumentError, "Agent run is not cancellable (current status: #{run.status})"
       end
 
-      run.with_lock do
-        return { id: run.id, status: run.status, note: "Run already finished" } unless run.cancellable?
-        run.cancel!
+      unless run.cancel!
+        return { id: run.id, status: run.reload.status, note: "Run already finished" }
       end
 
       AgentRunCancellationJob.perform_later(run.id)

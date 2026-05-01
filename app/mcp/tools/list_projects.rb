@@ -18,7 +18,13 @@ module Tools
       }
     end
 
+    VALID_STATUSES = %w[active inactive].freeze
+
     def call(status: nil, limit: 20)
+      if status.present? && !VALID_STATUSES.include?(status)
+        raise ArgumentError, "Invalid status filter '#{status}': must be 'active' or 'inactive'"
+      end
+
       projects = policy_scope(Project)
       projects = projects.where(active: status == "active") if status.present?
       projects = projects.order(updated_at: :desc).limit(limit.to_i.clamp(1, 100))

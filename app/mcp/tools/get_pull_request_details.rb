@@ -50,7 +50,7 @@ module Tools
       client = project.github_token&.client
       return [] unless client
 
-      comments = client.issue_comments(project.full_name, pr.github_number)
+      comments = client.issue_comments(project.full_name, pr.github_number).first(20)
       comments.map do |c|
         { user: c.user.login, body: c.body, created_at: c.created_at }
       end
@@ -63,7 +63,7 @@ module Tools
       client = project.github_token&.client
       return [] unless client
 
-      comments = client.pull_request_review_comments(project.full_name, pr.github_number)
+      comments = client.pull_request_review_comments(project.full_name, pr.github_number).first(20)
       comments.map do |c|
         { user: c.user.login, body: c.body, path: c.path, created_at: c.created_at }
       end

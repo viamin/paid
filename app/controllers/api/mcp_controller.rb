@@ -13,12 +13,7 @@ module Api
       response.headers["Cache-Control"] = "no-cache"
       response.headers["X-Accel-Buffering"] = "no"
 
-      call_url = if params[:session_token].present?
-        api_mcp_call_url(session_token: params[:session_token])
-      else
-        api_mcp_call_url
-      end
-      write_sse_event("endpoint", { url: call_url })
+      write_sse_event("endpoint", { url: api_mcp_call_url })
 
       # Keep connection alive until client disconnects
       loop do
@@ -58,13 +53,16 @@ module Api
         return
       end
 
-      @chat_session = ChatSession.find_by(external_id: token)
+      @chat_session, @current_user = TenantContext.with_system_access do
+        session = ChatSession.find_by(external_id: token)
+        [ session, session&.created_by ]
+      end
+
       unless @chat_session&.status == "active"
         render json: { error: "Invalid or inactive session" }, status: :unauthorized
         return
       end
 
-      @current_user = @chat_session.created_by
       unless @current_user
         render json: { error: "Session has no associated user" }, status: :unauthorized
         return

@@ -21,7 +21,7 @@ module Tools
         tool_hash[name]
       end
 
-      def definitions_for(user:, session:)
+      def definitions_for(user:)
         tool_hash.values.select { |klass| tool_available_to?(klass, user:) }.map(&:definition)
       end
 
@@ -32,7 +32,7 @@ module Tools
       private
 
       def tool_hash
-        TOOL_CLASSES.each_with_object({}) do |class_name, hash|
+        @tool_hash ||= TOOL_CLASSES.each_with_object({}) do |class_name, hash|
           klass = class_name.constantize
           hash[klass.tool_name] = klass
         end
