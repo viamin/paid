@@ -219,11 +219,12 @@ module Containers
     #   stops flowing for longer than this duration.
     # @param stream [Boolean] Whether to stream output to agent logs
     # @param env [Hash] Environment variables for the exec invocation
-    # @param heartbeat_path [String, nil] Optional host-visible path to a
-    #   heartbeat file. When provided, the watchdog treats a recent mtime on
-    #   this file as activity equivalent to stdout output. Agents that wait
-    #   for LLM responses without producing output can touch this file (e.g.
-    #   via Claude Code +PostToolUse+ or Codex +notify+ hooks) to signal
+    # @param heartbeat_path [String, nil] Optional heartbeat file path.
+    #   Host-visible paths are read directly. Container-only paths under
+    #   /paid-heartbeat are probed with Docker exec so volume-backed
+    #   workspaces can still suppress false startup/idle timeouts during
+    #   long, silent LLM inference. Agents can touch this file (e.g. via
+    #   Claude Code +PostToolUse+ or Codex +notify+ hooks) to signal
     #   "still working" and avoid startup/idle timeouts.
     # @return [Result] Result with stdout, stderr, and exit_code
     # @raise [StartupTimeoutError] when no output is received within +startup_timeout+ seconds
@@ -2382,7 +2383,9 @@ module Containers
     def heartbeat_age_seconds(heartbeat_path)
       return nil if heartbeat_path.blank?
 
-      mtime = File.mtime(heartbeat_path)
+      mtime = heartbeat_mtime(heartbeat_path)
+      return nil unless mtime
+
       observed_at_monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       observed_age = Time.now - mtime
 
@@ -2401,6 +2404,32 @@ module Containers
         end
       end
     rescue Errno::ENOENT, Errno::EACCES, Errno::ENOTDIR
+      nil
+    end
+
+    def heartbeat_mtime(heartbeat_path)
+      if container_heartbeat_path?(heartbeat_path)
+        container_heartbeat_mtime(heartbeat_path)
+      else
+        File.mtime(heartbeat_path)
+      end
+    end
+
+    def container_heartbeat_path?(heartbeat_path)
+      heartbeat_path.start_with?("#{HEARTBEAT_MOUNT_POINT}/")
+    end
+
+    def container_heartbeat_mtime(heartbeat_path)
+      stdout, = container.exec(
+        [ "sh", "-lc", "test -e #{Shellwords.escape(heartbeat_path)} && stat -c %Y #{Shellwords.escape(heartbeat_path)}" ],
+        wait: 5,
+        user: "agent"
+      )
+      mtime_seconds = stdout.join.to_s.strip
+      return nil if mtime_seconds.blank?
+
+      Time.at(Integer(mtime_seconds))
+    rescue Docker::Error::DockerError, ArgumentError
       nil
     end
 
