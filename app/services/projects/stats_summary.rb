@@ -38,18 +38,9 @@ module Projects
     attr_reader :budgets
 
     def period_cost_cents(budget_type, period_start, ttl)
-      budget = budgets.find { |item| item.budget_type == budget_type }
-      if budget && active_period?(budget, period_start)
-        return budget.current_usage_cents + chat_session_cost_cents(period_start)
-      end
-
       compute_and_cache(period_cache_key(budget_type, period_start), ttl) do
         period_cost_from_sources(period_start)
       end
-    end
-
-    def active_period?(budget, period_start)
-      budget.period_started_at.present? && budget.period_started_at >= period_start
     end
 
     def compute_and_cache(key, ttl, &)
@@ -69,13 +60,6 @@ module Projects
     def period_cost_from_sources(period_start)
       TokenUsage.billable
         .by_project(project.id)
-        .by_time_period(period_start, now)
-        .total_cost_cents
-    end
-
-    def chat_session_cost_cents(period_start)
-      TokenUsage.billable
-        .where(chat_session_id: ChatSession.where(project_id: project.id).select(:id))
         .by_time_period(period_start, now)
         .total_cost_cents
     end
