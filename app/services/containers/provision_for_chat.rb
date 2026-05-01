@@ -59,8 +59,8 @@ module Containers
     def call
       log("provision.start")
 
-      workspace_volume = create_workspace_volume
-      state_volume = create_state_volume
+      workspace_volume, workspace_volume_created = create_workspace_volume
+      state_volume, state_volume_created = create_state_volume
 
       @container = create_container(
         workspace_volume: workspace_volume,
@@ -68,7 +68,7 @@ module Containers
       )
       @container.start
       fix_ownership!
-      seed_workspace!
+      seed_workspace!(workspace_volume_created:)
 
       chat_session.update!(
         container_id: @container.id,
@@ -84,11 +84,21 @@ module Containers
       )
     rescue Docker::Error::DockerError => e
       log("provision.failed", error: e.message)
-      cleanup_on_failure(workspace_volume, state_volume)
+      cleanup_on_failure(
+        workspace_volume,
+        state_volume,
+        workspace_volume_created:,
+        state_volume_created:
+      )
       raise ProvisionError, "Docker error: #{e.message}"
     rescue StandardError => e
       log("provision.failed", error: e.message)
-      cleanup_on_failure(workspace_volume, state_volume)
+      cleanup_on_failure(
+        workspace_volume,
+        state_volume,
+        workspace_volume_created:,
+        state_volume_created:
+      )
       raise
     end
 
@@ -102,20 +112,22 @@ module Containers
       name = "paid-chat-workspace-#{chat_session.id}"
       begin
         Docker::Volume.get(name)
+        [ name, false ]
       rescue Docker::Error::NotFoundError
         Docker::Volume.create(name, volume_labels("workspace"))
+        [ name, true ]
       end
-      name
     end
 
     def create_state_volume
       name = "paid-chat-state-#{chat_session.id}"
       begin
         Docker::Volume.get(name)
+        [ name, false ]
       rescue Docker::Error::NotFoundError
         Docker::Volume.create(name, volume_labels("state"))
+        [ name, true ]
       end
-      name
     end
 
     def volume_labels(resource)
@@ -223,8 +235,13 @@ module Containers
     # Skipped when no project is associated.
     # Raises ProvisionError if the project has no active token or the clone fails,
     # since mounting the project repo is a core acceptance criterion for workspace mode.
-    def seed_workspace!
+    def seed_workspace!(workspace_volume_created:)
       return unless project
+
+      unless workspace_volume_created || workspace_empty?
+        log("provision.workspace_reused", project_id: project.id)
+        return
+      end
 
       github_token = project.github_token
       unless github_token&.active?
@@ -254,12 +271,21 @@ module Containers
       log("provision.workspace_seeded", project_id: project.id)
     end
 
+    def workspace_empty?
+      result = @container.exec(
+        [ "sh", "-c", "if [ -z \"$(ls -A . 2>/dev/null)\" ]; then exit 0; fi; exit 1" ],
+        user: options[:user]
+      )
+
+      result.is_a?(Array) && result[2] == 0
+    end
+
     def proxy_base_url
       proxy_port = Rails.application.config.x.paid_proxy_port
       "http://web:#{proxy_port}"
     end
 
-    def cleanup_on_failure(workspace_volume, state_volume)
+    def cleanup_on_failure(workspace_volume, state_volume, workspace_volume_created:, state_volume_created:)
       if @container
         begin
           @container.stop(timeout: 0)
@@ -270,8 +296,8 @@ module Containers
         @container = nil
       end
 
-      remove_volume(workspace_volume)
-      remove_volume(state_volume)
+      remove_volume(workspace_volume) if workspace_volume_created
+      remove_volume(state_volume) if state_volume_created
     end
 
     def remove_volume(name)

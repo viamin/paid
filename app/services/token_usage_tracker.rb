@@ -48,16 +48,18 @@ class TokenUsageTracker
         end
       end
 
-      if tracked_run.project
-        tracked_run.project.increment_metrics!(
-          cost_cents: cost_cents,
-          tokens_used: tokens_input + tokens_output
-        )
+      if update_aggregates
+        if tracked_run.project
+          tracked_run.project.increment_metrics!(
+            cost_cents: cost_cents,
+            tokens_used: tokens_input + tokens_output
+          )
 
-        update_cost_budgets(tracked_run.project, cost_cents)
+          update_cost_budgets(tracked_run.project, cost_cents)
+        end
+
+        record_usage_log(tracked_run, tokens_input:, tokens_output:, cost_cents:, llm_model:, request_type:)
       end
-
-      record_usage_log(tracked_run, tokens_input:, tokens_output:, cost_cents:, llm_model:, request_type:)
     end
 
     # Enforce hard-stop budgets *after* the transaction commits so that:

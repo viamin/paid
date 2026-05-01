@@ -132,6 +132,16 @@ RSpec.describe TokenUsageTracker do
         expect(project.reload.total_tokens_used).to eq(0)
       end
 
+      it "does not create a metric log entry" do
+        expect {
+          described_class.track(
+            agent_run: agent_run,
+            usage: { tokens_input: 1000, tokens_output: 500, request_type: "run_summary" },
+            update_aggregates: false
+          )
+        }.not_to change { agent_run.agent_run_logs.where(log_type: "metric").count }
+      end
+
       it "does not update cost budgets" do
         budget = create(:cost_budget, project: project, limit_cents: 100_000, period_started_at: Time.current.beginning_of_month)
 

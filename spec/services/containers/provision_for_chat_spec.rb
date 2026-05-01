@@ -181,6 +181,21 @@ RSpec.describe Containers::ProvisionForChat do
       described_class.call(chat_session: chat_session)
     end
 
+    it "skips recloning when reusing a non-empty workspace volume" do
+      allow(Docker::Volume).to receive(:get).and_return(mock_volume)
+      allow(mock_container).to receive(:exec).with(
+        [ "sh", "-c", "if [ -z \"$(ls -A . 2>/dev/null)\" ]; then exit 0; fi; exit 1" ],
+        user: "agent"
+      ).and_return([ [], [], 1 ])
+
+      expect(mock_container).not_to receive(:exec).with(
+        [ "sh", "-c", a_string_matching(/git clone/) ],
+        anything
+      )
+
+      described_class.call(chat_session: chat_session)
+    end
+
     context "when project has an active GitHub token" do
       let(:github_token) { instance_double(GithubToken, active?: true, token: "ghp_test123") }
 
@@ -218,6 +233,18 @@ RSpec.describe Containers::ProvisionForChat do
 
         expect(mock_container).to receive(:stop).with(timeout: 0)
         expect(mock_container).to receive(:delete).with(force: true, v: true)
+
+        expect { described_class.call(chat_session: chat_session) }
+          .to raise_error(Containers::ProvisionForChat::ProvisionError, /start failed/)
+      end
+
+      it "preserves reused volumes on failure" do
+        allow(Docker::Volume).to receive(:get).and_return(mock_volume)
+        allow(mock_container).to receive(:start).and_raise(Docker::Error::DockerError, "start failed")
+
+        expect(mock_container).to receive(:stop).with(timeout: 0)
+        expect(mock_container).to receive(:delete).with(force: true, v: true)
+        expect(mock_volume).not_to receive(:remove)
 
         expect { described_class.call(chat_session: chat_session) }
           .to raise_error(Containers::ProvisionForChat::ProvisionError, /start failed/)

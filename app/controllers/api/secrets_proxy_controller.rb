@@ -68,7 +68,11 @@ module Api
         return
       end
 
-      warning_threshold = authenticated_run.project.token_limit_warning_threshold
+      return unless limit.finite?
+
+      warning_threshold = authenticated_project&.token_limit_warning_threshold
+      return unless warning_threshold
+
       warning_at = (limit * warning_threshold / 100.0).floor
       if current_tokens >= warning_at
         response.set_header("X-Token-Usage", current_tokens.to_s)
