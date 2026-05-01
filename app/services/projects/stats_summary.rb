@@ -33,7 +33,6 @@ module Projects
       if budget && active_period?(budget, period_start)
         return budget.current_usage_cents + chat_session_cost_cents(period_start)
       end
-      return chat_session_cost_cents(period_start) if budget
 
       Rails.cache.fetch(period_cache_key(budget_type, period_start), expires_in: ttl) do
         period_cost_from_sources(period_start)
@@ -68,14 +67,14 @@ module Projects
     end
 
     def knowledge_run_cost_cents(period_start)
-      TokenUsage
+      TokenUsage.billable
         .where(knowledge_run_id: project.knowledge_runs.select(:id))
         .by_time_period(period_start, now)
         .total_cost_cents
     end
 
     def chat_session_cost_cents(period_start)
-      TokenUsage
+      TokenUsage.billable
         .where(chat_session_id: ChatSession.where(project_id: project.id).select(:id))
         .by_time_period(period_start, now)
         .total_cost_cents

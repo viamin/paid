@@ -1,16 +1,18 @@
 # frozen_string_literal: true
 
-class Projects::CostSnapshotsController < ApplicationController
-  before_action :set_project
+module Projects
+  class CostSnapshotsController < ApplicationController
+    before_action :set_project
 
-  def show
-    authorize @project
-    @summary = Projects::StatsSummary.call(project: @project, budgets: @project.cost_budgets.load)
-  end
+    def show
+      authorize @project
+      @summary = StatsSummary.call(project: @project, budgets: @project.cost_budgets.load)
+    end
 
-  private
+    private
 
-  def set_project
-    @project = policy_scope(Project).find(params[:project_id])
+    def set_project
+      @project = policy_scope(Project).find(params[:project_id])
+    end
   end
 end
