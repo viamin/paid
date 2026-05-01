@@ -27,7 +27,7 @@ module Tools
 
       issues = is_pull_request ? project.issues.pull_requests_only : project.issues.issues_only
       issues = issues.by_paid_state(state) if state.present?
-      issues = issues.order(updated_at: :desc).limit([ limit.to_i, 100 ].min)
+      issues = issues.order(updated_at: :desc).limit(limit.to_i.clamp(1, 100))
 
       issues.map do |issue|
         {

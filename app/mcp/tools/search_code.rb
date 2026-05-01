@@ -24,7 +24,7 @@ module Tools
       project = policy_scope(Project).find(project_id)
       authorize project, :show?
 
-      search_limit = [ limit.to_i, 50 ].min
+      search_limit = limit.to_i.clamp(1, 50)
       provider_config = project.knowledge_embedding_provider_configuration
 
       result = Knowledge::Search.call(

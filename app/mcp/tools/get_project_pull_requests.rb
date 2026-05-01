@@ -26,7 +26,7 @@ module Tools
 
       prs = project.issues.pull_requests_only
       prs = prs.where(github_state:) if github_state.present?
-      prs = prs.order(updated_at: :desc).limit([ limit.to_i, 100 ].min)
+      prs = prs.order(updated_at: :desc).limit(limit.to_i.clamp(1, 100))
 
       prs.map do |pr|
         {

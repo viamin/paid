@@ -13,7 +13,12 @@ module Api
       response.headers["Cache-Control"] = "no-cache"
       response.headers["X-Accel-Buffering"] = "no"
 
-      write_sse_event("endpoint", { url: api_mcp_call_url })
+      call_url = if params[:session_token].present?
+        api_mcp_call_url(session_token: params[:session_token])
+      else
+        api_mcp_call_url
+      end
+      write_sse_event("endpoint", { url: call_url })
 
       # Keep connection alive until client disconnects
       loop do

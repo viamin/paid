@@ -21,7 +21,7 @@ module Tools
     def call(status: nil, limit: 20)
       projects = policy_scope(Project)
       projects = projects.where(active: status == "active") if status.present?
-      projects = projects.order(updated_at: :desc).limit([ limit.to_i, 100 ].min)
+      projects = projects.order(updated_at: :desc).limit(limit.to_i.clamp(1, 100))
 
       projects.map do |project|
         {

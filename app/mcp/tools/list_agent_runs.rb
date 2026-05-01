@@ -23,7 +23,7 @@ module Tools
       runs = policy_scope(AgentRun)
       runs = runs.where(project_id:) if project_id.present?
       runs = runs.by_status(status) if status.present?
-      runs = runs.recent.limit([ limit.to_i, 100 ].min)
+      runs = runs.recent.limit(limit.to_i.clamp(1, 100))
 
       runs.map do |run|
         {
