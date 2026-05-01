@@ -134,8 +134,27 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
         agent_run = create(:agent_run, :running, project: project)
 
         expect {
-          activity.execute(agent_run_id: agent_run.id, error: "GitCredentials proxy returned 503")
+          activity.execute(agent_run_id: agent_run.id, error: "GithubProxy responded with 503: GitHub token not available")
         }.to have_enqueued_job(GithubTokenValidationJob).with(project.github_token.id)
+      end
+
+      it "does not enqueue validation for secondary rate-limit 403s" do
+        agent_run = create(:agent_run, :running, project: project)
+
+        expect {
+          activity.execute(
+            agent_run_id: agent_run.id,
+            error: "HTTP 403: You have exceeded a secondary rate limit. Please wait a few minutes before you try again."
+          )
+        }.not_to have_enqueued_job(GithubTokenValidationJob)
+      end
+
+      it "does not enqueue validation for generic proxy 503s" do
+        agent_run = create(:agent_run, :running, project: project)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "GithubProxy responded with 503: upstream proxy overload")
+        }.not_to have_enqueued_job(GithubTokenValidationJob)
       end
 
       it "does not enqueue validation for non-auth errors" do
