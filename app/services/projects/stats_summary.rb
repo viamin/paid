@@ -16,6 +16,15 @@ module Projects
       new(...).call
     end
 
+    def self.bust_cache!(project_id)
+      now = Time.current
+      %w[daily monthly].each do |budget_type|
+        period_start = budget_type == "daily" ? now.beginning_of_day : now.beginning_of_month
+        key = [ "projects", project_id, "stats_summary", budget_type, period_start.to_date.iso8601 ]
+        Rails.cache.delete(key)
+      end
+    end
+
     def call
       {
         today_cost_cents: period_cost_cents("daily", now.beginning_of_day, TODAY_CACHE_TTL),

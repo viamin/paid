@@ -414,6 +414,7 @@ class Project < ApplicationRecord
   end
 
   def broadcast_cost_snapshot_update
+    Projects::StatsSummary.bust_cache!(id)
     broadcast_replace_to(
       self, :project_updates,
       target: ActionView::RecordIdentifier.dom_id(self, :cost_snapshot),
