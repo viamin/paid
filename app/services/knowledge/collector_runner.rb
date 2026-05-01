@@ -115,6 +115,7 @@ module Knowledge
         project_id: project.id,
         error: e.message
       )
+      report_exception(e, collector_type)
       { collector_type: collector_type, status: "failed", error: e.message }
     end
 
@@ -150,6 +151,20 @@ module Knowledge
 
     def collector_classes
       self.class.registry
+    end
+
+    def report_exception(exception, collector_type)
+      return unless project.account
+
+      HandleExceptionJob.perform_later(
+        account_id: project.account_id,
+        exception_class: exception.class.name,
+        exception_message: exception.message,
+        exception_backtrace: exception.backtrace&.first(20),
+        context: { subsystem: "knowledge", project_id: project.id, collector_type: collector_type }
+      )
+    rescue StandardError => e
+      Rails.logger.warn(message: "knowledge.exception_report_failed", error: e.message)
     end
   end
 end

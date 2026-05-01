@@ -63,12 +63,24 @@ class TenantContext
       connection.select_value(
         ActiveRecord::Base.sanitize_sql_array([ "SELECT NULLIF(current_setting(?, true), '')", key ])
       )
+    rescue ActiveRecord::StatementInvalid => e
+      raise unless transaction_aborted?(e)
+
+      nil
     end
 
     def set_config(key, value)
       connection.execute(
         ActiveRecord::Base.sanitize_sql_array([ "SELECT set_config(?, ?, false)", key, value.to_s ])
       )
+    rescue ActiveRecord::StatementInvalid => e
+      raise unless transaction_aborted?(e)
+
+      nil
+    end
+
+    def transaction_aborted?(error)
+      error.cause.is_a?(PG::InFailedSqlTransaction)
     end
 
     def connection

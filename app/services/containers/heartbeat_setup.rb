@@ -11,8 +11,14 @@ module Containers
   # is stuck", suppressing idle/startup timeouts while the agent is active.
   #
   # The heartbeat file lives on a dedicated bind-mounted directory
-  # (/paid-heartbeat inside the container) so it is visible to both the
-  # container-side hooks and the host-side watchdog.
+  # (/paid-heartbeat inside the container) so it is usually visible to both
+  # the container-side hooks and the host-side watchdog.
+  #
+  # When the host path is unavailable (for example, reconnecting to a
+  # volume-backed workspace where only the container can see /paid-heartbeat),
+  # the setup still enables provider hooks and returns the container path.
+  # The watchdog must then inspect that path from inside the container rather
+  # than reading it directly from the host filesystem.
   #
   # @example
   #   setup = Containers::HeartbeatSetup.new(
@@ -49,11 +55,11 @@ module Containers
     end
 
     def heartbeat_path
-      host_heartbeat_path
+      host_heartbeat_path.presence || CONTAINER_HEARTBEAT_PATH
     end
 
     def available?
-      host_heartbeat_path.present? && SUPPORTED_PROVIDERS.include?(canonical_provider)
+      SUPPORTED_PROVIDERS.include?(canonical_provider)
     end
 
     # Returns the effective idle timeout for this provider given a base

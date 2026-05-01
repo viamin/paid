@@ -516,7 +516,8 @@ RSpec.describe Activities::RunAgentActivity do
         expect(env).to have_key("PAID_KILOCODE_CONFIG_B64")
         expect(env).to have_key("PAID_PROVIDER_ID")
         config_json = JSON.parse(Base64.strict_decode64(env["PAID_KILOCODE_CONFIG_B64"]))
-        expect(config_json["model"]).to eq("claude-sonnet-4-20250514")
+        expect(config_json["model"]).to eq("anthropic/claude-sonnet-4-20250514")
+        expect(config_json["provider"]).to eq({ "anthropic" => {} })
       end
 
       it "does not include PAID_KILOCODE_CONFIG_B64 for subscription kilocode providers" do
@@ -1893,6 +1894,24 @@ RSpec.describe Activities::RunAgentActivity do
 
         activity.execute(agent_run_id: agent_run.id)
       end
+
+      it "falls back to the container heartbeat path for volume-backed workspaces" do
+        agent_run.update!(worktree_path: nil)
+        project.update!(max_execution_seconds: 86_400)
+        allow(container_service).to receive_messages(execute: exec_success, heartbeat_host_path: nil)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(
+            timeout: AGENT_TIMEOUT_DEFAULT,
+            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
+            heartbeat_path: Containers::HeartbeatSetup::CONTAINER_HEARTBEAT_PATH
+          )
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
     end
 
     context "with fallback enabled" do
@@ -2179,6 +2198,34 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.status).to eq("rate_limited")
         expect(agent_run.error_message).to include("rate limited")
         expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
+      it "detects a real quota error returned with exit code 0" do
+        quota_success = Containers::Provision::Result.success(
+          stdout: "Error: Your billing limit has been reached. Please add credits.", stderr: "", exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(quota_success)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("error")
+        expect(agent_run.providers_attempted.first["error_message"]).to include("credit/quota error")
+      end
+
+      it "does not misclassify substantial agent output as a quota error when pattern appears in test descriptions" do
+        long_stdout = (1..40).map { |i| "includes test case number #{i} for the billing and rate limit patterns" }.join("\n")
+        long_output_success = Containers::Provision::Result.success(
+          stdout: long_stdout, stderr: "", exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(long_output_success)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
       end
 
       it "preserves timeout handling when the timeout happens before provider execution starts" do

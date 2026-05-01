@@ -472,6 +472,49 @@ RSpec.describe Provider do
     end
   end
 
+  describe "KiloCode config generation" do
+    let(:user) { create(:user) }
+    let(:api_key) { create(:provider_api_key, user: user, api_service_type: "anthropic") }
+    let(:provider) do
+      create(
+        :provider,
+        user: user,
+        provider_key: "kilocode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-20250514" } }
+      )
+    end
+
+    it "generates provider as a record with prefixed model" do
+      config = JSON.parse(provider.kilocode_config_json)
+
+      expect(config["provider"]).to eq({ "anthropic" => {} })
+      expect(config["model"]).to eq("anthropic/claude-sonnet-4-20250514")
+    end
+
+    it "does not double-prefix already-qualified model ids" do
+      provider.update!(config: { "kilocode" => { "api_provider" => "anthropic", "model" => "anthropic/claude-opus-4" } })
+
+      config = JSON.parse(provider.kilocode_config_json)
+
+      expect(config["model"]).to eq("anthropic/claude-opus-4")
+    end
+
+    it "uses openai as default provider key for OpenAI-compatible backends" do
+      zai_key = create(:provider_api_key, user: user, api_service_type: "zai_coding")
+      provider.update!(
+        provider_api_key: zai_key,
+        config: { "kilocode" => { "api_provider" => "zai_coding", "model" => "glm-5.1" } }
+      )
+
+      config = JSON.parse(provider.kilocode_config_json)
+
+      expect(config["provider"]).to eq({ "openai" => {} })
+      expect(config["model"]).to eq("openai/glm-5.1")
+    end
+  end
+
   describe "OpenCode agent-harness runtime helpers" do
     let(:user) { create(:user) }
     let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret") }
@@ -490,10 +533,14 @@ RSpec.describe Provider do
       runtime = provider.agent_harness_provider_runtime
 
       expect(runtime.model).to eq("moonshotai/kimi-k2-0905")
-      expect(runtime.api_provider).to eq("openrouter")
-      expect(runtime.base_url).to eq("https://openrouter.ai/api/v1")
-      expect(runtime.env).to include("OPENAI_API_KEY" => "sk-openrouter-secret")
+      expect(runtime.api_provider).to be_nil
+      expect(runtime.base_url).to be_nil
+      expect(runtime.env).to include(
+        "OPENAI_API_KEY" => "sk-openrouter-secret",
+        "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
+      )
       expect(runtime.unset_env).to include("OPENAI_HEADER_X_AGENT_RUN_ID", "OPENAI_HEADER_X_PROXY_TOKEN")
+      expect(runtime.metadata[:config]["provider"]).to eq({ "openrouter" => {} })
     end
 
     it "does not enable direct outbound when the OpenCode model id is missing" do
