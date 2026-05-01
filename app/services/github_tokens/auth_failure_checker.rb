@@ -21,7 +21,7 @@ module GithubTokens
       /The requested URL returned error: 401/i
     ].freeze
 
-    # Proxy 503 responses from credential/proxy controllers
+    # Credential-unavailable responses from proxy/credential controllers (any status code)
     PROXY_AUTH_PATTERNS = [
       /GitCredentials.*Project GitHub token is missing or inactive/i,
       /GithubProxy.*GitHub token not available/i,
