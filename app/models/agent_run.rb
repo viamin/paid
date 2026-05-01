@@ -273,7 +273,7 @@ class AgentRun < ApplicationRecord
 
   def self.provider_options_cache_key_for(account_id:, project_id: nil)
     if project_id
-      "agent_runs/providers/project/#{project_id}"
+      "agent_runs/providers/account/#{account_id}/project/#{project_id}"
     else
       "agent_runs/providers/account/#{account_id}"
     end
@@ -1660,7 +1660,7 @@ class AgentRun < ApplicationRecord
   end
 
   def invalidate_provider_options_cache_on_change
-    return unless previous_changes.key?("status") || previous_changes.key?("final_provider")
+    return unless previous_changes.key?("agent_type") || previous_changes.key?("final_provider")
 
     self.class.invalidate_provider_options_cache(
       account_id: project.account_id,
