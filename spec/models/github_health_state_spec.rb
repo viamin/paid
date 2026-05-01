@@ -3,6 +3,67 @@
 require "rails_helper"
 
 RSpec.describe GithubHealthState do
+  def wait_for_queue(queue, timeout: 5)
+    Timeout.timeout(timeout) { queue.pop }
+  end
+
+  def run_success_failure_race(state)
+    success_state = described_class.find(state.id)
+    failure_state = described_class.find(state.id)
+    update_started = Queue.new
+    continue_update = Queue.new
+    failure_started = Queue.new
+    failure_updated = Queue.new
+
+    allow(success_state).to receive(:update!).and_wrap_original do |method, *args|
+      update_started << true
+      wait_for_queue(continue_update)
+      method.call(*args)
+    end
+    allow(failure_state).to receive(:with_lock).and_wrap_original do |method, *args, &block|
+      failure_started << true
+      method.call(*args, &block)
+    end
+    allow(failure_state).to receive(:update!).and_wrap_original do |method, *args|
+      failure_updated << true
+      method.call(*args)
+    end
+
+    success_thread = Thread.new { success_state.record_success! }
+    wait_for_queue(update_started)
+    failure_thread = Thread.new { failure_state.record_failure!(error_message: "probe failed") }
+    wait_for_queue(failure_started)
+
+    expect { wait_for_queue(failure_updated, timeout: 0.1) }.to raise_error(Timeout::Error)
+
+    continue_update << true
+    [ success_thread, failure_thread ].each(&:join)
+  end
+
+  def run_recovery_race(state)
+    first_state = described_class.find(state.id)
+    second_state = described_class.find(state.id)
+    update_started = Queue.new
+    continue_update = Queue.new
+
+    allow(first_state).to receive(:update!).and_wrap_original do |method, *args|
+      update_started << true
+      wait_for_queue(continue_update)
+      method.call(*args)
+    end
+
+    first_result = nil
+    second_result = nil
+
+    first_thread = Thread.new { first_result = first_state.check_circuit_recovery!(timeout: 300) }
+    wait_for_queue(update_started)
+    second_thread = Thread.new { second_result = second_state.check_circuit_recovery!(timeout: 300) }
+    continue_update << true
+
+    [ first_thread, second_thread ].each(&:join)
+    [ first_result, second_result ]
+  end
+
   describe "validations" do
     subject { build(:github_health_state) }
 
@@ -169,6 +230,16 @@ RSpec.describe GithubHealthState do
       state.reload
       expect(state.failure_count).to eq(0)
     end
+
+    it "does not overwrite an open circuit when a failure races with success" do
+      state = create(:github_health_state, :circuit_half_open)
+      run_success_failure_race(state)
+
+      state.reload
+      expect(state.circuit_state).to eq("closed")
+      expect(state.failure_count).to eq(1)
+      expect(state.last_error_message).to eq("probe failed")
+    end
   end
 
   describe "#check_circuit_recovery!" do
@@ -191,6 +262,14 @@ RSpec.describe GithubHealthState do
     it "returns false for closed circuits" do
       state = create(:github_health_state, circuit_state: "closed")
       expect(state.check_circuit_recovery!(timeout: 300)).to be false
+    end
+
+    it "allows only one concurrent recovery transition" do
+      state = create(:github_health_state, circuit_state: "open", circuit_opened_at: 10.minutes.ago)
+      first_result, second_result = run_recovery_race(state)
+
+      expect([ first_result, second_result ].count(true)).to eq(1)
+      expect(state.reload.circuit_state).to eq("half_open")
     end
   end
 
