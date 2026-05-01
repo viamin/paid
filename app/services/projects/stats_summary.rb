@@ -7,10 +7,11 @@ module Projects
     TODAY_CACHE_TTL = 5.minutes
     MONTH_CACHE_TTL = 15.minutes
 
-    def initialize(project:, budgets: project.cost_budgets.load, now: Time.current)
+    def initialize(project:, budgets: project.cost_budgets.load, now: Time.current, skip_cache: false)
       @project = project
       @budgets = Array(budgets)
       @now = now
+      @skip_cache = skip_cache
     end
 
     def self.call(...)
@@ -34,13 +35,19 @@ module Projects
         return budget.current_usage_cents + chat_session_cost_cents(period_start)
       end
 
-      Rails.cache.fetch(period_cache_key(budget_type, period_start), expires_in: ttl) do
+      compute_and_cache(period_cache_key(budget_type, period_start), ttl) do
         period_cost_from_sources(period_start)
       end
     end
 
     def active_period?(budget, period_start)
       budget.period_started_at.nil? || budget.period_started_at >= period_start
+    end
+
+    def compute_and_cache(key, ttl, &block)
+      return block.call if @skip_cache
+
+      Rails.cache.fetch(key, expires_in: ttl, &block)
     end
 
     def period_cache_key(budget_type, period_start)

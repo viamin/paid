@@ -421,7 +421,7 @@ class Project < ApplicationRecord
       partial: "projects/cost_snapshot",
       locals: {
         project: self,
-        summary: Projects::StatsSummary.call(project: self, budgets: budgets)
+        summary: Projects::StatsSummary.call(project: self, budgets: budgets, skip_cache: true)
       }
     )
   end
