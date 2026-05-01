@@ -41,7 +41,7 @@ module Projects
     end
 
     def active_period?(budget, period_start)
-      budget.period_started_at.nil? || budget.period_started_at >= period_start
+      budget.period_started_at.present? && budget.period_started_at >= period_start
     end
 
     def compute_and_cache(key, ttl, &block)
