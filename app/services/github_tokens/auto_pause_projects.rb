@@ -2,8 +2,15 @@
 
 module GithubTokens
   class AutoPauseProjects
+    AUTO_PAUSE_REASON_PREFIX = "GitHub token '".freeze
+    AUTO_PAUSE_REASON_MARKER = "' failed validation:".freeze
+
     def self.call(...)
       new(...).call
+    end
+
+    def self.auto_pause_reason?(reason)
+      reason&.start_with?(AUTO_PAUSE_REASON_PREFIX) && reason.include?(AUTO_PAUSE_REASON_MARKER)
     end
 
     def initialize(github_token:)

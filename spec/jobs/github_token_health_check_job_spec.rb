@@ -53,6 +53,28 @@ RSpec.describe GithubTokenHealthCheckJob do
         described_class.perform_now
         expect(token.reload.validation_error).to be_nil
       end
+
+      it "always calls auto-resume after successful validation" do
+        allow(GithubTokens::AutoResumeProjects).to receive(:call)
+
+        described_class.perform_now
+
+        expect(GithubTokens::AutoResumeProjects).to have_received(:call).with(github_token: token)
+      end
+    end
+
+    context "when a previously failed token becomes valid again" do
+      let!(:token) { create(:github_token, :validation_failed, account: account) }
+
+      before { stub_valid_octokit }
+
+      it "auto-resumes projects paused by the token failure" do
+        allow(GithubTokens::AutoResumeProjects).to receive(:call)
+
+        described_class.perform_now
+
+        expect(GithubTokens::AutoResumeProjects).to have_received(:call).with(github_token: token)
+      end
     end
 
     context "when token has been revoked (auth error)" do
@@ -223,6 +245,32 @@ RSpec.describe GithubTokenHealthCheckJob do
           tokens_skipped: 0
         )
       )
+    end
+
+    context "when auto-resume raises an error" do
+      let!(:token) { create(:github_token, :pending_validation, account: account) }
+
+      before do
+        stub_valid_octokit
+        allow(GithubTokens::AutoResumeProjects).to receive(:call).and_raise(ActiveRecord::ConnectionTimeoutError)
+        allow(Rails.logger).to receive(:info)
+        allow(Rails.logger).to receive(:error)
+      end
+
+      it "still marks the token as validated" do
+        described_class.perform_now
+        expect(token.reload.validation_status).to eq("validated")
+      end
+
+      it "logs the auto-resume failure" do
+        described_class.perform_now
+        expect(Rails.logger).to have_received(:error).with(
+          hash_including(
+            message: "github_token.health_check.auto_resume_failed",
+            github_token_id: token.id
+          )
+        )
+      end
     end
   end
 end

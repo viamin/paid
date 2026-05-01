@@ -68,6 +68,7 @@ class GithubTokenHealthCheckJob < ApplicationJob
 
     result = token.validate_with_github!
     token.mark_validated!
+    auto_resume_with_fallback(token)
 
     Rails.logger.info(
       message: "github_token.health_check.token_valid",
@@ -95,5 +96,15 @@ class GithubTokenHealthCheckJob < ApplicationJob
       error: e.message
     )
     true
+  end
+
+  def auto_resume_with_fallback(token)
+    GithubTokens::AutoResumeProjects.call(github_token: token)
+  rescue StandardError => e
+    Rails.logger.error(
+      message: "github_token.health_check.auto_resume_failed",
+      github_token_id: token.id,
+      error: e.message
+    )
   end
 end
