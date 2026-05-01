@@ -42,5 +42,11 @@ class GithubTokenValidationJob < ApplicationJob
 
   def auto_resume_projects(github_token)
     GithubTokens::AutoResumeProjects.call(github_token: github_token)
+  rescue StandardError => e
+    Rails.logger.error(
+      message: "github_token_validation.auto_resume_failed",
+      github_token_id: github_token.id,
+      error: e.message
+    )
   end
 end

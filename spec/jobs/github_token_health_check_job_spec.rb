@@ -246,5 +246,31 @@ RSpec.describe GithubTokenHealthCheckJob do
         )
       )
     end
+
+    context "when auto-resume raises an error" do
+      let!(:token) { create(:github_token, :pending_validation, account: account) }
+
+      before do
+        stub_valid_octokit
+        allow(GithubTokens::AutoResumeProjects).to receive(:call).and_raise(ActiveRecord::ConnectionTimeoutError)
+        allow(Rails.logger).to receive(:info)
+        allow(Rails.logger).to receive(:error)
+      end
+
+      it "still marks the token as validated" do
+        described_class.perform_now
+        expect(token.reload.validation_status).to eq("validated")
+      end
+
+      it "logs the auto-resume failure" do
+        described_class.perform_now
+        expect(Rails.logger).to have_received(:error).with(
+          hash_including(
+            message: "github_token.health_check.auto_resume_failed",
+            github_token_id: token.id
+          )
+        )
+      end
+    end
   end
 end

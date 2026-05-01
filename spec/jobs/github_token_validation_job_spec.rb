@@ -133,5 +133,40 @@ RSpec.describe GithubTokenValidationJob do
         expect { described_class.perform_now(-1) }.not_to raise_error
       end
     end
+
+    context "when auto-resume raises an error" do
+      let(:github_token) { create(:github_token, :pending_validation, account: account) }
+
+      before do
+        octokit_client = instance_double(Octokit::Client)
+        allow(Octokit::Client).to receive(:new).and_return(octokit_client)
+        allow(octokit_client).to receive_messages(
+          user: OpenStruct.new(login: "testuser", id: 12345, name: "Test User", email: "test@example.com"),
+          scopes: [ "repo", "read:org" ],
+          last_response: OpenStruct.new(headers: {})
+        )
+        allow(octokit_client).to receive(:middleware=)
+        allow(octokit_client).to receive_messages(auto_paginate: false, repositories: [])
+        allow(octokit_client).to receive(:auto_paginate=)
+        allow(GithubTokens::AutoResumeProjects).to receive(:call).and_raise(ActiveRecord::ConnectionTimeoutError)
+        allow(Rails.logger).to receive(:info)
+        allow(Rails.logger).to receive(:error)
+      end
+
+      it "still marks the token as validated" do
+        described_class.perform_now(github_token.id)
+        expect(github_token.reload.validation_status).to eq("validated")
+      end
+
+      it "logs the auto-resume failure" do
+        described_class.perform_now(github_token.id)
+        expect(Rails.logger).to have_received(:error).with(
+          hash_including(
+            message: "github_token_validation.auto_resume_failed",
+            github_token_id: github_token.id
+          )
+        )
+      end
+    end
   end
 end
