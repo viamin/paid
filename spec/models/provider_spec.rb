@@ -490,10 +490,14 @@ RSpec.describe Provider do
       runtime = provider.agent_harness_provider_runtime
 
       expect(runtime.model).to eq("moonshotai/kimi-k2-0905")
-      expect(runtime.api_provider).to eq("openrouter")
-      expect(runtime.base_url).to eq("https://openrouter.ai/api/v1")
-      expect(runtime.env).to include("OPENAI_API_KEY" => "sk-openrouter-secret")
+      expect(runtime.api_provider).to be_nil
+      expect(runtime.base_url).to be_nil
+      expect(runtime.env).to include(
+        "OPENAI_API_KEY" => "sk-openrouter-secret",
+        "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
+      )
       expect(runtime.unset_env).to include("OPENAI_HEADER_X_AGENT_RUN_ID", "OPENAI_HEADER_X_PROXY_TOKEN")
+      expect(runtime.metadata[:config]["provider"]).to eq({ "openrouter" => {} })
     end
 
     it "does not enable direct outbound when the OpenCode model id is missing" do
