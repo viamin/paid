@@ -781,7 +781,8 @@ CREATE TABLE public.chat_sessions (
     created_by_id bigint,
     title character varying,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    proxy_token character varying(64)
 );
 
 ALTER TABLE ONLY public.chat_sessions FORCE ROW LEVEL SECURITY;
@@ -5702,6 +5703,13 @@ CREATE INDEX index_chat_sessions_on_provider_id ON public.chat_sessions USING bt
 
 
 --
+-- Name: index_chat_sessions_on_proxy_token; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_chat_sessions_on_proxy_token ON public.chat_sessions USING btree (proxy_token);
+
+
+--
 -- Name: index_chat_sessions_on_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10151,6 +10159,7 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260428140000'),
 ('20260428130904'),
 ('20260428120000'),
+('20260428093730'),
 ('20260428025840'),
 ('20260427225726'),
 ('20260427223009'),

@@ -11,10 +11,17 @@ module Api
   # @see docker/agent/scripts/git-credential-paid for the client-side helper
   class GitCredentialsController < ActionController::API
     include Api::ContainerAuthentication
+    allow_chat_session_authentication!
 
     # GET /api/proxy/git-credentials
     def show
-      github_token = @agent_run.project.github_token
+      project = authenticated_project
+      unless project
+        render json: { error: "Project is required for git credentials" }, status: :forbidden
+        return
+      end
+
+      github_token = project.github_token
 
       unless github_token&.active?
         render json: { error: "Project GitHub token is missing or inactive" }, status: :forbidden

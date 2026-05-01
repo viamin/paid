@@ -25,7 +25,7 @@ module AgentRuns
 
     def track_run_summary
       TokenUsageTracker.track(
-        agent_run: agent_run,
+        tracked_run: agent_run,
         usage: usage_payload(run_input, run_output, "run_summary"),
         update_aggregates: false
       )
@@ -37,7 +37,7 @@ module AgentRuns
       return unless (delta_input + delta_output).positive?
 
       TokenUsageTracker.track(
-        agent_run: agent_run,
+        tracked_run: agent_run,
         usage: usage_payload(delta_input, delta_output, "run_delta"),
         enforce_guardrails: false
       )
