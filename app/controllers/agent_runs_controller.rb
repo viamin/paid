@@ -10,7 +10,8 @@ class AgentRunsController < ApplicationController
     @q.sorts = "created_at desc" if @q.sorts.empty?
     @pagy, @agent_runs = pagy(@q.result)
     AgentRun.preload_source_pull_requests(@agent_runs)
-    @provider_options = base_scope.distinct_effective_providers
+    cache_key = AgentRun.provider_options_cache_key_for(account_id: current_account.id)
+    @provider_options = base_scope.distinct_effective_providers(cache_key: cache_key)
   end
 
   def pause_scheduler

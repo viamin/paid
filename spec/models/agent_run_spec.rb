@@ -2279,6 +2279,119 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe ".distinct_effective_providers caching" do
+    around do |example|
+      original_cache = Rails.cache
+      Rails.cache = ActiveSupport::Cache::MemoryStore.new
+      example.run
+    ensure
+      Rails.cache = original_cache
+    end
+
+    it "caches results by account cache key" do
+      project = create(:project)
+      create(:agent_run, :completed, project: project, agent_type: "claude_code")
+
+      account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
+      scope = described_class.where(project_id: project.id)
+
+      first_call = scope.distinct_effective_providers(cache_key: account_key)
+      expect(first_call).to include("claude")
+
+      second_call = scope.distinct_effective_providers(cache_key: account_key)
+      expect(second_call).to eq(first_call)
+    end
+
+    it "returns fresh results without cache_key" do
+      project = create(:project)
+      create(:agent_run, :completed, project: project, agent_type: "claude_code")
+
+      scope = described_class.where(project_id: project.id)
+
+      first = scope.distinct_effective_providers
+      expect(first).to include("claude")
+
+      create(:agent_run, :completed, project: project, agent_type: "cursor")
+
+      second = scope.distinct_effective_providers
+      expect(second).to include("cursor")
+    end
+
+    it "uses separate cache keys for account and project scope" do
+      project = create(:project)
+      create(:agent_run, :completed, project: project, agent_type: "claude_code")
+
+      account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
+      project_key = described_class.provider_options_cache_key_for(account_id: project.account_id, project_id: project.id)
+
+      described_class.where(project_id: project.id).distinct_effective_providers(cache_key: account_key)
+      described_class.where(project_id: project.id).distinct_effective_providers(cache_key: project_key)
+
+      expect(Rails.cache.read(account_key)).not_to be_nil
+      expect(Rails.cache.read(project_key)).not_to be_nil
+    end
+
+    it "includes account_id in project-scoped cache key" do
+      key = described_class.provider_options_cache_key_for(account_id: 42, project_id: 7)
+      expect(key).to include("account/42")
+      expect(key).to include("project/7")
+    end
+
+    describe "cache invalidation" do
+      it "invalidates cache when a new agent run is created" do
+        project = create(:project)
+        account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
+
+        described_class.where(project_id: project.id).distinct_effective_providers(cache_key: account_key)
+        expect(Rails.cache.read(account_key)).not_to be_nil
+
+        create(:agent_run, project: project, agent_type: "cursor")
+
+        expect(Rails.cache.read(account_key)).to be_nil
+      end
+
+      it "invalidates cache when final_provider changes" do
+        project = create(:project)
+        agent_run = create(:agent_run, :running, project: project, agent_type: "claude_code")
+        account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
+
+        described_class.where(project_id: project.id).distinct_effective_providers(cache_key: account_key)
+        expect(Rails.cache.read(account_key)).not_to be_nil
+
+        agent_run.update!(final_provider: "cursor")
+
+        expect(Rails.cache.read(account_key)).to be_nil
+      end
+
+      it "does not invalidate cache on intermediate status transitions" do
+        project = create(:project)
+        agent_run = create(:agent_run, :queued, project: project, agent_type: "claude_code")
+        account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
+
+        described_class.where(project_id: project.id).distinct_effective_providers(cache_key: account_key)
+        expect(Rails.cache.read(account_key)).not_to be_nil
+
+        agent_run.update!(status: "running", started_at: Time.current)
+
+        expect(Rails.cache.read(account_key)).not_to be_nil
+      end
+
+      it "invalidates both account and project keys on create" do
+        project = create(:project)
+        account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
+        project_key = described_class.provider_options_cache_key_for(account_id: project.account_id, project_id: project.id)
+
+        Rails.cache.write(account_key, [ "anthropic" ])
+        Rails.cache.write(project_key, [ "anthropic" ])
+
+        create(:agent_run, project: project, agent_type: "cursor")
+
+        expect(Rails.cache.read(account_key)).to be_nil
+        expect(Rails.cache.read(project_key)).to be_nil
+      end
+    end
+  end
+
   describe "#effective_provider" do
     it "returns final_provider when present and not mapped" do
       agent_run = create(:agent_run, agent_type: "claude_code", final_provider: "codex")
