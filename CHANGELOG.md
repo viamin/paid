@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.35.0](https://github.com/viamin/paid/compare/v0.34.0...v0.35.0) (2026-05-01)
+
+
+### Features
+
+* add centralized exception handling service with auto-issue filing and self-healing ([#1531](https://github.com/viamin/paid/issues/1531)) ([542d96b](https://github.com/viamin/paid/commit/542d96b82dc02739095631d5dd99545845d009f0))
+
+
+### Bug Fixes
+
+* **agent-runs:** prevent false-positive quota error on substantial agent output ([#1581](https://github.com/viamin/paid/issues/1581)) ([4c346e9](https://github.com/viamin/paid/commit/4c346e95ba07e5aa9363d4c424541364005cbd80))
+* Heartbeat disabled for Docker volume workspaces causes idle timeout false positives ([#1584](https://github.com/viamin/paid/issues/1584)) ([138ab90](https://github.com/viamin/paid/commit/138ab908104d6ef2947c33cd4e55a8d90dd76f3c))
+* Projects permanently stuck in scheduler_paused after token re-validation ([#1579](https://github.com/viamin/paid/issues/1579)) ([2e7e818](https://github.com/viamin/paid/commit/2e7e818eb7a2f9aa96cb5b784968f39234e9bfa1))
+* **providers:** generate record-format provider in kilocode and opencode CLI configs ([#1585](https://github.com/viamin/paid/issues/1585)) ([0d98d94](https://github.com/viamin/paid/commit/0d98d9459f5ec3030aff80bc1092138b5d65fa61))
+
 ## [0.34.0](https://github.com/viamin/paid/compare/v0.33.0...v0.34.0) (2026-04-30)
 
 
