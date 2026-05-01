@@ -3,6 +3,7 @@
 module Api
   class GithubProxyController < ActionController::API
     include Api::ContainerAuthentication
+    allow_chat_session_authentication!
 
     REVIEW_COMMENT_MARKER = "<!-- paid:code-review -->"
     REVIEW_HEADER = "## Code Review"
@@ -26,6 +27,12 @@ module Api
     # GET/POST/PATCH /api/proxy/github/*path
     def proxy
       path = params[:path] || ""
+      project = authenticated_project
+      unless project
+        render json: { error: "Project required" }, status: :forbidden
+        return
+      end
+
       match = find_allowed_endpoint(request.method, path)
 
       unless match
@@ -33,12 +40,12 @@ module Api
         return
       end
 
-      unless repo_matches?(match[:owner], match[:repo])
+      unless repo_matches?(project, match[:owner], match[:repo])
         render json: { error: "Repository mismatch" }, status: :forbidden
         return
       end
 
-      github_token = @agent_run.project.github_token
+      github_token = project.github_token
       unless github_token&.active?
         render json: { error: "GitHub token not available" }, status: :service_unavailable
         return
@@ -81,8 +88,8 @@ module Api
       nil
     end
 
-    def repo_matches?(owner, repo)
-      project_full_name = @agent_run.project.full_name
+    def repo_matches?(project, owner, repo)
+      project_full_name = project.full_name
       "#{owner}/#{repo}".casecmp(project_full_name).zero?
     end
 
@@ -102,16 +109,17 @@ module Api
     end
 
     def github_authorization_token(path)
-      return @agent_run.project.github_token.token unless use_review_bot_token?(path)
+      project = authenticated_project
+      return project.github_token.token unless use_review_bot_token?(path)
 
       Github::ReviewBotInstallationToken.new(
-        repo_full_name: @agent_run.project.full_name
+        repo_full_name: project.full_name
       ).fetch
     end
 
     def use_review_bot_token?(path)
-      @agent_run.review_goal? &&
-        @agent_run.project.review_method_enabled?("paid_agent") &&
+      @agent_run&.review_goal? &&
+        authenticated_project&.review_method_enabled?("paid_agent") &&
         request.method == "POST" &&
         %r{\Arepos/[^/]+/[^/]+/pulls/\d+/reviews\z}.match?(path)
     end
@@ -128,7 +136,7 @@ module Api
     end
 
     def review_creation_request?(path)
-      @agent_run.review_goal? &&
+      @agent_run&.review_goal? &&
         request.method == "POST" &&
         %r{\Arepos/[^/]+/[^/]+/pulls/\d+/reviews\z}.match?(path)
     end
@@ -148,6 +156,7 @@ module Api
     end
 
     def track_issue_creation(path, response)
+      return unless @agent_run
       return unless request.method == "POST"
       return unless %r{\Arepos/[^/]+/[^/]+/issues\z}.match?(path)
 
@@ -167,9 +176,8 @@ module Api
     end
 
     def track_review_creation(path, response)
+      return unless @agent_run
       return unless request.method == "POST"
-      # Only track for review-goal runs so non-review runs don't accidentally
-      # set review_posted_at, which is used to verify review-goal completion.
       return unless @agent_run.review_goal?
 
       match = %r{\Arepos/[^/]+/[^/]+/pulls/(?<number>\d+)/reviews\z}.match(path)
@@ -198,7 +206,7 @@ module Api
     end
 
     def review_url_for(pr_number, review_id)
-      "https://github.com/#{@agent_run.project.full_name}/pull/#{pr_number}#pullrequestreview-#{review_id}"
+      "https://github.com/#{authenticated_project.full_name}/pull/#{pr_number}#pullrequestreview-#{review_id}"
     end
 
     def warn_if_missing_inline_comments(response_body)
@@ -256,6 +264,7 @@ module Api
       Rails.logger.error(
         message: message,
         agent_run_id: @agent_run&.id,
+        chat_session_id: @chat_session&.id,
         error: error
       )
     end
@@ -264,6 +273,7 @@ module Api
       Rails.logger.info(
         message: message,
         agent_run_id: @agent_run&.id,
+        chat_session_id: @chat_session&.id,
         **metadata
       )
     end

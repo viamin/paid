@@ -42,7 +42,7 @@ RSpec.describe CostBudgets::Check do
         period_started_at: Time.current.beginning_of_day)
 
       TokenUsageTracker.track(
-        agent_run: agent_run,
+        tracked_run: agent_run,
         usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 }
       )
 
@@ -58,7 +58,7 @@ RSpec.describe CostBudgets::Check do
         limit_cents: 100, current_usage_cents: 0)
 
       TokenUsageTracker.track(
-        agent_run: agent_run,
+        tracked_run: agent_run,
         usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 }
       )
 
@@ -73,7 +73,7 @@ RSpec.describe CostBudgets::Check do
         period_started_at: Time.current.beginning_of_day)
 
       TokenUsageTracker.track(
-        agent_run: agent_run,
+        tracked_run: agent_run,
         usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 }
       )
 
@@ -89,7 +89,7 @@ RSpec.describe CostBudgets::Check do
       allow(AgentRuns::Cancel).to receive(:call).and_raise(StandardError, "Temporal RPC error")
 
       TokenUsageTracker.track(
-        agent_run: agent_run,
+        tracked_run: agent_run,
         usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 }
       )
 
@@ -109,7 +109,7 @@ RSpec.describe CostBudgets::Check do
       end
 
       TokenUsageTracker.track(
-        agent_run: agent_run,
+        tracked_run: agent_run,
         usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 }
       )
 
@@ -127,7 +127,7 @@ RSpec.describe CostBudgets::Check do
 
       # This will add 1800 cents, hitting the limit but within 20% grace (effective limit: 2160)
       TokenUsageTracker.track(
-        agent_run: agent_run,
+        tracked_run: agent_run,
         usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 }
       )
 

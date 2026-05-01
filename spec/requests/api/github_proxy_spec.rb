@@ -6,6 +6,7 @@ RSpec.describe "Api::GithubProxy" do
   let(:project) { create(:project, owner: "testowner", repo: "testrepo") }
   let(:agent_run) { create(:agent_run, :running, project: project) }
   let(:github_token) { project.github_token }
+  let(:chat_session) { create(:chat_session, account: project.account, project: nil) }
 
   let(:valid_headers) do
     {
@@ -100,6 +101,18 @@ RSpec.describe "Api::GithubProxy" do
         headers: valid_headers
 
       expect(agent_run.reload.created_issue_url).to be_nil
+    end
+
+    it "returns forbidden for a projectless chat session" do
+      get "/api/proxy/github/repos/testowner/testrepo/issues",
+        headers: {
+          "Content-Type" => "application/json",
+          "X-Chat-Session-Id" => chat_session.id.to_s,
+          "X-Proxy-Token" => chat_session.proxy_token
+        }
+
+      expect(response).to have_http_status(:forbidden)
+      expect(response.parsed_body).to eq("error" => "Project required")
     end
   end
 

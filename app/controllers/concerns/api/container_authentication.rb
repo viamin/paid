@@ -14,9 +14,11 @@ module Api
     extend ActiveSupport::Concern
     AGENT_RUN_PROXY_CREDENTIAL_PREFIX = "paid-run".freeze
     KNOWLEDGE_RUN_PROXY_CREDENTIAL_PREFIX = "paid-knowledge-run".freeze
+    CHAT_SESSION_PROXY_CREDENTIAL_PREFIX = "paid-chat-session".freeze
 
     included do
       class_attribute :knowledge_run_authentication_enabled, instance_accessor: false, default: false
+      class_attribute :chat_session_authentication_enabled, instance_accessor: false, default: false
 
       around_action :with_container_tenant_context
       before_action :validate_container_request
@@ -27,6 +29,10 @@ module Api
     class_methods do
       def allow_knowledge_run_authentication!
         self.knowledge_run_authentication_enabled = true
+      end
+
+      def allow_chat_session_authentication!
+        self.chat_session_authentication_enabled = true
       end
     end
 
@@ -59,6 +65,9 @@ module Api
 
       @authenticated_run, error_message = TenantContext.with_system_access do
         case @authenticated_run_type
+        when :chat_session
+          @chat_session = ChatSession.includes(project: :account).find_by(id: @authenticated_run_id)
+          [ @chat_session, "Invalid or inactive chat session" ]
         when :knowledge_run
           @knowledge_run = KnowledgeRun.includes(project: :account).find_by(id: @authenticated_run_id)
           [ @knowledge_run, "Invalid or inactive knowledge run" ]
@@ -105,6 +114,9 @@ module Api
       knowledge_run_id = request.headers["X-Knowledge-Run-Id"] || params[:knowledge_run_id]
       return [ :knowledge_run, knowledge_run_id ] if knowledge_run_authentication_enabled? && knowledge_run_id.present?
 
+      chat_session_id = request.headers["X-Chat-Session-Id"] || params[:chat_session_id]
+      return [ :chat_session, chat_session_id ] if chat_session_authentication_enabled? && chat_session_id.present?
+
       [ nil, nil ]
     end
 
@@ -112,8 +124,15 @@ module Api
       agent_run_match = value.to_s.match(/\A#{AGENT_RUN_PROXY_CREDENTIAL_PREFIX}:(\d+):([0-9a-f]+)\z/i)
       return [ :agent_run, agent_run_match[1], agent_run_match[2] ] if agent_run_match
 
+      # Gate-after-match pattern: regex runs unconditionally for consistency across all
+      # credential types, but the gate check ensures credentials are only accepted by
+      # controllers that explicitly enable that authentication type. Unmatched credentials
+      # fall through to nil safely.
       knowledge_run_match = value.to_s.match(/\A#{KNOWLEDGE_RUN_PROXY_CREDENTIAL_PREFIX}:(\d+):([0-9a-f]+)\z/i)
       return [ :knowledge_run, knowledge_run_match[1], knowledge_run_match[2] ] if knowledge_run_authentication_enabled? && knowledge_run_match
+
+      chat_session_match = value.to_s.match(/\A#{CHAT_SESSION_PROXY_CREDENTIAL_PREFIX}:(\d+):([0-9a-f]+)\z/i)
+      return [ :chat_session, chat_session_match[1], chat_session_match[2] ] if chat_session_authentication_enabled? && chat_session_match
 
       nil
     end
@@ -122,8 +141,14 @@ module Api
       self.class.knowledge_run_authentication_enabled
     end
 
+    def chat_session_authentication_enabled?
+      self.class.chat_session_authentication_enabled
+    end
+
     def missing_run_id_error
-      if knowledge_run_authentication_enabled?
+      if chat_session_authentication_enabled?
+        "Missing agent run ID, knowledge run ID, or chat session ID"
+      elsif knowledge_run_authentication_enabled?
         "Missing agent run ID or knowledge run ID"
       else
         "Missing agent run ID"
@@ -131,7 +156,11 @@ module Api
     end
 
     def authenticated_account
-      @authenticated_run&.project&.account
+      @authenticated_run&.project&.account || @authenticated_run.try(:account)
+    end
+
+    def authenticated_project
+      @authenticated_run&.project
     end
   end
 end

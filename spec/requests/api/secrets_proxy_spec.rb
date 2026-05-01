@@ -451,7 +451,7 @@ RSpec.describe "Api::SecretsProxy" do
 
         expect(response).to have_http_status(:unauthorized)
         body = JSON.parse(response.body)
-        expect(body["error"]).to eq("Missing agent run ID or knowledge run ID")
+        expect(body["error"]).to eq("Missing agent run ID, knowledge run ID, or chat session ID")
       end
     end
 
@@ -801,6 +801,24 @@ RSpec.describe "Api::SecretsProxy" do
         expect(response).to have_http_status(:too_many_requests)
         expect(JSON.parse(response.body)["error"]).to eq("Token limit exceeded for this knowledge run")
         expect(knowledge_run.reload.token_limit_status).to eq("exceeded")
+      end
+    end
+
+    context "when the request is authenticated as a projectless chat session" do
+      it "proxies successfully without rate-limit warnings" do
+        chat_session = create(:chat_session, account: project.account, project: nil)
+        create(:token_usage, :chat, chat_session: chat_session, input_tokens: 1_000, output_tokens: 500)
+
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: {
+            "Content-Type" => "application/json",
+            "X-Chat-Session-Id" => chat_session.id.to_s,
+            "X-Proxy-Token" => chat_session.proxy_token
+          }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.headers).not_to have_key("X-Token-Limit-Warning")
       end
     end
   end

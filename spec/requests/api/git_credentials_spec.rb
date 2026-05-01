@@ -6,6 +6,7 @@ RSpec.describe "Api::GitCredentials" do
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, :running, project: project) }
   let(:github_token) { project.github_token }
+  let(:chat_session) { create(:chat_session, :with_project, account: project.account, project: project) }
 
   let(:valid_headers) do
     {
@@ -133,6 +134,21 @@ RSpec.describe "Api::GitCredentials" do
 
         expect(response).to have_http_status(:forbidden)
         expect(response.parsed_body).to eq("error" => "Project GitHub token is missing or inactive")
+      end
+    end
+
+    context "with a projectless chat session" do
+      let(:chat_session) { create(:chat_session, account: project.account, project: nil) }
+
+      it "returns forbidden instead of raising" do
+        get "/api/proxy/git-credentials",
+          headers: {
+            "X-Chat-Session-Id" => chat_session.id.to_s,
+            "X-Proxy-Token" => chat_session.proxy_token
+          }
+
+        expect(response).to have_http_status(:forbidden)
+        expect(response.parsed_body).to eq("error" => "Project is required for git credentials")
       end
     end
   end

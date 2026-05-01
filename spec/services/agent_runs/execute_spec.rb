@@ -64,14 +64,14 @@ RSpec.describe AgentRuns::Execute do
                input_tokens: 1500, output_tokens: 800)
 
         expect(TokenUsageTracker).to receive(:track).with(
-          agent_run: agent_run,
+          tracked_run: agent_run,
           usage: hash_including(request_type: "run_summary"),
           update_aggregates: false
         )
         # No run_delta expected when proxy fully covers.
         # Use keyword arg matching (not positional hash) since track uses kwargs.
         expect(TokenUsageTracker).not_to receive(:track).with(
-          agent_run: anything,
+          tracked_run: anything,
           usage: hash_including(request_type: "run_delta")
         )
 
@@ -83,12 +83,12 @@ RSpec.describe AgentRuns::Execute do
                input_tokens: 1000, output_tokens: 500)
 
         expect(TokenUsageTracker).to receive(:track).with(
-          agent_run: agent_run,
+          tracked_run: agent_run,
           usage: hash_including(request_type: "run_summary"),
           update_aggregates: false
         )
         expect(TokenUsageTracker).to receive(:track).with(
-          agent_run: agent_run,
+          tracked_run: agent_run,
           usage: {
             tokens_input: 500,
             tokens_output: 300,
@@ -448,7 +448,7 @@ RSpec.describe AgentRuns::Execute do
 
       it "tracks only the missing billable delta when proxy coverage is partial" do
         TokenUsageTracker.track(
-          agent_run: agent_run,
+          tracked_run: agent_run,
           usage: {
             tokens_input: 1000,
             tokens_output: 200,
@@ -513,7 +513,7 @@ RSpec.describe AgentRuns::Execute do
 
       it "tracks only the missing billable delta when proxy coverage is partial" do
         TokenUsageTracker.track(
-          agent_run: agent_run,
+          tracked_run: agent_run,
           usage: {
             tokens_input: 2000,
             tokens_output: 500,
@@ -540,12 +540,12 @@ RSpec.describe AgentRuns::Execute do
                input_tokens: 4500, output_tokens: 1800)
 
         expect(TokenUsageTracker).to receive(:track).with(
-          agent_run: agent_run,
+          tracked_run: agent_run,
           usage: hash_including(request_type: "run_summary"),
           update_aggregates: false
         )
         expect(TokenUsageTracker).not_to receive(:track).with(
-          agent_run: anything,
+          tracked_run: anything,
           usage: hash_including(request_type: "run_delta")
         )
 

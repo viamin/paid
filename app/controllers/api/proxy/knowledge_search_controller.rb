@@ -4,6 +4,7 @@ module Api
   module Proxy
     class KnowledgeSearchController < ActionController::API
       include Api::ContainerAuthentication
+      allow_chat_session_authentication!
 
       DEFAULT_LIMIT = 5
       MAX_LIMIT = 10
@@ -14,7 +15,12 @@ module Api
       before_action :check_rate_limit
 
       def search
-        project = @agent_run.project
+        project = authenticated_project
+        unless project
+          render json: { error: "No project associated with authenticated session" }, status: :unprocessable_entity
+          return
+        end
+
         provider_config = project.knowledge_embedding_provider_configuration
 
         result = Knowledge::Search.call(
@@ -47,7 +53,11 @@ module Api
       end
 
       def rate_limit_key
-        "agent_run:#{@agent_run.id}:knowledge_search_count"
+        if @chat_session
+          "chat_session:#{@chat_session.id}:knowledge_search_count"
+        else
+          "agent_run:#{@agent_run.id}:knowledge_search_count"
+        end
       end
 
       def limit
