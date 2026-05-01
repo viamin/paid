@@ -8,6 +8,9 @@ class ChatSession < ApplicationRecord
   IDLE_TIMEOUT_DURATION = 30.minutes
 
   before_validation :set_external_id, on: :create
+  after_create_commit :broadcast_sidebar_prepend
+  after_update_commit :broadcast_sidebar_refresh
+  after_destroy_commit :broadcast_sidebar_remove
 
   belongs_to :project, optional: true
   belongs_to :provider, optional: true
@@ -64,5 +67,29 @@ class ChatSession < ApplicationRecord
     return if project.account_id == account_id
 
     errors.add(:project, "must belong to the same account")
+  end
+
+  def broadcast_sidebar_prepend
+    Turbo::StreamsChannel.broadcast_prepend_to(
+      [ account, :chat_sessions ],
+      target: "chat_sessions_list",
+      partial: "chat_sessions/session_card",
+      locals: { chat_session: self }
+    )
+  end
+
+  def broadcast_sidebar_refresh
+    Turbo::StreamsChannel.broadcast_remove_to(
+      [ account, :chat_sessions ],
+      target: ActionView::RecordIdentifier.dom_id(self)
+    )
+    broadcast_sidebar_prepend
+  end
+
+  def broadcast_sidebar_remove
+    Turbo::StreamsChannel.broadcast_remove_to(
+      [ account, :chat_sessions ],
+      target: ActionView::RecordIdentifier.dom_id(self)
+    )
   end
 end

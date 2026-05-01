@@ -111,6 +111,8 @@ class ChatMessagesController < ApplicationController
       model: message.model,
       tool_call_id: message.tool_call_id,
       tool_name: message.tool_name,
+      tool_arguments: message.tool_arguments,
+      tool_result: message.tool_result,
       tokens_input: message.tokens_input,
       tokens_output: message.tokens_output,
       created_at: message.created_at

@@ -261,6 +261,91 @@
   color: #fdba74; /* orange-300 */
 }
 
+/* Chat markdown rendering */
+.chat-session-card.border-sky-400 {
+  border-color: rgb(56 189 248);
+}
+
+.chat-session-card.bg-sky-50 {
+  background-color: rgb(240 249 255);
+}
+
+[data-controller~="chat-message"] [data-chat-message-target="content"] {
+  color: #0f172a;
+}
+
+[data-controller~="chat-message"] [data-chat-message-target="content"] p + p,
+[data-controller~="chat-message"] [data-chat-message-target="content"] ul + p,
+[data-controller~="chat-message"] [data-chat-message-target="content"] ol + p,
+[data-controller~="chat-message"] [data-chat-message-target="content"] pre + p,
+[data-controller~="chat-message"] [data-chat-message-target="content"] table + p {
+  margin-top: 0.9rem;
+}
+
+[data-controller~="chat-message"] [data-chat-message-target="content"] ul,
+[data-controller~="chat-message"] [data-chat-message-target="content"] ol {
+  margin-left: 1.25rem;
+  margin-top: 0.75rem;
+}
+
+[data-controller~="chat-message"] [data-chat-message-target="content"] ul {
+  list-style: disc;
+}
+
+[data-controller~="chat-message"] [data-chat-message-target="content"] ol {
+  list-style: decimal;
+}
+
+[data-controller~="chat-message"] [data-chat-message-target="content"] a {
+  color: #0369a1;
+  text-decoration: underline;
+}
+
+[data-controller~="chat-message"] [data-chat-message-target="content"] table {
+  margin-top: 1rem;
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid rgb(226 232 240);
+}
+
+[data-controller~="chat-message"] [data-chat-message-target="content"] th,
+[data-controller~="chat-message"] [data-chat-message-target="content"] td {
+  border-bottom: 1px solid rgb(226 232 240);
+  padding: 0.65rem 0.85rem;
+  text-align: left;
+}
+
+[data-controller~="chat-message"] [data-chat-message-target="content"] th {
+  background: rgb(248 250 252);
+  font-weight: 600;
+}
+
+[data-controller~="chat-message"] [data-chat-message-target="content"] :not(pre) > code {
+  border-radius: 9999px;
+  background: rgb(226 232 240);
+  padding: 0.15rem 0.45rem;
+  font-size: 0.875em;
+}
+
+[data-controller~="chat-message"] .hljs-keyword,
+[data-controller~="chat-message"] .hljs-selector-tag,
+[data-controller~="chat-message"] .hljs-title.function_ {
+  color: #7dd3fc;
+}
+
+[data-controller~="chat-message"] .hljs-string,
+[data-controller~="chat-message"] .hljs-attr,
+[data-controller~="chat-message"] .hljs-template-variable {
+  color: #fde68a;
+}
+
+[data-controller~="chat-message"] .hljs-comment,
+[data-controller~="chat-message"] .hljs-quote {
+  color: #94a3b8;
+}
+
 .dark .bg-amber-50 {
   background-color: rgba(120, 53, 15, 0.2);
 }
