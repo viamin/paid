@@ -516,7 +516,8 @@ RSpec.describe Activities::RunAgentActivity do
         expect(env).to have_key("PAID_KILOCODE_CONFIG_B64")
         expect(env).to have_key("PAID_PROVIDER_ID")
         config_json = JSON.parse(Base64.strict_decode64(env["PAID_KILOCODE_CONFIG_B64"]))
-        expect(config_json["model"]).to eq("claude-sonnet-4-20250514")
+        expect(config_json["model"]).to eq("anthropic/claude-sonnet-4-20250514")
+        expect(config_json["provider"]).to eq({ "anthropic" => {} })
       end
 
       it "does not include PAID_KILOCODE_CONFIG_B64 for subscription kilocode providers" do

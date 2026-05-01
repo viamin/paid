@@ -286,7 +286,7 @@ module Providers
     # provision.rb ensure block), which removes the config before the
     # subsequent smoke test runs.
     def prepare_kilocode_config!(run)
-      config_json = kilocode_container_config_json
+      config_json = provider.kilocode_config_json
       run.execute_in_container(
         [ "sh", "-c",
           "mkdir -p /home/agent/.config/kilo && " \
@@ -294,29 +294,6 @@ module Providers
         timeout: 30,
         env: { "KILOCODE_CONFIG_B64" => Base64.strict_encode64(config_json) }
       )
-    end
-
-    # Generates a kilo CLI config JSON compatible with v7.1.3.
-    #
-    # The kilo CLI expects provider to be a record (e.g. {"openai": {}}),
-    # not a string. For OpenAI-compatible backends (z.ai, DeepSeek, etc.),
-    # the "openai" provider is used with OPENAI_BASE_URL overridden via env.
-    def kilocode_container_config_json
-      api_provider = provider.kilocode_api_provider
-      api_config = Provider::DIRECT_OUTBOUND_API_PROVIDERS.fetch(
-        api_provider, Provider::DIRECT_OUTBOUND_API_PROVIDERS["anthropic"]
-      )
-
-      kilocode_provider_key = if api_config[:kilocode_api]
-        api_config[:kilocode_api]
-      else
-        "openai"
-      end
-
-      {
-        provider: { kilocode_provider_key => {} },
-        model: "#{kilocode_provider_key}/#{provider.kilocode_model_id}"
-      }.to_json
     end
 
     def build_test_run

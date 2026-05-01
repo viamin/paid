@@ -23,8 +23,27 @@ RSpec.describe Providers::HarnessExecutionPlan do
         "OPENAI_API_KEY" => "sk-openrouter-secret",
         "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
       )
+    end
+
+    it "writes opencode.json with provider as record, not string" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
+      provider = create(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+
+      plan = described_class.call(provider: provider, prompt: "ping")
+
       expect(plan.preparation.file_writes.first.path).to eq("~/.config/opencode/opencode.json")
-      expect(plan.preparation.file_writes.first.content).to include("\"provider\": \"openrouter\"")
+      parsed = JSON.parse(plan.preparation.file_writes.first.content)
+      expect(parsed["provider"]).to eq({ "openrouter" => {} })
+      expect(parsed["model"]).to eq("moonshotai/kimi-k2-0905")
+      expect(parsed).not_to have_key("baseURL")
     end
   end
 end

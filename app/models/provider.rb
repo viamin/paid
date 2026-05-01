@@ -198,12 +198,16 @@ class Provider < ApplicationRecord
     raise ArgumentError, "Missing KiloCode model id for provider #{id || provider_key}" if model_id.blank?
 
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(kilocode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["anthropic"])
-    api_adapter = api_config[:kilocode_api] || "openai-compatible"
+    kilocode_provider_key = api_config[:kilocode_api] || "openai"
 
-    AgentHarness.provider(:kilocode).config_file_content(
-      api_provider: api_adapter,
-      model_id: model_id
-    )
+    {
+      provider: { kilocode_provider_key => {} },
+      model: kilocode_qualified_model(kilocode_provider_key, model_id)
+    }.to_json
+  end
+
+  def kilocode_qualified_model(provider_key, model_id)
+    model_id.include?("/") ? model_id : "#{provider_key}/#{model_id}"
   end
 
   def direct_outbound_exec_env
@@ -597,12 +601,18 @@ class Provider < ApplicationRecord
 
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
 
+    env = { "OPENAI_API_KEY" => provider_api_key&.api_key.to_s }
+    env["OPENAI_BASE_URL"] = api_config[:base_url] if api_config[:base_url]
+
     AgentHarness::ProviderRuntime.new(
       model: model_id,
-      base_url: api_config[:base_url],
-      api_provider: opencode_api_provider,
-      env: { "OPENAI_API_KEY" => provider_api_key&.api_key.to_s },
-      unset_env: %w[OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN]
+      env: env,
+      unset_env: %w[OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN],
+      metadata: {
+        config: {
+          "provider" => { opencode_api_provider => {} }
+        }
+      }
     )
   end
 end
