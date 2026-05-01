@@ -12,9 +12,9 @@ RSpec.describe Containers::HeartbeatSetup do
       expect(setup.heartbeat_path).to eq(host_heartbeat_path)
     end
 
-    it "returns nil when host_heartbeat_path is nil" do
+    it "falls back to the container heartbeat path when host_heartbeat_path is nil" do
       setup = described_class.new(provider: "claude", worktree_path: worktree_path, host_heartbeat_path: nil)
-      expect(setup.heartbeat_path).to be_nil
+      expect(setup.heartbeat_path).to eq(described_class::CONTAINER_HEARTBEAT_PATH)
     end
   end
 
@@ -39,9 +39,9 @@ RSpec.describe Containers::HeartbeatSetup do
       expect(setup).not_to be_available
     end
 
-    it "returns false without host_heartbeat_path" do
+    it "returns true without host_heartbeat_path for supported providers" do
       setup = described_class.new(provider: "claude", worktree_path: worktree_path, host_heartbeat_path: nil)
-      expect(setup).not_to be_available
+      expect(setup).to be_available
     end
   end
 
@@ -56,9 +56,9 @@ RSpec.describe Containers::HeartbeatSetup do
       expect(setup.env).to eq({})
     end
 
-    it "returns empty hash without host_heartbeat_path" do
+    it "returns AGENT_HEARTBEAT_PATH without host_heartbeat_path" do
       setup = described_class.new(provider: "claude", worktree_path: worktree_path, host_heartbeat_path: nil)
-      expect(setup.env).to eq({})
+      expect(setup.env).to eq("AGENT_HEARTBEAT_PATH" => "/paid-heartbeat/.paid-heartbeat")
     end
   end
 
@@ -148,8 +148,8 @@ RSpec.describe Containers::HeartbeatSetup do
     context "without host_heartbeat_path" do
       let(:setup) { described_class.new(provider: "claude", worktree_path: worktree_path, host_heartbeat_path: nil) }
 
-      it "returns nil" do
-        expect(setup.preparation).to be_nil
+      it "still writes Claude heartbeat settings" do
+        expect(setup.preparation).to be_a(AgentHarness::ExecutionPreparation)
       end
     end
   end
@@ -179,9 +179,9 @@ RSpec.describe Containers::HeartbeatSetup do
       expect(setup.idle_timeout_for(base_timeout)).to be_nil
     end
 
-    it "returns nil without host_heartbeat_path" do
+    it "returns base timeout without host_heartbeat_path" do
       setup = described_class.new(provider: "claude", worktree_path: worktree_path, host_heartbeat_path: nil)
-      expect(setup.idle_timeout_for(base_timeout)).to be_nil
+      expect(setup.idle_timeout_for(base_timeout)).to eq(base_timeout)
     end
 
     it "returns base timeout for reliable heartbeat providers" do

@@ -2565,6 +2565,27 @@ RSpec.describe Containers::Provision do
         )
         expect(result).to be_success
       end
+
+      it "suppresses idle timeout when the heartbeat is only visible inside the container" do
+        heartbeat_path = "#{described_class::HEARTBEAT_MOUNT_POINT}/.paid-heartbeat"
+
+        allow(mock_container).to receive(:exec).with([ "sh", "-c", "working_silently" ], any_args) do |_, **_opts, &block|
+          block.call(:stdout, "initial output\n") if block
+          10.times { sleep 0.05 }
+          [ [ "initial output\n" ], [], 0 ]
+        end
+        allow(service).to receive(:watchdog_poll_interval).and_return(0.05)
+        allow(service).to receive(:container_heartbeat_mtime).with(heartbeat_path) { Time.now }
+
+        result = service.execute(
+          "working_silently",
+          timeout: 10,
+          idle_timeout: 1.2,
+          heartbeat_path: heartbeat_path
+        )
+        expect(result).to be_success
+        expect(container_stopped.true?).to be false
+      end
     end
   end
 
@@ -2642,6 +2663,25 @@ RSpec.describe Containers::Provision do
 
       expect(first_age).to eq(10.0)
       expect(second_age).to eq(15.0)
+    end
+
+    it "reads container-visible heartbeat mtimes via docker exec" do
+      service.with_existing_container(mock_container)
+      heartbeat_path = "#{described_class::HEARTBEAT_MOUNT_POINT}/.paid-heartbeat"
+      heartbeat_mtime = Time.utc(2026, 4, 29, 12, 0, 0)
+
+      allow(mock_container).to receive(:exec).with(
+        [ "sh", "-lc", "test -e /paid-heartbeat/.paid-heartbeat && stat -c %Y /paid-heartbeat/.paid-heartbeat" ],
+        wait: 5,
+        user: "agent"
+      ).and_return([ [ "#{heartbeat_mtime.to_i}\n" ], [], 0 ])
+      allow(Process).to receive(:clock_gettime).and_call_original
+      allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC).and_return(100.0)
+      allow(Time).to receive(:now).and_return(heartbeat_mtime + 10)
+
+      age = service.send(:heartbeat_age_seconds, heartbeat_path)
+
+      expect(age).to eq(10.0)
     end
   end
 
