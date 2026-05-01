@@ -1,7 +1,15 @@
 # frozen_string_literal: true
 
 class GithubTokenValidationJob < ApplicationJob
+  include GoodJob::ActiveJobExtensions::Concurrency
+
   queue_as :default
+
+  good_job_control_concurrency_with(
+    total_limit: 1,
+    enqueue_limit: 1,
+    key: -> { "github_token_validation_#{arguments.first}" }
+  )
 
   retry_on GithubClient::RateLimitError, wait: :polynomially_longer, attempts: 3
   discard_on ActiveRecord::RecordNotFound

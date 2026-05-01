@@ -20,9 +20,9 @@ RSpec.describe GithubTokens::AuthFailureChecker do
 
     it "detects proxy 503 responses" do
       [
-        "GitCredentials proxy returned 503",
-        "GithubProxy responded with 503",
-        "proxy error 503"
+        "GitCredentials returned 503: Project GitHub token is missing or inactive",
+        "GithubProxy responded with 503: GitHub token not available",
+        "Service Unavailable: GitHub token not available"
       ].each do |msg|
         checker = described_class.new(error_message: msg)
         expect(checker.auth_failure?).to be(true), "Expected auth failure for: #{msg}"
@@ -47,6 +47,8 @@ RSpec.describe GithubTokens::AuthFailureChecker do
         "Timeout after 300 seconds",
         "No changes detected",
         "Rate limit exceeded",
+        "HTTP 403: You have exceeded a secondary rate limit. Please wait a few minutes before you try again.",
+        "GithubProxy responded with 503: upstream proxy overload",
         "PermissionUnauthorizedError in module",
         ""
       ].each do |msg|
