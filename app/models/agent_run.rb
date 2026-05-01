@@ -119,6 +119,7 @@ class AgentRun < ApplicationRecord
 
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
+  after_commit :invalidate_provider_options_cache_on_change, on: [ :create, :update ]
   after_commit :enqueue_quality_metrics_collection, on: :update, if: :just_finished?
   after_commit :enqueue_anomaly_detection, on: :update, if: :just_finished?
   after_commit :enqueue_container_metrics_collection, on: :update, if: :just_started_running?
@@ -258,11 +259,38 @@ class AgentRun < ApplicationRecord
     %w[project]
   end
 
-  def self.distinct_effective_providers
+  PROVIDER_OPTIONS_CACHE_TTL = 5.minutes
+
+  def self.distinct_effective_providers(cache_key: nil)
+    if cache_key
+      Rails.cache.fetch(cache_key, expires_in: PROVIDER_OPTIONS_CACHE_TTL) do
+        compute_distinct_effective_providers
+      end
+    else
+      compute_distinct_effective_providers
+    end
+  end
+
+  def self.provider_options_cache_key_for(account_id:, project_id: nil)
+    if project_id
+      "agent_runs/providers/account/#{account_id}/project/#{project_id}"
+    else
+      "agent_runs/providers/account/#{account_id}"
+    end
+  end
+
+  def self.invalidate_provider_options_cache(account_id:, project_id: nil)
+    keys = [ provider_options_cache_key_for(account_id: account_id) ]
+    keys << provider_options_cache_key_for(account_id: account_id, project_id: project_id) if project_id
+    keys.each { |key| Rails.cache.delete(key) }
+  end
+
+  def self.compute_distinct_effective_providers
     pluck(Arel.sql("DISTINCT #{effective_provider_sql}"))
       .compact
       .sort
   end
+  private_class_method :compute_distinct_effective_providers
 
   def duration
     return nil unless started_at
@@ -1603,9 +1631,6 @@ class AgentRun < ApplicationRecord
       project.broadcast_agent_runs_update
       project.broadcast_agent_runs_list_update
       project.broadcast_stats_update
-      # Only broadcast issues updates when they can affect auto-pick eligibility
-      # or when the associated issue/agent type changes. This avoids redundant
-      # re-renders during intermediate status transitions (e.g., queued→pending→running).
       if issue_id.present?
         should_broadcast_issues = false
 
@@ -1624,10 +1649,6 @@ class AgentRun < ApplicationRecord
         project.broadcast_issues_update if should_broadcast_issues
       end
 
-      # Only broadcast dashboard stats on terminal status transitions to avoid
-      # a burst of expensive aggregate queries during intermediate transitions
-      # (queued→pending→running→completed). The Turbo Stream partials for
-      # project-level stats already cover the real-time detail view.
       DashboardBroadcastJob.perform_later(project.account_id) if finished?
     end
 
@@ -1636,5 +1657,14 @@ class AgentRun < ApplicationRecord
     end
 
     project.broadcast_agent_run_detail_update(self)
+  end
+
+  def invalidate_provider_options_cache_on_change
+    return unless previous_changes.key?("agent_type") || previous_changes.key?("final_provider")
+
+    self.class.invalidate_provider_options_cache(
+      account_id: project.account_id,
+      project_id: project_id
+    )
   end
 end
