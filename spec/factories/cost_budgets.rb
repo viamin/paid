@@ -17,6 +17,12 @@ FactoryBot.define do
       period_started_at { Time.current.beginning_of_day }
     end
 
+    trait :monthly do
+      budget_type { "monthly" }
+      limit_cents { 100_000 }
+      period_started_at { Time.current.beginning_of_month }
+    end
+
     trait :per_run do
       budget_type { "per_run" }
       limit_cents { 1_000 }

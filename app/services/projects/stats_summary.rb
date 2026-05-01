@@ -30,8 +30,10 @@ module Projects
 
     def period_cost_cents(budget_type, period_start, ttl)
       budget = budgets.find { |item| item.budget_type == budget_type }
-      return budget.current_usage_cents if budget && active_period?(budget, period_start)
-      return 0 if budget
+      if budget && active_period?(budget, period_start)
+        return budget.current_usage_cents + chat_session_cost_cents(period_start)
+      end
+      return chat_session_cost_cents(period_start) if budget
 
       Rails.cache.fetch(period_cache_key(budget_type, period_start), expires_in: ttl) do
         period_cost_from_sources(period_start)
@@ -48,8 +50,7 @@ module Projects
         project.id,
         "stats_summary",
         budget_type,
-        period_start.to_date.iso8601,
-        project.total_cost_cents
+        period_start.to_date.iso8601
       ]
     end
 
@@ -75,7 +76,7 @@ module Projects
 
     def chat_session_cost_cents(period_start)
       TokenUsage
-        .where(chat_session_id: project.chat_sessions.select(:id))
+        .where(chat_session_id: ChatSession.where(project_id: project.id).select(:id))
         .by_time_period(period_start, now)
         .total_cost_cents
     end
