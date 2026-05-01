@@ -33,7 +33,7 @@ module GithubTokens
     private
 
     def paused_projects
-      @github_token.projects.active.where.not(scheduler_paused_at: nil)
+      @github_token.projects.where.not(scheduler_paused_at: nil)
     end
   end
 end

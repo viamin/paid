@@ -64,11 +64,11 @@ RSpec.describe GithubTokens::AutoResumeProjects do
           scheduler_pause_reason: "GitHub token '#{github_token.name}' failed validation: Bad credentials")
       end
 
-      it "does not resume inactive projects" do
+      it "resumes inactive projects so they are not stuck when reactivated" do
         result = described_class.call(github_token: github_token)
 
-        expect(result).to be_empty
-        expect(project.reload.scheduler_paused_at).to be_present
+        expect(result).to eq([ project.id ])
+        expect(project.reload.scheduler_paused_at).to be_nil
       end
     end
 
