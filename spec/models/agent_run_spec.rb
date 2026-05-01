@@ -2140,7 +2140,8 @@ RSpec.describe AgentRun do
       expect(project).to have_received(:broadcast_agent_runs_update)
       expect(project).to have_received(:broadcast_agent_runs_list_update)
       expect(project).to have_received(:broadcast_stats_update)
-      expect(project).to have_received(:broadcast_cost_snapshot_update)
+      # cost snapshot only broadcasts on explicit status transitions, not default-status creates
+      expect(project).not_to have_received(:broadcast_cost_snapshot_update)
       expect(project).to have_received(:broadcast_agent_run_detail_update).with(agent_run)
     end
 
