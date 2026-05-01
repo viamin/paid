@@ -93,6 +93,9 @@ group :development, :test do
   # Additional RuboCop extensions
   gem "rubocop-rspec", require: false
 
+  # Performance suggestions for Ruby code [https://github.com/fasterer/fasterer]
+  gem "fasterer", require: false
+
   # Testing framework
   gem "rspec-rails"
   gem "factory_bot_rails"

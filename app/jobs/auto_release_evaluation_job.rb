@@ -97,9 +97,11 @@ class AutoReleaseEvaluationJob < ApplicationJob
 
   def fetch_previous_version(client, project)
     content = client.contents(project.full_name, path: ".release-please-manifest.json")
+    return nil unless content.respond_to?(:content)
+
     manifest = JSON.parse(Base64.decode64(content.content))
     manifest["."]
-  rescue GithubClient::Error, JSON::ParserError, NoMethodError => e
+  rescue GithubClient::Error, JSON::ParserError => e
     Rails.logger.warn(
       message: "auto_release.fetch_version_failed",
       project_id: project.id,
