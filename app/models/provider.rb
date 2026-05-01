@@ -202,8 +202,12 @@ class Provider < ApplicationRecord
 
     {
       provider: { kilocode_provider_key => {} },
-      model: "#{kilocode_provider_key}/#{model_id}"
+      model: kilocode_qualified_model(kilocode_provider_key, model_id)
     }.to_json
+  end
+
+  def kilocode_qualified_model(provider_key, model_id)
+    model_id.include?("/") ? model_id : "#{provider_key}/#{model_id}"
   end
 
   def direct_outbound_exec_env
