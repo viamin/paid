@@ -34,7 +34,7 @@ module Activities
         respect_requested: input.key?(:agent_type) || input.key?(:provider_id)
       )
 
-      validate_runnable_provider!(provider_id, agent_type, goal: goal)
+      validate_runnable_provider!(project: project, provider_id: provider_id, agent_type: agent_type, goal: goal)
 
       # Resolve and render prompt version if no custom prompt is provided.
       # Skip for untrusted issues to match the safety behavior in AgentRun#prompt_for_issue.
@@ -259,16 +259,44 @@ module Activities
       )
     end
 
-    def validate_runnable_provider!(provider_id, agent_type, goal:)
+    def validate_runnable_provider!(project:, provider_id:, agent_type:, goal:)
       return if goal.in?(NON_CONTAINER_GOALS)
 
-      return if provider_id.present?
+      provider = AgentRuns::ProviderResolver.selected_provider(project: project, provider_id: provider_id)
+      if provider
+        raise_no_runnable_provider!(
+          "No runnable provider available for project (provider_id=#{provider.id}, enabled_for_agent_runs=#{provider.enabled_for_agent_runs?})"
+        ) unless provider.enabled_for_agent_runs?
+
+        warn_if_rate_limited(provider, project: project, goal: goal)
+        return
+      end
 
       provider_key = ProviderSupport.provider_key_for_agent_type(agent_type)
       return if ProviderSupport.container_executable_provider_key?(provider_key)
 
+      raise_no_runnable_provider!("No runnable provider available for project (agent_type=#{agent_type})")
+    end
+
+    def warn_if_rate_limited(provider, project:, goal:)
+      provider_state = provider.user.provider_states.find_by(provider_name: provider.state_key)
+      return unless provider_state&.rate_limited?
+
+      logger.warn(
+        message: "agent_execution.selected_provider_rate_limited",
+        project_id: project.id,
+        provider_id: provider.id,
+        provider_key: provider.provider_key,
+        provider_state_name: provider.state_key,
+        agent_type: Provider.agent_type_for(provider.provider_key),
+        goal: goal,
+        rate_limited_until: provider_state.rate_limited_until
+      )
+    end
+
+    def raise_no_runnable_provider!(message)
       raise Temporalio::Error::ApplicationError.new(
-        "No runnable provider available for project (agent_type=#{agent_type})",
+        message,
         type: "NoRunnableProvider",
         non_retryable: true
       )

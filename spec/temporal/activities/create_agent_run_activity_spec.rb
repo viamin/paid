@@ -101,6 +101,15 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.agent_type).to eq("codex")
     end
 
+    it "fails fast when a selected provider is disabled for agent runs" do
+      codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
+      codex_provider.update!(enabled_for_agent_runs: false)
+
+      expect {
+        activity.execute(project_id: project.id, issue_id: issue.id, provider_id: codex_provider.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, /No runnable provider/)
+    end
+
     it "uses the goal-specific provider for fresh review runs" do
       codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
       project.created_by.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
@@ -230,6 +239,31 @@ RSpec.describe Activities::CreateAgentRunActivity do
       result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "claude_code")
 
       expect(result[:provider_attempt_count]).to eq(3)
+    end
+
+    it "warns when the selected provider is already rate limited" do
+      logger = instance_spy(Logger, info: nil, warn: nil)
+      allow(activity).to receive(:logger).and_return(logger)
+
+      create(
+        :provider_state,
+        :rate_limited,
+        user: project.created_by,
+        provider_name: "claude"
+      )
+
+      activity.execute(project_id: project.id, issue_id: issue.id)
+
+      expect(logger).to have_received(:warn).with(
+        hash_including(
+          message: "agent_execution.selected_provider_rate_limited",
+          project_id: project.id,
+          provider_key: "claude",
+          provider_state_name: "claude",
+          agent_type: "claude_code",
+          goal: "create_pr"
+        )
+      )
     end
 
     it "updates the issue paid_state to in_progress" do
