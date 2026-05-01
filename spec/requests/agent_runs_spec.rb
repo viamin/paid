@@ -5,8 +5,8 @@ require "rails_helper"
 RSpec.describe "AgentRuns" do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
-  let(:github_token) { create(:github_token, account: account) }
-  let(:project) { create(:project, account: account, github_token: github_token) }
+  let(:github_token) { create(:github_token, account: account, created_by: user) }
+  let(:project) { create(:project, account: account, github_token: github_token, created_by: user) }
 
   describe "GET /agent_runs" do
     context "when not authenticated" do
@@ -65,7 +65,7 @@ RSpec.describe "AgentRuns" do
       end
 
       it "sorts agent runs ascending via Ransack sort params" do
-        other_project = create(:project, account: account, github_token: github_token)
+        other_project = create(:project, account: account, github_token: github_token, created_by: user)
         create(:agent_run, project: project, agent_type: "claude_code", status: "completed", created_at: 2.days.ago)
         create(:agent_run, project: other_project, agent_type: "claude_code", status: "completed", created_at: 1.day.ago)
 
@@ -76,7 +76,7 @@ RSpec.describe "AgentRuns" do
       end
 
       it "sorts agent runs descending via Ransack sort params" do
-        other_project = create(:project, account: account, github_token: github_token)
+        other_project = create(:project, account: account, github_token: github_token, created_by: user)
         create(:agent_run, project: project, agent_type: "claude_code", status: "completed", created_at: 2.days.ago)
         create(:agent_run, project: other_project, agent_type: "claude_code", status: "completed", created_at: 1.day.ago)
 
@@ -124,8 +124,8 @@ RSpec.describe "AgentRuns" do
 
       it "does not show runs from other accounts" do
         other_account = create(:account)
-        other_token = create(:github_token, account: other_account)
-        other_project = create(:project, account: other_account, github_token: other_token)
+        other_token = create(:github_token, :without_creator, account: other_account)
+        other_project = create(:project, :without_creator, account: other_account, github_token: other_token)
         create(:agent_run, project: other_project, agent_type: "claude_code", status: "completed")
 
         get agent_runs_path
@@ -385,8 +385,8 @@ RSpec.describe "AgentRuns" do
 
       it "does not show runs from other accounts" do
         other_account = create(:account)
-        other_token = create(:github_token, account: other_account)
-        other_project = create(:project, account: other_account, github_token: other_token)
+        other_token = create(:github_token, :without_creator, account: other_account)
+        other_project = create(:project, :without_creator, account: other_account, github_token: other_token)
         get project_agent_runs_path(other_project)
         expect(response).to have_http_status(:not_found)
       end
@@ -681,8 +681,8 @@ RSpec.describe "AgentRuns" do
 
       it "does not show runs from other accounts" do
         other_account = create(:account)
-        other_token = create(:github_token, account: other_account)
-        other_project = create(:project, account: other_account, github_token: other_token)
+        other_token = create(:github_token, :without_creator, account: other_account)
+        other_project = create(:project, :without_creator, account: other_account, github_token: other_token)
         other_run = create(:agent_run, project: other_project)
         get project_agent_run_path(other_project, other_run)
         expect(response).to have_http_status(:not_found)
@@ -1609,8 +1609,8 @@ RSpec.describe "AgentRuns" do
 
       it "does not allow cancelling runs from other accounts" do
         other_account = create(:account)
-        other_token = create(:github_token, account: other_account)
-        other_project = create(:project, account: other_account, github_token: other_token)
+        other_token = create(:github_token, :without_creator, account: other_account)
+        other_project = create(:project, :without_creator, account: other_account, github_token: other_token)
         other_run = create(:agent_run, :running, project: other_project)
 
         post cancel_project_agent_run_path(other_project, other_run)
@@ -1941,8 +1941,8 @@ RSpec.describe "AgentRuns" do
 
       it "does not allow retrying runs from other accounts" do
         other_account = create(:account)
-        other_token = create(:github_token, account: other_account)
-        other_project = create(:project, account: other_account, github_token: other_token)
+        other_token = create(:github_token, :without_creator, account: other_account)
+        other_project = create(:project, :without_creator, account: other_account, github_token: other_token)
         other_run = create(:agent_run, :failed, project: other_project)
 
         post retry_project_agent_run_path(other_project, other_run)
@@ -2115,8 +2115,8 @@ RSpec.describe "AgentRuns" do
 
       it "does not allow refreshing runs from other accounts" do
         other_account = create(:account)
-        other_token = create(:github_token, account: other_account)
-        other_project = create(:project, account: other_account, github_token: other_token)
+        other_token = create(:github_token, :without_creator, account: other_account)
+        other_project = create(:project, :without_creator, account: other_account, github_token: other_token)
         other_run = create(:agent_run, :auth_expired, project: other_project)
 
         post refresh_auth_project_agent_run_path(other_project, other_run), params: { auth_code: "abc" }
@@ -2213,8 +2213,8 @@ RSpec.describe "AgentRuns" do
 
       it "does not allow diagnosing runs from other accounts" do
         other_account = create(:account)
-        other_token = create(:github_token, account: other_account)
-        other_project = create(:project, account: other_account, github_token: other_token)
+        other_token = create(:github_token, :without_creator, account: other_account)
+        other_project = create(:project, :without_creator, account: other_account, github_token: other_token)
         other_run = create(:agent_run, :failed, project: other_project)
 
         post diagnose_error_project_agent_run_path(other_project, other_run)
