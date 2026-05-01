@@ -106,14 +106,10 @@ RSpec.describe Containers::ProvisionForChat do
       described_class.call(chat_session: chat_session)
     end
 
-    it "mounts workspace volume and state volume subpaths at agent CLI dirs" do
+    it "mounts workspace volume and the full state volume" do
       expected_binds = [
         "paid-chat-workspace-#{chat_session.id}:/workspace:rw",
-        "paid-chat-state-#{chat_session.id}:/home/agent/.claude:rw,subpath=.claude",
-        "paid-chat-state-#{chat_session.id}:/home/agent/.codex:rw,subpath=.codex",
-        "paid-chat-state-#{chat_session.id}:/home/agent/.gemini:rw,subpath=.gemini",
-        "paid-chat-state-#{chat_session.id}:/home/agent/.cursor-agent:rw,subpath=.cursor-agent",
-        "paid-chat-state-#{chat_session.id}:/home/agent/.cache:rw,subpath=.cache"
+        "paid-chat-state-#{chat_session.id}:/home/agent:rw"
       ]
 
       expect(Docker::Container).to receive(:create).with(
@@ -150,6 +146,10 @@ RSpec.describe Containers::ProvisionForChat do
         described_class::STATE_VOLUME_DIRS
 
       expect(mock_container).to receive(:start).ordered
+      expect(mock_container).to receive(:exec).with(
+        [ "mkdir", "-p", *described_class::STATE_VOLUME_DIRS ],
+        user: "root"
+      ).ordered.and_return([ [], [], 0 ])
       expect(mock_container).to receive(:exec).with(
         expected_cmd,
         user: "root"
@@ -260,8 +260,14 @@ RSpec.describe Containers::ProvisionForChat do
       end
 
       it "skips workspace seeding" do
-        # Only expect chown exec, not git clone
-        expect(mock_container).to receive(:exec).once.and_return([ [], [], 0 ])
+        expect(mock_container).to receive(:exec).with(
+          [ "mkdir", "-p", *described_class::STATE_VOLUME_DIRS ],
+          user: "root"
+        ).ordered.and_return([ [], [], 0 ])
+        expect(mock_container).to receive(:exec).with(
+          [ "chown", "-R", "agent:agent", "/workspace", *described_class::STATE_VOLUME_DIRS ],
+          user: "root"
+        ).ordered.and_return([ [], [], 0 ])
         described_class.call(chat_session: chat_session)
       end
     end

@@ -16,6 +16,11 @@ module Api
 
       def search
         project = authenticated_project
+        unless project
+          render json: { error: "No project associated with authenticated session" }, status: :unprocessable_entity
+          return
+        end
+
         provider_config = project.knowledge_embedding_provider_configuration
 
         result = Knowledge::Search.call(

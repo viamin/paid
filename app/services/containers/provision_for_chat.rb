@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "docker-api"
+require "shellwords"
 
 module Containers
   # Provisions a Docker container for interactive chat sessions.
@@ -161,8 +162,9 @@ module Containers
 
     def host_config(workspace_volume, state_volume)
       binds = [
-        "#{workspace_volume}:#{options[:workspace_mount]}:rw"
-      ] + state_volume_binds(state_volume)
+        "#{workspace_volume}:#{options[:workspace_mount]}:rw",
+        "#{state_volume}:/home/agent:rw"
+      ]
 
       tmpfs = {
         "/tmp" => "exec,size=#{512 * 1024 * 1024},mode=1777"
@@ -216,17 +218,16 @@ module Containers
       labels
     end
 
-    def state_volume_binds(state_volume)
-      STATE_VOLUME_DIRS.map do |dir|
-        subdir = File.basename(dir)
-        "#{state_volume}:#{dir}:rw,subpath=#{subdir}"
-      end
-    end
-
     def fix_ownership!
+      initialize_state_directories!
+
       dirs = [ options[:workspace_mount] ] + STATE_VOLUME_DIRS
       cmd_args = [ "chown", "-R", "#{options[:user]}:#{options[:user]}" ] + dirs
       @container.exec(cmd_args, user: "root")
+    end
+
+    def initialize_state_directories!
+      @container.exec([ "mkdir", "-p", *STATE_VOLUME_DIRS ], user: "root")
     end
 
     # Seeds the workspace volume by cloning the project's git repository.

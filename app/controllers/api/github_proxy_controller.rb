@@ -27,6 +27,12 @@ module Api
     # GET/POST/PATCH /api/proxy/github/*path
     def proxy
       path = params[:path] || ""
+      project = authenticated_project
+      unless project
+        render json: { error: "Project required" }, status: :forbidden
+        return
+      end
+
       match = find_allowed_endpoint(request.method, path)
 
       unless match
@@ -34,12 +40,12 @@ module Api
         return
       end
 
-      unless repo_matches?(match[:owner], match[:repo])
+      unless repo_matches?(project, match[:owner], match[:repo])
         render json: { error: "Repository mismatch" }, status: :forbidden
         return
       end
 
-      github_token = authenticated_project.github_token
+      github_token = project.github_token
       unless github_token&.active?
         render json: { error: "GitHub token not available" }, status: :service_unavailable
         return
@@ -82,8 +88,8 @@ module Api
       nil
     end
 
-    def repo_matches?(owner, repo)
-      project_full_name = authenticated_project.full_name
+    def repo_matches?(project, owner, repo)
+      project_full_name = project.full_name
       "#{owner}/#{repo}".casecmp(project_full_name).zero?
     end
 
@@ -103,16 +109,17 @@ module Api
     end
 
     def github_authorization_token(path)
-      return authenticated_project.github_token.token unless use_review_bot_token?(path)
+      project = authenticated_project
+      return project.github_token.token unless use_review_bot_token?(path)
 
       Github::ReviewBotInstallationToken.new(
-        repo_full_name: authenticated_project.full_name
+        repo_full_name: project.full_name
       ).fetch
     end
 
     def use_review_bot_token?(path)
       @agent_run&.review_goal? &&
-        authenticated_project.review_method_enabled?("paid_agent") &&
+        authenticated_project&.review_method_enabled?("paid_agent") &&
         request.method == "POST" &&
         %r{\Arepos/[^/]+/[^/]+/pulls/\d+/reviews\z}.match?(path)
     end

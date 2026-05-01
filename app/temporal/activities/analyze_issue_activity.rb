@@ -256,7 +256,7 @@ module Activities
       return unless response.respond_to?(:tokens) && response.tokens
 
       TokenUsageTracker.track(
-        agent_run: agent_run,
+        tracked_run: agent_run,
         usage: {
           tokens_input: response.respond_to?(:input_tokens) ? response.input_tokens.to_i : 0,
           tokens_output: response.respond_to?(:output_tokens) ? response.output_tokens.to_i : 0,

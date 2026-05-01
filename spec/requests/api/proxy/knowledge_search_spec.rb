@@ -15,6 +15,7 @@ RSpec.describe "Api::Proxy::KnowledgeSearch" do
       "X-Proxy-Token" => agent_run.proxy_token
     }
   end
+  let(:chat_session) { create(:chat_session, account: project.account, project: nil) }
 
   describe "GET /api/proxy/knowledge/search" do
     it "returns project-scoped knowledge results for an authenticated agent run" do
@@ -99,6 +100,16 @@ RSpec.describe "Api::Proxy::KnowledgeSearch" do
       }
 
       expect(response).to have_http_status(:forbidden)
+    end
+
+    it "returns 422 for a projectless chat session" do
+      get "/api/proxy/knowledge/search", params: { q: "last active" }, headers: {
+        "X-Chat-Session-Id" => chat_session.id.to_s,
+        "X-Proxy-Token" => chat_session.proxy_token
+      }
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body).to eq("error" => "No project associated with authenticated session")
     end
   end
 

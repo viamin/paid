@@ -5,10 +5,9 @@ class TokenUsageTracker
   DEFAULT_INPUT_COST_PER_MILLION = BigDecimal("3.00")
   DEFAULT_OUTPUT_COST_PER_MILLION = BigDecimal("15.00")
 
-  # Tracks token usage for an agent run or knowledge run request.
+  # Tracks token usage for an agent run, knowledge run, or chat session request.
   #
-  # @param agent_run [AgentRun, nil] the agent run to attribute usage to
-  # @param knowledge_run [KnowledgeRun, nil] the knowledge run to attribute usage to
+  # @param tracked_run [AgentRun, KnowledgeRun, ChatSession] the run/session to attribute usage to
   # @param usage [Hash] token data (:tokens_input, :tokens_output, :llm_model, :request_type, :metadata)
   # @param update_aggregates [Boolean] when false, only creates a TokenUsage record without
   #   updating agent_run/project counters or cost budgets (use for run_summary records
@@ -16,8 +15,9 @@ class TokenUsageTracker
   # @param enforce_guardrails [Boolean] when false, updates aggregates without
   #   applying in-flight token/cost hard-stop behavior. Use for end-of-run
   #   summary reconciliation after the provider process has already exited.
-  def self.track(agent_run: nil, knowledge_run: nil, chat_session: nil, usage:, update_aggregates: true, enforce_guardrails: true)
-    tracked_run = resolve_tracked_run!(agent_run:, knowledge_run:, chat_session:)
+  def self.track(tracked_run:, usage:, update_aggregates: true, enforce_guardrails: true)
+    raise ArgumentError, "tracked_run is required" unless tracked_run.present?
+
     tokens_input  = usage.fetch(:tokens_input, 0).to_i
     tokens_output = usage.fetch(:tokens_output, 0).to_i
     llm_model     = usage[:llm_model]
@@ -29,9 +29,7 @@ class TokenUsageTracker
 
     ActiveRecord::Base.transaction do
       record_per_request_usage(
-        agent_run: agent_run,
-        knowledge_run: knowledge_run,
-        chat_session: chat_session,
+        tracked_run: tracked_run,
         input_tokens: tokens_input,
         output_tokens: tokens_output,
         cost_cents: cost_cents,
@@ -66,7 +64,7 @@ class TokenUsageTracker
     # 1. Row locks from the usage write are already released
     # 2. External side-effects (Temporal cancel, container cleanup) don't
     #    run inside a transaction — a failure won't roll back recorded usage
-    enforce_hard_stop_budgets(tracked_run) if enforce_guardrails && update_aggregates && cost_cents.positive? && agent_run.present?
+    enforce_hard_stop_budgets(tracked_run) if enforce_guardrails && update_aggregates && cost_cents.positive? && tracked_run.is_a?(AgentRun)
   end
 
   # Evaluates the agent run's cumulative token usage against project limits
@@ -163,11 +161,11 @@ class TokenUsageTracker
   end
   private_class_method :lookup_model
 
-  def self.record_per_request_usage(agent_run:, knowledge_run:, chat_session: nil, input_tokens:, output_tokens:, cost_cents:, llm_model:, request_type:, metadata:)
+  def self.record_per_request_usage(tracked_run:, input_tokens:, output_tokens:, cost_cents:, llm_model:, request_type:, metadata:)
     TokenUsage.create!(
-      agent_run: agent_run,
-      knowledge_run: knowledge_run,
-      chat_session: chat_session,
+      agent_run: tracked_run.is_a?(AgentRun) ? tracked_run : nil,
+      knowledge_run: tracked_run.is_a?(KnowledgeRun) ? tracked_run : nil,
+      chat_session: tracked_run.is_a?(ChatSession) ? tracked_run : nil,
       input_tokens: input_tokens,
       output_tokens: output_tokens,
       cost_cents: cost_cents,
@@ -177,15 +175,6 @@ class TokenUsageTracker
     )
   end
   private_class_method :record_per_request_usage
-
-  def self.resolve_tracked_run!(agent_run:, knowledge_run:, chat_session: nil)
-    return agent_run if agent_run.present? && knowledge_run.blank? && chat_session.blank?
-    return knowledge_run if knowledge_run.present? && agent_run.blank? && chat_session.blank?
-    return chat_session if chat_session.present? && agent_run.blank? && knowledge_run.blank?
-
-    raise ArgumentError, "expected exactly one of agent_run, knowledge_run, or chat_session"
-  end
-  private_class_method :resolve_tracked_run!
 
   def self.update_run_aggregates(tracked_run, tokens_input:, tokens_output:, cost_cents:)
     if tracked_run.is_a?(AgentRun)

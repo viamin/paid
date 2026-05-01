@@ -129,9 +129,7 @@ module Api
       model = body["model"] || body["modelVersion"]
 
       TokenUsageTracker.track(
-        agent_run: @agent_run,
-        knowledge_run: @knowledge_run,
-        chat_session: @chat_session,
+        tracked_run: @authenticated_run,
         usage: {
           tokens_input: usage[:input_tokens],
           tokens_output: usage[:output_tokens],

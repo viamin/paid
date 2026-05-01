@@ -10,18 +10,18 @@ RSpec.describe TokenUsageTracker do
   describe ".track" do
     it "increments tokens_input on the agent run" do
       expect {
-        described_class.track(agent_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
       }.to change { agent_run.reload.tokens_input }.by(1000)
     end
 
     it "increments tokens_output on the agent run" do
       expect {
-        described_class.track(agent_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
       }.to change { agent_run.reload.tokens_output }.by(500)
     end
 
     it "calculates and sets cost_cents on the agent run" do
-      described_class.track(agent_run: agent_run, usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 })
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 })
 
       agent_run.reload
       # $3/M input + $15/M output = $18 = 1800 cents
@@ -29,8 +29,8 @@ RSpec.describe TokenUsageTracker do
     end
 
     it "accumulates across multiple calls" do
-      described_class.track(agent_run: agent_run, usage: { tokens_input: 100, tokens_output: 50 })
-      described_class.track(agent_run: agent_run, usage: { tokens_input: 200, tokens_output: 100 })
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 100, tokens_output: 50 })
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 200, tokens_output: 100 })
 
       agent_run.reload
       expect(agent_run.tokens_input).to eq(300)
@@ -39,13 +39,13 @@ RSpec.describe TokenUsageTracker do
 
     it "updates project total_tokens_used" do
       expect {
-        described_class.track(agent_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
       }.to change { project.reload.total_tokens_used }.by(1500)
     end
 
     it "updates project total_cost_cents" do
       expect {
-        described_class.track(agent_run: agent_run, usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 })
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 })
       }.to change { project.reload.total_cost_cents }.by(1800)
     end
 
@@ -55,14 +55,14 @@ RSpec.describe TokenUsageTracker do
       allow(AgentRuns::UserSettingsResolver).to receive(:call).and_call_original
       allow(described_class).to receive(:enforce_hard_stop_budgets)
 
-      described_class.track(agent_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
 
       expect(AgentRuns::UserSettingsResolver).to have_received(:call).once.with(project: project, strict: false, create: false)
     end
 
     it "creates a metric log entry" do
       expect {
-        described_class.track(agent_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
       }.to change { agent_run.agent_run_logs.where(log_type: "metric").count }.by(1)
 
       log = agent_run.agent_run_logs.where(log_type: "metric").last
@@ -75,7 +75,7 @@ RSpec.describe TokenUsageTracker do
     it "creates a per-request TokenUsage record" do
       expect {
         described_class.track(
-          agent_run: agent_run,
+          tracked_run: agent_run,
           usage: {
             tokens_input: 1000,
             tokens_output: 500,
@@ -96,14 +96,14 @@ RSpec.describe TokenUsageTracker do
     it "updates cost budgets for the project" do
       budget = create(:cost_budget, project: project, limit_cents: 100_000, period_started_at: Time.current.beginning_of_month)
 
-      described_class.track(agent_run: agent_run, usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 })
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 })
 
       expect(budget.reload.current_usage_cents).to eq(1800)
     end
 
     it "includes llm_model and request_type in the log entry" do
       described_class.track(
-        agent_run: agent_run,
+        tracked_run: agent_run,
         usage: {
           tokens_input: 1000,
           tokens_output: 500,
@@ -122,7 +122,7 @@ RSpec.describe TokenUsageTracker do
       it "creates a TokenUsage record without updating agent_run or project counters" do
         expect {
           described_class.track(
-            agent_run: agent_run,
+            tracked_run: agent_run,
             usage: { tokens_input: 1000, tokens_output: 500, request_type: "run_summary" },
             update_aggregates: false
           )
@@ -135,7 +135,7 @@ RSpec.describe TokenUsageTracker do
       it "does not create a metric log entry" do
         expect {
           described_class.track(
-            agent_run: agent_run,
+            tracked_run: agent_run,
             usage: { tokens_input: 1000, tokens_output: 500, request_type: "run_summary" },
             update_aggregates: false
           )
@@ -146,7 +146,7 @@ RSpec.describe TokenUsageTracker do
         budget = create(:cost_budget, project: project, limit_cents: 100_000, period_started_at: Time.current.beginning_of_month)
 
         described_class.track(
-          agent_run: agent_run,
+          tracked_run: agent_run,
           usage: { tokens_input: 1_000_000, tokens_output: 1_000_000, request_type: "run_summary" },
           update_aggregates: false
         )
@@ -164,7 +164,7 @@ RSpec.describe TokenUsageTracker do
         create(:cost_budget, :hard_stop, :per_run, project: project, limit_cents: 100)
 
         described_class.track(
-          agent_run: agent_run,
+          tracked_run: agent_run,
           usage: { tokens_input: 1_000_000, tokens_output: 1_000_000, request_type: "run_delta" },
           enforce_guardrails: false
         )
@@ -183,7 +183,7 @@ RSpec.describe TokenUsageTracker do
       it "increments total_tokens on the knowledge run" do
         expect {
           described_class.track(
-            knowledge_run: knowledge_run,
+            tracked_run: knowledge_run,
             usage: { tokens_input: 80, tokens_output: 20, request_type: "knowledge" }
           )
         }.to change { knowledge_run.reload.total_tokens }.by(100)
@@ -191,7 +191,7 @@ RSpec.describe TokenUsageTracker do
 
       it "creates a TokenUsage record for the knowledge run" do
         described_class.track(
-          knowledge_run: knowledge_run,
+          tracked_run: knowledge_run,
           usage: {
             tokens_input: 1000,
             tokens_output: 500,
@@ -209,7 +209,7 @@ RSpec.describe TokenUsageTracker do
 
       it "defaults the request type to knowledge" do
         described_class.track(
-          knowledge_run: knowledge_run,
+          tracked_run: knowledge_run,
           usage: { tokens_input: 100, tokens_output: 50 }
         )
 
@@ -219,7 +219,7 @@ RSpec.describe TokenUsageTracker do
       it "updates project totals for knowledge runs" do
         expect {
           described_class.track(
-            knowledge_run: knowledge_run,
+            tracked_run: knowledge_run,
             usage: { tokens_input: 100, tokens_output: 50, request_type: "knowledge" }
           )
         }.to change { project.reload.total_tokens_used }.by(150)
@@ -228,7 +228,7 @@ RSpec.describe TokenUsageTracker do
       it "does not create an agent run log entry" do
         expect {
           described_class.track(
-            knowledge_run: knowledge_run,
+            tracked_run: knowledge_run,
             usage: { tokens_input: 100, tokens_output: 50, request_type: "knowledge" }
           )
         }.not_to change(AgentRunLog, :count)
@@ -244,35 +244,35 @@ RSpec.describe TokenUsageTracker do
     it "persists the agent run once when token_limit_status changes" do
       allow(agent_run).to receive(:save!).and_call_original
 
-      described_class.track(agent_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
 
       expect(agent_run).to have_received(:save!).once
     end
 
     it "sets token_limit_status to ok when below warning threshold" do
-      described_class.track(agent_run: agent_run, usage: { tokens_input: 3000, tokens_output: 1000 })
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 3000, tokens_output: 1000 })
       expect(agent_run.reload.token_limit_status).to eq("ok")
     end
 
     it "sets token_limit_status to warning when at or above warning threshold" do
-      described_class.track(agent_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
       expect(agent_run.reload.token_limit_status).to eq("warning")
     end
 
     it "sets token_limit_status to exceeded when at or above hard limit" do
-      described_class.track(agent_run: agent_run, usage: { tokens_input: 7000, tokens_output: 4000 })
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 7000, tokens_output: 4000 })
       expect(agent_run.reload.token_limit_status).to eq("exceeded")
     end
 
     it "logs a warning when crossing the soft threshold" do
-      described_class.track(agent_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
       log = agent_run.agent_run_logs.find_by(log_type: "system")
       expect(log.content).to include("Token usage warning")
       expect(log.metadata).to eq({ "type" => "token_limit_warning" })
     end
 
     it "logs an exceeded message when crossing the hard limit" do
-      described_class.track(agent_run: agent_run, usage: { tokens_input: 7000, tokens_output: 4000 })
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 7000, tokens_output: 4000 })
       log = agent_run.agent_run_logs.where(log_type: "system").last
       expect(log.content).to include("Token limit exceeded")
       expect(log.metadata).to eq({ "type" => "token_limit_exceeded" })
@@ -280,7 +280,7 @@ RSpec.describe TokenUsageTracker do
 
     it "does not check limits when update_aggregates is false" do
       described_class.track(
-        agent_run: agent_run,
+        tracked_run: agent_run,
         usage: { tokens_input: 7000, tokens_output: 4000 },
         update_aggregates: false
       )
@@ -289,7 +289,7 @@ RSpec.describe TokenUsageTracker do
 
     it "still checks limits when guardrail enforcement is disabled" do
       described_class.track(
-        agent_run: agent_run,
+        tracked_run: agent_run,
         usage: { tokens_input: 7000, tokens_output: 4000 },
         enforce_guardrails: false
       )
@@ -297,10 +297,10 @@ RSpec.describe TokenUsageTracker do
     end
 
     it "transitions from warning to exceeded as usage grows" do
-      described_class.track(agent_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
       expect(agent_run.reload.token_limit_status).to eq("warning")
 
-      described_class.track(agent_run: agent_run, usage: { tokens_input: 2000, tokens_output: 1000 })
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 2000, tokens_output: 1000 })
       expect(agent_run.reload.token_limit_status).to eq("exceeded")
     end
 
@@ -313,12 +313,12 @@ RSpec.describe TokenUsageTracker do
       end
 
       it "uses the UserSetting limit for status transitions" do
-        described_class.track(agent_run: agent_run, usage: { tokens_input: 3000, tokens_output: 1500 })
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 3000, tokens_output: 1500 })
         expect(agent_run.reload.token_limit_status).to eq("warning")
       end
 
       it "marks exceeded when usage reaches the UserSetting limit" do
-        described_class.track(agent_run: agent_run, usage: { tokens_input: 3000, tokens_output: 2000 })
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 3000, tokens_output: 2000 })
         expect(agent_run.reload.token_limit_status).to eq("exceeded")
       end
     end
@@ -331,7 +331,7 @@ RSpec.describe TokenUsageTracker do
       end
 
       it "uses the account default for status transitions" do
-        described_class.track(agent_run: agent_run, usage: { tokens_input: 3000, tokens_output: 2000 })
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 3000, tokens_output: 2000 })
 
         expect(agent_run.reload.token_limit_status).to eq("warning")
       end
@@ -372,7 +372,7 @@ RSpec.describe TokenUsageTracker do
 
     it "sets warning when usage crosses the threshold" do
       described_class.track(
-        knowledge_run: knowledge_run,
+        tracked_run: knowledge_run,
         usage: { tokens_input: 60, tokens_output: 20, request_type: "knowledge" }
       )
 
@@ -381,7 +381,7 @@ RSpec.describe TokenUsageTracker do
 
     it "sets exceeded when usage reaches the hard limit" do
       described_class.track(
-        knowledge_run: knowledge_run,
+        tracked_run: knowledge_run,
         usage: { tokens_input: 60, tokens_output: 40, request_type: "knowledge" }
       )
 

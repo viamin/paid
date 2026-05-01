@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "docker-api"
+require "base64"
+require "shellwords"
 
 module Containers
   # Manages the lifecycle of a chat session's Docker container.
@@ -133,10 +135,10 @@ module Containers
       { healthy: false, message: "Docker error: #{e.message}" }
     end
 
-    # Stops and removes the container and workspace volume.
-    # Keeps the state volume if preserve_state is true for session resume.
+    # Stops and removes the container and persistent volumes.
+    # Keeps both workspace and state when preserve_state is true for session resume.
     #
-    # @param preserve_state [Boolean] Whether to keep the state volume
+    # @param preserve_state [Boolean] Whether to keep the workspace and state volumes
     def cleanup!(preserve_state: false)
       log("cleanup.start")
 
@@ -144,9 +146,8 @@ module Containers
         stop_and_remove_container
       end
 
-      remove_workspace_volume
-
       unless preserve_state
+        remove_workspace_volume
         remove_state_volume
       end
 

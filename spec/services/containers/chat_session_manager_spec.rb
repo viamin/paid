@@ -292,8 +292,8 @@ RSpec.describe Containers::ChatSessionManager do
     end
 
     context "with preserve_state: true" do
-      it "keeps the state volume" do
-        expect(Docker::Volume).to receive(:get).with("paid-chat-workspace-vol").and_return(mock_volume)
+      it "keeps the workspace and state volumes" do
+        expect(Docker::Volume).not_to receive(:get).with("paid-chat-workspace-vol")
         expect(Docker::Volume).not_to receive(:get).with("paid-chat-state-#{chat_session.id}")
 
         manager.cleanup!(preserve_state: true)
