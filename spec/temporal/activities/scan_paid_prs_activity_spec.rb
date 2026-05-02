@@ -6801,6 +6801,34 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger_types).to include("ci_failure")
       end
 
+      it "does not emit review_goal_retry when the failed run already posted a review" do
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42,
+          review_posted_at: 5.minutes.ago,
+          review_url: "https://github.com/example/repo/pull/42#pullrequestreview-1")
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("review_goal_retry")
+      end
+
+      it "does not emit review_goal_retry when the no_output run already posted a review" do
+        create(:agent_run, :no_output,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42,
+          review_posted_at: 5.minutes.ago,
+          review_url: "https://github.com/example/repo/pull/42#pullrequestreview-1")
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("review_goal_retry")
+      end
+
       it "does not escalate at retry limit when paid_agent is not the sole review method" do
         project.update!(review_settings: {
           "enabled" => true,
@@ -7315,6 +7343,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       expect(result1[:prs_to_trigger].size).to eq(1)
       expect(result2[:prs_to_trigger].size).to eq(1)
+    end
+
+    it "does not retry when the failed run already posted a review" do
+      run = project.agent_runs.where(goal: "review", source_pull_request_number: 42).first
+      run.update!(review_posted_at: 5.minutes.ago, review_url: "https://github.com/example/repo/pull/42#pullrequestreview-1")
+
+      result = activity.execute(project_id: project.id)
+
+      triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+      expect(triggered_types).not_to include("paid_agent_review_pending")
     end
   end
 
