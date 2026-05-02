@@ -113,6 +113,23 @@ RSpec.describe Activities::CreateAgentRunActivity do
       }
     end
 
+    it "fails fast when an explicit provider_id no longer resolves" do
+      missing_provider_id = create(:provider, user: project.created_by, provider_key: "cursor").id
+      Provider.find(missing_provider_id).destroy!
+
+      expect {
+        activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          provider_id: missing_provider_id,
+          agent_type: "claude_code"
+        )
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("NoRunnableProvider")
+        expect(error.non_retryable).to be(true)
+      }
+    end
+
     it "uses the goal-specific provider for fresh review runs" do
       codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
       project.created_by.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })

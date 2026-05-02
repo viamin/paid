@@ -33,6 +33,11 @@ module Activities
         goal: goal,
         respect_requested: input.key?(:agent_type) || input.key?(:provider_id)
       )
+      validate_requested_provider_resolution!(
+        project: project,
+        requested_provider_id: input[:provider_id],
+        resolved_provider_id: provider_id
+      )
 
       validate_runnable_provider!(project: project, provider_id: provider_id, agent_type: agent_type, goal: goal)
 
@@ -255,7 +260,7 @@ module Activities
     def validate_runnable_provider!(project:, provider_id:, agent_type:, goal:)
       return if goal.in?(NON_CONTAINER_GOALS)
 
-      provider = AgentRuns::ProviderResolver.selected_provider(project: project, provider_id: provider_id)
+      provider = resolved_provider!(project: project, provider_id: provider_id)
       if provider
         raise_no_runnable_provider!(
           "No runnable provider available for project (provider_id=#{provider.id}, enabled_for_agent_runs=#{provider.enabled_for_agent_runs?})"
@@ -269,6 +274,27 @@ module Activities
       return if ProviderSupport.container_executable_provider_key?(provider_key)
 
       raise_no_runnable_provider!("No runnable provider available for project (agent_type=#{agent_type})")
+    end
+
+    def resolved_provider!(project:, provider_id:)
+      provider = AgentRuns::ProviderResolver.selected_provider(project: project, provider_id: provider_id)
+      raise_unresolved_provider!(project: project, provider_id: provider_id) if provider_id.present? && provider.nil?
+
+      provider
+    end
+
+    def validate_requested_provider_resolution!(project:, requested_provider_id:, resolved_provider_id:)
+      return if requested_provider_id.blank?
+      return if requested_provider_id.to_s == resolved_provider_id.to_s
+      return if AgentRuns::ProviderResolver.selected_provider(project: project, provider_id: requested_provider_id)
+
+      raise_unresolved_provider!(project: project, provider_id: requested_provider_id)
+    end
+
+    def raise_unresolved_provider!(project:, provider_id:)
+      return if provider_id.blank?
+
+      raise_no_runnable_provider!("No runnable provider available for project (project_id=#{project.id}, provider_id=#{provider_id}, resolved=false)")
     end
 
     def warn_if_rate_limited(provider, project:, goal:)
