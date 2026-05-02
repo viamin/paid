@@ -107,7 +107,10 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       expect {
         activity.execute(project_id: project.id, issue_id: issue.id, provider_id: codex_provider.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, /No runnable provider/)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("NoRunnableProvider")
+        expect(error.non_retryable).to be(true)
+      }
     end
 
     it "uses the goal-specific provider for fresh review runs" do
@@ -145,6 +148,26 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.provider).to eq(codex_provider)
       expect(agent_run.agent_type).to eq("codex")
       expect(agent_run.status).to eq("pending")
+    end
+
+    it "fails fast when a resumed queued run refreshes to a provider now disabled for agent runs" do
+      codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
+      claude_provider = project.created_by.providers.find_by!(provider_key: "claude")
+      queued_run = create(:agent_run, :queued, :automatic,
+        project: project, issue: issue, provider: claude_provider, agent_type: "claude_code")
+      codex_provider.update!(enabled_for_agent_runs: false)
+      allow(activity).to receive(:resolve_provider_selection).and_return([ codex_provider.id, "codex" ])
+
+      expect {
+        activity.execute(agent_run_id: queued_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("NoRunnableProvider")
+        expect(error.non_retryable).to be(true)
+      }
+
+      expect(queued_run.reload.provider).to eq(claude_provider)
+      expect(queued_run.agent_type).to eq("claude_code")
+      expect(queued_run.status).to eq("queued")
     end
 
     it "persists draft review round tracking metadata when provided" do
