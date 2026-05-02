@@ -71,5 +71,32 @@ RSpec.describe Issues::UpsertFromGithub do
 
       expect(issue.is_pull_request).to be(false)
     end
+
+    it "delivers completion notifications when an open issue closes" do
+      user = create(:user, account: project.account)
+      issue = create(:issue, project: project, github_issue_id: 1234, github_number: 42, github_state: "open")
+      create(:issue_merge_subscription, issue: issue, user: user)
+
+      github_issue.state = "closed"
+      github_issue.pull_request = nil
+
+      expect {
+        described_class.call(project: project, github_issue: github_issue)
+      }.to change(Notification, :count).by(1)
+
+      expect(Notification.last.title).to eq("Issue #42 was completed: Sync me")
+    end
+
+    it "does not deliver close notifications for pull requests from issue sync" do
+      user = create(:user, account: project.account)
+      issue = create(:issue, :pull_request, project: project, github_issue_id: 1234, github_number: 42, github_state: "open")
+      create(:issue_merge_subscription, issue: issue, user: user)
+
+      github_issue.state = "closed"
+
+      expect {
+        described_class.call(project: project, github_issue: github_issue)
+      }.not_to change(Notification, :count)
+    end
   end
 end

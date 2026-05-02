@@ -4,6 +4,8 @@ module Issues
   class UpsertFromGithub
     def self.call(project:, github_issue:, body: github_issue.body)
       issue = project.issues.find_or_initialize_by(github_issue_id: github_issue.id)
+      was_open = issue.github_state == "open"
+
       issue.update!(
         github_number: github_issue.number,
         title: github_issue.title,
@@ -15,6 +17,8 @@ module Issues
         github_created_at: github_issue.created_at,
         github_updated_at: github_issue.updated_at
       )
+
+      deliver_completion_notifications(issue, was_open: was_open)
       issue
     end
 
@@ -27,5 +31,14 @@ module Issues
       github_issue.respond_to?(:pull_request) ? github_issue.pull_request : nil
     end
     private_class_method :pull_request_payload
+
+    def self.deliver_completion_notifications(issue, was_open:)
+      return unless was_open
+      return unless issue.github_state == "closed"
+      return if issue.is_pull_request?
+
+      IssueMergeSubscriptions::Deliver.call(issue: issue, event: :completed)
+    end
+    private_class_method :deliver_completion_notifications
   end
 end

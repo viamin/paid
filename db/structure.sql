@@ -2035,6 +2035,67 @@ ALTER SEQUENCE public.issue_dependencies_id_seq OWNED BY public.issue_dependenci
 
 
 --
+-- Name: issue_merge_subscriptions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.issue_merge_subscriptions (
+    id bigint NOT NULL,
+    issue_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    subscription_type character varying DEFAULT 'on_merge'::character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: TABLE issue_merge_subscriptions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.issue_merge_subscriptions IS 'One-shot per-user subscriptions for issue completion or pull request merge notifications.';
+
+
+--
+-- Name: COLUMN issue_merge_subscriptions.issue_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.issue_merge_subscriptions.issue_id IS 'The synced issue row. Pull requests also use the issues table.';
+
+
+--
+-- Name: COLUMN issue_merge_subscriptions.user_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.issue_merge_subscriptions.user_id IS 'The user who should receive the notification.';
+
+
+--
+-- Name: COLUMN issue_merge_subscriptions.subscription_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.issue_merge_subscriptions.subscription_type IS 'Notification trigger type. on_merge covers PR merges and issue completion.';
+
+
+--
+-- Name: issue_merge_subscriptions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.issue_merge_subscriptions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: issue_merge_subscriptions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.issue_merge_subscriptions_id_seq OWNED BY public.issue_merge_subscriptions.id;
+
+
+--
 -- Name: issues; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4666,6 +4727,13 @@ ALTER TABLE ONLY public.issue_dependencies ALTER COLUMN id SET DEFAULT nextval('
 
 
 --
+-- Name: issue_merge_subscriptions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_merge_subscriptions ALTER COLUMN id SET DEFAULT nextval('public.issue_merge_subscriptions_id_seq'::regclass);
+
+
+--
 -- Name: issues id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -5299,6 +5367,14 @@ ALTER TABLE ONLY public.integration_credentials
 
 ALTER TABLE ONLY public.issue_dependencies
     ADD CONSTRAINT issue_dependencies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: issue_merge_subscriptions issue_merge_subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_merge_subscriptions
+    ADD CONSTRAINT issue_merge_subscriptions_pkey PRIMARY KEY (id);
 
 
 --
@@ -7091,6 +7167,27 @@ CREATE INDEX index_issue_dependencies_on_issue_id ON public.issue_dependencies U
 
 
 --
+-- Name: index_issue_merge_subscriptions_on_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_issue_merge_subscriptions_on_dedup ON public.issue_merge_subscriptions USING btree (issue_id, user_id, subscription_type);
+
+
+--
+-- Name: index_issue_merge_subscriptions_on_issue_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_issue_merge_subscriptions_on_issue_id ON public.issue_merge_subscriptions USING btree (issue_id);
+
+
+--
+-- Name: index_issue_merge_subscriptions_on_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_issue_merge_subscriptions_on_user_id ON public.issue_merge_subscriptions USING btree (user_id);
+
+
+--
 -- Name: index_issues_on_github_creator_login; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8405,6 +8502,14 @@ ALTER TABLE ONLY public.tracker_configurations
 
 
 --
+-- Name: issue_merge_subscriptions fk_rails_0655eb72fb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_merge_subscriptions
+    ADD CONSTRAINT fk_rails_0655eb72fb FOREIGN KEY (issue_id) REFERENCES public.issues(id);
+
+
+--
 -- Name: agent_runs fk_rails_0779afb693; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9186,6 +9291,14 @@ ALTER TABLE ONLY public.billing_invoices
 
 ALTER TABLE ONLY public.notification_rule_states
     ADD CONSTRAINT fk_rails_c198fcfeea FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: issue_merge_subscriptions fk_rails_c19cf2967e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_merge_subscriptions
+    ADD CONSTRAINT fk_rails_c19cf2967e FOREIGN KEY (user_id) REFERENCES public.users(id);
 
 
 --
@@ -11019,6 +11132,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260502231624'),
 ('20260502201828'),
 ('20260502200141'),
 ('20260502014212'),

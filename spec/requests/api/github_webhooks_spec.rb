@@ -203,6 +203,11 @@ RSpec.describe "Api::GithubWebhooks" do
     end
 
     context "with pull_request event (merge)" do
+      let!(:subscribed_pull_request) do
+        create(:issue, :pull_request, project: project, github_number: agent_run.pull_request_number, title: "Fix login timeout")
+      end
+      let!(:subscriber) { create(:user, account: project.account) }
+
       let(:payload) do
         {
           action: "closed",
@@ -215,6 +220,10 @@ RSpec.describe "Api::GithubWebhooks" do
             full_name: project.full_name
           }
         }
+      end
+
+      before do
+        create(:issue_merge_subscription, issue: subscribed_pull_request, user: subscriber)
       end
 
       it "records pr_merged feedback when PR is merged" do
@@ -236,6 +245,29 @@ RSpec.describe "Api::GithubWebhooks" do
 
         metric = agent_run.quality_metrics.human.last
         expect(metric.scores["pr_merged"]).to eq(1.0)
+      end
+
+      it "creates a notification for subscribed users" do
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect {
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "pull_request",
+              "X-Hub-Signature-256" => signature
+            }
+        }.to change(Notification, :count).by(1)
+
+        notification = Notification.last
+        expect(notification).to have_attributes(
+          account: project.account,
+          user: subscriber,
+          source: "issue_merge_subscription",
+          subject: subscribed_pull_request,
+          title: "PR ##{agent_run.pull_request_number} was merged: Fix login timeout"
+        )
       end
 
       it "ignores closed-but-not-merged PRs" do

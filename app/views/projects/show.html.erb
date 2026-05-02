@@ -193,9 +193,11 @@
 
     <%= render "projects/issues", project: @project, issues: @issues,
                issue_lifecycle_statuses: @issue_lifecycle_statuses,
-               paid_prs_by_issue_id: @paid_prs_by_issue_id %>
+               paid_prs_by_issue_id: @paid_prs_by_issue_id,
+               merge_notification_issue_ids: @merge_notification_issue_ids %>
 
     <%= render "projects/pull_requests", project: @project, pull_requests: @pull_requests,
+               merge_notification_issue_ids: @merge_notification_issue_ids,
                pr_numbers_with_queued_auto_continue: @pr_numbers_with_queued_auto_continue,
                pr_numbers_with_active_runs: @pr_numbers_with_active_runs %>
 

@@ -6,8 +6,10 @@
     <div class="mt-4 overflow-hidden bg-white shadow sm:rounded-lg">
       <div class="max-h-96 overflow-y-auto">
         <ul role="list" class="divide-y divide-gray-200">
+          <% merge_notification_issue_ids = local_assigns.fetch(:merge_notification_issue_ids, []) %>
           <% pull_requests.each do |pr| %>
             <%= render "projects/pull_request", pull_request: pr, project: project,
+                     merge_notification_issue_ids: merge_notification_issue_ids,
                      pr_numbers_with_queued_auto_continue: pr_numbers_with_queued_auto_continue,
                      pr_numbers_with_active_runs: pr_numbers_with_active_runs %>
           <% end %>

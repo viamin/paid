@@ -195,6 +195,60 @@ RSpec.describe "Projects" do
     end
   end
 
+  describe "merge notification subscriptions" do
+    let(:project) { create(:project, account: account, github_token: github_token) }
+    let(:issue) { create(:issue, project: project, github_number: 14, title: "Fix flaky spec") }
+    let(:pull_request) { create(:issue, :pull_request, project: project, github_number: 28, title: "Improve CI") }
+
+    before { sign_in user }
+
+    it "shows subscribe controls for issues and pull requests" do
+      issue
+      pull_request
+
+      get project_path(project)
+
+      expect(response.body).to include("Notify on completion")
+      expect(response.body).to include("Notify on merge")
+    end
+
+    it "creates a subscription and redirects back to the project anchor" do
+      post project_issue_merge_subscription_path(project, issue)
+
+      expect(response).to redirect_to(project_path(project, anchor: ActionView::RecordIdentifier.dom_id(issue)))
+      expect(user.issue_merge_subscriptions.on_merge.find_by(issue: issue)).to be_present
+    end
+
+    it "shows the unsubscribe control for subscribed issues" do
+      create(:issue_merge_subscription, issue: issue, user: user)
+
+      get project_path(project)
+
+      expect(response.body).to include("Stop completion alerts")
+    end
+
+    it "removes a subscription" do
+      create(:issue_merge_subscription, issue: issue, user: user)
+
+      delete project_issue_merge_subscription_path(project, issue)
+
+      expect(response).to redirect_to(project_path(project, anchor: ActionView::RecordIdentifier.dom_id(issue)))
+      expect(user.issue_merge_subscriptions.on_merge.find_by(issue: issue)).to be_nil
+    end
+
+    it "does not allow users from another account to subscribe" do
+      other_user = create(:user)
+      sign_out user
+      sign_in other_user
+
+      expect {
+        post project_issue_merge_subscription_path(project, issue)
+      }.not_to change(IssueMergeSubscription, :count)
+
+      expect(response).to have_http_status(:not_found)
+    end
+  end
+
   describe "GET /projects/new" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
