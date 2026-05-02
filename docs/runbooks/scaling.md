@@ -126,7 +126,8 @@ in "pending" state.
 3. Verify DB pool can support new slot count:
 
    ```bash
-   # In agent-only mode: DB_POOL >= TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + 2
+   # With TEMPORAL_WORKER_MODE=agent:
+   # DB_POOL >= TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + 2
    # 8 + 4 + 2 = 14, so DB_POOL=20 is sufficient
    ```
 
