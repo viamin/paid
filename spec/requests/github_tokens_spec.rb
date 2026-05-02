@@ -6,6 +6,14 @@ RSpec.describe "GithubTokens" do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
 
+  def create_current_account_token(*traits, **attrs)
+    create(:github_token, *traits, account: account, created_by: user, **attrs)
+  end
+
+  def create_current_account_project(github_token:, **attrs)
+    create(:project, account: account, created_by: user, github_token: github_token, **attrs)
+  end
+
   describe "GET /github_tokens" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
@@ -24,72 +32,72 @@ RSpec.describe "GithubTokens" do
       end
 
       it "shows the user's tokens" do
-        create(:github_token, account: account, name: "My Token")
+        create_current_account_token(name: "My Token")
         get github_tokens_path
         expect(response.body).to include("My Token")
       end
 
       it "does not show tokens from other accounts" do
         other_account = create(:account)
-        create(:github_token, account: other_account, name: "Other Token")
+        create(:github_token, :without_creator, account: other_account, name: "Other Token")
         get github_tokens_path
         expect(response.body).not_to include("Other Token")
       end
 
       it "shows status indicators for active tokens" do
-        create(:github_token, account: account, name: "Active Token")
+        create_current_account_token(name: "Active Token")
         get github_tokens_path
         expect(response.body).to include("Active")
       end
 
       it "shows status indicators for expired tokens" do
-        create(:github_token, :expired, account: account, name: "Expired Token")
+        create_current_account_token(:expired, name: "Expired Token")
         get github_tokens_path
         expect(response.body).to include("Expired")
       end
 
       it "shows status indicators for revoked tokens" do
-        create(:github_token, :revoked, account: account, name: "Revoked Token")
+        create_current_account_token(:revoked, name: "Revoked Token")
         get github_tokens_path
         expect(response.body).to include("Revoked")
       end
 
       it "shows expiring soon warning for tokens expiring within 7 days" do
-        create(:github_token, account: account, name: "Expiring Token", expires_at: 6.days.from_now)
+        create_current_account_token(name: "Expiring Token", expires_at: 6.days.from_now)
         get github_tokens_path
         expect(response.body).to include("Expiring Soon")
       end
 
       it "shows validating status for pending tokens" do
-        create(:github_token, :pending_validation, account: account, name: "Pending Token")
+        create_current_account_token(:pending_validation, name: "Pending Token")
         get github_tokens_path
         expect(response.body).to include("Validating...")
       end
 
       it "shows validation failed status" do
-        create(:github_token, :validation_failed, account: account, name: "Failed Token")
+        create_current_account_token(:validation_failed, name: "Failed Token")
         get github_tokens_path
         expect(response.body).to include("Validation Failed")
       end
 
       it "shows validation stuck status for stale validating tokens" do
-        token = create(:github_token, :validating, account: account, name: "Stuck Token")
+        token = create_current_account_token(:validating, name: "Stuck Token")
         token.update_column(:updated_at, 3.minutes.ago)
         get github_tokens_path
         expect(response.body).to include("Validation Stuck")
       end
 
       it "shows validation stuck status for stale pending tokens" do
-        token = create(:github_token, :pending_validation, account: account, name: "Stuck Pending Token")
+        token = create_current_account_token(:pending_validation, name: "Stuck Pending Token")
         token.update_column(:updated_at, 3.minutes.ago)
         get github_tokens_path
         expect(response.body).to include("Validation Stuck")
       end
 
       it "shows the projects count from counter cache" do
-        token = create(:github_token, account: account)
-        create(:project, account: account, github_token: token, owner: "acme", repo: "web")
-        create(:project, account: account, github_token: token, owner: "acme", repo: "api")
+        token = create_current_account_token
+        create_current_account_project(github_token: token, owner: "acme", repo: "web")
+        create_current_account_project(github_token: token, owner: "acme", repo: "api")
         get github_tokens_path
         document = Nokogiri::HTML(response.body)
         row = document.css("tr").detect { |tr| tr.text.include?(token.name) }
@@ -98,7 +106,7 @@ RSpec.describe "GithubTokens" do
       end
 
       it "does not show a Deactivate button" do
-        create(:github_token, account: account, name: "My Token")
+        create_current_account_token(name: "My Token")
         get github_tokens_path
         document = Nokogiri::HTML(response.body)
         deactivate_elements = document.css("button, input[type='submit'], a").select do |node|
@@ -229,7 +237,7 @@ RSpec.describe "GithubTokens" do
   describe "GET /github_tokens/:id" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
-        token = create(:github_token, account: account)
+        token = create_current_account_token
         get github_token_path(token)
         expect(response).to redirect_to(new_user_session_path)
       end
@@ -239,68 +247,68 @@ RSpec.describe "GithubTokens" do
       before { sign_in user }
 
       it "shows the token details" do
-        token = create(:github_token, account: account, name: "My Token")
+        token = create_current_account_token(name: "My Token")
         get github_token_path(token)
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("My Token")
       end
 
       it "masks the token value" do
-        token = create(:github_token, account: account)
+        token = create_current_account_token
         get github_token_path(token)
         expect(response.body).to include("****")
         expect(response.body).not_to include(token.token[9...-5])
       end
 
       it "shows scopes" do
-        token = create(:github_token, account: account, scopes: [ "repo", "read:org" ])
+        token = create_current_account_token(scopes: [ "repo", "read:org" ])
         get github_token_path(token)
         expect(response.body).to include("repo")
         expect(response.body).to include("read:org")
       end
 
       it "shows expiration warning for tokens expiring soon" do
-        token = create(:github_token, account: account, expires_at: 6.days.from_now)
+        token = create_current_account_token(expires_at: 6.days.from_now)
         get github_token_path(token)
         expect(response.body).to include("Token Expiring Soon")
       end
 
       it "does not allow viewing tokens from other accounts" do
         other_account = create(:account)
-        other_token = create(:github_token, account: other_account)
+        other_token = create(:github_token, :without_creator, account: other_account)
         get github_token_path(other_token)
         expect(response).to have_http_status(:not_found)
       end
 
       it "shows validating status for pending tokens" do
-        token = create(:github_token, :pending_validation, account: account)
+        token = create_current_account_token(:pending_validation)
         get github_token_path(token)
         expect(response.body).to include("Validating...")
       end
 
       it "shows validation failed badge for failed tokens" do
-        token = create(:github_token, :validation_failed, account: account)
+        token = create_current_account_token(:validation_failed)
         get github_token_path(token)
         expect(response.body).to include("Validation Failed")
       end
 
       it "shows validation stuck badge for stale validating tokens" do
-        token = create(:github_token, :validating, account: account)
+        token = create_current_account_token(:validating)
         token.update_column(:updated_at, 3.minutes.ago)
         get github_token_path(token)
         expect(response.body).to include("Validation Stuck")
       end
 
       it "shows validation stuck badge for stale pending tokens" do
-        token = create(:github_token, :pending_validation, account: account)
+        token = create_current_account_token(:pending_validation)
         token.update_column(:updated_at, 3.minutes.ago)
         get github_token_path(token)
         expect(response.body).to include("Validation Stuck")
       end
 
       it "shows associated projects with active badge" do
-        token = create(:github_token, account: account)
-        create(:project, account: account, github_token: token, owner: "acme", repo: "web", active: true)
+        token = create_current_account_token
+        create_current_account_project(github_token: token, owner: "acme", repo: "web", active: true)
         get github_token_path(token)
         document = Nokogiri::HTML(response.body)
         project_item = document.css("li").detect { |li| li.text.include?("acme/web") }
@@ -309,8 +317,8 @@ RSpec.describe "GithubTokens" do
       end
 
       it "shows associated projects with inactive badge" do
-        token = create(:github_token, account: account)
-        create(:project, :inactive, account: account, github_token: token, owner: "acme", repo: "api")
+        token = create_current_account_token
+        create_current_account_project(github_token: token, owner: "acme", repo: "api", active: false)
         get github_token_path(token)
         document = Nokogiri::HTML(response.body)
         project_item = document.css("li").detect { |li| li.text.include?("acme/api") }
@@ -319,13 +327,13 @@ RSpec.describe "GithubTokens" do
       end
 
       it "does not show projects section when no projects exist" do
-        token = create(:github_token, account: account)
+        token = create_current_account_token
         get github_token_path(token)
         expect(response.body).not_to include("Projects (")
       end
 
       it "shows Deactivate button for active tokens" do
-        token = create(:github_token, account: account)
+        token = create_current_account_token
         get github_token_path(token)
         document = Nokogiri::HTML(response.body)
         deactivate_elements = document.css("button, input[type='submit'], a").select do |node|
@@ -341,21 +349,21 @@ RSpec.describe "GithubTokens" do
       before { sign_in user }
 
       it "shows validating state for pending tokens" do
-        token = create(:github_token, :pending_validation, account: account)
+        token = create_current_account_token(:pending_validation)
         get validation_status_github_token_path(token)
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Validating token with GitHub")
       end
 
       it "shows success state for validated tokens" do
-        token = create(:github_token, account: account, accessible_repositories: [ { "id" => 1, "full_name" => "owner/repo" } ])
+        token = create_current_account_token(accessible_repositories: [ { "id" => 1, "full_name" => "owner/repo" } ])
         get validation_status_github_token_path(token)
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("validated successfully")
       end
 
       it "shows error state for failed tokens" do
-        token = create(:github_token, :validation_failed, account: account)
+        token = create_current_account_token(:validation_failed)
         get validation_status_github_token_path(token)
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Validation Failed")
@@ -363,7 +371,7 @@ RSpec.describe "GithubTokens" do
       end
 
       it "shows stuck state for stale validating tokens" do
-        token = create(:github_token, :validating, account: account)
+        token = create_current_account_token(:validating)
         token.update_column(:updated_at, 3.minutes.ago)
         get validation_status_github_token_path(token)
         expect(response).to have_http_status(:ok)
@@ -372,7 +380,7 @@ RSpec.describe "GithubTokens" do
       end
 
       it "shows stuck state for stale pending tokens" do
-        token = create(:github_token, :pending_validation, account: account)
+        token = create_current_account_token(:pending_validation)
         token.update_column(:updated_at, 3.minutes.ago)
         get validation_status_github_token_path(token)
         expect(response).to have_http_status(:ok)
@@ -387,7 +395,7 @@ RSpec.describe "GithubTokens" do
       before { sign_in user }
 
       it "resets validation status and enqueues job" do
-        token = create(:github_token, :validation_failed, account: account)
+        token = create_current_account_token(:validation_failed)
         expect {
           post retry_validation_github_token_path(token)
         }.to have_enqueued_job(GithubTokenValidationJob)
@@ -396,7 +404,7 @@ RSpec.describe "GithubTokens" do
       end
 
       it "resets stuck validating tokens and enqueues job" do
-        token = create(:github_token, :validating, account: account)
+        token = create_current_account_token(:validating)
         token.update_column(:updated_at, 3.minutes.ago)
         expect {
           post retry_validation_github_token_path(token)
@@ -406,7 +414,7 @@ RSpec.describe "GithubTokens" do
       end
 
       it "resets stuck pending tokens and enqueues job" do
-        token = create(:github_token, :pending_validation, account: account)
+        token = create_current_account_token(:pending_validation)
         token.update_column(:updated_at, 3.minutes.ago)
         expect {
           post retry_validation_github_token_path(token)
@@ -420,7 +428,7 @@ RSpec.describe "GithubTokens" do
   describe "DELETE /github_tokens/:id" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
-        token = create(:github_token, account: account)
+        token = create_current_account_token
         delete github_token_path(token)
         expect(response).to redirect_to(new_user_session_path)
       end
@@ -433,14 +441,14 @@ RSpec.describe "GithubTokens" do
         # First user in account automatically gets owner role via User#assign_owner_role_if_first_user
 
         it "revokes the token" do
-          token = create(:github_token, account: account)
+          token = create_current_account_token
           expect {
             delete github_token_path(token)
           }.to change { token.reload.revoked? }.from(false).to(true)
         end
 
         it "redirects with success message" do
-          token = create(:github_token, account: account)
+          token = create_current_account_token
           delete github_token_path(token)
           expect(response).to redirect_to(github_tokens_path)
           expect(flash[:notice]).to include("deactivated")
@@ -454,7 +462,7 @@ RSpec.describe "GithubTokens" do
         before { sign_in non_owner_user }
 
         it "redirects with authorization error" do
-          token = create(:github_token, account: account)
+          token = create_current_account_token
           delete github_token_path(token)
           expect(response).to redirect_to(root_path)
           expect(flash[:alert]).to include("not authorized")
