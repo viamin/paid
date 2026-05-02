@@ -14,6 +14,7 @@ class AgentRun < ApplicationRecord
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
   ACTIVE_STATUSES = %w[running].freeze
+  CAPACITY_STATUSES = %w[queued running].freeze
   FINISHED_STATUSES = %w[completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
   TERMINAL_FAILURE_STATUSES = (FAILURE_STATUSES + %w[cancelled]).freeze
@@ -179,6 +180,7 @@ class AgentRun < ApplicationRecord
   scope :paused, -> { where(status: "paused") }
   scope :rate_limited, -> { where(status: "rate_limited") }
   scope :active, -> { where(status: ACTIVE_STATUSES) }
+  scope :capacity_inflight, -> { running.or(claimed) }
   scope :finished, -> { where(status: FINISHED_STATUSES) }
   scope :recent, -> { order(created_at: :desc) }
   scope :started_before, ->(time) { where("started_at < ?", time) }
@@ -318,11 +320,11 @@ class AgentRun < ApplicationRecord
   # but only when the user is the account's effective fallback owner
   # (matching Project#effective_owner's resolution chain).
   def self.active_count_for_user(user)
-    scope = active.joins(:project).where(projects: { created_by_id: user.id })
+    scope = capacity_inflight.joins(:project).where(projects: { created_by_id: user.id })
 
     if orphaned_project_owner?(user)
       scope = scope.or(
-        active.joins(:project).where(
+        capacity_inflight.joins(:project).where(
           projects: { created_by_id: nil, account_id: user.account_id }
         )
       )
@@ -333,7 +335,7 @@ class AgentRun < ApplicationRecord
 
   # Returns the count of active runs for a given project.
   def self.active_count_for_project(project)
-    active.where(project_id: project.id).count
+    capacity_inflight.where(project_id: project.id).count
   end
 
   # Returns the count of unfinished (queued/running/paused) auto-pick
@@ -679,7 +681,7 @@ class AgentRun < ApplicationRecord
   }
 
   def self.project_active_counts_cte
-    active
+    capacity_inflight
       .select("project_id, COUNT(*) AS project_active_count")
       .group(:project_id)
   end
@@ -715,6 +717,7 @@ class AgentRun < ApplicationRecord
         ) AS user_id
       ) owner ON TRUE
       WHERE agent_runs.status = 'running'
+             OR (agent_runs.status = 'queued' AND agent_runs.temporal_workflow_id IS NOT NULL)
       GROUP BY owner.user_id
     SQL
   end

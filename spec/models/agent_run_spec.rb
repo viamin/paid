@@ -1439,11 +1439,18 @@ RSpec.describe AgentRun do
         expect(described_class.has_run_capacity?(user: user)).to be true
       end
 
-      it "does not count queued runs as active" do
+      it "does not count unclaimed queued runs as active" do
         user.settings.update!(max_concurrent_runs: 1)
         create(:agent_run, :queued, project: project)
 
         expect(described_class.has_run_capacity?(user: user)).to be true
+      end
+
+      it "counts claimed queued runs against capacity" do
+        user.settings.update!(max_concurrent_runs: 1)
+        create(:agent_run, :queued, project: project, temporal_workflow_id: "claimed")
+
+        expect(described_class.has_run_capacity?(user: user)).to be false
       end
 
       it "only counts runs from the user's projects" do
@@ -1483,15 +1490,16 @@ RSpec.describe AgentRun do
   end
 
   describe ".active_count_for_project" do
-    it "counts only active runs for the given project" do
+    it "counts running and claimed runs for the given project" do
       project = create(:project)
       other_project = create(:project)
 
       create(:agent_run, :running, project: project)
+      create(:agent_run, :queued, project: project, temporal_workflow_id: "claimed")
       create(:agent_run, :completed, project: project)
       create(:agent_run, :running, project: other_project)
 
-      expect(described_class.active_count_for_project(project)).to eq(1)
+      expect(described_class.active_count_for_project(project)).to eq(2)
     end
 
     it "returns zero when no active runs exist" do
@@ -2039,6 +2047,10 @@ RSpec.describe AgentRun do
   describe "constants" do
     it "defines valid STATUSES" do
       expect(described_class::STATUSES).to eq(%w[queued running paused completed no_output failed cancelled timeout retried auth_expired rate_limited])
+    end
+
+    it "defines CAPACITY_STATUSES including queued and running" do
+      expect(described_class::CAPACITY_STATUSES).to eq(%w[queued running])
     end
 
     it "defines valid AGENT_TYPES" do
