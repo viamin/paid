@@ -68,6 +68,8 @@ env:
     # DB_POOL: 20
 
     # Temporal worker concurrency — see docs/WORKER_POOL_TUNING.md for sizing.
+    # Set TEMPORAL_WORKER_MODE=agent or TEMPORAL_WORKER_MODE=poll when
+    # running dedicated worker processes.
     # TEMPORAL_WORKFLOW_SLOTS: 20
     # TEMPORAL_ACTIVITY_SLOTS: 4
 

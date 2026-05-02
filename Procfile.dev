@@ -1,7 +1,8 @@
 web: bin/rails server -b 0.0.0.0
 js: yarn build --watch
 css: yarn build:css --watch
-worker: bin/temporal_worker
+worker_poll: TEMPORAL_WORKER_MODE=poll bin/temporal_worker
+worker_agent: TEMPORAL_WORKER_MODE=agent bin/temporal_worker
 
 # Connect to a running process by running `overmind connect <process name>`
-# e.g. `overmind connect web` or `overmind connect worker`
+# e.g. `overmind connect web` or `overmind connect worker_agent`

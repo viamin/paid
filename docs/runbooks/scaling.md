@@ -126,7 +126,8 @@ in "pending" state.
 3. Verify DB pool can support new slot count:
 
    ```bash
-   # Must satisfy: DB_POOL >= ACTIVITY_SLOTS + LOCAL_ACTIVITY_SLOTS + 2
+   # With TEMPORAL_WORKER_MODE=agent:
+   # DB_POOL >= TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + 2
    # 8 + 4 + 2 = 14, so DB_POOL=20 is sufficient
    ```
 
@@ -219,6 +220,7 @@ in "pending" state.
    ```bash
    export GOOD_JOB_MAX_THREADS=6
    export TEMPORAL_ACTIVITY_SLOTS=4
+   export TEMPORAL_WORKER_MODE=agent
    export DB_POOL=20
    ```
 
@@ -264,7 +266,10 @@ in "pending" state.
 
 1. Check the worker startup log for the specific validation error
 2. Common fix: increase `DB_POOL` to satisfy
-   `DB_POOL >= ACTIVITY_SLOTS + LOCAL_ACTIVITY_SLOTS + 2`
+   the requirement for the mode you are running:
+   `agent => TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + 2`,
+   `poll => TEMPORAL_POLL_ACTIVITY_SLOTS + TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS + 2`,
+   `both => both pools combined + 4`
 
 ### Symptom: GoodJob Cron Jobs Running Multiple Times
 
