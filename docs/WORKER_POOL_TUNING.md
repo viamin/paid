@@ -55,10 +55,14 @@ bulk low-priority work cannot starve them:
 The Temporal worker runs as a separate process (`bin/temporal_worker`) that executes
 durable workflows and activities.
 
+Set `TEMPORAL_WORKER_MODE=poll` or `TEMPORAL_WORKER_MODE=agent` to run only one
+side of the workload in a dedicated process. The default mode is `both`.
+
 ### Environment Variables
 
 | Variable | Default | Description |
 |---|---|---|
+| `TEMPORAL_WORKER_MODE` | `both` | Run only the `poll` worker, only the `agent` worker, or both |
 | `TEMPORAL_WORKFLOW_SLOTS` | `20` | Max concurrent workflow tasks |
 | `TEMPORAL_ACTIVITY_SLOTS` | `4` | Max concurrent activity executions |
 | `TEMPORAL_LOCAL_ACTIVITY_SLOTS` | `=ACTIVITY_SLOTS` | Max concurrent local activity executions |
