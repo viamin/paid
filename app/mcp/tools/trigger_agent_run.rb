@@ -1,0 +1,70 @@
+# frozen_string_literal: true
+
+module Tools
+  class TriggerAgentRun < BaseTool
+    def self.tool_name = "trigger_agent_run"
+    def self.write_operation? = true
+
+    def self.description
+      "Start an agent run on an issue. Requires explicit confirmation."
+    end
+
+    def self.input_schema
+      {
+        type: "object",
+        properties: {
+          project_id: { type: "integer", description: "The project ID" },
+          issue_id: { type: "integer", description: "The issue ID" },
+          goal: { type: "string", description: "Run goal", enum: AgentRun::GOALS, default: "create_pr" },
+          confirmed: { type: "boolean", description: "Must be true to execute this write operation" }
+        },
+        required: %w[project_id issue_id confirmed]
+      }
+    end
+
+    def call(project_id:, issue_id:, confirmed: false, goal: "create_pr")
+      raise ArgumentError, "Confirmation required: set confirmed=true to trigger an agent run" unless confirmed
+
+      project = policy_scope(Project).find(project_id)
+      authorize project, :run_agent?, policy_class: ProjectPolicy
+
+      issue = project.issues.find(issue_id)
+
+      provider_id, agent_type = AgentRuns::ProviderResolver.call(
+        project: project,
+        goal: goal
+      )
+
+      run = AgentRun.create!(
+        project: project,
+        issue: issue,
+        provider_id: provider_id,
+        agent_type: agent_type,
+        goal: goal,
+        status: "queued",
+        trigger_type: "manual"
+      )
+
+      ProcessRunQueueJob.perform_later
+
+      {
+        id: run.id,
+        status: run.status,
+        goal: run.goal,
+        issue_id: run.issue_id,
+        project_id: run.project_id,
+        created_at: run.created_at
+      }
+    rescue ActiveRecord::RecordNotUnique => e
+      raise unless duplicate_active_issue_run?(e)
+
+      raise ArgumentError, "An agent run is already queued or in progress for this issue"
+    end
+
+    private
+
+    def duplicate_active_issue_run?(error)
+      (error.cause&.message || error.message).include?("idx_agent_runs_unique_active_issue")
+    end
+  end
+end
