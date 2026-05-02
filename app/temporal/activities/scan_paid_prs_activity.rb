@@ -1446,13 +1446,6 @@ module Activities
                  details: "Retrying unsuccessful review-goal run (attempt #{failed_count + 1}/#{max_retries})" } ]
       end
 
-      # When the latest review run posted a review (even though the run itself
-      # failed), treat the review as done. The feedback is already on the PR
-      # and the scanner's :has_comments path handles follow-up via
-      # review_bot_review_pending — there is no need to queue a fresh
-      # paid_agent review run through this sidecar trigger.
-      return [] if latest_finished_run&.review_posted_at.present?
-
       # Check whether the most recent finished review-goal run (regardless of
       # success) was attempted after the last create_pr run. If so, the review
       # was already attempted for the current code — don't re-trigger.
