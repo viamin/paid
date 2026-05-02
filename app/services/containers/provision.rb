@@ -371,6 +371,8 @@ module Containers
       abort_matched_output = nil # set when an abort_pattern matches stderr
       stdout_abort_buffer = +""
       watchdog = nil
+      streaming_event_processor = build_streaming_event_processor
+      streaming_abort_triggered = false
 
       timeout_check = TimeoutCheckState.new(
         mutex: watchdog_mutex,
@@ -411,6 +413,26 @@ module Containers
           when :stdout
             stdout_buffer << normalized_chunk
             log_output(:stdout, normalized_chunk) if stream
+
+            # Parse streaming JSONL progress events from stdout to give the
+            # watchdog semantic awareness of agent state (turn progress, token
+            # usage, errors) beyond raw output monitoring.
+            if streaming_event_processor
+              normalized_chunk.each_line do |line|
+                action = streaming_event_processor.handle_line(line)
+                case action
+                when :abort
+                  streaming_abort_triggered = true
+                  log_system("container.execute.streaming_abort",
+                    reason: "turn_failed or error event received")
+                  begin
+                    container.stop(timeout: 0)
+                  rescue Docker::Error::DockerError => e
+                    log_system("container.execute.streaming_abort_stop_failed", error: e.message)
+                  end
+                end
+              end
+            end
           when :stderr
             stderr_buffer << normalized_chunk
             log_output(:stderr, normalized_chunk) if stream
@@ -457,6 +479,14 @@ module Containers
         # to prevent late/false timeouts during post-processing.
         watchdog_mutex.synchronize { exec_completed = true }
         stop_watchdog(watchdog)
+
+        # Check if streaming events triggered an abort (turn.failed / error).
+        if streaming_abort_triggered
+          raise OutputAbortError.new(
+            "Process aborted: streaming turn failure detected",
+            matched_output: "streaming_event:turn_failed"
+          )
+        end
 
         # Check if we stopped the container due to an abort pattern match.
         # This takes precedence over timeout checks because the abort was
@@ -575,6 +605,8 @@ module Containers
       ensure
         watchdog_mutex.synchronize { exec_completed = true }
         stop_watchdog(watchdog)
+        # Persist turn metrics even on error paths so partial progress is recorded.
+        streaming_event_processor&.flush_metrics!
         if cleanup_steps&.any?
           if $!
             # An exception is already propagating; attempt cleanup but swallow
@@ -2143,6 +2175,15 @@ module Containers
       container.info.dig("State", "ExitCode") || -1
     rescue Docker::Error::DockerError
       -1
+    end
+
+    def build_streaming_event_processor
+      return nil unless agent_run
+
+      StreamingEventProcessor.new(
+        agent_run: agent_run,
+        logger: method(:log_system)
+      )
     end
 
     def log_system(message, **metadata)

@@ -3046,4 +3046,59 @@ RSpec.describe AgentRun do
       expect(agent_run.errors[:guardrail_violation_type]).to be_empty
     end
   end
+
+  describe "streaming turn metrics" do
+    describe "#streaming_total_tokens" do
+      it "sums tokens across all turns" do
+        agent_run = create(:agent_run, streaming_turns_data: [
+          { "turn_number" => 1, "input_tokens" => 500, "output_tokens" => 200 },
+          { "turn_number" => 2, "input_tokens" => 300, "output_tokens" => 100 }
+        ])
+
+        expect(agent_run.streaming_total_tokens).to eq(1100)
+      end
+
+      it "returns 0 for empty turns data" do
+        agent_run = create(:agent_run, streaming_turns_data: [])
+        expect(agent_run.streaming_total_tokens).to eq(0)
+      end
+
+      it "handles missing token fields gracefully" do
+        agent_run = create(:agent_run, streaming_turns_data: [
+          { "turn_number" => 1 }
+        ])
+
+        expect(agent_run.streaming_total_tokens).to eq(0)
+      end
+    end
+
+    describe "#streaming_avg_tokens_per_turn" do
+      it "calculates average tokens per turn" do
+        agent_run = create(:agent_run, turns_completed: 2, streaming_turns_data: [
+          { "turn_number" => 1, "input_tokens" => 500, "output_tokens" => 200 },
+          { "turn_number" => 2, "input_tokens" => 300, "output_tokens" => 100 }
+        ])
+
+        expect(agent_run.streaming_avg_tokens_per_turn).to eq(550.0)
+      end
+
+      it "returns 0 when no turns completed" do
+        agent_run = create(:agent_run, turns_completed: 0, streaming_turns_data: [])
+        expect(agent_run.streaming_avg_tokens_per_turn).to eq(0)
+      end
+    end
+
+    describe "validations" do
+      it "validates turns_completed is non-negative" do
+        agent_run = build(:agent_run, turns_completed: -1)
+        expect(agent_run).not_to be_valid
+        expect(agent_run.errors[:turns_completed]).to be_present
+      end
+
+      it "validates turns_completed is an integer" do
+        agent_run = build(:agent_run, turns_completed: 5)
+        expect(agent_run).to be_valid
+      end
+    end
+  end
 end
