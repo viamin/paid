@@ -818,7 +818,7 @@ end
 
 ### Task Queue Isolation
 
-`bin/temporal_worker` supports `TEMPORAL_WORKER_MODE=poll`, `agent`, or `both`.
+`bin/temporal_worker` supports `TEMPORAL_WORKER_MODE=poll`, `TEMPORAL_WORKER_MODE=agent`, or `TEMPORAL_WORKER_MODE=both`.
 By default it runs **two Temporal workers** in a single process, each polling a
 dedicated task queue. This isolates time-sensitive poll workflows from long-running
 agent-execution workloads, preventing the noisy-neighbor problem where saturated agent
