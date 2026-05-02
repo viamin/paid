@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "timeout"
 
 RSpec.describe GithubHealthState do
   def wait_for_queue(queue, timeout: 5)
@@ -37,7 +38,7 @@ RSpec.describe GithubHealthState do
     expect { wait_for_queue(failure_updated, timeout: 0.1) }.to raise_error(Timeout::Error)
 
     continue_update << true
-    [ success_thread, failure_thread ].each(&:join)
+    [ success_thread, failure_thread ].each(&:value)
   end
 
   def run_recovery_race(state)
@@ -60,7 +61,7 @@ RSpec.describe GithubHealthState do
     second_thread = Thread.new { second_result = second_state.check_circuit_recovery!(timeout: 300) }
     continue_update << true
 
-    [ first_thread, second_thread ].each(&:join)
+    [ first_thread, second_thread ].each(&:value)
     [ first_result, second_result ]
   end
 
