@@ -167,8 +167,9 @@ class AgentRun < ApplicationRecord
 
   scope :by_status, ->(status) { where(status: status) }
   scope :queued, -> { where(status: "queued") }
+  scope :waiting, -> { queued.where(temporal_workflow_id: nil) }
   scope :claimed, -> { queued.where.not(temporal_workflow_id: nil) }
-  scope :unclaimed, -> { queued.where(temporal_workflow_id: nil) }
+  scope :unclaimed, -> { waiting }
   scope :running, -> { where(status: "running") }
   scope :completed, -> { where(status: "completed") }
   scope :no_output, -> { where(status: "no_output") }

@@ -15,6 +15,7 @@ RSpec.describe Dashboard::LiveStats do
       create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago, container_id: "container-1")
       create(:agent_run, project: project, status: "running", started_at: 3.minutes.ago)
       create(:agent_run, project: project, status: "queued")
+      create(:agent_run, project: project, status: "queued", temporal_workflow_id: "wf-123")
       create(:agent_run, project: project, status: "completed", completed_at: 2.hours.ago)
       create(:agent_run, project: project, status: "failed", completed_at: 1.hour.ago)
       create(:container_pool_entry, project: project)
