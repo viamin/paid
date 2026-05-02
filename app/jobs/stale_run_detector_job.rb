@@ -342,8 +342,11 @@ class StaleRunDetectorJob < ApplicationJob
   # the workflow was successfully cancelled or was not found (already completed).
   # Returns false if cancellation failed for another reason, signaling that
   # the caller should not proceed with requeuing to avoid duplicate workflows.
+  CLAIMED_SENTINEL = "claimed"
+
   def cancel_temporal_workflow(agent_run, workflow_id)
     return true if workflow_id.blank?
+    return true if workflow_id == CLAIMED_SENTINEL
 
     handle = Paid.temporal_client.workflow_handle(workflow_id)
     handle.cancel

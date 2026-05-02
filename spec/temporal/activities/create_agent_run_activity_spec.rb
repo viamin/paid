@@ -136,7 +136,6 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.provider).to eq(codex_provider)
       expect(agent_run.agent_type).to eq("codex")
       expect(agent_run.status).to eq("queued")
-      expect(agent_run.agent_type).to eq("codex")
     end
 
     it "persists draft review round tracking metadata when provided" do
