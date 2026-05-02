@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.36.0](https://github.com/viamin/paid/compare/v0.35.0...v0.36.0) (2026-05-02)
+
+
+### Features
+
+* add chat container manager for workspace sessions ([#1520](https://github.com/viamin/paid/issues/1520)) ([cd70a99](https://github.com/viamin/paid/commit/cd70a997f53c4795cb765469a8882f02ee8bdc3b))
+* add Paid MCP server for agent tool use ([#1532](https://github.com/viamin/paid/issues/1532)) ([794bb41](https://github.com/viamin/paid/commit/794bb412d180c93cc57331d981c3945ddb49f667))
+
+
+### Bug Fixes
+
+* **agent-runs:** cache distinct_effective_providers to eliminate full-table scan on index page ([#1586](https://github.com/viamin/paid/issues/1586)) ([4516744](https://github.com/viamin/paid/commit/4516744188af7c3356fe02d55e8ff26c614c2f8a))
+* Auth failure checker false positives on rate-limit 403s and infrastructure 503s ([#1592](https://github.com/viamin/paid/issues/1592)) ([3bc154d](https://github.com/viamin/paid/commit/3bc154d40e8a4930d472ee939462ec190ce3b886))
+* Circuit breaker record_success! race condition allows overwriting open state ([#1594](https://github.com/viamin/paid/issues/1594)) ([f61ad25](https://github.com/viamin/paid/commit/f61ad2525f0324198894a090e142879b373d4561))
+* **projects:** defer expensive dashboard cost snapshots ([#1580](https://github.com/viamin/paid/issues/1580)) ([e556b3e](https://github.com/viamin/paid/commit/e556b3e76ed69db9d529cc06e202118bb21c6b60))
+* Provider validation missing at agent run creation time ([#1593](https://github.com/viamin/paid/issues/1593)) ([6f6d8e7](https://github.com/viamin/paid/commit/6f6d8e72748a6cc62d80d7088180f16ca411cdd2))
+
 ## [0.35.0](https://github.com/viamin/paid/compare/v0.34.0...v0.35.0) (2026-05-01)
 
 
