@@ -172,7 +172,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       expect(File.exist?(dev_start_log_path)).to be(true)
       expect(File.read(updater_log_path)).to include("Starting full restart update...")
       expect(File.read(updater_log_path)).to include("Full restart update complete.")
-      expect(File.read(dev_start_log_path)).to include("bin/dev booted")
+      expect(wait_for_dev_start_log(dir)).to include("bin/dev booted")
     end
   end
 
