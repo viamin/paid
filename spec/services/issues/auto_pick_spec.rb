@@ -644,7 +644,7 @@ RSpec.describe Issues::AutoPick do
       end
 
       it "queues another run when project already has an unfinished agent run" do
-        create(:agent_run, project: project, status: "running")
+        create(:agent_run, project: project, status: "queued", temporal_workflow_id: "claimed")
         issue = create(:issue, project: project)
 
         result = described_class.new(project).call

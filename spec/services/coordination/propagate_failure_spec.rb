@@ -21,7 +21,7 @@ RSpec.describe Coordination::PropagateFailure do
       expect(result.signal.payload["failed_status"]).to eq("failed")
     end
 
-    it "cancels queued dependent runs when cancel_dependents is true" do
+    it "cancels queued and running dependent runs when cancel_dependents is true" do
       queued_run = create(:agent_run, :queued, project: project, parent_workflow_id: workflow_id)
       running_run = create(:agent_run, :running, project: project, parent_workflow_id: workflow_id)
 

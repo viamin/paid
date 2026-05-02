@@ -8,7 +8,7 @@ class AgentRunsController < ApplicationController
     base_scope = policy_scope(AgentRun).includes(:project, issue: :project)
     @q = base_scope.ransack(params[:q])
 
-    if params[:sort] == "queue"
+    if params[:sort] == "queue" && queue_sort_compatible?
       @q.sorts.clear if @q.sorts.any?
       @agent_runs = apply_ransack_filters(@q).queue_order_display
     else
@@ -41,5 +41,12 @@ class AgentRunsController < ApplicationController
 
   def apply_ransack_filters(search)
     search.result
+  end
+
+  def queue_sort_compatible?
+    status_filter = params.dig(:q, :status_eq)
+    return true if status_filter.blank?
+
+    AgentRun::UNFINISHED_STATUSES.include?(status_filter)
   end
 end
