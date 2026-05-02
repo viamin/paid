@@ -2426,26 +2426,28 @@ RSpec.describe Activities::RunAgentActivity do
       end
 
       it "caps fallback attempts to the remaining project time budget" do
-        agent_run.update!(status: "running", started_at: 10.seconds.ago)
-        project.update!(max_execution_seconds: 90)
+        freeze_time do
+          agent_run.update!(status: "running", started_at: 10.seconds.ago)
+          project.update!(max_execution_seconds: 90)
 
-        call_count = 0
-        expect(container_service).to receive(:execute).twice do |_cmd, **opts|
-          call_count += 1
-          if call_count == 1
-            expect(opts[:timeout]).to eq(80)
-            agent_run.update!(started_at: 89.seconds.ago)
-            exec_failure
-          else
-            expect(opts[:timeout]).to eq(1)
-            exec_success
+          call_count = 0
+          expect(container_service).to receive(:execute).twice do |_cmd, **opts|
+            call_count += 1
+            if call_count == 1
+              expect(opts[:timeout]).to eq(80)
+              agent_run.update!(started_at: 89.seconds.ago)
+              exec_failure
+            else
+              expect(opts[:timeout]).to eq(1)
+              exec_success
+            end
           end
+
+          result = activity.execute(agent_run_id: agent_run.id)
+
+          expect(result[:success]).to be true
+          expect(result[:final_provider]).to eq("cursor")
         end
-
-        result = activity.execute(agent_run_id: agent_run.id)
-
-        expect(result[:success]).to be true
-        expect(result[:final_provider]).to eq("cursor")
       end
     end
 
