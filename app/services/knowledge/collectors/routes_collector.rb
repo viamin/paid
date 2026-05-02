@@ -84,12 +84,23 @@ module Knowledge
           install_gems_in_container
         end
 
+        run_routes_command
+      end
+
+      def run_routes_command
         run_command(
           "sh", "-c",
-          "BUNDLE_PATH=/tmp/bundle BUNDLE_APP_CONFIG=/tmp/bundle-config " \
           "bin/rails routes --expanded",
-          timeout: 120
+          timeout: 120,
+          env: routes_command_env
         )
+      end
+
+      def routes_command_env
+        {
+          "BUNDLE_PATH" => "/tmp/bundle",
+          "BUNDLE_APP_CONFIG" => "/tmp/bundle-config"
+        }
       end
 
       def install_gems_in_container

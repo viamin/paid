@@ -176,7 +176,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
 
       it "runs bundle install before bin/rails routes" do
         allow(command_collector).to receive(:run_command)
-          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_return(fixture_output)
 
         command_collector.collect
@@ -187,23 +187,68 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
 
       it "runs bin/rails routes --expanded" do
         allow(command_collector).to receive(:run_command)
-          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_return(fixture_output)
 
         expect(command_collector.collect.length).to eq(11)
       end
 
-      it "raises when the command fails" do
+      it "passes only bundle configuration to bin/rails routes" do
         allow(command_collector).to receive(:run_command)
-          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_return(fixture_output)
+
+        command_collector.collect
+
+        expect(command_collector).to have_received(:run_command).with(
+          "sh", "-c", /bin\/rails routes --expanded/,
+          timeout: 120,
+          env: {
+            "BUNDLE_PATH" => "/tmp/bundle",
+            "BUNDLE_APP_CONFIG" => "/tmp/bundle-config"
+          }
+        )
+      end
+
+      it "does not inject DATABASE_URL into the scanned app" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_return(fixture_output)
+
+        command_collector.collect
+
+        expect(command_collector).to have_received(:run_command).with(
+          "sh", "-c", /bin\/rails routes --expanded/,
+          timeout: 120,
+          env: satisfy { |env| !env.key?("DATABASE_URL") }
+        )
+      end
+
+      it "raises when the command fails with a non-database error" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_raise(RuntimeError, "Command failed")
 
         expect { command_collector.collect }.to raise_error(RuntimeError, "Command failed")
       end
 
+      it "fails when the command hits a database connection error" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            'Command failed (exit 1): ActiveRecord::ConnectionNotEstablished connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed'
+          )
+
+        expect { command_collector.collect }.to raise_error(
+          Knowledge::ContainerizedRunner::ContainerError,
+          /ActiveRecord::ConnectionNotEstablished/
+        )
+      end
+
       it "cleans up credentials and disconnects network before running routes" do
         allow(command_collector).to receive(:run_command)
-          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_return(fixture_output)
 
         command_collector.collect
@@ -215,7 +260,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           .with("sh", "-c", /rm -rf \/tmp\/paid-bundle-home.*! test -e \/tmp\/paid-bundle-home/, timeout: 10, env: { "HOME" => "/tmp/paid-bundle-home" }).ordered
         expect(container_runner).to have_received(:disconnect_network!).ordered
         expect(command_collector).to have_received(:run_command)
-          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120).ordered
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash)).ordered
       end
 
       it "disconnects network even when bundle install fails" do
@@ -265,7 +310,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       it "does not forward project github tokens into bundle install" do
         allow(project).to receive(:github_token).and_return(active_github_token)
         allow(command_collector).to receive(:run_command)
-          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_return(fixture_output)
 
         command_collector.collect
@@ -286,7 +331,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         allow(command_collector).to receive(:repo_file_exists?)
           .with("Gemfile").and_return(false)
         allow(command_collector).to receive(:run_command)
-          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_return(fixture_output)
 
         command_collector.collect
@@ -305,7 +350,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
 
       it "removes the temporary credential home after bundle install" do
         allow(command_collector).to receive(:run_command)
-          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_return(fixture_output)
 
         command_collector.collect
@@ -323,7 +368,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           RuntimeError, /credential cleanup verification failed/
         )
         expect(command_collector).not_to have_received(:run_command)
-          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
         expect(container_runner).to have_received(:disconnect_network!)
       end
 
