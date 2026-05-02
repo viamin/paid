@@ -30,12 +30,20 @@ RSpec.describe GithubHealthState do
       method.call(*args)
     end
 
-    success_thread = Thread.new { success_state.record_success! }
+    success_thread = Thread.new do
+      success_state.record_success!
+    ensure
+      ActiveRecord::Base.connection_pool.release_connection
+    end
     wait_for_queue(update_started)
-    failure_thread = Thread.new { failure_state.record_failure!(error_message: "probe failed") }
+    failure_thread = Thread.new do
+      failure_state.record_failure!(error_message: "probe failed")
+    ensure
+      ActiveRecord::Base.connection_pool.release_connection
+    end
     wait_for_queue(failure_started)
 
-    expect { wait_for_queue(failure_updated, timeout: 0.1) }.to raise_error(Timeout::Error)
+    expect { wait_for_queue(failure_updated, timeout: 2) }.to raise_error(Timeout::Error)
 
     continue_update << true
     [ success_thread, failure_thread ].each(&:value)
@@ -56,9 +64,17 @@ RSpec.describe GithubHealthState do
     first_result = nil
     second_result = nil
 
-    first_thread = Thread.new { first_result = first_state.check_circuit_recovery!(timeout: 300) }
+    first_thread = Thread.new do
+      first_result = first_state.check_circuit_recovery!(timeout: 300)
+    ensure
+      ActiveRecord::Base.connection_pool.release_connection
+    end
     wait_for_queue(update_started)
-    second_thread = Thread.new { second_result = second_state.check_circuit_recovery!(timeout: 300) }
+    second_thread = Thread.new do
+      second_result = second_state.check_circuit_recovery!(timeout: 300)
+    ensure
+      ActiveRecord::Base.connection_pool.release_connection
+    end
     continue_update << true
 
     [ first_thread, second_thread ].each(&:value)
