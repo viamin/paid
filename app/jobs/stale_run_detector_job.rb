@@ -147,7 +147,7 @@ class StaleRunDetectorJob < ApplicationJob
   end
 
   # Attempts to unclaim a stale claimed queued run.
-  # Returns :requeued if successfully unclaimed, :exhausted if requeue/skip budget
+  # Returns :unclaimed if successfully unclaimed, :exhausted if requeue/skip budget
   # is spent (caller should time out), or :skip if the run should be retried later.
   #
   # If a Temporal workflow was already started for this run (temporal_workflow_id
