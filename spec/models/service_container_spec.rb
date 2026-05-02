@@ -92,6 +92,18 @@ RSpec.describe ServiceContainer do
       expect(service_container.active_agent_run_count).to eq(1)
     end
 
+    it "counts claimed queued runs referencing this container" do
+      service_container = create(:service_container)
+      project = create(:project)
+      create(:project_service_container, project: project, service_container: service_container)
+
+      issue = create(:issue, project: project)
+      create(:agent_run, status: "queued", temporal_workflow_id: "workflow-123", project: project, issue: issue,
+        service_container_ids: [ service_container.id ])
+
+      expect(service_container.active_agent_run_count).to eq(1)
+    end
+
     it "returns 0 when no active runs reference this container" do
       service_container = create(:service_container)
       expect(service_container.active_agent_run_count).to eq(0)

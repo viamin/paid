@@ -54,7 +54,7 @@ class DockerOrphanCleanupJob < ApplicationJob
 
     agent_run_ids = containers.filter_map { |c| c.info.dig("Labels", "paid.agent_run_id") }
     numeric_ids = agent_run_ids.select { |id| id.match?(/\A\d+\z/) }
-    active_ids = AgentRun.active.where(id: numeric_ids).pluck(:id).map(&:to_s).to_set
+    active_ids = AgentRun.capacity_inflight.where(id: numeric_ids).pluck(:id).map(&:to_s).to_set
     retained_ids = AgentRun.where(id: numeric_ids)
       .where("container_retained_until > ?", Time.current)
       .pluck(:id).map(&:to_s).to_set
@@ -125,7 +125,7 @@ class DockerOrphanCleanupJob < ApplicationJob
     numeric_agent_run_ids = volumes
                               .map { |v| v.id.delete_prefix(VOLUME_PREFIX) }
                               .select { |id| id.match?(/\A\d+\z/) }
-    active_ids = AgentRun.active.where(id: numeric_agent_run_ids).pluck(:id).map(&:to_s).to_set
+    active_ids = AgentRun.capacity_inflight.where(id: numeric_agent_run_ids).pluck(:id).map(&:to_s).to_set
     retained_ids = AgentRun.where(id: numeric_agent_run_ids)
       .where("container_retained_until > ?", Time.current)
       .pluck(:id).map(&:to_s).to_set

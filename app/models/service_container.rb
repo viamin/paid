@@ -37,7 +37,7 @@ class ServiceContainer < ApplicationRecord
 
   # Counts active agent runs across all associated projects that reference this container.
   def active_agent_run_count
-    AgentRun.active
+    AgentRun.capacity_inflight
       .where(project_id: project_ids)
       .where("service_container_ids @> ?", [ id ].to_json)
       .count
