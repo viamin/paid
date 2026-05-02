@@ -875,7 +875,8 @@ workers =
   case ENV.fetch("TEMPORAL_WORKER_MODE", "both")
   when "poll" then [poll_worker]
   when "agent" then [agent_worker]
-  else [poll_worker, agent_worker]
+  when "both" then [poll_worker, agent_worker]
+  else raise ArgumentError, "Invalid TEMPORAL_WORKER_MODE: #{ENV["TEMPORAL_WORKER_MODE"].inspect}"
   end
 
 Temporalio::Worker.run_all(*workers, cancellation: shutdown)

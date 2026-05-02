@@ -281,11 +281,7 @@ bin/update                   # Update Ruby, Yarn, and supported Dockerfile-pinne
 bin/dev                      # Start dev server with Overmind (Rails + JS + CSS + split Temporal poll/agent workers)
 bin/rails server             # Start Rails server only
 bin/rails console            # Rails console
-<<<<<<< HEAD
-bin/temporal_worker          # Run both queues in one process, or set TEMPORAL_WORKER_MODE=poll|agent|both
-=======
 bin/temporal_worker          # Run the Temporal worker directly (`TEMPORAL_WORKER_MODE=poll|agent|both`; default is `both`)
->>>>>>> 3d71d21de (fix(docs): clarify temporal worker mode defaults)
 bin/dev-update --lightweight # Pull latest main without restarting the dev stack
 bin/dev-update --full        # Pull latest main, rerun setup, and restart the dev stack
 
