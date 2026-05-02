@@ -75,12 +75,19 @@ module Containers
     end
 
     # Persists accumulated turn metrics to the AgentRun record.
+    # Merges with any previously persisted metrics so that multiple
+    # container execs (e.g. post-run commit/check passes) don't
+    # overwrite turns recorded by the main agent command.
     def flush_metrics!
       return unless @agent_run
+      return if @turns_data.empty? && @turns_completed == 0
+
+      existing_turns = @agent_run.streaming_turns_data || []
+      existing_count = @agent_run.turns_completed || 0
 
       @agent_run.update_columns(
-        turns_completed: @turns_completed,
-        streaming_turns_data: @turns_data
+        turns_completed: existing_count + @turns_completed,
+        streaming_turns_data: existing_turns + @turns_data
       )
     end
 

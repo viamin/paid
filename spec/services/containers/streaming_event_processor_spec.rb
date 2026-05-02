@@ -173,6 +173,32 @@ RSpec.describe Containers::StreamingEventProcessor do
       expect(agent_run.streaming_turns_data.first["status"]).to eq("failed")
       expect(agent_run.streaming_turns_data.first["error"]).to include("context window exceeded")
     end
+
+    it "merges with previously persisted metrics instead of overwriting" do
+      # Simulate a first exec that already persisted metrics
+      agent_run.update_columns(
+        turns_completed: 3,
+        streaming_turns_data: [
+          { "turn_number" => 1, "input_tokens" => 100 },
+          { "turn_number" => 2, "input_tokens" => 200 },
+          { "turn_number" => 3, "input_tokens" => 300 }
+        ]
+      )
+
+      # Second exec records one more turn
+      processor.handle_line('{"type": "turn_complete", "usage": {"input_tokens": 400, "output_tokens": 50}}')
+      processor.flush_metrics!
+
+      agent_run.reload
+      expect(agent_run.turns_completed).to eq(4)
+      expect(agent_run.streaming_turns_data.length).to eq(4)
+      expect(agent_run.streaming_turns_data.last["input_tokens"]).to eq(400)
+    end
+
+    it "skips update when no events were processed" do
+      expect(agent_run).not_to receive(:update_columns)
+      processor.flush_metrics!
+    end
   end
 
   describe "structured logging" do

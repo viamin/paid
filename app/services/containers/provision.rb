@@ -562,6 +562,16 @@ module Containers
         # Log partial output first — raise_if_watchdog_timeout! may re-raise.
         log_partial_output(stdout_buffer, stderr_buffer)
 
+        # Check if the Docker error was caused by a streaming abort (turn.failed/error)
+        # stopping the container. This takes precedence over abort patterns and timeout
+        # classification so the caller sees OutputAbortError, not a generic ExecutionError.
+        if streaming_abort_triggered
+          raise OutputAbortError.new(
+            "Process aborted: streaming #{streaming_abort_event_type || 'turn_failed'} event detected",
+            matched_output: "streaming_event:#{streaming_abort_event_type || 'turn_failed'}"
+          )
+        end
+
         # Check if the Docker error was caused by an abort pattern stopping the
         # container. This takes precedence over timeout classification.
         if abort_matched_output
