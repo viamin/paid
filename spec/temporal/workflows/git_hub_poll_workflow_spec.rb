@@ -27,8 +27,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
   describe "request_sync signal" do
     it "defines a request_sync signal handler" do
-      info = described_class._workflow_definition
-      expect(info.signals).to include("request_sync")
+      expect(described_class.instance_methods(false)).to include(:request_sync)
     end
 
     it "sets @sync_requested and calls cancel proc" do

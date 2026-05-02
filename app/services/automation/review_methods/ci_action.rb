@@ -40,12 +40,10 @@ module Automation
         outcome_satisfied
       end
 
-      # ci_action dispatch is currently owned by +DispatchClaudeReviewActivity+
-      # in the workflow layer; there is no matching {Automation::Decision}
-      # type today. Returning +nil+ preserves that ownership while still
-      # letting the strategy report the method's pending/satisfied state.
       def decision
-        nil
+        return nil unless signals.trigger(TRIGGER_TYPE)&.dig(:dispatch_required)
+
+        Automation::Decision.dispatch_claude_review(pr_number: signals.pr_number)
       end
     end
   end

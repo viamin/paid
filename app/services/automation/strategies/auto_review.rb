@@ -169,7 +169,7 @@ module Automation
       end
 
       def non_bot_pending_decisions(plugins, signals, trigger_types)
-        decisions = manual_request_decisions(plugins)
+        decisions = non_bot_request_decisions(plugins)
 
         other_triggers = trigger_types - [
           Automation::ReviewMethods::Manual::TRIGGER_TYPE,
@@ -218,7 +218,7 @@ module Automation
           return decisions
         end
 
-        decisions.concat(manual_request_decisions(plugins))
+        decisions.concat(non_bot_request_decisions(plugins))
 
         if trigger_types.include?(Automation::ReviewMethods::Copilot::TRIGGER_TYPE)
           decisions.concat(review_bot_request_decisions(plugins))
@@ -246,6 +246,10 @@ module Automation
 
       def manual_request_decisions(plugins)
         plugins.select { |p| p.kind == :human }.filter_map(&:decision)
+      end
+
+      def non_bot_request_decisions(plugins)
+        plugins.select { |p| p.kind.in?([ :human, :ci ]) }.filter_map(&:decision)
       end
 
       def followup_decisions(signals)

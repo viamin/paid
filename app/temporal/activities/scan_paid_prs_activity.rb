@@ -66,7 +66,8 @@ module Activities
               issue.update_column(:last_pr_scan_at, Time.current)
               pending_review_states << pending_review_state(issue, result)
               collect_scan_result(issue, result, prs_to_trigger, automation_results,
-                explicit_pr_decisions:)
+                explicit_pr_decisions:,
+                lifecycle: build_lifecycle_signals(project, issue))
               next
             end
           end
@@ -84,13 +85,14 @@ module Activities
         # etc.), roughly doubling gate-check DB queries per PR. Once the
         # strategy fully owns gate evaluation, scan_pr should stop evaluating
         # gates itself and defer to the signals/strategy path.
-        lifecycle = build_lifecycle_signals(project, issue) if explicit_pr_decisions
+        lifecycle = build_lifecycle_signals(project, issue)
         scanned_count += 1
         issue.update_column(:last_pr_scan_at, Time.current)
         pending_review_states << pending_review_state(issue, result)
         if result
           collect_scan_result(issue, result, prs_to_trigger, automation_results,
-            explicit_pr_decisions:, lifecycle: lifecycle)
+            explicit_pr_decisions:,
+            lifecycle: lifecycle)
         end
       rescue Temporalio::Error::ApplicationError => e
         raise unless e.type == "RateLimit"
@@ -98,7 +100,7 @@ module Activities
         logger.warn(
           message: "pr_scanner.rate_budget_exhausted_mid_scan",
           project_id: project_id,
-          prs_collected: explicit_pr_decisions ? automation_results.size : prs_to_trigger.size,
+          prs_collected: automation_results.size,
           prs_remaining: paid_prs.size - paid_prs.index(issue) - 1
         )
         break
@@ -110,7 +112,7 @@ module Activities
         prs_found: paid_prs.size,
         prs_scanned: scanned_count,
         prs_skipped_unchanged: unchanged_count,
-        prs_triggered: explicit_pr_decisions ? automation_results.size : prs_to_trigger.size
+        prs_triggered: automation_results.size
       )
 
       {
@@ -123,14 +125,10 @@ module Activities
 
     private
 
-    def collect_scan_result(issue, result, prs_to_trigger, automation_results,
-      explicit_pr_decisions:, lifecycle: nil)
-      if explicit_pr_decisions
-        automation_results << Automation::Evaluator.for(issue, explicit_pr_decisions: true)
-          .call(scan: result, lifecycle: lifecycle).to_h
-      else
-        prs_to_trigger << result
-      end
+    def collect_scan_result(issue, result, prs_to_trigger, automation_results, explicit_pr_decisions:, lifecycle:)
+      prs_to_trigger << result unless explicit_pr_decisions
+      automation_results << Automation::Evaluator.for(issue, explicit_pr_decisions: true)
+        .call(scan: result, lifecycle: lifecycle).to_h
     end
 
     def build_lifecycle_signals(project, issue)

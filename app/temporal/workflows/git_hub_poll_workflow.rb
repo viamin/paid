@@ -259,51 +259,7 @@ module Workflows
     end
 
     def handle_automation_result(result, project_id)
-      (result[:decisions] || []).each do |decision|
-        execute_automation_decision(project_id, decision)
-      end
-    end
-
-    def execute_automation_decision(project_id, decision)
-      case decision[:type]
-      when "noop"
-        nil
-      when "queue_create_pr_run"
-        queue_create_pr_run(project_id, decision)
-      when "queue_review_run"
-        queue_review_run(project_id, decision)
-      when "start_planning"
-        start_planning_workflow(project_id, decision[:issue_id])
-      when "request_review"
-        request_review(project_id, decision[:pr_number], decision[:reviewers],
-          log_key: "pr_review.request_review_failed")
-      when "mark_ready"
-        handle_mark_ready(project_id, decision)
-      when "escalate"
-        handle_escalate_decision(project_id, decision)
-      when "dismiss_escalation"
-        handle_dismiss_escalation(project_id, decision)
-      when "merge"
-        handle_owner_approved(project_id, issue_id: decision[:issue_id], pr_number: decision[:pr_number])
-      when "record_pr_followup"
-        run_activity(Activities::RecordPrFollowupActivity, {
-          project_id: project_id,
-          issue_id: decision[:issue_id],
-          labels_to_remove: decision[:labels_to_remove] || [],
-          expected_followup_count: decision[:expected_followup_count]
-        }, timeout: 30)
-      when "record_review_goal_retry"
-        run_activity(Activities::RecordReviewGoalRetryActivity, {
-          issue_id: decision[:issue_id],
-          expected_review_goal_retry_count: decision[:expected_review_goal_retry_count]
-        }, timeout: 30)
-      when "queue_analyze_issue_run"
-        run_activity(Activities::QueueAgentRunActivity, {
-          project_id: project_id,
-          issue_id: decision[:issue_id],
-          goal: "analyze_issue"
-        }, timeout: 30)
-      end
+      Automation::WorkflowDecisionExecutor.call(workflow: self, project_id:, result:)
     end
 
     def queue_create_pr_run(project_id, decision)
@@ -361,8 +317,8 @@ module Workflows
     end
 
     def handle_pr_scan_results(scan_result, project_id)
-      if feature_flag_enabled?(:explicit_pr_automation_decisions, project_id:)
-        (scan_result[:automation_results] || []).each do |result|
+      if scan_result[:automation_results].present?
+        scan_result[:automation_results].each do |result|
           handle_automation_result(result, project_id)
         end
         return
