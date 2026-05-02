@@ -66,10 +66,12 @@ is `both`. `bin/dev` uses two dedicated processes from `Procfile.dev`, one with
 |---|---|---|
 | `TEMPORAL_WORKER_MODE` | `both` | Run only the `poll` worker, only the `agent` worker, or both |
 | `TEMPORAL_WORKFLOW_SLOTS` | `20` | Max concurrent workflow tasks |
-| `TEMPORAL_ACTIVITY_SLOTS` | `4` | Max concurrent activity executions |
-| `TEMPORAL_LOCAL_ACTIVITY_SLOTS` | `=ACTIVITY_SLOTS` | Max concurrent local activity executions |
-| `TEMPORAL_MAX_CONCURRENT_ACTIVITY_TASK_POLLS` | `=ACTIVITY_SLOTS` | Concurrent activity task pollers |
-| `TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASK_POLLS` | `=WORKFLOW_SLOTS` | Concurrent workflow task pollers |
+| `TEMPORAL_ACTIVITY_SLOTS` | `4` | Max concurrent activity executions (agent worker) |
+| `TEMPORAL_LOCAL_ACTIVITY_SLOTS` | `=TEMPORAL_ACTIVITY_SLOTS` | Max concurrent local activity executions (agent worker) |
+| `TEMPORAL_POLL_ACTIVITY_SLOTS` | `4` | Max concurrent activity executions (poll worker) |
+| `TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS` | `=TEMPORAL_POLL_ACTIVITY_SLOTS` | Max concurrent local activity executions (poll worker) |
+| `TEMPORAL_MAX_CONCURRENT_ACTIVITY_TASK_POLLS` | `=TEMPORAL_ACTIVITY_SLOTS` | Concurrent activity task pollers |
+| `TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASK_POLLS` | `=TEMPORAL_WORKFLOW_SLOTS` | Concurrent workflow task pollers |
 | `TEMPORAL_GRACEFUL_SHUTDOWN_PERIOD` | `30` | Seconds for graceful shutdown |
 | `TEMPORAL_FORCE_EXIT_BUFFER_SECONDS` | `10` | Extra seconds before forced exit |
 

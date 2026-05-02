@@ -114,10 +114,12 @@ Total web threads = `WEB_CONCURRENCY × RAILS_MAX_THREADS`.
 | `TEMPORAL_POLL_TASK_QUEUE` | `paid-poll-tasks` | Poll workflow task queue |
 | `TEMPORAL_AGENT_TASK_QUEUE` | `paid-agent-tasks` | Agent execution task queue |
 | `TEMPORAL_WORKFLOW_SLOTS` | `20` | Max concurrent workflow tasks |
-| `TEMPORAL_ACTIVITY_SLOTS` | `4` | Max concurrent activity executions |
-| `TEMPORAL_LOCAL_ACTIVITY_SLOTS` | `=ACTIVITY_SLOTS` | Max concurrent local activities |
-| `TEMPORAL_MAX_CONCURRENT_ACTIVITY_TASK_POLLS` | `=ACTIVITY_SLOTS` | Activity task pollers |
-| `TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASK_POLLS` | `=WORKFLOW_SLOTS` | Workflow task pollers |
+| `TEMPORAL_ACTIVITY_SLOTS` | `4` | Max concurrent activity executions (agent worker) |
+| `TEMPORAL_LOCAL_ACTIVITY_SLOTS` | `=TEMPORAL_ACTIVITY_SLOTS` | Max concurrent local activities (agent worker) |
+| `TEMPORAL_POLL_ACTIVITY_SLOTS` | `4` | Max concurrent activity executions (poll worker) |
+| `TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS` | `=TEMPORAL_POLL_ACTIVITY_SLOTS` | Max concurrent local activities (poll worker) |
+| `TEMPORAL_MAX_CONCURRENT_ACTIVITY_TASK_POLLS` | `=TEMPORAL_ACTIVITY_SLOTS` | Activity task pollers |
+| `TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASK_POLLS` | `=TEMPORAL_WORKFLOW_SLOTS` | Workflow task pollers |
 | `TEMPORAL_GRACEFUL_SHUTDOWN_PERIOD` | `30` | Graceful shutdown (seconds) |
 | `TEMPORAL_FORCE_EXIT_BUFFER_SECONDS` | `10` | Extra seconds before forced exit |
 
