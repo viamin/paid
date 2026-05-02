@@ -55,8 +55,9 @@ bulk low-priority work cannot starve them:
 The Temporal worker runs as a separate process (`bin/temporal_worker`) that executes
 durable workflows and activities.
 
-Set `TEMPORAL_WORKER_MODE=poll` or `TEMPORAL_WORKER_MODE=agent` to run only one
-side of the workload in a dedicated process. The default mode is `both`.
+Set `TEMPORAL_WORKER_MODE=poll`, `TEMPORAL_WORKER_MODE=agent`, or
+`TEMPORAL_WORKER_MODE=both` to control which worker set boots. The default mode
+is `both`.
 
 ### Environment Variables
 
@@ -78,8 +79,14 @@ one concurrent agent execution (container launch, monitoring, teardown). Activit
 are I/O-bound (waiting on Docker and LLM APIs), so more slots improve throughput
 linearly up to the database connection limit.
 
-**Key constraint**: `DB_POOL >= ACTIVITY_SLOTS + LOCAL_ACTIVITY_SLOTS + 2`
-(the +2 accounts for heartbeat and polling threads).
+**Key constraint**:
+
+- `TEMPORAL_WORKER_MODE=poll` or `TEMPORAL_WORKER_MODE=agent`:
+  `DB_POOL >= ACTIVITY_SLOTS + LOCAL_ACTIVITY_SLOTS + 2`
+- `TEMPORAL_WORKER_MODE=both`:
+  `DB_POOL >= (AGENT_ACTIVITY_SLOTS + AGENT_LOCAL_ACTIVITY_SLOTS + POLL_ACTIVITY_SLOTS + POLL_LOCAL_ACTIVITY_SLOTS) + 4`
+
+The extra headroom covers heartbeat and polling threads for the selected worker set.
 
 ### Workflow Slots
 

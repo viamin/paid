@@ -867,7 +867,14 @@ agent_worker = Temporalio::Worker.new(
   tuner: Temporalio::Worker::Tuner.create_fixed(activity_slots: 4)
 )
 
-Temporalio::Worker.run_all(poll_worker, agent_worker, cancellation: shutdown)
+workers =
+  case ENV.fetch("TEMPORAL_WORKER_MODE", "both")
+  when "poll" then [poll_worker]
+  when "agent" then [agent_worker]
+  else [poll_worker, agent_worker]
+  end
+
+Temporalio::Worker.run_all(*workers, cancellation: shutdown)
 ```
 
 ### Docker Compose Integration
