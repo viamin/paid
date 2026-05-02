@@ -85,15 +85,6 @@ module Knowledge
         end
 
         run_routes_command
-      rescue Knowledge::ContainerizedRunner::ContainerError => e
-        raise unless database_connection_error?(e)
-
-        Rails.logger.warn(
-          message: "knowledge.routes_collector.database_unavailable",
-          project_id: project.id,
-          error_snippet: e.message.first(200)
-        )
-        nil
       end
 
       def run_routes_command
@@ -106,29 +97,17 @@ module Knowledge
       end
 
       def routes_command_env
-        {
+        env = {
           "BUNDLE_PATH" => "/tmp/bundle",
-          "BUNDLE_APP_CONFIG" => "/tmp/bundle-config",
-          # The container has no PostgreSQL server. Provide a dummy
-          # DATABASE_URL so Rails does not attempt a Unix-socket
-          # connection (which fails with "No such file or directory").
-          # With a TCP target, the connection attempt is deferred by
-          # Rails' lazy connection pool and `bin/rails routes` usually
-          # succeeds without ever touching the database.
-          "DATABASE_URL" => "postgresql://127.0.0.1/placeholder"
+          "BUNDLE_APP_CONFIG" => "/tmp/bundle-config"
         }
-      end
 
-      DATABASE_CONNECTION_ERROR_PATTERN = /
-        ActiveRecord::ConnectionNotEstablished |
-        could\s+not\s+connect\s+to\s+server |
-        connection\s+to\s+server.*failed |
-        No\s+such\s+file\s+or\s+directory.*postgresql |
-        \.s\.PGSQL\.\d+
-      /xi
+        database_url = ENV["DATABASE_URL"].presence
+        return env unless database_url
 
-      def database_connection_error?(error)
-        DATABASE_CONNECTION_ERROR_PATTERN.match?(error.message)
+        # Reuse the provisioned service connection when available, but do not
+        # force an adapter for apps that rely on database.yml instead.
+        env.merge("DATABASE_URL" => database_url)
       end
 
       def install_gems_in_container

@@ -193,7 +193,9 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(command_collector.collect.length).to eq(11)
       end
 
-      it "passes DATABASE_URL to prevent socket connection errors" do
+      it "passes through the configured DATABASE_URL when present" do
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("DATABASE_URL").and_return("sqlite3:storage/test.sqlite3")
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_return(fixture_output)
@@ -203,7 +205,23 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(command_collector).to have_received(:run_command).with(
           "sh", "-c", /bin\/rails routes --expanded/,
           timeout: 120,
-          env: hash_including("DATABASE_URL" => "postgresql://127.0.0.1/placeholder")
+          env: hash_including("DATABASE_URL" => "sqlite3:storage/test.sqlite3")
+        )
+      end
+
+      it "does not inject DATABASE_URL when none is configured" do
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("DATABASE_URL").and_return(nil)
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_return(fixture_output)
+
+        command_collector.collect
+
+        expect(command_collector).to have_received(:run_command).with(
+          "sh", "-c", /bin\/rails routes --expanded/,
+          timeout: 120,
+          env: satisfy { |env| !env.key?("DATABASE_URL") }
         )
       end
 
@@ -215,7 +233,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect { command_collector.collect }.to raise_error(RuntimeError, "Command failed")
       end
 
-      it "skips gracefully when the command fails with a database connection error" do
+      it "fails when the command hits a database connection error" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_raise(
@@ -223,7 +241,10 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
             'Command failed (exit 1): ActiveRecord::ConnectionNotEstablished connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed'
           )
 
-        expect { command_collector.collect }.to raise_error(Knowledge::SkipCollector)
+        expect { command_collector.collect }.to raise_error(
+          Knowledge::ContainerizedRunner::ContainerError,
+          /ActiveRecord::ConnectionNotEstablished/
+        )
       end
 
       it "cleans up credentials and disconnects network before running routes" do
