@@ -818,10 +818,15 @@ end
 
 ### Task Queue Isolation
 
-`bin/temporal_worker` runs **two Temporal workers** in a single process, each polling
-a dedicated task queue. This isolates time-sensitive poll workflows from long-running
+`bin/temporal_worker` supports `TEMPORAL_WORKER_MODE=poll`, `TEMPORAL_WORKER_MODE=agent`, or `TEMPORAL_WORKER_MODE=both`.
+By default it runs **two Temporal workers** in a single process, each polling a
+dedicated task queue. This isolates time-sensitive poll workflows from long-running
 agent-execution workloads, preventing the noisy-neighbor problem where saturated agent
 activity slots starve poll cycles.
+
+In local development, `bin/dev` starts two dedicated worker processes from
+`Procfile.dev`: `worker_poll` runs with `TEMPORAL_WORKER_MODE=poll`, and
+`worker_agent` runs with `TEMPORAL_WORKER_MODE=agent`.
 
 | Task queue | Default name | Workflows | Purpose |
 |---|---|---|---|
@@ -838,6 +843,7 @@ routed to the agent task queue so they don't consume poll worker capacity.
 
 | Variable | Default | Description |
 |---|---|---|
+| `TEMPORAL_WORKER_MODE` | `both` | Run only the `poll` worker, only the `agent` worker, or both |
 | `TEMPORAL_POLL_TASK_QUEUE` | `paid-poll-tasks` | Poll worker task queue name |
 | `TEMPORAL_AGENT_TASK_QUEUE` | `paid-agent-tasks` | Agent worker task queue name |
 | `TEMPORAL_POLL_ACTIVITY_SLOTS` | `10` | Max concurrent poll activities |
@@ -865,7 +871,15 @@ agent_worker = Temporalio::Worker.new(
   tuner: Temporalio::Worker::Tuner.create_fixed(activity_slots: 4)
 )
 
-Temporalio::Worker.run_all(poll_worker, agent_worker, cancellation: shutdown)
+workers =
+  case ENV.fetch("TEMPORAL_WORKER_MODE", "both")
+  when "poll" then [poll_worker]
+  when "agent" then [agent_worker]
+  when "both" then [poll_worker, agent_worker]
+  else raise ArgumentError, "Invalid TEMPORAL_WORKER_MODE: #{ENV["TEMPORAL_WORKER_MODE"].inspect}"
+  end
+
+Temporalio::Worker.run_all(*workers, cancellation: shutdown)
 ```
 
 ### Docker Compose Integration

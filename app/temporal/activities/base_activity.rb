@@ -65,7 +65,7 @@ module Activities
       def with_rails_executor(&block)
         executor = Rails.application.executor if defined?(Rails) && Rails.respond_to?(:application) &&
           Rails.application.respond_to?(:executor)
-        return block.call unless executor
+        return yield unless executor
 
         executor.wrap(&block)
       end
@@ -74,12 +74,12 @@ module Activities
       # holding one for the entire activity duration. Activities often perform
       # long-running external I/O (container ops, GitHub calls) and keeping a
       # connection checked out would starve the pool.
-      def with_connection_cleanup(&block)
+      def with_connection_cleanup
         pool = ActiveRecord::Base.connection_pool if defined?(ActiveRecord::Base) &&
           ActiveRecord::Base.respond_to?(:connection_pool)
-        return block.call unless pool
+        return yield unless pool
 
-        block.call
+        yield
       ensure
         restore_outer_tenant_context!(pool) if pool
       end

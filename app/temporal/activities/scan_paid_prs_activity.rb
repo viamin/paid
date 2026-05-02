@@ -955,7 +955,15 @@ module Activities
       # Don't retry while a review-goal run is already queued or running.
       return false if review_run_in_progress?(project, issue)
 
-      latest_finished_automatic_review_run(project, issue)&.status&.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
+      latest_run = latest_finished_automatic_review_run(project, issue)
+      return false unless latest_run&.status&.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
+
+      # Don't retry when the run already posted a review on the PR. The agent
+      # may fail after posting (e.g. container timeout, spec failure) but the
+      # review content is already visible — retrying would post a duplicate.
+      return false if latest_run.review_posted_at.present?
+
+      true
     end
 
     def last_completed_run(project, issue)
@@ -1427,9 +1435,12 @@ module Activities
       # to escalate when the cap is hit. This check runs before the
       # #830 "already reviewed" guard so failed/no-output reviews are retried
       # even when the last finished review attempt post-dates the last create_pr.
-      failed_count = review_goal_consecutive_failure_count(project, issue)
-      latest_failed_run = latest_finished_automatic_review_run(project, issue)
-      if latest_failed_run&.status&.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
+      # However, when the run already posted a review on the PR, the feedback is
+      # visible — retrying would post a duplicate review on every scan cycle.
+      latest_finished_run = latest_finished_automatic_review_run(project, issue)
+      if latest_finished_run&.status&.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES) &&
+          latest_finished_run.review_posted_at.blank?
+        failed_count = review_goal_consecutive_failure_count(project, issue)
         max_retries = review_goal_max_retries(project)
         return [ { type: "paid_agent_review_pending",
                  details: "Retrying unsuccessful review-goal run (attempt #{failed_count + 1}/#{max_retries})" } ]
@@ -1564,7 +1575,8 @@ module Activities
         source_pull_request_number: issue.github_number,
         goal: "review",
         status: REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES,
-        trigger_type: "automatic"
+        trigger_type: "automatic",
+        review_posted_at: nil
       )
       scope = scope.where(review_run_cycle_boundary.gt(reset_at)) if reset_at
       scope.count
