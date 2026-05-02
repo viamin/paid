@@ -14,30 +14,17 @@ module ExceptionHandler
     end
 
     def call
-      return unless @project&.github_token&.client
+      client = @project&.github_token&.client
+      return unless client
 
-      # Determine action under a short lock to prevent duplicate filing,
-      # then perform the GitHub API call outside the lock to avoid holding
-      # a row lock across a network round-trip.
-      action = nil
       @incident.with_lock do
         @incident.reload
 
-        if @incident.github_issue_url.present?
-          action = :comment
+        if @incident.github_issue_number.present?
+          add_comment_to_existing(client: client)
         else
-          # Mark as filing-in-progress so concurrent workers see a non-nil
-          # URL and take the comment path instead of filing a duplicate.
-          @incident.update_columns(github_issue_url: "filing")
-          action = :create
+          create_new_issue(client: client)
         end
-      end
-
-      case action
-      when :comment
-        add_comment_to_existing
-      when :create
-        create_new_issue
       end
     rescue GithubClient::Error => e
       Rails.logger.warn(
@@ -56,8 +43,7 @@ module ExceptionHandler
 
     private
 
-    def create_new_issue
-      client = @project.github_token.client
+    def create_new_issue(client:)
       gh_issue = client.create_issue(
         @project.full_name,
         title: issue_title,
@@ -79,18 +65,11 @@ module ExceptionHandler
       )
 
       gh_issue.html_url
-    rescue StandardError
-      # Reset the "filing" placeholder so a future attempt can retry.
-      @incident.update_columns(github_issue_url: nil) if @incident.github_issue_url == "filing"
-      raise
     end
 
-    def add_comment_to_existing
-      @incident.reload
+    def add_comment_to_existing(client:)
       return unless @incident.github_issue_number
-      return if @incident.github_issue_url == "filing"
 
-      client = @project.github_token.client
       client.add_comment(
         @project.full_name,
         @incident.github_issue_number,
