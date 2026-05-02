@@ -915,11 +915,11 @@ class AgentRun < ApplicationRecord
 
     {
       queue_seconds: queue_seconds,
-      setup_seconds: grouped.fetch("setup", 0),
-      prompt_seconds: grouped.fetch("prompt", 0),
-      agent_seconds: grouped.fetch("agent", 0),
-      post_seconds: grouped.fetch("post", 0),
-      cleanup_seconds: grouped.fetch("cleanup", 0),
+      setup_seconds: grouped.fetch("setup") { 0 },
+      prompt_seconds: grouped.fetch("prompt") { 0 },
+      agent_seconds: grouped.fetch("agent") { 0 },
+      post_seconds: grouped.fetch("post") { 0 },
+      cleanup_seconds: grouped.fetch("cleanup") { 0 },
       observed_seconds: ordered_phases.sum(&:duration_seconds),
       first_phase_at: first_phase.started_at,
       last_phase_at: ordered_phases.last.finished_at
@@ -1631,6 +1631,10 @@ class AgentRun < ApplicationRecord
       project.broadcast_agent_runs_update
       project.broadcast_agent_runs_list_update
       project.broadcast_stats_update
+      project.broadcast_cost_snapshot_update if previous_changes.key?("status")
+      # Only broadcast issues updates when they can affect auto-pick eligibility
+      # or when the associated issue/agent type changes. This avoids redundant
+      # re-renders during intermediate status transitions (e.g., queued→pending→running).
       if issue_id.present?
         should_broadcast_issues = false
 

@@ -1,0 +1,23 @@
+<% monthly_cost_cents = summary[:monthly_cost_cents].to_i %>
+<% today_cost_cents = summary[:today_cost_cents].to_i %>
+
+<%= turbo_frame_tag dom_id(project, :cost_snapshot) do %>
+  <% if monthly_cost_cents.positive? || today_cost_cents.positive? %>
+    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="flex flex-wrap items-center divide-x divide-gray-200 text-sm">
+        <% if monthly_cost_cents.positive? %>
+          <div class="flex items-center gap-1.5 px-4 py-3">
+            <span class="font-medium text-gray-500">This Month:</span>
+            <span class="font-semibold text-gray-900">$<%= format("%.2f", monthly_cost_cents / 100.0) %></span>
+          </div>
+        <% end %>
+        <% if today_cost_cents.positive? %>
+          <div class="flex items-center gap-1.5 px-4 py-3">
+            <span class="font-medium text-gray-500">Today:</span>
+            <span class="font-semibold text-gray-900">$<%= format("%.2f", today_cost_cents / 100.0) %></span>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+<% end %>

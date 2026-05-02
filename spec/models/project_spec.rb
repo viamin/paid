@@ -1329,7 +1329,20 @@ RSpec.describe Project do
           project, :project_updates,
           target: "stats_project_#{project.id}",
           partial: "projects/stats",
-          locals: { project: project }
+          locals: hash_including(project: project)
+        )
+      end
+    end
+
+    describe "#broadcast_cost_snapshot_update" do
+      it "broadcasts replace to the project_updates stream with cost snapshot partial" do
+        project.broadcast_cost_snapshot_update
+
+        expect(project).to have_received(:broadcast_replace_to).with(
+          project, :project_updates,
+          target: "cost_snapshot_project_#{project.id}",
+          partial: "projects/cost_snapshot",
+          locals: hash_including(project: project, summary: hash_including(:today_cost_cents, :monthly_cost_cents))
         )
       end
     end

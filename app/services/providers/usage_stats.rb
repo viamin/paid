@@ -37,13 +37,13 @@ module Providers
       all_keys = provider_keys(run_counts, cost_by_provider, tokens_by_provider, fallback_stats, rate_limit_counts)
       all_keys.index_with do |key|
         {
-          runs_7d: run_counts.fetch(key, 0),
-          cost_cents_7d: cost_by_provider.fetch(key, 0),
-          tokens_7d: tokens_by_provider.fetch(key, 0),
+          runs_7d: run_counts.fetch(key) { 0 },
+          cost_cents_7d: cost_by_provider.fetch(key) { 0 },
+          tokens_7d: tokens_by_provider.fetch(key) { 0 },
           fallback_rate: fallback_stats.dig(key, :rate) || 0.0,
           fallback_total: fallback_stats.dig(key, :total) || 0,
           fallback_switched: fallback_stats.dig(key, :switched) || 0,
-          rate_limit_events_7d: rate_limit_counts.fetch(key, 0)
+          rate_limit_events_7d: rate_limit_counts.fetch(key) { 0 }
         }
       end
     end
@@ -107,7 +107,7 @@ module Providers
         .count
 
       totals_by_type.each_with_object({}) do |(provider, total), result|
-        switched = switched_by_type.fetch(provider, 0)
+        switched = switched_by_type.fetch(provider) { 0 }
         result[provider] = {
           total: total,
           switched: switched,
