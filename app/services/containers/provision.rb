@@ -2081,7 +2081,7 @@ module Containers
     end
 
     def local_config_path(dirname)
-      path = File.join(ENV.fetch("HOME") { "/home/vscode" }, dirname)
+      path = File.join(ENV.fetch("HOME", "/home/vscode"), dirname)
       File.directory?(path) ? path : nil
     end
 

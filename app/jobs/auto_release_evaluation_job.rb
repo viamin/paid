@@ -97,7 +97,15 @@ class AutoReleaseEvaluationJob < ApplicationJob
 
   def fetch_previous_version(client, project)
     content = client.contents(project.full_name, path: ".release-please-manifest.json")
-    return nil unless content.respond_to?(:content)
+    unless content.respond_to?(:content)
+      Rails.logger.warn(
+        message: "auto_release.fetch_version_failed",
+        project_id: project.id,
+        error: "Expected file content response for .release-please-manifest.json",
+        response_class: content.class.name
+      )
+      return nil
+    end
 
     manifest = JSON.parse(Base64.decode64(content.content))
     manifest["."]
