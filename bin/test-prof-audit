@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+OUTPUT_DIR="tmp/test_prof"
+EXCLUDE_PATTERN="spec/performance/**/*_spec.rb,spec/system/**/*_spec.rb"
+FAILED_RUNS=()
+
+mkdir -p "$OUTPUT_DIR"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bin/test-prof-audit hotspot-map
+  bin/test-prof-audit requests-deep
+  bin/test-prof-audit type-breakdown
+  bin/test-prof-audit file PROFILE_TARGET
+
+Commands:
+  hotspot-map
+    Runs plain RSpec profiling on the main hotspot directories.
+
+  requests-deep
+    Runs the deeper request-spec audit passes used in the May 2026 test-prof audit:
+    FPROF, FDOC, EVENT_PROF(sql.active_record), RD_PROF, and TPS_PROF.
+
+  type-breakdown
+    Runs TAG_PROF=type across the broader suite so request/model/service/job types
+    can actually be compared.
+
+  file PROFILE_TARGET
+    Runs plain profile + FPROF + FDOC + EVENT_PROF(sql.active_record) + RD_PROF
+    for one file.
+EOF
+}
+
+run_and_capture() {
+  local name="$1"
+  local status
+  shift
+
+  echo
+  echo "==> ${name}"
+  echo "Command: $*"
+
+  TEST_PROF_REPORT="$name" COVERAGE=false "$@" | tee "${OUTPUT_DIR}/${name}.log"
+  status=${PIPESTATUS[0]}
+
+  if (( status != 0 )); then
+    echo "Run failed with exit status ${status}; keeping ${OUTPUT_DIR}/${name}.log for inspection."
+    FAILED_RUNS+=("${name}:${status}")
+  fi
+}
+
+run_hotspot_map() {
+  run_and_capture requests_profile bundle exec rspec --profile 20 spec/requests --exclude-pattern "$EXCLUDE_PATTERN"
+  run_and_capture models_profile bundle exec rspec --profile 20 spec/models --exclude-pattern "$EXCLUDE_PATTERN"
+  run_and_capture services_profile bundle exec rspec --profile 20 spec/services --exclude-pattern "$EXCLUDE_PATTERN"
+  run_and_capture temporal_profile bundle exec rspec --profile 20 spec/temporal --exclude-pattern "$EXCLUDE_PATTERN"
+}
+
+run_requests_deep() {
+  run_and_capture requests_fprof env FPROF=1 bundle exec rspec spec/requests --exclude-pattern "$EXCLUDE_PATTERN"
+  run_and_capture requests_fdoc env FDOC=1 bundle exec rspec spec/requests --exclude-pattern "$EXCLUDE_PATTERN"
+  run_and_capture requests_event_sql env EVENT_PROF=sql.active_record EVENT_PROF_EXAMPLES=1 bundle exec rspec spec/requests --exclude-pattern "$EXCLUDE_PATTERN"
+  run_and_capture requests_rd_prof env RD_PROF=1 bundle exec rspec spec/requests --exclude-pattern "$EXCLUDE_PATTERN"
+  run_and_capture requests_tps env TPS_PROF=10 bundle exec rspec spec/requests --exclude-pattern "$EXCLUDE_PATTERN"
+}
+
+run_type_breakdown() {
+  run_and_capture suite_tag_type env TAG_PROF=type bundle exec rspec spec --exclude-pattern "$EXCLUDE_PATTERN"
+}
+
+run_file_deep() {
+  local target="$1"
+  local base
+  base="$(basename "$target" .rb)"
+
+  run_and_capture "${base}_profile" bundle exec rspec --profile 20 "$target"
+  run_and_capture "${base}_fprof" env FPROF=1 bundle exec rspec "$target"
+  run_and_capture "${base}_fdoc" env FDOC=1 bundle exec rspec "$target"
+  run_and_capture "${base}_event_sql" env EVENT_PROF=sql.active_record EVENT_PROF_EXAMPLES=1 bundle exec rspec "$target"
+  run_and_capture "${base}_rd_prof" env RD_PROF=1 bundle exec rspec "$target"
+}
+
+case "${1:-}" in
+  hotspot-map)
+    run_hotspot_map
+    ;;
+  requests-deep)
+    run_requests_deep
+    ;;
+  type-breakdown)
+    run_type_breakdown
+    ;;
+  file)
+    if [[ $# -ne 2 ]]; then
+      usage
+      exit 1
+    fi
+    run_file_deep "$2"
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac
+
+if (( ${#FAILED_RUNS[@]} > 0 )); then
+  echo
+  echo "Completed with failed profiling runs:"
+  printf '  %s\n' "${FAILED_RUNS[@]}"
+  exit 1
+fi
