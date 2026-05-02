@@ -69,6 +69,7 @@ class AgentRun < ApplicationRecord
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
   MAX_STALE_REQUEUES = 2
   MAX_STALE_SKIPS = 3
+  CLAIMED_SENTINEL = "claimed"
   STALE_CLAIMED_TIMEOUT = 15.minutes
   STALE_PAUSED_TIMEOUT = 2.hours
   STALE_RUNNING_GRACE_PERIOD = 10.minutes
@@ -807,7 +808,7 @@ class AgentRun < ApplicationRecord
       run = unclaimed.where(id: target_id).lock("FOR UPDATE SKIP LOCKED").first
       return nil unless run
 
-      run.update!(temporal_workflow_id: "claimed")
+      run.update!(temporal_workflow_id: CLAIMED_SENTINEL)
       run
     end
   end

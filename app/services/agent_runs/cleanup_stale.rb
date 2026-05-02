@@ -127,12 +127,10 @@ module AgentRuns
       issue.update!(paid_state: target_state) unless issue.paid_state == target_state
     end
 
-    CLAIMED_SENTINEL = "claimed"
-
     def cancel_temporal_workflow(agent_run)
       workflow_id = agent_run.temporal_workflow_id
       return true if workflow_id.blank?
-      return true if workflow_id == CLAIMED_SENTINEL
+      return true if workflow_id == AgentRun::CLAIMED_SENTINEL
 
       handle = Paid.temporal_client.workflow_handle(workflow_id)
       handle.cancel
