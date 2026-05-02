@@ -1582,7 +1582,8 @@ module Activities
         source_pull_request_number: issue.github_number,
         goal: "review",
         status: REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES,
-        trigger_type: "automatic"
+        trigger_type: "automatic",
+        review_posted_at: nil
       )
       scope = scope.where(review_run_cycle_boundary.gt(reset_at)) if reset_at
       scope.count
