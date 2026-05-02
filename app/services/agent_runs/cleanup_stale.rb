@@ -62,7 +62,7 @@ module AgentRuns
     end
 
     def stale?(agent_run)
-      stale_running?(agent_run) || stale_pending?(agent_run)
+      stale_running?(agent_run) || stale_claimed?(agent_run)
     end
 
     def stale_running?(agent_run)
@@ -71,16 +71,17 @@ module AgentRuns
         agent_run.started_at < AgentRun.stale_running_cutoff
     end
 
-    def stale_pending?(agent_run)
-      agent_run.status == "pending" &&
+    def stale_claimed?(agent_run)
+      agent_run.status == "queued" &&
+        agent_run.temporal_workflow_id.present? &&
         agent_run.updated_at &&
-        agent_run.updated_at < AgentRun.stale_pending_cutoff
+        agent_run.updated_at < AgentRun.stale_claimed_cutoff
     end
 
     def resolve_stale_run(agent_run)
       return resolve_stale_running(agent_run) if stale_running?(agent_run)
 
-      resolve_stale_pending(agent_run)
+      resolve_stale_claimed(agent_run)
     end
 
     def resolve_stale_running(agent_run)
@@ -91,18 +92,17 @@ module AgentRuns
       true
     end
 
-    def resolve_stale_pending(agent_run)
+    def resolve_stale_claimed(agent_run)
       if agent_run.stale_requeue_count >= AgentRun::MAX_STALE_REQUEUES
-        return false unless agent_run.timeout!(error: "Manual stale run cleanup: exceeded pending requeue limit")
+        return false unless agent_run.timeout!(error: "Manual stale run cleanup: exceeded claimed requeue limit")
 
-        agent_run.log!("system", "Stale pending run marked as timed out by manual stale run cleanup")
+        agent_run.log!("system", "Stale claimed queued run marked as timed out by manual stale run cleanup")
         update_issue_state(agent_run)
         should_cleanup_resources = true
       else
         return false unless cancel_temporal_workflow(agent_run)
 
         agent_run.update!(
-          status: "queued",
           stale_requeue_count: agent_run.stale_requeue_count + 1,
           temporal_workflow_id: nil,
           temporal_run_id: nil,
@@ -112,7 +112,7 @@ module AgentRuns
         )
         agent_run.log!(
           "system",
-          "Stale pending run requeued by manual stale run cleanup (attempt #{agent_run.stale_requeue_count}/#{AgentRun::MAX_STALE_REQUEUES})"
+          "Stale claimed queued run unclaimed by manual stale run cleanup (attempt #{agent_run.stale_requeue_count}/#{AgentRun::MAX_STALE_REQUEUES})"
         )
         should_cleanup_resources = true
       end

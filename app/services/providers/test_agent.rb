@@ -306,7 +306,7 @@ module Providers
           project_id: test_project.id,
           provider_id: provider.id,
           agent_type: Provider.agent_type_for(provider.provider_key),
-          status: "pending",
+          status: "queued",
           goal: "create_pr",
           trigger_type: "manual",
           custom_prompt: "smoke_test",

@@ -3,7 +3,6 @@
 module ApplicationHelper
   AGENT_RUN_STATUS_STYLES = {
     "queued" => { bg: "bg-indigo-100", text: "text-indigo-700", label: "Queued" },
-    "pending" => { bg: "bg-yellow-100", text: "text-yellow-800", label: "Pending" },
     "running" => { bg: "bg-blue-100", text: "text-blue-700", label: "Running" },
     "completed" => { bg: "bg-green-100", text: "text-green-700", label: "Completed" },
     "no_output" => { bg: "bg-slate-100", text: "text-slate-600", label: "No Output" },
@@ -16,7 +15,7 @@ module ApplicationHelper
   }.freeze
 
   def agent_run_status_badge(status)
-    styles = AGENT_RUN_STATUS_STYLES[status] || AGENT_RUN_STATUS_STYLES["pending"]
+    styles = AGENT_RUN_STATUS_STYLES[status] || AGENT_RUN_STATUS_STYLES["queued"]
     tag.span(
       styles[:label],
       class: "inline-flex items-center rounded-md #{styles[:bg]} px-2 py-1 text-xs font-medium #{styles[:text]}"
@@ -265,7 +264,7 @@ module ApplicationHelper
         class: "text-indigo-600 hover:text-indigo-900", title: context[:tooltip])
     when :text
       tag.span(context[:label], class: context[:classes], title: context[:tooltip])
-    when :pending
+    when :in_progress
       tag.span("Creating issue\u2026", class: "italic text-gray-500")
     else
       tag.span("-", class: "text-gray-400")
@@ -350,7 +349,7 @@ module ApplicationHelper
     elsif run.finished?
       { type: :placeholder }
     else
-      { type: :pending }
+      { type: :in_progress }
     end
   end
 

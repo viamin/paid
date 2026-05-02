@@ -643,8 +643,8 @@ RSpec.describe Issues::AutoPick do
         expect(result.issue).to eq(issue)
       end
 
-      it "queues another run when project already has a pending agent run" do
-        create(:agent_run, project: project, status: "pending")
+      it "queues another run when project already has an unfinished agent run" do
+        create(:agent_run, project: project, status: "running")
         issue = create(:issue, project: project)
 
         result = described_class.new(project).call

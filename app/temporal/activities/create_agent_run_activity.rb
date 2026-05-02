@@ -82,7 +82,7 @@ module Activities
         count_toward_draft_review_round: count_toward_draft_review_round,
         expected_draft_review_count: expected_draft_review_count,
         prompt_version: prompt_version,
-        status: "pending"
+        status: "queued"
       }
       attrs[:parent_workflow_id] = input[:parent_workflow_id] if input[:parent_workflow_id]
 
@@ -169,13 +169,7 @@ module Activities
 
       if agent_run.queued?
         refresh_automatic_run_provider!(agent_run)
-        agent_run.update!(status: "pending")
-      elsif agent_run.status == "pending"
-        refresh_automatic_run_provider!(agent_run)
       else
-        # "queued" and "pending" are the expected statuses here; ProcessRunQueueJob
-        # may claim runs (queued->pending) before starting the workflow. Only warn
-        # for truly unexpected statuses.
         logger.warn(
           message: "agent_execution.resume_queued_run_unexpected_status",
           agent_run_id: agent_run.id,

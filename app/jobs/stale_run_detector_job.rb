@@ -1,16 +1,17 @@
 # frozen_string_literal: true
 
-# Detects agent runs stuck in "running", "pending", or "paused" status beyond
-# the configured timeout thresholds.
+# Detects agent runs stuck in "running", claimed-queued, or "paused" status
+# beyond the configured timeout thresholds.
 #
 # Running runs use the full agent timeout plus a grace period.
-# Pending runs use a shorter threshold since the pending→running
-# transition (container provisioning + clone) should complete in minutes.
+# Claimed queued runs (temporal_workflow_id set but status still "queued") use
+# a shorter threshold since the workflow should progress past the provisioning
+# phase within minutes.
 # Paused runs use their own threshold so guardrail pauses do not block
 # auto-pick forever when nobody manually resumes or terminates them.
 #
-# Stale pending/paused runs that have not exhausted their requeue budget are
-# automatically requeued (reset to "queued") so transient failures
+# Stale claimed/paused runs that have not exhausted their requeue budget are
+# automatically unclaimed (temporal_workflow_id cleared) so transient failures
 # (e.g. worker restart, temporary resource exhaustion) self-heal.
 # Runs that exceed MAX_STALE_REQUEUES are timed out like stale running runs.
 #
@@ -30,16 +31,16 @@ class StaleRunDetectorJob < ApplicationJob
   # Accounts for container provisioning, git clone, push, and PR creation.
   GRACE_PERIOD = 10.minutes
 
-  # Shorter threshold for pending runs. Container provisioning + clone
+  # Shorter threshold for claimed queued runs. Container provisioning + clone
   # should complete well within this window. Using the full agent timeout
-  # (70 min) for pending runs delays detection of stuck runs unnecessarily.
-  PENDING_TIMEOUT = AgentRun.stale_pending_timeout
+  # (70 min) for claimed runs delays detection of stuck runs unnecessarily.
+  CLAIMED_TIMEOUT = AgentRun.stale_claimed_timeout
 
   # Paused runs need a manual decision in the happy path, but should not block
   # PR scanning indefinitely if the pause is never acted on.
   PAUSED_TIMEOUT = AgentRun.stale_paused_timeout
 
-  # Maximum times a stale pending run can be automatically requeued before
+  # Maximum times a stale claimed run can be automatically unclaimed before
   # being timed out. Prevents infinite retry loops when the underlying
   # issue is persistent (e.g. misconfigured project, missing credentials).
   MAX_STALE_REQUEUES = AgentRun::MAX_STALE_REQUEUES
@@ -48,7 +49,7 @@ class StaleRunDetectorJob < ApplicationJob
   def perform
     job_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     running_threshold = agent_timeout_with_grace.ago
-    pending_threshold = PENDING_TIMEOUT.ago
+    claimed_threshold = CLAIMED_TIMEOUT.ago
     paused_threshold = PAUSED_TIMEOUT.ago
     resolved = 0
     requeued = 0
@@ -64,16 +65,8 @@ class StaleRunDetectorJob < ApplicationJob
       )
     end
 
-    github_down = github_circuit_open?
-
-    stale_pending_runs(pending_threshold).find_each do |agent_run|
-      if github_down
-        skipped += 1
-        log_skip(agent_run, "github_circuit_open")
-        next
-      end
-
-      case requeue_stale_pending_run(agent_run)
+    stale_claimed_runs(claimed_threshold).find_each do |agent_run|
+      case requeue_stale_claimed_run(agent_run)
       when :requeued
         requeued += 1
       when :exhausted
@@ -138,11 +131,12 @@ class StaleRunDetectorJob < ApplicationJob
     AgentRun.running.where("started_at < ?", threshold)
   end
 
-  # Runs stuck in "pending" whose last update was before the threshold.
-  # Uses updated_at to approximate when the run entered "pending", since a run
-  # may have spent a long time in "queued" before transitioning to "pending".
-  def stale_pending_runs(threshold)
-    AgentRun.pending.where("updated_at < ?", threshold)
+  # Claimed queued runs (temporal_workflow_id set, status "queued") whose
+  # last update was before the threshold. Uses updated_at to approximate
+  # when the run was claimed, since a run may have spent a long time in
+  # "queued" before being claimed.
+  def stale_claimed_runs(threshold)
+    AgentRun.claimed.where("updated_at < ?", threshold)
   end
 
   # Runs stuck in "paused" whose pause timestamp is before the threshold.
@@ -150,17 +144,17 @@ class StaleRunDetectorJob < ApplicationJob
     AgentRun.paused.where("paused_at < ?", threshold)
   end
 
-  # Attempts to requeue a stale pending run.
-  # Returns :requeued if successfully requeued, :exhausted if requeue/skip budget
+  # Attempts to unclaim a stale claimed queued run.
+  # Returns :requeued if successfully unclaimed, :exhausted if requeue/skip budget
   # is spent (caller should time out), or :skip if the run should be retried later.
   #
   # If a Temporal workflow was already started for this run (temporal_workflow_id
-  # is present), we cancel it *before* requeuing so ProcessRunQueueJob can start
-  # a fresh workflow without racing the old one. If cancellation fails with a
-  # non-NOT_FOUND error, we skip the requeue to avoid duplicate workflows — the
-  # next detector cycle will retry.
-  def requeue_stale_pending_run(agent_run)
-    requeue_stale_unfinished_run(agent_run, pending_requeue_policy)
+  # is a real workflow ID, not just "claimed"), we cancel it *before* unclaiming
+  # so ProcessRunQueueJob can start a fresh workflow without racing the old one.
+  # If cancellation fails with a non-NOT_FOUND error, we skip the unclaim to
+  # avoid duplicate workflows — the next detector cycle will retry.
+  def requeue_stale_claimed_run(agent_run)
+    requeue_stale_unfinished_run(agent_run, claimed_requeue_policy)
   end
 
   def requeue_stale_paused_run(agent_run)
@@ -174,6 +168,9 @@ class StaleRunDetectorJob < ApplicationJob
       agent_run.reload
       return skip_requeue(agent_run, "finished") if agent_run.finished?
       return skip_requeue(agent_run, "status_changed") unless agent_run.status == policy.fetch(:status)
+      if policy[:claimed]
+        return skip_requeue(agent_run, "no_longer_claimed") unless agent_run.temporal_workflow_id.present?
+      end
       return skip_requeue(agent_run, "not_stale") unless stale_for_requeue?(agent_run, policy)
       return :exhausted if timeout_before_requeue?(agent_run, policy)
       return :exhausted if agent_run.stale_requeue_count >= MAX_STALE_REQUEUES
@@ -209,12 +206,13 @@ class StaleRunDetectorJob < ApplicationJob
     }
   end
 
-  def pending_requeue_policy
+  def claimed_requeue_policy
     {
-      status: "pending",
+      status: "queued",
       stale_attribute: :updated_at,
-      threshold: PENDING_TIMEOUT.ago,
-      reset_attributes: {}
+      threshold: CLAIMED_TIMEOUT.ago,
+      reset_attributes: {},
+      claimed: true
     }
   end
 
@@ -268,7 +266,11 @@ class StaleRunDetectorJob < ApplicationJob
 
   def stale_requeue_log(agent_run)
     previous_status = agent_run.status_before_last_save
-    "Stale #{previous_status} run requeued by stale run detector (attempt #{agent_run.stale_requeue_count}/#{MAX_STALE_REQUEUES})"
+    if previous_status == "queued"
+      "Stale claimed queued run unclaimed by stale run detector (attempt #{agent_run.stale_requeue_count}/#{MAX_STALE_REQUEUES})"
+    else
+      "Stale #{previous_status} run requeued by stale run detector (attempt #{agent_run.stale_requeue_count}/#{MAX_STALE_REQUEUES})"
+    end
   end
 
   def skip_after_cancel_failure(agent_run)

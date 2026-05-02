@@ -47,7 +47,7 @@ RSpec.describe Activities::CheckProjectRunCapacityActivity do
       user.settings.update!(max_parallel_agents_per_project: 2, max_concurrent_runs: 10)
 
       create(:agent_run, :running, project: project)
-      create(:agent_run, project: project) # pending (default status)
+      create(:agent_run, :running, project: project)
 
       result = activity.execute({ project_id: project.id })
 

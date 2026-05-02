@@ -156,13 +156,14 @@ RSpec.describe AgentRun do
       end
     end
 
-    describe ".pending" do
-      it "returns only pending runs" do
-        pending_run = create(:agent_run)
+    describe ".claimed" do
+      it "returns only claimed (queued with temporal_workflow_id) runs" do
+        claimed_run = create(:agent_run, :queued, temporal_workflow_id: "claimed")
+        create(:agent_run, :queued)
         create(:agent_run, :running)
 
-        expect(described_class.pending).to include(pending_run)
-        expect(described_class.pending.count).to eq(1)
+        expect(described_class.claimed).to include(claimed_run)
+        expect(described_class.claimed.count).to eq(1)
       end
     end
 
@@ -180,32 +181,32 @@ RSpec.describe AgentRun do
       it "returns only running runs older than the stale cutoff" do
         stale_run = create(:agent_run, :running, started_at: described_class.stale_running_cutoff - 1.minute)
         create(:agent_run, :running, started_at: described_class.stale_running_cutoff + 1.minute)
-        create(:agent_run, status: "pending", started_at: described_class.stale_running_cutoff - 1.minute)
+        create(:agent_run, :queued, started_at: described_class.stale_running_cutoff - 1.minute)
 
         expect(described_class.stale_running).to contain_exactly(stale_run)
       end
     end
 
-    describe ".stale_pending" do
-      it "returns only pending runs older than the stale cutoff" do
-        stale_run = create(:agent_run, status: "pending")
-        stale_run.update_column(:updated_at, described_class.stale_pending_cutoff - 1.minute)
-        fresh_run = create(:agent_run, status: "pending")
-        fresh_run.update_column(:updated_at, described_class.stale_pending_cutoff + 1.minute)
+    describe ".stale_claimed" do
+      it "returns only claimed runs older than the stale cutoff" do
+        stale_run = create(:agent_run, :queued, temporal_workflow_id: "claimed")
+        stale_run.update_column(:updated_at, described_class.stale_claimed_cutoff - 1.minute)
+        fresh_run = create(:agent_run, :queued, temporal_workflow_id: "claimed")
+        fresh_run.update_column(:updated_at, described_class.stale_claimed_cutoff + 1.minute)
         create(:agent_run, :running, started_at: described_class.stale_running_cutoff - 1.minute)
 
-        expect(described_class.stale_pending).to contain_exactly(stale_run)
+        expect(described_class.stale_claimed).to contain_exactly(stale_run)
       end
     end
 
     describe ".stale_for_cleanup" do
-      it "includes stale running and pending runs" do
+      it "includes stale running and stale claimed runs" do
         stale_running = create(:agent_run, :running, started_at: described_class.stale_running_cutoff - 1.minute)
-        stale_pending = create(:agent_run, status: "pending")
-        stale_pending.update_column(:updated_at, described_class.stale_pending_cutoff - 1.minute)
+        stale_claimed = create(:agent_run, :queued, temporal_workflow_id: "claimed")
+        stale_claimed.update_column(:updated_at, described_class.stale_claimed_cutoff - 1.minute)
         create(:agent_run, :running, started_at: described_class.stale_running_cutoff + 1.minute)
 
-        expect(described_class.stale_for_cleanup).to contain_exactly(stale_running, stale_pending)
+        expect(described_class.stale_for_cleanup).to contain_exactly(stale_running, stale_claimed)
       end
     end
 
@@ -270,15 +271,14 @@ RSpec.describe AgentRun do
     end
 
     describe ".active" do
-      it "includes pending and running runs but not queued" do
-        pending_run = create(:agent_run)
+      it "includes running runs but not queued or completed" do
         running_run = create(:agent_run, :running)
         create(:agent_run, :completed)
         create(:agent_run, :queued)
 
         active = described_class.active
-        expect(active).to include(pending_run, running_run)
-        expect(active.count).to eq(2)
+        expect(active).to include(running_run)
+        expect(active.count).to eq(1)
       end
     end
 
@@ -470,17 +470,13 @@ RSpec.describe AgentRun do
       end
 
       it "returns false when status is not queued" do
-        agent_run = build(:agent_run)
+        agent_run = build(:agent_run, :running)
 
         expect(agent_run.queued?).to be false
       end
     end
 
     describe "#active?" do
-      it "returns true for pending status" do
-        expect(build(:agent_run, status: "pending").active?).to be true
-      end
-
       it "returns true for running status" do
         expect(build(:agent_run, :running).active?).to be true
       end
@@ -541,8 +537,8 @@ RSpec.describe AgentRun do
         expect(build(:agent_run, :rate_limited).finished?).to be true
       end
 
-      it "returns false for pending status" do
-        expect(build(:agent_run).finished?).to be false
+      it "returns false for queued status" do
+        expect(build(:agent_run, :queued).finished?).to be false
       end
 
       it "returns false for running status" do
@@ -794,7 +790,7 @@ RSpec.describe AgentRun do
       end
 
       it "clears stale completed_at to prevent negative duration" do
-        agent_run = create(:agent_run, status: "pending", completed_at: 1.hour.ago)
+        agent_run = create(:agent_run, :queued, completed_at: 1.hour.ago)
 
         agent_run.start!
 
@@ -1492,11 +1488,10 @@ RSpec.describe AgentRun do
       other_project = create(:project)
 
       create(:agent_run, :running, project: project)
-      create(:agent_run, project: project) # pending (default status)
       create(:agent_run, :completed, project: project)
       create(:agent_run, :running, project: other_project)
 
-      expect(described_class.active_count_for_project(project)).to eq(2)
+      expect(described_class.active_count_for_project(project)).to eq(1)
     end
 
     it "returns zero when no active runs exist" do
@@ -1633,7 +1628,9 @@ RSpec.describe AgentRun do
 
   describe ".peek_next_queued_run" do
     def claim_peeked_run
-      described_class.claim_next_queued_run(target_id: described_class.peek_next_queued_run.id)
+      run = described_class.claim_next_queued_run(target_id: described_class.peek_next_queued_run.id)
+      run&.update!(status: "running", started_at: Time.current)
+      run
     end
 
     it "returns the highest-priority queued run without changing status" do
@@ -1833,14 +1830,16 @@ RSpec.describe AgentRun do
   end
 
   describe ".claim_next_queued_run" do
-    it "claims a specific queued run and transitions to pending" do
+    it "claims a specific queued run by setting temporal_workflow_id" do
       run = create(:agent_run, :queued)
 
       claimed = described_class.claim_next_queued_run(target_id: run.id)
 
       expect(claimed).to eq(run)
-      expect(claimed.status).to eq("pending")
-      expect(run.reload.status).to eq("pending")
+      expect(claimed.temporal_workflow_id).to eq("claimed")
+      expect(claimed.status).to eq("queued")
+      expect(run.reload.temporal_workflow_id).to eq("claimed")
+      expect(run.reload.status).to eq("queued")
     end
 
     it "returns nil when the target run is no longer queued" do
@@ -2039,7 +2038,7 @@ RSpec.describe AgentRun do
 
   describe "constants" do
     it "defines valid STATUSES" do
-      expect(described_class::STATUSES).to eq(%w[queued pending running paused completed no_output failed cancelled timeout retried auth_expired rate_limited])
+      expect(described_class::STATUSES).to eq(%w[queued running paused completed no_output failed cancelled timeout retried auth_expired rate_limited])
     end
 
     it "defines valid AGENT_TYPES" do
@@ -2056,9 +2055,9 @@ RSpec.describe AgentRun do
   end
 
   describe "defaults" do
-    it "defaults status to pending" do
+    it "defaults status to queued" do
       agent_run = create(:agent_run)
-      expect(agent_run.status).to eq("pending")
+      expect(agent_run.status).to eq("queued")
     end
 
     it "defaults iterations to 0" do
@@ -2132,6 +2131,7 @@ RSpec.describe AgentRun do
       allow(project).to receive(:broadcast_agent_runs_update)
       allow(project).to receive(:broadcast_agent_runs_list_update)
       allow(project).to receive(:broadcast_stats_update)
+      allow(project).to receive(:broadcast_cost_snapshot_update)
       allow(project).to receive(:broadcast_agent_run_detail_update)
 
       agent_run = create(:agent_run, project: project)
@@ -2139,6 +2139,7 @@ RSpec.describe AgentRun do
       expect(project).to have_received(:broadcast_agent_runs_update)
       expect(project).to have_received(:broadcast_agent_runs_list_update)
       expect(project).to have_received(:broadcast_stats_update)
+      expect(project).to have_received(:broadcast_cost_snapshot_update)
       expect(project).to have_received(:broadcast_agent_run_detail_update).with(agent_run)
     end
 
@@ -2146,12 +2147,14 @@ RSpec.describe AgentRun do
       allow(project).to receive(:broadcast_agent_runs_update)
       allow(project).to receive(:broadcast_agent_runs_list_update)
       allow(project).to receive(:broadcast_stats_update)
+      allow(project).to receive(:broadcast_cost_snapshot_update)
       allow(project).to receive(:broadcast_agent_run_detail_update)
       agent_run = create(:agent_run, project: project)
 
       expect(project).to receive(:broadcast_agent_runs_update).once
       expect(project).to receive(:broadcast_agent_runs_list_update).once
       expect(project).to receive(:broadcast_stats_update).once
+      expect(project).to receive(:broadcast_cost_snapshot_update).once
       expect(project).to receive(:broadcast_agent_run_detail_update).with(agent_run).once
 
       agent_run.update!(status: "running", started_at: Time.current)
@@ -2161,12 +2164,14 @@ RSpec.describe AgentRun do
       allow(project).to receive(:broadcast_agent_runs_update)
       allow(project).to receive(:broadcast_agent_runs_list_update)
       allow(project).to receive(:broadcast_stats_update)
+      allow(project).to receive(:broadcast_cost_snapshot_update)
       allow(project).to receive(:broadcast_agent_run_detail_update)
       agent_run = create(:agent_run, project: project, status: "running", started_at: Time.current)
 
       expect(project).not_to receive(:broadcast_agent_runs_update)
       expect(project).not_to receive(:broadcast_agent_runs_list_update)
       expect(project).not_to receive(:broadcast_stats_update)
+      expect(project).not_to receive(:broadcast_cost_snapshot_update)
       expect(project).to receive(:broadcast_agent_run_detail_update).with(agent_run).once
 
       agent_run.update!(tokens_input: 1000, tokens_output: 500, cost_cents: 10)
@@ -2179,6 +2184,7 @@ RSpec.describe AgentRun do
         allow(project).to receive(:broadcast_agent_runs_update)
         allow(project).to receive(:broadcast_agent_runs_list_update)
         allow(project).to receive(:broadcast_stats_update)
+        allow(project).to receive(:broadcast_cost_snapshot_update)
         allow(project).to receive(:broadcast_agent_run_detail_update)
         allow(project).to receive(:broadcast_issues_update)
       end
@@ -2191,17 +2197,16 @@ RSpec.describe AgentRun do
       end
 
       it "broadcasts issues update when transitioning from nil to a blocking status (create)" do
-        # Eagerly create issue so its own after_commit broadcast doesn't interfere
         issue
         expect(project).to receive(:broadcast_issues_update).once
-        create(:agent_run, project: project, issue: issue, status: "pending")
+        create(:agent_run, project: project, issue: issue, status: "running", started_at: Time.current)
       end
 
       it "does not broadcast issues update for intermediate transitions within blocking statuses" do
-        agent_run = create(:agent_run, project: project, issue: issue, status: "pending")
+        agent_run = create(:agent_run, project: project, issue: issue, status: "running", started_at: Time.current)
 
         expect(project).not_to receive(:broadcast_issues_update)
-        agent_run.update!(status: "running", started_at: Time.current)
+        agent_run.update!(status: "paused", paused_at: Time.current)
       end
 
       it "does not broadcast issues update for non-issue runs" do
@@ -2784,8 +2789,8 @@ RSpec.describe AgentRun do
       expect(agent_run.current_phase_group).to eq("queue")
     end
 
-    it "returns 'queue' for pending runs" do
-      agent_run = create(:agent_run, status: "pending")
+    it "returns 'queue' for queued runs with temporal_workflow_id (claimed)" do
+      agent_run = create(:agent_run, status: "queued", temporal_workflow_id: "claimed")
       expect(agent_run.current_phase_group).to eq("queue")
     end
 
@@ -2911,7 +2916,7 @@ RSpec.describe AgentRun do
 
   describe "container metrics collection callback" do
     it "enqueues ContainerMetricsCollectionJob when transitioning to running with container_id" do
-      agent_run = create(:agent_run, status: "pending", container_id: "abc123")
+      agent_run = create(:agent_run, :queued, container_id: "abc123")
 
       expect {
         agent_run.update!(status: "running", started_at: Time.current)
@@ -2919,7 +2924,7 @@ RSpec.describe AgentRun do
     end
 
     it "does not enqueue when transitioning to running without container_id" do
-      agent_run = create(:agent_run, status: "pending", container_id: nil)
+      agent_run = create(:agent_run, :queued, container_id: nil)
 
       expect {
         agent_run.update!(status: "running", started_at: Time.current)
