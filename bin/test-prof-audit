@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 OUTPUT_DIR="tmp/test_prof"
 EXCLUDE_PATTERN="spec/performance/**/*_spec.rb,spec/system/**/*_spec.rb"
+FAILED_RUNS=()
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -37,6 +38,7 @@ EOF
 
 run_and_capture() {
   local name="$1"
+  local status
   shift
 
   echo
@@ -44,6 +46,12 @@ run_and_capture() {
   echo "Command: $*"
 
   TEST_PROF_REPORT="$name" COVERAGE=false "$@" | tee "${OUTPUT_DIR}/${name}.log"
+  status=${PIPESTATUS[0]}
+
+  if (( status != 0 )); then
+    echo "Run failed with exit status ${status}; keeping ${OUTPUT_DIR}/${name}.log for inspection."
+    FAILED_RUNS+=("${name}:${status}")
+  fi
 }
 
 run_hotspot_map() {
@@ -99,3 +107,10 @@ case "${1:-}" in
     exit 1
     ;;
 esac
+
+if (( ${#FAILED_RUNS[@]} > 0 )); then
+  echo
+  echo "Completed with failed profiling runs:"
+  printf '  %s\n' "${FAILED_RUNS[@]}"
+  exit 1
+fi

@@ -119,7 +119,7 @@ Measured improvement:
 - Reused the already-created request `user` as `created_by` for the top-level `github_token`.
 - Reused the same `user` as `created_by` for the top-level `project`.
 - Reused the same `user` for same-account secondary projects in sort scenarios.
-- Used `:without_creator` / `:without_creator`-project for foreign-account authorization scenarios.
+- Used `:without_creator` for both `github_token` and `project` in foreign-account authorization scenarios.
 
 Measured improvement:
 
@@ -159,5 +159,5 @@ These are the next low-risk candidates, in order:
 
 - `let_it_be` remains out of scope. The repo's tenant-context wrapper still makes `before(:context)` setup risky.
 - `spec/models/agent_run_spec.rb` had 15 failures because `Docker` was not loaded in this environment. The passing-example timings are still useful as a hotspot signal, but a clean rerun is required before making file-level optimization decisions there.
-- `spec/temporal/workflows/git_hub_poll_workflow_spec.rb` had 1 failure due `Temporalio::Workflow::Definition::VersioningBehavior` not being available during the run. Fix that first, then re-profile.
+- `spec/temporal/workflows/git_hub_poll_workflow_spec.rb` had 1 failure due to `Temporalio::Workflow::Definition::VersioningBehavior` not being available during the run. Fix that first, then re-profile.
 - `FDOC` is now wired into the audit runner, but this report intentionally prioritizes the stronger signals already captured from `FPROF`, `EVENT_PROF`, `RD_PROF`, `TPS_PROF`, and the measured request-spec improvements. Run `bin/test-prof-audit file <path>` or `bin/test-prof-audit requests-deep` to collect the current FactoryDoctor output before the next optimization wave.
