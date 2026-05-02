@@ -99,6 +99,19 @@ RSpec.describe "ChatSessions" do
 
         expect(response).to redirect_to(chat_session_path(ChatSession.last))
       end
+
+      it "returns an html response when the create rate limit is exceeded" do
+        Rails.cache.clear
+
+        10.times do |index|
+          post chat_sessions_path, params: { mode: "api", title: "Chat #{index}" }
+        end
+
+        post chat_sessions_path, params: { mode: "api", title: "Blocked chat" }
+
+        expect(response).to redirect_to(chat_sessions_path)
+        expect(flash[:alert]).to eq("Rate limit exceeded")
+      end
     end
   end
 
@@ -157,6 +170,30 @@ RSpec.describe "ChatSessions" do
         expect(response.body).to include("Assistant is typing")
         expect(response.body).to include("Rendered markdown")
       end
+
+      it "loads the newest 50 messages on the initial html render" do
+        101.times { |index| create(:chat_message, chat_session: chat_session, content: "Message #{index}") }
+
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Message 100")
+        expect(response.body).to include("Message 51")
+        expect(response.body).not_to include("Message 50")
+      end
+
+      it "pins the active session in the sidebar when it falls outside the first batch" do
+        chat_session.update_columns(title: "Pinned session", updated_at: 3.days.ago)
+
+        55.times do |index|
+          create(:chat_session, account: account, created_by: user, title: "Recent #{index}", updated_at: index.minutes.ago)
+        end
+
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include(%(data-session-id="#{chat_session.id}"))
+      end
     end
   end
 
@@ -178,6 +215,29 @@ RSpec.describe "ChatSessions" do
         expect(response.body).to match(/<turbo-frame[^>]*id="older_messages_next"/)
         expect(response.body).to match(/<turbo-frame[^>]*id="older_messages_next_next"/)
       end
+    end
+  end
+
+  describe "GET /chat/sidebar_page" do
+    before { sign_in user }
+
+    it "paginates with a stable updated_at/id cursor" do
+      sessions = 55.times.map do |index|
+        create(:chat_session, account: account, created_by: user, title: "Session #{index}", updated_at: index.minutes.ago)
+      end
+      cursor_session = sessions[49]
+
+      get sidebar_page_chat_sessions_path,
+        params: {
+          before_updated_at: cursor_session.updated_at.iso8601(6),
+          before_id: cursor_session.id
+        },
+        headers: { "Turbo-Frame" => "sidebar_page_#{cursor_session.id}" }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Session 50")
+      expect(response.body).to include("Session 54")
+      expect(response.body).not_to include("Session 49")
     end
   end
 

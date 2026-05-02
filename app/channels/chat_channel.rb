@@ -21,6 +21,8 @@ class ChatChannel < ApplicationCable::Channel
     TenantContext.with(current_user.account) do
       content = data["content"]
       return if content.blank?
+      return broadcast_event("error", { message: "You are not authorized to send messages" }) unless authorized_to_send_messages?
+      return broadcast_event("error", { message: "Rate limit exceeded" }) if rate_limited?
 
       stream_message_id = SecureRandom.uuid
       broadcast_event("message_start", { message_id: stream_message_id, model: @chat_session.model })
@@ -65,6 +67,14 @@ class ChatChannel < ApplicationCable::Channel
 
   def stream_name
     "chat_session:#{@chat_session.id}"
+  end
+
+  def authorized_to_send_messages?
+    ChatMessagePolicy.new(current_user, ChatMessage.new(chat_session: @chat_session)).create?
+  end
+
+  def rate_limited?
+    ChatMessages::RateLimit.exceeded?(user_id: current_user.id, chat_session_id: @chat_session.id)
   end
 
   def broadcast_event(type, data)

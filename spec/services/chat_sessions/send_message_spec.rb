@@ -184,7 +184,7 @@ RSpec.describe ChatSessions::SendMessage do
         tool_result_msg = chat_session.messages.find_by(role: "tool")
         expect(tool_result_msg).to be_present
         expect(tool_result_msg.tool_call_id).to eq("call_1")
-        expect(tool_result_msg.content).to be_nil
+        expect(JSON.parse(tool_result_msg.content)).to eq({ "status" => "not_implemented" })
         expect(tool_result_msg.tool_result).to eq({ "status" => "not_implemented" })
       end
 
@@ -199,6 +199,29 @@ RSpec.describe ChatSessions::SendMessage do
         )
 
         expect(roles).to eq(%w[user assistant assistant tool])
+      end
+
+      it "replays persisted tool results in follow-up turns" do
+        described_class.call(
+          chat_session: chat_session, content: "Search for test", llm_client: tool_llm_client
+        )
+
+        follow_up_client = instance_double(Proc)
+        allow(follow_up_client).to receive(:call) do |conversation|
+          tool_entry = conversation.find { |message| message[:role] == "tool" }
+
+          expect(tool_entry).to include(
+            content: { "status" => "not_implemented" },
+            tool_call_id: "call_1",
+            tool_name: "search"
+          )
+
+          llm_response
+        end
+
+        described_class.call(chat_session: chat_session, content: "What happened?", llm_client: follow_up_client)
+
+        expect(follow_up_client).to have_received(:call)
       end
     end
   end

@@ -6,8 +6,8 @@ class ChatMessagesController < ApplicationController
   skip_after_action :verify_authorized, only: :index
   before_action :set_chat_session
 
-  rate_limit to: 60, within: 1.minute,
-    by: -> { "#{current_user&.id}:#{params[:chat_session_id]}" },
+  rate_limit to: ChatMessages::RateLimit::MAX_REQUESTS, within: ChatMessages::RateLimit::PERIOD,
+    by: -> { ChatMessages::RateLimit.identifier(user_id: current_user&.id, chat_session_id: params[:chat_session_id]) },
     with: -> { render json: { error: "Rate limit exceeded" }, status: :too_many_requests },
     only: :create
 

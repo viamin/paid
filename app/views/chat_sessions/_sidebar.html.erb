@@ -25,8 +25,8 @@
       <% sessions.each do |chat_session| %>
         <%= render "session_card", chat_session: chat_session %>
       <% end %>
-      <% if local_assigns.fetch(:sidebar_has_more, false) %>
-        <%= turbo_frame_tag "sidebar_page_2", src: sidebar_page_chat_sessions_path(page: 2), loading: :lazy do %>
+      <% if local_assigns.fetch(:sidebar_has_more, false) && local_assigns[:sidebar_next_frame_id] && local_assigns[:sidebar_next_params] %>
+        <%= turbo_frame_tag sidebar_next_frame_id, src: sidebar_page_chat_sessions_path(sidebar_next_params), loading: :lazy do %>
           <p class="py-3 text-center text-xs text-slate-400">Loading more…</p>
         <% end %>
       <% end %>

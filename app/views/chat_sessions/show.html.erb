@@ -9,6 +9,8 @@
                  active_session: @chat_session,
                  sessions: @sessions,
                  sidebar_has_more: @sidebar_has_more,
+                 sidebar_next_frame_id: @sidebar_next_frame_id,
+                 sidebar_next_params: @sidebar_next_params,
                  chat_session: @new_chat_session,
                  available_providers: @available_providers,
                  available_projects: @available_projects,
@@ -100,7 +102,7 @@
                 <div class="space-y-5"
                      data-chat-target="messages"
                      data-chat-stream-target="messageContainer">
-                  <% if @pagy&.previous %>
+                  <% if @has_older_messages %>
                     <%= turbo_frame_tag "older_messages",
                           src: older_messages_chat_session_path(@chat_session, before: @chat_messages.first.id),
                           loading: :lazy do %>

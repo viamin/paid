@@ -1,13 +1,15 @@
 # frozen_string_literal: true
 
 class ChatSessionsController < ApplicationController
+  CREATE_RATE_LIMIT = 10
+  CREATE_RATE_LIMIT_PERIOD = 1.minute
+  CREATE_RATE_LIMIT_FALLBACK_CACHE = ActiveSupport::Cache::MemoryStore.new
+  MESSAGE_PAGE_SIZE = 50
+  SIDEBAR_PAGE_SIZE = 50
+
   skip_after_action :verify_authorized, only: %i[index sidebar_page]
   before_action :set_chat_session, only: %i[show update destroy older_messages]
-
-  rate_limit to: 10, within: 1.minute,
-    by: -> { current_account&.id },
-    with: -> { render json: { error: "Rate limit exceeded" }, status: :too_many_requests },
-    only: :create
+  before_action :enforce_create_rate_limit, only: :create
 
   def index
     respond_to do |format|
@@ -30,9 +32,9 @@ class ChatSessionsController < ApplicationController
     authorize @chat_session, :show?
     before_id = params.require(:before)
     frame_id = request.headers["Turbo-Frame"].presence || "older_messages"
-    messages = @chat_session.messages.chronological
-      .where("chat_messages.id < ?", before_id)
-      .last(50)
+    messages = latest_messages(
+      @chat_session.messages.chronological.where("chat_messages.id < ?", before_id)
+    )
 
     has_more = @chat_session.messages.where("chat_messages.id < ?", messages.first&.id).exists? if messages.any?
 
@@ -41,13 +43,18 @@ class ChatSessionsController < ApplicationController
   end
 
   def sidebar_page
-    page = [ params.fetch(:page, 1).to_i, 1 ].max
-    @sessions = session_scope.offset((page - 1) * 50).limit(51)
-    has_more = @sessions.size > 50
-    @sessions = @sessions.first(50)
-    @next_page = has_more ? page + 1 : nil
+    sidebar = sidebar_batch(
+      before_updated_at: params[:before_updated_at],
+      before_id: params[:before_id],
+      exclude_id: params[:exclude_id]
+    )
 
-    render partial: "chat_sessions/sidebar_page", locals: { sessions: @sessions, current_page: page, next_page: @next_page }
+    render partial: "chat_sessions/sidebar_page", locals: {
+      sessions: sidebar[:sessions],
+      frame_id: request.headers["Turbo-Frame"].presence || sidebar[:frame_id],
+      next_frame_id: sidebar[:next_frame_id],
+      next_params: sidebar[:next_params]
+    }
   end
 
   def create
@@ -69,11 +76,10 @@ class ChatSessionsController < ApplicationController
 
     respond_to do |format|
       format.html do
-        load_sidebar_data
+        load_sidebar_data(active_session: @chat_session)
         scope = @chat_session.messages.chronological
-        total = scope.count
-        last_page = [ (total.to_f / 50).ceil, 1 ].max
-        @pagy, @chat_messages = pagy(scope, limit: 50, page: last_page)
+        @chat_messages = latest_messages(scope)
+        @has_older_messages = scope.where("chat_messages.id < ?", @chat_messages.first.id).exists? if @chat_messages.any?
       end
 
       format.json do
@@ -163,16 +169,6 @@ class ChatSessionsController < ApplicationController
     }
   end
 
-  def load_sidebar_data
-    @sessions = session_scope.limit(51)
-    @sidebar_has_more = @sessions.size > 50
-    @sessions = @sessions.first(50)
-    @new_chat_session = ChatSession.new(mode: "api")
-    @available_providers = current_user.providers.ordered
-    @available_projects = current_account.projects.order(:name)
-    @available_models = LlmModel.active.order(:provider, :display_name)
-  end
-
   def session_scope
     policy_scope(ChatSession)
       .with_preview_content
@@ -183,7 +179,7 @@ class ChatSessionsController < ApplicationController
         "(SELECT COALESCE(SUM(cost_cents),0) FROM token_usages WHERE token_usages.chat_session_id = chat_sessions.id) AS preloaded_cost_cents"
       )
       .includes(:project, :provider, :chat_session_projects, :projects)
-      .order(updated_at: :desc)
+      .order(updated_at: :desc, id: :desc)
   end
 
   def pagination_meta(pagy)
@@ -192,5 +188,109 @@ class ChatSessionsController < ApplicationController
 
   def session_projects(session)
     (session.projects.to_a + [ session.project ].compact).uniq(&:id)
+  end
+
+  def render_create_rate_limit_exceeded
+    respond_to do |format|
+      format.turbo_stream { redirect_back fallback_location: chat_sessions_path, alert: "Rate limit exceeded" }
+      format.html { redirect_back fallback_location: chat_sessions_path, alert: "Rate limit exceeded" }
+      format.json { render json: { error: "Rate limit exceeded" }, status: :too_many_requests }
+    end
+  end
+
+  def latest_messages(scope, limit: MESSAGE_PAGE_SIZE)
+    scope.reorder(created_at: :desc, id: :desc).limit(limit).reverse
+  end
+
+  def enforce_create_rate_limit
+    key = "chat_sessions:create:#{current_account&.id}"
+    count = create_rate_limit_cache.increment(key, 1, expires_in: CREATE_RATE_LIMIT_PERIOD)
+    count ||= initialize_rate_limit_count(key)
+    return if count <= CREATE_RATE_LIMIT
+
+    render_create_rate_limit_exceeded
+  end
+
+  def load_sidebar_data(active_session: nil)
+    sidebar = sidebar_batch
+    sidebar = pinned_sidebar_batch(active_session) if active_session_needs_pinning?(active_session:, sessions: sidebar[:sessions])
+
+    @sessions = sidebar[:sessions]
+    @sidebar_has_more = sidebar[:next_frame_id].present?
+    @sidebar_next_frame_id = sidebar[:next_frame_id]
+    @sidebar_next_params = sidebar[:next_params]
+    @new_chat_session = ChatSession.new(mode: "api")
+    @available_providers = current_user.providers.ordered
+    @available_projects = current_account.projects.order(:name)
+    @available_models = LlmModel.active.order(:provider, :display_name)
+  end
+
+  def pinned_sidebar_batch(active_session)
+    sidebar = sidebar_batch(limit: SIDEBAR_PAGE_SIZE - 1, exclude_id: active_session.id)
+
+    {
+      sessions: [ active_session ] + sidebar[:sessions],
+      next_frame_id: sidebar[:next_frame_id],
+      next_params: sidebar[:next_params]
+    }
+  end
+
+  def active_session_needs_pinning?(active_session:, sessions:)
+    active_session.present? && sessions.none? { |session| session.id == active_session.id }
+  end
+
+  def sidebar_batch(before_updated_at: nil, before_id: nil, exclude_id: nil, limit: SIDEBAR_PAGE_SIZE)
+    sessions = apply_sidebar_cursor(
+      session_scope,
+      before_updated_at:,
+      before_id:,
+      exclude_id:
+    ).limit(limit + 1).to_a
+
+    visible_sessions = sessions.first(limit)
+    cursor_session = visible_sessions.last if sessions.size > limit
+
+    {
+      sessions: visible_sessions,
+      frame_id: sidebar_frame_id(before_updated_at:, before_id:),
+      next_frame_id: cursor_session ? sidebar_frame_id(before_updated_at: cursor_session.updated_at.iso8601(6), before_id: cursor_session.id) : nil,
+      next_params: cursor_session ? sidebar_cursor_params(cursor_session, exclude_id:) : nil
+    }
+  end
+
+  def apply_sidebar_cursor(scope, before_updated_at:, before_id:, exclude_id:)
+    scoped = exclude_id.present? ? scope.where.not(id: exclude_id) : scope
+    return scoped if before_updated_at.blank? || before_id.blank?
+
+    scoped.where(
+      "chat_sessions.updated_at < :updated_at OR (chat_sessions.updated_at = :updated_at AND chat_sessions.id < :id)",
+      updated_at: Time.iso8601(before_updated_at),
+      id: before_id
+    )
+  rescue ArgumentError
+    scoped.none
+  end
+
+  def sidebar_cursor_params(session, exclude_id:)
+    {
+      before_updated_at: session.updated_at.iso8601(6),
+      before_id: session.id,
+      exclude_id:
+    }.compact
+  end
+
+  def sidebar_frame_id(before_updated_at:, before_id:)
+    return "sidebar_page_1" if before_updated_at.blank? || before_id.blank?
+
+    "sidebar_page_#{before_id}"
+  end
+
+  def initialize_rate_limit_count(key)
+    create_rate_limit_cache.write(key, 1, expires_in: CREATE_RATE_LIMIT_PERIOD)
+    1
+  end
+
+  def create_rate_limit_cache
+    Rails.cache.is_a?(ActiveSupport::Cache::NullStore) ? CREATE_RATE_LIMIT_FALLBACK_CACHE : Rails.cache
   end
 end

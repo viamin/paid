@@ -77,6 +77,31 @@ RSpec.describe ChatChannel do
       perform :send_message, content: ""
     end
 
+    it "rejects users who cannot create chat messages" do
+      viewer = create(:user, :viewer, account: account)
+
+      stub_connection current_user: viewer
+      subscribe(session_id: chat_session.id)
+
+      expect(ChatSessions::SendMessage).not_to receive(:call)
+
+      expect {
+        perform :send_message, content: "Hello"
+      }.to have_broadcasted_to("chat_session:#{chat_session.id}")
+        .with(hash_including(type: "error", message: "You are not authorized to send messages"))
+    end
+
+    it "enforces the per-user per-session rate limit" do
+      allow(ChatMessages::RateLimit).to receive(:exceeded?).and_return(true)
+
+      expect(ChatSessions::SendMessage).not_to receive(:call)
+
+      expect {
+        perform :send_message, content: "Hello"
+      }.to have_broadcasted_to("chat_session:#{chat_session.id}")
+        .with(hash_including(type: "error", message: "Rate limit exceeded"))
+    end
+
     it "broadcasts a generic error for unexpected failures" do
       allow(ChatSessions::SendMessage).to receive(:call)
         .and_raise(StandardError, "provider failed")

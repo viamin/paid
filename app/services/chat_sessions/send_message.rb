@@ -77,11 +77,19 @@ module ChatSessions
       messages = messages.last(MAX_CONVERSATION_MESSAGES)
 
       messages.map do |msg|
-        { role: msg.role, content: msg.content }.tap do |entry|
+        { role: msg.role, content: conversation_content_for(msg) }.tap do |entry|
           entry[:tool_call_id] = msg.tool_call_id if msg.tool_call_id.present?
           entry[:tool_name] = msg.tool_name if msg.tool_name.present?
         end
       end
+    end
+
+    def conversation_content_for(message)
+      return message.tool_result if message.role == "tool" && message.tool_result.present?
+      return message.content if message.content.present?
+      return message.tool_result if message.tool_result.present?
+
+      nil
     end
 
     def execute_agent(conversation)
@@ -155,7 +163,7 @@ module ChatSessions
 
         tool_result_message = chat_session.messages.create!(
           role: "tool",
-          content: nil,
+          content: tool_result.to_json,
           tool_result: tool_result,
           tool_call_id: tool_call[:id],
           tool_name: tool_call[:name]
