@@ -33,8 +33,13 @@ module Activities
         goal: goal,
         respect_requested: input.key?(:agent_type) || input.key?(:provider_id)
       )
+      validate_requested_provider_resolution!(
+        project: project,
+        requested_provider_id: input[:provider_id],
+        resolved_provider_id: provider_id
+      )
 
-      validate_runnable_provider!(provider_id, agent_type, goal: goal)
+      validate_runnable_provider!(project: project, provider_id: provider_id, agent_type: agent_type, goal: goal)
 
       # Resolve and render prompt version if no custom prompt is provided.
       # Skip for untrusted issues to match the safety behavior in AgentRun#prompt_for_issue.
@@ -146,21 +151,14 @@ module Activities
     end
 
     def refresh_automatic_run_provider!(agent_run)
-      return unless agent_run.automatic?
+      return [ agent_run.provider_id, agent_run.agent_type ] unless agent_run.automatic?
 
-      provider_id, agent_type = resolve_provider_selection(
+      resolve_provider_selection(
         project: agent_run.project,
         requested_agent_type: nil,
         requested_provider_id: nil,
         goal: agent_run.goal,
         respect_requested: false
-      )
-      provider = Provider.find_by(id: provider_id) if provider_id
-      return unless provider
-
-      agent_run.update!(
-        provider: provider,
-        agent_type: agent_type
       )
     end
 
@@ -168,10 +166,10 @@ module Activities
       agent_run = AgentRun.find(agent_run_id)
 
       if agent_run.queued?
-        refresh_automatic_run_provider!(agent_run)
+        validate_and_sync_resumed_provider!(agent_run)
         agent_run.update!(status: "pending")
       elsif agent_run.status == "pending"
-        refresh_automatic_run_provider!(agent_run)
+        validate_and_sync_resumed_provider!(agent_run)
       else
         # "queued" and "pending" are the expected statuses here; ProcessRunQueueJob
         # may claim runs (queued->pending) before starting the workflow. Only warn
@@ -259,16 +257,85 @@ module Activities
       )
     end
 
-    def validate_runnable_provider!(provider_id, agent_type, goal:)
+    def validate_runnable_provider!(project:, provider_id:, agent_type:, goal:)
       return if goal.in?(NON_CONTAINER_GOALS)
 
-      return if provider_id.present?
+      provider = resolved_provider!(project: project, provider_id: provider_id)
+      if provider
+        raise_no_runnable_provider!(
+          "No runnable provider available for project (provider_id=#{provider.id}, enabled_for_agent_runs=#{provider.enabled_for_agent_runs?})"
+        ) unless provider.enabled_for_agent_runs?
+
+        warn_if_rate_limited(provider, project: project, goal: goal)
+        return
+      end
 
       provider_key = ProviderSupport.provider_key_for_agent_type(agent_type)
       return if ProviderSupport.container_executable_provider_key?(provider_key)
 
+      raise_no_runnable_provider!("No runnable provider available for project (agent_type=#{agent_type})")
+    end
+
+    def resolved_provider!(project:, provider_id:)
+      provider = AgentRuns::ProviderResolver.selected_provider(project: project, provider_id: provider_id)
+      raise_unresolved_provider!(project: project, provider_id: provider_id) if provider_id.present? && provider.nil?
+
+      provider
+    end
+
+    def validate_requested_provider_resolution!(project:, requested_provider_id:, resolved_provider_id:)
+      return if requested_provider_id.blank?
+      return if requested_provider_id.to_s == resolved_provider_id.to_s
+      return if AgentRuns::ProviderResolver.selected_provider(project: project, provider_id: requested_provider_id)
+
+      raise_unresolved_provider!(project: project, provider_id: requested_provider_id)
+    end
+
+    def raise_unresolved_provider!(project:, provider_id:)
+      return if provider_id.blank?
+
+      raise_no_runnable_provider!("No runnable provider available for project (project_id=#{project.id}, provider_id=#{provider_id}, resolved=false)")
+    end
+
+    def warn_if_rate_limited(provider, project:, goal:)
+      provider_state = provider.user.provider_states.find_by(provider_name: provider.state_key)
+      return unless provider_state&.rate_limited?
+
+      logger.warn(
+        message: "agent_execution.selected_provider_rate_limited",
+        project_id: project.id,
+        provider_id: provider.id,
+        provider_key: provider.provider_key,
+        provider_state_name: provider.state_key,
+        agent_type: Provider.agent_type_for(provider.provider_key),
+        goal: goal,
+        rate_limited_until: provider_state.rate_limited_until
+      )
+    end
+
+    def validate_and_sync_resumed_provider!(agent_run)
+      provider_id, agent_type = refresh_automatic_run_provider!(agent_run)
+      validate_runnable_provider!(
+        project: agent_run.project,
+        provider_id: provider_id,
+        agent_type: agent_type,
+        goal: agent_run.goal
+      )
+      sync_provider_selection!(agent_run, provider_id: provider_id, agent_type: agent_type)
+    end
+
+    def sync_provider_selection!(agent_run, provider_id:, agent_type:)
+      return if agent_run.provider_id == provider_id && agent_run.agent_type == agent_type
+
+      agent_run.update!(
+        provider: Provider.find_by(id: provider_id),
+        agent_type: agent_type
+      )
+    end
+
+    def raise_no_runnable_provider!(message)
       raise Temporalio::Error::ApplicationError.new(
-        "No runnable provider available for project (agent_type=#{agent_type})",
+        message,
         type: "NoRunnableProvider",
         non_retryable: true
       )

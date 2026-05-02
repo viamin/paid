@@ -182,6 +182,12 @@ Rails.application.routes.draw do
     # GitHub webhook receiver for PR reviews, merges, and comments
     post "github_webhooks", to: "github_webhooks#create"
 
+    # MCP server endpoint for chat agent tool use
+    scope :mcp do
+      get "sse", to: "mcp#sse", as: :mcp_sse
+      post "call", to: "mcp#call", as: :mcp_call
+    end
+
     # Billing API for external billing system integration
     get "billing/usage", to: "billing#usage"
     get "billing/plan", to: "billing#plan"

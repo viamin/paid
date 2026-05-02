@@ -187,6 +187,22 @@ RSpec.describe AutoReleaseEvaluationJob do
       expect(client).to have_received(:merge_pull_request)
     end
 
+    it "warns and skips when manifest lookup returns a non-file response" do
+      allow(client).to receive(:contents).and_return([])
+      allow(Rails.logger).to receive(:warn)
+
+      described_class.perform_now(project.id)
+
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "auto_release.fetch_version_failed",
+          project_id: project.id,
+          response_class: "Array"
+        )
+      )
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
     it "handles expected merge failures gracefully" do
       allow(client).to receive(:merge_pull_request).and_raise(
         GithubClient::ApiError.new("Merge conflict", status: 409)
