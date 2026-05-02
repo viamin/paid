@@ -6801,6 +6801,34 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger_types).to include("ci_failure")
       end
 
+      it "does not emit review_goal_retry when the failed run already posted a review" do
+        create(:agent_run, :failed,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42,
+          review_posted_at: 5.minutes.ago,
+          review_url: "https://github.com/example/repo/pull/42#pullrequestreview-1")
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("review_goal_retry")
+      end
+
+      it "does not emit review_goal_retry when the no_output run already posted a review" do
+        create(:agent_run, :no_output,
+          project: project,
+          goal: "review",
+          source_pull_request_number: 42,
+          review_posted_at: 5.minutes.ago,
+          review_url: "https://github.com/example/repo/pull/42#pullrequestreview-1")
+
+        result = activity.execute(project_id: project.id)
+
+        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(triggered_types).not_to include("review_goal_retry")
+      end
+
       it "does not escalate at retry limit when paid_agent is not the sole review method" do
         project.update!(review_settings: {
           "enabled" => true,
@@ -7315,6 +7343,33 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       expect(result1[:prs_to_trigger].size).to eq(1)
       expect(result2[:prs_to_trigger].size).to eq(1)
+    end
+
+    it "does not retry when the failed run already posted a review" do
+      run = project.agent_runs.where(goal: "review", source_pull_request_number: 42).first
+      run.update!(review_posted_at: 5.minutes.ago, review_url: "https://github.com/example/repo/pull/42#pullrequestreview-1")
+
+      result = activity.execute(project_id: project.id)
+
+      triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+      expect(triggered_types).not_to include("paid_agent_review_pending")
+    end
+
+    it "re-triggers review when a newer create_pr run exists after a posted-but-failed review" do
+      run = project.agent_runs.where(goal: "review", source_pull_request_number: 42).first
+      run.update!(review_posted_at: 30.minutes.ago, review_url: "https://github.com/example/repo/pull/42#pullrequestreview-1")
+
+      create(:agent_run,
+        project: project, issue: failed_review_issue,
+        source_pull_request_number: 42,
+        goal: "create_pr", status: "completed",
+        trigger_type: "automatic",
+        started_at: 10.minutes.ago, completed_at: 10.minutes.ago)
+
+      result = activity.execute(project_id: project.id)
+
+      triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+      expect(triggered_types).to include("paid_agent_review_pending")
     end
   end
 
@@ -7862,6 +7917,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(trigger_types).to include("paid_agent_review_pending")
       expect(trigger_types).not_to include("escalate_to_owner")
     end
+
+    it "does not re-emit paid_agent_review_pending when the no_output run already posted a review" do
+      run = project.agent_runs.where(goal: "review", source_pull_request_number: 42).first
+      run.update!(review_posted_at: 5.minutes.ago, review_url: "https://github.com/example/repo/pull/42#pullrequestreview-1")
+
+      result = activity.execute(project_id: project.id)
+
+      triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+      expect(triggered_types).not_to include("paid_agent_review_pending")
+    end
   end
 
   context "when paid_agent review-goal reaches the retry limit with no_output runs" do
@@ -7891,6 +7956,44 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       trigger = result[:prs_to_trigger].first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("escalate_to_owner")
+      expect(trigger_types).not_to include("paid_agent_review_pending")
+    end
+  end
+
+  context "when paid_agent review-goal has multiple posted-but-failed runs" do
+    let(:posted_failed_review_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+    end
+
+    before do
+      enable_paid_agent_review!(max_review_rounds: 3)
+      3.times do |index|
+        create(:agent_run,
+          project: project, issue: posted_failed_review_issue,
+          source_pull_request_number: 42,
+          goal: "review", status: "failed",
+          started_at: (3 - index).hours.ago,
+          completed_at: (3 - index).hours.ago,
+          review_posted_at: (3 - index).hours.ago,
+          review_url: "https://github.com/example/repo/pull/42#pullrequestreview-#{index + 1}")
+      end
+      stub_github_for_pr(draft: true, reviews: [
+        { id: 200, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+         body: "Found issues.", submitted_at: 10.minutes.ago }
+      ])
+    end
+
+    it "does not treat posted failures as exhausting the retry budget" do
+      result = activity.execute(project_id: project.id)
+
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+      expect(trigger_types).to include("review_bot_comments")
+      expect(trigger_types).not_to include("escalate_to_owner")
       expect(trigger_types).not_to include("paid_agent_review_pending")
     end
   end
