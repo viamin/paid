@@ -49,13 +49,15 @@ module ChatSessionsHelper
   end
 
   def chat_session_preview(chat_session)
-    content = chat_session.messages
-      .where.not(role: "system")
-      .where.not(content: [ nil, "" ])
-      .order(:created_at)
-      .pick(:content)
+    preview_cache[chat_session.id] ||= begin
+      content = chat_session.messages
+        .where.not(role: "system")
+        .where.not(content: [ nil, "" ])
+        .order(:created_at)
+        .pick(:content)
 
-    content.to_s.tr("\n", " ").truncate(64).presence || "Untitled chat"
+      content.to_s.tr("\n", " ").truncate(64).presence || "Untitled chat"
+    end
   end
 
   def chat_message_bubble_classes(message)
@@ -116,6 +118,10 @@ module ChatSessionsHelper
   end
 
   private
+
+  def preview_cache
+    @preview_cache ||= {}
+  end
 
   def badge_label(label, classes)
     tag.span(label, class: "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold #{classes}")

@@ -1,15 +1,18 @@
+<% session_title = chat_session_title(chat_session) %>
+<% session_preview = chat_session_preview(chat_session) %>
+
 <%= link_to chat_session_path(chat_session),
             id: dom_id(chat_session),
             class: "chat-session-card block rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md",
             data: {
               chat_session_list_target: "card",
               session_id: chat_session.id,
-              search_text: "#{chat_session_title(chat_session)} #{chat_session_preview(chat_session)} #{chat_session.project&.name} #{chat_session.provider&.display_name} #{chat_session.model}".downcase
+              search_text: "#{session_title} #{session_preview} #{chat_session.project&.name} #{chat_session.provider&.display_name} #{chat_session.model}".downcase
             } do %>
   <div class="flex items-start justify-between gap-3">
     <div class="min-w-0 flex-1">
-      <p class="truncate text-sm font-semibold text-slate-900"><%= chat_session_title(chat_session) %></p>
-      <p class="mt-1 truncate text-xs text-slate-500"><%= chat_session_preview(chat_session) %></p>
+      <p class="truncate text-sm font-semibold text-slate-900"><%= session_title %></p>
+      <p class="mt-1 truncate text-xs text-slate-500"><%= session_preview %></p>
     </div>
     <%= chat_session_status_badge(chat_session) %>
   </div>
