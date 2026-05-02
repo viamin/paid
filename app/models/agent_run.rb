@@ -1360,14 +1360,14 @@ class AgentRun < ApplicationRecord
   # @param options [Hash] Override default container options
   # @yield [self] The agent run with provisioned container
   # @return [Object] The return value of the block
-  def with_container(**options, &block)
+  def with_container(**options, &)
     Containers::Provision.with_container(
       agent_run: self,
       worktree_path: worktree_path.presence,
       **options
     ) do |service|
       @container_service = service
-      block.call(self)
+      yield(self)
     ensure
       @container_service = nil
     end

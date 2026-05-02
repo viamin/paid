@@ -107,7 +107,7 @@ module PromptEvolution
       end
 
       if sampled_ids.size < sample_size
-        sampled_ids.concat(leftover_ids.shuffle(random: random).first(sample_size - sampled_ids.size))
+        sampled_ids.concat(leftover_ids.sample(sample_size - sampled_ids.size, random: random))
       end
 
       AgentRun.where(id: sampled_ids.first(sample_size))

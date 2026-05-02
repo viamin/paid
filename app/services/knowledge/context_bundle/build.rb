@@ -106,7 +106,7 @@ module Knowledge
           chunks = a.active_ordered_chunks.to_a
           total_chunks += chunks.size
           if chunks.any?
-            chunk_lines = chunks.map { |c| "- #{c.content.gsub("\n", " ").truncate(200)}" }
+            chunk_lines = chunks.map { |c| "- #{c.content.tr("\n", " ").truncate(200)}" }
             "#### #{section_title}\n#{chunk_lines.join("\n")}"
           else
             "#### #{section_title}\n- #{a.content.to_s.truncate(300)}"

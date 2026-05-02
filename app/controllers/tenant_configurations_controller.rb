@@ -66,13 +66,13 @@ class TenantConfigurationsController < ApplicationController
   end
 
   def feature_flag_rollout_params
-    params.fetch(:feature_flag_rollouts, ActionController::Parameters.new).permit(
+    params.fetch(:feature_flag_rollouts) { ActionController::Parameters.new }.permit(
       FeatureFlags::DEFINITIONS.keys.index_with { %i[percentage_of_actors percentage_of_time] }
     ).to_h
   end
 
   def feature_flag_rollout_original_params
-    params.fetch(:feature_flag_rollout_originals, ActionController::Parameters.new).permit(
+    params.fetch(:feature_flag_rollout_originals) { ActionController::Parameters.new }.permit(
       FeatureFlags::DEFINITIONS.keys.index_with { %i[percentage_of_actors percentage_of_time] }
     ).to_h
   end
@@ -101,7 +101,7 @@ class TenantConfigurationsController < ApplicationController
       features: FeatureFlags::DEFINITIONS.keys
     ).to_h
     attrs["features"] ||= {}
-    FeatureFlags::DEFINITIONS.keys.each do |flag_name|
+    FeatureFlags::DEFINITIONS.each_key do |flag_name|
       attrs["features"][flag_name.to_s] = ActiveModel::Type::Boolean.new.cast(attrs["features"][flag_name.to_s])
     end
     attrs
