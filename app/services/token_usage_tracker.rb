@@ -65,6 +65,8 @@ class TokenUsageTracker
     # 2. External side-effects (Temporal cancel, container cleanup) don't
     #    run inside a transaction — a failure won't roll back recorded usage
     enforce_hard_stop_budgets(tracked_run) if enforce_guardrails && update_aggregates && cost_cents.positive? && tracked_run.is_a?(AgentRun)
+
+    Projects::StatsSummary.bust_cache!(tracked_run.project.id) if update_aggregates && tracked_run.project
   end
 
   # Evaluates the agent run's cumulative token usage against project limits
