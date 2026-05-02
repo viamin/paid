@@ -20,22 +20,6 @@
         <span class="font-semibold text-gray-900"><%= number_with_delimiter(project.total_tokens_used) %></span>
       </div>
     <% end %>
-    <% now = local_assigns.fetch(:now, Time.current) %>
-    <% project_token_usages = local_assigns.fetch(:project_token_usages, TokenUsage.billable.by_project(project.id)) %>
-    <% monthly_cost_cents = local_assigns.fetch(:monthly_cost_cents, project_token_usages.by_time_period(now.beginning_of_month, now).total_cost_cents) %>
-    <% if monthly_cost_cents > 0 %>
-      <div class="flex items-center gap-1.5 px-4 py-3">
-        <span class="font-medium text-gray-500">This Month:</span>
-        <span class="font-semibold text-gray-900">$<%= format("%.2f", monthly_cost_cents / 100.0) %></span>
-      </div>
-    <% end %>
-    <% today_cost_cents = local_assigns.fetch(:today_cost_cents, project_token_usages.by_time_period(now.beginning_of_day, now).total_cost_cents) %>
-    <% if today_cost_cents > 0 %>
-      <div class="flex items-center gap-1.5 px-4 py-3">
-        <span class="font-medium text-gray-500">Today:</span>
-        <span class="font-semibold text-gray-900">$<%= format("%.2f", today_cost_cents / 100.0) %></span>
-      </div>
-    <% end %>
     <% budgets = local_assigns.fetch(:budgets, project.cost_budgets.load) %>
     <% if budgets.any? %>
       <div class="flex items-center gap-1.5 px-4 py-3">

@@ -176,6 +176,8 @@ module ChatSessions
         llm_model: assistant_message.model,
         request_type: "chat_message"
       )
+
+      Projects::StatsSummary.bust_cache!(chat_session.project_id) if chat_session.project_id
     end
 
     def update_session_activity

@@ -2,6 +2,22 @@ import { Controller } from "@hotwired/stimulus"
 import { marked } from "marked"
 import hljs from "highlight.js/lib/common"
 
+const SAFE_URL_SCHEMES = /^(https?|mailto):/i
+
+const renderer = {
+  link({ href, text }) {
+    if (href && !SAFE_URL_SCHEMES.test(href)) return text
+    const escaped = href.replaceAll("&", "&amp;").replaceAll('"', "&quot;")
+    return `<a href="${escaped}" rel="noopener noreferrer">${text}</a>`
+  },
+  image({ href, text }) {
+    if (href && !SAFE_URL_SCHEMES.test(href)) return text || ""
+    const escaped = href.replaceAll("&", "&amp;").replaceAll('"', "&quot;")
+    const alt = (text || "").replaceAll("&", "&amp;").replaceAll('"', "&quot;")
+    return `<img src="${escaped}" alt="${alt}" />`
+  }
+}
+
 export default class extends Controller {
   static targets = ["content"]
   static values = { role: String, markdown: Boolean }
@@ -24,17 +40,24 @@ export default class extends Controller {
     const safeContent = this.escapeHtml(rawContent)
     this.contentTarget.innerHTML = marked.parse(safeContent, {
       breaks: true,
-      gfm: true
+      gfm: true,
+      renderer
     })
 
     this.decorateCodeBlocks()
   }
 
-  copyCode(event) {
+  async copyCode(event) {
     const button = event.currentTarget
-    window.navigator.clipboard.writeText(button.dataset.copyContent || "")
-    button.textContent = "Copied"
-    window.setTimeout(() => { button.textContent = "Copy" }, 1200)
+    const originalText = button.textContent
+
+    try {
+      await window.navigator.clipboard.writeText(button.dataset.copyContent || "")
+      button.textContent = "Copied"
+      window.setTimeout(() => { button.textContent = originalText }, 1200)
+    } catch {
+      button.textContent = originalText
+    }
   }
 
   decorateCodeBlocks() {
@@ -53,7 +76,9 @@ export default class extends Controller {
 
       const header = document.createElement("div")
       header.className = "flex items-center justify-between border-b border-slate-800 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400"
-      header.innerHTML = `<span>${language}</span>`
+      const languageLabel = document.createElement("span")
+      languageLabel.textContent = language
+      header.append(languageLabel)
 
       const copyButton = document.createElement("button")
       copyButton.type = "button"
@@ -68,7 +93,11 @@ export default class extends Controller {
 
       const gutter = document.createElement("div")
       gutter.className = "select-none border-r border-slate-800 bg-slate-900/70 px-3 py-4 text-right text-xs leading-6 text-slate-500"
-      gutter.innerHTML = lines.map((_, index) => `<div>${index + 1}</div>`).join("")
+      lines.forEach((_, index) => {
+        const lineNum = document.createElement("div")
+        lineNum.textContent = index + 1
+        gutter.append(lineNum)
+      })
 
       pre.className = "overflow-x-auto bg-transparent px-4 py-4 text-sm leading-6"
       codeBlock.classList.add("block", "min-w-full", "bg-transparent", "font-mono")

@@ -46,7 +46,7 @@ class ChatSessionsController < ApplicationController
     respond_to do |format|
       format.html do
         load_sidebar_data
-        @chat_messages = @chat_session.messages.chronological
+        @pagy, @chat_messages = pagy(@chat_session.messages.chronological, limit: 50)
       end
 
       format.json do
@@ -142,7 +142,7 @@ class ChatSessionsController < ApplicationController
 
   def session_scope
     policy_scope(ChatSession)
-      .includes(:project, :provider, :chat_session_projects, :projects, :messages)
+      .includes(:project, :provider, :chat_session_projects, :projects)
       .order(updated_at: :desc)
   end
 

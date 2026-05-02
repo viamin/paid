@@ -141,11 +141,20 @@ export default class extends Controller {
 
     const meta = document.createElement("div")
     meta.className = "mb-2 flex items-center gap-2"
-    meta.innerHTML = `
-      <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">Assistant</span>
-      <span class="text-xs font-medium text-slate-400">${model || "Assistant"}</span>
-      <span class="text-xs text-slate-300">just now</span>
-    `
+
+    const roleBadge = document.createElement("span")
+    roleBadge.className = "inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600"
+    roleBadge.textContent = "Assistant"
+
+    const modelLabel = document.createElement("span")
+    modelLabel.className = "text-xs font-medium text-slate-400"
+    modelLabel.textContent = model || "Assistant"
+
+    const timestamp = document.createElement("span")
+    timestamp.className = "text-xs text-slate-300"
+    timestamp.textContent = "just now"
+
+    meta.append(roleBadge, modelLabel, timestamp)
 
     const content = document.createElement("div")
     content.dataset.chatMessageTarget = "content"
@@ -166,14 +175,28 @@ export default class extends Controller {
       "ml-auto max-w-3xl rounded-[1.5rem] rounded-br-md bg-slate-900 px-4 py-3 text-sm text-white shadow-sm" :
       "max-w-3xl rounded-[1.5rem] rounded-bl-md bg-white px-4 py-3 text-sm text-slate-900 shadow-sm ring-1 ring-slate-200"
 
-    article.innerHTML = `
-      <div class="mb-2 flex items-center gap-2">
-        <span class="inline-flex items-center rounded-full ${role === "user" ? "bg-slate-800 text-slate-100" : "bg-slate-100 text-slate-600"} px-2.5 py-1 text-xs font-semibold">${role === "user" ? "User" : "Assistant"}</span>
-        <span class="text-xs font-medium ${role === "user" ? "text-slate-300" : "text-slate-400"}">${role === "user" ? "You" : "Assistant"}</span>
-        <span class="text-xs ${role === "user" ? "text-slate-400" : "text-slate-300"}">just now</span>
-      </div>
-      <div class="whitespace-pre-wrap break-words leading-6">${this.escapeHtml(content)}</div>
-    `
+    const metaDiv = document.createElement("div")
+    metaDiv.className = "mb-2 flex items-center gap-2"
+
+    const badge = document.createElement("span")
+    badge.className = `inline-flex items-center rounded-full ${role === "user" ? "bg-slate-800 text-slate-100" : "bg-slate-100 text-slate-600"} px-2.5 py-1 text-xs font-semibold`
+    badge.textContent = role === "user" ? "User" : "Assistant"
+
+    const label = document.createElement("span")
+    label.className = `text-xs font-medium ${role === "user" ? "text-slate-300" : "text-slate-400"}`
+    label.textContent = role === "user" ? "You" : "Assistant"
+
+    const time = document.createElement("span")
+    time.className = `text-xs ${role === "user" ? "text-slate-400" : "text-slate-300"}`
+    time.textContent = "just now"
+
+    metaDiv.append(badge, label, time)
+
+    const body = document.createElement("div")
+    body.className = "whitespace-pre-wrap break-words leading-6"
+    body.textContent = content
+
+    article.append(metaDiv, body)
 
     wrapper.append(article)
     this.messagesTarget.append(wrapper)
@@ -200,12 +223,5 @@ export default class extends Controller {
     } else {
       this.containerTarget.scrollTop = this.containerTarget.scrollHeight
     }
-  }
-
-  escapeHtml(content) {
-    return content
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
   }
 }

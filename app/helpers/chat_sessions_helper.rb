@@ -49,8 +49,13 @@ module ChatSessionsHelper
   end
 
   def chat_session_preview(chat_session)
-    message = chat_session.messages.reject { |entry| entry.role == "system" }.find { |entry| entry.content.present? }
-    message&.content.to_s.tr("\n", " ").truncate(64).presence || "Untitled chat"
+    content = chat_session.messages
+      .where.not(role: "system")
+      .where.not(content: [ nil, "" ])
+      .order(:created_at)
+      .pick(:content)
+
+    content.to_s.tr("\n", " ").truncate(64).presence || "Untitled chat"
   end
 
   def chat_message_bubble_classes(message)

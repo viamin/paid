@@ -8,6 +8,7 @@ class ChatSession < ApplicationRecord
   IDLE_TIMEOUT_DURATION = 30.minutes
 
   before_validation :set_external_id, on: :create
+  before_create :generate_proxy_token
   after_create_commit :broadcast_sidebar_prepend
   after_update_commit :broadcast_sidebar_refresh
   after_destroy_commit :broadcast_sidebar_remove
@@ -30,6 +31,25 @@ class ChatSession < ApplicationRecord
   scope :active, -> { where(status: "active") }
   scope :idle_expired, -> { where(status: "active").where("idle_timeout_at < ?", Time.current) }
 
+  def active?
+    status == "active"
+  end
+
+  def ensure_proxy_token!
+    return proxy_token if proxy_token.present?
+
+    token = SecureRandom.hex(32)
+    updated_rows = self.class.where(id: id, proxy_token: nil).update_all(proxy_token: token)
+
+    if updated_rows == 1
+      self.proxy_token = token
+    else
+      reload
+    end
+
+    proxy_token
+  end
+
   def total_tokens_input
     token_usages.sum(:input_tokens)
   end
@@ -50,6 +70,10 @@ class ChatSession < ApplicationRecord
 
   def set_external_id
     self.external_id ||= SecureRandom.uuid
+  end
+
+  def generate_proxy_token
+    self.proxy_token ||= SecureRandom.hex(32)
   end
 
   def provider_must_belong_to_same_account
