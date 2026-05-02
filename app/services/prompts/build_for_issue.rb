@@ -133,6 +133,7 @@ module Prompts
     end
 
     def self.fetch_trusted_comments(github_client:, repo:, number:, project:, max_comments: DEFAULT_MAX_COMMENTS)
+      return [] if max_comments <= 0
       all_comments = github_client.issue_comments(repo, number)
       trusted = []
       all_comments.reverse_each do |c|
