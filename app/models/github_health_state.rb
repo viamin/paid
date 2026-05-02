@@ -82,23 +82,25 @@ class GithubHealthState < ApplicationRecord
   # an in-flight success while circuit is open must not bypass the
   # recovery timeout.
   def record_success!
-    return if circuit_state == "closed" && failure_count.zero?
-    return if circuit_open?
+    with_lock do
+      return if circuit_state == "closed" && failure_count.zero?
+      return if circuit_open?
 
-    was_half_open = circuit_half_open?
+      was_half_open = circuit_half_open?
 
-    update!(
-      failure_count: 0,
-      circuit_state: "closed",
-      circuit_opened_at: nil,
-      last_error_message: nil
-    )
-
-    if was_half_open
-      Rails.logger.info(
-        message: "github_health.circuit_closed",
-        endpoint: endpoint
+      update!(
+        failure_count: 0,
+        circuit_state: "closed",
+        circuit_opened_at: nil,
+        last_error_message: nil
       )
+
+      if was_half_open
+        Rails.logger.info(
+          message: "github_health.circuit_closed",
+          endpoint: endpoint
+        )
+      end
     end
   end
 
@@ -107,17 +109,19 @@ class GithubHealthState < ApplicationRecord
   # @param timeout [Integer] Seconds to wait before attempting recovery
   # @return [Boolean] true if transitioned to half_open
   def check_circuit_recovery!(timeout: DEFAULT_RECOVERY_TIMEOUT)
-    return false unless circuit_state == "open"
-    return false unless circuit_opened_at.present?
-    return false unless circuit_opened_at + timeout.seconds <= Time.current
+    with_lock do
+      return false unless circuit_state == "open"
+      return false unless circuit_opened_at.present?
+      return false unless circuit_opened_at + timeout.seconds <= Time.current
 
-    update!(circuit_state: "half_open")
+      update!(circuit_state: "half_open")
 
-    Rails.logger.info(
-      message: "github_health.circuit_half_open",
-      endpoint: endpoint
-    )
-    true
+      Rails.logger.info(
+        message: "github_health.circuit_half_open",
+        endpoint: endpoint
+      )
+      true
+    end
   end
 
   def circuit_open?
