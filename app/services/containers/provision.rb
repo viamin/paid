@@ -32,6 +32,7 @@ module Containers
   class Provision
     CODEX_NOTIFY_LINE = 'notify = ["sh", "-lc", "date +%s > /paid-heartbeat/.paid-heartbeat"]'
     HEARTBEAT_MOUNT_POINT = "/paid-heartbeat"
+    MAX_STREAMING_LINE_BUFFER_BYTES = 64 * 1024
 
     # Base error for all container service errors
     class Error < StandardError; end
@@ -371,7 +372,7 @@ module Containers
       abort_matched_output = nil # set when an abort_pattern matches stderr
       stdout_abort_buffer = +""
       watchdog = nil
-      streaming_event_processor = build_streaming_event_processor
+      streaming_event_processor = build_streaming_event_processor(command)
       streaming_abort_triggered = false
       streaming_abort_event_type = nil
       streaming_line_buffer = +""
@@ -437,6 +438,8 @@ module Containers
                   end
                 end
               end
+
+              trim_streaming_line_buffer!(streaming_line_buffer)
             end
           when :stderr
             stderr_buffer << normalized_chunk
@@ -2202,13 +2205,25 @@ module Containers
       -1
     end
 
-    def build_streaming_event_processor
-      return nil unless agent_run
+    def build_streaming_event_processor(command)
+      return nil unless agent_run && streaming_event_command?(command)
 
       StreamingEventProcessor.new(
         agent_run: agent_run,
         logger: method(:log_system)
       )
+    end
+
+    def streaming_event_command?(command)
+      codex_exec_command?(command)
+    end
+
+    def trim_streaming_line_buffer!(buffer)
+      return unless buffer.bytesize > MAX_STREAMING_LINE_BUFFER_BYTES
+
+      dropped_bytes = buffer.bytesize
+      buffer.clear
+      log_system("container.execute.streaming_buffer_reset", dropped_bytes: dropped_bytes)
     end
 
     def log_system(message, **metadata)

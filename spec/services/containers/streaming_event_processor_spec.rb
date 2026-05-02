@@ -20,6 +20,12 @@ RSpec.describe Containers::StreamingEventProcessor do
       expect(processor.parse_line("plain text output")).to be_nil
     end
 
+    it "returns nil for brace-free lines without invoking the JSON parser" do
+      expect(processor).not_to receive(:parse_jsonl_event)
+
+      expect(processor.parse_line("progress: still working")).to be_nil
+    end
+
     it "returns nil for JSON without type field" do
       expect(processor.parse_line('{"key": "value"}')).to be_nil
     end
@@ -192,6 +198,7 @@ RSpec.describe Containers::StreamingEventProcessor do
       agent_run.reload
       expect(agent_run.turns_completed).to eq(4)
       expect(agent_run.streaming_turns_data.length).to eq(4)
+      expect(agent_run.streaming_turns_data.last["turn_number"]).to eq(4)
       expect(agent_run.streaming_turns_data.last["input_tokens"]).to eq(400)
     end
 

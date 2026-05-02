@@ -2007,6 +2007,34 @@ RSpec.describe Containers::Provision do
         expect(agent_run.turns_completed).to eq(2)
         expect(agent_run.streaming_turns_data.length).to eq(2)
       end
+
+      it "ignores streaming-looking JSON output from non-agent exec commands" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "{\"type\": \"error\", \"message\": \"helper output\"}\n") if block
+          [ [], [], 0 ]
+        end
+
+        expect { service.execute("echo '{\"type\":\"error\"}'") }.not_to raise_error
+        expect(mock_container).not_to have_received(:stop)
+      end
+
+      it "drops oversized partial JSONL buffers instead of growing without bound" do
+        overflow_chunk = "{" + ("x" * described_class::MAX_STREAMING_LINE_BUFFER_BYTES)
+
+        allow(agent_run).to receive(:log!).and_call_original
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, overflow_chunk) if block
+          [ [], [], 0 ]
+        end
+
+        service.execute("codex exec --json")
+
+        expect(agent_run).to have_received(:log!).with(
+          "system",
+          "container.execute.streaming_buffer_reset",
+          metadata: hash_including(dropped_bytes: overflow_chunk.bytesize)
+        )
+      end
     end
 
     context "when container is not provisioned" do

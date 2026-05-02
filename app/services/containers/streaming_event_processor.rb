@@ -33,6 +33,7 @@ module Containers
     def parse_line(line)
       stripped = line.to_s.strip
       return nil if stripped.blank?
+      return nil unless stripped.start_with?("{")
 
       parsed = parse_jsonl_event(stripped)
       return nil unless parsed
@@ -84,10 +85,11 @@ module Containers
 
       existing_turns = @agent_run.streaming_turns_data || []
       existing_count = @agent_run.turns_completed || 0
+      turn_number_offset = [ existing_turns.length, existing_count ].max
 
       @agent_run.update_columns(
         turns_completed: existing_count + @turns_completed,
-        streaming_turns_data: existing_turns + @turns_data
+        streaming_turns_data: existing_turns + renumbered_turns(turn_number_offset)
       )
     end
 
@@ -180,6 +182,12 @@ module Containers
       log_streaming("container.execute.streaming_error",
         event_type: event["type"],
         error: error_message)
+    end
+
+    def renumbered_turns(offset)
+      @turns_data.map.with_index(1) do |turn_data, index|
+        turn_data.merge("turn_number" => offset + index)
+      end
     end
 
     def log_streaming(message, **metadata)
