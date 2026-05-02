@@ -57,7 +57,8 @@ durable workflows and activities.
 
 Set `TEMPORAL_WORKER_MODE=poll`, `TEMPORAL_WORKER_MODE=agent`, or
 `TEMPORAL_WORKER_MODE=both` to control which worker set boots. The default mode
-is `both`.
+is `both`. `bin/dev` uses two dedicated processes from `Procfile.dev`, one with
+`TEMPORAL_WORKER_MODE=poll` and one with `TEMPORAL_WORKER_MODE=agent`.
 
 ### Environment Variables
 
@@ -81,8 +82,10 @@ linearly up to the database connection limit.
 
 **Key constraint**:
 
-- `TEMPORAL_WORKER_MODE=poll` or `TEMPORAL_WORKER_MODE=agent`:
-  `DB_POOL >= ACTIVITY_SLOTS + LOCAL_ACTIVITY_SLOTS + 2`
+- `TEMPORAL_WORKER_MODE=poll`:
+  `DB_POOL >= TEMPORAL_POLL_ACTIVITY_SLOTS + TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS + 2`
+- `TEMPORAL_WORKER_MODE=agent`:
+  `DB_POOL >= TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + 2`
 - `TEMPORAL_WORKER_MODE=both`:
   `DB_POOL >= (AGENT_ACTIVITY_SLOTS + AGENT_LOCAL_ACTIVITY_SLOTS + POLL_ACTIVITY_SLOTS + POLL_LOCAL_ACTIVITY_SLOTS) + 4`
 

@@ -824,6 +824,10 @@ dedicated task queue. This isolates time-sensitive poll workflows from long-runn
 agent-execution workloads, preventing the noisy-neighbor problem where saturated agent
 activity slots starve poll cycles.
 
+In local development, `bin/dev` starts two dedicated worker processes from
+`Procfile.dev`: `worker_poll` runs with `TEMPORAL_WORKER_MODE=poll`, and
+`worker_agent` runs with `TEMPORAL_WORKER_MODE=agent`.
+
 | Task queue | Default name | Workflows | Purpose |
 |---|---|---|---|
 | **Poll queue** | `paid-poll-tasks` | `GitHubPollWorkflow` | Short-lived poll activities with a small, fixed activity pool. Ensures `last_polled_at` freshness is independent of agent load. |

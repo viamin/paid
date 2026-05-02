@@ -33,10 +33,10 @@ workflows = Workflows.constants.map { |c| Workflows.const_get(c) }
 # GitHubPollWorkflow runs on the poll queue; everything else on the agent queue.
 poll_workflows = workflows.select { |w| w == Workflows::GitHubPollWorkflow }
 agent_workflows = workflows.reject { |w| w == Workflows::GitHubPollWorkflow }
-worker_mode = ENV.fetch("TEMPORAL_WORKER_MODE", "both")
-
-unless %w[poll agent both].include?(worker_mode)
-  warn "Invalid TEMPORAL_WORKER_MODE=#{worker_mode.inspect}; expected 'poll', 'agent', or 'both'"
+begin
+  worker_mode = Paid::TemporalWorkerConfig.worker_mode
+rescue ArgumentError => error
+  warn error.message
   exit 1
 end
 
@@ -66,17 +66,20 @@ poll_activity_task_polls = ENV.fetch("TEMPORAL_POLL_MAX_CONCURRENT_ACTIVITY_TASK
 poll_workflow_task_polls = ENV.fetch("TEMPORAL_POLL_MAX_CONCURRENT_WORKFLOW_TASK_POLLS", poll_workflow_slots.to_s).to_i
 
 db_pool = ENV.fetch("DB_POOL") { ENV.fetch("RAILS_MAX_THREADS", "20") }.to_i
-selected_activity_slots = case worker_mode
-when "poll"
-  poll_activity_slots + poll_local_activity_slots
-when "agent"
-  agent_activity_slots + agent_local_activity_slots
-else
-  agent_activity_slots + agent_local_activity_slots +
-    poll_activity_slots + poll_local_activity_slots
-end
-selected_pool_overhead = worker_mode == "both" ? 4 : 2 # heartbeat/polling threads for the selected worker set
-min_required_pool = selected_activity_slots + selected_pool_overhead
+selected_activity_slots = Paid::TemporalWorkerConfig.selected_activity_slots(
+  worker_mode: worker_mode,
+  agent_activity_slots: agent_activity_slots,
+  agent_local_activity_slots: agent_local_activity_slots,
+  poll_activity_slots: poll_activity_slots,
+  poll_local_activity_slots: poll_local_activity_slots
+)
+min_required_pool = Paid::TemporalWorkerConfig.min_required_db_pool(
+  worker_mode: worker_mode,
+  agent_activity_slots: agent_activity_slots,
+  agent_local_activity_slots: agent_local_activity_slots,
+  poll_activity_slots: poll_activity_slots,
+  poll_local_activity_slots: poll_local_activity_slots
+)
 
 puts "Agent worker concurrency: workflows=#{agent_workflow_slots} activities=#{agent_activity_slots} " \
      "local_activities=#{agent_local_activity_slots} activity_polls=#{agent_activity_task_polls} " \

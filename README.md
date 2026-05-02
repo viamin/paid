@@ -187,6 +187,7 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split T
 | `TEMPORAL_HOST` | Temporal server address | `localhost:7233` |
 | `TEMPORAL_ADDRESS` | Temporal address (alternative to TEMPORAL_HOST) | _(falls back to TEMPORAL_HOST)_ |
 | `TEMPORAL_NAMESPACE` | Temporal namespace | `default` |
+| `TEMPORAL_WORKER_MODE` | Which worker set `bin/temporal_worker` boots (`poll`, `agent`, or `both`) | `both` |
 | `TEMPORAL_POLL_TASK_QUEUE` | Temporal poll workflow task queue | `paid-poll-tasks` |
 | `TEMPORAL_AGENT_TASK_QUEUE` | Temporal agent execution task queue | `paid-agent-tasks` |
 | `TEMPORAL_UI_URL` | Temporal UI base URL for monitoring links | `http://localhost:8080` |
@@ -280,7 +281,7 @@ bin/update                   # Update Ruby, Yarn, and supported Dockerfile-pinne
 bin/dev                      # Start dev server with Overmind (Rails + JS + CSS + split Temporal poll/agent workers)
 bin/rails server             # Start Rails server only
 bin/rails console            # Rails console
-bin/temporal_worker          # Run the Temporal worker directly
+bin/temporal_worker          # Run both queues in one process, or set TEMPORAL_WORKER_MODE=poll|agent
 bin/dev-update --lightweight # Pull latest main without restarting the dev stack
 bin/dev-update --full        # Pull latest main, rerun setup, and restart the dev stack
 

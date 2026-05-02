@@ -110,6 +110,7 @@ Total web threads = `WEB_CONCURRENCY × RAILS_MAX_THREADS`.
 |----------|---------|-------------|
 | `TEMPORAL_ADDRESS` | `localhost:7233` | Temporal server address |
 | `TEMPORAL_NAMESPACE` | `default` | Temporal namespace |
+| `TEMPORAL_WORKER_MODE` | `both` | Which worker set a `bin/temporal_worker` process boots |
 | `TEMPORAL_POLL_TASK_QUEUE` | `paid-poll-tasks` | Poll workflow task queue |
 | `TEMPORAL_AGENT_TASK_QUEUE` | `paid-agent-tasks` | Agent execution task queue |
 | `TEMPORAL_WORKFLOW_SLOTS` | `20` | Max concurrent workflow tasks |
@@ -135,7 +136,9 @@ so more slots improve throughput linearly up to the DB connection and Docker hos
 **Pool sizing constraints:**
 
 - `async_server` mode: `DB_POOL >= RAILS_MAX_THREADS + GOOD_JOB_MAX_THREADS`
-- Temporal worker: `DB_POOL >= ACTIVITY_SLOTS + LOCAL_ACTIVITY_SLOTS + 2`
+- Temporal worker in `agent` mode: `DB_POOL >= TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + 2`
+- Temporal worker in `poll` mode: `DB_POOL >= TEMPORAL_POLL_ACTIVITY_SLOTS + TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS + 2`
+- Temporal worker in `both` mode: `DB_POOL >= (TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + TEMPORAL_POLL_ACTIVITY_SLOTS + TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS) + 4`
 - Total connections across all processes must not exceed PostgreSQL `max_connections`
 
 ### Agent Containers
@@ -338,8 +341,9 @@ total_connections =
 **Activity slots across Temporal workers:**
 
 ```
-total_activity_slots = num_temporal_workers × TEMPORAL_ACTIVITY_SLOTS
-max_concurrent_runs ≈ total_activity_slots
+total_agent_activity_slots = num_agent_workers × TEMPORAL_ACTIVITY_SLOTS
+total_poll_activity_slots = num_poll_workers × TEMPORAL_POLL_ACTIVITY_SLOTS
+max_concurrent_agent_runs ≈ total_agent_activity_slots
 ```
 
 ### When to Scale
@@ -382,9 +386,10 @@ Temporal workers register on a shared task queue and the Temporal server
 distributes work across all registered workers.
 
 1. Deploy additional Temporal worker processes (`bin/temporal_worker`)
-2. All workers use the same `TEMPORAL_POLL_TASK_QUEUE` / `TEMPORAL_AGENT_TASK_QUEUE`
-3. Each worker needs its own `DB_POOL` and Docker Engine access
-4. Total activity slots = sum across all workers
+2. Set `TEMPORAL_WORKER_MODE=agent` or `TEMPORAL_WORKER_MODE=poll` when you want dedicated worker pools per queue
+3. Workers serving the same queue share the same task queue name and Temporal load-balances across them
+4. Each worker process needs its own `DB_POOL` and Docker Engine access
+5. Total activity slots = sum across workers serving that queue
 
 ### PostgreSQL
 
