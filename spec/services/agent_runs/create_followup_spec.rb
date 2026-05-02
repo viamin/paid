@@ -90,18 +90,13 @@ RSpec.describe AgentRuns::CreateFollowup do
         expect(followup.provider).to eq(resolved_provider)
       end
 
-      it "derives agent_type from fallback_agent_type, not the resolver, when provider_id is nil" do
-        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[codex])
-        project.created_by.providers.update_all(enabled_for_agent_runs: false)
-        # CreateFollowup destructures only provider_id from the resolver;
-        # the resolver's agent_type ("ignored") is intentionally unused.
+      it "preserves the resolver agent_type when provider_id is nil" do
         allow(AgentRuns::ProviderResolver).to receive(:call)
-          .and_return([ nil, "ignored" ])
+          .and_return([ nil, "codex" ])
 
         followup = described_class.call(agent_run: analysis_run, goal: "create_pr")
 
         expect(followup.provider).to be_nil
-        # agent_type comes from fallback_agent_type (first runnable key), not the resolver
         expect(followup.agent_type).to eq("codex")
       end
     end
