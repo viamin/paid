@@ -115,10 +115,6 @@ class StaleRunDetectorJob < ApplicationJob
 
   private
 
-  def github_circuit_open?
-    !GithubHealthState.github_available_with_recovery?
-  end
-
   # Uses the default timeout rather than per-user maximums. Individual run
   # timeouts are enforced by the Temporal workflow; this job is a safety net
   # for orphaned runs where the workflow died. Using UserSetting.maximum

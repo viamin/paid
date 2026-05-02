@@ -646,10 +646,10 @@ class AgentRun < ApplicationRecord
         "COALESCE(user_active_counts.user_active_count, 0) AS user_active_count",
         "project_owner.user_id AS project_owner_user_id",
         "COALESCE(user_settings.fair_queue_across_projects, TRUE) AS fair_queue_across_projects",
-        "CASE WHEN agent_runs.status = 'running' THEN 0 WHEN agent_runs.temporal_workflow_id IS NOT NULL THEN 1 ELSE 2 END AS status_order"
+        "CASE WHEN agent_runs.status = 'running' THEN 0 WHEN agent_runs.temporal_workflow_id IS NOT NULL THEN 1 WHEN agent_runs.status = 'paused' THEN 3 ELSE 2 END AS status_order"
       )
       .reorder(
-        Arel.sql("CASE WHEN agent_runs.status = 'running' THEN 0 WHEN agent_runs.temporal_workflow_id IS NOT NULL THEN 1 ELSE 2 END ASC"),
+        Arel.sql("CASE WHEN agent_runs.status = 'running' THEN 0 WHEN agent_runs.temporal_workflow_id IS NOT NULL THEN 1 WHEN agent_runs.status = 'paused' THEN 3 ELSE 2 END ASC"),
         QUEUE_PRIORITY_SQL,
         GOAL_PRIORITY_SQL,
         created_at: :asc,

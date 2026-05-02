@@ -307,6 +307,7 @@ module Providers
           provider_id: provider.id,
           agent_type: Provider.agent_type_for(provider.provider_key),
           status: "queued",
+          temporal_workflow_id: AgentRun::CLAIMED_SENTINEL,
           goal: "create_pr",
           trigger_type: "manual",
           custom_prompt: "smoke_test",

@@ -77,7 +77,7 @@ module Api
         end
       end
 
-      unless @authenticated_run&.active? || (@authenticated_run_type == :agent_run && @agent_run&.claimed?)
+      unless @authenticated_run&.active? || (@authenticated_run_type == :agent_run && @authenticated_run&.claimed?)
         render json: { error: error_message }, status: :forbidden
         return
       end
