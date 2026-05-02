@@ -6,6 +6,12 @@ module AgentRuns
       new(...).call
     end
 
+    def self.selected_provider(project:, provider_id:)
+      return if provider_id.blank?
+
+      project.effective_owner&.providers&.find_by(id: provider_id)
+    end
+
     def initialize(project:, goal:, requested_agent_type: nil, requested_provider_id: nil, respect_requested: true, logger: nil)
       @project = project
       @goal = goal
@@ -94,9 +100,7 @@ module AgentRuns
     end
 
     def provider_for_id(provider_id)
-      return if provider_id.blank?
-
-      project.effective_owner&.providers&.find_by(id: provider_id)
+      self.class.selected_provider(project: project, provider_id: provider_id)
     end
 
     def provider_runnable?(provider)
