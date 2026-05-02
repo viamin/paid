@@ -81,6 +81,8 @@ RSpec.describe ExceptionHandler::IssueFiler do
         TenantContext.with_system_access do
           described_class.call(incident: ExceptionIncident.find(incident.id), project: project)
         end
+      ensure
+        ActiveRecord::Base.connection_pool.release_connection
       end
     end
   end
