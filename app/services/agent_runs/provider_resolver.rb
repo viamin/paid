@@ -64,19 +64,31 @@ module AgentRuns
       return unless owner
 
       settings = UserSettingsResolver.call(project: project, strict: false)
-      base_provider = provider_from_settings(settings, owner)
+      selected_provider = selected_provider_from_settings(settings, owner)
+      configured_provider = configured_provider_from_raw_settings(settings)
+      base_provider = runnable_provider(selected_provider) || runnable_provider(configured_provider)
       fallback_provider = Provider.first_enabled_for_owner(owner) || Provider.ensure_default_for(owner)
-      tenant_api_key_provider(base_provider || fallback_provider, owner) ||
+      tenant_api_key_provider(configured_provider || fallback_provider, owner) ||
         base_provider ||
         fallback_provider
     end
 
-    def provider_from_settings(settings, owner)
+    def selected_provider_from_settings(settings, owner)
       return Provider.ensure_default_for(owner) unless settings
 
       identifier = settings.select_automated_provider_identifier(goal: goal) ||
         settings.default_provider_identifier_for_goal(goal)
-      provider = Provider.for_identifier(settings.user, identifier)
+      Provider.for_identifier(settings.user, identifier)
+    end
+
+    def configured_provider_from_raw_settings(settings)
+      return unless settings
+
+      identifier = settings.default_agent_providers_by_goal[goal.to_s].presence || settings.default_agent_provider
+      Provider.for_identifier(settings.user, identifier)
+    end
+
+    def runnable_provider(provider)
       return unless provider&.enabled_for_agent_runs?
       return unless provider_runnable?(provider)
 

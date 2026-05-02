@@ -84,6 +84,29 @@ RSpec.describe AgentRuns::ProviderResolver do
       expect(agent_type).to eq("claude_code")
     end
 
+    it "keeps the configured provider family for tenant API-key selection before falling back" do
+      project = create(:project)
+      owner = project.created_by
+      cursor_provider = create(:provider, user: owner, provider_key: "cursor")
+      owner.settings.update!(default_agent_provider: "cursor")
+      cursor_provider.update!(enabled_for_agent_runs: false)
+
+      api_key = create(:provider_api_key, user: owner, api_service_type: "anthropic")
+      create(:tenant_setting, account: project.account,
+        provider_preferences: { "api_key_ids" => { "anthropic" => api_key.id } })
+
+      provider_id, agent_type = described_class.call(project: project, goal: "create_pr")
+      provider = Provider.find(provider_id)
+
+      expect(agent_type).to eq("cursor")
+      expect(provider).to have_attributes(
+        user: owner,
+        provider_key: "cursor",
+        auth_type: "api_key",
+        provider_api_key: api_key
+      )
+    end
+
     it "falls back to a nil provider id with the first runnable agent type when no owner providers are available" do
       allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[codex])
 

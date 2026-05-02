@@ -804,7 +804,10 @@ RSpec.describe Activities::RunAgentActivity do
     it "drops stale default-provider entries and keeps the first runnable fallback" do
       allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[codex])
       agent_run.update!(provider: nil, agent_type: "claude_code")
-      user.settings.update_columns(fallback_enabled: false, default_agent_provider: "claude")
+      # Persist a stale saved default plus fallback flag exactly as they could
+      # exist from older settings before provider availability changed.
+      user.settings.assign_attributes(fallback_enabled: false, default_agent_provider: "claude")
+      user.settings.save!(validate: false)
 
       providers = activity.send(:build_provider_order, agent_run, user.settings)
 
