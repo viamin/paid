@@ -117,6 +117,17 @@ RSpec.describe Containers::StreamingEventProcessor do
     it "returns nil for unknown events" do
       expect(processor.process(nil)).to be_nil
     end
+
+    it "tracks last_event_type from the raw event" do
+      parsed = {
+        type: :error,
+        event: { "type" => "error", "message" => "fatal" },
+        raw_type: "error"
+      }
+
+      processor.process(parsed)
+      expect(processor.last_event_type).to eq("error")
+    end
   end
 
   describe "#handle_line" do

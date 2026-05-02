@@ -19,16 +19,13 @@ module Containers
     TURN_FAILED_EVENT_TYPES = %w[turn.failed turn_failed].freeze
     ERROR_EVENT_TYPES = %w[error].freeze
 
-    ACTIVITY_EVENT_TYPES = (PROGRESS_EVENT_TYPES + TURN_COMPLETE_EVENT_TYPES).freeze
-
-    attr_reader :turns_completed, :turns_data
+    attr_reader :turns_completed, :turns_data, :last_event_type
 
     def initialize(agent_run:, logger: nil)
       @agent_run = agent_run
       @logger = logger
       @turns_completed = 0
       @turns_data = []
-      @current_turn_started_at = nil
     end
 
     # Attempts to parse a stdout line as a streaming JSONL progress event.
@@ -50,6 +47,8 @@ module Containers
     # symbol: :activity (reset idle timer), :abort (trigger early abort), or nil.
     def process(parsed)
       return nil unless parsed
+
+      @last_event_type = parsed[:raw_type]
 
       case parsed[:type]
       when :progress
@@ -133,39 +132,39 @@ module Containers
       @turns_completed += 1
 
       turn_data = {
-        turn_number: @turns_completed,
-        completed_at: Time.current.iso8601,
-        input_tokens: event.dig("usage", "input_tokens") || event["input_tokens"],
-        output_tokens: event.dig("usage", "output_tokens") || event["output_tokens"],
-        duration_ms: event["duration_ms"] || event.dig("metrics", "duration_ms")
+        "turn_number" => @turns_completed,
+        "completed_at" => Time.current.iso8601,
+        "input_tokens" => event.dig("usage", "input_tokens") || event["input_tokens"],
+        "output_tokens" => event.dig("usage", "output_tokens") || event["output_tokens"],
+        "duration_ms" => event["duration_ms"] || event.dig("metrics", "duration_ms")
       }.compact
 
       @turns_data << turn_data
 
       log_streaming("container.execute.turn_complete",
         turn_number: @turns_completed,
-        input_tokens: turn_data[:input_tokens],
-        output_tokens: turn_data[:output_tokens],
-        duration_ms: turn_data[:duration_ms])
+        input_tokens: turn_data["input_tokens"],
+        output_tokens: turn_data["output_tokens"],
+        duration_ms: turn_data["duration_ms"])
     end
 
     def record_turn_failed(event)
       @turns_completed += 1
 
       turn_data = {
-        turn_number: @turns_completed,
-        completed_at: Time.current.iso8601,
-        status: "failed",
-        error: (event["message"] || event.dig("error", "message")).to_s.truncate(500),
-        input_tokens: event.dig("usage", "input_tokens") || event["input_tokens"],
-        output_tokens: event.dig("usage", "output_tokens") || event["output_tokens"]
+        "turn_number" => @turns_completed,
+        "completed_at" => Time.current.iso8601,
+        "status" => "failed",
+        "error" => (event["message"] || event.dig("error", "message")).to_s.truncate(500),
+        "input_tokens" => event.dig("usage", "input_tokens") || event["input_tokens"],
+        "output_tokens" => event.dig("usage", "output_tokens") || event["output_tokens"]
       }.compact
 
       @turns_data << turn_data
 
       log_streaming("container.execute.turn_failed",
         turn_number: @turns_completed,
-        error: turn_data[:error])
+        error: turn_data["error"])
     end
 
     def log_error_event(event)

@@ -373,6 +373,8 @@ module Containers
       watchdog = nil
       streaming_event_processor = build_streaming_event_processor
       streaming_abort_triggered = false
+      streaming_abort_event_type = nil
+      streaming_line_buffer = +""
 
       timeout_check = TimeoutCheckState.new(
         mutex: watchdog_mutex,
@@ -418,13 +420,16 @@ module Containers
             # watchdog semantic awareness of agent state (turn progress, token
             # usage, errors) beyond raw output monitoring.
             if streaming_event_processor
-              normalized_chunk.each_line do |line|
+              streaming_line_buffer << normalized_chunk
+              while (newline_idx = streaming_line_buffer.index("\n"))
+                line = streaming_line_buffer.slice!(0, newline_idx + 1)
                 action = streaming_event_processor.handle_line(line)
                 case action
                 when :abort
                   streaming_abort_triggered = true
+                  streaming_abort_event_type ||= streaming_event_processor.last_event_type
                   log_system("container.execute.streaming_abort",
-                    reason: "turn_failed or error event received")
+                    reason: "#{streaming_abort_event_type} event received")
                   begin
                     container.stop(timeout: 0)
                   rescue Docker::Error::DockerError => e
@@ -475,6 +480,16 @@ module Containers
           end
         end
 
+        # Process any remaining partial line left in the streaming buffer.
+        if streaming_event_processor && streaming_line_buffer.present?
+          action = streaming_event_processor.handle_line(streaming_line_buffer)
+          if action == :abort && !streaming_abort_triggered
+            streaming_abort_triggered = true
+            streaming_abort_event_type ||= streaming_event_processor.last_event_type
+          end
+          streaming_line_buffer.clear
+        end
+
         # Signal the watchdog that exec has returned, then stop it immediately
         # to prevent late/false timeouts during post-processing.
         watchdog_mutex.synchronize { exec_completed = true }
@@ -483,8 +498,8 @@ module Containers
         # Check if streaming events triggered an abort (turn.failed / error).
         if streaming_abort_triggered
           raise OutputAbortError.new(
-            "Process aborted: streaming turn failure detected",
-            matched_output: "streaming_event:turn_failed"
+            "Process aborted: streaming #{streaming_abort_event_type || 'turn_failed'} event detected",
+            matched_output: "streaming_event:#{streaming_abort_event_type || 'turn_failed'}"
           )
         end
 
