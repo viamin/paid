@@ -252,5 +252,5 @@ Use `WORKLOG.md` as persistent working memory across context compactions:
 - `docs/AGENT_SYSTEM.md` - Temporal workflows and container management
 - `docs/LLM_STYLE_GUIDE.md` - **Read this first** — concise coding rules for AI assistants (with line refs to full guide)
 - `docs/STYLE_GUIDE.md` - Detailed coding standards, rationale, and examples
-- `docs/DATA_MODEL.md` - Database schema and RBAC
+- `db/structure.sql` - Canonical database schema with table and column comments
 - `docs/rdrs/` - All architectural decision records
