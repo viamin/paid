@@ -179,10 +179,13 @@ RSpec.describe ChatSessions::SendMessage do
         tool_call_msg = chat_session.messages.find_by(tool_name: "search", role: "assistant")
         expect(tool_call_msg).to be_present
         expect(tool_call_msg.tool_call_id).to eq("call_1")
+        expect(tool_call_msg.tool_arguments).to eq({ "query" => "test" })
 
         tool_result_msg = chat_session.messages.find_by(role: "tool")
         expect(tool_result_msg).to be_present
         expect(tool_result_msg.tool_call_id).to eq("call_1")
+        expect(tool_result_msg.content).to be_nil
+        expect(tool_result_msg.tool_result).to eq({ "status" => "not_implemented" })
       end
 
       it "notifies tool messages so live threads can render them" do

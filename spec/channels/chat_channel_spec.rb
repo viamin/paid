@@ -54,7 +54,7 @@ RSpec.describe ChatChannel do
         assistant_message = create(:chat_message, :assistant, chat_session: chat_session,
           content: "Let me check.", tokens_input: 10, tokens_output: 5)
         tool_message = create(:chat_message, :tool, chat_session: chat_session,
-          tool_name: "search", content: { status: "ok" }.to_json, tool_call_id: "call_1")
+          tool_name: "search", tool_result: { status: "ok" }, tool_call_id: "call_1")
 
         args[:on_message_persisted].call(user_message)
         args[:on_message_persisted].call(assistant_message, stream_message_id: args[:stream_message_id])

@@ -128,6 +128,19 @@ RSpec.describe "ChatSessions" do
         expect(body["pagination"]).to include("page", "pages", "count")
       end
 
+      it "returns structured tool payloads in the JSON API" do
+        create(:chat_message, :tool_call, chat_session: chat_session, tool_call_id: "call_1")
+        create(:chat_message, :tool, chat_session: chat_session, tool_call_id: "call_1", tool_result: { status: "ok" })
+
+        get chat_session_path(chat_session, format: :json)
+
+        tool_call = response.parsed_body["messages"].find { |message| message["role"] == "assistant" && message["tool_name"] == "search" }
+        tool_result = response.parsed_body["messages"].find { |message| message["role"] == "tool" }
+
+        expect(tool_call["tool_arguments"]).to eq({ "query" => "test" })
+        expect(tool_result["tool_result"]).to eq({ "status" => "ok" })
+      end
+
       it "does not return another account's session" do
         other_account = create(:account)
         other_session = create(:chat_session, account: other_account)
@@ -143,6 +156,27 @@ RSpec.describe "ChatSessions" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Assistant is typing")
         expect(response.body).to include("Rendered markdown")
+      end
+    end
+  end
+
+  describe "GET /chat/:id/older_messages" do
+    let!(:chat_session) { create(:chat_session, account: account, created_by: user) }
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "renders the requesting turbo frame id for paginated fetches" do
+        52.times { |index| create(:chat_message, chat_session: chat_session, content: "Message #{index}") }
+        newest_message = create(:chat_message, chat_session: chat_session, content: "Newest message")
+
+        get older_messages_chat_session_path(chat_session),
+          params: { before: newest_message.id },
+          headers: { "Turbo-Frame" => "older_messages_next" }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to match(/<turbo-frame[^>]*id="older_messages_next"/)
+        expect(response.body).to match(/<turbo-frame[^>]*id="older_messages_next_next"/)
       end
     end
   end

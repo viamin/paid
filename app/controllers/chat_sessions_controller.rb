@@ -29,6 +29,7 @@ class ChatSessionsController < ApplicationController
   def older_messages
     authorize @chat_session, :show?
     before_id = params.require(:before)
+    frame_id = request.headers["Turbo-Frame"].presence || "older_messages"
     messages = @chat_session.messages.chronological
       .where("chat_messages.id < ?", before_id)
       .last(50)
@@ -36,7 +37,7 @@ class ChatSessionsController < ApplicationController
     has_more = @chat_session.messages.where("chat_messages.id < ?", messages.first&.id).exists? if messages.any?
 
     render partial: "chat_sessions/older_messages",
-      locals: { messages: messages, chat_session: @chat_session, has_more: has_more }
+      locals: { messages: messages, chat_session: @chat_session, has_more: has_more, frame_id: frame_id }
   end
 
   def sidebar_page

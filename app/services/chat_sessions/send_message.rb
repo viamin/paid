@@ -146,7 +146,7 @@ module ChatSessions
           role: "assistant",
           content: nil,
           tool_name: tool_call[:name],
-          tool_arguments: tool_call[:arguments].to_json,
+          tool_arguments: tool_call[:arguments],
           tool_call_id: tool_call[:id]
         )
         on_message_persisted&.call(tool_call_message)
@@ -155,7 +155,8 @@ module ChatSessions
 
         tool_result_message = chat_session.messages.create!(
           role: "tool",
-          content: tool_result.to_json,
+          content: nil,
+          tool_result: tool_result,
           tool_call_id: tool_call[:id],
           tool_name: tool_call[:name]
         )
