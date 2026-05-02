@@ -29,10 +29,8 @@ export default class extends Controller {
     const content = event.detail.content?.trim()
     if (!content || this.streaming) return
 
-    this.appendMessage({ role: "user", content })
     this.setBusy(true)
     this.subscription.perform("send_message", { content })
-    this.scrollToBottom()
   }
 
   submitForm(event) {
@@ -54,6 +52,9 @@ export default class extends Controller {
 
   handleEvent(data) {
     switch (data.type) {
+    case "message_created":
+      this.handleMessageCreated(data)
+      break
     case "message_start":
       this.handleMessageStart(data)
       break
@@ -74,7 +75,6 @@ export default class extends Controller {
     this.streaming = true
     this.setStatus(`Streaming ${data.model || "assistant"} response…`)
     this.toggleTyping(true)
-    this.ensureAssistantMessage(data.message_id, data.model)
   }
 
   handleMessageChunk(data) {
@@ -95,6 +95,7 @@ export default class extends Controller {
   }
 
   handleError(data) {
+    this.removePendingAssistantMessage()
     this.streaming = false
     this.currentStreamId = null
     this.setBusy(false)
@@ -126,7 +127,7 @@ export default class extends Controller {
   }
 
   ensureAssistantMessage(streamId, model = null) {
-    const existing = this.messagesTarget.querySelector(`[data-stream-message-id="${streamId}"]`)
+    const existing = this.messagesTarget.querySelector(`article[data-stream-message-id="${streamId}"]`)
     if (existing) return existing
 
     const wrapper = document.createElement("div")
@@ -166,40 +167,41 @@ export default class extends Controller {
     return article
   }
 
-  appendMessage({ role, content }) {
-    const wrapper = document.createElement("div")
-    wrapper.className = role === "user" ? "flex justify-end" : "flex justify-start"
+  handleMessageCreated(data) {
+    if (!data.html) return
 
-    const article = document.createElement("article")
-    article.className = role === "user" ?
-      "ml-auto max-w-3xl rounded-[1.5rem] rounded-br-md bg-slate-900 px-4 py-3 text-sm text-white shadow-sm" :
-      "max-w-3xl rounded-[1.5rem] rounded-bl-md bg-white px-4 py-3 text-sm text-slate-900 shadow-sm ring-1 ring-slate-200"
+    const messageElement = this.buildMessageElement(data.html)
+    if (!messageElement) return
 
-    const metaDiv = document.createElement("div")
-    metaDiv.className = "mb-2 flex items-center gap-2"
+    if (data.stream_message_id) {
+      const existingMessage = this.messagesTarget.querySelector(`article[data-stream-message-id="${data.stream_message_id}"]`)
+      if (existingMessage) {
+        existingMessage.closest("div")?.replaceWith(messageElement)
+        this.scrollToBottom()
+        return
+      }
+    }
 
-    const badge = document.createElement("span")
-    badge.className = `inline-flex items-center rounded-full ${role === "user" ? "bg-slate-800 text-slate-100" : "bg-slate-100 text-slate-600"} px-2.5 py-1 text-xs font-semibold`
-    badge.textContent = role === "user" ? "User" : "Assistant"
+    this.messagesTarget.append(messageElement)
+    this.scrollToBottom()
+  }
 
-    const label = document.createElement("span")
-    label.className = `text-xs font-medium ${role === "user" ? "text-slate-300" : "text-slate-400"}`
-    label.textContent = role === "user" ? "You" : "Assistant"
+  buildMessageElement(html) {
+    const template = document.createElement("template")
+    template.innerHTML = html.trim()
+    return template.content.firstElementChild
+  }
 
-    const time = document.createElement("span")
-    time.className = `text-xs ${role === "user" ? "text-slate-400" : "text-slate-300"}`
-    time.textContent = "just now"
+  removePendingAssistantMessage() {
+    if (!this.currentStreamId) return
 
-    metaDiv.append(badge, label, time)
+    const pendingMessage = this.messagesTarget.querySelector(`article[data-stream-message-id="${this.currentStreamId}"]`)
+    if (!pendingMessage) return
 
-    const body = document.createElement("div")
-    body.className = "whitespace-pre-wrap break-words leading-6"
-    body.textContent = content
+    const contentTarget = pendingMessage.querySelector("[data-chat-message-target='content']")
+    if (contentTarget?.dataset.rawContent) return
 
-    article.append(metaDiv, body)
-
-    wrapper.append(article)
-    this.messagesTarget.append(wrapper)
+    pendingMessage.closest("div")?.remove()
   }
 
   messageControllerFor(element) {

@@ -165,6 +165,14 @@ RSpec.describe "ChatSessions" do
         expect(response).to have_http_status(:ok)
         expect(chat_session.reload.model).to eq("gpt-4o")
       end
+
+      it "updates values submitted under chat_session params" do
+        patch chat_session_path(chat_session), params: { chat_session: { title: "Updated From Form", model: "gpt-4.1" } }
+
+        expect(response).to redirect_to(chat_session_path(chat_session))
+        expect(chat_session.reload.title).to eq("Updated From Form")
+        expect(chat_session.model).to eq("gpt-4.1")
+      end
     end
   end
 

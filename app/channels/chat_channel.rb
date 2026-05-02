@@ -22,19 +22,23 @@ class ChatChannel < ApplicationCable::Channel
       content = data["content"]
       return if content.blank?
 
-      message_id = SecureRandom.uuid
-      broadcast_event("message_start", { message_id: message_id, model: @chat_session.model })
+      stream_message_id = SecureRandom.uuid
+      broadcast_event("message_start", { message_id: stream_message_id, model: @chat_session.model })
 
       assistant_message = ChatSessions::SendMessage.call(
         chat_session: @chat_session,
         content: content,
+        stream_message_id: stream_message_id,
+        on_message_persisted: ->(message, stream_message_id: nil) {
+          broadcast_persisted_message(message, stream_message_id: stream_message_id)
+        },
         on_chunk: ->(chunk) {
-          broadcast_event("message_chunk", { message_id: message_id, content: chunk })
+          broadcast_event("message_chunk", { message_id: stream_message_id, content: chunk })
         }
       )
 
       broadcast_event("message_complete", {
-        message_id: message_id,
+        message_id: stream_message_id,
         tokens: {
           input: assistant_message.tokens_input,
           output: assistant_message.tokens_output
@@ -65,5 +69,17 @@ class ChatChannel < ApplicationCable::Channel
 
   def broadcast_event(type, data)
     ActionCable.server.broadcast(stream_name, { type: type }.merge(data))
+  end
+
+  def broadcast_persisted_message(message, stream_message_id: nil)
+    broadcast_event("message_created", {
+      message_id: message.id,
+      role: message.role,
+      stream_message_id: stream_message_id,
+      html: ApplicationController.render(
+        partial: "chat_messages/message",
+        locals: { message: message }
+      )
+    })
   end
 end

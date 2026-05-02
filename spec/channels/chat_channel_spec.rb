@@ -48,6 +48,30 @@ RSpec.describe ChatChannel do
         .with(hash_including(type: "message_start"))
     end
 
+    it "broadcasts persisted messages for user, assistant, and tool entries" do
+      allow(ChatSessions::SendMessage).to receive(:call) do |**args|
+        user_message = create(:chat_message, chat_session: chat_session, role: "user", content: "Hello")
+        assistant_message = create(:chat_message, :assistant, chat_session: chat_session,
+          content: "Let me check.", tokens_input: 10, tokens_output: 5)
+        tool_message = create(:chat_message, :tool, chat_session: chat_session,
+          tool_name: "search", content: { status: "ok" }.to_json, tool_call_id: "call_1")
+
+        args[:on_message_persisted].call(user_message)
+        args[:on_message_persisted].call(assistant_message, stream_message_id: args[:stream_message_id])
+        args[:on_message_persisted].call(tool_message)
+        assistant_message
+      end
+
+      expect {
+        perform :send_message, content: "Hello"
+      }.to have_broadcasted_to("chat_session:#{chat_session.id}")
+        .with(hash_including(type: "message_created", role: "user", stream_message_id: nil))
+        .and have_broadcasted_to("chat_session:#{chat_session.id}")
+          .with(hash_including(type: "message_created", role: "assistant", stream_message_id: kind_of(String)))
+        .and have_broadcasted_to("chat_session:#{chat_session.id}")
+          .with(hash_including(type: "message_created", role: "tool", stream_message_id: nil))
+    end
+
     it "ignores blank content" do
       expect(ChatSessions::SendMessage).not_to receive(:call)
       perform :send_message, content: ""

@@ -138,6 +138,25 @@ RSpec.describe ChatSessions::SendMessage do
       expect(chat_session.messages.where(role: "user").count).to eq(2)
     end
 
+    it "notifies persisted messages in creation order" do
+      persisted_messages = []
+
+      described_class.call(
+        chat_session: chat_session,
+        content: "Hello",
+        llm_client: llm_client,
+        stream_message_id: "stream-123",
+        on_message_persisted: ->(message, stream_message_id: nil) {
+          persisted_messages << [ message.role, message.content, stream_message_id ]
+        }
+      )
+
+      expect(persisted_messages).to eq([
+        [ "user", "Hello", nil ],
+        [ "assistant", "I can help with that.", "stream-123" ]
+      ])
+    end
+
     context "with tool calls in response" do
       let(:tool_llm_response) do
         {
@@ -164,6 +183,19 @@ RSpec.describe ChatSessions::SendMessage do
         tool_result_msg = chat_session.messages.find_by(role: "tool")
         expect(tool_result_msg).to be_present
         expect(tool_result_msg.tool_call_id).to eq("call_1")
+      end
+
+      it "notifies tool messages so live threads can render them" do
+        roles = []
+
+        described_class.call(
+          chat_session: chat_session,
+          content: "Search for test",
+          llm_client: tool_llm_client,
+          on_message_persisted: ->(message, **) { roles << message.role }
+        )
+
+        expect(roles).to eq(%w[user assistant assistant tool])
       end
     end
   end

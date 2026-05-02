@@ -91,10 +91,12 @@ class ChatSessionsController < ApplicationController
   end
 
   def update_params
-    params.permit(:title, :model, :project_id, :provider_id)
+    params.fetch(:chat_session, params).permit(:title, :model, :project_id, :provider_id)
   end
 
   def session_json(session)
+    projects = session_projects(session)
+
     {
       id: session.id,
       external_id: session.external_id,
@@ -105,7 +107,8 @@ class ChatSessionsController < ApplicationController
       provider_id: session.provider_id,
       provider_name: session.provider&.display_name,
       project_id: session.project_id,
-      project_name: session.project&.name,
+      project_name: session.project&.name || projects.first&.name,
+      project_names: projects.map(&:name),
       created_by_id: session.created_by_id,
       created_at: session.created_at,
       updated_at: session.updated_at,
@@ -142,11 +145,16 @@ class ChatSessionsController < ApplicationController
 
   def session_scope
     policy_scope(ChatSession)
+      .with_preview_content
       .includes(:project, :provider, :chat_session_projects, :projects)
       .order(updated_at: :desc)
   end
 
   def pagination_meta(pagy)
     { page: pagy.page, pages: pagy.pages, count: pagy.count }
+  end
+
+  def session_projects(session)
+    (session.projects.to_a + [ session.project ].compact).uniq(&:id)
   end
 end

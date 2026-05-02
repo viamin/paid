@@ -30,6 +30,17 @@ class ChatSession < ApplicationRecord
 
   scope :active, -> { where(status: "active") }
   scope :idle_expired, -> { where(status: "active").where("idle_timeout_at < ?", Time.current) }
+  scope :with_preview_content, lambda {
+    preview_subquery = ChatMessage.where("chat_messages.chat_session_id = chat_sessions.id")
+      .where.not(role: "system")
+      .where.not(content: [ nil, "" ])
+      .order(:created_at)
+      .limit(1)
+      .select(:content)
+      .to_sql
+
+    select("chat_sessions.*", "(#{preview_subquery}) AS preview_content")
+  }
 
   def active?
     status == "active"

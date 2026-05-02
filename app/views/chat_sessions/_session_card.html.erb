@@ -1,5 +1,6 @@
 <% session_title = chat_session_title(chat_session) %>
 <% session_preview = chat_session_preview(chat_session) %>
+<% session_projects = chat_session_projects(chat_session) %>
 
 <%= link_to chat_session_path(chat_session),
             id: dom_id(chat_session),
@@ -7,7 +8,7 @@
             data: {
               chat_session_list_target: "card",
               session_id: chat_session.id,
-              search_text: "#{session_title} #{session_preview} #{chat_session.project&.name} #{chat_session.provider&.display_name} #{chat_session.model}".downcase
+              search_text: "#{session_title} #{session_preview} #{session_projects.map(&:name).join(' ')} #{chat_session.provider&.display_name} #{chat_session.model}".downcase
             } do %>
   <div class="flex items-start justify-between gap-3">
     <div class="min-w-0 flex-1">
@@ -22,8 +23,8 @@
     <% if chat_session.model.present? %>
       <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600"><%= chat_session.model %></span>
     <% end %>
-    <% if chat_session.project.present? %>
-      <span class="inline-flex items-center rounded-full bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700"><%= chat_session.project.name %></span>
+    <% session_projects.each do |project| %>
+      <span class="inline-flex items-center rounded-full bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700"><%= project.name %></span>
     <% end %>
   </div>
 

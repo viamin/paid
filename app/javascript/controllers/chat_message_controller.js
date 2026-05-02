@@ -6,15 +6,13 @@ const SAFE_URL_SCHEMES = /^(https?|mailto):/i
 
 const renderer = {
   link({ href, text }) {
-    if (href && !SAFE_URL_SCHEMES.test(href)) return text
+    if (!href) return text
+    if (!SAFE_URL_SCHEMES.test(href)) return text
     const escaped = href.replaceAll("&", "&amp;").replaceAll('"', "&quot;")
     return `<a href="${escaped}" rel="noopener noreferrer">${text}</a>`
   },
-  image({ href, text }) {
-    if (href && !SAFE_URL_SCHEMES.test(href)) return text || ""
-    const escaped = href.replaceAll("&", "&amp;").replaceAll('"', "&quot;")
-    const alt = (text || "").replaceAll("&", "&amp;").replaceAll('"', "&quot;")
-    return `<img src="${escaped}" alt="${alt}" />`
+  image({ text }) {
+    return text || ""
   }
 }
 

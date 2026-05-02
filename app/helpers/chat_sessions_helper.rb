@@ -50,14 +50,23 @@ module ChatSessionsHelper
 
   def chat_session_preview(chat_session)
     preview_cache[chat_session.id] ||= begin
-      content = chat_session.messages
-        .where.not(role: "system")
-        .where.not(content: [ nil, "" ])
-        .order(:created_at)
-        .pick(:content)
+      content =
+        if chat_session.respond_to?(:preview_content)
+          chat_session.preview_content
+        else
+          chat_session.messages
+            .where.not(role: "system")
+            .where.not(content: [ nil, "" ])
+            .order(:created_at)
+            .pick(:content)
+        end
 
       content.to_s.tr("\n", " ").truncate(64).presence || "Untitled chat"
     end
+  end
+
+  def chat_session_projects(chat_session)
+    (chat_session.projects.to_a + [ chat_session.project ].compact).uniq(&:id)
   end
 
   def chat_message_bubble_classes(message)

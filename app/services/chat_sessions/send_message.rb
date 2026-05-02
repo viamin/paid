@@ -12,13 +12,15 @@ module ChatSessions
   #     on_chunk: ->(chunk) { ActionCable.server.broadcast(channel, chunk) }
   #   )
   class SendMessage
-    attr_reader :chat_session, :content, :on_chunk, :llm_client
+    attr_reader :chat_session, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id
 
-    def initialize(chat_session:, content:, on_chunk: nil, llm_client: nil)
+    def initialize(chat_session:, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
       @chat_session = chat_session
       @content = content
       @on_chunk = on_chunk
+      @on_message_persisted = on_message_persisted
       @llm_client = llm_client
+      @stream_message_id = stream_message_id
     end
 
     def self.call(...)
@@ -57,10 +59,13 @@ module ChatSessions
     end
 
     def persist_user_message
-      chat_session.messages.create!(
+      message = chat_session.messages.create!(
         role: "user",
         content: content
       )
+
+      on_message_persisted&.call(message)
+      message
     end
 
     # Cap conversation history to avoid unbounded memory growth and
@@ -121,35 +126,40 @@ module ChatSessions
     end
 
     def create_assistant_message(response)
-      chat_session.messages.create!(
+      message = chat_session.messages.create!(
         role: "assistant",
         content: response[:content],
         model: response[:model],
         tokens_input: response[:tokens_input],
         tokens_output: response[:tokens_output]
       )
+
+      on_message_persisted&.call(message, stream_message_id: stream_message_id)
+      message
     end
 
     def handle_tool_calls(response)
       assistant_msg = create_assistant_message(response)
 
       response[:tool_calls].each do |tool_call|
-        chat_session.messages.create!(
+        tool_call_message = chat_session.messages.create!(
           role: "assistant",
           content: nil,
           tool_name: tool_call[:name],
           tool_arguments: tool_call[:arguments].to_json,
           tool_call_id: tool_call[:id]
         )
+        on_message_persisted&.call(tool_call_message)
 
         tool_result = execute_tool(tool_call)
 
-        chat_session.messages.create!(
+        tool_result_message = chat_session.messages.create!(
           role: "tool",
           content: tool_result.to_json,
           tool_call_id: tool_call[:id],
           tool_name: tool_call[:name]
         )
+        on_message_persisted&.call(tool_result_message)
       end
 
       assistant_msg
