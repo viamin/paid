@@ -193,9 +193,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(command_collector.collect.length).to eq(11)
       end
 
-      it "passes through the configured DATABASE_URL when present" do
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("DATABASE_URL").and_return("sqlite3:storage/test.sqlite3")
+      it "passes only bundle configuration to bin/rails routes" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_return(fixture_output)
@@ -205,13 +203,14 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(command_collector).to have_received(:run_command).with(
           "sh", "-c", /bin\/rails routes --expanded/,
           timeout: 120,
-          env: hash_including("DATABASE_URL" => "sqlite3:storage/test.sqlite3")
+          env: {
+            "BUNDLE_PATH" => "/tmp/bundle",
+            "BUNDLE_APP_CONFIG" => "/tmp/bundle-config"
+          }
         )
       end
 
-      it "does not inject DATABASE_URL when none is configured" do
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("DATABASE_URL").and_return(nil)
+      it "does not inject DATABASE_URL into the scanned app" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_return(fixture_output)

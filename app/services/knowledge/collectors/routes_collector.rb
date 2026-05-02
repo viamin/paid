@@ -97,17 +97,10 @@ module Knowledge
       end
 
       def routes_command_env
-        env = {
+        {
           "BUNDLE_PATH" => "/tmp/bundle",
           "BUNDLE_APP_CONFIG" => "/tmp/bundle-config"
         }
-
-        database_url = ENV["DATABASE_URL"].presence
-        return env unless database_url
-
-        # Reuse the provisioned service connection when available, but do not
-        # force an adapter for apps that rely on database.yml instead.
-        env.merge("DATABASE_URL" => database_url)
       end
 
       def install_gems_in_container
