@@ -52,6 +52,7 @@ class StaleRunDetectorJob < ApplicationJob
     claimed_threshold = CLAIMED_TIMEOUT.ago
     paused_threshold = PAUSED_TIMEOUT.ago
     resolved = 0
+    unclaimed = 0
     requeued = 0
     skipped = 0
 
@@ -66,9 +67,9 @@ class StaleRunDetectorJob < ApplicationJob
     end
 
     stale_claimed_runs(claimed_threshold).find_each do |agent_run|
-      case requeue_stale_claimed_run(agent_run)
-      when :requeued
-        requeued += 1
+      case unclaim_stale_claimed_run(agent_run)
+      when :unclaimed
+        unclaimed += 1
       when :exhausted
         resolved += 1 if resolve_stale_run(agent_run)
       when :skip
@@ -103,12 +104,13 @@ class StaleRunDetectorJob < ApplicationJob
     Rails.logger.info(
       message: "stale_run_detector.completed",
       resolved: resolved,
+      unclaimed: unclaimed,
       requeued: requeued,
       skipped: skipped,
       duration_ms: duration_ms
     )
 
-    ProcessRunQueueJob.perform_later if resolved > 0 || requeued > 0
+    ProcessRunQueueJob.perform_later if resolved > 0 || unclaimed > 0 || requeued > 0
   end
 
   private
@@ -153,8 +155,9 @@ class StaleRunDetectorJob < ApplicationJob
   # so ProcessRunQueueJob can start a fresh workflow without racing the old one.
   # If cancellation fails with a non-NOT_FOUND error, we skip the unclaim to
   # avoid duplicate workflows — the next detector cycle will retry.
-  def requeue_stale_claimed_run(agent_run)
-    requeue_stale_unfinished_run(agent_run, claimed_requeue_policy)
+  def unclaim_stale_claimed_run(agent_run)
+    result = requeue_stale_unfinished_run(agent_run, claimed_requeue_policy)
+    result == :requeued ? :unclaimed : result
   end
 
   def requeue_stale_paused_run(agent_run)
@@ -185,7 +188,7 @@ class StaleRunDetectorJob < ApplicationJob
       agent_run.log!("system", stale_requeue_log(agent_run))
 
       Rails.logger.info(
-        message: "stale_run_detector.requeued_stale_#{agent_run.status_before_last_save}_run",
+        message: "stale_run_detector.#{policy[:log_action]}_stale_#{agent_run.status_before_last_save}_run",
         agent_run_id: agent_run.id,
         project_id: agent_run.project_id,
         stale_requeue_count: agent_run.stale_requeue_count
@@ -212,7 +215,8 @@ class StaleRunDetectorJob < ApplicationJob
       stale_attribute: :updated_at,
       threshold: CLAIMED_TIMEOUT.ago,
       reset_attributes: {},
-      claimed: true
+      claimed: true,
+      log_action: "unclaimed"
     }
   end
 
@@ -229,7 +233,8 @@ class StaleRunDetectorJob < ApplicationJob
         guardrail_violation_type: nil,
         guardrail_context: nil
       },
-      timeout_before_requeue: true
+      timeout_before_requeue: true,
+      log_action: "requeued"
     }
   end
 

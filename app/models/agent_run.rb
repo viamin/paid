@@ -14,7 +14,6 @@ class AgentRun < ApplicationRecord
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
   ACTIVE_STATUSES = %w[running].freeze
-  CAPACITY_STATUSES = %w[queued running].freeze
   FINISHED_STATUSES = %w[completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
   TERMINAL_FAILURE_STATUSES = (FAILURE_STATUSES + %w[cancelled]).freeze
@@ -686,11 +685,11 @@ class AgentRun < ApplicationRecord
       .group(:project_id)
   end
 
-  # CTE that counts running runs per effective user (owner).
-  # Orphaned projects (created_by_id IS NULL) are attributed to the
-  # account's fallback owner using the same COALESCE chain as
-  # QUEUE_LATERAL_JOIN. Paused runs are excluded (only ACTIVE_STATUSES
-  # are counted) so a paused run does not inflate a user's stride.
+  # CTE that counts in-flight runs (running + claimed queued) per effective
+  # user (owner). Orphaned projects (created_by_id IS NULL) are attributed to
+  # the account's fallback owner using the same COALESCE chain as
+  # QUEUE_LATERAL_JOIN. Paused runs are excluded so a paused run does not
+  # inflate a user's stride.
   def self.user_active_counts_cte
     Arel.sql(<<~SQL.squish)
       SELECT owner.user_id AS user_id, COUNT(*) AS user_active_count

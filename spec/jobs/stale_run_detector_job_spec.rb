@@ -246,28 +246,24 @@ RSpec.describe StaleRunDetectorJob do
         expect(stale_run.service_container_ids).to eq([])
       end
 
-      it "skips a run that transitioned out of claimed before requeue" do
-        # Simulate the race: run was claimed at query time but transitions
-        # to running before the lock is acquired inside requeue_stale_claimed_run.
+      it "skips a run that transitioned out of claimed before unclaim" do
         run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id")
         run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
-        # Transition to running before requeue_stale_claimed_run acquires the lock
         run.update_columns(status: "running", started_at: Time.current, updated_at: Time.current)
 
         job = described_class.new
-        result = job.send(:requeue_stale_claimed_run, run)
+        result = job.send(:unclaim_stale_claimed_run, run)
 
         expect(result).to eq(:skip)
         expect(run.reload.status).to eq("running")
       end
 
       it "skips a claimed run that was recently updated (no longer stale)" do
-        # Run is still claimed but was updated after the staleness query
         run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id")
         run.update_columns(updated_at: 1.minute.ago)
 
         job = described_class.new
-        result = job.send(:requeue_stale_claimed_run, run)
+        result = job.send(:unclaim_stale_claimed_run, run)
 
         expect(result).to eq(:skip)
         expect(run.reload.status).to eq("queued")

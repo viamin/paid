@@ -2049,8 +2049,12 @@ RSpec.describe AgentRun do
       expect(described_class::STATUSES).to eq(%w[queued running paused completed no_output failed cancelled timeout retried auth_expired rate_limited])
     end
 
-    it "defines CAPACITY_STATUSES including queued and running" do
-      expect(described_class::CAPACITY_STATUSES).to eq(%w[queued running])
+    it "counts running and claimed queued runs in capacity_inflight scope" do
+      running = create(:agent_run, :running)
+      _claimed = create(:agent_run, status: "queued", temporal_workflow_id: "claimed")
+      _unclaimed = create(:agent_run, status: "queued")
+
+      expect(described_class.capacity_inflight).to contain_exactly(running, _claimed)
     end
 
     it "defines valid AGENT_TYPES" do
