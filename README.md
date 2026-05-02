@@ -348,7 +348,7 @@ bin/ci                       # Runs setup, lint, and security audit
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, code style, submitting PRs |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture and technology stack |
 | [ROADMAP.md](docs/ROADMAP.md) | Phased implementation plan |
-| [DATA_MODEL.md](docs/DATA_MODEL.md) | Database schema, accounts, and RBAC |
+| [db/structure.sql](db/structure.sql) | Canonical database schema with PostgreSQL table and column comments |
 | [AGENT_SYSTEM.md](docs/AGENT_SYSTEM.md) | Agent execution and Temporal workflows |
 | [KNOWLEDGE_BASE.md](docs/KNOWLEDGE_BASE.md) | Knowledge collection, embeddings, and hybrid search |
 | [SECURITY.md](docs/SECURITY.md) | Security model and container isolation |

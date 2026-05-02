@@ -10,7 +10,7 @@ For product overview and full local environment details, see [README.md](README.
 - [docs/STYLE_GUIDE.md](docs/STYLE_GUIDE.md)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/AGENT_SYSTEM.md](docs/AGENT_SYSTEM.md)
-- [docs/DATA_MODEL.md](docs/DATA_MODEL.md)
+- [db/structure.sql](db/structure.sql)
 
 ## Before You Start
 
@@ -178,6 +178,7 @@ Paid follows `rubocop-rails-omakase` and the repo style guides. A few convention
 - Use structured JSON logging with consistent component names.
 - Use Yarn commands for JavaScript dependencies.
 - Use `rails generate migration` to create migrations; do not create migration files manually.
+- Add `comment:` for new tables and columns when their purpose is not obvious from the schema alone.
 - Add foreign keys and indexes for new relational data.
 - Never edit schema dump files directly.
 
