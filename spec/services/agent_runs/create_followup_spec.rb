@@ -89,6 +89,18 @@ RSpec.describe AgentRuns::CreateFollowup do
 
         expect(followup.provider).to eq(resolved_provider)
       end
+
+      it "falls back to the first enabled agent type when the resolver returns no provider id" do
+        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[codex])
+        project.created_by.providers.update_all(enabled_for_agent_runs: false)
+        allow(AgentRuns::ProviderResolver).to receive(:call)
+          .and_return([ nil, "codex" ])
+
+        followup = described_class.call(agent_run: analysis_run, goal: "create_pr")
+
+        expect(followup.provider).to be_nil
+        expect(followup.agent_type).to eq("codex")
+      end
     end
 
     it "enqueues ProcessRunQueueJob" do

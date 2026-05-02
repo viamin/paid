@@ -68,5 +68,32 @@ RSpec.describe AgentRuns::ProviderResolver do
       expect(Provider.find(provider_id)).to eq(project.created_by.providers.find_by!(provider_key: "claude"))
       expect(agent_type).to eq("claude_code")
     end
+
+    it "falls back to the first enabled runnable provider when the saved setting points to a disabled provider" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor])
+
+      project = create(:project)
+      owner = project.created_by
+      cursor_provider = create(:provider, user: owner, provider_key: "cursor")
+      owner.settings.update!(default_agent_provider: "cursor")
+      cursor_provider.update!(enabled_for_agent_runs: false)
+
+      provider_id, agent_type = described_class.call(project: project, goal: "create_pr")
+
+      expect(provider_id).to eq(owner.providers.find_by!(provider_key: "claude").id)
+      expect(agent_type).to eq("claude_code")
+    end
+
+    it "falls back to a nil provider id with the first runnable agent type when no owner providers are available" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[codex])
+
+      project = build_stubbed(:project)
+      allow(project).to receive(:effective_owner).and_return(nil)
+
+      provider_id, agent_type = described_class.new(project: project, goal: "create_pr").send(:fallback_from_settings)
+
+      expect(provider_id).to be_nil
+      expect(agent_type).to eq("codex")
+    end
   end
 end

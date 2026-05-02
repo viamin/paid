@@ -65,9 +65,10 @@ module AgentRuns
 
       settings = UserSettingsResolver.call(project: project, strict: false)
       base_provider = provider_from_settings(settings, owner)
-      tenant_api_key_provider(base_provider || Provider.ensure_default_for(owner), owner) ||
+      fallback_provider = Provider.first_enabled_for_owner(owner) || Provider.ensure_default_for(owner)
+      tenant_api_key_provider(base_provider || fallback_provider, owner) ||
         base_provider ||
-        Provider.ensure_default_for(owner)
+        fallback_provider
     end
 
     def provider_from_settings(settings, owner)
@@ -75,7 +76,11 @@ module AgentRuns
 
       identifier = settings.select_automated_provider_identifier(goal: goal) ||
         settings.default_provider_identifier_for_goal(goal)
-      Provider.for_identifier(settings.user, identifier)
+      provider = Provider.for_identifier(settings.user, identifier)
+      return unless provider&.enabled_for_agent_runs?
+      return unless provider_runnable?(provider)
+
+      provider
     end
 
     def tenant_api_key_provider(base_provider, owner)
