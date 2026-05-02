@@ -10,13 +10,6 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Name: public; Type: SCHEMA; Schema: -; Owner: -
---
-
--- *not* creating schema, since initdb creates it
-
-
---
 -- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
 --
 
@@ -311,6 +304,69 @@ ALTER TABLE ONLY public.agent_run_anomalies FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE agent_run_anomalies; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.agent_run_anomalies IS 'Stores statistical outliers detected when an agent run metric deviates materially from the project''s historical baseline.';
+
+
+--
+-- Name: COLUMN agent_run_anomalies.anomaly_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_run_anomalies.anomaly_type IS 'Direction of the deviation relative to baseline, such as high_value or low_value.';
+
+
+--
+-- Name: COLUMN agent_run_anomalies.severity; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_run_anomalies.severity IS 'Escalation level for the anomaly. Currently warning or critical.';
+
+
+--
+-- Name: COLUMN agent_run_anomalies.metric_name; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_run_anomalies.metric_name IS 'Baseline-tracked metric that triggered the anomaly, such as duration_seconds or cost_cents.';
+
+
+--
+-- Name: COLUMN agent_run_anomalies.metric_value; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_run_anomalies.metric_value IS 'Observed value for the anomalous metric on this agent run.';
+
+
+--
+-- Name: COLUMN agent_run_anomalies.baseline_mean; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_run_anomalies.baseline_mean IS 'Historical mean for the metric from the project''s baseline record.';
+
+
+--
+-- Name: COLUMN agent_run_anomalies.baseline_standard_deviation; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_run_anomalies.baseline_standard_deviation IS 'Historical standard deviation for the metric from the project''s baseline record.';
+
+
+--
+-- Name: COLUMN agent_run_anomalies.deviation_factor; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_run_anomalies.deviation_factor IS 'Number of baseline standard deviations between the observed value and the baseline mean.';
+
+
+--
+-- Name: COLUMN agent_run_anomalies.message; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_run_anomalies.message IS 'Human-readable explanation of why the run was flagged as anomalous.';
+
+
+--
 -- Name: agent_run_anomalies_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -385,6 +441,41 @@ CREATE TABLE public.agent_run_phases (
 );
 
 ALTER TABLE ONLY public.agent_run_phases FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE agent_run_phases; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.agent_run_phases IS 'Tracks the discrete lifecycle phases recorded for an agent run so setup, execution, post-processing, and cleanup can be timed and inspected.';
+
+
+--
+-- Name: COLUMN agent_run_phases.phase_key; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_run_phases.phase_key IS 'Specific phase identifier such as create_agent_run, provision_container, run_agent, or create_pull_request.';
+
+
+--
+-- Name: COLUMN agent_run_phases.phase_group; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_run_phases.phase_group IS 'High-level phase bucket: setup, prompt, agent, post, or cleanup.';
+
+
+--
+-- Name: COLUMN agent_run_phases.status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_run_phases.status IS 'Outcome for the recorded phase. Currently completed or failed.';
+
+
+--
+-- Name: COLUMN agent_run_phases.metadata; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_run_phases.metadata IS 'Structured phase-specific details captured for debugging or UI display.';
 
 
 --
@@ -865,6 +956,20 @@ CREATE TABLE public.configuration_experiment_assignments (
 
 
 --
+-- Name: TABLE configuration_experiment_assignments; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.configuration_experiment_assignments IS 'Records which experiment variant a specific agent run received so outcomes can be analyzed later.';
+
+
+--
+-- Name: COLUMN configuration_experiment_assignments.quality_score; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiment_assignments.quality_score IS 'Observed quality score attributed to the assigned variant for this run.';
+
+
+--
 -- Name: configuration_experiment_assignments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -898,6 +1003,48 @@ CREATE TABLE public.configuration_experiment_variants (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
 );
+
+
+--
+-- Name: TABLE configuration_experiment_variants; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.configuration_experiment_variants IS 'Defines the control and treatment values that participate in a configuration experiment.';
+
+
+--
+-- Name: COLUMN configuration_experiment_variants.config_value; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiment_variants.config_value IS 'Concrete configuration value assigned to traffic for this variant.';
+
+
+--
+-- Name: COLUMN configuration_experiment_variants.is_control; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiment_variants.is_control IS 'Marks the baseline variant that represents the pre-experiment behavior.';
+
+
+--
+-- Name: COLUMN configuration_experiment_variants.sample_count; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiment_variants.sample_count IS 'Number of agent runs assigned to this variant.';
+
+
+--
+-- Name: COLUMN configuration_experiment_variants.total_quality_score; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiment_variants.total_quality_score IS 'Sum of quality scores across assignments so averages can be derived incrementally.';
+
+
+--
+-- Name: COLUMN configuration_experiment_variants.avg_quality_score; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiment_variants.avg_quality_score IS 'Average observed quality score for runs assigned to this variant.';
 
 
 --
@@ -943,6 +1090,90 @@ CREATE TABLE public.configuration_experiments (
     updated_at timestamp(6) without time zone NOT NULL,
     winner_variant_id bigint
 );
+
+
+--
+-- Name: TABLE configuration_experiments; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.configuration_experiments IS 'Runs A/B-style experiments on configuration values so Paid can compare rollout variants using downstream quality signals.';
+
+
+--
+-- Name: COLUMN configuration_experiments.account_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiments.account_id IS 'Owning account for account-scoped experiments. Null means the experiment is global.';
+
+
+--
+-- Name: COLUMN configuration_experiments.config_key; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiments.config_key IS 'Configuration setting under test, such as a prompt or model-related behavior flag.';
+
+
+--
+-- Name: COLUMN configuration_experiments.status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiments.status IS 'Lifecycle state for the experiment: draft, running, completed, or cancelled.';
+
+
+--
+-- Name: COLUMN configuration_experiments.control_value; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiments.control_value IS 'Baseline configuration value that treatment variants are compared against.';
+
+
+--
+-- Name: COLUMN configuration_experiments.experiment_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiments.experiment_type IS 'Kind of signal being optimized, such as agent_output, llm_output, or quality_signal.';
+
+
+--
+-- Name: COLUMN configuration_experiments.min_samples_per_variant; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiments.min_samples_per_variant IS 'Minimum assignment count required for each variant before analysis is considered reliable.';
+
+
+--
+-- Name: COLUMN configuration_experiments.confidence_threshold; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiments.confidence_threshold IS 'Statistical confidence threshold required before selecting a winning variant.';
+
+
+--
+-- Name: COLUMN configuration_experiments.traffic_percentage; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiments.traffic_percentage IS 'Percentage of eligible traffic routed into the experiment instead of bypassing it.';
+
+
+--
+-- Name: COLUMN configuration_experiments.cached_analysis; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiments.cached_analysis IS 'Persisted summary of the latest experiment analysis for dashboards and polling.';
+
+
+--
+-- Name: COLUMN configuration_experiments.analysis_samples_key; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiments.analysis_samples_key IS 'Cache key derived from assignment counts so stale cached analysis can be detected.';
+
+
+--
+-- Name: COLUMN configuration_experiments.winner_variant_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_experiments.winner_variant_id IS 'Variant selected as the winner when the experiment is completed.';
 
 
 --
@@ -1028,6 +1259,55 @@ ALTER TABLE ONLY public.container_pool_entries FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE container_pool_entries; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.container_pool_entries IS 'Represents a warm-container pool slot that can be pre-provisioned, claimed by a run, or recycled after failure.';
+
+
+--
+-- Name: COLUMN container_pool_entries.agent_run_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.container_pool_entries.agent_run_id IS 'Agent run that claimed or last used the warm pool entry.';
+
+
+--
+-- Name: COLUMN container_pool_entries.status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.container_pool_entries.status IS 'Warm pool lifecycle state: warming, warm, claimed, or error.';
+
+
+--
+-- Name: COLUMN container_pool_entries.workspace_volume; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.container_pool_entries.workspace_volume IS 'Docker volume that preserves the prepared workspace for fast reuse.';
+
+
+--
+-- Name: COLUMN container_pool_entries.warmed_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.container_pool_entries.warmed_at IS 'Time the container finished warming and became available for claiming.';
+
+
+--
+-- Name: COLUMN container_pool_entries.claimed_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.container_pool_entries.claimed_at IS 'Time an agent run claimed the warm container entry.';
+
+
+--
+-- Name: COLUMN container_pool_entries.last_error; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.container_pool_entries.last_error IS 'Most recent provisioning or lifecycle error for this pool entry.';
+
+
+--
 -- Name: container_pool_entries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -1071,6 +1351,69 @@ ALTER TABLE ONLY public.context_intake_responses FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE context_intake_responses; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.context_intake_responses IS 'Stores individual answers collected during a context intake session, including follow-up questions.';
+
+
+--
+-- Name: COLUMN context_intake_responses.question_key; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.context_intake_responses.question_key IS 'Stable identifier for the prompt so the same question can be referenced across schema versions.';
+
+
+--
+-- Name: COLUMN context_intake_responses.answer_data; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.context_intake_responses.answer_data IS 'Structured answer payload for non-freeform responses or extracted metadata.';
+
+
+--
+-- Name: COLUMN context_intake_responses.section; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.context_intake_responses.section IS 'Logical intake section used to group related questions in the UI.';
+
+
+--
+-- Name: COLUMN context_intake_responses.sequence; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.context_intake_responses.sequence IS 'Ordering position within the section.';
+
+
+--
+-- Name: COLUMN context_intake_responses.is_follow_up; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.context_intake_responses.is_follow_up IS 'Whether this response came from a generated follow-up question instead of the base questionnaire.';
+
+
+--
+-- Name: COLUMN context_intake_responses.parent_response_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.context_intake_responses.parent_response_id IS 'Original response that prompted this follow-up question, when applicable.';
+
+
+--
+-- Name: COLUMN context_intake_responses.skipped; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.context_intake_responses.skipped IS 'Whether the question was intentionally skipped instead of unanswered.';
+
+
+--
+-- Name: COLUMN context_intake_responses.provenance; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.context_intake_responses.provenance IS 'Who supplied the answer, currently human or agent.';
+
+
+--
 -- Name: context_intake_responses_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -1108,6 +1451,55 @@ CREATE TABLE public.context_intake_sessions (
 );
 
 ALTER TABLE ONLY public.context_intake_sessions FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE context_intake_sessions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.context_intake_sessions IS 'Captures a structured context-gathering interview for a project before or between agent runs.';
+
+
+--
+-- Name: COLUMN context_intake_sessions.status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.context_intake_sessions.status IS 'Session state: in_progress, completed, stale, or archived.';
+
+
+--
+-- Name: COLUMN context_intake_sessions.schema_version; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.context_intake_sessions.schema_version IS 'Version of the intake questionnaire schema used to generate the session.';
+
+
+--
+-- Name: COLUMN context_intake_sessions.current_step; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.context_intake_sessions.current_step IS 'Zero-based position within the intake flow so the UI can resume where it left off.';
+
+
+--
+-- Name: COLUMN context_intake_sessions.completed_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.context_intake_sessions.completed_at IS 'When the intake session was explicitly completed.';
+
+
+--
+-- Name: COLUMN context_intake_sessions.stale_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.context_intake_sessions.stale_at IS 'When the session was marked stale because its context was no longer current.';
+
+
+--
+-- Name: COLUMN context_intake_sessions.metadata; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.context_intake_sessions.metadata IS 'Structured intake context that does not fit the normalized response rows.';
 
 
 --
@@ -1848,6 +2240,55 @@ ALTER TABLE ONLY public.knowledge_recommendations FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE knowledge_recommendations; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.knowledge_recommendations IS 'Actionable recommendations generated from knowledge-base usage patterns to improve repository context collection.';
+
+
+--
+-- Name: COLUMN knowledge_recommendations.recommendation_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.knowledge_recommendations.recommendation_type IS 'Recommendation category such as add_collector, remove_collector, improve_collector, or knowledge_gap.';
+
+
+--
+-- Name: COLUMN knowledge_recommendations.collector_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.knowledge_recommendations.collector_type IS 'Collector implicated by the recommendation when the action targets a specific collector.';
+
+
+--
+-- Name: COLUMN knowledge_recommendations.evidence; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.knowledge_recommendations.evidence IS 'Structured supporting evidence explaining why the recommendation was generated.';
+
+
+--
+-- Name: COLUMN knowledge_recommendations.status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.knowledge_recommendations.status IS 'Recommendation workflow state: pending, accepted, dismissed, or implemented.';
+
+
+--
+-- Name: COLUMN knowledge_recommendations.dismissed_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.knowledge_recommendations.dismissed_at IS 'When the recommendation was dismissed.';
+
+
+--
+-- Name: COLUMN knowledge_recommendations.dismissal_reason; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.knowledge_recommendations.dismissal_reason IS 'Reason recorded when a recommendation is dismissed.';
+
+
+--
 -- Name: knowledge_recommendations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -1927,6 +2368,62 @@ CREATE TABLE public.knowledge_usage_stats (
 );
 
 ALTER TABLE ONLY public.knowledge_usage_stats FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE knowledge_usage_stats; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.knowledge_usage_stats IS 'Aggregates how an agent run consumed retrieved knowledge so search/bundle context effectiveness can be analyzed.';
+
+
+--
+-- Name: COLUMN knowledge_usage_stats.artifact_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.knowledge_usage_stats.artifact_type IS 'Knowledge artifact category consumed by the run, such as code, docs, or decision records.';
+
+
+--
+-- Name: COLUMN knowledge_usage_stats.goal; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.knowledge_usage_stats.goal IS 'Agent run goal associated with the usage record, such as create_pr or review.';
+
+
+--
+-- Name: COLUMN knowledge_usage_stats.context_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.knowledge_usage_stats.context_type IS 'Retrieval mode used to supply context. Currently search or bundle.';
+
+
+--
+-- Name: COLUMN knowledge_usage_stats.artifact_count; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.knowledge_usage_stats.artifact_count IS 'Number of distinct artifacts included in the retrieved context.';
+
+
+--
+-- Name: COLUMN knowledge_usage_stats.chunk_count; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.knowledge_usage_stats.chunk_count IS 'Number of knowledge chunks included in the retrieved context.';
+
+
+--
+-- Name: COLUMN knowledge_usage_stats.token_count; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.knowledge_usage_stats.token_count IS 'Approximate token cost of the retrieved knowledge context.';
+
+
+--
+-- Name: COLUMN knowledge_usage_stats.metadata; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.knowledge_usage_stats.metadata IS 'Additional retrieval details used for reporting or debugging.';
 
 
 --
@@ -2013,7 +2510,7 @@ CREATE TABLE public.llm_models (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     tier character varying(10),
-    CONSTRAINT llm_models_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[]))))
+    CONSTRAINT llm_models_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text]))))
 );
 
 
@@ -2057,6 +2554,62 @@ CREATE TABLE public.llm_output_metrics (
 );
 
 ALTER TABLE ONLY public.llm_output_metrics FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE llm_output_metrics; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.llm_output_metrics IS 'Stores scored quality signals for specific LLM-generated artifacts so prompt and output quality can be tracked over time.';
+
+
+--
+-- Name: COLUMN llm_output_metrics.output_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.llm_output_metrics.output_type IS 'Artifact category being scored, such as pr_description, issue_title, or decision_record.';
+
+
+--
+-- Name: COLUMN llm_output_metrics.prompt_slug; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.llm_output_metrics.prompt_slug IS 'Logical prompt identifier associated with the generated output.';
+
+
+--
+-- Name: COLUMN llm_output_metrics.source_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.llm_output_metrics.source_id IS 'Primary key of the application record whose generated output was scored.';
+
+
+--
+-- Name: COLUMN llm_output_metrics.source_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.llm_output_metrics.source_type IS 'Application record type referenced by source_id, such as PullRequest, Issue, or DecisionRecord.';
+
+
+--
+-- Name: COLUMN llm_output_metrics.scores; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.llm_output_metrics.scores IS 'Named metric scores used to evaluate the output before calculating any composite score.';
+
+
+--
+-- Name: COLUMN llm_output_metrics.composite_score; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.llm_output_metrics.composite_score IS 'Weighted aggregate quality score derived from the scores payload.';
+
+
+--
+-- Name: COLUMN llm_output_metrics.metadata; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.llm_output_metrics.metadata IS 'Additional scoring context used for reporting or troubleshooting.';
 
 
 --
@@ -2140,8 +2693,8 @@ CREATE TABLE public.model_selections (
     tier character varying(10),
     escalated_from_tier character varying(10),
     escalated_reason character varying(255),
-    CONSTRAINT model_selections_escalated_from_tier_check CHECK (((escalated_from_tier IS NULL) OR ((escalated_from_tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[])))),
-    CONSTRAINT model_selections_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying])::text[]))))
+    CONSTRAINT model_selections_escalated_from_tier_check CHECK (((escalated_from_tier IS NULL) OR ((escalated_from_tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text])))),
+    CONSTRAINT model_selections_tier_check CHECK (((tier IS NULL) OR ((tier)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text]))))
 );
 
 ALTER TABLE ONLY public.model_selections FORCE ROW LEVEL SECURITY;
@@ -2392,6 +2945,55 @@ CREATE TABLE public.project_baselines (
 );
 
 ALTER TABLE ONLY public.project_baselines FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE project_baselines; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.project_baselines IS 'Stores per-project historical baselines for run metrics so anomalies can be detected against recent norms.';
+
+
+--
+-- Name: COLUMN project_baselines.metric_name; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.project_baselines.metric_name IS 'Tracked agent run metric summarized by this baseline, such as tokens_total, duration_seconds, iterations, or cost_cents.';
+
+
+--
+-- Name: COLUMN project_baselines.mean; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.project_baselines.mean IS 'Historical mean value for the tracked metric.';
+
+
+--
+-- Name: COLUMN project_baselines.standard_deviation; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.project_baselines.standard_deviation IS 'Historical standard deviation for the tracked metric.';
+
+
+--
+-- Name: COLUMN project_baselines.sample_count; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.project_baselines.sample_count IS 'Number of runs contributing to the baseline calculation.';
+
+
+--
+-- Name: COLUMN project_baselines.p95; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.project_baselines.p95 IS 'Ninety-fifth percentile for the tracked metric.';
+
+
+--
+-- Name: COLUMN project_baselines.last_calculated_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.project_baselines.last_calculated_at IS 'When the baseline values were last recomputed.';
 
 
 --
@@ -2876,6 +3478,41 @@ ALTER TABLE ONLY public.quality_gate_events FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE quality_gate_events; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.quality_gate_events IS 'Records each threshold breach and recovery observed by the quality gate system.';
+
+
+--
+-- Name: COLUMN quality_gate_events.event_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_gate_events.event_type IS 'Quality gate transition being recorded: trigger or recovery.';
+
+
+--
+-- Name: COLUMN quality_gate_events.score_value; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_gate_events.score_value IS 'Observed metric value that triggered the event.';
+
+
+--
+-- Name: COLUMN quality_gate_events.threshold_value; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_gate_events.threshold_value IS 'Specific threshold value that was breached or recovered.';
+
+
+--
+-- Name: COLUMN quality_gate_events.metadata; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_gate_events.metadata IS 'Structured context about the gate evaluation and follow-up actions.';
+
+
+--
 -- Name: quality_gate_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -2911,6 +3548,48 @@ CREATE TABLE public.quality_gate_thresholds (
 );
 
 ALTER TABLE ONLY public.quality_gate_thresholds FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE quality_gate_thresholds; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.quality_gate_thresholds IS 'Defines per-project quality gate rules that trigger pauses or recovery when metrics breach expected bounds.';
+
+
+--
+-- Name: COLUMN quality_gate_thresholds.metric_key; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_gate_thresholds.metric_key IS 'Quality metric evaluated by the gate, such as composite_score, lint_clean, or review_score.';
+
+
+--
+-- Name: COLUMN quality_gate_thresholds.min_threshold; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_gate_thresholds.min_threshold IS 'Lower bound whose breach triggers the gate for metrics where too low is bad.';
+
+
+--
+-- Name: COLUMN quality_gate_thresholds.max_threshold; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_gate_thresholds.max_threshold IS 'Upper bound whose breach triggers the gate for metrics where too high is bad.';
+
+
+--
+-- Name: COLUMN quality_gate_thresholds.severity; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_gate_thresholds.severity IS 'Severity assigned when the gate is breached: info, warning, or critical.';
+
+
+--
+-- Name: COLUMN quality_gate_thresholds.enabled; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_gate_thresholds.enabled IS 'Whether this threshold currently participates in quality gate evaluation.';
 
 
 --
@@ -2991,6 +3670,41 @@ ALTER TABLE ONLY public.quality_pause_events FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE quality_pause_events; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.quality_pause_events IS 'Audit trail for project-level automatic pauses and resumptions caused by quality gate outcomes.';
+
+
+--
+-- Name: COLUMN quality_pause_events.event_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_pause_events.event_type IS 'Pause lifecycle event: paused when automation is halted or resumed when it is re-enabled.';
+
+
+--
+-- Name: COLUMN quality_pause_events.composite_score; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_pause_events.composite_score IS 'Composite quality score observed when the pause or resume decision was made.';
+
+
+--
+-- Name: COLUMN quality_pause_events.threshold; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_pause_events.threshold IS 'Composite score threshold that justified the pause or resume event.';
+
+
+--
+-- Name: COLUMN quality_pause_events.metadata; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_pause_events.metadata IS 'Structured context for the pause decision, including contributing signals.';
+
+
+--
 -- Name: quality_pause_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -3032,6 +3746,76 @@ CREATE TABLE public.quality_recovery_actions (
 );
 
 ALTER TABLE ONLY public.quality_recovery_actions FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE quality_recovery_actions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.quality_recovery_actions IS 'Tracks remediation steps proposed or executed after a quality gate pause so recovery effectiveness can be measured.';
+
+
+--
+-- Name: COLUMN quality_recovery_actions.action_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_recovery_actions.action_type IS 'Recovery strategy being attempted, such as prompt_rollback, model_change, or final_pause.';
+
+
+--
+-- Name: COLUMN quality_recovery_actions.status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_recovery_actions.status IS 'Execution state for the recovery action: pending, executing, executed, evaluated, or failed.';
+
+
+--
+-- Name: COLUMN quality_recovery_actions.diagnosis; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_recovery_actions.diagnosis IS 'Structured diagnosis explaining why this recovery action was selected.';
+
+
+--
+-- Name: COLUMN quality_recovery_actions.parameters; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_recovery_actions.parameters IS 'Inputs required to execute the recovery action.';
+
+
+--
+-- Name: COLUMN quality_recovery_actions.result; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_recovery_actions.result IS 'Structured output and evaluation details produced by the recovery action.';
+
+
+--
+-- Name: COLUMN quality_recovery_actions.quality_before; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_recovery_actions.quality_before IS 'Quality score before the recovery action was executed.';
+
+
+--
+-- Name: COLUMN quality_recovery_actions.quality_after; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_recovery_actions.quality_after IS 'Quality score measured after the recovery action was evaluated.';
+
+
+--
+-- Name: COLUMN quality_recovery_actions.executed_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_recovery_actions.executed_at IS 'When execution of the recovery action began or completed.';
+
+
+--
+-- Name: COLUMN quality_recovery_actions.evaluated_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quality_recovery_actions.evaluated_at IS 'When the impact of the recovery action was evaluated.';
 
 
 --
@@ -3337,6 +4121,69 @@ ALTER TABLE ONLY public.tracker_configurations FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE tracker_configurations; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tracker_configurations IS 'Stores external issue-tracker integration settings for an account, user, or project.';
+
+
+--
+-- Name: COLUMN tracker_configurations.configurable_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tracker_configurations.configurable_type IS 'Polymorphic owner type for the tracker configuration: Account, User, or Project.';
+
+
+--
+-- Name: COLUMN tracker_configurations.configurable_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tracker_configurations.configurable_id IS 'Polymorphic owner id for the account, user, or project that owns the tracker configuration.';
+
+
+--
+-- Name: COLUMN tracker_configurations.tracker_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tracker_configurations.tracker_type IS 'External tracker implementation, such as github_issues, jira, linear, azure_devops, mcp, or generic_webhook.';
+
+
+--
+-- Name: COLUMN tracker_configurations.base_url; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tracker_configurations.base_url IS 'Tracker base URL used when the integration targets a self-hosted or custom endpoint.';
+
+
+--
+-- Name: COLUMN tracker_configurations.integration_credential_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tracker_configurations.integration_credential_id IS 'Credential used to authenticate to the external tracker when one is required.';
+
+
+--
+-- Name: COLUMN tracker_configurations.project_mapping; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tracker_configurations.project_mapping IS 'Mapping data between Paid entities and tracker-specific project identifiers.';
+
+
+--
+-- Name: COLUMN tracker_configurations.enabled; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tracker_configurations.enabled IS 'Whether this tracker configuration is active for automation.';
+
+
+--
+-- Name: COLUMN tracker_configurations.created_by_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tracker_configurations.created_by_id IS 'User who created the tracker configuration.';
+
+
+--
 -- Name: tracker_configurations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -3410,7 +4257,7 @@ CREATE TABLE public.user_settings (
     fair_queue_across_projects boolean DEFAULT true NOT NULL,
     CONSTRAINT chk_max_issues_per_page_bounds CHECK (((max_issues_per_page >= 5) AND (max_issues_per_page <= 200))),
     CONSTRAINT chk_max_prs_per_page_bounds CHECK (((max_prs_per_page >= 5) AND (max_prs_per_page <= 200))),
-    CONSTRAINT chk_provider_selection_mode CHECK (((provider_selection_mode)::text = ANY ((ARRAY['single'::character varying, 'round_robin'::character varying, 'random'::character varying])::text[])))
+    CONSTRAINT chk_provider_selection_mode CHECK (((provider_selection_mode)::text = ANY (ARRAY[('single'::character varying)::text, ('round_robin'::character varying)::text, ('random'::character varying)::text])))
 );
 
 ALTER TABLE ONLY public.user_settings FORCE ROW LEVEL SECURITY;
@@ -4824,14 +5671,14 @@ CREATE INDEX idx_agent_runs_project_status_created_at_desc ON public.agent_runs 
 -- Name: idx_agent_runs_unique_active_issue; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_agent_runs_unique_active_issue ON public.agent_runs USING btree (project_id, issue_id, goal) WHERE ((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])));
+CREATE UNIQUE INDEX idx_agent_runs_unique_active_issue ON public.agent_runs USING btree (project_id, issue_id, goal) WHERE ((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])));
 
 
 --
 -- Name: idx_agent_runs_unique_active_pr; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_agent_runs_unique_active_pr ON public.agent_runs USING btree (project_id, source_pull_request_number, goal) WHERE ((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])));
+CREATE UNIQUE INDEX idx_agent_runs_unique_active_pr ON public.agent_runs USING btree (project_id, source_pull_request_number, goal) WHERE ((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])));
 
 
 --
@@ -10156,6 +11003,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260502201828'),
 ('20260428140000'),
 ('20260428130904'),
 ('20260428120000'),

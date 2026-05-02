@@ -1,5 +1,9 @@
 # Paid Data Model
 
+> [!WARNING]
+> This document is deprecated and known to drift from the live schema.
+> Use [`db/structure.sql`](../db/structure.sql) as the canonical database reference. Table and column intent is now documented via PostgreSQL comments in migrations, which are dumped into `db/structure.sql`.
+
 This document describes the database schema for Paid. The schema is designed around the principle that **configuration is data**—prompts, model preferences, and workflow parameters are all stored in the database, not in code.
 
 ## Implementation Status
