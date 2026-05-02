@@ -83,7 +83,7 @@ module Activities
         expected_draft_review_count: expected_draft_review_count,
         prompt_version: prompt_version,
         status: "queued",
-        temporal_workflow_id: AgentRun::CLAIMED_SENTINEL
+        temporal_workflow_id: input[:workflow_id] || AgentRun::CLAIMED_SENTINEL
       }
       attrs[:parent_workflow_id] = input[:parent_workflow_id] if input[:parent_workflow_id]
 
