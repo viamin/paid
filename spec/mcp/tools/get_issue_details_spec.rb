@@ -15,7 +15,7 @@ RSpec.describe Tools::GetIssueDetails do
 
     before do
       allow(GithubClient).to receive(:new).and_return(github_client)
-      allow(github_client).to receive(:issue_comments).and_return([])
+      allow(github_client).to receive(:recent_issue_comments).and_return([])
     end
 
     it "returns issue details" do
@@ -35,17 +35,18 @@ RSpec.describe Tools::GetIssueDetails do
         "A comment",
         Time.current
       )
-      allow(github_client).to receive(:issue_comments).and_return([ comment ])
+      allow(github_client).to receive(:recent_issue_comments).and_return([ comment ])
 
       result = tool.call(project_id: project.id, issue_id: issue.id)
 
+      expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, issue.github_number)
       expect(result[:comments].size).to eq(1)
       expect(result[:comments].first[:user]).to eq("octocat")
       expect(result[:comments].first[:body]).to eq("A comment")
     end
 
     it "returns empty comments when GitHub API fails" do
-      allow(github_client).to receive(:issue_comments).and_raise(StandardError, "API error")
+      allow(github_client).to receive(:recent_issue_comments).and_raise(StandardError, "API error")
 
       result = tool.call(project_id: project.id, issue_id: issue.id)
 

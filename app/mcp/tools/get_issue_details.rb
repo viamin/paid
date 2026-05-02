@@ -49,7 +49,7 @@ module Tools
       client = project.github_token&.client
       return [] unless client
 
-      comments = client.issue_comments(project.full_name, issue.github_number).first(20)
+      comments = client.recent_issue_comments(project.full_name, issue.github_number).last(20)
       comments.map do |c|
         { user: c.user.login, body: c.body, created_at: c.created_at }
       end

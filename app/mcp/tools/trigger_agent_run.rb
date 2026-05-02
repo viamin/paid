@@ -55,6 +55,16 @@ module Tools
         project_id: run.project_id,
         created_at: run.created_at
       }
+    rescue ActiveRecord::RecordNotUnique => e
+      raise unless duplicate_active_issue_run?(e)
+
+      raise ArgumentError, "An agent run is already queued or in progress for this issue"
+    end
+
+    private
+
+    def duplicate_active_issue_run?(error)
+      (error.cause&.message || error.message).include?("idx_agent_runs_unique_active_issue")
     end
   end
 end

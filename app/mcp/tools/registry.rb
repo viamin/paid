@@ -41,7 +41,11 @@ module Tools
       def tool_available_to?(klass, user:)
         return true unless klass.write_operation?
 
-        Pundit.policy(user, Project.new(account: user.account))&.run_agent? || false
+        return true if Pundit.policy(user, Project.new(account: user.account))&.run_agent?
+
+        scope = Pundit.policy_scope!(user, Project)
+
+        scope.any? { |project| Pundit.policy!(user, project).run_agent? }
       end
     end
   end

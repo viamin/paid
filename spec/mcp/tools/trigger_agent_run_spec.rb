@@ -62,5 +62,14 @@ RSpec.describe Tools::TriggerAgentRun do
         }.to raise_error(Pundit::NotAuthorizedError)
       end
     end
+
+    it "returns an invalid params error when an active run already exists" do
+      allow(AgentRun).to receive(:create!)
+        .and_raise(ActiveRecord::RecordNotUnique.new("idx_agent_runs_unique_active_issue"))
+
+      expect {
+        tool.call(project_id: project.id, issue_id: issue.id, confirmed: true)
+      }.to raise_error(ArgumentError, "An agent run is already queued or in progress for this issue")
+    end
   end
 end

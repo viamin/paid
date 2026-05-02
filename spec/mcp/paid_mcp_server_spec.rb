@@ -60,6 +60,16 @@ RSpec.describe PaidMcpServer do
 
       expect(result[:error][:code]).to eq(-32602)
     end
+
+    it "returns invalid params when tool arguments are not an object" do
+      result = server.handle_request(
+        method: "tools/call",
+        params: { "name" => "list_projects", "arguments" => [] },
+        id: 6
+      )
+
+      expect(result[:error]).to eq(code: -32602, message: "Tool arguments must be a JSON object")
+    end
   end
 
   describe "#tool_definitions" do
