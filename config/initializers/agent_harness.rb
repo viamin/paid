@@ -14,7 +14,7 @@ AGENT_TIMEOUT_DEFAULT = 3600
 Rails.application.config.x.agent_timeout = AGENT_TIMEOUT_DEFAULT
 
 AgentHarness.configure do |config|
-  # Order is deterministic: follows APP_TO_HARNESS_PROVIDER_KEYS declaration order.
+  # Order is deterministic: follows APP_PROVIDER_KEYS declaration order.
   supported_provider_keys = ProviderSupport.supported_provider_keys
 
   default_key = if supported_provider_keys.include?("claude")
