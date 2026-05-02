@@ -600,6 +600,13 @@ class AgentRun < ApplicationRecord
   USER_ACTIVE_COUNT_SQL = Arel.sql("COALESCE(user_active_counts.user_active_count, 0) ASC").freeze
   QUEUE_ORDER = [ QUEUE_PRIORITY_SQL, USER_ACTIVE_COUNT_SQL, GOAL_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
   WITHIN_OWNER_QUEUE_ORDER = [ PROJECT_ACTIVE_COUNT_SQL, GOAL_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
+  STATUS_ORDER_CASE_SQL = <<~SQL.squish.freeze
+    CASE WHEN agent_runs.status = 'running' THEN 0
+         WHEN agent_runs.status = 'queued' AND agent_runs.temporal_workflow_id IS NOT NULL THEN 1
+         WHEN agent_runs.status = 'paused' THEN 3
+         ELSE 2 END
+  SQL
+  STATUS_ORDER_SQL = Arel.sql("#{STATUS_ORDER_CASE_SQL} ASC").freeze
 
   # Scope that adds the CTE and joins required by QUEUE_ORDER.
   # All queue-ordering methods use this instead of bare `queued`.
@@ -647,10 +654,10 @@ class AgentRun < ApplicationRecord
         "COALESCE(user_active_counts.user_active_count, 0) AS user_active_count",
         "project_owner.user_id AS project_owner_user_id",
         "COALESCE(user_settings.fair_queue_across_projects, TRUE) AS fair_queue_across_projects",
-        "CASE WHEN agent_runs.status = 'running' THEN 0 WHEN agent_runs.status = 'queued' AND agent_runs.temporal_workflow_id IS NOT NULL THEN 1 WHEN agent_runs.status = 'paused' THEN 3 ELSE 2 END AS status_order"
+        "#{STATUS_ORDER_CASE_SQL} AS status_order"
       )
       .reorder(
-        Arel.sql("CASE WHEN agent_runs.status = 'running' THEN 0 WHEN agent_runs.status = 'queued' AND agent_runs.temporal_workflow_id IS NOT NULL THEN 1 WHEN agent_runs.status = 'paused' THEN 3 ELSE 2 END ASC"),
+        STATUS_ORDER_SQL,
         QUEUE_PRIORITY_SQL,
         GOAL_PRIORITY_SQL,
         created_at: :asc,

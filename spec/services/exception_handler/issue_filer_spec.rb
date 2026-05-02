@@ -40,8 +40,8 @@ RSpec.describe ExceptionHandler::IssueFiler do
       expect(incident.action_taken).to eq("issue_filed")
     end
 
-    it "retries issue creation when a previous attempt left only github_issue_url populated" do
-      incident.update_columns(github_issue_url: "filing", github_issue_number: nil)
+    it "retries issue creation when a previous attempt claimed but did not complete" do
+      incident.update_columns(action_taken: "filing", github_issue_number: nil)
       allow(gh_issue).to receive_messages(html_url: "https://github.com/acme/widgets/issues/34", number: 34)
       allow(client).to receive(:create_issue).and_return(gh_issue)
 

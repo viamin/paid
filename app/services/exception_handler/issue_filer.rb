@@ -17,13 +17,36 @@ module ExceptionHandler
       client = @project&.github_token&.client
       return unless client
 
-      @incident.with_lock do
-        @incident.reload
-
+      # Short lock to check-and-claim: prevents duplicate GitHub issues
+      # when concurrent jobs process the same incident. The GitHub network
+      # call happens outside the lock to avoid holding it during I/O.
+      action = @incident.with_lock do
         if @incident.github_issue_number.present?
-          add_comment_to_existing(client: client)
+          :add_comment
+        elsif @incident.action_taken == "filing"
+          :wait_for_filing
         else
-          create_new_issue(client: client)
+          @incident.update_column(:action_taken, "filing")
+          :create_issue
+        end
+      end
+
+      case action
+      when :add_comment
+        add_comment_to_existing(client: client)
+      when :wait_for_filing
+        wait_and_comment_or_retry(client: client)
+      when :create_issue
+        gh_issue = file_github_issue(client: client)
+        # Re-lock to persist the issue number. If another worker raced
+        # and already filed (e.g. stale "filing" retry), add a comment
+        # instead of overwriting.
+        @incident.with_lock do
+          if @incident.github_issue_number.present?
+            add_comment_to_existing(client: client)
+          else
+            persist_new_issue(gh_issue)
+          end
         end
       end
     rescue GithubClient::Error => e
@@ -43,14 +66,37 @@ module ExceptionHandler
 
     private
 
-    def create_new_issue(client:)
-      gh_issue = client.create_issue(
+    def wait_and_comment_or_retry(client:)
+      # Another worker claimed this incident. Wait briefly for it to
+      # finish, then add a comment if it succeeded or retry if it stalled.
+      sleep 2
+      @incident.reload
+
+      if @incident.github_issue_number.present?
+        add_comment_to_existing(client: client)
+      else
+        # Previous claimant likely crashed — reclaim and file.
+        gh_issue = file_github_issue(client: client)
+        @incident.with_lock do
+          if @incident.github_issue_number.present?
+            add_comment_to_existing(client: client)
+          else
+            persist_new_issue(gh_issue)
+          end
+        end
+      end
+    end
+
+    def file_github_issue(client:)
+      client.create_issue(
         @project.full_name,
         title: issue_title,
         body: issue_body,
         labels: issue_labels
       )
+    end
 
+    def persist_new_issue(gh_issue)
       @incident.update!(
         github_issue_url: gh_issue.html_url,
         github_issue_number: gh_issue.number,
