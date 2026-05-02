@@ -112,9 +112,9 @@ class ChatSessionsController < ApplicationController
       created_by_id: session.created_by_id,
       created_at: session.created_at,
       updated_at: session.updated_at,
-      total_tokens_input: session.total_tokens_input,
-      total_tokens_output: session.total_tokens_output,
-      estimated_cost_cents: session.estimated_cost_cents
+      total_tokens_input: session.try(:preloaded_tokens_input) || session.total_tokens_input,
+      total_tokens_output: session.try(:preloaded_tokens_output) || session.total_tokens_output,
+      estimated_cost_cents: session.try(:preloaded_cost_cents) || session.estimated_cost_cents
     }
   end
 
@@ -146,6 +146,12 @@ class ChatSessionsController < ApplicationController
   def session_scope
     policy_scope(ChatSession)
       .with_preview_content
+      .select(
+        "chat_sessions.*",
+        "(SELECT COALESCE(SUM(input_tokens),0) FROM token_usages WHERE token_usages.chat_session_id = chat_sessions.id) AS preloaded_tokens_input",
+        "(SELECT COALESCE(SUM(output_tokens),0) FROM token_usages WHERE token_usages.chat_session_id = chat_sessions.id) AS preloaded_tokens_output",
+        "(SELECT COALESCE(SUM(cost_cents),0) FROM token_usages WHERE token_usages.chat_session_id = chat_sessions.id) AS preloaded_cost_cents"
+      )
       .includes(:project, :provider, :chat_session_projects, :projects)
       .order(updated_at: :desc)
   end
