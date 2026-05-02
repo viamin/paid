@@ -9,7 +9,7 @@ class AgentRunsController < ApplicationController
     @q = base_scope.ransack(params[:q])
 
     if params[:sort] == "queue"
-      @q.sorts = nil
+      @q.sorts.clear if @q.sorts.any?
       @agent_runs = apply_ransack_filters(@q).queue_order_display
     else
       @q.sorts = "created_at desc" if @q.sorts.empty?

@@ -134,6 +134,12 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     context "with stale claimed runs" do
+      before do
+        handle = double(cancel: true) # rubocop:disable RSpec/VerifiedDoubles
+        temporal_client = double(workflow_handle: handle, start_workflow: nil) # rubocop:disable RSpec/VerifiedDoubles
+        allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+      end
+
       it "requeues a stale claimed run that has not exhausted requeue budget" do
         stale_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id")
         stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)

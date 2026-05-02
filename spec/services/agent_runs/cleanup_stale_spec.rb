@@ -6,6 +6,12 @@ RSpec.describe AgentRuns::CleanupStale do
   describe ".call" do
     let(:project) { create(:project) }
 
+    before do
+      handle = double(cancel: true) # rubocop:disable RSpec/VerifiedDoubles
+      temporal_client = double(workflow_handle: handle, start_workflow: nil) # rubocop:disable RSpec/VerifiedDoubles
+      allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+    end
+
     it "times out stale running runs for the project" do
       stale_run = create(:agent_run, :running, project: project, started_at: AgentRun.stale_running_cutoff - 1.minute)
 
