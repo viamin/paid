@@ -51,7 +51,7 @@ module Activities
         # `updated_at` second as the watermark), use the exact timestamp
         # to guarantee forward progress. Some same-second issues may be
         # skipped, but permanent re-fetch of the same window is worse.
-        latest_updated = github_issues.filter_map { |gi| gi.updated_at }.max
+        latest_updated = github_issues.filter_map(&:updated_at).max
         if latest_updated
           inclusive_cursor = latest_updated - 1.second
           # `incremental` is only true when `last_issue_sync_at` is present,

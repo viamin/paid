@@ -168,6 +168,23 @@ jobs:
       - name: Run query performance benchmarks
         run: COVERAGE=false bin/rspec spec/performance
 
+  fasterer:
+    runs-on: ubuntu-latest
+    env:
+      BUNDLE_FROZEN: "true"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@c4e5b1316158f92e3d49443a9d58b31d25ac0f8f
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Run fasterer
+        run: bundle exec fasterer
+
   performance:
     runs-on: ubuntu-latest
 

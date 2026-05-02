@@ -75,7 +75,7 @@ class TokenUsage < ApplicationRecord
   private
 
   def exactly_one_run_present
-    present_count = [ agent_run_id, knowledge_run_id, chat_session_id ].count { |id| id.present? }
+    present_count = [ agent_run_id, knowledge_run_id, chat_session_id ].count(&:present?)
     return if present_count == 1
 
     errors.add(:base, "must belong to exactly one of agent_run, knowledge_run, or chat_session")

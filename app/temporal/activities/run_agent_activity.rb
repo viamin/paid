@@ -1659,11 +1659,11 @@ module Activities
       "Could not inspect container: #{e.message}"
     end
 
-    def error_or_cause_matches?(error, klass, &block)
+    def error_or_cause_matches?(error, klass, &)
       current = error
 
       while current
-        return true if current.is_a?(klass) && (!block || block.call(current))
+        return true if current.is_a?(klass) && (!block_given? || yield(current))
 
         break unless current.respond_to?(:cause)
         current = current.cause

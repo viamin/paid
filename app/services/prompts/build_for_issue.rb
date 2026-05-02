@@ -133,10 +133,15 @@ module Prompts
     end
 
     def self.fetch_trusted_comments(github_client:, repo:, number:, project:, max_comments: DEFAULT_MAX_COMMENTS)
+      return [] if max_comments <= 0
       all_comments = github_client.issue_comments(repo, number)
-      all_comments
-        .select { |c| project.trusted_github_user?(c.user&.login) }
-        .last(max_comments)
+      trusted = []
+      all_comments.reverse_each do |c|
+        next unless project.trusted_github_user?(c.user&.login)
+        trusted << c
+        break if trusted.size >= max_comments
+      end
+      trusted.reverse
     rescue GithubClient::Error
       []
     end

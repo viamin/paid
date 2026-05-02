@@ -51,8 +51,13 @@ rescue AgentHarness::ConfigurationError
   # instead of the generic registry method. Fall back to that API.
   begin
     provider_class = AgentHarness::Providers.const_get(provider.split("_").map(&:capitalize).join)
-    contract = provider_class.installation_contract
-  rescue NameError, NoMethodError => e
+    if provider_class.respond_to?(:installation_contract)
+      contract = provider_class.installation_contract
+    else
+      warn "No install contract found for provider: #{provider}"
+      exit 1
+    end
+  rescue NameError => e
     warn "No install contract found for provider: #{provider} (#{e.message})"
     exit 1
   end
