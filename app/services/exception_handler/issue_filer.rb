@@ -16,16 +16,26 @@ module ExceptionHandler
     def call
       return unless @project&.github_token&.client
 
-      if @incident.github_issue_url.present?
-        add_comment_to_existing
-      else
-        create_new_issue
+      @incident.with_lock do
+        @incident.reload
+
+        if @incident.github_issue_url.present?
+          add_comment_to_existing
+        else
+          create_new_issue
+        end
       end
     rescue GithubClient::Error => e
       Rails.logger.warn(
         message: "exception_handler.issue_filing_failed",
         incident_id: @incident.id,
         error: e.message
+      )
+      nil
+    rescue ActiveRecord::RecordNotFound
+      Rails.logger.warn(
+        message: "exception_handler.incident_gone",
+        incident_id: @incident.id
       )
       nil
     end
