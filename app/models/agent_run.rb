@@ -840,14 +840,15 @@ class AgentRun < ApplicationRecord
 
   # Returns total tokens consumed across all streaming turns.
   def streaming_total_tokens
-    streaming_turns_data.sum { |t| t["input_tokens"].to_i + t["output_tokens"].to_i }
+    Array(streaming_turns_data).sum { |turn| turn["input_tokens"].to_i + turn["output_tokens"].to_i }
   end
 
   # Returns the average tokens per turn from streaming data.
   def streaming_avg_tokens_per_turn
-    return 0 if turns_completed.zero?
+    completed_turns = turns_completed.to_i
+    return 0 if completed_turns <= 0
 
-    streaming_total_tokens.to_f / turns_completed
+    streaming_total_tokens.to_f / completed_turns
   end
 
   def token_limit_exceeded?

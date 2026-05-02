@@ -2008,6 +2008,27 @@ RSpec.describe Containers::Provision do
         expect(agent_run.streaming_turns_data.length).to eq(2)
       end
 
+      it "swallows metric flush failures so the original error is preserved" do
+        processor = instance_double(Containers::StreamingEventProcessor)
+        allow(service).to receive(:build_streaming_event_processor).and_return(processor)
+        allow(processor).to receive_messages(handle_line: nil, last_event_type: nil)
+        allow(processor).to receive(:flush_metrics!).and_raise(ActiveRecord::ActiveRecordError, "flush failed")
+        allow(agent_run).to receive(:log!).and_call_original
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "{\"type\": \"progress\"}\n") if block
+          raise Docker::Error::DockerError, "exec failed"
+        end
+
+        expect { service.execute("codex exec --json") }
+          .to raise_error(described_class::ExecutionError, /Docker exec error: exec failed/)
+
+        expect(agent_run).to have_received(:log!).with(
+          "system",
+          "container.execute.streaming_metrics_flush_failed",
+          metadata: hash_including(error: "flush failed")
+        )
+      end
+
       it "ignores streaming-looking JSON output from non-agent exec commands" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stdout, "{\"type\": \"error\", \"message\": \"helper output\"}\n") if block

@@ -3070,6 +3070,12 @@ RSpec.describe AgentRun do
 
         expect(agent_run.streaming_total_tokens).to eq(0)
       end
+
+      it "returns 0 when turns data is nil" do
+        agent_run = build(:agent_run, streaming_turns_data: nil)
+
+        expect(agent_run.streaming_total_tokens).to eq(0)
+      end
     end
 
     describe "#streaming_avg_tokens_per_turn" do
@@ -3084,6 +3090,12 @@ RSpec.describe AgentRun do
 
       it "returns 0 when no turns completed" do
         agent_run = create(:agent_run, turns_completed: 0, streaming_turns_data: [])
+        expect(agent_run.streaming_avg_tokens_per_turn).to eq(0)
+      end
+
+      it "returns 0 when turns_completed is nil" do
+        agent_run = build(:agent_run, turns_completed: nil, streaming_turns_data: nil)
+
         expect(agent_run.streaming_avg_tokens_per_turn).to eq(0)
       end
     end

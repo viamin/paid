@@ -634,7 +634,7 @@ module Containers
         watchdog_mutex.synchronize { exec_completed = true }
         stop_watchdog(watchdog)
         # Persist turn metrics even on error paths so partial progress is recorded.
-        streaming_event_processor&.flush_metrics!
+        safe_flush_streaming_metrics(streaming_event_processor)
         if cleanup_steps&.any?
           if $!
             # An exception is already propagating; attempt cleanup but swallow
@@ -783,6 +783,14 @@ module Containers
       cleanup_execution_preparation(cleanup_steps, env: env)
     rescue ExecutionError
       log_system("container.execute.preparation_cleanup_swallowed", note: "swallowed to preserve original exception")
+    end
+
+    # Best-effort metrics persistence for ensure blocks. Streaming telemetry
+    # should not replace the original execution failure or skip later cleanup.
+    def safe_flush_streaming_metrics(streaming_event_processor)
+      streaming_event_processor&.flush_metrics!
+    rescue StandardError => e
+      log_system("container.execute.streaming_metrics_flush_failed", error: e.message)
     end
 
     # Runs a single preparation cleanup step, returning the error on failure
