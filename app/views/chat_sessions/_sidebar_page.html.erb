@@ -1,0 +1,11 @@
+<% current_page = local_assigns.fetch(:current_page, next_page ? next_page - 1 : 2) %>
+<%= turbo_frame_tag "sidebar_page_#{current_page}" do %>
+  <% sessions.each do |chat_session| %>
+    <%= render "session_card", chat_session: chat_session %>
+  <% end %>
+  <% if next_page %>
+    <%= turbo_frame_tag "sidebar_page_#{next_page}", src: sidebar_page_chat_sessions_path(page: next_page), loading: :lazy do %>
+      <p class="py-3 text-center text-xs text-slate-400">Loading more…</p>
+    <% end %>
+  <% end %>
+<% end %>

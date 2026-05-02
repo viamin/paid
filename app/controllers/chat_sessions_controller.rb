@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 class ChatSessionsController < ApplicationController
-  skip_after_action :verify_authorized, only: :index
-  before_action :set_chat_session, only: %i[show update destroy]
+  skip_after_action :verify_authorized, only: %i[index sidebar_page]
+  before_action :set_chat_session, only: %i[show update destroy older_messages]
 
   rate_limit to: 10, within: 1.minute,
     by: -> { current_account&.id },
@@ -26,6 +26,29 @@ class ChatSessionsController < ApplicationController
     end
   end
 
+  def older_messages
+    authorize @chat_session, :show?
+    before_id = params.require(:before)
+    messages = @chat_session.messages.chronological
+      .where("chat_messages.id < ?", before_id)
+      .last(50)
+
+    has_more = @chat_session.messages.where("chat_messages.id < ?", messages.first&.id).exists? if messages.any?
+
+    render partial: "chat_sessions/older_messages",
+      locals: { messages: messages, chat_session: @chat_session, has_more: has_more }
+  end
+
+  def sidebar_page
+    page = [ params.fetch(:page, 1).to_i, 1 ].max
+    @sessions = session_scope.offset((page - 1) * 50).limit(51)
+    has_more = @sessions.size > 50
+    @sessions = @sessions.first(50)
+    @next_page = has_more ? page + 1 : nil
+
+    render partial: "chat_sessions/sidebar_page", locals: { sessions: @sessions, current_page: page, next_page: @next_page }
+  end
+
   def create
     authorize ChatSession.new(account: current_account), :create?
     session = ChatSessions::Create.call(
@@ -46,7 +69,10 @@ class ChatSessionsController < ApplicationController
     respond_to do |format|
       format.html do
         load_sidebar_data
-        @pagy, @chat_messages = pagy(@chat_session.messages.chronological, limit: 50)
+        scope = @chat_session.messages.chronological
+        total = scope.count
+        last_page = [ (total.to_f / 50).ceil, 1 ].max
+        @pagy, @chat_messages = pagy(scope, limit: 50, page: last_page)
       end
 
       format.json do
@@ -86,7 +112,8 @@ class ChatSessionsController < ApplicationController
   end
 
   def create_params
-    params.permit(:mode, :model, :provider_id, :project_id, :system_prompt, :title)
+    source = params.key?(:chat_session) ? params.require(:chat_session) : params
+    source.permit(:mode, :model, :provider_id, :project_id, :system_prompt, :title)
       .to_h.symbolize_keys
   end
 
@@ -136,7 +163,9 @@ class ChatSessionsController < ApplicationController
   end
 
   def load_sidebar_data
-    @sessions = session_scope.limit(50)
+    @sessions = session_scope.limit(51)
+    @sidebar_has_more = @sessions.size > 50
+    @sessions = @sessions.first(50)
     @new_chat_session = ChatSession.new(mode: "api")
     @available_providers = current_user.providers.ordered
     @available_projects = current_account.projects.order(:name)

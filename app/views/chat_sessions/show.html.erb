@@ -8,6 +8,7 @@
       <%= render "sidebar",
                  active_session: @chat_session,
                  sessions: @sessions,
+                 sidebar_has_more: @sidebar_has_more,
                  chat_session: @new_chat_session,
                  available_providers: @available_providers,
                  available_projects: @available_projects,
@@ -99,6 +100,13 @@
                 <div class="space-y-5"
                      data-chat-target="messages"
                      data-chat-stream-target="messageContainer">
+                  <% if @pagy&.previous %>
+                    <%= turbo_frame_tag "older_messages",
+                          src: older_messages_chat_session_path(@chat_session, before: @chat_messages.first.id),
+                          loading: :lazy do %>
+                      <p class="py-2 text-center text-xs text-slate-400">Loading older messages…</p>
+                    <% end %>
+                  <% end %>
                   <% @chat_messages.each do |message| %>
                     <%= render "chat_messages/message", message: message %>
                   <% end %>
