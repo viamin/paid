@@ -169,14 +169,14 @@ RSpec.describe DockerOrphanCleanupJob do
         stub_pool_containers
       end
 
-      it "removes service containers with zero active agent runs" do
+      it "removes service containers with zero in-flight capacity runs" do
         sc = create(:service_container, status: "running")
         container = make_container(labels: {
           "paid.service_container" => "true",
           "paid.service_container_id" => sc.id.to_s
         })
         stub_service_containers(container)
-        allow(sc).to receive(:active_agent_run_count).and_return(0)
+        allow(sc).to receive(:capacity_inflight_agent_run_count).and_return(0)
         allow(ServiceContainer).to receive(:find_by).with(id: sc.id.to_s).and_return(sc)
 
         job.perform
@@ -185,14 +185,14 @@ RSpec.describe DockerOrphanCleanupJob do
         expect(sc.reload.status).to eq("stopped")
       end
 
-      it "skips service containers with active agent runs" do
+      it "skips service containers with running agent runs" do
         sc = create(:service_container, status: "running")
         container = make_container(labels: {
           "paid.service_container" => "true",
           "paid.service_container_id" => sc.id.to_s
         })
         stub_service_containers(container)
-        allow(sc).to receive(:active_agent_run_count).and_return(1)
+        allow(sc).to receive(:capacity_inflight_agent_run_count).and_return(1)
         allow(ServiceContainer).to receive(:find_by).with(id: sc.id.to_s).and_return(sc)
 
         job.perform

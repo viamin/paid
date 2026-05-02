@@ -35,8 +35,9 @@ class ServiceContainer < ApplicationRecord
     status == "running"
   end
 
-  # Counts active agent runs across all associated projects that reference this container.
-  def active_agent_run_count
+  # Counts in-flight capacity runs across all associated projects that reference this container.
+  # Includes running runs and claimed queued runs that are still provisioning.
+  def capacity_inflight_agent_run_count
     AgentRun.capacity_inflight
       .where(project_id: project_ids)
       .where("service_container_ids @> ?", [ id ].to_json)

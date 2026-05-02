@@ -87,7 +87,7 @@ class DockerOrphanCleanupJob < ApplicationJob
     removed
   end
 
-  # Phase 3: Remove service containers with zero active agent runs.
+  # Phase 3: Remove service containers with zero in-flight capacity runs.
   def cleanup_service_containers
     containers = list_containers_by_label("paid.service_container=true")
     return 0 if containers.empty?
@@ -97,7 +97,7 @@ class DockerOrphanCleanupJob < ApplicationJob
       sc_id = container.info.dig("Labels", "paid.service_container_id")
       service_container = ServiceContainer.find_by(id: sc_id) if sc_id.present?
 
-      if service_container.nil? || service_container.active_agent_run_count == 0
+      if service_container.nil? || service_container.capacity_inflight_agent_run_count == 0
         if stop_and_remove_container(container, "service", sc_id)
           begin
             service_container&.update!(status: "stopped", docker_container_id: nil)

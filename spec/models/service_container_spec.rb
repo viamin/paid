@@ -77,8 +77,8 @@ RSpec.describe ServiceContainer do
     end
   end
 
-  describe "#active_agent_run_count" do
-    it "counts active agent runs referencing this container" do
+  describe "#capacity_inflight_agent_run_count" do
+    it "counts running agent runs referencing this container" do
       service_container = create(:service_container)
       project = create(:project)
       create(:project_service_container, project: project, service_container: service_container)
@@ -89,7 +89,7 @@ RSpec.describe ServiceContainer do
       create(:agent_run, :completed, project: project, issue: issue,
         service_container_ids: [ service_container.id ])
 
-      expect(service_container.active_agent_run_count).to eq(1)
+      expect(service_container.capacity_inflight_agent_run_count).to eq(1)
     end
 
     it "counts claimed queued runs referencing this container" do
@@ -101,12 +101,12 @@ RSpec.describe ServiceContainer do
       create(:agent_run, status: "queued", temporal_workflow_id: "workflow-123", project: project, issue: issue,
         service_container_ids: [ service_container.id ])
 
-      expect(service_container.active_agent_run_count).to eq(1)
+      expect(service_container.capacity_inflight_agent_run_count).to eq(1)
     end
 
-    it "returns 0 when no active runs reference this container" do
+    it "returns 0 when no in-flight capacity runs reference this container" do
       service_container = create(:service_container)
-      expect(service_container.active_agent_run_count).to eq(0)
+      expect(service_container.capacity_inflight_agent_run_count).to eq(0)
     end
   end
 end
