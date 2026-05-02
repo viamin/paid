@@ -2131,6 +2131,7 @@ RSpec.describe AgentRun do
       allow(project).to receive(:broadcast_agent_runs_update)
       allow(project).to receive(:broadcast_agent_runs_list_update)
       allow(project).to receive(:broadcast_stats_update)
+      allow(project).to receive(:broadcast_cost_snapshot_update)
       allow(project).to receive(:broadcast_agent_run_detail_update)
 
       agent_run = create(:agent_run, project: project)
@@ -2138,6 +2139,7 @@ RSpec.describe AgentRun do
       expect(project).to have_received(:broadcast_agent_runs_update)
       expect(project).to have_received(:broadcast_agent_runs_list_update)
       expect(project).to have_received(:broadcast_stats_update)
+      expect(project).not_to have_received(:broadcast_cost_snapshot_update)
       expect(project).to have_received(:broadcast_agent_run_detail_update).with(agent_run)
     end
 
@@ -2145,12 +2147,14 @@ RSpec.describe AgentRun do
       allow(project).to receive(:broadcast_agent_runs_update)
       allow(project).to receive(:broadcast_agent_runs_list_update)
       allow(project).to receive(:broadcast_stats_update)
+      allow(project).to receive(:broadcast_cost_snapshot_update)
       allow(project).to receive(:broadcast_agent_run_detail_update)
       agent_run = create(:agent_run, project: project)
 
       expect(project).to receive(:broadcast_agent_runs_update).once
       expect(project).to receive(:broadcast_agent_runs_list_update).once
       expect(project).to receive(:broadcast_stats_update).once
+      expect(project).to receive(:broadcast_cost_snapshot_update).once
       expect(project).to receive(:broadcast_agent_run_detail_update).with(agent_run).once
 
       agent_run.update!(status: "running", started_at: Time.current)
@@ -2160,12 +2164,14 @@ RSpec.describe AgentRun do
       allow(project).to receive(:broadcast_agent_runs_update)
       allow(project).to receive(:broadcast_agent_runs_list_update)
       allow(project).to receive(:broadcast_stats_update)
+      allow(project).to receive(:broadcast_cost_snapshot_update)
       allow(project).to receive(:broadcast_agent_run_detail_update)
       agent_run = create(:agent_run, project: project, status: "running", started_at: Time.current)
 
       expect(project).not_to receive(:broadcast_agent_runs_update)
       expect(project).not_to receive(:broadcast_agent_runs_list_update)
       expect(project).not_to receive(:broadcast_stats_update)
+      expect(project).not_to receive(:broadcast_cost_snapshot_update)
       expect(project).to receive(:broadcast_agent_run_detail_update).with(agent_run).once
 
       agent_run.update!(tokens_input: 1000, tokens_output: 500, cost_cents: 10)
@@ -2178,6 +2184,7 @@ RSpec.describe AgentRun do
         allow(project).to receive(:broadcast_agent_runs_update)
         allow(project).to receive(:broadcast_agent_runs_list_update)
         allow(project).to receive(:broadcast_stats_update)
+        allow(project).to receive(:broadcast_cost_snapshot_update)
         allow(project).to receive(:broadcast_agent_run_detail_update)
         allow(project).to receive(:broadcast_issues_update)
       end

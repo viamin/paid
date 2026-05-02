@@ -7,6 +7,16 @@ RSpec.describe GithubTokenValidationJob do
   let(:account) { create(:account) }
   let(:github_token) { create(:github_token, :pending_validation, account: account) }
 
+  describe "GoodJob concurrency" do
+    it "serializes validation per GitHub token" do
+      config = described_class.good_job_concurrency_config
+
+      expect(config[:total_limit]).to eq(1)
+      expect(config[:enqueue_limit]).to eq(1)
+      expect(described_class.new(github_token.id).good_job_concurrency_key).to eq("github_token_validation_#{github_token.id}")
+    end
+  end
+
   describe "#perform" do
     context "when token is valid" do
       before do

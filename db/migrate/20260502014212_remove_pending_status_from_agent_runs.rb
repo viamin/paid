@@ -10,6 +10,8 @@ class RemovePendingStatusFromAgentRuns < ActiveRecord::Migration[8.1]
 
     agent_run.where(status: "pending")
              .update_all("status = 'queued', temporal_workflow_id = 'claimed', updated_at = '#{now.to_fs(:db)}'")
+
+    change_column_default :agent_runs, :status, from: "pending", to: "queued"
   end
 
   def down

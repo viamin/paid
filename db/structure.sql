@@ -417,7 +417,7 @@ CREATE TABLE public.agent_runs (
     temporal_workflow_id character varying(255),
     temporal_run_id character varying(255),
     agent_type character varying(50) NOT NULL,
-    status character varying(50) DEFAULT 'pending'::character varying NOT NULL,
+    status character varying(50) DEFAULT 'queued'::character varying NOT NULL,
     worktree_path character varying(500),
     branch_name character varying(255),
     base_commit_sha character varying(40),
