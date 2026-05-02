@@ -148,7 +148,7 @@ bash .devcontainer/setup-signing-key.sh
 # Prerequisites: Ruby 3.4+, Bundler 2.7.2, PostgreSQL 16+, Node.js 22.x (see .tool-versions for the exact pinned version), Yarn 1.22.22, Docker Engine
 # Also start PostgreSQL, Temporal, and Qdrant locally before running setup.
 bin/setup               # Install deps, prepare DB
-bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the Temporal worker
+bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split Temporal poll/agent workers
 ```
 
 `bin/setup` now does more than install Ruby and JS dependencies: it configures git hooks, prepares the database, checks Qdrant connectivity, builds the `paid-agent:latest` Docker image, and cleans up stale dev state. If Docker is unavailable, setup is incomplete.
@@ -187,6 +187,7 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the Tempora
 | `TEMPORAL_HOST` | Temporal server address | `localhost:7233` |
 | `TEMPORAL_ADDRESS` | Temporal address (alternative to TEMPORAL_HOST) | _(falls back to TEMPORAL_HOST)_ |
 | `TEMPORAL_NAMESPACE` | Temporal namespace | `default` |
+| `TEMPORAL_WORKER_MODE` | Which worker set `bin/temporal_worker` boots (`poll`, `agent`, or `both`) | `both` |
 | `TEMPORAL_POLL_TASK_QUEUE` | Temporal poll workflow task queue | `paid-poll-tasks` |
 | `TEMPORAL_AGENT_TASK_QUEUE` | Temporal agent execution task queue | `paid-agent-tasks` |
 | `TEMPORAL_UI_URL` | Temporal UI base URL for monitoring links | `http://localhost:8080` |
@@ -277,10 +278,10 @@ bin/setup --reset            # Setup with database reset
 bin/update                   # Update Ruby, Yarn, and supported Dockerfile-pinned deps
 
 # Development
-bin/dev                      # Start dev server with Overmind (Rails + JS + CSS + Temporal worker)
+bin/dev                      # Start dev server with Overmind (Rails + JS + CSS + split Temporal poll/agent workers)
 bin/rails server             # Start Rails server only
 bin/rails console            # Rails console
-bin/temporal_worker          # Run the Temporal worker directly
+bin/temporal_worker          # Run the Temporal worker directly (`TEMPORAL_WORKER_MODE=poll|agent|both`; default is `both`)
 bin/dev-update --lightweight # Pull latest main without restarting the dev stack
 bin/dev-update --full        # Pull latest main, rerun setup, and restart the dev stack
 

@@ -96,7 +96,7 @@ If Docker is unavailable, setup is incomplete.
 
 ## Environment Notes
 
-`bin/dev` uses Overmind and starts the Rails server, JS watcher, CSS watcher, and Temporal worker together.
+`bin/dev` uses Overmind and starts the Rails server, JS watcher, CSS watcher, and split Temporal poll/agent workers together.
 
 The default dev runner does not rely on automatic `.env` loading. Treat `.env.example` as a reference, and load required environment variables in your shell, dev container, or Compose configuration.
 
