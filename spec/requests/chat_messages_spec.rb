@@ -87,7 +87,11 @@ RSpec.describe "ChatMessages" do
       it "returns SSE stream" do
         assistant_msg = create(:chat_message, :assistant, chat_session: chat_session,
           tokens_input: 10, tokens_output: 5)
-        allow(ChatSessions::SendMessage).to receive(:call).and_return(assistant_msg)
+        allow(ChatSessions::SendMessage).to receive(:call) do |**args|
+          args[:on_chunk].call("Hello ")
+          args[:on_chunk].call("back!")
+          assistant_msg
+        end
 
         post chat_session_chat_messages_path(chat_session),
           params: { content: "Hello" },
@@ -98,6 +102,7 @@ RSpec.describe "ChatMessages" do
 
         body = response.body
         expect(body).to include("event: message_start")
+        expect(body).to include("event: message_chunk")
         expect(body).to include("event: message_complete")
       end
     end

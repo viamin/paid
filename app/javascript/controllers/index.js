@@ -10,6 +10,21 @@ application.register("agent-run-actions", AgentRunActionsController)
 import CheckboxToggleController from "./checkbox_toggle_controller"
 application.register("checkbox-toggle", CheckboxToggleController)
 
+import ChatController from "./chat_controller"
+application.register("chat", ChatController)
+
+import ChatInputController from "./chat_input_controller"
+application.register("chat-input", ChatInputController)
+
+import ChatMessageController from "./chat_message_controller"
+application.register("chat-message", ChatMessageController)
+
+import ChatSessionListController from "./chat_session_list_controller"
+application.register("chat-session-list", ChatSessionListController)
+
+import ChatStreamController from "./chat_stream_controller"
+application.register("chat-stream", ChatStreamController)
+
 import ConfirmDeleteController from "./confirm_delete_controller"
 application.register("confirm-delete", ConfirmDeleteController)
 

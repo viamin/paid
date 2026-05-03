@@ -12,13 +12,15 @@ module ChatSessions
   #     on_chunk: ->(chunk) { ActionCable.server.broadcast(channel, chunk) }
   #   )
   class SendMessage
-    attr_reader :chat_session, :content, :on_chunk, :llm_client
+    attr_reader :chat_session, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id
 
-    def initialize(chat_session:, content:, on_chunk: nil, llm_client: nil)
+    def initialize(chat_session:, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
       @chat_session = chat_session
       @content = content
       @on_chunk = on_chunk
+      @on_message_persisted = on_message_persisted
       @llm_client = llm_client
+      @stream_message_id = stream_message_id
     end
 
     def self.call(...)
@@ -57,10 +59,13 @@ module ChatSessions
     end
 
     def persist_user_message
-      chat_session.messages.create!(
+      message = chat_session.messages.create!(
         role: "user",
         content: content
       )
+
+      on_message_persisted&.call(message)
+      message
     end
 
     # Cap conversation history to avoid unbounded memory growth and
@@ -72,11 +77,19 @@ module ChatSessions
       messages = messages.last(MAX_CONVERSATION_MESSAGES)
 
       messages.map do |msg|
-        { role: msg.role, content: msg.content }.tap do |entry|
+        { role: msg.role, content: conversation_content_for(msg) }.tap do |entry|
           entry[:tool_call_id] = msg.tool_call_id if msg.tool_call_id.present?
           entry[:tool_name] = msg.tool_name if msg.tool_name.present?
         end
       end
+    end
+
+    def conversation_content_for(message)
+      return message.tool_result if message.role == "tool" && message.tool_result.present?
+      return message.content if message.content.present?
+      return message.tool_result if message.tool_result.present?
+
+      nil
     end
 
     def execute_agent(conversation)
@@ -99,8 +112,18 @@ module ChatSessions
     end
 
     def call_llm(conversation)
+      chunk_streamed = false
+      chunk_callback = lambda do |chunk|
+        next if chunk.blank?
+
+        chunk_streamed = true
+        on_chunk&.call(chunk)
+      end
+
       if llm_client
-        llm_client.call(conversation)
+        invoke_llm_client(conversation, chunk_callback).tap do |response|
+          replay_response_content(response, chunk_callback) unless chunk_streamed
+        end
       else
         # Delegate to agent-harness for LLM interaction.
         # Returns a response hash with :content, :tool_calls, :tokens_input, :tokens_output.
@@ -109,6 +132,36 @@ module ChatSessions
         # (depends on agent-harness AH-1, AH-2, AH-3).
         # In production, this calls provider.send_chat_message(conversation:, stream:).
         raise NotImplementedError, "agent-harness chat transport not yet integrated"
+      end
+    end
+
+    def invoke_llm_client(conversation, chunk_callback)
+      return llm_client.call(conversation) unless on_chunk
+
+      if llm_client_supports_chunk_callback?
+        llm_client.call(conversation, on_chunk: chunk_callback)
+      else
+        llm_client.call(conversation)
+      end
+    rescue ArgumentError => error
+      raise error unless unsupported_on_chunk_callback?(error)
+
+      llm_client.call(conversation)
+    end
+
+    def replay_response_content(response, chunk_callback)
+      response[:content].to_s.scan(/\S+\s*|\s+/).each do |chunk|
+        chunk_callback.call(chunk)
+      end
+    end
+
+    def unsupported_on_chunk_callback?(error)
+      error.message.include?("unknown keyword: :on_chunk") || error.message.match?(/wrong number of arguments/)
+    end
+
+    def llm_client_supports_chunk_callback?
+      llm_client.method(:call).parameters.any? do |kind, name|
+        (kind == :keyrest) || ([ :key, :keyreq ].include?(kind) && name == :on_chunk)
       end
     end
 
@@ -121,35 +174,41 @@ module ChatSessions
     end
 
     def create_assistant_message(response)
-      chat_session.messages.create!(
+      message = chat_session.messages.create!(
         role: "assistant",
         content: response[:content],
         model: response[:model],
         tokens_input: response[:tokens_input],
         tokens_output: response[:tokens_output]
       )
+
+      on_message_persisted&.call(message, stream_message_id: stream_message_id)
+      message
     end
 
     def handle_tool_calls(response)
       assistant_msg = create_assistant_message(response)
 
       response[:tool_calls].each do |tool_call|
-        chat_session.messages.create!(
+        tool_call_message = chat_session.messages.create!(
           role: "assistant",
           content: nil,
           tool_name: tool_call[:name],
-          tool_arguments: tool_call[:arguments].to_json,
+          tool_arguments: tool_call[:arguments],
           tool_call_id: tool_call[:id]
         )
+        on_message_persisted&.call(tool_call_message)
 
         tool_result = execute_tool(tool_call)
 
-        chat_session.messages.create!(
+        tool_result_message = chat_session.messages.create!(
           role: "tool",
           content: tool_result.to_json,
+          tool_result: tool_result,
           tool_call_id: tool_call[:id],
           tool_name: tool_call[:name]
         )
+        on_message_persisted&.call(tool_result_message)
       end
 
       assistant_msg
