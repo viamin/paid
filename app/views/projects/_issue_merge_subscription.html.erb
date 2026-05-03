@@ -1,5 +1,3 @@
-<%# When rendered from a broadcast (no user context), output an inert frame
-    that preserves the DOM slot without triggering a lazy-load GET per row. %>
 <% if local_assigns.key?(:subscribed) %>
   <%= turbo_frame_tag dom_id(issue, :merge_subscription) do %>
     <% if subscribed %>
@@ -16,8 +14,6 @@
                     form: { data: { turbo_stream: true } } %>
     <% end %>
   <% end %>
-<% elsif local_assigns.fetch(:broadcast, false) %>
-  <%= turbo_frame_tag dom_id(issue, :merge_subscription) %>
 <% else %>
   <%= turbo_frame_tag dom_id(issue, :merge_subscription),
         src: project_issue_merge_subscription_path(project, issue),

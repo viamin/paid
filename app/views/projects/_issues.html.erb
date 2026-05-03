@@ -17,8 +17,6 @@
             } %>
             <% if local_assigns.key?(:merge_notification_issue_ids) %>
               <% issue_locals[:merge_notification_issue_ids] = local_assigns[:merge_notification_issue_ids] %>
-            <% elsif local_assigns.fetch(:broadcast, false) %>
-              <% issue_locals[:broadcast] = true %>
             <% end %>
             <%= render "projects/issue", **issue_locals %>
           <% end %>

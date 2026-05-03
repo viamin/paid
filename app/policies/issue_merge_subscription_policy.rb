@@ -12,7 +12,9 @@ class IssueMergeSubscriptionPolicy < ApplicationPolicy
   private
 
   def allowed?
-    record.github_state == "open" && ProjectPolicy.new(user, record.project).show?
+    record.github_state == "open" &&
+      record.source == Issue::GITHUB_SOURCE &&
+      ProjectPolicy.new(user, record.project).show?
   end
 
   def account_for_record

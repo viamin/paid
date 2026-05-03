@@ -256,6 +256,24 @@ RSpec.describe "Projects" do
 
       expect(response).to have_http_status(:not_found)
     end
+
+    it "does not allow subscriptions for synthetic non-GitHub issues" do
+      synthetic_issue = create(
+        :issue,
+        project: project,
+        source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+        github_number: 99,
+        title: "Code scanning alert",
+        github_state: "open"
+      )
+
+      expect {
+        post project_issue_merge_subscription_path(project, synthetic_issue)
+      }.not_to change(IssueMergeSubscription, :count)
+
+      expect(response).to redirect_to(root_path)
+      expect(flash[:alert]).to eq("You are not authorized to perform this action.")
+    end
   end
 
   describe "GET /projects/new" do
