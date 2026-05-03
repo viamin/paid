@@ -251,5 +251,73 @@ RSpec.describe Containers::StreamingEventProcessor do
       expect(result).not_to be_nil
       expect(result[:type]).to eq(:progress)
     end
+
+    it "normalizes wrapped progress events from agent-harness" do
+      harness_event = AgentHarness::Providers::Codex::StreamingEvent.new(
+        type: :progress,
+        raw_event: {
+          "type" => "event_msg",
+          "payload" => {
+            "type" => "message.delta",
+            "delta" => { "content" => [ { "type" => "output_text_delta", "text" => "Working" } ] }
+          }
+        }
+      )
+      allow(AgentHarness::Providers::Codex).to receive(:parse_streaming_event).and_return(harness_event)
+
+      result = processor.parse_line('{"type":"event_msg","payload":{"type":"message.delta"}}')
+
+      expect(result).not_to be_nil
+      expect(result[:type]).to eq(:progress)
+      expect(result[:raw_type]).to eq("progress")
+      expect(result[:event]["type"]).to eq("progress")
+      expect(result[:event]["transport_type"]).to eq("event_msg")
+    end
+
+    it "normalizes wrapped turn completion events from agent-harness" do
+      harness_event = AgentHarness::Providers::Codex::StreamingEvent.new(
+        type: :turn_complete,
+        tokens: { input: 123, output: 45 },
+        raw_event: {
+          "type" => "event_msg",
+          "payload" => {
+            "type" => "turn.completed",
+            "usage" => { "input_tokens" => 123, "output_tokens" => 45 },
+            "metrics" => { "duration_ms" => 3210 }
+          }
+        }
+      )
+      allow(AgentHarness::Providers::Codex).to receive(:parse_streaming_event).and_return(harness_event)
+
+      result = processor.parse_line('{"type":"event_msg","payload":{"type":"turn.completed"}}')
+
+      expect(result).not_to be_nil
+      expect(result[:type]).to eq(:turn_complete)
+      expect(result[:raw_type]).to eq("turn.completed")
+      expect(result[:event]["usage"]).to eq({ "input_tokens" => 123, "output_tokens" => 45 })
+      expect(result[:event].dig("metrics", "duration_ms")).to eq(3210)
+    end
+
+    it "normalizes wrapped failed turn events from agent-harness" do
+      harness_event = AgentHarness::Providers::Codex::StreamingEvent.new(
+        type: :error,
+        error_message: "context window exceeded",
+        raw_event: {
+          "type" => "event_msg",
+          "payload" => {
+            "type" => "turn.failed",
+            "error" => { "message" => "context window exceeded" }
+          }
+        }
+      )
+      allow(AgentHarness::Providers::Codex).to receive(:parse_streaming_event).and_return(harness_event)
+
+      result = processor.parse_line('{"type":"event_msg","payload":{"type":"turn.failed"}}')
+
+      expect(result).not_to be_nil
+      expect(result[:type]).to eq(:turn_failed)
+      expect(result[:raw_type]).to eq("turn.failed")
+      expect(result[:event]["message"]).to eq("context window exceeded")
+    end
   end
 end

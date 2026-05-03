@@ -15,7 +15,7 @@ module Containers
   # parse_streaming_event (viamin/agent-harness#178).
   class StreamingEventProcessor
     PROGRESS_EVENT_TYPES = %w[progress token_usage].freeze
-    TURN_COMPLETE_EVENT_TYPES = %w[turn_complete turn.complete].freeze
+    TURN_COMPLETE_EVENT_TYPES = %w[turn_complete turn.complete turn.completed].freeze
     TURN_FAILED_EVENT_TYPES = %w[turn.failed turn_failed].freeze
     ERROR_EVENT_TYPES = %w[error].freeze
 
@@ -122,19 +122,43 @@ module Containers
 
     def normalize_harness_event(event)
       raw_event = event.raw_event.is_a?(Hash) ? event.raw_event.deep_dup : {}
-      raw_event["type"] ||= event.type.to_s if event.respond_to?(:type)
+      payload = raw_event["payload"].is_a?(Hash) ? raw_event["payload"].deep_dup : nil
+      normalized_event = payload || raw_event
+      semantic_type = normalized_harness_event_type(event, payload, raw_event)
+      transport_type = raw_event["type"].presence
+
+      normalized_event["transport_type"] ||= transport_type if transport_type.present? && transport_type != semantic_type
+      normalized_event["type"] = semantic_type if semantic_type.present?
+      normalized_event["turn"] ||= event.turn if event.respond_to?(:turn) && event.turn.present?
 
       if event.respond_to?(:tokens) && event.tokens.present?
-        raw_event["usage"] ||= {}
-        raw_event["usage"]["input_tokens"] ||= event.tokens[:input]
-        raw_event["usage"]["output_tokens"] ||= event.tokens[:output]
+        normalized_event["usage"] ||= {}
+        normalized_event["usage"]["input_tokens"] ||= event.tokens[:input]
+        normalized_event["usage"]["output_tokens"] ||= event.tokens[:output]
       end
 
       if event.respond_to?(:error_message) && event.error_message.present?
-        raw_event["message"] ||= event.error_message
+        normalized_event["message"] ||= event.error_message
       end
 
-      raw_event
+      normalized_event
+    end
+
+    def normalized_harness_event_type(event, payload, raw_event)
+      semantic_type = payload&.[]("type").presence || raw_event["type"].to_s.presence
+
+      case event_type = event.respond_to?(:type) ? event.type.to_s : nil
+      when "progress"
+        "progress"
+      when "token_usage"
+        "token_usage"
+      when "turn_complete"
+        semantic_type.presence_in(TURN_COMPLETE_EVENT_TYPES) || "turn_complete"
+      when "error"
+        semantic_type.presence_in(TURN_FAILED_EVENT_TYPES + ERROR_EVENT_TYPES) || "error"
+      else
+        semantic_type || event_type.presence
+      end
     end
 
     def classify_event(event_type)
