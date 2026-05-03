@@ -25,7 +25,7 @@ module IssueMergeSubscriptions
 
     def call
       IssueMergeSubscription.transaction do
-        subscriptions = issue.issue_merge_subscriptions.on_merge.lock.to_a
+        subscriptions = issue.issue_merge_subscriptions.on_merge.includes(:user).lock.to_a
         return 0 if subscriptions.empty?
 
         subscriptions.each do |subscription|
