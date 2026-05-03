@@ -1760,14 +1760,18 @@ RSpec.describe Containers::Provision do
         expect(mock_container).to have_received(:stop).with(timeout: 0)
       end
 
-      it "logs the abort pattern match" do
+      it "logs the abort pattern match with stream type" do
         allow(agent_run).to receive(:log!)
 
-        service.execute("kilo run --auto", abort_patterns: abort_patterns) rescue nil
+        expect { service.execute("kilo run --auto", abort_patterns: abort_patterns) }
+          .to raise_error(described_class::OutputAbortError)
 
         expect(agent_run).to have_received(:log!).with(
           "system", "container.execute.abort_pattern_matched",
-          metadata: hash_including(output: a_string_matching(/Free tier limit reached/))
+          metadata: hash_including(
+            stream: "stderr",
+            output: a_string_matching(/Free tier limit reached/)
+          )
         )
       end
     end
@@ -1880,6 +1884,24 @@ RSpec.describe Containers::Provision do
           }
 
         expect(mock_container).to have_received(:stop).with(timeout: 0)
+      end
+
+      it "logs stdout as the stream type when structured JSONL triggers abort" do
+        error_json = { "type" => "response.failed",
+                       "error" => { "message" => "Error: Free tier limit reached." } }.to_json + "\n"
+        allow(agent_run).to receive(:log!)
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, error_json) if block
+          [ [ error_json ], [], 1 ]
+        end
+
+        expect { service.execute("codex exec --json", abort_patterns: abort_patterns) }
+          .to raise_error(described_class::OutputAbortError)
+
+        expect(agent_run).to have_received(:log!).with(
+          "system", "container.execute.abort_pattern_matched",
+          metadata: hash_including(stream: "stdout", output: a_string_matching(/Free tier limit reached/))
+        )
       end
 
       it "aborts on a complete structured stdout failure event without a trailing newline" do
