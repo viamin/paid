@@ -1,7 +1,13 @@
 # frozen_string_literal: true
 
-require "capybara"
-require "capybara/cuprite"
+begin
+  require "capybara"
+  require "capybara/cuprite"
+rescue LoadError => e
+  raise LoadError,
+    "#{e.message} — capybara and cuprite are in the :test Gemfile group. " \
+    "Run with RAILS_ENV=test or move them to a shared group."
+end
 require "fileutils"
 
 module Screenshots
@@ -17,7 +23,10 @@ module Screenshots
   #   paths = Screenshots::Capture.call(output_dir: "tmp/screenshots")
   #   paths # => ["tmp/screenshots/sign_in.png", "tmp/screenshots/dashboard.png", ...]
   class Capture
-    # Pages to capture: [slug, path, requires_auth]
+    # Key application pages to capture: [slug, path, requires_auth].
+    # This is intentionally a curated list of the main UI surfaces rather than
+    # dynamic route introspection, which would be fragile and capture many
+    # irrelevant pages (API endpoints, Devise flows, admin tools, etc.).
     PAGES = [
       [ "sign_in", "/users/sign_in", false ],
       [ "dashboard", "/dashboard", true ],
@@ -56,6 +65,11 @@ module Screenshots
         file_path = File.join(@output_dir, "#{slug}.png")
         begin
           session.visit(path)
+
+          if requires_auth && session.current_path&.include?("sign_in")
+            raise "redirected to sign-in page — authentication may have failed"
+          end
+
           session.save_screenshot(file_path, full: true)
           captured << file_path
           puts "  Captured: #{slug} -> #{file_path}"
@@ -106,24 +120,24 @@ module Screenshots
 
     def setup_capybara
       Capybara.server = :puma, { Silent: true }
-      Capybara.server_host = "127.0.0.1"
+      # Bind to all interfaces when using a remote Chrome container so the
+      # browser can reach the Rack server over the Docker network.
+      Capybara.server_host = ENV["CHROME_URL"] ? "0.0.0.0" : "127.0.0.1"
       Capybara.default_max_wait_time = 10
     end
 
-    def ensure_seed_user!
-      account = Account.first_or_create!(
-        name: "Screenshot Account",
-        slug: "screenshot-account"
-      )
+    SEED_PASSWORD = "screenshot-password-123"
 
-      user = User.find_by(email: "screenshot@example.com")
-      unless user
-        user = User.create!(
-          email: "screenshot@example.com",
-          password: "screenshot-password-123",
-          password_confirmation: "screenshot-password-123"
-        )
+    def ensure_seed_user!
+      account = Account.find_or_create_by!(slug: "screenshot-account") do |a|
+        a.name = "Screenshot Account"
       end
+
+      user = User.find_or_initialize_by(email: "screenshot@example.com")
+      user.account = account
+      user.password = SEED_PASSWORD
+      user.password_confirmation = SEED_PASSWORD
+      user.save!
 
       unless user.account_memberships.exists?(account: account)
         user.account_memberships.create!(account: account, role: :owner)
@@ -135,7 +149,7 @@ module Screenshots
     def sign_in(session, user)
       session.visit("/users/sign_in")
       session.fill_in "Email", with: user.email
-      session.fill_in "Password", with: "screenshot-password-123"
+      session.fill_in "Password", with: SEED_PASSWORD
       session.click_button "Sign in"
     end
   end

@@ -39,7 +39,8 @@ jobs:
             exit 0
           fi
 
-          # UI-facing file patterns
+          # UI-facing file patterns — keep in sync with
+          # Screenshots::DetectUiChanges::UI_FILE_PATTERNS
           ui_patterns=(
             "^app/views/"
             "^app/javascript/"
@@ -58,6 +59,8 @@ jobs:
             "\.css$"
             "\.scss$"
             "\.sass$"
+            "\.vue$"
+            "\.svelte$"
           )
 
           combined_pattern=$(IFS='|'; echo "${ui_patterns[*]}")
@@ -95,6 +98,16 @@ jobs:
           --health-timeout=5s
           --health-retries=5
 
+      chrome:
+        image: browserless/chromium:latest
+        ports:
+          - 9222:3000
+        options: >-
+          --health-cmd="curl -sf http://localhost:3000/json/version || exit 1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
     env:
       BUNDLE_FROZEN: "true"
       RAILS_ENV: test
@@ -102,6 +115,7 @@ jobs:
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
       SCREENSHOT_OUTPUT_DIR: tmp/screenshots
+      CHROME_URL: ws://localhost:9222
 
     steps:
       - name: Checkout code
@@ -128,17 +142,25 @@ jobs:
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
 
-      - name: Locate Chrome browser
-        # Chrome is pre-installed on ubuntu-latest runners. Cuprite uses it
-        # as the rendering engine for screenshot capture.
+      - name: Verify Chrome service
+        # The chrome service container provides a containerized Chrome instance
+        # via CDP. Fall back to the runner's pre-installed Chrome if unavailable.
         run: |
-          path="$(command -v google-chrome || command -v chromium-browser || command -v chromium)"
-          if [ -z "$path" ]; then
-            echo "::error::No Chrome/Chromium browser found on the runner."
-            exit 1
+          if curl -sf http://localhost:9222/json/version > /dev/null 2>&1; then
+            echo "Chrome service container is available via CHROME_URL"
+          else
+            echo "::warning::Chrome service not reachable; falling back to local Chrome"
+            unset CHROME_URL
+            path="$(command -v google-chrome || command -v chromium-browser || command -v chromium)"
+            if [ -z "$path" ]; then
+              echo "::error::No Chrome/Chromium browser found."
+              exit 1
+            fi
+            echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"
+            # Clear CHROME_URL so capture.rb uses local Chrome
+            echo "CHROME_URL=" >> "$GITHUB_ENV"
+            "$path" --version
           fi
-          echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"
-          "$path" --version
 
       - name: Build assets
         run: yarn build && yarn build:css
@@ -154,7 +176,7 @@ jobs:
         with:
           name: pr-screenshots
           path: tmp/screenshots/*.png
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
 
       - name: Comment on PR with screenshot summary
