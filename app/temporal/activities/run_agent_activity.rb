@@ -640,16 +640,16 @@ module Activities
         command_preparation = merge_preparations(command_preparation, heartbeat.preparation)
       end
 
+      raise ProviderExecutionError, "Agent run already finished with status #{agent_run.status}" if agent_run.finished?
+
+      pre_agent_sha = capture_head_sha(container_service, agent_run)
+
       run_provider_preflight!(
         agent_run: agent_run,
         container_service: container_service,
         command_context: command_context,
         provider: provider
       )
-
-      pre_agent_sha = capture_head_sha(container_service, agent_run)
-
-      raise ProviderExecutionError, "Agent run already finished with status #{agent_run.status}" if agent_run.finished?
 
       # Only start! on first provider attempt.
       agent_run.start! unless agent_run.running?
@@ -1062,13 +1062,11 @@ module Activities
     end
 
     def preflight_provider_for(command_context)
-      provider_candidate = command_context.provider_candidate
-      provider_key = command_context.provider
-      user = command_context.user
-      app_provider_key = ProviderSupport.provider_key_for_agent_type(provider_key)
-      harness_key = ProviderSupport.harness_provider_key_for(app_provider_key).to_sym
-      klass = AgentHarness::Providers::Registry.instance.get(harness_key)
-      klass.new(config: harness_response_config(harness_key, provider_candidate, user))
+      harness_response_provider(
+        command_context.provider_candidate,
+        command_context.provider,
+        command_context.user
+      )
     end
 
     def provider_preflight_supported?(command_context)
