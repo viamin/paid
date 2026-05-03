@@ -1,9 +1,6 @@
 # frozen_string_literal: true
 
 module Integrations
-  # TODO: This catalog will serve the integrations hub UI once RBAC is implemented.
-  # Account admin role users will be able to add/manage account-scoped credentials
-  # for GitLab, Jira, signing, and per-provider LLM tokens via this catalog.
   module CredentialCatalog
     CATEGORY_DETAILS = {
       repository: {
