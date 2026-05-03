@@ -22,8 +22,7 @@ class QueueMonitorJob < ApplicationJob
     global_result = Scaling::QueueMonitor.call
     global_depths = global_result.queue_depths.reject { |d| d.type == :agent_run_queue }
 
-    agent_run_counts = AgentRun.joins(:project)
-      .where(status: "queued")
+    agent_run_counts = AgentRun.waiting.joins(:project)
       .group("projects.account_id")
       .count
 

@@ -267,11 +267,13 @@ class Project < ApplicationRecord
     worktree_service.push_branch(agent_run)
   end
 
-  # Returns the set of PR numbers that have queued automatic agent runs,
+  # Returns the set of PR numbers that have unclaimed queued automatic agent runs,
   # used by both the controller and Turbo broadcasts to drive the "Bump Priority" UI.
+  # Excludes claimed runs (temporal_workflow_id set) since those are already being
+  # processed and should not be reprioritized.
   def pr_numbers_with_queued_auto_continue
     agent_runs
-      .where(trigger_type: "automatic", status: "queued")
+      .where(trigger_type: "automatic", status: "queued", temporal_workflow_id: nil)
       .where.not(source_pull_request_number: nil)
       .distinct
       .pluck(:source_pull_request_number)
@@ -478,7 +480,8 @@ class Project < ApplicationRecord
       partial: "projects/issues",
       locals: { project: self, issues: displayed,
                 issue_lifecycle_statuses: lifecycle_statuses,
-                paid_prs_by_issue_id: paid_prs_by_issue_id }
+                paid_prs_by_issue_id: paid_prs_by_issue_id,
+                merge_notification_issue_ids: Set.new }
     )
   end
 
@@ -504,7 +507,8 @@ class Project < ApplicationRecord
         project: self,
         pull_requests: open_items.pull_requests_only.limit(25),
         pr_numbers_with_queued_auto_continue: pr_numbers_with_queued_auto_continue,
-        pr_numbers_with_active_runs: pr_numbers_with_active_runs
+        pr_numbers_with_active_runs: pr_numbers_with_active_runs,
+        merge_notification_issue_ids: Set.new
       }
     )
   end

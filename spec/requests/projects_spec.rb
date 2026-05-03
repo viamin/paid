@@ -195,6 +195,87 @@ RSpec.describe "Projects" do
     end
   end
 
+  describe "merge notification subscriptions" do
+    let(:project) { create(:project, account: account, github_token: github_token) }
+    let(:issue) { create(:issue, project: project, github_number: 14, title: "Fix flaky spec") }
+    let(:pull_request) { create(:issue, :pull_request, project: project, github_number: 28, title: "Improve CI") }
+
+    before { sign_in user }
+
+    it "shows subscribe controls for issues and pull requests" do
+      issue
+      pull_request
+
+      get project_path(project)
+
+      expect(response.body).to include("Notify on completion")
+      expect(response.body).to include("Notify on merge")
+    end
+
+    it "creates a subscription and redirects back to the project anchor" do
+      post project_issue_merge_subscription_path(project, issue)
+
+      expect(response).to redirect_to(project_path(project, anchor: ActionView::RecordIdentifier.dom_id(issue)))
+      expect(user.issue_merge_subscriptions.on_merge.find_by(issue: issue)).to be_present
+    end
+
+    it "shows the unsubscribe control for subscribed issues" do
+      create(:issue_merge_subscription, issue: issue, user: user)
+
+      get project_path(project)
+
+      expect(response.body).to include("Stop completion alerts")
+    end
+
+    it "renders the current subscription state for turbo-frame refreshes" do
+      create(:issue_merge_subscription, issue: issue, user: user)
+
+      get project_issue_merge_subscription_path(project, issue)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Stop completion alerts")
+    end
+
+    it "removes a subscription" do
+      create(:issue_merge_subscription, issue: issue, user: user)
+
+      delete project_issue_merge_subscription_path(project, issue)
+
+      expect(response).to redirect_to(project_path(project, anchor: ActionView::RecordIdentifier.dom_id(issue)))
+      expect(user.issue_merge_subscriptions.on_merge.find_by(issue: issue)).to be_nil
+    end
+
+    it "does not allow users from another account to subscribe" do
+      other_user = create(:user)
+      sign_out user
+      sign_in other_user
+
+      expect {
+        post project_issue_merge_subscription_path(project, issue)
+      }.not_to change(IssueMergeSubscription, :count)
+
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it "does not allow subscriptions for synthetic non-GitHub issues" do
+      synthetic_issue = create(
+        :issue,
+        project: project,
+        source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+        github_number: 99,
+        title: "Code scanning alert",
+        github_state: "open"
+      )
+
+      expect {
+        post project_issue_merge_subscription_path(project, synthetic_issue)
+      }.not_to change(IssueMergeSubscription, :count)
+
+      expect(response).to redirect_to(root_path)
+      expect(flash[:alert]).to eq("You are not authorized to perform this action.")
+    end
+  end
+
   describe "GET /projects/new" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
@@ -508,10 +589,10 @@ RSpec.describe "Projects" do
         expect(response.body).not_to include("Clean Up Stale Runs")
       end
 
-      it "shows the stale cleanup button for stale pending runs" do
+      it "shows the stale cleanup button for stale claimed runs" do
         project = create(:project, account: account, github_token: github_token)
-        stale_run = create(:agent_run, status: "pending", project: project)
-        stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+        stale_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-wf", project: project)
+        stale_run.update_column(:updated_at, AgentRun.stale_claimed_cutoff - 1.minute)
 
         get project_path(project)
 
@@ -1413,16 +1494,22 @@ RSpec.describe "Projects" do
         expect(stale_run.reload.status).to eq("timeout")
       end
 
-      it "requeues stale pending runs" do
+      it "unclaims stale claimed runs" do
         project = create(:project, account: account, github_token: github_token)
-        stale_run = create(:agent_run, status: "pending", project: project)
-        stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+        stale_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-wf", project: project)
+        stale_run.update_column(:updated_at, AgentRun.stale_claimed_cutoff - 1.minute)
+
+        handle = instance_double(Temporalio::Client::WorkflowHandle)
+        temporal_client = instance_double(Temporalio::Client)
+        allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+        allow(temporal_client).to receive(:workflow_handle).with("test-wf").and_return(handle)
+        allow(handle).to receive(:cancel)
 
         post cleanup_stale_runs_project_path(project)
 
         expect(response).to redirect_to(project_path(project))
         expect(flash[:notice]).to eq("Cleaned up 1 stale agent run(s).")
-        expect(stale_run.reload.status).to eq("queued")
+        expect(stale_run.reload.temporal_workflow_id).to be_nil
         expect(stale_run.stale_requeue_count).to eq(1)
       end
 

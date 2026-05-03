@@ -80,6 +80,48 @@ RSpec.describe Containers::StreamingEventProcessor do
 
       expect(result[:type]).to be_nil
     end
+
+    it "uses agent-harness hash events directly when available" do
+      line = '{"type":"progress","message":"working"}'
+
+      allow(AgentHarness::Providers::Codex).to receive(:parse_streaming_event).with(line).and_return(
+        { "type" => "progress", "message" => "working" }
+      )
+
+      result = processor.parse_line(line)
+
+      expect(result).to eq(
+        type: :progress,
+        raw_type: "progress",
+        event: { "type" => "progress", "message" => "working" }
+      )
+    end
+
+    it "preserves harness semantic types for struct events while keeping the raw event type" do
+      line = '{"type":"message.delta","delta":{"content":[]}}'
+      event_class = Struct.new(:type, :raw_event, keyword_init: true)
+      event = event_class.new(type: :progress, raw_event: { "type" => "message.delta" })
+
+      allow(AgentHarness::Providers::Codex).to receive(:parse_streaming_event).with(line).and_return(event)
+
+      result = processor.parse_line(line)
+
+      expect(result).to eq(type: :progress, raw_type: "message.delta", event: event)
+    end
+
+    it "falls back to JSON parsing when agent-harness returns nil" do
+      line = '{"type":"progress","message":"working"}'
+
+      allow(AgentHarness::Providers::Codex).to receive(:parse_streaming_event).with(line).and_return(nil)
+
+      result = processor.parse_line(line)
+
+      expect(result).to eq(
+        type: :progress,
+        raw_type: "progress",
+        event: { "type" => "progress", "message" => "working" }
+      )
+    end
   end
 
   describe "#process" do
@@ -271,7 +313,7 @@ RSpec.describe Containers::StreamingEventProcessor do
       expect(result[:type]).to eq(:progress)
     end
 
-    it "normalizes wrapped progress events from agent-harness" do
+    it "classifies wrapped progress events from agent-harness via semantic type" do
       harness_event = AgentHarness::Providers::Codex::StreamingEvent.new(
         type: :progress,
         raw_event: {
@@ -288,12 +330,10 @@ RSpec.describe Containers::StreamingEventProcessor do
 
       expect(result).not_to be_nil
       expect(result[:type]).to eq(:progress)
-      expect(result[:raw_type]).to eq("progress")
-      expect(result[:event]["type"]).to eq("progress")
-      expect(result[:event]["transport_type"]).to eq("event_msg")
+      expect(result[:event]).to eq(harness_event)
     end
 
-    it "normalizes wrapped turn completion events from agent-harness" do
+    it "classifies wrapped turn completion events using payload type" do
       harness_event = AgentHarness::Providers::Codex::StreamingEvent.new(
         type: :turn_complete,
         tokens: { input: 123, output: 45 },
@@ -313,11 +353,10 @@ RSpec.describe Containers::StreamingEventProcessor do
       expect(result).not_to be_nil
       expect(result[:type]).to eq(:turn_complete)
       expect(result[:raw_type]).to eq("turn.completed")
-      expect(result[:event]["usage"]).to eq({ "input_tokens" => 123, "output_tokens" => 45 })
-      expect(result[:event].dig("metrics", "duration_ms")).to eq(3210)
+      expect(result[:event]).to eq(harness_event)
     end
 
-    it "normalizes wrapped failed turn events from agent-harness" do
+    it "classifies wrapped failed turn events using payload type" do
       harness_event = AgentHarness::Providers::Codex::StreamingEvent.new(
         type: :error,
         error_message: "context window exceeded",
@@ -336,7 +375,7 @@ RSpec.describe Containers::StreamingEventProcessor do
       expect(result).not_to be_nil
       expect(result[:type]).to eq(:turn_failed)
       expect(result[:raw_type]).to eq("turn.failed")
-      expect(result[:event]["message"]).to eq("context window exceeded")
+      expect(result[:event]).to eq(harness_event)
     end
   end
 end

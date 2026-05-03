@@ -39,6 +39,17 @@
       </div>
     <% end %>
 
+    <div>
+      <%= label_tag :sort, "Sort", class: "block text-sm font-medium text-gray-700" %>
+      <%= select_tag :sort,
+        options_for_select([
+          ["Newest first", "newest"],
+          ["Queue priority (approximate)", "queue"]
+        ], params[:sort].presence || "newest"),
+        id: :sort,
+        class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+    </div>
+
     <div class="flex items-end gap-2">
       <%= f.submit "Filter",
         class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>

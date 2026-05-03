@@ -38,10 +38,13 @@ module Containers
       parsed = parse_jsonl_event(stripped)
       return nil unless parsed
 
-      event_type = event_value(parsed, "type").to_s
-      return nil if event_type.blank?
+      raw_type = raw_event_type(parsed).to_s
+      semantic_type = semantic_event_type(parsed).to_s
+      return nil if raw_type.blank? && semantic_type.blank?
 
-      { type: classify_event(event_type), event: parsed, raw_type: event_type }
+      event_type = classify_event(raw_type) || classify_event(semantic_type)
+
+      { type: event_type, event: parsed, raw_type: raw_type.presence || semantic_type }
     end
 
     # Processes a parsed event, updating internal state and returning an action
@@ -97,11 +100,10 @@ module Containers
 
     def parse_jsonl_event(line)
       if harness_streaming_available?
-        harness_event = AgentHarness::Providers::Codex.parse_streaming_event(line)
-        return normalize_harness_event(harness_event) if harness_event
+        AgentHarness::Providers::Codex.parse_streaming_event(line) || fallback_parse(line)
+      else
+        fallback_parse(line)
       end
-
-      fallback_parse(line)
     end
 
     def harness_streaming_available?
@@ -118,45 +120,26 @@ module Containers
       nil
     end
 
-    def normalize_harness_event(event)
-      raw_event = event.raw_event.is_a?(Hash) ? event.raw_event.deep_dup : {}
-      payload = raw_event["payload"].is_a?(Hash) ? raw_event["payload"].deep_dup : nil
-      normalized_event = payload || raw_event
-      semantic_type = normalized_harness_event_type(event, payload, raw_event)
-      transport_type = raw_event["type"].presence
+    def semantic_event_type(event)
+      event_type = event.type if !event.is_a?(Hash) && event.respond_to?(:type)
+      event_type = event_value(event, "type") if event_type.blank?
 
-      normalized_event["transport_type"] ||= transport_type if transport_type.present? && transport_type != semantic_type
-      normalized_event["type"] = semantic_type if semantic_type.present?
-      normalized_event["turn"] ||= event.turn if event.respond_to?(:turn) && event.turn.present?
-
-      if event.respond_to?(:tokens) && event.tokens.present?
-        normalized_event["usage"] ||= {}
-        normalized_event["usage"]["input_tokens"] ||= event.tokens[:input]
-        normalized_event["usage"]["output_tokens"] ||= event.tokens[:output]
-      end
-
-      if event.respond_to?(:error_message) && event.error_message.present?
-        normalized_event["message"] ||= event.error_message
-      end
-
-      normalized_event
+      event_type.to_s
     end
 
-    def normalized_harness_event_type(event, payload, raw_event)
-      semantic_type = payload&.[]("type").presence || raw_event["type"].to_s.presence
+    def raw_event_type(event)
+      raw_event = event.respond_to?(:raw_event) ? event.raw_event : event
 
-      case event_type = event.respond_to?(:type) ? event.type.to_s : nil
-      when "progress"
-        "progress"
-      when "token_usage"
-        "token_usage"
-      when "turn_complete"
-        semantic_type.presence_in(TURN_COMPLETE_EVENT_TYPES) || "turn_complete"
-      when "error"
-        semantic_type.presence_in(TURN_FAILED_EVENT_TYPES + ERROR_EVENT_TYPES) || "error"
-      else
-        semantic_type || event_type.presence
+      if raw_event.is_a?(Hash)
+        # For wrapped events (e.g. Codex event_msg), prefer the payload type
+        # which carries semantic meaning (e.g. "turn.failed") over the
+        # transport type (e.g. "event_msg") which doesn't classify.
+        raw_event.dig("payload", "type") || raw_event["type"] || raw_event[:type]
+      elsif raw_event.respond_to?(:[])
+        raw_event["type"] || raw_event[:type]
       end
+    rescue NameError
+      nil
     end
 
     def classify_event(event_type)

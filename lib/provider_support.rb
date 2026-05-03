@@ -71,7 +71,11 @@ module ProviderSupport
   end
 
   def harness_provider_key_for(provider_key)
-    AgentHarness.provider_metadata(provider_key.to_sym)[:canonical_provider].to_s
+    metadata = AgentHarness.provider_metadata(provider_key.to_sym)
+    metadata.fetch(:canonical_provider).to_s
+  rescue KeyError
+    raise AgentHarness::ConfigurationError,
+      "provider_metadata for #{provider_key.inspect} missing :canonical_provider key"
   end
 
   def provider_key_for_agent_type(agent_type)
