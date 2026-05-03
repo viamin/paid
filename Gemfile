@@ -52,6 +52,8 @@ gem "qdrant-ruby", require: false
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
 # 0.11.0 fixes GithubCopilot provider CLI version detection for 0.1.x subcommand CLIs.
+# require: needed because gem name (agent-harness) differs from entry file (agent_harness);
+# Bundler auto-require would try "agent/harness" and fail silently.
 gem "agent-harness", "~> 0.11.3", require: "agent_harness"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
