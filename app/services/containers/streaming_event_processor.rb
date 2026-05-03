@@ -205,7 +205,8 @@ module Containers
     end
 
     def error_message(event)
-      (event_value(event, "message") || event_dig(event, "error", "message") || event.respond_to?(:error_message) && event.error_message).to_s.truncate(500)
+      msg = event_value(event, "message") || event_dig(event, "error", "message") || (event.error_message if event.respond_to?(:error_message))
+      msg.to_s.truncate(500)
     end
 
     def token_counts(event)
@@ -220,7 +221,15 @@ module Containers
 
     def event_value(event, key)
       raw_event = event.respond_to?(:raw_event) ? event.raw_event : event
-      return raw_event[key] if raw_event.respond_to?(:[])
+      if raw_event.is_a?(Hash)
+        return raw_event[key] if raw_event.key?(key)
+      elsif raw_event.respond_to?(:[])
+        begin
+          return raw_event[key]
+        rescue NameError
+          # Struct-like objects raise NameError for missing keys; fall through
+        end
+      end
 
       event.public_send(key) if event.respond_to?(key)
     end

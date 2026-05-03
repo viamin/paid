@@ -48,9 +48,10 @@ module Providers
 
       klass.new(config: config)
     end
+    private_class_method :build_harness_provider
 
     def harness_provider
-      @harness_provider ||= self.class.build_harness_provider(harness_provider_name)
+      @harness_provider ||= self.class.send(:build_harness_provider, harness_provider_name)
     end
 
     def harness_provider_name
