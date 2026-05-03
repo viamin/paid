@@ -86,13 +86,13 @@ module DashboardHelper
   end
 
   TIER_BADGE_CLASSES = {
-    "low" => "bg-green-100 text-green-700",
-    "mid" => "bg-blue-100 text-blue-700",
-    "high" => "bg-purple-100 text-purple-700"
+    "low" => "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-200",
+    "mid" => "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200",
+    "high" => "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200"
   }.freeze
 
   def tier_badge_classes(tier)
-    TIER_BADGE_CLASSES.fetch(tier, "bg-gray-100 text-gray-700")
+    TIER_BADGE_CLASSES.fetch(tier, "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200")
   end
 
   def filter_button_classes(active)

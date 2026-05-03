@@ -8,14 +8,14 @@ module QualityMetricsHelper
   end
 
   def quality_score_color(score)
-    return "text-gray-400" if score.nil?
+    return "text-gray-400 dark:text-gray-500" if score.nil?
 
     if score >= 0.8
-      "text-green-600"
+      "text-green-600 dark:text-green-400"
     elsif score >= 0.5
-      "text-yellow-600"
+      "text-yellow-600 dark:text-yellow-400"
     else
-      "text-red-600"
+      "text-red-600 dark:text-red-400"
     end
   end
 

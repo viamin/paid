@@ -1,10 +1,10 @@
 <div id="<%= dom_id(agent_run, :detail) %>" data-agent-run-status="<%= agent_run.status %>" data-agent-run-has-error="<%= agent_run.error_message.present? %>">
-  <div class="bg-white shadow sm:rounded-lg">
+  <div class="bg-white shadow sm:rounded-lg dark:bg-gray-800">
     <div class="px-4 py-5 sm:px-6">
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-xl font-semibold text-gray-900">Agent Run #<%= agent_run.id %></h1>
-          <p class="mt-1 text-sm text-gray-500">
+          <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-100">Agent Run #<%= agent_run.id %></h1>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
             <% final_provider_record = local_assigns.fetch(:final_provider_record, nil) %>
             <% missing_provider_entry_label = "Deleted provider entry" %>
             <% provider_label = lambda do |identifier, resolved_provider = nil|
@@ -46,10 +46,10 @@
     </div>
 
     <% if agent_run.issue %>
-      <div class="border-t border-gray-200 px-4 py-4 sm:px-6">
-        <h2 class="text-sm font-semibold text-gray-500">Related Issue</h2>
+      <div class="border-t border-gray-200 px-4 py-4 sm:px-6 dark:border-gray-700">
+        <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Related Issue</h2>
         <p class="mt-1">
-          <%= link_to agent_run.issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" do %>
+          <%= link_to agent_run.issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300" do %>
             #<%= agent_run.issue.github_number %> - <%= agent_run.issue.title %>
           <% end %>
         </p>
@@ -59,14 +59,14 @@
 
   <div class="mt-6">
     <dl class="grid grid-cols-1 gap-5 sm:grid-cols-4">
-      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Iterations</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900"><%= agent_run.iterations || 0 %></dd>
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 dark:bg-gray-800">
+        <dt class="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Iterations</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100"><%= agent_run.iterations || 0 %></dd>
       </div>
 
-      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Duration</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 dark:bg-gray-800">
+        <dt class="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Duration</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
           <% elapsed = if agent_run.duration_seconds.present?
                agent_run.duration_seconds
              elsif agent_run.running? && agent_run.started_at.present?
@@ -82,9 +82,9 @@
 
       <% total_tokens_display = (agent_run.tokens_input || 0) + (agent_run.tokens_output || 0) %>
       <% if total_tokens_display > 0 %>
-        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
-          <dt class="truncate text-sm font-medium text-gray-500">Tokens</dt>
-          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 dark:bg-gray-800">
+          <dt class="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Tokens</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
             <%= number_with_delimiter(total_tokens_display) %>
           </dd>
           <% limit = agent_run.effective_max_tokens_per_run %>
@@ -97,18 +97,18 @@
             <% limit_exceeded = ratio >= 1.0 %>
             <% limit_warning = !limit_exceeded && ratio >= warning_ratio %>
             <div class="mt-2">
-              <div class="flex items-center justify-between text-xs text-gray-500">
+              <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                 <span><%= raw_percent %>% of limit</span>
                 <span><%= number_with_delimiter(limit) %></span>
               </div>
-              <div class="mt-1 h-2 w-full rounded-full bg-gray-200">
+              <div class="mt-1 h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700">
                 <div class="h-2 rounded-full <%= limit_exceeded ? 'bg-red-500' : limit_warning ? 'bg-yellow-500' : 'bg-green-500' %>"
                      style="width: <%= bar_percent %>%"></div>
               </div>
               <% if limit_exceeded %>
-                <p class="mt-1 text-xs font-medium text-red-600">Limit exceeded</p>
+                <p class="mt-1 text-xs font-medium text-red-600 dark:text-red-400">Limit exceeded</p>
               <% elsif limit_warning %>
-                <p class="mt-1 text-xs font-medium text-yellow-600">Approaching limit</p>
+                <p class="mt-1 text-xs font-medium text-yellow-600 dark:text-yellow-400">Approaching limit</p>
               <% end %>
             </div>
           <% end %>
@@ -116,9 +116,9 @@
       <% end %>
 
       <% if (agent_run.cost_cents || 0) > 0 %>
-        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
-          <dt class="truncate text-sm font-medium text-gray-500">Cost</dt>
-          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 dark:bg-gray-800">
+          <dt class="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Cost</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
             $<%= format("%.2f", agent_run.cost_cents / 100.0) %>
           </dd>
         </div>
@@ -130,29 +130,29 @@
   <% initial_provider_name = agent_run.provider&.display_name || agent_run.agent_type&.titleize %>
   <% effective_provider_name = header_provider_name %>
   <% fallback_occurred = agent_run.provider_switches > 0 %>
-  <div class="mt-6 rounded-lg bg-white p-4 shadow">
-    <h2 class="text-sm font-semibold text-gray-900">Provider</h2>
-    <dl class="mt-2 divide-y divide-gray-200">
+  <div class="mt-6 rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+    <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Provider</h2>
+    <dl class="mt-2 divide-y divide-gray-200 dark:divide-gray-700">
       <div class="flex justify-between py-2">
-        <dt class="text-sm text-gray-500">Active Provider</dt>
-        <dd class="text-sm font-medium text-gray-900">
+        <dt class="text-sm text-gray-500 dark:text-gray-400">Active Provider</dt>
+        <dd class="text-sm font-medium text-gray-900 dark:text-gray-100">
           <%= effective_provider_name %>
           <% if fallback_occurred %>
-            <span class="ml-1 inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Fallback</span>
+            <span class="ml-1 inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Fallback</span>
           <% end %>
         </dd>
       </div>
       <% if fallback_occurred && initial_provider_name.present? %>
         <div class="flex justify-between py-2">
-          <dt class="text-sm text-gray-500">Originally Requested</dt>
-          <dd class="text-sm text-gray-900"><%= initial_provider_name %></dd>
+          <dt class="text-sm text-gray-500 dark:text-gray-400">Originally Requested</dt>
+          <dd class="text-sm text-gray-900 dark:text-gray-100"><%= initial_provider_name %></dd>
         </div>
       <% end %>
       <% if effective_record&.auth_type.present? %>
         <div class="flex justify-between py-2">
-          <dt class="text-sm text-gray-500">Auth Type</dt>
-          <dd class="text-sm text-gray-900">
-            <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= effective_record.subscription? ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700' %>">
+          <dt class="text-sm text-gray-500 dark:text-gray-400">Auth Type</dt>
+          <dd class="text-sm text-gray-900 dark:text-gray-100">
+            <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= effective_record.subscription? ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200' : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200' %>">
               <%= effective_record.auth_type.titleize %>
             </span>
           </dd>
@@ -160,15 +160,15 @@
       <% end %>
       <% if fallback_occurred %>
         <div class="flex justify-between py-2">
-          <dt class="text-sm text-gray-500">Provider Switches</dt>
-          <dd class="text-sm text-gray-900"><%= agent_run.provider_switches %></dd>
+          <dt class="text-sm text-gray-500 dark:text-gray-400">Provider Switches</dt>
+          <dd class="text-sm text-gray-900 dark:text-gray-100"><%= agent_run.provider_switches %></dd>
         </div>
       <% end %>
       <% if agent_run.running? %>
         <div class="flex justify-between py-2">
-          <dt class="text-sm text-gray-500">Status</dt>
-          <dd class="text-sm text-gray-900">
-            <span class="inline-flex items-center gap-1 text-green-700">
+          <dt class="text-sm text-gray-500 dark:text-gray-400">Status</dt>
+          <dd class="text-sm text-gray-900 dark:text-gray-100">
+            <span class="inline-flex items-center gap-1 text-green-700 dark:text-green-400">
               <span class="relative flex h-2 w-2">
                 <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
                 <span class="relative inline-flex h-2 w-2 rounded-full bg-green-500"></span>
@@ -186,13 +186,13 @@
   <% phases = phase_timeline.to_a %>
   <% active_phase_group = agent_run.current_phase_group(phases: phases) %>
 
-  <div class="mt-6 rounded-lg bg-white p-4 shadow">
+  <div class="mt-6 rounded-lg bg-white p-4 shadow dark:bg-gray-800">
     <div class="flex items-start justify-between gap-4">
       <div>
-        <h2 class="text-sm font-semibold text-gray-900">Run Timeline</h2>
-        <p class="mt-1 text-sm text-gray-500">Breaks out queue, setup, prompt preparation, agent execution, post-processing, and cleanup.</p>
+        <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Run Timeline</h2>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Breaks out queue, setup, prompt preparation, agent execution, post-processing, and cleanup.</p>
       </div>
-      <span class="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
+      <span class="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-200">
         Observed <%= format_duration(phase_summary[:observed_seconds]) %>
       </span>
     </div>
@@ -211,13 +211,13 @@
         <% is_completed = phase_group == "queue" ? (phases.any? || agent_run.status == "running") : completed_groups.include?(phase_group) %>
         <% is_pending = !is_active && !is_completed && active_phase_group.present? %>
         <div class="rounded-lg border px-3 py-3 <%= if is_active
-          'border-blue-400 bg-blue-50'
+          'border-blue-400 bg-blue-50 dark:border-blue-500 dark:bg-blue-900/30'
         elsif is_pending
-          'border-gray-200 opacity-50'
+          'border-gray-200 opacity-50 dark:border-gray-700'
         else
-          'border-gray-200'
+          'border-gray-200 dark:border-gray-700'
         end %>">
-          <div class="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide <%= is_active ? 'text-blue-600' : 'text-gray-500' %>">
+          <div class="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide <%= is_active ? 'text-blue-600 dark:text-blue-300' : 'text-gray-500 dark:text-gray-400' %>">
             <% if is_active %>
               <span class="relative flex h-2 w-2">
                 <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75"></span>
@@ -226,9 +226,9 @@
             <% end %>
             <%= phase_group_label(phase_group) %>
           </div>
-          <div class="mt-2 text-xl font-semibold <%= is_active ? 'text-blue-900' : 'text-gray-900' %>">
+          <div class="mt-2 text-xl font-semibold <%= is_active ? 'text-blue-900 dark:text-blue-200' : 'text-gray-900 dark:text-gray-100' %>">
             <% if is_active %>
-              <span class="text-blue-600">In Progress</span>
+              <span class="text-blue-600 dark:text-blue-300">In Progress</span>
             <% elsif is_pending %>
               &mdash;
             <% else %>
@@ -240,37 +240,37 @@
     </div>
 
     <% if phases.any? %>
-      <div class="mt-5 overflow-hidden overflow-x-auto rounded-lg border border-gray-200">
-        <table class="min-w-full divide-y divide-gray-200">
-          <thead class="bg-gray-50">
+      <div class="mt-5 overflow-hidden overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+          <thead class="bg-gray-50 dark:bg-gray-900/50">
             <tr>
-              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Phase</th>
-              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Group</th>
-              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Duration</th>
-              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Finished</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Phase</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Group</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Duration</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Finished</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-200 bg-white">
+          <tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
             <% phases.each do |phase| %>
               <tr>
-                <td class="px-4 py-3 text-sm font-medium text-gray-900"><%= phase.label %></td>
-                <td class="px-4 py-3 text-sm text-gray-500">
+                <td class="px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100"><%= phase.label %></td>
+                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
                   <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-white <%= phase_group_bar_style(phase.phase_group) %>">
                     <%= phase_group_label(phase.phase_group) %>
                   </span>
                   <% if phase.status == "failed" %>
-                    <span class="ml-2 inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">Failed</span>
+                    <span class="ml-2 inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-900/40 dark:text-red-200">Failed</span>
                   <% end %>
                 </td>
-                <td class="px-4 py-3 text-right text-sm text-gray-900"><%= format_duration(phase.duration_seconds) %></td>
-                <td class="px-4 py-3 text-right text-sm text-gray-500"><%= time_ago_in_words(phase.finished_at) %> ago</td>
+                <td class="px-4 py-3 text-right text-sm text-gray-900 dark:text-gray-100"><%= format_duration(phase.duration_seconds) %></td>
+                <td class="px-4 py-3 text-right text-sm text-gray-500 dark:text-gray-400"><%= time_ago_in_words(phase.finished_at) %> ago</td>
               </tr>
             <% end %>
           </tbody>
         </table>
       </div>
     <% else %>
-      <div class="mt-4 rounded-lg border border-dashed border-gray-300 px-4 py-5 text-sm text-gray-500">
+      <div class="mt-4 rounded-lg border border-dashed border-gray-300 px-4 py-5 text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
         Phase timing will appear here once this run records lifecycle events.
       </div>
     <% end %>
@@ -279,49 +279,49 @@
   <%= render "agent_runs/quality_scores", quality_metrics: quality_metrics %>
 
   <% if safe_github_url?(agent_run.pull_request_url) %>
-    <div class="mt-6 rounded-lg border border-green-200 bg-green-50 p-4">
-      <h2 class="text-sm font-semibold text-green-800">Pull Request Created</h2>
+    <div class="mt-6 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/30">
+      <h2 class="text-sm font-semibold text-green-800 dark:text-green-200">Pull Request Created</h2>
       <p class="mt-1">
-        <%= link_to agent_run.pull_request_url, agent_run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-green-700 hover:text-green-900 underline" %>
+        <%= link_to agent_run.pull_request_url, agent_run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-green-700 hover:text-green-900 underline dark:text-green-300 dark:hover:text-green-100" %>
       </p>
     </div>
   <% end %>
 
   <% if safe_github_url?(agent_run.review_url) %>
-    <div class="mt-6 rounded-lg border border-purple-200 bg-purple-50 p-4">
-      <h2 class="text-sm font-semibold text-purple-800">Review Posted</h2>
+    <div class="mt-6 rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-900/30">
+      <h2 class="text-sm font-semibold text-purple-800 dark:text-purple-200">Review Posted</h2>
       <p class="mt-1">
-        <%= link_to agent_run.review_url, agent_run.review_url, target: "_blank", rel: "noopener noreferrer", class: "text-purple-700 hover:text-purple-900 underline" %>
+        <%= link_to agent_run.review_url, agent_run.review_url, target: "_blank", rel: "noopener noreferrer", class: "text-purple-700 hover:text-purple-900 underline dark:text-purple-300 dark:hover:text-purple-100" %>
       </p>
     </div>
   <% end %>
 
   <% if safe_github_url?(agent_run.created_issue_url) %>
-    <div class="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
-      <h2 class="text-sm font-semibold text-blue-800">Issue Created</h2>
+    <div class="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/30">
+      <h2 class="text-sm font-semibold text-blue-800 dark:text-blue-200">Issue Created</h2>
       <p class="mt-1">
-        <%= link_to agent_run.created_issue_url, agent_run.created_issue_url, target: "_blank", rel: "noopener noreferrer", class: "text-blue-700 hover:text-blue-900 underline" %>
+        <%= link_to agent_run.created_issue_url, agent_run.created_issue_url, target: "_blank", rel: "noopener noreferrer", class: "text-blue-700 hover:text-blue-900 underline dark:text-blue-300 dark:hover:text-blue-100" %>
       </p>
     </div>
   <% end %>
 
   <% if agent_run.cross_repo_issue_pair? %>
-    <div class="mt-6 rounded-lg border border-indigo-200 bg-indigo-50 p-4">
-      <h2 class="text-sm font-semibold text-indigo-800">Cross-Repo Issue Pair</h2>
+    <div class="mt-6 rounded-lg border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-800 dark:bg-indigo-900/30">
+      <h2 class="text-sm font-semibold text-indigo-800 dark:text-indigo-200">Cross-Repo Issue Pair</h2>
       <ul class="mt-2 space-y-1">
         <% agent_run.upstream_issues.each do |issue_entry| %>
           <% if safe_github_url?(issue_entry["issue_url"]) %>
             <li class="text-sm">
-              <span class="font-medium text-indigo-700">Upstream (<%= issue_entry["repo"] %>):</span>
-              <%= link_to "##{issue_entry["issue_number"]}", issue_entry["issue_url"], target: "_blank", rel: "noopener noreferrer", class: "text-indigo-700 hover:text-indigo-900 underline" %>
+              <span class="font-medium text-indigo-700 dark:text-indigo-300">Upstream (<%= issue_entry["repo"] %>):</span>
+              <%= link_to "##{issue_entry["issue_number"]}", issue_entry["issue_url"], target: "_blank", rel: "noopener noreferrer", class: "text-indigo-700 hover:text-indigo-900 underline dark:text-indigo-300 dark:hover:text-indigo-100" %>
             </li>
           <% end %>
         <% end %>
         <% agent_run.downstream_issues.each do |issue_entry| %>
           <% if safe_github_url?(issue_entry["issue_url"]) %>
             <li class="text-sm">
-              <span class="font-medium text-indigo-700">Downstream (<%= issue_entry["repo"] %>):</span>
-              <%= link_to "##{issue_entry["issue_number"]}", issue_entry["issue_url"], target: "_blank", rel: "noopener noreferrer", class: "text-indigo-700 hover:text-indigo-900 underline" %>
+              <span class="font-medium text-indigo-700 dark:text-indigo-300">Downstream (<%= issue_entry["repo"] %>):</span>
+              <%= link_to "##{issue_entry["issue_number"]}", issue_entry["issue_url"], target: "_blank", rel: "noopener noreferrer", class: "text-indigo-700 hover:text-indigo-900 underline dark:text-indigo-300 dark:hover:text-indigo-100" %>
             </li>
           <% end %>
         <% end %>
@@ -336,46 +336,46 @@
     violation_label = violation_type&.tr("_", " ")&.capitalize || "Guardrail violation"
     violation_detail = agent_run.guardrail_context&.dig("details").presence
   %>
-  <div class="mt-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
-    <h2 class="text-sm font-semibold text-yellow-800">Run Paused</h2>
-    <p class="mt-1 text-sm text-yellow-700">
+  <div class="mt-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4 dark:border-yellow-800 dark:bg-yellow-900/30">
+    <h2 class="text-sm font-semibold text-yellow-800 dark:text-yellow-200">Run Paused</h2>
+    <p class="mt-1 text-sm text-yellow-700 dark:text-yellow-300">
       This agent run has been paused due to a <%= violation_label.downcase %>.
       <% if violation_detail.present? %>
-        <br><span class="text-yellow-600"><%= violation_detail %></span>
+        <br><span class="text-yellow-600 dark:text-yellow-400"><%= violation_detail %></span>
       <% end %>
       <% if agent_run.paused_at.present? %>
         <br>Paused <%= time_ago_in_words(agent_run.paused_at) %> ago.
       <% end %>
       <% if agent_run.error_message.present? %>
-        <br><span class="text-yellow-600"><%= agent_run.error_message %></span>
+        <br><span class="text-yellow-600 dark:text-yellow-400"><%= agent_run.error_message %></span>
       <% end %>
     </p>
   </div>
 <% end %>
 
 <% if agent_run.token_limit_exceeded? %>
-  <div class="mt-6 rounded-lg border border-red-200 bg-red-50 p-4">
-    <h2 class="text-sm font-semibold text-red-800">Token Limit Exceeded</h2>
-    <p class="mt-1 text-sm text-red-700">
+  <div class="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/30">
+    <h2 class="text-sm font-semibold text-red-800 dark:text-red-200">Token Limit Exceeded</h2>
+    <p class="mt-1 text-sm text-red-700 dark:text-red-300">
       This agent run was stopped because it exceeded the configured token limit
       of <%= number_with_delimiter(agent_run.effective_max_tokens_per_run) %> tokens.
       Total tokens used: <strong><%= number_with_delimiter(agent_run.total_tokens) %></strong>.
     </p>
   </div>
 <% elsif agent_run.status == "timeout" %>
-  <div class="mt-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
-    <h2 class="text-sm font-semibold text-yellow-800">Execution Timed Out</h2>
-    <p class="mt-1 text-sm text-yellow-700">
+  <div class="mt-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4 dark:border-yellow-800 dark:bg-yellow-900/30">
+    <h2 class="text-sm font-semibold text-yellow-800 dark:text-yellow-200">Execution Timed Out</h2>
+    <p class="mt-1 text-sm text-yellow-700 dark:text-yellow-300">
       This run exceeded the maximum execution time of <strong><%= agent_run.project.max_execution_seconds %>s</strong>.
       <% if agent_run.error_message.present? %>
-        <br><span class="text-yellow-600"><%= agent_run.error_message %></span>
+        <br><span class="text-yellow-600 dark:text-yellow-400"><%= agent_run.error_message %></span>
       <% end %>
     </p>
   </div>
 <% elsif agent_run.rate_limited? %>
-  <div class="mt-6 rounded-lg border border-orange-200 bg-orange-50 p-4">
-    <h2 class="text-sm font-semibold text-orange-800">Rate Limited</h2>
-    <p class="mt-1 text-sm text-orange-700">
+  <div class="mt-6 rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-900/30">
+    <h2 class="text-sm font-semibold text-orange-800 dark:text-orange-200">Rate Limited</h2>
+    <p class="mt-1 text-sm text-orange-700 dark:text-orange-300">
       The provider hit a rate limit.
       <% if agent_run.rate_limited_until.present? %>
         <br>Expected reset: <strong><%= local_time(agent_run.rate_limited_until) %></strong>
@@ -386,14 +386,14 @@
         <% end %>
       <% end %>
       <% if agent_run.error_message.present? %>
-        <br><span class="text-orange-600"><%= agent_run.error_message %></span>
+        <br><span class="text-orange-600 dark:text-orange-400"><%= agent_run.error_message %></span>
       <% end %>
     </p>
   </div>
   <% elsif agent_run.auth_expired? %>
-    <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
-      <h2 class="text-sm font-semibold text-amber-800">Authentication Expired</h2>
-      <p class="mt-1 text-sm text-amber-700">
+    <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/30">
+      <h2 class="text-sm font-semibold text-amber-800 dark:text-amber-200">Authentication Expired</h2>
+      <p class="mt-1 text-sm text-amber-700 dark:text-amber-300">
         <% auth_provider_display_name =
              case agent_run.auth_provider
              when "github_copilot" then "GitHub Copilot"
@@ -402,35 +402,35 @@
              end %>
         The <%= auth_provider_display_name %> authentication token has expired.
         <% if agent_run.error_message.present? %>
-          <br><span class="text-amber-600"><%= agent_run.error_message %></span>
+          <br><span class="text-amber-600 dark:text-amber-400"><%= agent_run.error_message %></span>
         <% end %>
       </p>
     </div>
   <% elsif agent_run.error_message.present? %>
-    <div class="mt-6 rounded-lg border border-red-200 bg-red-50 p-4">
-      <h2 class="text-sm font-semibold text-red-800">Error</h2>
-      <pre class="mt-1 overflow-auto whitespace-pre-wrap text-sm text-red-700"><%= agent_run.error_message %></pre>
+    <div class="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/30">
+      <h2 class="text-sm font-semibold text-red-800 dark:text-red-200">Error</h2>
+      <pre class="mt-1 overflow-auto whitespace-pre-wrap text-sm text-red-700 dark:text-red-300"><%= agent_run.error_message %></pre>
     </div>
   <% end %>
 
   <% if agent_run.model_selection.present? %>
-    <div class="mt-6 rounded-lg bg-white p-4 shadow">
-      <h2 class="text-sm font-semibold text-gray-900">Model Selection</h2>
-      <dl class="mt-2 divide-y divide-gray-200">
+    <div class="mt-6 rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+      <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Model Selection</h2>
+      <dl class="mt-2 divide-y divide-gray-200 dark:divide-gray-700">
         <div class="flex justify-between py-2">
-          <dt class="text-sm text-gray-500">Selected Model</dt>
-          <dd class="text-sm font-medium text-gray-900"><%= agent_run.model_selection.llm_model.display_name %></dd>
+          <dt class="text-sm text-gray-500 dark:text-gray-400">Selected Model</dt>
+          <dd class="text-sm font-medium text-gray-900 dark:text-gray-100"><%= agent_run.model_selection.llm_model.display_name %></dd>
         </div>
         <% selection_tier = agent_run.model_selection.tier || agent_run.model_selection.llm_model.tier %>
         <% if selection_tier.present? %>
           <div class="flex justify-between py-2">
-            <dt class="text-sm text-gray-500">Tier</dt>
-            <dd class="text-sm text-gray-900">
+            <dt class="text-sm text-gray-500 dark:text-gray-400">Tier</dt>
+            <dd class="text-sm text-gray-900 dark:text-gray-100">
               <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= tier_badge_classes(selection_tier) %>">
                 <%= selection_tier.titleize %>
               </span>
               <% if agent_run.model_selection.selector_type == "quality_escalation" %>
-                <span class="ml-1 inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                <span class="ml-1 inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
                   Escalated<% if agent_run.model_selection.escalated_from_tier.present? %> from <%= agent_run.model_selection.escalated_from_tier.titleize %><% end %>
                 </span>
               <% end %>
@@ -438,14 +438,14 @@
           </div>
         <% end %>
         <div class="flex justify-between py-2">
-          <dt class="text-sm text-gray-500">Selection Method</dt>
-          <dd class="text-sm text-gray-900">
+          <dt class="text-sm text-gray-500 dark:text-gray-400">Selection Method</dt>
+          <dd class="text-sm text-gray-900 dark:text-gray-100">
             <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium
               <%= case agent_run.model_selection.selector_type
-                  when 'meta_agent' then 'bg-purple-100 text-purple-700'
-                  when 'rules' then 'bg-blue-100 text-blue-700'
-                  when 'override' then 'bg-amber-100 text-amber-700'
-                  else 'bg-gray-100 text-gray-700'
+                  when 'meta_agent' then 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200'
+                  when 'rules' then 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200'
+                  when 'override' then 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200'
+                  else 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
                   end %>">
               <%= agent_run.model_selection.selector_type.titleize %>
             </span>
@@ -453,20 +453,20 @@
         </div>
         <% if agent_run.model_selection.complexity_score.present? %>
           <div class="flex justify-between py-2">
-            <dt class="text-sm text-gray-500">Complexity Score</dt>
-            <dd class="text-sm text-gray-900"><%= agent_run.model_selection.complexity_score %> / 10</dd>
+            <dt class="text-sm text-gray-500 dark:text-gray-400">Complexity Score</dt>
+            <dd class="text-sm text-gray-900 dark:text-gray-100"><%= agent_run.model_selection.complexity_score %> / 10</dd>
           </div>
         <% end %>
         <% if agent_run.model_selection.reasoning.present? %>
           <div class="py-2">
-            <dt class="text-sm text-gray-500">Reasoning</dt>
-            <dd class="mt-1 text-sm text-gray-700"><%= agent_run.model_selection.reasoning %></dd>
+            <dt class="text-sm text-gray-500 dark:text-gray-400">Reasoning</dt>
+            <dd class="mt-1 text-sm text-gray-700 dark:text-gray-300"><%= agent_run.model_selection.reasoning %></dd>
           </div>
         <% end %>
         <% if agent_run.model_selection.selection_duration_ms.present? %>
           <div class="flex justify-between py-2">
-            <dt class="text-sm text-gray-500">Selection Time</dt>
-            <dd class="text-sm text-gray-900"><%= agent_run.model_selection.selection_duration_ms %>ms</dd>
+            <dt class="text-sm text-gray-500 dark:text-gray-400">Selection Time</dt>
+            <dd class="text-sm text-gray-900 dark:text-gray-100"><%= agent_run.model_selection.selection_duration_ms %>ms</dd>
           </div>
         <% end %>
       </dl>
@@ -474,23 +474,23 @@
   <% end %>
 
   <% if agent_run.branch_name.present? %>
-    <div class="mt-6 rounded-lg bg-white p-4 shadow">
-      <h2 class="text-sm font-semibold text-gray-500">Git Details</h2>
-      <dl class="mt-2 divide-y divide-gray-200">
+    <div class="mt-6 rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+      <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Git Details</h2>
+      <dl class="mt-2 divide-y divide-gray-200 dark:divide-gray-700">
         <div class="flex justify-between py-2">
-          <dt class="text-sm text-gray-500">Branch</dt>
-          <dd class="text-sm text-gray-900"><code class="rounded bg-gray-100 px-1 py-0.5 text-xs"><%= agent_run.branch_name %></code></dd>
+          <dt class="text-sm text-gray-500 dark:text-gray-400">Branch</dt>
+          <dd class="text-sm text-gray-900 dark:text-gray-100"><code class="rounded bg-gray-100 px-1 py-0.5 text-xs dark:bg-gray-700 dark:text-gray-200"><%= agent_run.branch_name %></code></dd>
         </div>
         <% if agent_run.base_commit_sha.present? %>
           <div class="flex justify-between py-2">
-            <dt class="text-sm text-gray-500">Base Commit</dt>
-            <dd class="text-sm font-mono text-gray-900"><%= agent_run.base_commit_sha[0..7] %></dd>
+            <dt class="text-sm text-gray-500 dark:text-gray-400">Base Commit</dt>
+            <dd class="text-sm font-mono text-gray-900 dark:text-gray-100"><%= agent_run.base_commit_sha[0..7] %></dd>
           </div>
         <% end %>
         <% if agent_run.result_commit_sha.present? %>
           <div class="flex justify-between py-2">
-            <dt class="text-sm text-gray-500">Result Commit</dt>
-            <dd class="text-sm font-mono text-gray-900"><%= agent_run.result_commit_sha[0..7] %></dd>
+            <dt class="text-sm text-gray-500 dark:text-gray-400">Result Commit</dt>
+            <dd class="text-sm font-mono text-gray-900 dark:text-gray-100"><%= agent_run.result_commit_sha[0..7] %></dd>
           </div>
         <% end %>
       </dl>
@@ -500,22 +500,22 @@
   <% provider_attempts = Array(agent_run.providers_attempted) %>
   <% if provider_attempts.any? %>
     <% attempted_providers_by_routing_key = local_assigns.fetch(:attempted_providers_by_routing_key, {}) %>
-    <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/30">
       <div class="flex items-center justify-between">
-        <h2 class="text-sm font-semibold text-amber-800"><%= agent_run.provider_switches.positive? ? "Provider Fallback" : "Provider Attempts" %></h2>
-        <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+        <h2 class="text-sm font-semibold text-amber-800 dark:text-amber-200"><%= agent_run.provider_switches.positive? ? "Provider Fallback" : "Provider Attempts" %></h2>
+        <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-800/60 dark:text-amber-100">
           <%= agent_run.provider_switches.positive? ? pluralize(agent_run.provider_switches, "switch") : pluralize(provider_attempts.size, "attempt") %>
         </span>
       </div>
       <div class="mt-3 flex flex-wrap items-center gap-2">
         <% provider_attempts.each_with_index do |attempt, index| %>
           <% if index > 0 %>
-            <svg class="h-4 w-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg class="h-4 w-4 text-amber-400 dark:text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
             </svg>
           <% end %>
           <% attempt_provider = attempted_providers_by_routing_key[attempt["provider"]] %>
-          <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= attempt['success'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' %>">
+          <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= attempt['success'] ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200' %>">
             <%= provider_label.call(attempt["provider"], attempt_provider) %>
             <% if attempt['error_type'].present? %>
               <span class="ml-1 text-xs opacity-75">(<%= attempt['error_type'] %>)</span>
@@ -528,15 +528,15 @@
         <div class="mt-3 space-y-2">
           <% attempt_failures.each do |attempt| %>
             <% attempt_provider = attempted_providers_by_routing_key[attempt["provider"]] %>
-            <div class="rounded-md border border-amber-200 bg-white/70 px-3 py-2">
-              <p class="text-xs font-medium text-amber-900"><%= provider_label.call(attempt["provider"], attempt_provider) %></p>
-              <p class="mt-1 text-xs text-amber-800"><%= truncate(redacted_error_message(attempt["error_message"]), length: 300) %></p>
+            <div class="rounded-md border border-amber-200 bg-white/70 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/50">
+              <p class="text-xs font-medium text-amber-900 dark:text-amber-100"><%= provider_label.call(attempt["provider"], attempt_provider) %></p>
+              <p class="mt-1 text-xs text-amber-800 dark:text-amber-200"><%= truncate(redacted_error_message(attempt["error_message"]), length: 300) %></p>
             </div>
           <% end %>
         </div>
       <% end %>
       <% if agent_run.final_provider.present? %>
-        <p class="mt-2 text-xs text-amber-700">
+        <p class="mt-2 text-xs text-amber-700 dark:text-amber-300">
           <% final_prov = attempted_providers_by_routing_key[agent_run.final_provider] %>
           Final provider: <span class="font-medium"><%= provider_label.call(agent_run.final_provider, final_prov) %></span>
         </p>

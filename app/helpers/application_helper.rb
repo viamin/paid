@@ -2,17 +2,17 @@
 
 module ApplicationHelper
   AGENT_RUN_STATUS_STYLES = {
-    "queued" => { bg: "bg-indigo-100", text: "text-indigo-700", label: "Queued" },
-    "pending" => { bg: "bg-yellow-100", text: "text-yellow-800", label: "Pending" },
-    "running" => { bg: "bg-blue-100", text: "text-blue-700", label: "Running" },
-    "completed" => { bg: "bg-green-100", text: "text-green-700", label: "Completed" },
-    "no_output" => { bg: "bg-slate-100", text: "text-slate-600", label: "No Output" },
-    "failed" => { bg: "bg-red-100", text: "text-red-700", label: "Failed" },
-    "cancelled" => { bg: "bg-gray-100", text: "text-gray-600", label: "Cancelled" },
-    "timeout" => { bg: "bg-orange-100", text: "text-orange-700", label: "Timeout" },
-    "retried" => { bg: "bg-purple-100", text: "text-purple-700", label: "Retried" },
-    "auth_expired" => { bg: "bg-amber-100", text: "text-amber-700", label: "Auth Expired" },
-    "rate_limited" => { bg: "bg-orange-100", text: "text-orange-700", label: "Rate Limited" }
+    "queued" => { bg: "bg-indigo-100 dark:bg-indigo-900/40", text: "text-indigo-700 dark:text-indigo-200", label: "Queued" },
+    "pending" => { bg: "bg-yellow-100 dark:bg-yellow-900/40", text: "text-yellow-800 dark:text-yellow-200", label: "Pending" },
+    "running" => { bg: "bg-blue-100 dark:bg-blue-900/40", text: "text-blue-700 dark:text-blue-200", label: "Running" },
+    "completed" => { bg: "bg-green-100 dark:bg-green-900/40", text: "text-green-700 dark:text-green-200", label: "Completed" },
+    "no_output" => { bg: "bg-slate-100 dark:bg-slate-800", text: "text-slate-600 dark:text-slate-300", label: "No Output" },
+    "failed" => { bg: "bg-red-100 dark:bg-red-900/40", text: "text-red-700 dark:text-red-200", label: "Failed" },
+    "cancelled" => { bg: "bg-gray-100 dark:bg-gray-700", text: "text-gray-600 dark:text-gray-300", label: "Cancelled" },
+    "timeout" => { bg: "bg-orange-100 dark:bg-orange-900/40", text: "text-orange-700 dark:text-orange-200", label: "Timeout" },
+    "retried" => { bg: "bg-purple-100 dark:bg-purple-900/40", text: "text-purple-700 dark:text-purple-200", label: "Retried" },
+    "auth_expired" => { bg: "bg-amber-100 dark:bg-amber-900/40", text: "text-amber-700 dark:text-amber-200", label: "Auth Expired" },
+    "rate_limited" => { bg: "bg-orange-100 dark:bg-orange-900/40", text: "text-orange-700 dark:text-orange-200", label: "Rate Limited" }
   }.freeze
 
   def agent_run_status_badge(status)
