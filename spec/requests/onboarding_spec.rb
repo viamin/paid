@@ -34,6 +34,16 @@ RSpec.describe "Onboarding" do
         get onboarding_path
         expect(response).to redirect_to(dashboard_path)
       end
+
+      it "mentions auto-release in the GitHub token permission guidance" do
+        Onboarding::CompleteStep.call(account: account, step: "account_profile")
+
+        get onboarding_path
+
+        expect(response.body).to include("Actions: Read-only")
+        expect(response.body).to include("Dependabot auto-merge")
+        expect(response.body).to include("auto-release")
+      end
     end
   end
 

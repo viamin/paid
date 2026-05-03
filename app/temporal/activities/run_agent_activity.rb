@@ -648,7 +648,8 @@ module Activities
         agent_run: agent_run,
         container_service: container_service,
         command_context: command_context,
-        provider: provider
+        provider: provider,
+        execution_env: command_env
       )
 
       # Only start! on first provider attempt.
@@ -767,13 +768,18 @@ module Activities
       raise ProviderExecutionError, "Docker exec error: #{e.message}"
     end
 
-    def run_provider_preflight!(agent_run:, container_service:, command_context:, provider:)
+    def run_provider_preflight!(agent_run:, container_service:, command_context:, provider:, execution_env:)
       return unless provider_preflight_supported?(command_context)
 
       # Run the provider-owned preflight first (auth, CLI version,
       # OPENAI_BASE_URL reachability) — this surfaces actionable errors
       # without spending a container exec on a smoke prompt.
-      run_harness_preflight!(agent_run: agent_run, command_context: command_context, provider: provider)
+      run_harness_preflight!(
+        agent_run: agent_run,
+        command_context: command_context,
+        provider: provider,
+        execution_env: execution_env
+      )
 
       prompt = provider_preflight_prompt_for(provider)
       command = build_command(command_context, prompt)
@@ -835,10 +841,9 @@ module Activities
       )
     end
 
-    def run_harness_preflight!(agent_run:, command_context:, provider:)
+    def run_harness_preflight!(agent_run:, command_context:, provider:, execution_env:)
       harness_provider = preflight_provider_for(command_context)
-      env = command_env_for(command_context, provider_preflight_prompt_for(provider))
-      result = harness_provider.preflight_check(env: env, timeout: PREFLIGHT_TIMEOUT_SECONDS)
+      result = harness_provider.preflight_check(env: execution_env, timeout: PREFLIGHT_TIMEOUT_SECONDS)
 
       return if result[:healthy]
 

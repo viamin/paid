@@ -17,6 +17,7 @@ require "faraday/retry"
 class GithubClient
   DEFAULT_CHECK_RUNS_PER_PAGE = 100
   DEFAULT_CHECK_RUNS_MAX_PAGES = 10
+  WORKFLOW_RUNS_PER_PAGE = 100
   RETRY_MAX = 3
   RETRY_INTERVAL = 0.5
   RETRY_INTERVAL_RANDOMNESS = 0.5
@@ -440,6 +441,74 @@ class GithubClient
     handle_errors do
       response = client.combined_status(repo, ref)
       { state: response.state, total_count: response.total_count }
+    end
+  end
+
+  # Lists GitHub Actions workflow runs for a specific commit SHA, deduped to
+  # the latest run per workflow file. Used as a fallback CI verifier when
+  # callers cannot read the Checks API (e.g., fine-grained tokens, which
+  # expose +Actions: Read+ but no Checks permission).
+  #
+  # Deduping is required because "Re-run all jobs" creates a new workflow_run
+  # sharing the same head_sha, leaving the original (failed) run in place;
+  # without deduping, a stale failure would block a now-green merge. GitHub
+  # returns runs newest-first by created_at, so keeping the first occurrence
+  # per workflow_id wins.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param sha [String] Commit SHA
+  # @return [Array<Hash>] Workflow runs with :id, :workflow_id, :name, :status,
+  #   :conclusion, :head_sha, and :html_url keys
+  def workflow_runs_for_sha(repo, sha)
+    handle_errors do
+      response = client.repository_workflow_runs(repo, head_sha: sha, per_page: WORKFLOW_RUNS_PER_PAGE)
+
+      truncated = response.total_count > WORKFLOW_RUNS_PER_PAGE
+
+      if truncated
+        Rails.logger.warn(
+          message: "github_client.workflow_runs_pagination_truncated",
+          repo: repo,
+          sha: sha,
+          total_count: response.total_count,
+          fetched_count: response.workflow_runs.size
+        )
+      end
+
+      latest_per_workflow = {}
+      response.workflow_runs.each do |wr|
+        latest_per_workflow[wr.workflow_id] ||= wr
+      end
+
+      runs = latest_per_workflow.values.map do |wr|
+        {
+          id: wr.id,
+          workflow_id: wr.workflow_id,
+          name: wr.name,
+          status: wr.status,
+          conclusion: wr.conclusion,
+          head_sha: wr.head_sha,
+          html_url: wr.html_url
+        }
+      end
+
+      # When the response is truncated, older workflow runs may have been
+      # omitted — some of which could be failing or in-progress. Inject a
+      # synthetic non-green entry so callers (conclusions_green?) refuse to
+      # merge rather than treating a partial page as authoritative.
+      if truncated
+        runs << {
+          id: 0,
+          workflow_id: 0,
+          name: "truncated_results_sentinel",
+          status: "completed",
+          conclusion: "failure",
+          head_sha: sha,
+          html_url: ""
+        }
+      end
+
+      runs
     end
   end
 

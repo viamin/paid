@@ -1736,11 +1736,18 @@ RSpec.describe Activities::RunAgentActivity do
         )
       end
 
-      it "calls harness preflight_check with env and timeout" do
+      it "calls harness preflight_check with the main execution env and timeout" do
         harness_provider = instance_double(AgentHarness::Providers::Codex)
         allow(harness_provider).to receive(:preflight_check).and_return({ healthy: true })
         allow(activity).to receive(:preflight_provider_for).and_return(harness_provider)
         allow(activity).to receive(:run_harness_preflight!).and_call_original
+        allow(activity).to receive(:command_env_for).and_wrap_original do |original, command_context, prompt|
+          if prompt == "Reply with exactly OK."
+            { "PROMPT_KIND" => "preflight" }
+          else
+            original.call(command_context, prompt).merge("PROMPT_KIND" => "main")
+          end
+        end
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
         allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
@@ -1748,7 +1755,7 @@ RSpec.describe Activities::RunAgentActivity do
         activity.execute(agent_run_id: agent_run.id)
 
         expect(harness_provider).to have_received(:preflight_check).with(
-          env: a_kind_of(Hash),
+          env: hash_including("PROMPT_KIND" => "main"),
           timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS
         )
       end
