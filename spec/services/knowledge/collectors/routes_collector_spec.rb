@@ -246,6 +246,36 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         )
       end
 
+      it "marks wrapped database connection errors as preserve-existing skips" do
+        cause = ActiveRecord::ConnectionNotEstablished.new("connection failed")
+        wrapped_error = Knowledge::ContainerizedRunner::ContainerError.new("Command failed (exit 1): boot aborted")
+        allow(wrapped_error).to receive(:cause).and_return(cause)
+
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(wrapped_error)
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.reason).to match(/routes require database access during Rails boot/)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
+      end
+
+      it "skips on alternate database error message patterns" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            "Command failed (exit 1): database app_development does not exist"
+          )
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
+      end
+
       it "cleans up credentials and disconnects network before running routes" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))

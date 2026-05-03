@@ -35,11 +35,7 @@ module Knowledge
       project_version = resolve_project_version
       results = run_collectors(project_version)
 
-      # Only mark stale artifacts when all collectors completed successfully.
-      # If any failed, we'd be staling artifacts without a replacement.
-      # If any are still running, another worker is mid-collection.
-      all_succeeded = results.all? { |r| r[:status] == "completed" || r[:status] == "skipped" }
-      mark_stale_artifacts(project_version) if all_succeeded && collector_classes.any?
+      mark_stale_artifacts(project_version) if should_mark_stale_artifacts?(results)
 
       {
         project_version: project_version,
@@ -104,9 +100,15 @@ module Knowledge
         message: "knowledge.collector_skipped",
         collector_type: collector_type,
         project_id: project.id,
-        reason: e.reason
+        reason: e.reason,
+        preserve_existing_artifacts: e.preserve_existing_artifacts?
       )
-      { collector_type: collector_type, status: "skipped", reason: e.reason }
+      {
+        collector_type: collector_type,
+        status: "skipped",
+        reason: e.reason,
+        preserve_existing_artifacts: e.preserve_existing_artifacts?
+      }
     rescue => e
       collector_run&.mark_failed!(error: e.message) if collector_run&.persisted?
       Rails.logger.error(
@@ -117,6 +119,19 @@ module Knowledge
       )
       report_exception(e, collector_type)
       { collector_type: collector_type, status: "failed", error: e.message }
+    end
+
+    def should_mark_stale_artifacts?(results)
+      return false unless collector_classes.any?
+
+      # Only mark stale artifacts when every collector either completed or
+      # skipped in a way that still produced a safe replacement boundary.
+      results.all? do |result|
+        next true if result[:status] == "completed"
+        next false unless result[:status] == "skipped"
+
+        !result[:preserve_existing_artifacts]
+      end
     end
 
     def mark_stale_artifacts(project_version)

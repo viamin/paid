@@ -97,7 +97,10 @@ module Knowledge
       rescue StandardError => error
         raise unless database_connection_error?(error)
 
-        skip!("routes require database access during Rails boot")
+        skip!(
+          "routes require database access during Rails boot",
+          preserve_existing_artifacts: true
+        )
       end
 
       def run_routes_command
