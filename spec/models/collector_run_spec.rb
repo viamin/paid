@@ -120,5 +120,13 @@ RSpec.describe CollectorRun do
       expect(run.completed_at).to be_present
       expect(run.artifacts_count).to eq(0)
     end
+
+    it "persists a preserved artifact count when provided" do
+      run = create(:collector_run, :running)
+      run.mark_skipped!(reason: "routes require database access during Rails boot", artifacts_count: 3)
+
+      expect(run.status).to eq("skipped")
+      expect(run.artifacts_count).to eq(3)
+    end
   end
 end

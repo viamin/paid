@@ -5,6 +5,32 @@ module Knowledge
     class RoutesCollector < BaseCollector
       SCOPE_PATH = "config/routes.rb"
       BUNDLE_HOME = "/tmp/paid-bundle-home"
+      # Exception class names that indicate database connectivity issues.
+      # Checked against both error.class.name (local execution) and
+      # error.message (containerized execution, where ContainerError wraps
+      # the original class name in its message string).
+      DATABASE_ERROR_CLASS_NAMES = [
+        "ActiveRecord::ConnectionNotEstablished",
+        "ActiveRecord::DatabaseConnectionError",
+        "ActiveRecord::NoDatabaseError",
+        "Mysql2::Error::ConnectionError",
+        "SQLite3::CantOpenException",
+        "Sequel::DatabaseConnectionError",
+        "PG::ConnectionBad"
+      ].freeze
+
+      # Message patterns that unmistakably indicate database connection issues.
+      # Intentionally narrow to avoid false-positives from non-DB services
+      # that use similar "could not connect" wording.
+      DATABASE_ERROR_MESSAGE_PATTERNS = [
+        /connection to server .+(?:PGSQL|PostgreSQL|5432).* failed/i,
+        /could not connect to server:.*(?:PostgreSQL|5432|pg_hba)/i,
+        /can't connect to (?:local )?MySQL server/i,
+        /unknown database/i,
+        /unable to open database file/i,
+        /no such database/i,
+        /database .* does not exist/i
+      ].freeze
 
       def collect
         output = read_routes_output
@@ -85,6 +111,20 @@ module Knowledge
         end
 
         run_routes_command
+      rescue StandardError => error
+        raise unless database_connection_error?(error)
+
+        # Always preserve prior route artifacts on DB skip. We cannot
+        # reliably detect whether config/routes.rb changed: containerized
+        # runs use shallow clones (--depth 1) so the parent tree needed
+        # by git diff-tree is absent, and even with full history we would
+        # only compare HEAD vs its parent, missing multi-commit batches.
+        # Preserving stale routes is preferable to losing them entirely;
+        # the next successful collection will correct any drift.
+        skip!(
+          "routes require database access during Rails boot",
+          preserve_existing_artifacts: true
+        )
       end
 
       def run_routes_command
@@ -165,6 +205,41 @@ module Knowledge
         end
 
         raise teardown_error if original_error.nil? && teardown_error
+      end
+
+      def database_connection_error?(error)
+        each_error_in_chain(error).any? do |current_error|
+          matches_database_error_class?(current_error) ||
+            matches_database_error_message?(current_error)
+        end
+      end
+
+      # Checks both the actual class (local execution) and whether the
+      # class name appears in the message (containerized execution, where
+      # ContainerizedRunner::ContainerError embeds the original error text).
+      def matches_database_error_class?(error)
+        message = error.message.to_s
+
+        DATABASE_ERROR_CLASS_NAMES.any? do |class_name|
+          error.class.name == class_name || message.include?(class_name)
+        end
+      end
+
+      def matches_database_error_message?(error)
+        message = error.message.to_s
+
+        DATABASE_ERROR_MESSAGE_PATTERNS.any? { |pattern| message.match?(pattern) }
+      end
+
+      def each_error_in_chain(error)
+        [].tap do |errors|
+          current_error = error
+
+          while current_error && !errors.include?(current_error)
+            errors << current_error
+            current_error = current_error.cause
+          end
+        end
       end
 
       def parse_expanded_output(output)

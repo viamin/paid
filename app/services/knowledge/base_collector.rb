@@ -31,8 +31,8 @@ module Knowledge
 
     private
 
-    def skip!(reason)
-      raise SkipCollector, reason
+    def skip!(reason, preserve_existing_artifacts: false)
+      raise SkipCollector.new(reason, preserve_existing_artifacts:)
     end
 
     def container_runner

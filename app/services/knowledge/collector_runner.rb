@@ -35,11 +35,9 @@ module Knowledge
       project_version = resolve_project_version
       results = run_collectors(project_version)
 
-      # Only mark stale artifacts when all collectors completed successfully.
-      # If any failed, we'd be staling artifacts without a replacement.
-      # If any are still running, another worker is mid-collection.
-      all_succeeded = results.all? { |r| r[:status] == "completed" || r[:status] == "skipped" }
-      mark_stale_artifacts(project_version) if all_succeeded && collector_classes.any?
+      if should_mark_stale_artifacts?(results)
+        mark_stale_artifacts(project_version, preserved_collector_types(results))
+      end
 
       {
         project_version: project_version,
@@ -99,14 +97,28 @@ module Knowledge
 
       { collector_type: collector_type, status: "completed", artifacts_count: count }
     rescue SkipCollector => e
-      collector_run&.mark_skipped!(reason: e.reason) if collector_run&.persisted?
+      if collector_run&.persisted?
+        collector_run.mark_skipped!(
+          reason: e.reason,
+          artifacts_count: skipped_artifacts_count(
+            collector_type: collector_type,
+            preserve_existing_artifacts: e.preserve_existing_artifacts?
+          )
+        )
+      end
       Rails.logger.info(
         message: "knowledge.collector_skipped",
         collector_type: collector_type,
         project_id: project.id,
-        reason: e.reason
+        reason: e.reason,
+        preserve_existing_artifacts: e.preserve_existing_artifacts?
       )
-      { collector_type: collector_type, status: "skipped", reason: e.reason }
+      {
+        collector_type: collector_type,
+        status: "skipped",
+        reason: e.reason,
+        preserve_existing_artifacts: e.preserve_existing_artifacts?
+      }
     rescue => e
       collector_run&.mark_failed!(error: e.message) if collector_run&.persisted?
       Rails.logger.error(
@@ -119,7 +131,21 @@ module Knowledge
       { collector_type: collector_type, status: "failed", error: e.message }
     end
 
-    def mark_stale_artifacts(project_version)
+    def should_mark_stale_artifacts?(results)
+      return false unless collector_classes.any?
+
+      results.all? do |result|
+        %w[completed skipped].include?(result[:status])
+      end
+    end
+
+    def preserved_collector_types(results)
+      results.filter_map do |result|
+        result[:collector_type] if result[:status] == "skipped" && result[:preserve_existing_artifacts]
+      end
+    end
+
+    def mark_stale_artifacts(project_version, preserved_types = [])
       current_run_ids = project_version.collector_runs.select(:id)
 
       # We can only safely determine "older" versions when we know the commit time.
@@ -140,6 +166,9 @@ module Knowledge
           .where(project: project, status: "active")
           .where.not(collector_run_id: current_run_ids)
           .where(collector_runs: { project_version_id: older_version_ids })
+        if preserved_types.any?
+          stale_artifacts = stale_artifacts.where.not(knowledge_artifacts: { collector_type: preserved_types })
+        end
 
         KnowledgeChunk
           .where(knowledge_artifact_id: stale_artifacts.select(:id), status: "active")
@@ -151,6 +180,12 @@ module Knowledge
 
     def collector_classes
       self.class.registry
+    end
+
+    def skipped_artifacts_count(collector_type:, preserve_existing_artifacts:)
+      return 0 unless preserve_existing_artifacts
+
+      project.knowledge_artifacts.active.where(collector_type: collector_type).count
     end
 
     def report_exception(exception, collector_type)
