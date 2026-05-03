@@ -3,7 +3,6 @@
 class IntegrationCredentialsController < ApplicationController
   before_action :set_filter_context, only: [ :index, :new, :create ]
   before_action :set_integration_credential, only: [ :show, :destroy ]
-  skip_after_action :verify_policy_scoped, only: :index
 
   def index
     authorize IntegrationCredential

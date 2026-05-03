@@ -39,7 +39,7 @@ module Integrations
         end
 
         if user.has_any_role?(:admin, :owner, account)
-          credentials = account.integration_credentials.active.order(created_at: :desc).load
+          credentials = account.integration_credentials.order(created_at: :desc).load
           if credentials.any?
             sections << Section.new(
               key: :integration_credentials,

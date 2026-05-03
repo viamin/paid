@@ -3,14 +3,17 @@
 require "rails_helper"
 
 RSpec.describe "IntegrationCredentials" do
-  let(:user) { create(:user) }
+  let(:account) { create(:account) }
+  let(:owner_user) { create(:user, account: account) }
+  let(:admin_user) { create(:user, :admin, account: account) }
+  let(:member_user) { create(:user, :member, account: account) }
 
   describe "GET /integration_credentials" do
-    before { sign_in user }
+    before { sign_in owner_user }
 
     it "filters credentials by category" do
-      matching = create(:integration_credential, account: user.account, created_by: user, service_key: "claude", category: "llm_provider", name: "Claude Token")
-      create(:integration_credential, :gitlab, account: user.account, created_by: user, name: "GitLab Token")
+      matching = create(:integration_credential, account: account, created_by: owner_user, service_key: "claude", category: "llm_provider", name: "Claude Token")
+      create(:integration_credential, :gitlab, account: account, created_by: owner_user, name: "GitLab Token")
 
       get integration_credentials_path(category: "llm_provider")
 
@@ -20,8 +23,6 @@ RSpec.describe "IntegrationCredentials" do
     end
 
     context "when user is an admin" do
-      let(:admin_user) { create(:user, :admin, account: user.account) }
-
       before { sign_in admin_user }
 
       it "allows access" do
@@ -32,8 +33,6 @@ RSpec.describe "IntegrationCredentials" do
     end
 
     context "when user is a member" do
-      let(:member_user) { create(:user, :member, account: user.account) }
-
       before { sign_in member_user }
 
       it "denies access" do
@@ -46,7 +45,7 @@ RSpec.describe "IntegrationCredentials" do
   end
 
   describe "GET /integration_credentials/new" do
-    before { sign_in user }
+    before { sign_in owner_user }
 
     it "prefills service-specific forms from query params" do
       get new_integration_credential_path(service_key: "github_signing", category: "signing")
@@ -57,8 +56,6 @@ RSpec.describe "IntegrationCredentials" do
     end
 
     context "when user is a member" do
-      let(:member_user) { create(:user, :member, account: user.account) }
-
       before { sign_in member_user }
 
       it "denies access" do
@@ -71,7 +68,7 @@ RSpec.describe "IntegrationCredentials" do
   end
 
   describe "POST /integration_credentials" do
-    before { sign_in user }
+    before { sign_in owner_user }
 
     it "creates provider credentials" do
       post integration_credentials_path, params: {
@@ -87,7 +84,7 @@ RSpec.describe "IntegrationCredentials" do
       credential = IntegrationCredential.last
       expect(response).to redirect_to(integration_credential_path(credential, category: credential.category))
       expect(credential.service_key).to eq("gemini")
-      expect(credential.created_by).to eq(user)
+      expect(credential.created_by).to eq(owner_user)
     end
 
     it "rejects invalid signing auth types" do
@@ -106,8 +103,6 @@ RSpec.describe "IntegrationCredentials" do
     end
 
     context "when user is a member" do
-      let(:member_user) { create(:user, :member, account: user.account) }
-
       before { sign_in member_user }
 
       it "denies access" do
@@ -128,10 +123,10 @@ RSpec.describe "IntegrationCredentials" do
   end
 
   describe "GET /integration_credentials/:id" do
-    before { sign_in user }
+    before { sign_in owner_user }
 
     it "shows the credential details" do
-      credential = create(:integration_credential, account: user.account, created_by: user, name: "My Claude Key")
+      credential = create(:integration_credential, account: account, created_by: owner_user, name: "My Claude Key")
 
       get integration_credential_path(credential)
 
@@ -149,27 +144,24 @@ RSpec.describe "IntegrationCredentials" do
     end
 
     context "when user is a member" do
-      let(:member_user) { create(:user, :member, account: user.account) }
-
       before { sign_in member_user }
 
       it "denies access" do
-        credential = create(:integration_credential, account: user.account, created_by: user, name: "My Key")
+        credential = create(:integration_credential, account: account, created_by: owner_user, name: "My Key")
 
         get integration_credential_path(credential)
 
-        expect(response).to redirect_to(root_path)
-        expect(flash[:alert]).to include("not authorized")
+        expect(response).to have_http_status(:not_found)
       end
     end
   end
 
   describe "DELETE /integration_credentials/:id" do
     context "when user has owner role" do
-      before { sign_in user }
+      before { sign_in owner_user }
 
       it "revokes the credential and redirects to index" do
-        credential = create(:integration_credential, account: user.account, created_by: user)
+        credential = create(:integration_credential, account: account, created_by: owner_user)
 
         delete integration_credential_path(credential)
 
@@ -180,7 +172,7 @@ RSpec.describe "IntegrationCredentials" do
       end
 
       it "preserves return filter params when provided" do
-        credential = create(:integration_credential, account: user.account, created_by: user, service_key: "claude", category: "llm_provider")
+        credential = create(:integration_credential, account: account, created_by: owner_user, service_key: "claude", category: "llm_provider")
 
         delete integration_credential_path(credential, category: "llm_provider", service_key: "claude")
 
@@ -189,12 +181,10 @@ RSpec.describe "IntegrationCredentials" do
     end
 
     context "when user has admin role" do
-      let(:admin_user) { create(:user, :admin, account: user.account) }
-
       before { sign_in admin_user }
 
       it "revokes the credential" do
-        credential = create(:integration_credential, account: user.account, created_by: user)
+        credential = create(:integration_credential, account: account, created_by: owner_user)
 
         delete integration_credential_path(credential)
 
@@ -204,22 +194,19 @@ RSpec.describe "IntegrationCredentials" do
     end
 
     context "when user is a member" do
-      let(:member_user) { create(:user, :member, account: user.account) }
-
       before { sign_in member_user }
 
       it "denies access" do
-        credential = create(:integration_credential, account: user.account, created_by: user)
+        credential = create(:integration_credential, account: account, created_by: owner_user)
 
         delete integration_credential_path(credential)
 
-        expect(response).to redirect_to(root_path)
-        expect(flash[:alert]).to include("not authorized")
+        expect(response).to have_http_status(:not_found)
       end
     end
 
     context "when credential belongs to another account" do
-      before { sign_in user }
+      before { sign_in owner_user }
 
       it "is not accessible" do
         other_account = create(:account)
