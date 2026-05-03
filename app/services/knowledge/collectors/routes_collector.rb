@@ -5,21 +5,31 @@ module Knowledge
     class RoutesCollector < BaseCollector
       SCOPE_PATH = "config/routes.rb"
       BUNDLE_HOME = "/tmp/paid-bundle-home"
-      DATABASE_CONNECTION_ERROR_PATTERNS = [
-        { class_pattern: /\AActiveRecord::ConnectionNotEstablished\z/ },
-        { class_pattern: /\AActiveRecord::DatabaseConnectionError\z/ },
-        { class_pattern: /\AActiveRecord::NoDatabaseError\z/ },
-        { class_pattern: /\AMysql2::Error::ConnectionError\z/ },
-        { class_pattern: /\ASQLite3::CantOpenException\z/ },
-        { class_pattern: /\ASequel::DatabaseConnectionError\z/ },
-        { class_pattern: /\APG::ConnectionBad\z/ },
-        { message_pattern: /connection to server .*PGSQL.*failed/i },
-        { message_pattern: /can't connect to (?:local )?MySQL server/i },
-        { message_pattern: /unknown database/i },
-        { message_pattern: /unable to open database file/i },
-        { message_pattern: /no such database/i },
-        { message_pattern: /could not connect to server/i },
-        { message_pattern: /database .* does not exist/i }
+      # Exception class names that indicate database connectivity issues.
+      # Checked against both error.class.name (local execution) and
+      # error.message (containerized execution, where ContainerError wraps
+      # the original class name in its message string).
+      DATABASE_ERROR_CLASS_NAMES = [
+        "ActiveRecord::ConnectionNotEstablished",
+        "ActiveRecord::DatabaseConnectionError",
+        "ActiveRecord::NoDatabaseError",
+        "Mysql2::Error::ConnectionError",
+        "SQLite3::CantOpenException",
+        "Sequel::DatabaseConnectionError",
+        "PG::ConnectionBad"
+      ].freeze
+
+      # Message patterns that unmistakably indicate database connection issues.
+      # Intentionally narrow to avoid false-positives from non-DB services
+      # that use similar "could not connect" wording.
+      DATABASE_ERROR_MESSAGE_PATTERNS = [
+        /connection to server .+(?:PGSQL|PostgreSQL|5432).* failed/i,
+        /could not connect to server:.*(?:PostgreSQL|5432|pg_hba)/i,
+        /can't connect to (?:local )?MySQL server/i,
+        /unknown database/i,
+        /unable to open database file/i,
+        /no such database/i,
+        /database .* does not exist/i
       ].freeze
 
       def collect
@@ -192,17 +202,26 @@ module Knowledge
 
       def database_connection_error?(error)
         each_error_in_chain(error).any? do |current_error|
-          DATABASE_CONNECTION_ERROR_PATTERNS.any? do |pattern|
-            matches_database_connection_pattern?(current_error, pattern)
-          end
+          matches_database_error_class?(current_error) ||
+            matches_database_error_message?(current_error)
         end
       end
 
-      def matches_database_connection_pattern?(error, pattern)
-        class_matches = pattern[:class_pattern] && error.class.name.match?(pattern[:class_pattern])
-        message_matches = pattern[:message_pattern] && error.message.to_s.match?(pattern[:message_pattern])
+      # Checks both the actual class (local execution) and whether the
+      # class name appears in the message (containerized execution, where
+      # ContainerizedRunner::ContainerError embeds the original error text).
+      def matches_database_error_class?(error)
+        message = error.message.to_s
 
-        class_matches || message_matches
+        DATABASE_ERROR_CLASS_NAMES.any? do |class_name|
+          error.class.name == class_name || message.include?(class_name)
+        end
+      end
+
+      def matches_database_error_message?(error)
+        message = error.message.to_s
+
+        DATABASE_ERROR_MESSAGE_PATTERNS.any? { |pattern| message.match?(pattern) }
       end
 
       def each_error_in_chain(error)
