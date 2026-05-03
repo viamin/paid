@@ -192,18 +192,93 @@ module Screenshots
         status: "pending"
       )
 
-      Prompt.find_or_create_by!(account: account, slug: "screenshots.prompt") do |record|
+      prompt = Prompt.find_or_create_by!(account: account, slug: "screenshots.prompt") do |record|
         record.name = "Screenshots Prompt"
         record.category = "coding"
         record.active = true
       end
 
+      current_prompt_version = prompt.current_version || prompt.create_version!(
+        template: "Ship {{title}} safely",
+        system_prompt: "You are a pragmatic coding assistant.",
+        created_by: "screenshots",
+        created_by_user: user,
+        change_notes: "Initial screenshot seed"
+      )
+
+      pending_prompt_version = prompt.prompt_versions.pending_review.order(:id).first || prompt.create_pending_version!(
+        template: "Ship {{title}} safely with extra review",
+        system_prompt: "You are a pragmatic coding assistant.",
+        created_by: "screenshots",
+        created_by_user: user,
+        change_notes: "Pending screenshot seed",
+        parent_version: current_prompt_version
+      )
+
+      ab_test = prompt.ab_tests.where(name: "Screenshot A/B Test").first_or_create!(
+        control_version: current_prompt_version,
+        description: "Representative screenshot coverage",
+        status: "draft",
+        min_samples_per_variant: 30,
+        confidence_threshold: 0.95
+      )
+      ab_test.ab_test_variants.find_or_create_by!(prompt_version: current_prompt_version) do |record|
+        record.is_control = true
+      end
+      ab_test.ab_test_variants.find_or_create_by!(prompt_version: pending_prompt_version) do |record|
+        record.is_control = false
+      end
+
+      provider_api_key = user.provider_api_keys.find_or_create_by!(name: "Screenshot OpenAI Key") do |record|
+        record.api_service_type = "openai"
+        record.api_key = "sk-test-#{'a' * 32}"
+      end
+
+      integration_credential = account.integration_credentials.find_or_create_by!(
+        name: "Screenshot Claude Credential",
+        service_key: "claude"
+      ) do |record|
+        record.created_by = user
+        record.auth_kind = "api_key"
+        record.secret = "sk-ant-#{'a' * 24}"
+      end
+
+      linear_token = account.linear_tokens.find_or_create_by!(name: "Screenshot Linear Token") do |record|
+        record.created_by = user
+        record.token = "lin_api_#{'a' * 32}"
+        record.validation_status = "validated"
+      end
+
+      style_guide = account.style_guides.find_or_create_by!(name: "Screenshot Style Guide") do |record|
+        record.project = project
+        record.raw_content = "Prefer small methods and explicit tests."
+        record.language = "ruby"
+        record.active = true
+      end
+
+      chat_session = ChatSession.where(account: account, title: "Screenshot Chat").first_or_create!(
+        created_by: user,
+        project: project,
+        provider: provider,
+        mode: "workspace",
+        status: "active"
+      )
+
       {
         user: user,
         project: project,
         provider: provider,
+        github_token: github_token,
+        integration_credential: integration_credential,
+        linear_token: linear_token,
+        provider_api_key: provider_api_key,
         service_container: service_container,
-        agent_run: agent_run
+        agent_run: agent_run,
+        prompt: prompt,
+        pending_prompt_version: pending_prompt_version,
+        ab_test: ab_test,
+        style_guide: style_guide,
+        chat_session: chat_session
       }
     end
 

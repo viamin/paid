@@ -22,10 +22,22 @@ RSpec.describe Screenshots::CaptureTargets do
       expect(targets.map(&:slug)).to eq([ "service_container_edit" ])
     end
 
-    it "raises when a changed UI file has no route mapping" do
-      expect {
-        described_class.call(changed_files: [ "app/views/prompt_reviews/show.html.erb" ])
-      }.to raise_error(described_class::UnmappedUiChangeError, /prompt_reviews\/show\.html\.erb/)
+    it "maps existing prompt review screens instead of treating them as unmapped UI" do
+      targets = described_class.call(changed_files: [ "app/views/prompt_reviews/show.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "prompt_review_show" ])
+    end
+
+    it "maps existing knowledge screens instead of treating them as unmapped UI" do
+      targets = described_class.call(changed_files: [ "app/views/knowledge/search/project_search.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_knowledge_search" ])
+    end
+
+    it "maps helper files that do not follow the default helper-to-view naming convention" do
+      targets = described_class.call(changed_files: [ "app/helpers/workflow_helper.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "workflow_status" ])
     end
   end
 end

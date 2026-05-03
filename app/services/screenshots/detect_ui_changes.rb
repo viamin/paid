@@ -12,6 +12,12 @@ module Screenshots
   #   result[:ui_changes?]  # => true
   #   result[:ui_files]     # => ["app/views/projects/index.html.erb"]
   class DetectUiChanges
+    UI_FILE_EXCLUSIONS = [
+      %r{\Aapp/views/devise/mailer/},
+      %r{\Aapp/views/layouts/mailer(?:\.text)?\.erb\z},
+      %r{\Aapp/views/pwa/}
+    ].freeze
+
     UI_FILE_PATTERNS = [
       %r{\Aapp/views/},
       %r{\Aapp/javascript/},
@@ -57,6 +63,8 @@ module Screenshots
     private
 
     def ui_file?(path)
+      return false if UI_FILE_EXCLUSIONS.any? { |pattern| pattern.match?(path) }
+
       UI_FILE_PATTERNS.any? { |pattern| pattern.match?(path) }
     end
   end

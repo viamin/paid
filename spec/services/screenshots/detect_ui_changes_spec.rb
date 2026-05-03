@@ -108,5 +108,19 @@ RSpec.describe Screenshots::DetectUiChanges do
       expect(result[:ui_changes?]).to be true
       expect(result[:ui_files]).to eq([ "config/locales/devise.en.yml" ])
     end
+
+    it "ignores mailer templates that do not render browser UI" do
+      result = described_class.call(changed_files: [ "app/views/devise/mailer/reset_password_instructions.html.erb" ])
+
+      expect(result[:ui_changes?]).to be false
+      expect(result[:ui_files]).to be_empty
+    end
+
+    it "ignores pwa templates that do not map to rendered screenshots" do
+      result = described_class.call(changed_files: [ "app/views/pwa/manifest.json.erb" ])
+
+      expect(result[:ui_changes?]).to be false
+      expect(result[:ui_files]).to be_empty
+    end
   end
 end
