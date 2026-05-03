@@ -1,0 +1,194 @@
+<% content_for(:title) { "#{chat_session_title(@chat_session)} - Chat - Paid" } %>
+<% can_update_chat_session = policy(@chat_session).update? %>
+<% can_destroy_chat_session = policy(@chat_session).destroy? %>
+<% can_create_chat_message = policy(ChatMessage.new(chat_session: @chat_session)).create? %>
+
+<%= turbo_stream_from current_account, :chat_sessions %>
+
+<div class="min-h-[calc(100vh-4rem)] bg-[radial-gradient(circle_at_top_left,_rgba(125,211,252,0.22),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(253,224,71,0.18),_transparent_28%),linear-gradient(180deg,_#f8fafc_0%,_#e2e8f0_100%)]">
+  <div class="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+    <div class="grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
+      <%= render "sidebar",
+                 active_session: @chat_session,
+                 sessions: @sessions,
+                 sidebar_has_more: @sidebar_has_more,
+                 sidebar_next_frame_id: @sidebar_next_frame_id,
+                 sidebar_next_params: @sidebar_next_params,
+                 chat_session: @new_chat_session,
+                 available_providers: @available_providers,
+                 available_projects: @available_projects,
+                 available_models: @available_models %>
+
+      <section class="overflow-hidden rounded-[2rem] border border-white/70 bg-white/60 shadow-[0_20px_70px_-32px_rgba(15,23,42,0.45)] backdrop-blur">
+        <div class="flex min-h-[70vh] flex-col"
+             data-controller="chat"
+             data-chat-session-id-value="<%= @chat_session.id %>">
+          <header class="border-b border-slate-200/80 bg-white/80 px-6 py-5">
+            <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div class="min-w-0 flex-1">
+                <% if can_update_chat_session %>
+                  <%= form_with model: @chat_session,
+                                url: chat_session_path(@chat_session),
+                                method: :patch,
+                                class: "flex flex-col gap-3 lg:flex-row lg:items-center",
+                                data: { action: "change->chat#submitForm blur->chat#submitTitleOnBlur" } do |form| %>
+                    <%= form.text_field :title,
+                                        value: @chat_session.title,
+                                        placeholder: "Untitled chat",
+                                        class: "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-lg font-semibold text-slate-900 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200 lg:max-w-md" %>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <%= chat_session_status_badge(@chat_session) %>
+                      <%= chat_mode_badge(@chat_session.mode) %>
+                      <%= chat_container_status_badge(@chat_session) %>
+                    </div>
+                  <% end %>
+                <% else %>
+                  <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+                    <h1 class="text-lg font-semibold text-slate-900 lg:max-w-md"><%= chat_session_title(@chat_session) %></h1>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <%= chat_session_status_badge(@chat_session) %>
+                      <%= chat_mode_badge(@chat_session.mode) %>
+                      <%= chat_container_status_badge(@chat_session) %>
+                    </div>
+                  </div>
+                <% end %>
+
+                <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                  <% session_projects = chat_session_projects(@chat_session) %>
+                  <% if session_projects.any? %>
+                    <% session_projects.each do |project| %>
+                      <%= link_to project.name,
+                                  project_path(project),
+                                  class: "inline-flex items-center rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-600 transition hover:bg-slate-200 hover:text-slate-900" %>
+                    <% end %>
+                  <% else %>
+                    <span class="rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-500">No project linked</span>
+                  <% end %>
+                  <span>Updated <%= local_time(@chat_session.updated_at, format: :relative) %></span>
+                </div>
+              </div>
+
+              <div class="flex flex-col gap-3 xl:min-w-[18rem]">
+                <% if can_update_chat_session %>
+                  <%= form_with model: @chat_session,
+                                url: chat_session_path(@chat_session),
+                                method: :patch,
+                                class: "grid gap-3 md:grid-cols-2 xl:grid-cols-1",
+                                data: { action: "change->chat#submitForm" } do |form| %>
+                    <div>
+                      <%= form.label :provider_id, "Provider", class: "mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500" %>
+                      <%= form.select :provider_id,
+                                      options_from_collection_for_select(@available_providers, :id, :display_name, @chat_session.provider_id),
+                                      { include_blank: "Default provider" },
+                                      class: "w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200" %>
+                    </div>
+                    <div>
+                      <%= form.label :model, "Model", class: "mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500" %>
+                      <%= form.select :model,
+                                      options_for_select(@available_models.map { |model| ["#{model.display_name} (#{model.model_id})", model.model_id] }, @chat_session.model),
+                                      { include_blank: "Automatic" },
+                                      class: "w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200" %>
+                    </div>
+                  <% end %>
+                <% else %>
+                  <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+                    <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Provider</p>
+                      <p class="mt-1 text-sm text-slate-900"><%= @chat_session.provider&.display_name || "Default provider" %></p>
+                    </div>
+                    <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Model</p>
+                      <p class="mt-1 text-sm text-slate-900"><%= @chat_session.model.presence || "Automatic" %></p>
+                    </div>
+                  </div>
+                <% end %>
+
+                <div class="flex items-center justify-between rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white">
+                  <div>
+                    <p class="text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-slate-300">Token usage</p>
+                    <p class="mt-1 font-medium">
+                      <span data-chat-target="tokenUsage"><%= number_with_delimiter(@chat_session.total_tokens) %></span>
+                      tokens
+                    </p>
+                  </div>
+                  <% if can_destroy_chat_session %>
+                    <%= button_to "Close",
+                                  chat_session_path(@chat_session),
+                                  method: :delete,
+                                  class: "inline-flex items-center rounded-full bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/20" %>
+                  <% end %>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <div class="flex-1 overflow-hidden px-4 pb-4 pt-5 sm:px-6">
+            <div class="flex h-full flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-slate-100/70">
+              <div class="flex-1 overflow-y-auto px-4 py-5 sm:px-6"
+                   data-chat-target="container"
+                   data-action="scroll->chat#handleScroll"
+                   data-controller="chat-stream">
+                <div class="space-y-5"
+                     data-chat-target="messages"
+                     data-chat-stream-target="messageContainer">
+                  <% if @has_older_messages %>
+                    <%= turbo_frame_tag "older_messages",
+                          src: older_messages_chat_session_path(@chat_session, before: @chat_messages.first.id),
+                          loading: :lazy do %>
+                      <p class="py-2 text-center text-xs text-slate-400">Loading older messages…</p>
+                    <% end %>
+                  <% end %>
+                  <% @chat_messages.each do |message| %>
+                    <%= render "chat_messages/message", message: message %>
+                  <% end %>
+                </div>
+
+                <div class="hidden px-2 pt-3"
+                     data-chat-target="typingIndicator"
+                     data-chat-stream-target="typingIndicator">
+                  <div class="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm text-slate-500 shadow-sm ring-1 ring-slate-200">
+                    <span class="h-2 w-2 animate-pulse rounded-full bg-sky-400"></span>
+                    Assistant is typing…
+                  </div>
+                </div>
+              </div>
+
+              <div class="border-t border-slate-200 bg-white px-4 py-4 sm:px-6">
+                <% if can_create_chat_message %>
+                  <form data-controller="chat-input"
+                        data-action="submit->chat-input#send chat-input:send->chat#sendMessage chat:busy->chat-input#disable chat:idle->chat-input#enable"
+                        class="space-y-3">
+                    <label class="block">
+                      <span class="sr-only">Message</span>
+                      <textarea name="content"
+                                rows="1"
+                                maxlength="12000"
+                                placeholder="Ask about this project, request code changes, or continue the thread…"
+                                class="max-h-72 min-h-[3.25rem] w-full resize-none rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-900 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                                data-chat-input-target="textarea"
+                                data-chat-target="input"
+                                data-action="input->chat-input#resize keydown->chat-input#handleKeydown"></textarea>
+                    </label>
+                    <div class="flex items-center justify-between gap-3">
+                      <p class="text-xs text-slate-500" data-chat-target="status">Ready</p>
+                      <div class="flex items-center gap-3">
+                        <span class="text-xs font-medium text-slate-400" data-chat-input-target="charCount">0 / 12000</span>
+                        <button type="submit"
+                                class="inline-flex items-center rounded-full bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                                data-chat-input-target="sendButton">
+                          Send
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                <% else %>
+                  <p class="text-sm text-slate-500">You have read-only access to this chat.</p>
+                <% end %>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>

@@ -59,7 +59,7 @@ RSpec.describe "Dashboard" do
         get dashboard_path
 
         doc = Nokogiri::HTML(response.body)
-        chart = doc.at_css("div[id^='chart-'][style*='height: 320px']")
+        chart = doc.at_css("div#daily-runs-chart")
 
         expect(response.body).to include("Agent Runs per Day")
         expect(response.body).to include("Completed runs are stacked above failed runs across the last 30 days.")
