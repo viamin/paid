@@ -157,13 +157,13 @@ RSpec.describe "GithubTokens" do
       it "displays the optional Code scanning alerts permission hint" do
         get new_github_token_path
         expect(response.body).to include("Code scanning alerts")
-        expect(response.body).to include("security_events")
       end
 
-      it "displays the optional Checks permission hint" do
+      it "displays the optional Actions permission hint for auto-merge" do
         get new_github_token_path
-        expect(response.body).to include("Checks")
+        expect(response.body).to include("Actions: Read-only")
         expect(response.body).to include("Dependabot auto-merge")
+        expect(response.body).to include("auto-release")
       end
     end
   end

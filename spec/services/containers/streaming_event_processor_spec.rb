@@ -80,6 +80,48 @@ RSpec.describe Containers::StreamingEventProcessor do
 
       expect(result[:type]).to be_nil
     end
+
+    it "uses agent-harness hash events directly when available" do
+      line = '{"type":"progress","message":"working"}'
+
+      allow(AgentHarness::Providers::Codex).to receive(:parse_streaming_event).with(line).and_return(
+        { "type" => "progress", "message" => "working" }
+      )
+
+      result = processor.parse_line(line)
+
+      expect(result).to eq(
+        type: :progress,
+        raw_type: "progress",
+        event: { "type" => "progress", "message" => "working" }
+      )
+    end
+
+    it "preserves harness semantic types for struct events while keeping the raw event type" do
+      line = '{"type":"message.delta","delta":{"content":[]}}'
+      event_class = Struct.new(:type, :raw_event, keyword_init: true)
+      event = event_class.new(type: :progress, raw_event: { "type" => "message.delta" })
+
+      allow(AgentHarness::Providers::Codex).to receive(:parse_streaming_event).with(line).and_return(event)
+
+      result = processor.parse_line(line)
+
+      expect(result).to eq(type: :progress, raw_type: "message.delta", event: event)
+    end
+
+    it "falls back to JSON parsing when agent-harness returns nil" do
+      line = '{"type":"progress","message":"working"}'
+
+      allow(AgentHarness::Providers::Codex).to receive(:parse_streaming_event).with(line).and_return(nil)
+
+      result = processor.parse_line(line)
+
+      expect(result).to eq(
+        type: :progress,
+        raw_type: "progress",
+        event: { "type" => "progress", "message" => "working" }
+      )
+    end
   end
 
   describe "#process" do
@@ -239,6 +281,25 @@ RSpec.describe Containers::StreamingEventProcessor do
 
       expect(logged_events.last[:message]).to eq("container.execute.streaming_error")
       expect(logged_events.last[:error]).to eq("API error")
+    end
+
+    it "logs agent-harness struct events using raw_event and tokens" do
+      event_class = Struct.new(:type, :tokens, :error_message, :raw_event, keyword_init: true)
+      parsed = {
+        type: :progress,
+        raw_type: "item.completed",
+        event: event_class.new(
+          type: :progress,
+          tokens: { input: 100, output: 50 },
+          raw_event: { "type" => "item.completed" }
+        )
+      }
+
+      expect(processor.process(parsed)).to eq(:activity)
+      expect(logged_events.last[:message]).to eq("container.execute.progress")
+      expect(logged_events.last[:event_type]).to eq("item.completed")
+      expect(logged_events.last[:tokens_input]).to eq(100)
+      expect(logged_events.last[:tokens_output]).to eq(50)
     end
   end
 
