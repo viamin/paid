@@ -1763,11 +1763,8 @@ RSpec.describe Containers::Provision do
       it "logs the abort pattern match with stream type" do
         allow(agent_run).to receive(:log!)
 
-        begin
-          service.execute("kilo run --auto", abort_patterns: abort_patterns)
-        rescue described_class::OutputAbortError
-          # expected — we are testing the log side-effect, not the raise
-        end
+        expect { service.execute("kilo run --auto", abort_patterns: abort_patterns) }
+          .to raise_error(described_class::OutputAbortError)
 
         expect(agent_run).to have_received(:log!).with(
           "system", "container.execute.abort_pattern_matched",
@@ -1898,10 +1895,8 @@ RSpec.describe Containers::Provision do
           [ [ error_json ], [], 1 ]
         end
 
-        begin
-          service.execute("codex exec --json", abort_patterns: abort_patterns)
-        rescue described_class::OutputAbortError # expected
-        end
+        expect { service.execute("codex exec --json", abort_patterns: abort_patterns) }
+          .to raise_error(described_class::OutputAbortError)
 
         expect(agent_run).to have_received(:log!).with(
           "system", "container.execute.abort_pattern_matched",
