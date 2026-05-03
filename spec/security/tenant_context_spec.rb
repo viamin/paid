@@ -7,6 +7,7 @@ require Rails.root.join("db/migrate/20260425060000_enable_rls_on_notification_ru
 require Rails.root.join("db/migrate/20260426011810_enable_rls_on_llm_output_metrics")
 require Rails.root.join("db/migrate/20260426231639_enable_rls_on_chat_tables")
 require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recommendations")
+require Rails.root.join("db/migrate/20260503093418_enable_rls_on_issue_merge_subscriptions")
 
 RSpec.describe TenantContext, :tenant_isolation do
   around do |example|
@@ -42,6 +43,25 @@ RSpec.describe TenantContext, :tenant_isolation do
     as_restricted_role do
       described_class.with(account_a) do
         expect(AgentRun.all).to contain_exactly(run_a)
+      end
+    end
+  end
+
+  it "filters issue merge subscriptions and rejects cross-tenant users at the database policy" do
+    subscription_a = described_class.with_system_access do
+      issue = create(:issue, project: create(:project, account: account_a))
+      create(:issue_merge_subscription, issue:)
+    end
+    issue_a = subscription_a.issue
+    user_b = described_class.with_system_access { create(:user, account: account_b) }
+    described_class.with_system_access do
+      create(:issue_merge_subscription, issue: create(:issue, project: create(:project, account: account_b)))
+    end
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        expect(IssueMergeSubscription.all).to contain_exactly(subscription_a)
+        expect_rls_rejection { insert_issue_merge_subscription(issue_a, user_b) }
       end
     end
   end
@@ -153,6 +173,7 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnLlmOutputMetrics.new.down if llm_output_metrics_has_rls?
       EnableRlsOnKnowledgeUsageStats.new.down if knowledge_usage_stats_has_rls?
       EnableRlsOnNotificationRuleStates.new.down
+      EnableRlsOnIssueMergeSubscriptions.new.down if issue_merge_subscriptions_has_rls?
       EnableTenantRowLevelSecurity.new.down
       EnableTenantRowLevelSecurity.new.up
       EnableRlsOnNotificationRuleStates.new.up
@@ -160,6 +181,7 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnLlmOutputMetrics.new.up unless llm_output_metrics_has_rls?
       EnableRlsOnChatTables.new.up unless chat_tables_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.up unless knowledge_recommendations_has_rls?
+      EnableRlsOnIssueMergeSubscriptions.new.up unless issue_merge_subscriptions_has_rls?
     end
     ActiveRecord::Base.connection.execute("RESET ROLE")
     cleanup_restricted_role
@@ -178,6 +200,7 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnLlmOutputMetrics.new.down if llm_output_metrics_has_rls?
       EnableRlsOnKnowledgeUsageStats.new.down if knowledge_usage_stats_has_rls?
       EnableRlsOnNotificationRuleStates.new.down
+      EnableRlsOnIssueMergeSubscriptions.new.down if issue_merge_subscriptions_has_rls?
       EnableTenantRowLevelSecurity.new.down
     end
   end
@@ -203,6 +226,12 @@ RSpec.describe TenantContext, :tenant_isolation do
   def llm_output_metrics_has_rls?
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'llm_output_metrics' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
+  end
+
+  def issue_merge_subscriptions_has_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'issue_merge_subscriptions' AND policyname = 'tenant_isolation'"
     ).to_i.positive?
   end
 
@@ -249,6 +278,13 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.execute(<<~SQL.squish)
       INSERT INTO project_service_containers (project_id, service_container_id, created_at, updated_at)
       VALUES (#{project.id}, #{service_container.id}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    SQL
+  end
+
+  def insert_issue_merge_subscription(issue, user)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO issue_merge_subscriptions (issue_id, user_id, subscription_type, created_at, updated_at)
+      VALUES (#{issue.id}, #{user.id}, 'on_merge', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     SQL
   end
 

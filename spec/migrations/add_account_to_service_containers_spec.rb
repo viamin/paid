@@ -8,6 +8,7 @@ require Rails.root.join("db/migrate/20260425060000_enable_rls_on_notification_ru
 require Rails.root.join("db/migrate/20260426011810_enable_rls_on_llm_output_metrics")
 require Rails.root.join("db/migrate/20260426231639_enable_rls_on_chat_tables")
 require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recommendations")
+require Rails.root.join("db/migrate/20260503093418_enable_rls_on_issue_merge_subscriptions")
 
 RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   self.use_transactional_tests = false
@@ -19,6 +20,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   let(:llm_output_metrics_rls_migration) { EnableRlsOnLlmOutputMetrics.new }
   let(:chat_rls_migration) { EnableRlsOnChatTables.new }
   let(:knowledge_recommendations_rls_migration) { EnableRlsOnKnowledgeRecommendations.new }
+  let(:issue_merge_subscriptions_rls_migration) { EnableRlsOnIssueMergeSubscriptions.new }
 
   include MigrationSpecHelpers
 
@@ -26,6 +28,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     truncate_migration_test_data
 
     if tenant_policy_count.positive?
+      issue_merge_subscriptions_rls_migration.down if issue_merge_subscriptions_have_rls?
       knowledge_recommendations_rls_migration.down if knowledge_recommendations_has_rls?
       chat_rls_migration.down if chat_tables_have_rls?
       llm_output_metrics_rls_migration.down if llm_output_metrics_has_rls?
@@ -51,6 +54,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       llm_output_metrics_rls_migration.up unless llm_output_metrics_has_rls?
       chat_rls_migration.up unless chat_tables_have_rls?
       knowledge_recommendations_rls_migration.up unless knowledge_recommendations_has_rls?
+      issue_merge_subscriptions_rls_migration.up unless issue_merge_subscriptions_have_rls?
     end
     ServiceContainer.reset_column_information
   end
@@ -228,6 +232,12 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   def llm_output_metrics_has_rls?
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'llm_output_metrics' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
+  end
+
+  def issue_merge_subscriptions_have_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'issue_merge_subscriptions' AND policyname = 'tenant_isolation'"
     ).to_i.positive?
   end
 
