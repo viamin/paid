@@ -22,9 +22,6 @@ module Activities
     NEEDS_INPUT_COMMENT_MARKER = "<!-- paid:needs-input -->"
     RECOMMEND_CLOSE_COMMENT_MARKER = "<!-- paid:recommend-close -->"
 
-    # Supplementary patterns used alongside quota patterns from agent-harness
-    # to detect provider-level errors in agent output. Includes rate-limit
-    # indicators and credit/quota phrases not yet covered by agent-harness.
     SUPPLEMENTARY_ERROR_PATTERNS = [
       /quota exceeded/i,
       /rate.?limit/i,
@@ -35,6 +32,20 @@ module Activities
       /purchase (?:more )?credits/i,
       /buy (?:more )?credits/i,
       /requires? more credits/i
+    ].freeze
+
+    INFRASTRUCTURE_ERROR_PATTERNS = [
+      /bwrap:.*namespace/i,
+      /no permissions to create a new namespace/i,
+      /non-privileged user namespaces/i,
+      /cannot create namespace/i,
+      /unshare failed/i,
+      /bubblewrap.*(error|fail)/i,
+      /container.*failed to start/i,
+      /failed to create container/i,
+      /sandbox.*error/i,
+      /docker.*permission denied/i,
+      /exec format error/i
     ].freeze
 
     def execute(input)
@@ -59,6 +70,8 @@ module Activities
         case outcome
         when "provider_error"
           handle_provider_error(agent_run, agent_summary)
+        when "infrastructure_error"
+          handle_infrastructure_error(agent_run, agent_summary)
         when "needs_input"
           handle_needs_input(client, agent_run, agent_summary)
           agent_run.complete!
@@ -94,10 +107,10 @@ module Activities
       # Guard: if the agent produced output but shows no evidence of having
       # actually run (zero iterations AND zero cost), the "output" is likely
       # a provider-level error (e.g. credit exhaustion) rather than a real
-      # agent response. Confirm by checking the output for provider error
-      # patterns.
+      # agent response. Confirm by checking the output for error patterns.
       if agent_run.iterations.to_i.zero? && agent_run.cost_cents.to_i.zero?
         return "provider_error" if provider_error_output?(agent_summary)
+        return "infrastructure_error" if infrastructure_error_output?(agent_summary)
       end
 
       "recommend_close"
@@ -109,6 +122,12 @@ module Activities
       provider_error_patterns.any? { |pattern| text.match?(pattern) }
     end
 
+    def infrastructure_error_output?(text)
+      return false if text.blank?
+
+      INFRASTRUCTURE_ERROR_PATTERNS.any? { |pattern| text.match?(pattern) }
+    end
+
     def provider_error_patterns
       @provider_error_patterns ||= ProviderSupport.aggregated_error_classification_patterns(:quota) +
         SUPPLEMENTARY_ERROR_PATTERNS
@@ -117,6 +136,11 @@ module Activities
     def handle_provider_error(agent_run, agent_summary)
       agent_run.fail!(error: "Provider error detected in output: #{agent_summary.to_s.truncate(500)}")
       agent_run.log!("system", "Failed: provider error detected in output (not a real agent response)")
+    end
+
+    def handle_infrastructure_error(agent_run, agent_summary)
+      agent_run.fail!(error: "Infrastructure error detected in output: #{agent_summary.to_s.truncate(500)}")
+      agent_run.log!("system", "Failed: infrastructure error detected in output (container/sandbox failure)")
     end
 
     def handle_needs_input(client, agent_run, agent_summary)

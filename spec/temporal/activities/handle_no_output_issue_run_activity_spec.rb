@@ -342,6 +342,69 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
       end
     end
 
+    context "when output is present but agent hit infrastructure errors" do
+      let(:bwrap_error) do
+        "I'm blocked by the local execution environment. " \
+          "bwrap: No permissions to create a new namespace, likely because " \
+          "the kernel does not allow non-privileged user namespaces."
+      end
+
+      it "classifies as infrastructure_error when iterations and cost are zero" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", bwrap_error)
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("infrastructure_error")
+      end
+
+      it "fails the run instead of completing it" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", bwrap_error)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(agent_run.reload.status).to eq("failed")
+      end
+
+      it "does not transition issue to recommend_close" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", bwrap_error)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(issue.reload.paid_state).not_to eq("recommend_close")
+      end
+
+      it "detects sandbox error variants" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "sandbox error: cannot create namespace")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("infrastructure_error")
+      end
+
+      it "allows recommend_close when agent has iterations > 0 despite bwrap mention" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", "Checked the code and bwrap config looks fine")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("recommend_close")
+      end
+    end
+
     context "when GitHub comment would contain provider error text" do
       it "redacts provider error lines from recommend_close comments" do
         issue = create(:issue, :in_progress, project: project)

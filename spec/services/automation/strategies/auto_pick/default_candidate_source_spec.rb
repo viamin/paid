@@ -35,6 +35,35 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
       expect(scope.pluck(:id)).to contain_exactly(eligible.id)
     end
+
+    it "includes completed issues with no PR-producing run (infrastructure failure recovery)" do
+      issue = create(:issue, project: project, paid_state: "completed")
+      create(:agent_run, :completed, project: project, issue: issue, pull_request_number: nil)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    it "excludes completed issues that had a PR-producing run" do
+      issue = create(:issue, project: project, paid_state: "completed")
+      create(:agent_run, :completed, project: project, issue: issue, pull_request_number: 42)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
+    it "includes completed issues even when other PR-producing runs have NULL issue_id" do
+      issue = create(:issue, project: project, paid_state: "completed")
+      create(:agent_run, :completed, project: project, issue: issue, pull_request_number: nil)
+      create(:agent_run, :completed, project: project, issue: nil, pull_request_number: 99,
+        custom_prompt: "manual PR run")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
   end
 
   describe ".eligible_issue_ids" do

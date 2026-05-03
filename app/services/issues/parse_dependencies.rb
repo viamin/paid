@@ -108,6 +108,18 @@ module Issues
     # Matches same-project references like #123
     ISSUE_REF_PATTERN = /\#(\d+)/
 
+    # Section headings that list child/sub-issues. Inline dependency phrases
+    # within these sections describe relationships between the listed
+    # sub-issues (e.g. "- [ ] #453 — ... (depends on #452)"), not dependencies
+    # of the current issue, so the entire section must be excluded from inline
+    # extraction. Matches headings containing child/sub keywords anywhere in
+    # the heading text (e.g. "## Sub-Issues", "## Implementation Sub-Issues").
+    CHILD_LISTING_SECTION_PATTERN = /
+      ^\#+[^\n]*\b(?:child\s+issues?|sub[- ]?issues?|sub[- ]?tasks?)\b[^\n]*\n
+      [\s\S]*?
+      (?=^\#|\z)
+    /xim
+
     attr_reader :issue, :adjacency, :comments
 
     def initialize(issue:, adjacency: nil, comments: [])
@@ -212,13 +224,17 @@ module Issues
 
     # Extracts refs from body using both dependency sections and inline patterns.
     # Only dependency-scoped text is parsed — incidental #N mentions (e.g. in a
-    # "Notes" section) are intentionally ignored.
+    # "Notes" section) are intentionally ignored. Child/sub-issue listing
+    # sections are stripped before inline extraction so dependency phrases
+    # describing inter-sub-issue relationships are not attributed to the
+    # current issue.
     def extract_body_refs(body, local_deps, cross_deps)
       body.scan(DEPENDENCY_SECTION_PATTERN) do |(section_body)|
         extract_section_refs(section_body, local_deps, cross_deps)
       end
 
-      extract_inline_refs(body, local_deps, cross_deps)
+      inline_text = body.gsub(CHILD_LISTING_SECTION_PATTERN, "")
+      extract_inline_refs(inline_text, local_deps, cross_deps)
     end
 
     # Within a "## Dependencies" section, recognise both explicit
