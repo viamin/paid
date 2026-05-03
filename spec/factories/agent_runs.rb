@@ -5,7 +5,7 @@ FactoryBot.define do
     project
     issue { association :issue, project: project }
     agent_type { "claude_code" }
-    status { "pending" }
+    status { "queued" }
 
     trait :queued do
       status { "queued" }

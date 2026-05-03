@@ -93,7 +93,7 @@ module Containers
     # Provisions all service containers needed by an agent run's project.
     #
     # Records the run→container association before starting containers so
-    # that concurrent cleanup decisions (via active_agent_run_count) count
+    # that concurrent cleanup decisions (via capacity_inflight_agent_run_count) count
     # this run even if provisioning is still in progress.
     #
     # @param agent_run [AgentRun] The agent run to provision services for
@@ -149,7 +149,7 @@ module Containers
     end
 
     # Stops a single service container unconditionally. Intended for cleanup
-    # of orphaned containers that have no active agent runs.
+    # of orphaned containers that have no in-flight capacity runs.
     #
     # @param service_container [ServiceContainer] The container to stop
     def stop_orphaned_container!(service_container)
@@ -157,7 +157,7 @@ module Containers
     end
 
     # Cleans up service containers that are no longer needed.
-    # Only stops containers with no active agent runs still using them.
+    # Only stops containers with no in-flight capacity runs still using them.
     #
     # @param agent_run [AgentRun] The agent run to clean up services for
     def cleanup(agent_run, stale_requeue_count: nil)
@@ -170,7 +170,7 @@ module Containers
           drop_per_run_database(sc, db_name) if droppable_per_run_database?(agent_run, sc, db_name)
         end
 
-        if sc.active_agent_run_count == 0
+        if sc.capacity_inflight_agent_run_count == 0
           stop_container!(sc)
         end
       end

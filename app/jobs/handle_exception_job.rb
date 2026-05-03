@@ -3,6 +3,9 @@
 class HandleExceptionJob < ApplicationJob
   queue_as :default
   discard_on ActiveRecord::RecordNotFound
+  retry_on ExceptionHandler::IssueFiler::RetryableFilingInProgress,
+    wait: 2.seconds,
+    attempts: (ExceptionHandler::IssueFiler::CLAIM_STALE_AFTER / 2.seconds).ceil
 
   # Accepts serialized exception data since exceptions themselves are not
   # serializable through Active Job.

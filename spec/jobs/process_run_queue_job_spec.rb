@@ -33,7 +33,7 @@ RSpec.describe ProcessRunQueueJob do
       described_class.new.perform
 
       queued_run.reload
-      expect(queued_run.status).to eq("pending")
+      expect(queued_run.status).to eq("queued")
       expect(queued_run.temporal_workflow_id).to be_present
     end
 
@@ -47,8 +47,8 @@ RSpec.describe ProcessRunQueueJob do
 
       described_class.new.perform
 
-      expect(older.reload.status).to eq("pending")
-      expect(newer.reload.status).to eq("pending")
+      expect(older.reload.status).to eq("queued")
+      expect(newer.reload.status).to eq("queued")
     end
 
     it "stops when user capacity is exhausted" do
@@ -89,7 +89,7 @@ RSpec.describe ProcessRunQueueJob do
       described_class.new.perform
 
       expect(started_ids).to eq([ older.id ])
-      expect(older.reload.status).to eq("pending")
+      expect(older.reload.status).to eq("queued")
       expect(newer.reload.status).to eq("queued")
     end
 
@@ -108,7 +108,7 @@ RSpec.describe ProcessRunQueueJob do
       described_class.new.perform
 
       expect(started_ids).to eq([ manual.id ])
-      expect(manual.reload.status).to eq("pending")
+      expect(manual.reload.status).to eq("queued")
       expect(auto.reload.status).to eq("queued")
     end
 
@@ -129,7 +129,7 @@ RSpec.describe ProcessRunQueueJob do
       described_class.new.perform
 
       expect(started_ids).to eq([ manual.id ])
-      expect(manual.reload.status).to eq("pending")
+      expect(manual.reload.status).to eq("queued")
       expect(auto_continue.reload.status).to eq("queued")
     end
 
@@ -151,7 +151,7 @@ RSpec.describe ProcessRunQueueJob do
       # (e.g. when start_workflow raises due to a network timeout but
       # the workflow actually started server-side).
       expect(failing_run.reload.temporal_workflow_id).to be_present
-      expect(good_run.reload.status).to eq("pending")
+      expect(good_run.reload.status).to eq("queued")
     end
 
     it "enqueues finished-run followups when workflow start fails" do
@@ -224,7 +224,7 @@ RSpec.describe ProcessRunQueueJob do
       described_class.new.perform
 
       expect(started_ids).to eq([ active_run.id ])
-      expect(active_run.reload.status).to eq("pending")
+      expect(active_run.reload.status).to eq("queued")
       expect(paused_run.reload.status).to eq("queued")
     end
 
@@ -243,7 +243,7 @@ RSpec.describe ProcessRunQueueJob do
       described_class.new.perform
 
       expect(blocked_run.reload.status).to eq("queued")
-      expect(eligible_run.reload.status).to eq("pending")
+      expect(eligible_run.reload.status).to eq("queued")
     end
 
     it "does not start queued runs when user is at capacity" do
@@ -277,7 +277,7 @@ RSpec.describe ProcessRunQueueJob do
 
         expect(Issues::AutoPick).to have_received(:new)
           .with(having_attributes(id: project.id)).at_least(:once)
-        expect(AgentRun.last.status).to eq("pending")
+        expect(AgentRun.last.status).to eq("queued")
       end
 
       it "stops seeding when no new runs are created" do
@@ -324,8 +324,8 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
 
         expect(project.agent_runs.where(trigger_type: "automatic").count).to eq(4)
-        expect(project.agent_runs.pending.count).to eq(4)
-        expect(project.agent_runs.queued.count).to eq(0)
+        expect(project.agent_runs.claimed.count).to eq(4)
+        expect(project.agent_runs.unclaimed.count).to eq(0)
       end
 
       it "round robins auto-pick runs across projects before giving one project extra capacity" do
@@ -349,8 +349,8 @@ RSpec.describe ProcessRunQueueJob do
 
         expected_order = [ first_project, second_project, first_project, second_project ].map(&:id)
         expect(started_projects).to eq(expected_order)
-        expect(first_project.agent_runs.pending.count).to eq(2)
-        expect(second_project.agent_runs.pending.count).to eq(2)
+        expect(first_project.agent_runs.claimed.count).to eq(2)
+        expect(second_project.agent_runs.claimed.count).to eq(2)
       end
 
       it "starts auto-pick runs up to the full user capacity" do
@@ -362,8 +362,8 @@ RSpec.describe ProcessRunQueueJob do
 
         described_class.new.perform
 
-        expect(project.agent_runs.pending.count).to eq(4)
-        expect(project.agent_runs.queued.count).to eq(0)
+        expect(project.agent_runs.claimed.count).to eq(4)
+        expect(project.agent_runs.unclaimed.count).to eq(0)
       end
 
       it "caps seeded auto-pick runs at the owner's max_concurrent_runs" do
@@ -424,7 +424,7 @@ RSpec.describe ProcessRunQueueJob do
 
         described_class.new.perform
 
-        expect(manual_run.reload.status).to eq("pending")
+        expect(manual_run.reload.status).to eq("queued")
       end
     end
 
@@ -447,7 +447,7 @@ RSpec.describe ProcessRunQueueJob do
 
       expect(blocked_run.reload.status).to eq("failed")
       expect(blocked_run.error_message).to include("Budget enforcement")
-      expect(normal_run.reload.status).to eq("pending")
+      expect(normal_run.reload.status).to eq("queued")
     end
 
     context "when GitHub circuit is open" do
