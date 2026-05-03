@@ -3,7 +3,7 @@
 class ChatSessionProject < ApplicationRecord
   CONTEXT_TYPES = %w[primary reference].freeze
 
-  belongs_to :chat_session
+  belongs_to :chat_session, touch: true
   belongs_to :project
 
   validates :context_type, inclusion: { in: CONTEXT_TYPES }

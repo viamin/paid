@@ -16,6 +16,22 @@ RSpec.describe ChatSessions::SendMessage do
     }
   end
   let(:llm_client) { instance_double(Proc, call: llm_response) }
+  let(:streaming_client) do
+    Class.new do
+      def call(_conversation, on_chunk: nil)
+        on_chunk&.call("I can ")
+        on_chunk&.call("help with that.")
+
+        {
+          content: "I can help with that.",
+          tool_calls: [],
+          tokens_input: 100,
+          tokens_output: 50,
+          model: "gpt-4o"
+        }
+      end
+    end.new
+  end
 
   describe ".call" do
     it "persists the user message" do
@@ -138,6 +154,52 @@ RSpec.describe ChatSessions::SendMessage do
       expect(chat_session.messages.where(role: "user").count).to eq(2)
     end
 
+    it "notifies persisted messages in creation order" do
+      persisted_messages = []
+
+      described_class.call(
+        chat_session: chat_session,
+        content: "Hello",
+        llm_client: llm_client,
+        stream_message_id: "stream-123",
+        on_message_persisted: ->(message, stream_message_id: nil) {
+          persisted_messages << [ message.role, message.content, stream_message_id ]
+        }
+      )
+
+      expect(persisted_messages).to eq([
+        [ "user", "Hello", nil ],
+        [ "assistant", "I can help with that.", "stream-123" ]
+      ])
+    end
+
+    it "passes streamed chunks through when the llm client supports chunk callbacks" do
+      chunks = []
+
+      described_class.call(
+        chat_session: chat_session,
+        content: "Hello",
+        llm_client: streaming_client,
+        on_chunk: ->(chunk) { chunks << chunk }
+      )
+
+      expect(chunks).to eq([ "I can ", "help with that." ])
+    end
+
+    it "replays response content when the llm client does not support chunk callbacks" do
+      chunks = []
+
+      described_class.call(
+        chat_session: chat_session,
+        content: "Hello",
+        llm_client: llm_client,
+        on_chunk: ->(chunk) { chunks << chunk }
+      )
+
+      expect(chunks.join).to eq("I can help with that.")
+      expect(chunks.length).to be > 1
+    end
+
     context "with tool calls in response" do
       let(:tool_llm_response) do
         {
@@ -160,10 +222,49 @@ RSpec.describe ChatSessions::SendMessage do
         tool_call_msg = chat_session.messages.find_by(tool_name: "search", role: "assistant")
         expect(tool_call_msg).to be_present
         expect(tool_call_msg.tool_call_id).to eq("call_1")
+        expect(tool_call_msg.tool_arguments).to eq({ "query" => "test" })
 
         tool_result_msg = chat_session.messages.find_by(role: "tool")
         expect(tool_result_msg).to be_present
         expect(tool_result_msg.tool_call_id).to eq("call_1")
+        expect(JSON.parse(tool_result_msg.content)).to eq({ "status" => "not_implemented" })
+        expect(tool_result_msg.tool_result).to eq({ "status" => "not_implemented" })
+      end
+
+      it "notifies tool messages so live threads can render them" do
+        roles = []
+
+        described_class.call(
+          chat_session: chat_session,
+          content: "Search for test",
+          llm_client: tool_llm_client,
+          on_message_persisted: ->(message, **) { roles << message.role }
+        )
+
+        expect(roles).to eq(%w[user assistant assistant tool])
+      end
+
+      it "replays persisted tool results in follow-up turns" do
+        described_class.call(
+          chat_session: chat_session, content: "Search for test", llm_client: tool_llm_client
+        )
+
+        follow_up_client = instance_double(Proc)
+        allow(follow_up_client).to receive(:call) do |conversation|
+          tool_entry = conversation.find { |message| message[:role] == "tool" }
+
+          expect(tool_entry).to include(
+            content: { "status" => "not_implemented" },
+            tool_call_id: "call_1",
+            tool_name: "search"
+          )
+
+          llm_response
+        end
+
+        described_class.call(chat_session: chat_session, content: "What happened?", llm_client: follow_up_client)
+
+        expect(follow_up_client).to have_received(:call)
       end
     end
   end
