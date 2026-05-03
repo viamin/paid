@@ -31,29 +31,16 @@ module Providers
     def self.for_provider_key(provider_key:, prompt:, options: {})
       harness_key = ProviderSupport.harness_provider_key_for(provider_key).to_sym
       klass = AgentHarness::Providers::Registry.instance.get(harness_key)
-      capture = ExecutorCapture.new
 
       config = AgentHarness::ProviderConfig.new(harness_key)
       config.externally_sandboxed = true
 
-      provider_instance = klass.new(executor: capture, config: config)
-      provider_instance.send_message(prompt: prompt, **options)
-
-      Result.new(
-        command: capture.command,
-        env: capture.env,
-        preparation: capture.preparation
-      )
+      provider_instance = klass.new(config: config)
+      Result.new(**provider_instance.plan_execution(prompt: prompt, **options))
     end
 
     def call
-      harness_provider.send_message(prompt: @prompt, provider_runtime: provider_runtime, **@options)
-
-      Result.new(
-        command: capture_executor.command,
-        env: capture_executor.env,
-        preparation: capture_executor.preparation
-      )
+      Result.new(**harness_provider.plan_execution(prompt: @prompt, provider_runtime: provider_runtime, **@options))
     end
 
     private
@@ -61,12 +48,8 @@ module Providers
     def harness_provider
       @harness_provider ||= begin
         klass = AgentHarness::Providers::Registry.instance.get(harness_provider_name)
-        klass.new(executor: capture_executor)
+        klass.new
       end
-    end
-
-    def capture_executor
-      @capture_executor ||= ExecutorCapture.new
     end
 
     def harness_provider_name
@@ -75,23 +58,6 @@ module Providers
 
     def provider_runtime
       @provider.agent_harness_provider_runtime
-    end
-
-    class ExecutorCapture
-      attr_reader :command, :env, :preparation
-
-      def execute(command, env: {}, preparation: nil, **)
-        @command = command
-        @env = env
-        @preparation = preparation
-
-        AgentHarness::CommandExecutor::Result.new(
-          stdout: "",
-          stderr: "",
-          exit_code: 0,
-          duration: 0.0
-        )
-      end
     end
   end
 end
