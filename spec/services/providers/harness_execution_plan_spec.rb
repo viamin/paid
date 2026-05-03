@@ -3,6 +3,31 @@
 require "rails_helper"
 
 RSpec.describe Providers::HarnessExecutionPlan do
+  describe ".for_provider_key" do
+    it "uses plan_execution for probe-dependent providers" do
+      harness_provider = instance_double(
+        AgentHarness::Providers::GithubCopilot,
+        plan_execution: {
+          command: %w[github-copilot-cli -p ping --output-format json],
+          env: {},
+          preparation: nil
+        }
+      )
+      provider_class = class_double(AgentHarness::Providers::GithubCopilot)
+
+      allow(AgentHarness).to receive(:provider_class).with(:github_copilot).and_return(provider_class)
+      allow(AgentHarness).to receive(:build_config).with(:github_copilot).and_return(
+        AgentHarness::ProviderConfig.new(:github_copilot)
+      )
+      allow(provider_class).to receive(:new).with(config: kind_of(AgentHarness::ProviderConfig)).and_return(harness_provider)
+
+      plan = described_class.for_provider_key(provider_key: "copilot", prompt: "ping")
+
+      expect(harness_provider).to have_received(:plan_execution).with(prompt: "ping")
+      expect(plan.command).to eq(%w[github-copilot-cli -p ping --output-format json])
+    end
+  end
+
   describe ".call" do
     it "builds the OpenCode execution contract through agent-harness" do
       user = create(:user)
@@ -48,6 +73,10 @@ RSpec.describe Providers::HarnessExecutionPlan do
 
     it "constructs the harness provider with external sandboxing enabled" do
       provider = instance_double(Provider, provider_key: "claude", agent_harness_provider_runtime: nil)
+      harness_provider = instance_double(
+        AgentHarness::Providers::Anthropic,
+        plan_execution: { command: %w[claude ping], env: {}, preparation: nil }
+      )
       provider_class = class_double(AgentHarness::Providers::Anthropic)
 
       allow(AgentHarness).to receive(:provider_class).with(:claude).and_return(provider_class)
@@ -55,16 +84,11 @@ RSpec.describe Providers::HarnessExecutionPlan do
         AgentHarness::ProviderConfig.new(:claude)
       )
 
-      allow(provider_class).to receive(:new) do |executor:, config:|
+      allow(provider_class).to receive(:new) do |config:|
         expect(config).to be_a(AgentHarness::ProviderConfig)
         expect(config.name).to eq(:claude)
         expect(config.externally_sandboxed).to be(true)
-
-        harness = instance_double(AgentHarness::Providers::Anthropic)
-        allow(harness).to receive(:send_message) do |prompt:, **|
-          executor.execute(%w[claude ping], env: {})
-        end
-        harness
+        harness_provider
       end
 
       described_class.call(provider: provider, prompt: "ping")
