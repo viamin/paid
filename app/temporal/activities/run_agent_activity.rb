@@ -770,6 +770,11 @@ module Activities
     def run_provider_preflight!(agent_run:, container_service:, command_context:, provider:)
       return unless provider_preflight_supported?(command_context)
 
+      # Run the provider-owned preflight first (auth, CLI version,
+      # OPENAI_BASE_URL reachability) — this surfaces actionable errors
+      # without spending a container exec on a smoke prompt.
+      run_harness_preflight!(agent_run: agent_run, command_context: command_context, provider: provider)
+
       prompt = provider_preflight_prompt_for(provider)
       command = build_command(command_context, prompt)
       env = command_env_for(command_context, prompt)
@@ -828,6 +833,21 @@ module Activities
         provider: provider,
         reason: "Docker exec error: #{e.message}"
       )
+    end
+
+    def run_harness_preflight!(agent_run:, command_context:, provider:)
+      harness_provider = preflight_provider_for(command_context)
+      env = command_env_for(command_context, provider_preflight_prompt_for(provider))
+      result = harness_provider.preflight_check(env: env, timeout: PREFLIGHT_TIMEOUT_SECONDS)
+
+      return if result[:healthy]
+
+      reason = result[:reason] || "Preflight check failed"
+      raise_preflight_failure!(agent_run: agent_run, provider: provider, reason: reason)
+    rescue AgentHarness::ConfigurationError, KeyError
+      # Provider config unavailable — skip harness preflight and let the
+      # smoke execution catch any real issues.
+      nil
     end
 
     # Checks if the agent run is stuck in an infinite loop by analyzing

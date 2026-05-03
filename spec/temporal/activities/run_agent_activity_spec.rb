@@ -1631,9 +1631,35 @@ RSpec.describe Activities::RunAgentActivity do
         user.settings.update!(fallback_enabled: true, fallback_providers: [ "cursor" ])
         allow(activity).to receive(:logger).and_return(instance_double(ActiveSupport::Logger, info: nil, warn: nil, error: nil))
         allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+        # By default harness preflight passes (no-op); individual tests override.
+        allow(activity).to receive(:run_harness_preflight!)
       end
 
-      it "falls back when preflight detects expired auth" do
+      it "falls back when harness preflight detects expired auth" do
+        allow(activity).to receive(:run_harness_preflight!).and_raise(
+          Activities::RunAgentActivity::ProviderExecutionError, "Preflight check failed: Auth token expired: refresh_token_reused"
+        )
+        allow(activity).to receive(:logger).and_return(instance_double(ActiveSupport::Logger, info: nil, warn: nil, error: nil))
+        # Smoke exec is skipped; only cursor fallback runs.
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        agent_run.reload
+        expect(result).to include(success: true, final_provider: "cursor")
+        expect(agent_run.status).to eq("running")
+        expect(agent_run.providers_attempted).to contain_exactly(
+          hash_including("provider" => "codex", "success" => false, "error_type" => "error"),
+          hash_including("provider" => "cursor", "success" => true)
+        )
+        expect(agent_run.provider_switches).to eq(1)
+        # Only cursor main exec — no smoke exec for codex since harness preflight failed.
+        expect(container_service).to have_received(:execute).once
+      end
+
+      it "falls back when smoke exec detects expired auth after harness preflight passes" do
         allow(container_service).to receive(:execute).and_return(codex_auth_expired_output, exec_success)
         allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
         allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
@@ -1707,6 +1733,23 @@ RSpec.describe Activities::RunAgentActivity do
             timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS,
             idle_timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS
           )
+        )
+      end
+
+      it "calls harness preflight_check with env and timeout" do
+        harness_provider = instance_double(AgentHarness::Providers::Codex)
+        allow(harness_provider).to receive(:preflight_check).and_return({ healthy: true })
+        allow(activity).to receive(:preflight_provider_for).and_return(harness_provider)
+        allow(activity).to receive(:run_harness_preflight!).and_call_original
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(harness_provider).to have_received(:preflight_check).with(
+          env: a_kind_of(Hash),
+          timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS
         )
       end
     end
@@ -1950,6 +1993,7 @@ RSpec.describe Activities::RunAgentActivity do
       it "applies extended idle timeout to codex for coarse heartbeat" do
         agent_run.update!(agent_type: "codex")
         project.update!(max_execution_seconds: 86_400)
+        allow(activity).to receive(:run_harness_preflight!)
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
 
