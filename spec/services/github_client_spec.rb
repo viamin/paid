@@ -818,6 +818,110 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#workflow_runs_for_sha" do
+    let(:repo) { "owner/repo" }
+    let(:sha) { "abc123" }
+
+    def stub_workflow_runs(workflow_runs, total_count: nil)
+      total_count ||= workflow_runs.size
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/runs")
+        .with(query: hash_including("head_sha" => sha, "per_page" => "100"))
+        .to_return(
+          status: 200,
+          body: { total_count: total_count, workflow_runs: workflow_runs }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
+    context "when workflow runs exist" do
+      before do
+        stub_workflow_runs([
+          { id: 11, workflow_id: 1, name: "CI", status: "completed", conclusion: "success",
+            head_sha: sha, html_url: "https://github.com/owner/repo/actions/runs/11" },
+          { id: 12, workflow_id: 2, name: "Lint", status: "completed", conclusion: "failure",
+            head_sha: sha, html_url: "https://github.com/owner/repo/actions/runs/12" }
+        ])
+      end
+
+      it "returns simplified workflow run hashes for the commit" do
+        result = client.workflow_runs_for_sha(repo, sha)
+
+        expect(result).to eq([
+          { id: 11, workflow_id: 1, name: "CI", status: "completed", conclusion: "success",
+            head_sha: sha, html_url: "https://github.com/owner/repo/actions/runs/11" },
+          { id: 12, workflow_id: 2, name: "Lint", status: "completed", conclusion: "failure",
+            head_sha: sha, html_url: "https://github.com/owner/repo/actions/runs/12" }
+        ])
+      end
+    end
+
+    context "when 'Re-run all jobs' has produced multiple runs for the same workflow" do
+      before do
+        # API returns newest first; the most recent re-run succeeded but the
+        # original failed run is still present. Without dedup, the failure
+        # would block a now-green merge.
+        stub_workflow_runs([
+          { id: 22, workflow_id: 1, name: "CI", status: "completed", conclusion: "success",
+            head_sha: sha, html_url: "https://github.com/owner/repo/actions/runs/22" },
+          { id: 11, workflow_id: 1, name: "CI", status: "completed", conclusion: "failure",
+            head_sha: sha, html_url: "https://github.com/owner/repo/actions/runs/11" }
+        ])
+      end
+
+      it "returns only the latest run per workflow_id" do
+        result = client.workflow_runs_for_sha(repo, sha)
+
+        expect(result.size).to eq(1)
+        expect(result.first).to include(id: 22, conclusion: "success")
+      end
+    end
+
+    context "when no workflow runs exist for the commit" do
+      before { stub_workflow_runs([]) }
+
+      it "returns an empty array" do
+        expect(client.workflow_runs_for_sha(repo, sha)).to eq([])
+      end
+    end
+
+    context "when total_count exceeds the per-page limit" do
+      before do
+        stub_workflow_runs(
+          [ { id: 1, workflow_id: 1, name: "CI", status: "completed", conclusion: "success",
+              head_sha: sha, html_url: "https://example" } ],
+          total_count: 250
+        )
+      end
+
+      it "logs a pagination_truncated warning" do
+        allow(Rails.logger).to receive(:warn)
+
+        client.workflow_runs_for_sha(repo, sha)
+
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(message: "github_client.workflow_runs_pagination_truncated", total_count: 250)
+        )
+      end
+    end
+
+    context "when the token cannot read Actions" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/actions/runs")
+          .with(query: hash_including("head_sha" => sha))
+          .to_return(
+            status: 403,
+            body: { message: "Resource not accessible by personal access token" }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "raises ApiError with status 403" do
+        expect { client.workflow_runs_for_sha(repo, sha) }
+          .to raise_error(GithubClient::ApiError) { |e| expect(e.status).to eq(403) }
+      end
+    end
+  end
+
   describe "#check_run_log" do
     let(:repo) { "owner/repo" }
 

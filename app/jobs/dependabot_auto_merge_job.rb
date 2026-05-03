@@ -100,21 +100,19 @@ class DependabotAutoMergeJob < ApplicationJob
     checks = client.check_runs_for_ref(project.full_name, sha)
 
     if checks.nil? || checks.empty?
-      return combined_status_state_settled?(client, project, sha)
+      return combined_status_ok?(client, project, sha, strict: false)
     end
 
-    checks.all? { |c| %w[success skipped neutral].include?(c[:conclusion]) }
+    conclusions_green?(checks)
   rescue GithubClient::ApiError => e
-    if e.status == 403
-      Rails.logger.info(
-        message: "dependabot_auto_merge.check_runs_forbidden",
-        project_id: project.id,
-        error: e.message
-      )
-      return combined_status_state_settled?(client, project, sha)
-    end
+    raise unless e.status == 403
 
-    raise
+    Rails.logger.info(
+      message: "dependabot_auto_merge.check_runs_forbidden",
+      project_id: project.id,
+      error: e.message
+    )
+    workflow_runs_or_status_green?(client, project, sha)
   rescue GithubClient::Error => e
     Rails.logger.warn(
       message: "dependabot_auto_merge.check_runs_failed",
@@ -124,15 +122,47 @@ class DependabotAutoMergeJob < ApplicationJob
     false
   end
 
-  # Returns true when CI has passed or no CI is configured.
-  # GitHub returns "pending" with 0 contexts when no status checks exist,
-  # so we treat that as "no CI" and allow the merge. Any other non-success
-  # state (failure, error, or pending with actual statuses) blocks merging.
-  # This is also the fallback when the token cannot read check runs: we only
-  # proceed after a separate API confirms success or that no statuses exist.
-  def combined_status_state_settled?(client, project, sha)
+  # Reached when the Checks API is forbidden (e.g., fine-grained tokens have
+  # no Checks permission). Verifies CI via the Actions API instead. If Actions
+  # is also unavailable or empty, only an explicit "success" combined status
+  # passes — "pending + 0 contexts" is not safe here because we never confirmed
+  # the absence of check runs from non-Actions GitHub Apps.
+  def workflow_runs_or_status_green?(client, project, sha)
+    runs = client.workflow_runs_for_sha(project.full_name, sha)
+    return conclusions_green?(runs) if runs.any?
+
+    combined_status_ok?(client, project, sha, strict: true)
+  rescue GithubClient::ApiError => e
+    raise unless e.status == 403
+
+    Rails.logger.info(
+      message: "dependabot_auto_merge.workflow_runs_forbidden",
+      project_id: project.id,
+      error: e.message
+    )
+    combined_status_ok?(client, project, sha, strict: true)
+  rescue GithubClient::Error => e
+    Rails.logger.warn(
+      message: "dependabot_auto_merge.workflow_runs_failed",
+      project_id: project.id,
+      error: e.message
+    )
+    false
+  end
+
+  def conclusions_green?(items)
+    items.all? { |i| %w[success skipped neutral].include?(i[:conclusion]) }
+  end
+
+  # When +strict+ is false, "pending + 0 contexts" counts as "no CI configured"
+  # and allows the merge — safe only when the caller has positive evidence (an
+  # empty check_runs response) that no check runs exist either. When +strict+
+  # is true (e.g., the Checks API was forbidden), only an explicit "success"
+  # passes, since absence of statuses cannot prove absence of check runs.
+  def combined_status_ok?(client, project, sha, strict:)
     status = client.combined_status(project.full_name, sha)
-    status[:state] == "success" || (status[:state] == "pending" && status[:total_count] == 0)
+    return true if status[:state] == "success"
+    !strict && status[:state] == "pending" && status[:total_count] == 0
   rescue GithubClient::Error => e
     Rails.logger.warn(
       message: "dependabot_auto_merge.combined_status_failed",
