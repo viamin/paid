@@ -14,6 +14,7 @@ module Containers
     def execute(command, timeout: nil, env: {}, preparation: nil, **)
       unset_vars, set_vars = partition_env(env)
       effective_command = inject_kilocode_auto_flags(wrapped_command(command, unset_vars))
+      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
       result = @agent_run.execute_in_container(
         effective_command,
@@ -22,21 +23,31 @@ module Containers
         env: set_vars,
         preparation: preparation
       )
+      duration = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
 
       AgentHarness::CommandExecutor::Result.new(
         stdout: result[:stdout].to_s,
         stderr: result[:stderr].to_s,
         exit_code: result.success? ? (result[:exit_code] || 0) : (result[:exit_code] || 1),
-        duration: 0.0
+        duration: duration
       )
     end
 
     def which(binary)
-      "/usr/local/bin/#{binary}"
+      result = @agent_run.execute_in_container(
+        [ "which", binary.to_s ],
+        stream: false,
+        env: {},
+        preparation: nil
+      )
+
+      return unless result.success?
+
+      result[:stdout].to_s.strip.presence
     end
 
-    def available?(_binary)
-      true
+    def available?(binary)
+      which(binary).present?
     end
 
     private
