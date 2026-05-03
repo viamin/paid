@@ -2047,6 +2047,8 @@ CREATE TABLE public.issue_merge_subscriptions (
     updated_at timestamp(6) without time zone NOT NULL
 );
 
+ALTER TABLE ONLY public.issue_merge_subscriptions FORCE ROW LEVEL SECURITY;
+
 
 --
 -- Name: TABLE issue_merge_subscriptions; Type: COMMENT; Schema: public; Owner: -
@@ -9788,6 +9790,12 @@ ALTER TABLE public.integration_credentials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.issue_dependencies ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: issue_merge_subscriptions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.issue_merge_subscriptions ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: issues; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -10325,6 +10333,23 @@ CREATE POLICY tenant_isolation ON public.issue_dependencies USING ((public.paid_
    FROM (public.issues depends_on_issues
      JOIN public.projects ON ((projects.id = depends_on_issues.project_id)))
   WHERE ((depends_on_issues.id = issue_dependencies.depends_on_issue_id) AND (projects.account_id = public.paid_current_account_id()))))))));
+
+
+--
+-- Name: issue_merge_subscriptions tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.issue_merge_subscriptions USING ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM (public.issues
+     JOIN public.projects ON ((projects.id = issues.project_id)))
+  WHERE ((issues.id = issue_merge_subscriptions.issue_id) AND (projects.account_id = public.paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = issue_merge_subscriptions.user_id) AND (users.account_id = public.paid_current_account_id()))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM (public.issues
+     JOIN public.projects ON ((projects.id = issues.project_id)))
+  WHERE ((issues.id = issue_merge_subscriptions.issue_id) AND (projects.account_id = public.paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = issue_merge_subscriptions.user_id) AND (users.account_id = public.paid_current_account_id())))))));
 
 
 --
@@ -11132,6 +11157,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260503093418'),
 ('20260502231624'),
 ('20260502201828'),
 ('20260502200141'),
