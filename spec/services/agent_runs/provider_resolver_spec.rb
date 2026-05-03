@@ -136,6 +136,31 @@ RSpec.describe AgentRuns::ProviderResolver do
       )
     end
 
+    it "does not create a tenant API-key provider for a non-runnable configured provider key" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude])
+      allow(ProviderSupport).to receive(:container_executable_provider_key?) do |key|
+        key == "claude"
+      end
+
+      project = create(:project)
+      owner = project.created_by
+      # Use a valid provider key (cursor) but stub it as non-runnable
+      stale_provider = create(:provider, user: owner, provider_key: "cursor", enabled_for_agent_runs: true)
+      owner.settings.update!(default_agent_provider: "cursor")
+
+      api_key = create(:provider_api_key, user: owner, api_service_type: "anthropic")
+      create(:tenant_setting, account: project.account,
+        provider_preferences: { "api_key_ids" => { "anthropic" => api_key.id } })
+
+      provider_id, agent_type = described_class.call(project: project, goal: "create_pr")
+
+      # Should not select the non-runnable cursor provider via tenant API key
+      expect(provider_id).not_to eq(stale_provider.id)
+      resolved_provider = Provider.find(provider_id)
+      expect(resolved_provider.provider_key).to eq("claude")
+      expect(agent_type).to eq("claude_code")
+    end
+
     it "falls back to a nil provider id with the first runnable agent type when no owner providers are available" do
       allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[codex])
 

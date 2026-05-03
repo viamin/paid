@@ -99,6 +99,7 @@ module AgentRuns
 
     def tenant_api_key_provider(base_provider, owner)
       return unless base_provider
+      return unless provider_runnable?(base_provider)
 
       service_type = ProviderSupport.api_service_type_for(base_provider.provider_key)
       api_key = project.account.tenant_setting&.provider_api_key_for(service_type)
