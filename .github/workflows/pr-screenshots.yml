@@ -99,7 +99,7 @@ jobs:
           --health-retries=5
 
       chrome:
-        image: browserless/chromium:latest
+        image: browserless/chromium:2.18.0
         ports:
           - 9222:3000
         options: >-
