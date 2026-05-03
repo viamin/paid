@@ -986,12 +986,12 @@ module Activities
     def harness_response_provider(provider_candidate, provider_key, user)
       app_provider_key = ProviderSupport.provider_key_for_agent_type(provider_key)
       harness_key = ProviderSupport.harness_provider_key_for(app_provider_key).to_sym
-      klass = AgentHarness::Providers::Registry.instance.get(harness_key)
+      klass = AgentHarness.provider_class(harness_key)
       klass.new(config: harness_response_config(harness_key, provider_candidate, user))
     end
 
     def harness_response_config(harness_key, provider_candidate, user)
-      config = AgentHarness::ProviderConfig.new(harness_key)
+      config = AgentHarness.build_config(harness_key)
       config.externally_sandboxed = true
       config.model = provider_runtime_model(provider_candidate, user)
       config

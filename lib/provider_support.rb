@@ -34,10 +34,10 @@ module ProviderSupport
 
   def supported_provider_keys_set
     @supported_provider_keys_set ||= begin
-      registry = AgentHarness::Providers::Registry.instance
-
       APP_PROVIDER_KEYS.each_with_object(Set.new) do |provider_key, set|
-        set << provider_key if registry.registered?(provider_key)
+        set << provider_key if AgentHarness.provider_class(provider_key)
+      rescue AgentHarness::ConfigurationError
+        nil
       end.freeze
     end
   end

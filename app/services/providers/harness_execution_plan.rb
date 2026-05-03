@@ -30,10 +30,10 @@ module Providers
     # @return [Result] command, env, and preparation
     def self.for_provider_key(provider_key:, prompt:, options: {})
       harness_key = ProviderSupport.harness_provider_key_for(provider_key).to_sym
-      klass = AgentHarness::Providers::Registry.instance.get(harness_key)
+      klass = AgentHarness.provider_class(harness_key)
       capture = ExecutorCapture.new
 
-      config = AgentHarness::ProviderConfig.new(harness_key)
+      config = AgentHarness.build_config(harness_key)
       config.externally_sandboxed = true
 
       provider_instance = klass.new(executor: capture, config: config)
@@ -60,7 +60,7 @@ module Providers
 
     def harness_provider
       @harness_provider ||= begin
-        klass = AgentHarness::Providers::Registry.instance.get(harness_provider_name)
+        klass = AgentHarness.provider_class(harness_provider_name)
         klass.new(executor: capture_executor)
       end
     end
