@@ -32,6 +32,12 @@ RSpec.describe Automation::Providers::Github::RepositoryProvider do
     proc { adapter.fetch_pull_request(repo: repo, number: 999) }
   end
 
+  def stub_missing_label_provider_failure
+    allow(client).to receive(:remove_label_from_issue)
+      .with(repo, pr_number, label_name)
+      .and_raise(GithubClient::NotFoundError, "Label does not exist")
+  end
+
   before do
     pr_resource = OpenStruct.new(
       number: 42, title: "Test", body: "desc", state: "open",

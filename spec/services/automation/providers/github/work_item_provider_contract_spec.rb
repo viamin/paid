@@ -41,6 +41,12 @@ RSpec.describe Automation::Providers::Github::WorkItemProvider do
     proc { adapter.fetch_issue(repo: repo, number: 999) }
   end
 
+  def stub_missing_label_provider_failure
+    allow(client).to receive(:remove_label_from_issue)
+      .with(repo, issue_number, label_name)
+      .and_raise(GithubClient::NotFoundError, "Label does not exist")
+  end
+
   before do
     allow(client).to receive_messages(
       issue: issue_resource,

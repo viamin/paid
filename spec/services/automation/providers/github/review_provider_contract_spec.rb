@@ -17,6 +17,7 @@ RSpec.describe Automation::Providers::Github::ReviewProvider do
   let(:pr_number) { 42 }
   let(:requested_reviewers) { [ "Alice", "Bob" ] }
   let(:expected_new_reviewers) { [ "bob" ] }
+  let(:fully_pending_reviewers) { [ "alice" ] }
 
   def provider_failure_message = "review request failed"
 
@@ -30,6 +31,16 @@ RSpec.describe Automation::Providers::Github::ReviewProvider do
     proc do
       adapter.request_reviewers(repo: repo, pr_number: pr_number, reviewers: requested_reviewers)
     end
+  end
+
+  def invoke_fully_pending_review_request
+    proc do
+      adapter.request_reviewers(repo: repo, pr_number: pr_number, reviewers: fully_pending_reviewers)
+    end
+  end
+
+  def assert_no_redundant_review_request
+    expect(client).not_to have_received(:request_pull_request_review)
   end
 
   before do

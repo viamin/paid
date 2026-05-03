@@ -18,6 +18,9 @@
 #   invoke_expected_provider_failure
 #                 — a lambda that performs the adapter call expected to
 #                   raise ProviderError after translation
+#   stub_missing_label_provider_failure
+#                 — a lambda that stubs the provider's "label already
+#                   absent" failure for remove_label
 #   provider_failure_message
 #                 — the expected translated ProviderError message
 #
@@ -93,6 +96,13 @@ RSpec.shared_examples "a RepositoryProvider implementation" do
 
   describe "#remove_label" do
     it "does not raise (idempotent)" do
+      expect { adapter.remove_label(repo: repo, number: pr_number, label: label_name) }
+        .not_to raise_error
+    end
+
+    it "swallows the provider's missing-label error" do
+      stub_missing_label_provider_failure
+
       expect { adapter.remove_label(repo: repo, number: pr_number, label: label_name) }
         .not_to raise_error
     end

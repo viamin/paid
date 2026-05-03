@@ -17,6 +17,14 @@
 #   invoke_expected_provider_failure
 #               — a lambda that performs the adapter call expected to
 #                 raise ProviderError after translation
+#   fully_pending_reviewers
+#               — reviewers passed to #request_reviewers when every
+#                 reviewer is already pending
+#   invoke_fully_pending_review_request
+#               — a lambda that performs that fully-idempotent request
+#   assert_no_redundant_review_request
+#               — a lambda that asserts the provider request API was not
+#                 called for the fully-idempotent request
 #   provider_failure_message
 #               — the expected translated ProviderError message
 #
@@ -86,6 +94,13 @@ RSpec.shared_examples "a ReviewProvider implementation" do
       expect(result).to all(satisfy("be downcased") { |login| login == login.downcase })
       expect(result).to all(be_in(requested_reviewers.map(&:downcase)))
       expect(result & pending_reviewers).to be_empty
+    end
+
+    it "returns [] without re-requesting when everyone is already pending" do
+      result = invoke_fully_pending_review_request.call
+
+      expect(result).to eq([])
+      assert_no_redundant_review_request
     end
   end
 
