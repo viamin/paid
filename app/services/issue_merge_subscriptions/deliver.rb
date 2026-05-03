@@ -2,9 +2,6 @@
 
 module IssueMergeSubscriptions
   class Deliver
-    include ActionView::RecordIdentifier
-    include Rails.application.routes.url_helpers
-
     EVENT_CONFIG = {
       merged: {
         item_name: "PR",
@@ -27,10 +24,10 @@ module IssueMergeSubscriptions
     end
 
     def call
-      subscriptions = issue.issue_merge_subscriptions.on_merge.includes(:user).to_a
-      return 0 if subscriptions.empty?
-
       IssueMergeSubscription.transaction do
+        subscriptions = issue.issue_merge_subscriptions.on_merge.lock.to_a
+        return 0 if subscriptions.empty?
+
         subscriptions.each do |subscription|
           Notifications::Publish.call(
             account: issue.project.account,
@@ -39,16 +36,15 @@ module IssueMergeSubscriptions
             subject: issue,
             severity: :info,
             title: notification_title,
-            action_url: project_path(issue.project, anchor: dom_id(issue)),
+            action_url: issue.github_url,
             nav_section: "projects",
             metadata: notification_metadata
           )
         end
 
         IssueMergeSubscription.where(id: subscriptions.map(&:id)).delete_all
+        subscriptions.size
       end
-
-      subscriptions.size
     end
 
     private

@@ -152,7 +152,7 @@ Rails.application.routes.draw do
       controller: "projects/pr_templates"
     resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"
     resources :issues, only: [] do
-      resource :merge_subscription, only: [ :create, :destroy ],
+      resource :merge_subscription, only: [ :show, :create, :destroy ],
         controller: "projects/issue_merge_subscriptions"
     end
     post :detect_services, on: :member

@@ -8,10 +8,7 @@ RSpec.describe IssueMergeSubscriptions::Deliver do
     let(:issue) { create(:issue, project: project, github_number: 42, title: "Fix login timeout") }
     let(:user) { create(:user, account: project.account) }
     let(:expected_action_url) do
-      Rails.application.routes.url_helpers.project_path(
-        project,
-        anchor: ActionView::RecordIdentifier.dom_id(issue)
-      )
+      issue.github_url
     end
     let(:expected_metadata) do
       {
@@ -60,6 +57,7 @@ RSpec.describe IssueMergeSubscriptions::Deliver do
       described_class.call(issue: pull_request, event: :merged)
 
       expect(Notification.last.title).to eq("PR #77 was merged: Improve CI")
+      expect(Notification.last.action_url).to eq(pull_request.github_url)
     end
   end
 end

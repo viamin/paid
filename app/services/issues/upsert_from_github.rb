@@ -18,7 +18,7 @@ module Issues
         github_updated_at: github_issue.updated_at
       )
 
-      deliver_completion_notifications(issue, was_open: was_open)
+      deliver_completion_notifications(issue, github_issue: github_issue, was_open: was_open)
       issue
     end
 
@@ -32,13 +32,19 @@ module Issues
     end
     private_class_method :pull_request_payload
 
-    def self.deliver_completion_notifications(issue, was_open:)
+    def self.deliver_completion_notifications(issue, github_issue:, was_open:)
       return unless was_open
       return unless issue.github_state == "closed"
-      return if issue.is_pull_request?
+      return unless closed_as_completed?(github_issue)
 
-      IssueMergeSubscriptions::Deliver.call(issue: issue, event: :completed)
+      event = issue.is_pull_request? ? :merged : :completed
+      IssueMergeSubscriptions::Deliver.call(issue: issue, event: event)
     end
     private_class_method :deliver_completion_notifications
+
+    def self.closed_as_completed?(github_issue)
+      github_issue.respond_to?(:state_reason) && github_issue.state_reason == "completed"
+    end
+    private_class_method :closed_as_completed?
   end
 end

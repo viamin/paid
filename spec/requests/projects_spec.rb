@@ -227,6 +227,15 @@ RSpec.describe "Projects" do
       expect(response.body).to include("Stop completion alerts")
     end
 
+    it "renders the current subscription state for turbo-frame refreshes" do
+      create(:issue_merge_subscription, issue: issue, user: user)
+
+      get project_issue_merge_subscription_path(project, issue)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Stop completion alerts")
+    end
+
     it "removes a subscription" do
       create(:issue_merge_subscription, issue: issue, user: user)
 

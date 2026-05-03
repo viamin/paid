@@ -22,10 +22,11 @@
   </div>
   <div class="ml-4 flex flex-shrink-0 items-center space-x-2">
     <%= paid_state_badge(pull_request.paid_state) %>
-    <%= render "projects/issue_merge_subscription",
-               issue: pull_request,
-               project: project,
-               subscribed: local_assigns.fetch(:merge_notification_issue_ids, []).include?(pull_request.id) %>
+    <% subscription_locals = { issue: pull_request, project: project } %>
+    <% if local_assigns.key?(:merge_notification_issue_ids) %>
+      <% subscription_locals[:subscribed] = local_assigns[:merge_notification_issue_ids].include?(pull_request.id) %>
+    <% end %>
+    <%= render "projects/issue_merge_subscription", **subscription_locals %>
     <% if automation_enabled %>
       <%= button_to toggle_auto_continue_pause_project_agent_runs_path(project, pull_request_id: pull_request.id),
                     method: :post,

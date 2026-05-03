@@ -18,10 +18,11 @@
   </div>
   <div class="ml-4 flex flex-shrink-0 items-center space-x-2">
     <%= issue_lifecycle_badge(local_assigns.fetch(:lifecycle_status, :eligible)) %>
-    <%= render "projects/issue_merge_subscription",
-               issue: issue,
-               project: project,
-               subscribed: local_assigns.fetch(:merge_notification_issue_ids, []).include?(issue.id) %>
+    <% subscription_locals = { issue: issue, project: project } %>
+    <% if local_assigns.key?(:merge_notification_issue_ids) %>
+      <% subscription_locals[:subscribed] = local_assigns[:merge_notification_issue_ids].include?(issue.id) %>
+    <% end %>
+    <%= render "projects/issue_merge_subscription", **subscription_locals %>
     <% paid_pr = local_assigns.fetch(:paid_pr, nil) %>
     <%# Prefer the paid-generated PR when one exists; otherwise fall back to
         any open associated PR so manually-opened PRs still get a visible

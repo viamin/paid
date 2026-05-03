@@ -1,15 +1,26 @@
-<%= turbo_frame_tag dom_id(issue, :merge_subscription) do %>
-  <% if subscribed %>
-    <%= button_to issue.is_pull_request? ? "Stop merge alerts" : "Stop completion alerts",
-                  project_issue_merge_subscription_path(project, issue),
-                  method: :delete,
-                  class: "text-xs font-medium text-gray-600 hover:text-gray-900",
-                  form: { data: { turbo_stream: true } } %>
+<% frame_options =
+  if local_assigns.key?(:subscribed)
+    {}
+  else
+    { src: project_issue_merge_subscription_path(project, issue), loading: :lazy }
+  end %>
+
+<%= turbo_frame_tag dom_id(issue, :merge_subscription), **frame_options do %>
+  <% if local_assigns.key?(:subscribed) %>
+    <% if subscribed %>
+      <%= button_to issue.is_pull_request? ? "Stop merge alerts" : "Stop completion alerts",
+                    project_issue_merge_subscription_path(project, issue),
+                    method: :delete,
+                    class: "text-xs font-medium text-gray-600 hover:text-gray-900",
+                    form: { data: { turbo_stream: true } } %>
+    <% else %>
+      <%= button_to issue.is_pull_request? ? "Notify on merge" : "Notify on completion",
+                    project_issue_merge_subscription_path(project, issue),
+                    method: :post,
+                    class: "text-xs font-medium text-indigo-600 hover:text-indigo-900",
+                    form: { data: { turbo_stream: true } } %>
+    <% end %>
   <% else %>
-    <%= button_to issue.is_pull_request? ? "Notify on merge" : "Notify on completion",
-                  project_issue_merge_subscription_path(project, issue),
-                  method: :post,
-                  class: "text-xs font-medium text-indigo-600 hover:text-indigo-900",
-                  form: { data: { turbo_stream: true } } %>
+    <span class="text-xs font-medium text-gray-400">Loading alerts...</span>
   <% end %>
 <% end %>

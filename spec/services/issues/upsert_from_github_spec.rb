@@ -15,6 +15,7 @@ RSpec.describe Issues::UpsertFromGithub do
         state: "open",
         labels: [ OpenStruct.new(name: "paid-generated"), "P1" ],
         pull_request: OpenStruct.new(html_url: "https://github.com/test/repo/pull/42"),
+        state_reason: nil,
         user: OpenStruct.new(login: "viamin"),
         created_at: Time.zone.parse("2026-04-14 00:00:00 UTC"),
         updated_at: Time.zone.parse("2026-04-14 00:01:00 UTC")
@@ -79,6 +80,7 @@ RSpec.describe Issues::UpsertFromGithub do
 
       github_issue.state = "closed"
       github_issue.pull_request = nil
+      github_issue.state_reason = "completed"
 
       expect {
         described_class.call(project: project, github_issue: github_issue)
@@ -87,12 +89,29 @@ RSpec.describe Issues::UpsertFromGithub do
       expect(Notification.last.title).to eq("Issue #42 was completed: Sync me")
     end
 
-    it "does not deliver close notifications for pull requests from issue sync" do
+    it "delivers merge notifications for pull requests closed as completed from issue sync" do
       user = create(:user, account: project.account)
       issue = create(:issue, :pull_request, project: project, github_issue_id: 1234, github_number: 42, github_state: "open")
       create(:issue_merge_subscription, issue: issue, user: user)
 
       github_issue.state = "closed"
+      github_issue.state_reason = "completed"
+
+      expect {
+        described_class.call(project: project, github_issue: github_issue)
+      }.to change(Notification, :count).by(1)
+
+      expect(Notification.last.title).to eq("PR #42 was merged: Sync me")
+    end
+
+    it "does not deliver completion notifications for issues closed as not planned" do
+      user = create(:user, account: project.account)
+      issue = create(:issue, project: project, github_issue_id: 1234, github_number: 42, github_state: "open")
+      create(:issue_merge_subscription, issue: issue, user: user)
+
+      github_issue.state = "closed"
+      github_issue.pull_request = nil
+      github_issue.state_reason = "not_planned"
 
       expect {
         described_class.call(project: project, github_issue: github_issue)
