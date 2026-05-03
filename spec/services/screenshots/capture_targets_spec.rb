@@ -39,5 +39,17 @@ RSpec.describe Screenshots::CaptureTargets do
 
       expect(targets.map(&:slug)).to eq([ "workflow_status" ])
     end
+
+    it "maps component files to shared UI targets" do
+      targets = described_class.call(changed_files: [ "app/components/sidebar_component.rb" ])
+
+      expect(targets.map(&:slug)).to include("sign_in", "dashboard", "projects")
+    end
+
+    it "maps knowledge artifact views to the artifact show route" do
+      targets = described_class.call(changed_files: [ "app/views/knowledge/artifacts/show.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_knowledge_artifact_show" ])
+    end
   end
 end

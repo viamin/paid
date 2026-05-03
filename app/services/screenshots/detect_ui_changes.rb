@@ -26,19 +26,7 @@ module Screenshots
       %r{\Aapp/helpers/.*_helper\.rb\z},
       %r{\Aapp/components/},
       %r{\Aapp/frontend/},
-      %r{\Aconfig/locales/.*\.yml\z},
-      %r{\.html\.erb\z},
-      %r{\.html\.haml\z},
-      %r{\.html\.slim\z},
-      %r{\.js\z},
-      %r{\.jsx\z},
-      %r{\.ts\z},
-      %r{\.tsx\z},
-      %r{\.css\z},
-      %r{\.scss\z},
-      %r{\.sass\z},
-      %r{\.vue\z},
-      %r{\.svelte\z}
+      %r{\Aconfig/locales/.*\.yml\z}
     ].freeze
 
     # @param changed_files [Array<String>] list of file paths changed in the PR

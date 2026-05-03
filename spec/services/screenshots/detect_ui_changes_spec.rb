@@ -52,6 +52,17 @@ RSpec.describe Screenshots::DetectUiChanges do
       expect(result[:ui_files]).to be_empty
     end
 
+    it "ignores frontend-looking extensions outside UI directories" do
+      result = described_class.call(changed_files: [
+        "spec/fixtures/knowledge/sample.ts",
+        "script/build.js",
+        "vendor/assets/theme.css"
+      ])
+
+      expect(result[:ui_changes?]).to be false
+      expect(result[:ui_files]).to be_empty
+    end
+
     it "returns only UI files from a mixed set" do
       changed_files = [
         "app/models/project.rb",

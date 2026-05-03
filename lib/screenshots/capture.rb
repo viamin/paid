@@ -264,6 +264,41 @@ module Screenshots
         status: "active"
       )
 
+      project_version = ProjectVersion.find_or_create_by!(project: project, commit_sha: "f" * 40) do |record|
+        record.branch = "main"
+        record.committed_at = 1.day.ago
+      end
+
+      collector_run = CollectorRun.find_or_create_by!(project_version: project_version, collector_type: "screenshot_seed") do |record|
+        record.status = "completed"
+        record.started_at = 5.minutes.ago
+        record.completed_at = 4.minutes.ago
+        record.duration_ms = 60_000
+        record.artifacts_count = 1
+      end
+
+      knowledge_artifact = KnowledgeArtifact.find_or_create_by!(
+        collector_run: collector_run,
+        content_hash: Digest::SHA256.hexdigest("screenshots-seed-artifact")
+      ) do |record|
+        record.project = project
+        record.collector_type = collector_run.collector_type
+        record.artifact_type = "route"
+        record.scope_path = "config/routes.rb"
+        record.identifier = "GET /screenshots"
+        record.content = "Screenshot artifact seed"
+        record.metadata = { source: "screenshots_seed" }
+        record.status = "active"
+      end
+
+      KnowledgeChunk.find_or_create_by!(knowledge_artifact: knowledge_artifact, sequence: 0) do |record|
+        record.project = project
+        record.chunk_type = "definition"
+        record.status = "active"
+        record.content = "Screenshot artifact chunk seed"
+        record.content_hash = Digest::SHA256.hexdigest("screenshots-seed-artifact-chunk")
+      end
+
       {
         user: user,
         project: project,
@@ -278,7 +313,8 @@ module Screenshots
         pending_prompt_version: pending_prompt_version,
         ab_test: ab_test,
         style_guide: style_guide,
-        chat_session: chat_session
+        chat_session: chat_session,
+        knowledge_artifact: knowledge_artifact
       }
     end
 

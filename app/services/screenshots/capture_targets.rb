@@ -93,6 +93,7 @@ module Screenshots
       project_knowledge_search: Target.new(slug: "project_knowledge_search", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge/search" }, requires_auth: true),
       project_knowledge_browse: Target.new(slug: "project_knowledge_browse", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge/browse" }, requires_auth: true),
       project_knowledge_browse_show: Target.new(slug: "project_knowledge_browse_show", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge/browse/route" }, requires_auth: true),
+      project_knowledge_artifact_show: Target.new(slug: "project_knowledge_artifact_show", path_builder: ->(seed_data) { "/knowledge_artifacts/#{seed_data.fetch(:knowledge_artifact).id}" }, requires_auth: true),
       workflow_status: Target.new(slug: "workflow_status", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/workflow_status" }, requires_auth: true)
     }.freeze
 
@@ -130,6 +131,8 @@ module Screenshots
 
       if path.start_with?("app/views/")
         targets_for_view(path.delete_prefix("app/views/"))
+      elsif path.start_with?("app/components/")
+        SHARED_TARGET_KEYS
       elsif path.start_with?("app/helpers/")
         targets_for_helper(path)
       else
@@ -180,7 +183,7 @@ module Screenshots
       when /\Astyle_guides\// then rest_resource_targets(relative_path, "style_guides", index: :style_guides, new: :style_guide_new, show: :style_guide_show, edit: :style_guide_edit)
       when /\Achat_sessions\// then chat_session_targets(relative_path.delete_prefix("chat_sessions/"))
       when /\Achat_messages\// then [ :chat_session_show ]
-      when /\Aknowledge\/artifacts\// then [ :project_knowledge_browse_show ]
+      when /\Aknowledge\/artifacts\// then [ :project_knowledge_artifact_show ]
       when /\Aknowledge\/browse\// then knowledge_browse_targets(relative_path.delete_prefix("knowledge/browse/"))
       when /\Aknowledge\/context_intake\// then [ :project_context_intake ]
       when /\Aknowledge\/search\// then knowledge_search_targets(relative_path.delete_prefix("knowledge/search/"))

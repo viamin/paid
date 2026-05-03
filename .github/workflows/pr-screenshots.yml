@@ -160,6 +160,8 @@ jobs:
         run: bin/rails screenshots:capture
 
       - name: Upload screenshots
+        id: upload_screenshots
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pr-screenshots
@@ -168,7 +170,7 @@ jobs:
           retention-days: 30
 
       - name: Comment on PR with screenshot summary
-        if: always()
+        if: always() && steps.upload_screenshots.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}

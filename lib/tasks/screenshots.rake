@@ -15,6 +15,7 @@ namespace :screenshots do
         puts "No UI-facing file changes detected. Skipping screenshot capture."
         next
       end
+      changed_files = result[:ui_files]
       puts "Detected #{result[:ui_files].size} UI-facing file change(s):"
       result[:ui_files].each { |f| puts "  #{f}" }
     end

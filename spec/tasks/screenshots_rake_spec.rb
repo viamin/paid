@@ -50,6 +50,18 @@ RSpec.describe "screenshots:capture" do
         changed_files: [ "app/views/projects/index.html.erb" ]
       )
     end
+
+    it "passes only UI files to capture when the change list is mixed" do
+      ENV["CHANGED_FILES"] = "app/views/projects/index.html.erb\napp/models/project.rb"
+      allow(Screenshots::Capture).to receive(:call).and_return([])
+
+      task.invoke
+
+      expect(Screenshots::Capture).to have_received(:call).with(
+        output_dir: output_dir,
+        changed_files: [ "app/views/projects/index.html.erb" ]
+      )
+    end
   end
 
   context "when CHANGED_FILES is empty" do
