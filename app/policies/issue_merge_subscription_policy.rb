@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
 class IssueMergeSubscriptionPolicy < ApplicationPolicy
+  def show?
+    allowed?
+  end
+
   def create?
     allowed?
   end
