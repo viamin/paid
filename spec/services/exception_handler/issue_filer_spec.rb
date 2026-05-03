@@ -41,7 +41,11 @@ RSpec.describe ExceptionHandler::IssueFiler do
     end
 
     it "retries issue creation when a previous attempt claimed but did not complete" do
-      incident.update_columns(action_taken: "filing", github_issue_number: nil)
+      incident.update_columns(
+        action_taken: "filing",
+        github_issue_number: nil,
+        updated_at: (ExceptionHandler::IssueFiler::CLAIM_STALE_AFTER + 1.second).ago
+      )
       allow(gh_issue).to receive_messages(html_url: "https://github.com/acme/widgets/issues/34", number: 34)
       allow(client).to receive(:create_issue).and_return(gh_issue)
 
@@ -53,7 +57,7 @@ RSpec.describe ExceptionHandler::IssueFiler do
       expect(incident.github_issue_number).to eq(34)
     end
 
-    it "adds a comment instead of creating a duplicate issue for concurrent calls" do
+    it "adds a comment instead of creating a duplicate issue for concurrent calls when the first filing is slow" do
       allow(gh_issue).to receive_messages(html_url: "https://github.com/acme/widgets/issues/56", number: 56)
       create_issue_started = Queue.new
       release_create_issue = Queue.new
@@ -67,6 +71,7 @@ RSpec.describe ExceptionHandler::IssueFiler do
       thread_one = concurrent_call
       create_issue_started.pop
       thread_two = concurrent_call
+      sleep 2.1
       release_create_issue << true
 
       [ thread_one, thread_two ].each(&:value)
@@ -74,6 +79,14 @@ RSpec.describe ExceptionHandler::IssueFiler do
       expect(client).to have_received(:create_issue).once
       expect(client).to have_received(:add_comment).once.with(project.full_name, 56, kind_of(String))
       expect(incident.reload.github_issue_number).to eq(56)
+    end
+
+    it "releases the filing claim after a GitHub failure so a later retry can file" do
+      allow(client).to receive(:create_issue).and_raise(GithubClient::Error, "timeout")
+
+      described_class.call(incident: incident, project: project)
+
+      expect(incident.reload.action_taken).to eq("notified")
     end
 
     def concurrent_call

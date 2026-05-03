@@ -32,6 +32,7 @@ module Containers
   class Provision
     CODEX_NOTIFY_LINE = 'notify = ["sh", "-lc", "date +%s > /paid-heartbeat/.paid-heartbeat"]'
     HEARTBEAT_MOUNT_POINT = "/paid-heartbeat"
+    MAX_STREAMING_LINE_BUFFER_BYTES = 64 * 1024
 
     # Base error for all container service errors
     class Error < StandardError; end
@@ -371,6 +372,10 @@ module Containers
       abort_matched_output = nil # set when an abort_pattern matches stderr
       stdout_abort_buffer = +""
       watchdog = nil
+      streaming_event_processor = build_streaming_event_processor(command)
+      streaming_abort_triggered = false
+      streaming_abort_event_type = nil
+      streaming_line_buffer = +""
 
       timeout_check = TimeoutCheckState.new(
         mutex: watchdog_mutex,
@@ -411,6 +416,31 @@ module Containers
           when :stdout
             stdout_buffer << normalized_chunk
             log_output(:stdout, normalized_chunk) if stream
+
+            # Parse streaming JSONL progress events from stdout to give the
+            # watchdog semantic awareness of agent state (turn progress, token
+            # usage, errors) beyond raw output monitoring.
+            if streaming_event_processor
+              streaming_line_buffer << normalized_chunk
+              while (newline_idx = streaming_line_buffer.index("\n"))
+                line = streaming_line_buffer.slice!(0, newline_idx + 1)
+                action = streaming_event_processor.handle_line(line)
+                case action
+                when :abort
+                  streaming_abort_triggered = true
+                  streaming_abort_event_type ||= streaming_event_processor.last_event_type
+                  log_system("container.execute.streaming_abort",
+                    reason: "#{streaming_abort_event_type} event received")
+                  begin
+                    container.stop(timeout: 0)
+                  rescue Docker::Error::DockerError => e
+                    log_system("container.execute.streaming_abort_stop_failed", error: e.message)
+                  end
+                end
+              end
+
+              trim_streaming_line_buffer!(streaming_line_buffer)
+            end
           when :stderr
             stderr_buffer << normalized_chunk
             log_output(:stderr, normalized_chunk) if stream
@@ -453,10 +483,28 @@ module Containers
           end
         end
 
+        # Process any remaining partial line left in the streaming buffer.
+        if streaming_event_processor && streaming_line_buffer.present?
+          action = streaming_event_processor.handle_line(streaming_line_buffer)
+          if action == :abort && !streaming_abort_triggered
+            streaming_abort_triggered = true
+            streaming_abort_event_type ||= streaming_event_processor.last_event_type
+          end
+          streaming_line_buffer.clear
+        end
+
         # Signal the watchdog that exec has returned, then stop it immediately
         # to prevent late/false timeouts during post-processing.
         watchdog_mutex.synchronize { exec_completed = true }
         stop_watchdog(watchdog)
+
+        # Check if streaming events triggered an abort (turn.failed / error).
+        if streaming_abort_triggered
+          raise OutputAbortError.new(
+            "Process aborted: streaming #{streaming_abort_event_type || 'turn_failed'} event detected",
+            matched_output: "streaming_event:#{streaming_abort_event_type || 'turn_failed'}"
+          )
+        end
 
         # Check if we stopped the container due to an abort pattern match.
         # This takes precedence over timeout checks because the abort was
@@ -517,6 +565,16 @@ module Containers
         # Log partial output first — raise_if_watchdog_timeout! may re-raise.
         log_partial_output(stdout_buffer, stderr_buffer)
 
+        # Check if the Docker error was caused by a streaming abort (turn.failed/error)
+        # stopping the container. This takes precedence over abort patterns and timeout
+        # classification so the caller sees OutputAbortError, not a generic ExecutionError.
+        if streaming_abort_triggered
+          raise OutputAbortError.new(
+            "Process aborted: streaming #{streaming_abort_event_type || 'turn_failed'} event detected",
+            matched_output: "streaming_event:#{streaming_abort_event_type || 'turn_failed'}"
+          )
+        end
+
         # Check if the Docker error was caused by an abort pattern stopping the
         # container. This takes precedence over timeout classification.
         if abort_matched_output
@@ -575,6 +633,8 @@ module Containers
       ensure
         watchdog_mutex.synchronize { exec_completed = true }
         stop_watchdog(watchdog)
+        # Persist turn metrics even on error paths so partial progress is recorded.
+        safe_flush_streaming_metrics(streaming_event_processor)
         if cleanup_steps&.any?
           if $!
             # An exception is already propagating; attempt cleanup but swallow
@@ -723,6 +783,14 @@ module Containers
       cleanup_execution_preparation(cleanup_steps, env: env)
     rescue ExecutionError
       log_system("container.execute.preparation_cleanup_swallowed", note: "swallowed to preserve original exception")
+    end
+
+    # Best-effort metrics persistence for ensure blocks. Streaming telemetry
+    # should not replace the original execution failure or skip later cleanup.
+    def safe_flush_streaming_metrics(streaming_event_processor)
+      streaming_event_processor&.flush_metrics!
+    rescue StandardError => e
+      log_system("container.execute.streaming_metrics_flush_failed", error: e.message)
     end
 
     # Runs a single preparation cleanup step, returning the error on failure
@@ -2143,6 +2211,27 @@ module Containers
       container.info.dig("State", "ExitCode") || -1
     rescue Docker::Error::DockerError
       -1
+    end
+
+    def build_streaming_event_processor(command)
+      return nil unless agent_run && streaming_event_command?(command)
+
+      StreamingEventProcessor.new(
+        agent_run: agent_run,
+        logger: method(:log_system)
+      )
+    end
+
+    def streaming_event_command?(command)
+      codex_exec_command?(command)
+    end
+
+    def trim_streaming_line_buffer!(buffer)
+      return unless buffer.bytesize > MAX_STREAMING_LINE_BUFFER_BYTES
+
+      dropped_bytes = buffer.bytesize
+      buffer.clear
+      log_system("container.execute.streaming_buffer_reset", dropped_bytes: dropped_bytes)
     end
 
     def log_system(message, **metadata)

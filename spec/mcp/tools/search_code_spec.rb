@@ -24,9 +24,7 @@ RSpec.describe Tools::SearchCode do
   end
 
   describe "#call" do
-    before do
-      allow(Knowledge::ProviderConfiguration).to receive(:for_embedding).and_return(nil)
-    end
+    before { allow(Knowledge::ProviderConfiguration).to receive(:for_embedding).and_return(nil) }
 
     it "maps Knowledge::Search results into the MCP response shape" do
       allow(Knowledge::Search).to receive(:call).and_return(search_results)
