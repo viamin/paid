@@ -14,8 +14,7 @@ module ChatMessages
 
     def exceeded?(user_id:, chat_session_id:, cache: rate_limit_cache)
       key = cache_key(user_id:, chat_session_id:)
-      count = cache.increment(key, 1, expires_in: PERIOD)
-      count ||= initialize_count(cache:, key:)
+      count = increment_count(cache:, key:)
       count > MAX_REQUESTS
     end
 
@@ -23,9 +22,12 @@ module ChatMessages
       "chat_messages:rate_limit:#{identifier(user_id:, chat_session_id:)}"
     end
 
-    def initialize_count(cache:, key:)
-      cache.write(key, 1, expires_in: PERIOD)
-      1
+    def increment_count(cache:, key:)
+      count = cache.increment(key, 1, expires_in: PERIOD)
+      return count unless count.nil?
+
+      cache.write(key, 0, expires_in: PERIOD, unless_exist: true)
+      cache.increment(key, 1, expires_in: PERIOD) || 1
     end
 
     def rate_limit_cache

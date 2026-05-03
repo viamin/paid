@@ -10,6 +10,7 @@ class ChatSessionsController < ApplicationController
   skip_after_action :verify_authorized, only: %i[index sidebar_page]
   before_action :set_chat_session, only: %i[show update destroy older_messages]
   before_action :enforce_create_rate_limit, only: :create
+  before_action :default_request_format_to_json, only: %i[index create show update destroy]
 
   def index
     respond_to do |format|
@@ -19,7 +20,7 @@ class ChatSessionsController < ApplicationController
       end
 
       format.json do
-        pagy, sessions = pagy(session_scope, limit: 25)
+        pagy, sessions = pagy(session_scope_with_token_totals, limit: 25)
         render json: {
           sessions: sessions.map { |s| session_json(s) },
           pagination: pagination_meta(pagy)
@@ -172,6 +173,13 @@ class ChatSessionsController < ApplicationController
   def session_scope
     policy_scope(ChatSession)
       .with_preview_content
+      .includes(:project, :provider, :chat_session_projects, :projects)
+      .order(updated_at: :desc, id: :desc)
+  end
+
+  def session_scope_with_token_totals
+    policy_scope(ChatSession)
+      .with_preview_content
       .select(
         "chat_sessions.*",
         "(SELECT COALESCE(SUM(input_tokens),0) FROM token_usages WHERE token_usages.chat_session_id = chat_sessions.id) AS preloaded_tokens_input",
@@ -204,11 +212,23 @@ class ChatSessionsController < ApplicationController
 
   def enforce_create_rate_limit
     key = "chat_sessions:create:#{current_account&.id}"
-    count = create_rate_limit_cache.increment(key, 1, expires_in: CREATE_RATE_LIMIT_PERIOD)
-    count ||= initialize_rate_limit_count(key)
+    count = increment_rate_limit_counter(
+      cache: create_rate_limit_cache,
+      key:,
+      expires_in: CREATE_RATE_LIMIT_PERIOD
+    )
     return if count <= CREATE_RATE_LIMIT
 
     render_create_rate_limit_exceeded
+  end
+
+  def default_request_format_to_json
+    return if params[:format].present?
+    return if request.headers["Accept"].to_s.include?("text/html")
+    return if request.headers["Accept"].to_s.include?("application/json")
+    return if request.headers["Accept"].to_s.include?("text/vnd.turbo-stream.html")
+
+    request.format = :json
   end
 
   def load_sidebar_data(active_session: nil)
@@ -285,9 +305,12 @@ class ChatSessionsController < ApplicationController
     "sidebar_page_#{before_id}"
   end
 
-  def initialize_rate_limit_count(key)
-    create_rate_limit_cache.write(key, 1, expires_in: CREATE_RATE_LIMIT_PERIOD)
-    1
+  def increment_rate_limit_counter(cache:, key:, expires_in:)
+    count = cache.increment(key, 1, expires_in: expires_in)
+    return count unless count.nil?
+
+    cache.write(key, 0, expires_in: expires_in, unless_exist: true)
+    cache.increment(key, 1, expires_in: expires_in) || 1
   end
 
   def create_rate_limit_cache

@@ -61,6 +61,16 @@ RSpec.describe "ChatSessions" do
         expect(response.body).to include("Interactive Chat")
         expect(response.body).to include("Planning Thread")
       end
+
+      it "defaults wildcard accept requests to the existing json API" do
+        create(:chat_session, account: account, created_by: user, title: "API Session")
+
+        get chat_sessions_path, headers: { "Accept" => "*/*" }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.media_type).to eq("application/json")
+        expect(response.parsed_body["sessions"].first["title"]).to eq("API Session")
+      end
     end
 
     context "when authenticated as a viewer" do
@@ -112,6 +122,14 @@ RSpec.describe "ChatSessions" do
         post chat_sessions_path, params: { mode: "api", title: "UI Chat" }
 
         expect(response).to redirect_to(chat_session_path(ChatSession.last))
+      end
+
+      it "defaults wildcard accept create requests to json" do
+        post chat_sessions_path, params: { mode: "api", title: "API Chat" }, headers: { "Accept" => "*/*" }
+
+        expect(response).to have_http_status(:created)
+        expect(response.media_type).to eq("application/json")
+        expect(response.parsed_body["title"]).to eq("API Chat")
       end
 
       it "returns an html response when the create rate limit is exceeded" do
@@ -183,6 +201,16 @@ RSpec.describe "ChatSessions" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Assistant is typing")
         expect(response.body).to include("Rendered markdown")
+      end
+
+      it "defaults wildcard accept show requests to the existing json API" do
+        create(:chat_message, chat_session: chat_session, role: "user", content: "Hello")
+
+        get chat_session_path(chat_session), headers: { "Accept" => "*/*" }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.media_type).to eq("application/json")
+        expect(response.parsed_body["id"]).to eq(chat_session.id)
       end
 
       it "loads the newest 50 messages on the initial html render" do

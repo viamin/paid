@@ -104,8 +104,9 @@ RSpec.describe ChatChannel do
 
       expect {
         perform :send_message, content: "Hello"
-      }.to have_broadcasted_to("chat_session:#{chat_session.id}")
-        .with(hash_including(type: "error", message: "You are not authorized to send messages"))
+      }.not_to have_broadcasted_to("chat_session:#{chat_session.id}")
+
+      expect(transmissions.last).to include("type" => "error", "message" => "You are not authorized to send messages")
     end
 
     it "enforces the per-user per-session rate limit" do
@@ -115,28 +116,29 @@ RSpec.describe ChatChannel do
 
       expect {
         perform :send_message, content: "Hello"
-      }.to have_broadcasted_to("chat_session:#{chat_session.id}")
-        .with(hash_including(type: "error", message: "Rate limit exceeded"))
+      }.not_to have_broadcasted_to("chat_session:#{chat_session.id}")
+
+      expect(transmissions.last).to include("type" => "error", "message" => "Rate limit exceeded")
     end
 
     it "broadcasts a generic error for unexpected failures" do
       allow(ChatSessions::SendMessage).to receive(:call)
         .and_raise(StandardError, "provider failed")
 
-      expect {
-        perform :send_message, content: "Hello"
-      }.to have_broadcasted_to("chat_session:#{chat_session.id}")
-        .with(hash_including(type: "error", message: "An unexpected error occurred"))
+      perform :send_message, content: "Hello"
+
+      expect(broadcasts("chat_session:#{chat_session.id}").map { |payload| payload["type"] }).not_to include("error")
+      expect(transmissions.last).to include("type" => "error", "message" => "An unexpected error occurred")
     end
 
     it "broadcasts the original message for argument errors" do
       allow(ChatSessions::SendMessage).to receive(:call)
         .and_raise(ArgumentError, "chat session must be active")
 
-      expect {
-        perform :send_message, content: "Hello"
-      }.to have_broadcasted_to("chat_session:#{chat_session.id}")
-        .with(hash_including(type: "error", message: "chat session must be active"))
+      perform :send_message, content: "Hello"
+
+      expect(broadcasts("chat_session:#{chat_session.id}").map { |payload| payload["type"] }).not_to include("error")
+      expect(transmissions.last).to include("type" => "error", "message" => "chat session must be active")
     end
   end
 end
