@@ -66,7 +66,8 @@ module Activities
               issue.update_column(:last_pr_scan_at, Time.current)
               pending_review_states << pending_review_state(issue, result)
               collect_scan_result(issue, result, prs_to_trigger, automation_results,
-                explicit_pr_decisions:)
+                explicit_pr_decisions:,
+                lifecycle: explicit_pr_decisions ? build_lifecycle_signals(project, issue) : nil)
               next
             end
           end
@@ -84,13 +85,13 @@ module Activities
         # etc.), roughly doubling gate-check DB queries per PR. Once the
         # strategy fully owns gate evaluation, scan_pr should stop evaluating
         # gates itself and defer to the signals/strategy path.
-        lifecycle = build_lifecycle_signals(project, issue) if explicit_pr_decisions
         scanned_count += 1
         issue.update_column(:last_pr_scan_at, Time.current)
         pending_review_states << pending_review_state(issue, result)
         if result
           collect_scan_result(issue, result, prs_to_trigger, automation_results,
-            explicit_pr_decisions:, lifecycle: lifecycle)
+            explicit_pr_decisions:,
+            lifecycle: explicit_pr_decisions ? build_lifecycle_signals(project, issue) : nil)
         end
       rescue Temporalio::Error::ApplicationError => e
         raise unless e.type == "RateLimit"
@@ -123,14 +124,12 @@ module Activities
 
     private
 
-    def collect_scan_result(issue, result, prs_to_trigger, automation_results,
-      explicit_pr_decisions:, lifecycle: nil)
-      if explicit_pr_decisions
-        automation_results << Automation::Evaluator.for(issue, explicit_pr_decisions: true)
-          .call(scan: result, lifecycle: lifecycle).to_h
-      else
-        prs_to_trigger << result
-      end
+    def collect_scan_result(issue, result, prs_to_trigger, automation_results, explicit_pr_decisions:, lifecycle:)
+      prs_to_trigger << result unless explicit_pr_decisions
+      return unless explicit_pr_decisions
+
+      automation_results << Automation::Evaluator.for(issue, explicit_pr_decisions: true)
+        .call(scan: result, lifecycle: lifecycle).to_h
     end
 
     def build_lifecycle_signals(project, issue)

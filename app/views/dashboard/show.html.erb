@@ -46,6 +46,10 @@
         <%= render "dashboard/queue_health", queue_depths: @queue_health.queue_depths, healthy: @queue_health.healthy? %>
       </div>
 
+      <div class="mt-6">
+        <%= render "dashboard/queue_preview", queue_preview: @queue_preview %>
+      </div>
+
       <div id="dashboard-alerts" class="mt-6 space-y-3"></div>
 
       <div class="mt-6">

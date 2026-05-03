@@ -83,6 +83,21 @@ RSpec.describe ExceptionHandler::IssueFiler do
       expect(incident.reload.github_issue_number).to eq(56)
     end
 
+    it "treats an incident with only github_issue_url as already filed" do
+      incident.update_columns(
+        github_issue_url: "https://github.com/acme/widgets/issues/78",
+        github_issue_number: nil,
+        action_taken: "issue_filed"
+      )
+      allow(client).to receive(:create_issue)
+      allow(client).to receive(:add_comment)
+
+      described_class.call(incident: incident, project: project)
+
+      expect(client).to have_received(:add_comment).with(project.full_name, 78, kind_of(String))
+      expect(client).not_to have_received(:create_issue)
+    end
+
     it "releases the filing claim after a GitHub failure so a later retry can file" do
       allow(client).to receive(:create_issue).and_raise(GithubClient::Error, "timeout")
 

@@ -77,6 +77,32 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Recent Activity")
       end
 
+      it "shows upcoming queue positions only for the signed-in user's projects" do
+        owned_project = create(:project, account: account, created_by: user, owner: "visible-owner", repo: "visible-repo")
+        other_user = create(:user, account: account)
+        hidden_project = create(:project, account: account, created_by: other_user, owner: "hidden-owner", repo: "hidden-repo")
+
+        create(:agent_run, :queued, :manual, project: owned_project, created_at: 2.minutes.ago)
+        create(:agent_run, :queued, :manual, project: hidden_project, created_at: 1.minute.ago)
+
+        get dashboard_path
+
+        expect(response.body).to include("Upcoming Queue")
+        expect(response.body).to include("visible-owner/visible-repo")
+        expect(response.body).to include("Waiting")
+        expect(response.body).not_to include("hidden-owner/hidden-repo")
+      end
+
+      it "shows orphaned queued projects for the account fallback owner" do
+        orphaned_project = create(:project, account: account, created_by: nil, owner: "fallback-owner", repo: "orphaned-repo")
+
+        create(:agent_run, :queued, :manual, project: orphaned_project)
+
+        get dashboard_path
+
+        expect(response.body).to include("fallback-owner/orphaned-repo")
+      end
+
       it "shows active runs and recent activity scoped to the account" do
         create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
         create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago, duration_seconds: 42)

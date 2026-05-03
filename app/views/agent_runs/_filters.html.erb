@@ -44,7 +44,7 @@
       <%= select_tag :sort,
         options_for_select([
           ["Newest first", "newest"],
-          ["Queue order (next to run)", "queue"]
+          ["Queue priority (approximate)", "queue"]
         ], params[:sort].presence || "newest"),
         id: :sort,
         class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>

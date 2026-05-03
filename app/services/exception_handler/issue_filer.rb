@@ -51,7 +51,7 @@ module ExceptionHandler
       @incident.with_lock do
         @incident.reload
 
-        return :add_comment if @incident.github_issue_number.present?
+        return :add_comment if github_issue_recorded?
         return :wait_for_filing if filing_claim_active?
 
         claim_incident!
@@ -78,7 +78,7 @@ module ExceptionHandler
       @incident.with_lock do
         @incident.reload
 
-        if @incident.github_issue_number.present?
+        if github_issue_recorded?
           add_comment_to_existing(client: client)
         else
           persist_new_issue(gh_issue)
@@ -101,7 +101,7 @@ module ExceptionHandler
     def release_claim!
       @incident.with_lock do
         @incident.reload
-        return if @incident.github_issue_number.present?
+        return if github_issue_recorded?
         return unless @incident.action_taken == "filing"
 
         @incident.update_columns(action_taken: "notified", updated_at: Time.current)
@@ -135,20 +135,35 @@ module ExceptionHandler
     end
 
     def add_comment_to_existing(client:)
-      return unless @incident.github_issue_number
+      issue_number = existing_github_issue_number
+      return unless issue_number
 
       client.add_comment(
         @project.full_name,
-        @incident.github_issue_number,
+        issue_number,
         occurrence_comment
       )
 
       Rails.logger.info(
         message: "exception_handler.issue_comment_added",
         incident_id: @incident.id,
-        issue_number: @incident.github_issue_number,
+        issue_number:,
         occurrence_count: @incident.occurrence_count
       )
+    end
+
+    def existing_github_issue_number
+      @incident.github_issue_number || github_issue_number_from_url
+    end
+
+    def github_issue_recorded?
+      @incident.github_issue_url.present? || existing_github_issue_number.present?
+    end
+
+    def github_issue_number_from_url
+      issue_url = @incident.github_issue_url.to_s
+      match = issue_url.match(%r{/issues/(\d+)(?:[/?#]|$)})
+      match&.captures&.first&.to_i
     end
 
     def issue_title

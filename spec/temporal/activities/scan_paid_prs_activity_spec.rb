@@ -113,6 +113,65 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when explicit PR decisions are disabled" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          paid_state: "completed")
+      end
+
+      before do
+        FeatureFlags.disable!(:explicit_pr_automation_decisions, project:)
+        pr_issue
+      end
+
+      it "returns only legacy trigger payloads" do
+        stub_github_for_pr(checks: [ { name: "rspec", conclusion: "failure" } ])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).not_to be_empty
+        expect(result[:automation_results]).to eq([])
+      end
+
+      it "does not build lifecycle signals for legacy trigger payloads" do
+        allow(activity).to receive(:scan_pr).and_return({ pr_number: 42, triggers: [ { type: "ci_failure" } ] })
+        allow(activity).to receive(:build_lifecycle_signals).and_call_original
+
+        activity.execute(project_id: project.id)
+
+        expect(activity).not_to have_received(:build_lifecycle_signals)
+      end
+
+      it "logs legacy trigger counts when rate limiting interrupts the scan" do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 43,
+          labels: [ "paid-generated", "paid-automation" ],
+          paid_state: "completed")
+        scan_count = 0
+        allow(activity).to receive(:scan_pr) do
+          scan_count += 1
+          raise Temporalio::Error::ApplicationError.new("rate limited", type: "RateLimit") if scan_count == 2
+
+          { pr_number: 42, triggers: [ { type: "ci_failure" } ] }
+        end
+        allow(Rails.logger).to receive(:warn)
+
+        activity.execute(project_id: project.id)
+
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(
+            message: "pr_scanner.rate_budget_exhausted_mid_scan",
+            project_id: project.id,
+            prs_collected: 1
+          )
+        )
+      end
+    end
+
     context "when rate limit is low" do
       let(:pr_issue) do
         create(:issue, :pull_request,
@@ -6068,6 +6127,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "with structured logging" do
       before do
+        FeatureFlags.disable!(:explicit_pr_automation_decisions, project:)
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
@@ -6085,6 +6145,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             prs_scanned: 1,
             prs_skipped_unchanged: 0,
             prs_triggered: 0
+          )
+        )
+      end
+
+      it "logs legacy trigger totals when explicit decisions are disabled" do
+        allow(Rails.logger).to receive(:info)
+        allow(activity).to receive(:scan_pr).and_return({ pr_number: 42, triggers: [ { type: "ci_failure" } ] })
+
+        activity.execute(project_id: project.id)
+
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(
+            message: "pr_scanner.scan_complete",
+            project_id: project.id,
+            prs_scanned: 1,
+            prs_skipped_unchanged: 0,
+            prs_triggered: 1
           )
         )
       end

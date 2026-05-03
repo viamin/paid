@@ -635,8 +635,10 @@ class AgentRun < ApplicationRecord
   }
 
   # Scope for the agent runs index page: orders ALL unfinished runs by queue
-  # priority so the user sees the exact processing order. Claimed queued runs
-  # (temporal_workflow_id set) sort ahead of unclaimed ones at the same tier.
+  # priority so the user sees an approximate scheduler sort. Claimed queued
+  # runs (temporal_workflow_id set) sort ahead of unclaimed ones at the same
+  # tier, but the scheduler's within-owner fair-queue boundary logic still
+  # makes the exact dequeue order dynamic.
   scope :queue_order_display, -> {
     unfinished
       .with(
@@ -660,6 +662,7 @@ class AgentRun < ApplicationRecord
       .reorder(
         STATUS_ORDER_SQL,
         QUEUE_PRIORITY_SQL,
+        USER_ACTIVE_COUNT_SQL,
         GOAL_PRIORITY_SQL,
         created_at: :asc,
         id: :asc
@@ -742,14 +745,17 @@ class AgentRun < ApplicationRecord
   # excluded so a "pause all" toggle can hold new starts while still
   # accepting new queue entries from the project trigger button.
   def self.peek_next_queued_run(exclude_ids: [])
-    scope = unclaimed_with_priority
+    scope = schedulable_queued_with_priority
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
-    scope = scope.joins(project: :account).where(accounts: { scheduler_paused_at: nil })
-    scope = scope.where(projects: { scheduler_paused_at: nil })
-    scope = scope.where(
-      "agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL"
-    )
     next_queued_run_from(scope)
+  end
+
+  def self.schedulable_queued_with_priority
+    queued_with_priority
+      .joins(project: :account)
+      .where(accounts: { scheduler_paused_at: nil })
+      .where(projects: { scheduler_paused_at: nil })
+      .where("agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL")
   end
 
   def self.next_queued_run_from(scope)
