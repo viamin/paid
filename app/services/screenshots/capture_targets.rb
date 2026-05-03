@@ -24,6 +24,10 @@ module Screenshots
       onboarding
       user_settings
       quality_dashboard
+      chat_sessions
+      ab_tests
+      style_guides
+      knowledge_search
     ].freeze
 
     HELPER_TARGETS = {
@@ -126,6 +130,45 @@ module Screenshots
       target_keys.map { |key| TARGETS.fetch(key) }
     end
 
+    # Maps a controller file path to the target keys whose pages that controller serves.
+    CONTROLLER_TARGETS = {
+      "dashboard_controller.rb" => [ :dashboard ],
+      "home_controller.rb" => [ :dashboard ],
+      "projects_controller.rb" => %i[projects project_show project_edit],
+      "agent_runs_controller.rb" => [ :agent_runs ],
+      "prompts_controller.rb" => [ :prompts ],
+      "prompt_reviews_controller.rb" => %i[prompt_reviews_queue prompt_reviews prompt_review_show],
+      "ab_tests_controller.rb" => %i[ab_tests ab_test_show],
+      "providers_controller.rb" => %i[providers providers_new providers_edit],
+      "provider_api_keys_controller.rb" => %i[provider_api_keys provider_api_key_show],
+      "integrations_controller.rb" => [ :integrations ],
+      "integration_credentials_controller.rb" => %i[integration_credentials integration_credential_show],
+      "github_tokens_controller.rb" => %i[github_tokens github_token_show],
+      "linear_tokens_controller.rb" => %i[linear_tokens linear_token_show],
+      "notifications_controller.rb" => [ :notifications ],
+      "onboarding_controller.rb" => [ :onboarding ],
+      "user_settings_controller.rb" => [ :user_settings ],
+      "tenant_configurations_controller.rb" => [ :tenant_configuration ],
+      "service_containers_controller.rb" => %i[service_containers service_container_show],
+      "style_guides_controller.rb" => %i[style_guides style_guide_show],
+      "chat_sessions_controller.rb" => %i[chat_sessions chat_session_show],
+      "chat_messages_controller.rb" => [ :chat_session_show ],
+      "quality_dashboards_controller.rb" => [ :quality_dashboard ],
+      "workflow_statuses_controller.rb" => [ :workflow_status ]
+    }.freeze
+
+    # Nested controller path => target keys
+    NESTED_CONTROLLER_TARGETS = {
+      "projects/agent_runs_controller.rb" => %i[project_agent_runs project_agent_run_show],
+      "projects/cost_dashboards_controller.rb" => [ :project_cost_dashboard ],
+      "projects/cost_snapshots_controller.rb" => [ :project_cost_snapshot ],
+      "projects/quality_dashboards_controller.rb" => [ :project_quality_dashboard ],
+      "knowledge/search_controller.rb" => %i[knowledge_search project_knowledge_search],
+      "knowledge/browse_controller.rb" => %i[project_knowledge_browse project_knowledge_browse_show],
+      "knowledge/artifacts_controller.rb" => [ :project_knowledge_artifact_show ],
+      "knowledge/context_intake_controller.rb" => [ :project_context_intake ]
+    }.freeze
+
     def targets_for(path)
       return SHARED_TARGET_KEYS if shared_ui_file?(path)
 
@@ -135,6 +178,10 @@ module Screenshots
         SHARED_TARGET_KEYS
       elsif path.start_with?("app/helpers/")
         targets_for_helper(path)
+      elsif path.start_with?("app/controllers/")
+        targets_for_controller(path.delete_prefix("app/controllers/"))
+      elsif path.start_with?("public/")
+        SHARED_TARGET_KEYS
       else
         []
       end
@@ -241,6 +288,17 @@ module Screenshots
       end
     end
 
+    def targets_for_controller(relative_path)
+      # Skip concerns and base controllers — they don't map to specific pages
+      return [] if relative_path.start_with?("concerns/") || relative_path == "application_controller.rb"
+      # Skip API controllers — they don't render HTML
+      return [] if relative_path.start_with?("api/")
+
+      NESTED_CONTROLLER_TARGETS[relative_path] ||
+        CONTROLLER_TARGETS[File.basename(relative_path)] ||
+        SHARED_TARGET_KEYS
+    end
+
     def rest_resource_targets(relative_path, prefix, index:, new:, show:, edit:)
       leaf = relative_path.delete_prefix("#{prefix}/")
 
@@ -249,6 +307,7 @@ module Screenshots
       when "new.html.erb" then [ new ]
       when "show.html.erb" then [ show ]
       when "edit.html.erb" then [ edit ]
+      when /\A_/ then [ new, edit ].uniq # Partials are typically rendered from new/edit pages
       else
         [ show ]
       end

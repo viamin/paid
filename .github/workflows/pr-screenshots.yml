@@ -98,7 +98,7 @@ jobs:
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
       SCREENSHOT_OUTPUT_DIR: tmp/screenshots
-      CHROME_URL: ws://localhost:9222
+      CHROME_URL: http://localhost:9222
 
     steps:
       - name: Checkout code
@@ -144,9 +144,12 @@ jobs:
 
       - name: Configure remote Capybara host
         run: |
-          host_ip="$(ip route | awk '/default/ {print $3; exit}')"
+          # Service containers share the runner's Docker network; use the
+          # runner's primary IP (not the upstream gateway) so Chrome can
+          # connect back to Puma.
+          host_ip="$(hostname -I | awk '{print $1}')"
           if [ -z "$host_ip" ]; then
-            echo "::error::Could not determine the runner gateway IP for the Chrome service container."
+            echo "::error::Could not determine the runner host IP for the Chrome service container."
             exit 1
           fi
           echo "CAPYBARA_APP_HOST=$host_ip" >> "$GITHUB_ENV"
@@ -171,7 +174,10 @@ jobs:
           retention-days: 30
 
       - name: Comment on PR with screenshot summary
-        if: always() && steps.upload_screenshots.outcome == 'success'
+        if: >-
+          always()
+          && steps.upload_screenshots.outcome == 'success'
+          && github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -223,3 +229,38 @@ jobs:
               --method POST \
               --field "body=@-"
           fi
+
+  # When a synchronize event removes all UI changes, update the stale comment
+  # so reviewers aren't misled by outdated screenshots.
+  cleanup:
+    needs: detect
+    if: >-
+      needs.detect.outputs.has_ui_changes == 'false'
+      && github.event.action == 'synchronize'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update stale screenshot comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          marker="<!-- pr-screenshots-comment -->"
+          existing_comment_id=$(gh api \
+            "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" \
+            2>/dev/null | head -1)
+
+          if [ -z "$existing_comment_id" ]; then
+            echo "No existing screenshot comment to clean up."
+            exit 0
+          fi
+
+          body="${marker}\n## 📸 UI Screenshots\n\n"
+          body+="This PR **no longer contains UI-facing changes**. "
+          body+="The previously captured screenshots are outdated and can be ignored.\n"
+
+          printf '%b' "$body" | gh api \
+            "repos/${{ github.repository }}/issues/comments/${existing_comment_id}" \
+            --method PATCH \
+            --field "body=@-"

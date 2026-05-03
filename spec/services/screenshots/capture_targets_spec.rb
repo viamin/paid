@@ -51,5 +51,36 @@ RSpec.describe Screenshots::CaptureTargets do
 
       expect(targets.map(&:slug)).to eq([ "project_knowledge_artifact_show" ])
     end
+
+    it "maps controller files to their corresponding page targets" do
+      targets = described_class.call(changed_files: [ "app/controllers/dashboard_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "dashboard" ])
+    end
+
+    it "maps nested controller files to their corresponding page targets" do
+      targets = described_class.call(changed_files: [ "app/controllers/projects/cost_dashboards_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_cost_dashboard" ])
+    end
+
+    it "maps public assets to shared UI targets" do
+      targets = described_class.call(changed_files: [ "public/icon.png" ])
+
+      expect(targets.map(&:slug)).to include("sign_in", "dashboard", "projects")
+    end
+
+    it "maps view partials to both new and edit targets" do
+      targets = described_class.call(changed_files: [ "app/views/service_containers/_form.html.erb" ])
+
+      expect(targets.map(&:slug)).to contain_exactly("service_container_new", "service_container_edit")
+    end
+
+    it "maps shared targets to include chat and ab_test pages" do
+      targets = described_class.call(changed_files: [ "app/javascript/controllers/modal_controller.js" ])
+
+      slugs = targets.map(&:slug)
+      expect(slugs).to include("chat_sessions", "ab_tests", "style_guides", "knowledge_search")
+    end
   end
 end

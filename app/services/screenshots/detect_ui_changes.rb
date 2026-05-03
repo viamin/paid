@@ -26,7 +26,9 @@ module Screenshots
       %r{\Aapp/helpers/.*_helper\.rb\z},
       %r{\Aapp/components/},
       %r{\Aapp/frontend/},
-      %r{\Aconfig/locales/.*\.yml\z}
+      %r{\Aconfig/locales/.*\.yml\z},
+      %r{\Aapp/controllers/(?!concerns/|api/).*_controller\.rb\z},
+      %r{\Apublic/.*\.(?:png|svg|ico|webmanifest)\z}
     ].freeze
 
     # @param changed_files [Array<String>] list of file paths changed in the PR

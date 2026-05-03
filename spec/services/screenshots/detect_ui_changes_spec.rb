@@ -133,5 +133,40 @@ RSpec.describe Screenshots::DetectUiChanges do
       expect(result[:ui_changes?]).to be false
       expect(result[:ui_files]).to be_empty
     end
+
+    it "detects controller changes that affect rendered pages" do
+      result = described_class.call(changed_files: [ "app/controllers/dashboard_controller.rb" ])
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "app/controllers/dashboard_controller.rb" ])
+    end
+
+    it "ignores API controllers that do not render HTML" do
+      result = described_class.call(changed_files: [ "app/controllers/api/secrets_proxy_controller.rb" ])
+
+      expect(result[:ui_changes?]).to be false
+      expect(result[:ui_files]).to be_empty
+    end
+
+    it "ignores controller concerns" do
+      result = described_class.call(changed_files: [ "app/controllers/concerns/agent_run_cancellable.rb" ])
+
+      expect(result[:ui_changes?]).to be false
+      expect(result[:ui_files]).to be_empty
+    end
+
+    it "detects static browser-facing asset changes" do
+      result = described_class.call(changed_files: [ "public/icon.svg" ])
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "public/icon.svg" ])
+    end
+
+    it "ignores non-visual public files" do
+      result = described_class.call(changed_files: [ "public/robots.txt", "public/404.html" ])
+
+      expect(result[:ui_changes?]).to be false
+      expect(result[:ui_files]).to be_empty
+    end
   end
 end

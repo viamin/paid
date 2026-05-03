@@ -172,12 +172,11 @@ module Screenshots
         record.allowed_github_usernames = [ user.email ]
       end
 
-      provider = user.providers.find_or_create_by!(provider_key: "cursor", auth_type: "subscription") do |record|
-        record.enabled_for_agent_runs = true
-        record.enabled_for_fallback = true
-        record.fallback_role = "standard"
-        record.config = {}
-      end
+      # Reuse the default subscription provider created by User#ensure_default_provider
+      # (after_create callback) rather than creating a second subscription entry which
+      # could conflict with the per-(user, provider_key, auth_type) uniqueness validation.
+      provider = user.providers.subscription.first!
+      provider.update!(enabled_for_agent_runs: true, enabled_for_fallback: true)
 
       service_container = ServiceContainer.find_or_create_by!(account: account, name: "Screenshot Postgres") do |record|
         record.image = "postgres:16"
