@@ -59,12 +59,15 @@ RSpec.describe Automation::ReviewMethods::CiAction do
     end
   end
 
-  it "produces no decision (dispatch is owned by the workflow layer)" do
+  it "produces a dispatch decision when the action must be triggered" do
     plugin = build_plugin(
       config: build_config(ci_action: { "enabled" => true, "action_name" => "Claude Code Review" }),
       triggers: [ { type: "ci_action_pending", dispatch_required: true } ]
     )
 
-    expect(plugin.decision).to be_nil
+    expect(plugin.decision.to_h).to eq(
+      type: "dispatch_claude_review",
+      pr_number: 50
+    )
   end
 end

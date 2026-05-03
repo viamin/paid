@@ -35,6 +35,12 @@ module Automation
         })
       end
 
+      def dispatch_claude_review(pr_number:)
+        new(type: "dispatch_claude_review", payload: {
+          pr_number: pr_number
+        })
+      end
+
       def mark_ready(issue_id:, pr_number:, owner_reviewer_login: nil)
         new(type: "mark_ready", payload: {
           issue_id: issue_id,

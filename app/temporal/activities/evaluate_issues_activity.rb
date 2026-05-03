@@ -25,18 +25,7 @@ module Activities
 
     def evaluate_issue(project, issue_id, explicit_pr_decisions:)
       issue = project.issues.find(issue_id)
-      result = Automation::Evaluator.for(issue, explicit_pr_decisions:).call
-
-      update_paid_state!(issue, result)
-
-      logger.info(
-        message: "github_sync.detect_labels",
-        project_id: project.id,
-        issue_id: issue_id,
-        decision_types: result.decisions.map(&:type)
-      )
-
-      serialize_result(result, issue, project_id: project.id, issue_id:)
+      Automation::IssueEvaluation.call(project:, issue:, explicit_pr_decisions:, logger:)
     rescue ActiveRecord::RecordNotFound => e
       logger.warn(
         message: "evaluate_issues.issue_not_found",
@@ -57,47 +46,6 @@ module Activities
         error: e.message
       )
       nil
-    end
-
-    def update_paid_state!(issue, result)
-      first_decision = result.decisions.reject { |decision| decision.type == "noop" }.first
-      return unless first_decision
-
-      new_state = case first_decision.type
-      when "queue_create_pr_run"
-        "in_progress"
-      when "start_planning"
-        "planning"
-      end
-
-      issue.update!(paid_state: new_state) if new_state
-    end
-
-    def serialize_result(result, issue, project_id:, issue_id:)
-      serialized = result.to_h.merge(
-        issue_id: issue_id,
-        project_id: project_id,
-        action: action_for(result)
-      )
-
-      if issue.is_pull_request? && serialized[:action] == "execute_agent"
-        serialized[:source_pull_request_number] = issue.github_number
-      end
-
-      serialized
-    end
-
-    def action_for(result)
-      first_decision = result.decisions.reject { |decision| decision.type == "noop" }.first
-
-      case first_decision&.type
-      when "queue_create_pr_run"
-        "execute_agent"
-      when "start_planning"
-        "start_planning"
-      else
-        "none"
-      end
     end
   end
 end

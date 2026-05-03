@@ -26,9 +26,13 @@ RSpec.describe Workflows::GitHubPollWorkflow do
   end
 
   describe "request_sync signal" do
-    it "defines a request_sync signal handler" do
-      info = described_class._workflow_definition
-      expect(info.signals).to include("request_sync")
+    it "registers request_sync as a Temporal signal" do
+      # Temporal stores declared workflow_signal handlers on the class as they
+      # are defined. Inspecting that registry avoids forcing lazy definition
+      # construction, which is brittle in the current gem load order.
+      signal_names = (described_class.instance_variable_get(:@workflow_signals) || {}).keys.map(&:to_s)
+
+      expect(signal_names).to include("request_sync")
     end
 
     it "sets @sync_requested and calls cancel proc" do
@@ -48,6 +52,44 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect { workflow.request_sync }.not_to raise_error
       expect(workflow.instance_variable_get(:@sync_requested)).to be true
+    end
+  end
+
+  describe "#execute_automation_decision" do
+    let(:project_id) { 1 }
+
+    before do
+      allow(workflow).to receive(:run_activity)
+      allow(workflow).to receive(:quality_gate_allows_run?).and_return(true)
+    end
+
+    it "routes dispatch_claude_review decisions to DispatchClaudeReviewActivity" do
+      workflow.execute_automation_decision(
+        project_id:,
+        decision: { type: "dispatch_claude_review", pr_number: 42 }
+      )
+
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::DispatchClaudeReviewActivity,
+        { project_id:, pr_number: 42 },
+        timeout: 60
+      )
+    end
+
+    it "warns when a decision type is not implemented" do
+      logger = instance_double(Logger, warn: true)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
+
+      workflow.execute_automation_decision(
+        project_id:,
+        decision: { type: "future_decision_type" }
+      )
+
+      expect(logger).to have_received(:warn).with(
+        message: "workflow_decision_executor.unknown_decision_type",
+        project_id: project_id,
+        type: "future_decision_type"
+      )
     end
   end
 
@@ -1684,6 +1726,25 @@ RSpec.describe Workflows::GitHubPollWorkflow do
   describe "initial sync for existing PRs" do
     let(:workflow) { described_class.new }
     let(:project_id) { 1 }
+    let(:legacy_pr_scan_result) do
+      {
+        prs_to_trigger: [
+          {
+            issue_id: 10,
+            pr_number: 42,
+            phase: "ready",
+            triggers: [ { type: "paid_agent_review_pending" } ]
+          }
+        ],
+        automation_results: [
+          {
+            decisions: [
+              { type: "queue_create_pr_run", issue_id: 10, source_pull_request_number: 42 }
+            ]
+          }
+        ]
+      }
+    end
 
     def stub_initial_sync(trigger_result:)
       allow(workflow).to receive(:run_activity)
@@ -1805,6 +1866,25 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::QueueAgentRunActivity,
           hash_including(project_id: project_id, issue_id: 10,
             source_pull_request_number: 42, goal: "review"),
+          timeout: 30)
+    end
+
+    it "ignores explicit PR automation results when the rollout flag is disabled" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
+
+      workflow.send(:handle_pr_scan_results, legacy_pr_scan_result, project_id)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(project_id: project_id, issue_id: 10,
+            source_pull_request_number: 42, goal: "review"),
+          timeout: 30)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(project_id: project_id, issue_id: 10,
+            source_pull_request_number: 42, goal: "create_pr"),
           timeout: 30)
     end
   end
