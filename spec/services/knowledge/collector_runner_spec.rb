@@ -182,14 +182,15 @@ RSpec.describe Knowledge::CollectorRunner do
         described_class.register("test_collector", test_collector_class)
       end
 
-      def create_orphaned_artifact(commit_sha:)
+      def create_orphaned_artifact(commit_sha:, collector_type: "test_collector", artifact_type: "orphaned_type",
+        identifier: "OrphanedThing", content: "old")
         project_version = ProjectVersion.find_by!(commit_sha:)
-        old_run = CollectorRun.find_by!(collector_type: "test_collector", project_version:)
+        old_run = CollectorRun.find_by!(collector_type:, project_version:)
 
         create(:knowledge_artifact,
           collector_run: old_run, project: project,
-          collector_type: old_run.collector_type, artifact_type: "orphaned_type",
-          identifier: "OrphanedThing", content: "old", content_hash: Digest::SHA256.hexdigest("old"))
+          collector_type: old_run.collector_type, artifact_type:,
+          identifier:, content:, content_hash: Digest::SHA256.hexdigest(content))
       end
 
       it "marks the collector run as skipped with a reason" do
@@ -247,7 +248,13 @@ RSpec.describe Knowledge::CollectorRunner do
 
         old_sha = "g" * 40
         described_class.call(project: project, commit_sha: old_sha, committed_at: 2.hours.ago)
-        extra = create_orphaned_artifact(commit_sha: old_sha)
+        extra = create_orphaned_artifact(
+          commit_sha: old_sha,
+          collector_type: "preserving_skip_collector",
+          artifact_type: "routes",
+          identifier: "GET /widgets",
+          content: "old routes"
+        )
 
         new_sha = "h" * 40
         result = described_class.call(project: project, commit_sha: new_sha, committed_at: 1.hour.ago)
@@ -258,6 +265,29 @@ RSpec.describe Knowledge::CollectorRunner do
           preserve_existing_artifacts: true
         )
         expect(extra.reload.status).to eq("active")
+      end
+
+      it "still marks other collectors' orphaned artifacts as stale" do
+        described_class.reset_registry!
+        described_class.register("preserving_skip_collector", preserving_skip_collector_class)
+        described_class.register("test_collector", test_collector_class)
+
+        old_sha = "i" * 40
+        described_class.call(project: project, commit_sha: old_sha, committed_at: 2.hours.ago)
+        extra = create_orphaned_artifact(commit_sha: old_sha)
+        preserved_artifact = create_orphaned_artifact(
+          commit_sha: old_sha,
+          collector_type: "preserving_skip_collector",
+          artifact_type: "routes",
+          identifier: "GET /widgets",
+          content: "old routes"
+        )
+
+        new_sha = "j" * 40
+        described_class.call(project: project, commit_sha: new_sha, committed_at: 1.hour.ago)
+
+        expect(extra.reload.status).to eq("stale")
+        expect(preserved_artifact.reload.status).to eq("active")
       end
     end
 

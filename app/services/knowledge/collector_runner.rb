@@ -35,7 +35,9 @@ module Knowledge
       project_version = resolve_project_version
       results = run_collectors(project_version)
 
-      mark_stale_artifacts(project_version) if should_mark_stale_artifacts?(results)
+      if should_mark_stale_artifacts?(results)
+        mark_stale_artifacts(project_version, preserved_collector_types(results))
+      end
 
       {
         project_version: project_version,
@@ -124,17 +126,18 @@ module Knowledge
     def should_mark_stale_artifacts?(results)
       return false unless collector_classes.any?
 
-      # Only mark stale artifacts when every collector either completed or
-      # skipped in a way that still produced a safe replacement boundary.
       results.all? do |result|
-        next true if result[:status] == "completed"
-        next false unless result[:status] == "skipped"
-
-        !result[:preserve_existing_artifacts]
+        %w[completed skipped].include?(result[:status])
       end
     end
 
-    def mark_stale_artifacts(project_version)
+    def preserved_collector_types(results)
+      results.filter_map do |result|
+        result[:collector_type] if result[:status] == "skipped" && result[:preserve_existing_artifacts]
+      end
+    end
+
+    def mark_stale_artifacts(project_version, preserved_types = [])
       current_run_ids = project_version.collector_runs.select(:id)
 
       # We can only safely determine "older" versions when we know the commit time.
@@ -155,6 +158,7 @@ module Knowledge
           .where(project: project, status: "active")
           .where.not(collector_run_id: current_run_ids)
           .where(collector_runs: { project_version_id: older_version_ids })
+        stale_artifacts = stale_artifacts.where.not(collector_type: preserved_types) if preserved_types.any?
 
         KnowledgeChunk
           .where(knowledge_artifact_id: stale_artifacts.select(:id), status: "active")
