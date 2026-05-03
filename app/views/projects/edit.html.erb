@@ -272,7 +272,6 @@
                   <input type="checkbox" name="project[review_settings][methods][copilot][enabled]" value="1" id="review_copilot_enabled"
                     <%= "checked" if copilot["enabled"] %>
                     aria-controls="review_copilot_settings"
-                    aria-expanded="<%= copilot["enabled"] ? "true" : "false" %>"
                     class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
                     data-action="change->collapsible-panel#toggle"
                     data-collapsible-panel-target="checkbox" />
@@ -281,8 +280,7 @@
                 </div>
                 <div id="review_copilot_settings"
                   class="ml-7 grid grid-cols-2 gap-3 transition-all duration-200 ease-in-out <%= copilot["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
-                  aria-hidden="<%= copilot["enabled"] ? "false" : "true" %>"
-                  <%= "hidden" unless copilot["enabled"] %>
+                  <%= "inert" unless copilot["enabled"] %>
                   data-collapsible-panel-target="panel">
                   <div>
                     <label for="review_copilot_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
@@ -321,7 +319,6 @@
                   <input type="checkbox" name="project[review_settings][methods][paid_agent][enabled]" value="1" id="review_paid_agent_enabled"
                     <%= "checked" if paid["enabled"] %>
                     aria-controls="review_paid_agent_settings"
-                    aria-expanded="<%= paid["enabled"] ? "true" : "false" %>"
                     class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
                     data-action="change->collapsible-panel#toggle"
                     data-collapsible-panel-target="checkbox" />
@@ -329,8 +326,7 @@
                 </div>
                 <div id="review_paid_agent_settings"
                   class="ml-7 grid grid-cols-2 gap-3 transition-all duration-200 ease-in-out <%= paid["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
-                  aria-hidden="<%= paid["enabled"] ? "false" : "true" %>"
-                  <%= "hidden" unless paid["enabled"] %>
+                  <%= "inert" unless paid["enabled"] %>
                   data-collapsible-panel-target="panel">
                   <div>
                     <label for="review_paid_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
@@ -369,7 +365,6 @@
                   <input type="checkbox" name="project[review_settings][methods][codex][enabled]" value="1" id="review_codex_enabled"
                     <%= "checked" if codex["enabled"] %>
                     aria-controls="review_codex_settings"
-                    aria-expanded="<%= codex["enabled"] ? "true" : "false" %>"
                     class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
                     data-action="change->collapsible-panel#toggle"
                     data-collapsible-panel-target="checkbox" />
@@ -378,8 +373,7 @@
                 </div>
                 <div id="review_codex_settings"
                   class="space-y-3 transition-all duration-200 ease-in-out <%= codex["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
-                  aria-hidden="<%= codex["enabled"] ? "false" : "true" %>"
-                  <%= "hidden" unless codex["enabled"] %>
+                  <%= "inert" unless codex["enabled"] %>
                   data-collapsible-panel-target="panel">
                   <p class="ml-7 text-xs text-gray-500">Waits for the <code>chatgpt-codex-connector</code> bot to review the PR and resolve its threads before advancing.</p>
                   <div class="ml-7 grid grid-cols-2 gap-3">
@@ -421,7 +415,6 @@
                   <input type="checkbox" name="project[review_settings][methods][ci_action][enabled]" value="1" id="review_ci_action_enabled"
                     <%= "checked" if ci["enabled"] %>
                     aria-controls="review_ci_action_settings"
-                    aria-expanded="<%= ci["enabled"] ? "true" : "false" %>"
                     class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
                     data-action="change->collapsible-panel#toggle"
                     data-collapsible-panel-target="checkbox" />
@@ -429,8 +422,7 @@
                 </div>
                 <div id="review_ci_action_settings"
                   class="ml-7 space-y-3 transition-all duration-200 ease-in-out <%= ci["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
-                  aria-hidden="<%= ci["enabled"] ? "false" : "true" %>"
-                  <%= "hidden" unless ci["enabled"] %>
+                  <%= "inert" unless ci["enabled"] %>
                   data-collapsible-panel-target="panel">
                   <div>
                     <label for="review_ci_action_name" class="block text-xs font-medium text-gray-600">Action Name</label>
@@ -481,7 +473,6 @@
                   <input type="checkbox" name="project[review_settings][methods][manual][enabled]" value="1" id="review_manual_enabled"
                     <%= "checked" if manual["enabled"] %>
                     aria-controls="review_manual_settings"
-                    aria-expanded="<%= manual["enabled"] ? "true" : "false" %>"
                     class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
                     data-action="change->collapsible-panel#toggle"
                     data-collapsible-panel-target="checkbox" />
@@ -489,8 +480,7 @@
                 </div>
                 <div id="review_manual_settings"
                   class="ml-7 space-y-3 transition-all duration-200 ease-in-out <%= manual["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
-                  aria-hidden="<%= manual["enabled"] ? "false" : "true" %>"
-                  <%= "hidden" unless manual["enabled"] %>
+                  <%= "inert" unless manual["enabled"] %>
                   data-collapsible-panel-target="panel">
                   <div>
                     <label for="review_manual_reviewer_login" class="block text-xs font-medium text-gray-600">Reviewer Login</label>

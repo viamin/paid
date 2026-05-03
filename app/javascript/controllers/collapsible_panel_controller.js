@@ -7,22 +7,21 @@ export default class extends Controller {
   static targets = ["checkbox", "panel"]
 
   connect() {
-    this.toggle()
+    this.applyState()
   }
 
   toggle() {
+    this.applyState()
+  }
+
+  applyState() {
     const expanded = this.checkboxTarget.checked
 
     this.checkboxTarget.setAttribute("aria-expanded", expanded.toString())
-    this.panelTarget.hidden = !expanded
     this.panelTarget.setAttribute("aria-hidden", (!expanded).toString())
+    this.panelTarget.inert = !expanded
 
-    COLLAPSED_CLASSES.forEach((className) => {
-      this.panelTarget.classList.toggle(className, !expanded)
-    })
-
-    EXPANDED_CLASSES.forEach((className) => {
-      this.panelTarget.classList.toggle(className, expanded)
-    })
+    COLLAPSED_CLASSES.forEach((cls) => this.panelTarget.classList.toggle(cls, !expanded))
+    EXPANDED_CLASSES.forEach((cls) => this.panelTarget.classList.toggle(cls, expanded))
   }
 }

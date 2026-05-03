@@ -1061,11 +1061,9 @@ RSpec.describe "Projects" do
         checkbox = doc.at_css("#review_copilot_enabled")
 
         expect(panel).to be_present
-        expect(panel["hidden"]).to eq("")
+        expect(panel.has_attribute?("inert")).to be true
         expect(panel["data-collapsible-panel-target"]).to eq("panel")
-        expect(panel["aria-hidden"]).to eq("true")
         expect(checkbox["data-action"]).to eq("change->collapsible-panel#toggle")
-        expect(checkbox["aria-expanded"]).to eq("false")
       end
 
       it "shows review method settings for enabled review types" do
@@ -1087,10 +1085,8 @@ RSpec.describe "Projects" do
         checkbox = doc.at_css("#review_manual_enabled")
 
         expect(panel).to be_present
-        expect(panel["hidden"]).to be_nil
+        expect(panel.has_attribute?("inert")).to be false
         expect(panel["class"]).to include("max-h-[2000px]")
-        expect(panel["aria-hidden"]).to eq("false")
-        expect(checkbox["aria-expanded"]).to eq("true")
       end
     end
   end
