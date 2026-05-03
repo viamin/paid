@@ -956,6 +956,31 @@ RSpec.describe Activities::RunAgentActivity do
     expect(error.message).to include("Post-run #{operation} failed after 3 attempts")
   end
 
+  def codex_auth_expired_output
+    Containers::Provision::Result.failure(
+      error: "exit 1",
+      stdout: "",
+      stderr: <<~STDERR,
+        ERROR codex_core::auth: Failed to refresh token: 401 Unauthorized
+        "message": "Your refresh token has already been used to generate a new access token. Please try signing in again."
+        "code": "refresh_token_reused"
+        ERROR codex_core::auth: Failed to refresh token: Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.
+      STDERR
+      exit_code: 1
+    )
+  end
+
+  def expect_preflight_failure_log(activity, agent_run_id, provider:, reason:)
+    expect(activity.send(:logger)).to have_received(:warn).with(
+      hash_including(
+        message: "agent_execution.preflight_failed",
+        provider: provider,
+        agent_run_id: agent_run_id,
+        reason: include(reason)
+      )
+    )
+  end
+
   def wrap_error(inner_error, message = "wrapped failure")
     begin
       raise inner_error
@@ -1600,28 +1625,36 @@ RSpec.describe Activities::RunAgentActivity do
           agent_type: "codex",
           container_id: "abc123")
       end
-      let(:auth_expired_output) do
-        Containers::Provision::Result.failure(
-          error: "exit 1",
-          stdout: "",
-          stderr: <<~STDERR,
-            ERROR codex_core::auth: Failed to refresh token: 401 Unauthorized
-            "message": "Your refresh token has already been used to generate a new access token. Please try signing in again."
-            "code": "refresh_token_reused"
-            ERROR codex_core::auth: Failed to refresh token: Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.
-          STDERR
-          exit_code: 1
-        )
-      end
 
       before do
         user.providers.find_or_create_by!(provider_key: "cursor")
         user.settings.update!(fallback_enabled: true, fallback_providers: [ "cursor" ])
+        allow(activity).to receive(:logger).and_return(instance_double(ActiveSupport::Logger, info: nil, warn: nil, error: nil))
         allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
-        allow(container_service).to receive(:execute).and_return(auth_expired_output)
       end
 
-      it "marks the run as auth_expired and does not fall back" do
+      it "falls back when preflight detects expired auth" do
+        allow(container_service).to receive(:execute).and_return(codex_auth_expired_output, exec_success)
+        allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        agent_run.reload
+        expect(result).to include(success: true, final_provider: "cursor")
+        expect(agent_run.status).to eq("running")
+        expect(agent_run.providers_attempted).to contain_exactly(
+          hash_including("provider" => "codex", "success" => false, "error_type" => "error"),
+          hash_including("provider" => "cursor", "success" => true)
+        )
+        expect(agent_run.provider_switches).to eq(1)
+        expect(container_service).to have_received(:execute).twice
+        expect_preflight_failure_log(activity, agent_run.id, provider: "codex", reason: "refresh_token_reused")
+      end
+
+      it "marks the run as auth_expired when the main execution fails after preflight succeeds" do
+        allow(container_service).to receive(:execute).and_return(exec_success, codex_auth_expired_output)
+
         expect {
           activity.execute(agent_run_id: agent_run.id)
         }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
@@ -1634,10 +1667,10 @@ RSpec.describe Activities::RunAgentActivity do
           hash_including("provider" => "codex", "success" => false, "error_type" => "auth_expired")
         )
         expect(agent_run.provider_switches).to eq(0)
-        expect(container_service).to have_received(:execute).once
+        expect(container_service).to have_received(:execute).twice
       end
 
-      it "treats generic refresh failures as ordinary provider errors" do
+      it "treats generic refresh failures during preflight as ordinary provider errors" do
         generic_refresh_failure = Containers::Provision::Result.failure(
           error: "exit 1",
           stdout: "",
@@ -1659,6 +1692,22 @@ RSpec.describe Activities::RunAgentActivity do
         )
         expect(agent_run.provider_switches).to eq(1)
         expect(container_service).to have_received(:execute).twice
+      end
+
+      it "uses a short timeout for codex preflight" do
+        allow(container_service).to receive(:execute).and_return(codex_auth_expired_output, exec_success)
+        allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(container_service).to have_received(:execute).with(
+          array_including("Reply with exactly OK."),
+          hash_including(
+            timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS,
+            idle_timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS
+          )
+        )
       end
     end
 

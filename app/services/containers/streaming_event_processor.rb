@@ -36,12 +36,7 @@ module Containers
       return nil unless stripped.start_with?("{")
 
       parsed = parse_jsonl_event(stripped)
-      return nil unless parsed
-
-      event_type = parsed["type"].to_s
-      return nil if event_type.blank?
-
-      { type: classify_event(event_type), event: parsed, raw_type: event_type }
+      normalize_parsed_event(parsed)
     end
 
     # Processes a parsed event, updating internal state and returning an action
@@ -97,10 +92,13 @@ module Containers
 
     def parse_jsonl_event(line)
       if harness_streaming_available?
-        AgentHarness::Providers::Codex.parse_streaming_event(line)
+        parsed = AgentHarness::Providers::Codex.parse_streaming_event(line)
+        return parsed if parsed
       else
-        fallback_parse(line)
+        return fallback_parse(line)
       end
+
+      fallback_parse(line)
     end
 
     def harness_streaming_available?
@@ -127,6 +125,74 @@ module Containers
       elsif ERROR_EVENT_TYPES.include?(event_type)
         :error
       end
+    end
+
+    def normalize_parsed_event(parsed)
+      case parsed
+      when Hash
+        raw_type = parsed["type"].to_s
+        return nil if raw_type.blank?
+
+        { type: classify_event(raw_type), event: parsed, raw_type: raw_type }
+      else
+        normalize_harness_streaming_event(parsed)
+      end
+    end
+
+    def normalize_harness_streaming_event(parsed)
+      return nil unless parsed.respond_to?(:type) && parsed.respond_to?(:raw_event)
+
+      raw_type = extract_harness_raw_type(parsed)
+      classified_type = classify_event(raw_type) || classify_harness_event_type(parsed.type)
+      return nil unless classified_type
+
+      {
+        type: classified_type,
+        event: harness_event_payload(parsed, raw_type),
+        raw_type: raw_type
+      }
+    end
+
+    def extract_harness_raw_type(parsed)
+      raw_event = parsed.raw_event
+      return raw_event.dig("payload", "type").to_s if raw_event.is_a?(Hash) && raw_event["type"] == "event_msg"
+      return raw_event["type"].to_s if raw_event.is_a?(Hash)
+
+      parsed.type.to_s
+    end
+
+    def classify_harness_event_type(event_type)
+      case event_type.to_sym
+      when :progress, :token_usage
+        :progress
+      when :turn_complete
+        :turn_complete
+      when :turn_failed
+        :turn_failed
+      when :error
+        :error
+      end
+    end
+
+    def harness_event_payload(parsed, raw_type)
+      tokens = parsed.tokens.is_a?(Hash) ? parsed.tokens : {}
+      raw_event = parsed.raw_event.is_a?(Hash) ? parsed.raw_event : {}
+      usage = {
+        "input_tokens" => tokens[:input] || tokens["input"],
+        "output_tokens" => tokens[:output] || tokens["output"],
+        "total_tokens" => tokens[:total] || tokens["total"]
+      }.compact
+
+      {
+        "type" => raw_type,
+        "turn" => parsed.turn,
+        "message" => parsed.error_message,
+        "tool_name" => parsed.tool_name,
+        "duration_ms" => raw_event["duration_ms"] || raw_event.dig("payload", "duration_ms"),
+        "usage" => usage.presence,
+        "input_tokens" => usage["input_tokens"],
+        "output_tokens" => usage["output_tokens"]
+      }.compact
     end
 
     def log_progress_event(event)

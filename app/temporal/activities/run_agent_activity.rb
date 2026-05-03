@@ -73,6 +73,7 @@ module Activities
     DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
     DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
     DEFAULT_CREATE_PR_IDLE_TIMEOUT = 300   # 5 minutes without output = stuck
+    PREFLIGHT_TIMEOUT_SECONDS = 10
     CHANGE_DETECTION_MAX_ATTEMPTS = 3
     CHANGE_DETECTION_RETRY_BACKOFF = 0.25
     POST_RUN_BOOKKEEPING_ERROR_TYPE = "PostRunBookkeepingFailed"
@@ -639,6 +640,13 @@ module Activities
         command_preparation = merge_preparations(command_preparation, heartbeat.preparation)
       end
 
+      run_provider_preflight!(
+        agent_run: agent_run,
+        container_service: container_service,
+        command_context: command_context,
+        provider: provider
+      )
+
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 
       raise ProviderExecutionError, "Agent run already finished with status #{agent_run.status}" if agent_run.finished?
@@ -757,6 +765,69 @@ module Activities
       )
     rescue Containers::Provision::ExecutionError => e
       raise ProviderExecutionError, "Docker exec error: #{e.message}"
+    end
+
+    def run_provider_preflight!(agent_run:, container_service:, command_context:, provider:)
+      return unless provider_preflight_supported?(command_context)
+
+      prompt = provider_preflight_prompt_for(provider)
+      command = build_command(command_context, prompt)
+      env = command_env_for(command_context, prompt)
+      preparation = command_preparation_for(command_context, prompt)
+
+      result = container_service.execute(
+        command,
+        timeout: PREFLIGHT_TIMEOUT_SECONDS,
+        idle_timeout: PREFLIGHT_TIMEOUT_SECONDS,
+        env: env,
+        preparation: preparation,
+        abort_patterns: aggregated_abort_patterns
+      )
+      stdout = normalize_output_text(result[:stdout])
+      stderr = normalize_output_text(result[:stderr])
+      output = [ stderr.presence, stdout.presence ].compact.first.to_s.strip
+      sanitized_output = strip_prompt_echo(output, prompt)
+
+      if result.success?
+        if insufficient_credits_error?(sanitized_output)
+          raise_preflight_failure!(
+            agent_run: agent_run,
+            provider: provider,
+            reason: "Provider credit/quota error: #{sanitized_output.truncate(500)}"
+          )
+        end
+
+        return
+      end
+
+      if rate_limit_error?(sanitized_output)
+        reset_at = rate_limit_reset_at(provider, sanitized_output)
+        log_preflight_failure(agent_run: agent_run, provider: provider, reason: "Rate limited by #{provider} during preflight")
+        raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+      end
+
+      reason = if sanitized_output.present?
+        "Agent exited with code #{result[:exit_code]}: #{sanitized_output.truncate(500)}"
+      else
+        "No output before exit code #{result[:exit_code]}. Check proxy configuration, auth, and network policy."
+      end
+      raise_preflight_failure!(agent_run: agent_run, provider: provider, reason: reason)
+    rescue Containers::Provision::TimeoutError => e
+      reason = "Timed out after #{PREFLIGHT_TIMEOUT_SECONDS}s: #{e.message}. Check proxy configuration, auth, and network policy."
+      raise_preflight_failure!(agent_run: agent_run, provider: provider, reason: reason)
+    rescue Containers::Provision::OutputAbortError => e
+      reset_at = rate_limit_reset_at(provider, e.matched_output.to_s)
+      log_preflight_failure(agent_run: agent_run, provider: provider, reason: e.matched_output.to_s.truncate(200))
+      raise ProviderRateLimitError.new(
+        "Rate limited by #{provider}: #{e.matched_output.to_s.truncate(200)}",
+        reset_at: reset_at
+      )
+    rescue Containers::Provision::ExecutionError => e
+      raise_preflight_failure!(
+        agent_run: agent_run,
+        provider: provider,
+        reason: "Docker exec error: #{e.message}"
+      )
     end
 
     # Checks if the agent run is stuck in an infinite loop by analyzing
@@ -988,6 +1059,46 @@ module Activities
       harness_key = ProviderSupport.harness_provider_key_for(app_provider_key).to_sym
       klass = AgentHarness::Providers::Registry.instance.get(harness_key)
       klass.new(config: harness_response_config(harness_key, provider_candidate, user))
+    end
+
+    def preflight_provider_for(command_context)
+      provider_candidate = command_context.provider_candidate
+      provider_key = command_context.provider
+      user = command_context.user
+      app_provider_key = ProviderSupport.provider_key_for_agent_type(provider_key)
+      harness_key = ProviderSupport.harness_provider_key_for(app_provider_key).to_sym
+      klass = AgentHarness::Providers::Registry.instance.get(harness_key)
+      klass.new(config: harness_response_config(harness_key, provider_candidate, user))
+    end
+
+    def provider_preflight_supported?(command_context)
+      provider = preflight_provider_for(command_context)
+      return false unless provider.respond_to?(:preflight_check)
+
+      provider.method(:preflight_check).owner != AgentHarness::Providers::Base
+    rescue AgentHarness::ConfigurationError, KeyError
+      false
+    end
+
+    def provider_preflight_prompt_for(provider_key)
+      harness_provider = harness_provider_for(provider_key)
+      harness_provider.class.smoke_test_contract&.fetch(:prompt, nil).presence || "Reply with exactly OK."
+    rescue AgentHarness::ConfigurationError, KeyError
+      "Reply with exactly OK."
+    end
+
+    def log_preflight_failure(agent_run:, provider:, reason:)
+      logger.warn(
+        message: "agent_execution.preflight_failed",
+        provider: provider,
+        agent_run_id: agent_run.id,
+        reason: reason
+      )
+    end
+
+    def raise_preflight_failure!(agent_run:, provider:, reason:)
+      log_preflight_failure(agent_run: agent_run, provider: provider, reason: reason)
+      raise ProviderExecutionError, "Preflight check failed: #{reason}"
     end
 
     def harness_response_config(harness_key, provider_candidate, user)
