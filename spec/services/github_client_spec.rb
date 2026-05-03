@@ -902,6 +902,16 @@ RSpec.describe GithubClient do
           hash_including(message: "github_client.workflow_runs_pagination_truncated", total_count: 250)
         )
       end
+
+      it "appends a non-green sentinel so callers refuse to merge on partial data" do
+        allow(Rails.logger).to receive(:warn)
+
+        runs = client.workflow_runs_for_sha(repo, sha)
+        sentinel = runs.find { |r| r[:name] == "truncated_results_sentinel" }
+
+        expect(sentinel).to be_present
+        expect(sentinel[:conclusion]).to eq("failure")
+      end
     end
 
     context "when the token cannot read Actions" do

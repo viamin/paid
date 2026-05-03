@@ -19,8 +19,10 @@
           <li><strong>Metadata:</strong> Read-only</li>
         </ul>
         <p class="mt-2 text-xs text-blue-600">
-          <strong>Optional:</strong> Add <strong>Actions: Read-only</strong> for Dependabot auto-merge and CI-gated auto-merge,
-          and <strong>Code scanning alerts: Read-only</strong> for security monitoring.
+          <strong>Optional:</strong> Add <strong>Actions: Read-only</strong> for Dependabot auto-merge and CI-gated auto-merge.
+          For repositories using third-party CI (e.g. CircleCI, Buildkite), also add
+          <strong>Commit statuses: Read-only</strong>.
+          Add <strong>Code scanning alerts: Read-only</strong> for security monitoring.
         </p>
       </div>
     </div>
@@ -43,7 +45,7 @@
       <div class="mt-2">
         <%= form.password_field "github_token[token]",
             class: "block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
-            placeholder: "github_pat_xxxx", autocomplete: "off", spellcheck: false, required: true %>
+            placeholder: "ghp_xxxx or github_pat_xxxx", autocomplete: "off", spellcheck: false, required: true %>
       </div>
       <p class="mt-1 text-xs text-gray-500">Your token is encrypted at rest and never displayed after saving.</p>
     </div>

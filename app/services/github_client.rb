@@ -463,7 +463,9 @@ class GithubClient
     handle_errors do
       response = client.repository_workflow_runs(repo, head_sha: sha, per_page: WORKFLOW_RUNS_PER_PAGE)
 
-      if response.total_count > WORKFLOW_RUNS_PER_PAGE
+      truncated = response.total_count > WORKFLOW_RUNS_PER_PAGE
+
+      if truncated
         Rails.logger.warn(
           message: "github_client.workflow_runs_pagination_truncated",
           repo: repo,
@@ -478,7 +480,7 @@ class GithubClient
         latest_per_workflow[wr.workflow_id] ||= wr
       end
 
-      latest_per_workflow.values.map do |wr|
+      runs = latest_per_workflow.values.map do |wr|
         {
           id: wr.id,
           workflow_id: wr.workflow_id,
@@ -489,6 +491,24 @@ class GithubClient
           html_url: wr.html_url
         }
       end
+
+      # When the response is truncated, older workflow runs may have been
+      # omitted — some of which could be failing or in-progress. Inject a
+      # synthetic non-green entry so callers (conclusions_green?) refuse to
+      # merge rather than treating a partial page as authoritative.
+      if truncated
+        runs << {
+          id: 0,
+          workflow_id: 0,
+          name: "truncated_results_sentinel",
+          status: "completed",
+          conclusion: "failure",
+          head_sha: sha,
+          html_url: ""
+        }
+      end
+
+      runs
     end
   end
 
