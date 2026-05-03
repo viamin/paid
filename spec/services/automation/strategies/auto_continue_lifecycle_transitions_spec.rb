@@ -1,0 +1,283 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+# Tests verifying lifecycle transition semantics in AutoContinue:
+# gate priority, phase transitions, and delegation to AutoReview.
+RSpec.describe Automation::Strategies::AutoContinue do
+  context "with lifecycle transitions" do
+  let(:strategy) { described_class.new }
+  let(:project) { create(:project) }
+  let(:pull_request) do
+    create(:issue, :pull_request, project: project, github_number: 42, paid_state: "new")
+  end
+
+  def evaluate(lifecycle: nil, scan: nil)
+    metadata = {}
+    metadata[:lifecycle] = lifecycle if lifecycle
+    metadata[:scan] = scan if scan
+
+    context = Automation::Context.build(
+      record: pull_request,
+      project: project,
+      metadata: metadata
+    )
+    strategy.evaluate(context)
+  end
+
+  def decision_types(result)
+    result.to_h[:decisions].map { |d| d[:type] }
+  end
+
+  def base_lifecycle(phase: "ready", **overrides)
+    {
+      issue_id: pull_request.id,
+      pr_number: 42,
+      phase: phase,
+      active_run_exists: false,
+      operational_failure_breaker: false,
+      draft_review_limit_reached: false,
+      consecutive_draft_failures_breaker: false,
+      review_goal_retry_limit_requires_escalation: false,
+      followup_limit_reached: false,
+      escalation_dismissed: false,
+      owner_reviewer_login: "alice",
+      escalation_reason: nil,
+      draft: phase == "draft" || phase == "restarted"
+    }.merge(overrides)
+  end
+
+  describe "gate priority ordering" do
+    it "active_run_exists trumps all other gates" do
+      result = evaluate(
+        lifecycle: base_lifecycle(
+          active_run_exists: true,
+          operational_failure_breaker: true,
+          escalation_reason: "failures"
+        ),
+        scan: { issue_id: pull_request.id, pr_number: 42, phase: "ready", triggers: [] }
+      )
+
+      expect(decision_types(result)).to eq([ "noop" ])
+    end
+
+    it "operational_failure_breaker trumps escalation_dismissed" do
+      result = evaluate(
+        lifecycle: base_lifecycle(
+          phase: "escalated",
+          operational_failure_breaker: true,
+          escalation_dismissed: true,
+          escalation_reason: "Consecutive operational failures"
+        )
+      )
+
+      expect(result.to_h[:decisions].first).to include(type: "escalate")
+    end
+
+    it "escalation_dismissed trumps phase-specific gates" do
+      result = evaluate(
+        lifecycle: base_lifecycle(
+          phase: "escalated",
+          escalation_dismissed: true,
+          draft_review_limit_reached: true,
+          draft: false
+        )
+      )
+
+      expect(result.to_h[:decisions].first).to include(type: "dismiss_escalation")
+    end
+  end
+
+  describe "draft phase gates" do
+    it "escalates on review_goal_retry_limit" do
+      result = evaluate(
+        lifecycle: base_lifecycle(
+          phase: "draft",
+          review_goal_retry_limit_requires_escalation: true,
+          escalation_reason: "Review-goal retry limit reached"
+        )
+      )
+
+      decisions = result.to_h[:decisions]
+      expect(decisions.first[:type]).to eq("escalate")
+      expect(decisions.first[:reason]).to eq("Review-goal retry limit reached")
+    end
+
+    it "escalates on draft_review_limit" do
+      result = evaluate(
+        lifecycle: base_lifecycle(
+          phase: "draft",
+          draft_review_limit_reached: true,
+          escalation_reason: "Draft review limit reached"
+        )
+      )
+
+      expect(result.to_h[:decisions].first[:type]).to eq("escalate")
+    end
+
+    it "escalates on consecutive_draft_failures" do
+      result = evaluate(
+        lifecycle: base_lifecycle(
+          phase: "draft",
+          consecutive_draft_failures_breaker: true,
+          escalation_reason: "Consecutive draft follow-up failures"
+        )
+      )
+
+      expect(result.to_h[:decisions].first[:type]).to eq("escalate")
+    end
+
+    it "delegates to AutoReview when all draft gates pass" do
+      result = evaluate(
+        lifecycle: base_lifecycle(phase: "draft"),
+        scan: {
+          issue_id: pull_request.id,
+          pr_number: 42,
+          phase: "draft",
+          current_draft_review_count: 0,
+          triggers: [ { type: "ci_failure", details: [ "test-suite" ] } ]
+        }
+      )
+
+      types = decision_types(result)
+      expect(types).to include("queue_create_pr_run")
+    end
+  end
+
+  describe "restarted phase gates" do
+    it "treats restarted like draft for gate evaluation" do
+      result = evaluate(
+        lifecycle: base_lifecycle(
+          phase: "restarted",
+          draft_review_limit_reached: true,
+          escalation_reason: "Draft review limit reached"
+        )
+      )
+
+      expect(result.to_h[:decisions].first[:type]).to eq("escalate")
+    end
+  end
+
+  describe "ready phase gates" do
+    it "returns noop when followup_limit_reached" do
+      result = evaluate(
+        lifecycle: base_lifecycle(
+          phase: "ready",
+          followup_limit_reached: true
+        ),
+        scan: { issue_id: pull_request.id, pr_number: 42, phase: "ready", triggers: [] }
+      )
+
+      expect(decision_types(result)).to eq([ "noop" ])
+    end
+
+    it "escalates on review_goal_retry_limit" do
+      result = evaluate(
+        lifecycle: base_lifecycle(
+          phase: "ready",
+          review_goal_retry_limit_requires_escalation: true,
+          escalation_reason: "Review-goal retry limit reached"
+        )
+      )
+
+      expect(result.to_h[:decisions].first[:type]).to eq("escalate")
+    end
+
+    it "delegates to AutoReview when all ready gates pass" do
+      result = evaluate(
+        lifecycle: base_lifecycle(phase: "ready"),
+        scan: {
+          issue_id: pull_request.id,
+          pr_number: 42,
+          phase: "ready",
+          triggers: [ { type: "owner_approved" } ]
+        }
+      )
+
+      expect(result.to_h[:decisions].first[:type]).to eq("merge")
+    end
+  end
+
+  describe "escalated phase gates" do
+    it "returns noop when followup_limit_reached" do
+      result = evaluate(
+        lifecycle: base_lifecycle(
+          phase: "escalated",
+          followup_limit_reached: true
+        ),
+        scan: { issue_id: pull_request.id, pr_number: 42, phase: "escalated", triggers: [] }
+      )
+
+      expect(decision_types(result)).to eq([ "noop" ])
+    end
+
+    it "escalates on review_goal_retry_limit" do
+      result = evaluate(
+        lifecycle: base_lifecycle(
+          phase: "escalated",
+          review_goal_retry_limit_requires_escalation: true,
+          escalation_reason: "Review-goal retry limit reached"
+        )
+      )
+
+      expect(result.to_h[:decisions].first[:type]).to eq("escalate")
+    end
+  end
+
+  describe "dismiss_escalation" do
+    it "includes the issue_id and draft flag in the payload" do
+      result = evaluate(
+        lifecycle: base_lifecycle(
+          phase: "escalated",
+          escalation_dismissed: true,
+          draft: false
+        )
+      )
+
+      decision = result.to_h[:decisions].first
+      expect(decision[:type]).to eq("dismiss_escalation")
+      expect(decision[:issue_id]).to eq(pull_request.id)
+    end
+  end
+
+  describe "delegation without lifecycle" do
+    it "falls back to AutoReview when no lifecycle signals present" do
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        triggers: [ { type: "owner_approved" } ]
+      })
+
+      expect(result.to_h[:decisions].first[:type]).to eq("merge")
+    end
+
+    it "returns noop when neither lifecycle nor scan is provided" do
+      result = evaluate
+      expect(decision_types(result)).to eq([ "noop" ])
+    end
+  end
+
+  describe "scan data forwarding" do
+    it "passes scan through to AutoReview when gates pass" do
+      result = evaluate(
+        lifecycle: base_lifecycle(phase: "ready"),
+        scan: {
+          issue_id: pull_request.id,
+          pr_number: 42,
+          phase: "ready",
+          triggers: [ { type: "paid_agent_review_pending" } ]
+        }
+      )
+
+      expect(decision_types(result)).to include("queue_review_run")
+    end
+
+    it "returns noop when gates pass but no scan data is present" do
+      result = evaluate(lifecycle: base_lifecycle(phase: "ready"))
+
+      expect(decision_types(result)).to eq([ "noop" ])
+    end
+  end
+  end
+end
