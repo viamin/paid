@@ -172,7 +172,24 @@ RSpec.describe Containers::HarnessExecutor do
 
       expect(executor.which("claude")).to eq("/usr/local/bin/claude")
       expect(agent_run).to have_received(:execute_in_container).with(
-        [ "which", "claude" ],
+        [ "sh", "-c", "command -v -- claude" ],
+        stream: false,
+        env: {},
+        preparation: nil
+      )
+    end
+
+    it "shell-escapes the binary name for the command probe" do
+      container_result = Containers::Provision::Result.success(
+        stdout: "", stderr: "", exit_code: 0
+      )
+      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+      binary = "claude; rm -rf /"
+
+      executor.which(binary)
+
+      expect(agent_run).to have_received(:execute_in_container).with(
+        [ "sh", "-c", "command -v -- #{Shellwords.escape(binary)}" ],
         stream: false,
         env: {},
         preparation: nil

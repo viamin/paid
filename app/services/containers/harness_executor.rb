@@ -35,7 +35,7 @@ module Containers
 
     def which(binary)
       result = @agent_run.execute_in_container(
-        [ "which", binary.to_s ],
+        [ "sh", "-c", "command -v -- #{Shellwords.escape(binary.to_s)}" ],
         stream: false,
         env: {},
         preparation: nil
