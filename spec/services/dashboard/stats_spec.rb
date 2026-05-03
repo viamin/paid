@@ -80,6 +80,10 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with agent runs" do
+      around do |example|
+        travel_to(Time.zone.local(2026, 5, 3, 12, 0, 0)) { example.run }
+      end
+
       before do
         create(:agent_run, :completed, project: project, duration_seconds: 100,
           tokens_input: 1000, tokens_output: 500, cost_cents: 50, iterations: 3,
@@ -127,17 +131,15 @@ RSpec.describe Dashboard::Stats do
       end
 
       it "builds a zero-filled daily chart grouped by day and status" do
-        travel_to(Time.zone.local(2026, 5, 3, 12, 0, 0)) do
-          series = stats[:daily_run_status_chart].index_by { |item| item[:name] }
+        series = stats[:daily_run_status_chart].index_by { |item| item[:name] }
 
-          expect(series["Failed"][:data][Date.new(2026, 4, 30)]).to eq(1)
-          expect(series["Completed"][:data][Date.new(2026, 5, 1)]).to eq(1)
-          expect(series["Completed"][:data][Date.new(2026, 4, 28)]).to eq(1)
-          expect(series["Completed"][:data][Date.new(2026, 4, 13)]).to eq(1)
-          expect(series["Failed"][:data][Date.new(2026, 5, 2)]).to eq(0)
-          expect(series["Completed"][:data].keys.first).to eq(Date.new(2026, 4, 4))
-          expect(series["Completed"][:data].keys.last).to eq(Date.new(2026, 5, 3))
-        end
+        expect(series["Failed"][:data][Date.new(2026, 4, 30)]).to eq(1)
+        expect(series["Completed"][:data][Date.new(2026, 5, 1)]).to eq(1)
+        expect(series["Completed"][:data][Date.new(2026, 4, 28)]).to eq(1)
+        expect(series["Completed"][:data][Date.new(2026, 4, 13)]).to eq(1)
+        expect(series["Failed"][:data][Date.new(2026, 5, 2)]).to eq(0)
+        expect(series["Completed"][:data].keys.first).to eq(Date.new(2026, 4, 4))
+        expect(series["Completed"][:data].keys.last).to eq(Date.new(2026, 5, 3))
       end
 
       it "calculates phase breakdown percentiles" do
