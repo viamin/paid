@@ -138,7 +138,7 @@
         <dd class="text-sm font-medium text-gray-900 dark:text-gray-100">
           <%= effective_provider_name %>
           <% if fallback_occurred %>
-            <span class="ml-1 inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Fallback</span>
+            <span class="ml-1 inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Fallback</span>
           <% end %>
         </dd>
       </div>
@@ -152,7 +152,7 @@
         <div class="flex justify-between py-2">
           <dt class="text-sm text-gray-500 dark:text-gray-400">Auth Type</dt>
           <dd class="text-sm text-gray-900 dark:text-gray-100">
-            <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= effective_record.subscription? ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200' : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200' %>">
+            <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= effective_record.subscription? ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700' %>">
               <%= effective_record.auth_type.titleize %>
             </span>
           </dd>
@@ -192,7 +192,7 @@
         <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Run Timeline</h2>
         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Breaks out queue, setup, prompt preparation, agent execution, post-processing, and cleanup.</p>
       </div>
-      <span class="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-200">
+      <span class="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
         Observed <%= format_duration(phase_summary[:observed_seconds]) %>
       </span>
     </div>
@@ -259,7 +259,7 @@
                     <%= phase_group_label(phase.phase_group) %>
                   </span>
                   <% if phase.status == "failed" %>
-                    <span class="ml-2 inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-900/40 dark:text-red-200">Failed</span>
+                    <span class="ml-2 inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">Failed</span>
                   <% end %>
                 </td>
                 <td class="px-4 py-3 text-right text-sm text-gray-900 dark:text-gray-100"><%= format_duration(phase.duration_seconds) %></td>
@@ -430,7 +430,7 @@
                 <%= selection_tier.titleize %>
               </span>
               <% if agent_run.model_selection.selector_type == "quality_escalation" %>
-                <span class="ml-1 inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                <span class="ml-1 inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
                   Escalated<% if agent_run.model_selection.escalated_from_tier.present? %> from <%= agent_run.model_selection.escalated_from_tier.titleize %><% end %>
                 </span>
               <% end %>
@@ -440,12 +440,14 @@
         <div class="flex justify-between py-2">
           <dt class="text-sm text-gray-500 dark:text-gray-400">Selection Method</dt>
           <dd class="text-sm text-gray-900 dark:text-gray-100">
+            <%# Dark-mode badge colors are handled by the global unlayered overrides
+                in application.tailwind.css (e.g. `.dark .bg-purple-100`). %>
             <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium
               <%= case agent_run.model_selection.selector_type
-                  when 'meta_agent' then 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200'
-                  when 'rules' then 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200'
-                  when 'override' then 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200'
-                  else 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
+                  when 'meta_agent' then 'bg-purple-100 text-purple-700'
+                  when 'rules' then 'bg-blue-100 text-blue-700'
+                  when 'override' then 'bg-amber-100 text-amber-700'
+                  else 'bg-gray-100 text-gray-700'
                   end %>">
               <%= agent_run.model_selection.selector_type.titleize %>
             </span>
@@ -479,7 +481,7 @@
       <dl class="mt-2 divide-y divide-gray-200 dark:divide-gray-700">
         <div class="flex justify-between py-2">
           <dt class="text-sm text-gray-500 dark:text-gray-400">Branch</dt>
-          <dd class="text-sm text-gray-900 dark:text-gray-100"><code class="rounded bg-gray-100 px-1 py-0.5 text-xs dark:bg-gray-700 dark:text-gray-200"><%= agent_run.branch_name %></code></dd>
+          <dd class="text-sm text-gray-900 dark:text-gray-100"><code class="rounded bg-gray-100 px-1 py-0.5 text-xs"><%= agent_run.branch_name %></code></dd>
         </div>
         <% if agent_run.base_commit_sha.present? %>
           <div class="flex justify-between py-2">
@@ -503,7 +505,7 @@
     <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/30">
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-semibold text-amber-800 dark:text-amber-200"><%= agent_run.provider_switches.positive? ? "Provider Fallback" : "Provider Attempts" %></h2>
-        <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-800/60 dark:text-amber-100">
+        <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
           <%= agent_run.provider_switches.positive? ? pluralize(agent_run.provider_switches, "switch") : pluralize(provider_attempts.size, "attempt") %>
         </span>
       </div>
@@ -515,7 +517,7 @@
             </svg>
           <% end %>
           <% attempt_provider = attempted_providers_by_routing_key[attempt["provider"]] %>
-          <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= attempt['success'] ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200' %>">
+          <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= attempt['success'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' %>">
             <%= provider_label.call(attempt["provider"], attempt_provider) %>
             <% if attempt['error_type'].present? %>
               <span class="ml-1 text-xs opacity-75">(<%= attempt['error_type'] %>)</span>

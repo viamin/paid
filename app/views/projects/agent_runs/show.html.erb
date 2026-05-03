@@ -45,7 +45,7 @@
           <div class="border-b border-gray-100 px-4 py-2 font-mono text-xs text-gray-700 last:border-b-0 dark:border-gray-700 dark:text-gray-200 <%= log.log_type == 'stderr' ? 'bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-200' : '' %> <%= log.log_type == 'system' ? 'bg-blue-50 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200' : '' %>"
                data-controller="log-truncate" data-log-truncate-max-lines-value="10">
             <span class="mr-2 text-gray-400 dark:text-gray-500"><%= local_time(log.created_at, format: :time) %></span>
-            <span class="mr-2 rounded bg-gray-200 px-1 text-gray-600 dark:bg-gray-700 dark:text-gray-300"><%= log.log_type %></span>
+            <span class="mr-2 rounded bg-gray-200 px-1 text-gray-600"><%= log.log_type %></span>
             <pre class="inline-block whitespace-pre-wrap" data-log-truncate-target="content"><%= log.content %></pre>
             <button type="button" class="mt-1 hidden cursor-pointer text-xs font-medium text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300" data-log-truncate-target="toggle" data-action="log-truncate#toggle"></button>
           </div>
