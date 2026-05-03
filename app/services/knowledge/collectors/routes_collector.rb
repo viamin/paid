@@ -114,12 +114,16 @@ module Knowledge
       rescue StandardError => error
         raise unless database_connection_error?(error)
 
-        # Only preserve prior route artifacts when the routes file itself
-        # is unchanged — otherwise stale them so deleted/renamed endpoints
-        # don't linger indefinitely for repos that always need a DB to boot.
+        # Always preserve prior route artifacts on DB skip. We cannot
+        # reliably detect whether config/routes.rb changed: containerized
+        # runs use shallow clones (--depth 1) so the parent tree needed
+        # by git diff-tree is absent, and even with full history we would
+        # only compare HEAD vs its parent, missing multi-commit batches.
+        # Preserving stale routes is preferable to losing them entirely;
+        # the next successful collection will correct any drift.
         skip!(
           "routes require database access during Rails boot",
-          preserve_existing_artifacts: !scope_file_changed_in_commit?
+          preserve_existing_artifacts: true
         )
       end
 
@@ -201,24 +205,6 @@ module Knowledge
         end
 
         raise teardown_error if original_error.nil? && teardown_error
-      end
-
-      def scope_file_changed_in_commit?
-        base = host_repo_path
-        return true if base.blank?
-
-        sha = project_version.commit_sha
-        return true if sha.blank?
-
-        output, status = Open3.capture2(
-          "git", "diff-tree", "--no-commit-id", "--name-only", "-r", sha, "--", SCOPE_PATH,
-          chdir: base
-        )
-        return true unless status.success?
-
-        output.strip.present?
-      rescue Errno::ENOENT, Errno::EACCES
-        true
       end
 
       def database_connection_error?(error)

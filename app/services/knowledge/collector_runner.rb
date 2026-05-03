@@ -166,7 +166,9 @@ module Knowledge
           .where(project: project, status: "active")
           .where.not(collector_run_id: current_run_ids)
           .where(collector_runs: { project_version_id: older_version_ids })
-        stale_artifacts = stale_artifacts.where.not(knowledge_artifacts: { collector_type: preserved_types }) if preserved_types.any?
+        if preserved_types.any?
+          stale_artifacts = stale_artifacts.where.not(knowledge_artifacts: { collector_type: preserved_types })
+        end
 
         KnowledgeChunk
           .where(knowledge_artifact_id: stale_artifacts.select(:id), status: "active")

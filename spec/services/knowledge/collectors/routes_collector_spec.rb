@@ -246,8 +246,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         )
       end
 
-      it "preserves existing artifacts on db skip when routes file is unchanged" do
-        allow(command_collector).to receive(:scope_file_changed_in_commit?).and_return(false)
+      it "always preserves existing artifacts on db skip" do
         cause = ActiveRecord::ConnectionNotEstablished.new("connection failed")
         wrapped_error = Knowledge::ContainerizedRunner::ContainerError.new("Command failed (exit 1): boot aborted")
         allow(wrapped_error).to receive(:cause).and_return(cause)
@@ -263,25 +262,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         end
       end
 
-      it "does not preserve existing artifacts on db skip when routes file changed" do
-        allow(command_collector).to receive(:scope_file_changed_in_commit?).and_return(true)
-        cause = ActiveRecord::ConnectionNotEstablished.new("connection failed")
-        wrapped_error = Knowledge::ContainerizedRunner::ContainerError.new("Command failed (exit 1): boot aborted")
-        allow(wrapped_error).to receive(:cause).and_return(cause)
-
-        allow(command_collector).to receive(:run_command)
-          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
-          .and_raise(wrapped_error)
-
-        expect { command_collector.collect }.to raise_error do |error|
-          expect(error).to be_a(Knowledge::SkipCollector)
-          expect(error.reason).to match(/routes require database access during Rails boot/)
-          expect(error.preserve_existing_artifacts?).to be(false)
-        end
-      end
-
       it "skips on alternate database error message patterns" do
-        allow(command_collector).to receive(:scope_file_changed_in_commit?).and_return(false)
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_raise(
@@ -296,7 +277,6 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       end
 
       it "skips on mysql connection errors" do
-        allow(command_collector).to receive(:scope_file_changed_in_commit?).and_return(false)
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_raise(
@@ -311,7 +291,6 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       end
 
       it "skips on sqlite database open errors" do
-        allow(command_collector).to receive(:scope_file_changed_in_commit?).and_return(false)
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_raise(
