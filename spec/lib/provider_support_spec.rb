@@ -4,6 +4,14 @@ require "rails_helper"
 require "set"
 
 RSpec.describe ProviderSupport do
+  before do
+    described_class.reset_supported_provider_keys!
+  end
+
+  after do
+    described_class.reset_supported_provider_keys!
+  end
+
   describe "CONTAINER_EXECUTABLE_PROVIDER_KEYS" do
     it "includes claude" do
       expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("claude")
@@ -160,6 +168,17 @@ RSpec.describe ProviderSupport do
 
     it "titleizes unknown types" do
       expect(described_class.api_service_type_label("unknown")).to eq("Unknown")
+    end
+  end
+
+  describe ".supported_provider_keys" do
+    it "excludes providers not registered in the harness" do
+      allow(AgentHarness).to receive(:providers)
+        .and_return(AgentHarness.providers - [ :gemini ])
+
+      supported_keys = described_class.supported_provider_keys
+
+      expect(supported_keys).not_to include("gemini")
     end
   end
 
