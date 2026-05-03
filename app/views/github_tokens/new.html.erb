@@ -40,17 +40,16 @@
               <p class="mt-1 text-xs text-blue-600">
                 <strong>Optional:</strong> If your repository uses GitHub Actions and you want Paid to be able to edit workflow files
                 (<code>.github/workflows/</code>), also add the <strong>Workflows: Read and write</strong> permission.
-                For classic tokens, this is the <strong>workflow</strong> scope.
-                Without this, pushes that modify workflow files will be rejected by GitHub.
               </p>
               <p class="mt-1 text-xs text-blue-600">
-                <strong>Optional:</strong> To enable Dependabot auto-merge, auto-release, or CI-gated auto-merge, also add
-                <strong>Checks: Read-only</strong> permission. For classic tokens, this is included in the <strong>repo</strong> scope.
+                <strong>Optional:</strong> To enable Dependabot auto-merge, auto-release, or CI-gated auto-merge, add
+                <strong>Actions: Read-only</strong> so Paid can verify GitHub Actions workflow runs before merging.
+                For repositories using third-party CI that posts via the commit-statuses API, also add
+                <strong>Commit statuses: Read-only</strong>.
               </p>
               <p class="mt-1 text-xs text-blue-600">
                 <strong>Optional:</strong> To enable code scanning alert monitoring (auto-scan security), also add
-                <strong>Code scanning alerts: Read-only</strong> permission under Repository permissions.
-                For classic tokens, this is the <strong>security_events</strong> scope.
+                <strong>Code scanning alerts: Read-only</strong> permission.
               </p>
             </div>
           </div>
