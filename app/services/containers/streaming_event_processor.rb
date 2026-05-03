@@ -38,10 +38,13 @@ module Containers
       parsed = parse_jsonl_event(stripped)
       return nil unless parsed
 
-      event_type = event_value(parsed, "type").to_s
-      return nil if event_type.blank?
+      raw_type = raw_event_type(parsed).to_s
+      semantic_type = semantic_event_type(parsed).to_s
+      return nil if raw_type.blank? && semantic_type.blank?
 
-      { type: classify_event(event_type), event: parsed, raw_type: event_type }
+      event_type = classify_event(raw_type) || classify_event(semantic_type)
+
+      { type: event_type, event: parsed, raw_type: raw_type.presence || semantic_type }
     end
 
     # Processes a parsed event, updating internal state and returning an action
@@ -114,6 +117,25 @@ module Containers
 
       parsed
     rescue JSON::ParserError, TypeError
+      nil
+    end
+
+    def semantic_event_type(event)
+      event_type = event.type if !event.is_a?(Hash) && event.respond_to?(:type)
+      event_type = event_value(event, "type") if event_type.blank?
+
+      event_type.to_s
+    end
+
+    def raw_event_type(event)
+      raw_event = event.respond_to?(:raw_event) ? event.raw_event : event
+
+      if raw_event.is_a?(Hash)
+        raw_event["type"] || raw_event[:type]
+      elsif raw_event.respond_to?(:[])
+        raw_event["type"] || raw_event[:type]
+      end
+    rescue NameError
       nil
     end
 
