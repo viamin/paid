@@ -17,7 +17,6 @@ RSpec.describe Automation::Providers::Github::WorkItemProvider do
   let(:issue_number) { 42 }
   let(:label_name) { "bug" }
   let(:comment_body) { "test comment" }
-
   let(:issue_resource) do
     OpenStruct.new(
       number: 42, title: "Bug", body: "details", state: "open",
@@ -28,6 +27,18 @@ RSpec.describe Automation::Providers::Github::WorkItemProvider do
       labels: [ OpenStruct.new(name: "bug") ],
       pull_request: nil
     )
+  end
+
+  def provider_failure_message = "missing issue"
+
+  def stub_expected_provider_failure
+    allow(client).to receive(:issue)
+      .with(repo, 999)
+      .and_raise(GithubClient::NotFoundError.new(provider_failure_message))
+  end
+
+  def invoke_expected_provider_failure
+    proc { adapter.fetch_issue(repo: repo, number: 999) }
   end
 
   before do

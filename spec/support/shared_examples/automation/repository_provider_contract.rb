@@ -13,6 +13,13 @@
 #   ref           — a String git ref whose check-run fetch succeeds
 #   label_name    — a String label name for add/remove tests
 #   comment_body  — a String body for add_comment
+#   stub_expected_provider_failure
+#                 — a lambda that stubs an expected provider-side failure
+#   invoke_expected_provider_failure
+#                 — a lambda that performs the adapter call expected to
+#                   raise ProviderError after translation
+#   provider_failure_message
+#                 — the expected translated ProviderError message
 #
 # The adapter's underlying client should be stubbed to return valid
 # data for the given repo/pr_number/ref combination.
@@ -113,6 +120,17 @@ RSpec.shared_examples "a RepositoryProvider implementation" do
 
       expect(result).to be_a(Automation::Providers::Data::MergeResult)
       expect(result.merged).to be(true).or be(false)
+    end
+  end
+
+  describe "expected provider failures" do
+    it "translates them into RepositoryProvider::ProviderError" do
+      stub_expected_provider_failure
+
+      expect(&invoke_expected_provider_failure).to raise_error(
+        Automation::Providers::RepositoryProvider::ProviderError,
+        provider_failure_message
+      )
     end
   end
 end

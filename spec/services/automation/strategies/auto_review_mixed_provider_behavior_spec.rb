@@ -57,8 +57,11 @@ RSpec.describe Automation::Strategies::AutoReview do
         ]
       })
 
-      types = decision_types(result)
-      expect(types).to include("request_review")
+      expect(result.to_h).to eq(
+        decisions: [
+          { type: "request_review", pr_number: 42, reviewers: [ "copilot" ] }
+        ]
+      )
     end
   end
 

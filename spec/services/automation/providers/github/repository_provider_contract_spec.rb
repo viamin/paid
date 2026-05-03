@@ -20,6 +20,18 @@ RSpec.describe Automation::Providers::Github::RepositoryProvider do
   let(:label_name) { "automation" }
   let(:comment_body) { "test comment" }
 
+  def provider_failure_message = "missing pull request"
+
+  def stub_expected_provider_failure
+    allow(client).to receive(:pull_request)
+      .with(repo, 999)
+      .and_raise(GithubClient::NotFoundError.new(provider_failure_message))
+  end
+
+  def invoke_expected_provider_failure
+    proc { adapter.fetch_pull_request(repo: repo, number: 999) }
+  end
+
   before do
     pr_resource = OpenStruct.new(
       number: 42, title: "Test", body: "desc", state: "open",

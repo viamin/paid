@@ -35,41 +35,71 @@ RSpec.describe Automation::ReviewMethods::Registry do
   end
 
   describe Automation::ReviewMethods::Copilot do
-    let(:plugin) { build_plugin(described_class, :copilot) }
+    let(:method_name) { :copilot }
+    let(:resolved_class) { Automation::ReviewMethods::Registry.resolve(method_name) }
+    let(:plugin) { build_plugin(resolved_class, method_name) }
     let(:expected_kind) { :bot }
+
+    it "resolves :copilot through the registry defaults" do
+      expect(resolved_class).to eq(described_class)
+    end
 
     it_behaves_like "a ReviewMethods plugin"
   end
 
   describe Automation::ReviewMethods::PaidAgent do
-    let(:plugin) { build_plugin(described_class, :paid_agent) }
+    let(:method_name) { :paid_agent }
+    let(:resolved_class) { Automation::ReviewMethods::Registry.resolve(method_name) }
+    let(:plugin) { build_plugin(resolved_class, method_name) }
     let(:expected_kind) { :agent }
+
+    it "resolves :paid_agent through the registry defaults" do
+      expect(resolved_class).to eq(described_class)
+    end
 
     it_behaves_like "a ReviewMethods plugin"
   end
 
   describe Automation::ReviewMethods::Codex do
-    let(:plugin) { build_plugin(described_class, :codex) }
+    let(:method_name) { :codex }
+    let(:resolved_class) { Automation::ReviewMethods::Registry.resolve(method_name) }
+    let(:plugin) { build_plugin(resolved_class, method_name) }
     let(:expected_kind) { :comment_bot }
+
+    it "resolves :codex through the registry defaults" do
+      expect(resolved_class).to eq(described_class)
+    end
 
     it_behaves_like "a ReviewMethods plugin"
   end
 
   describe Automation::ReviewMethods::Manual do
-    let(:plugin) { build_plugin(described_class, :manual) }
+    let(:method_name) { :manual }
+    let(:resolved_class) { Automation::ReviewMethods::Registry.resolve(method_name) }
+    let(:plugin) { build_plugin(resolved_class, method_name) }
     let(:expected_kind) { :human }
+
+    it "resolves :manual through the registry defaults" do
+      expect(resolved_class).to eq(described_class)
+    end
 
     it_behaves_like "a ReviewMethods plugin"
   end
 
   describe Automation::ReviewMethods::CiAction do
+    let(:method_name) { :ci_action }
+    let(:resolved_class) { Automation::ReviewMethods::Registry.resolve(method_name) }
     let(:plugin) do
       build_plugin(
-        described_class, :ci_action,
+        resolved_class, method_name,
         config: build_config(ci_action: { "enabled" => true, "action_name" => "claude-review" })
       )
     end
     let(:expected_kind) { :ci }
+
+    it "resolves :ci_action through the registry defaults" do
+      expect(resolved_class).to eq(described_class)
+    end
 
     it_behaves_like "a ReviewMethods plugin"
   end

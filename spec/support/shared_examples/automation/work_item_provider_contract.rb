@@ -10,6 +10,13 @@
 #   issue_number   — an Integer/String issue number whose fetch succeeds
 #   label_name     — a String label name for add/remove tests
 #   comment_body   — a String body for add_comment
+#   stub_expected_provider_failure
+#                 — a lambda that stubs an expected provider-side failure
+#   invoke_expected_provider_failure
+#                 — a lambda that performs the adapter call expected to
+#                   raise ProviderError after translation
+#   provider_failure_message
+#                 — the expected translated ProviderError message
 #
 # The adapter's underlying client should be stubbed to return valid
 # data for the given repo/issue_number combination.
@@ -108,6 +115,17 @@ RSpec.shared_examples "a WorkItemProvider implementation" do
       result = adapter.transition_state(repo: repo, number: issue_number, state: :closed)
 
       expect(result).to be_a(Automation::Providers::Data::Issue)
+    end
+  end
+
+  describe "expected provider failures" do
+    it "translates them into WorkItemProvider::ProviderError" do
+      stub_expected_provider_failure
+
+      expect(&invoke_expected_provider_failure).to raise_error(
+        Automation::Providers::WorkItemProvider::ProviderError,
+        provider_failure_message
+      )
     end
   end
 end

@@ -40,6 +40,15 @@ RSpec.describe Automation::Strategy do
     Automation::Strategies::AutoReview.new.evaluate(context)
   end
 
+  def evaluate_auto_pick
+    context = Automation::Context.build(
+      record: nil,
+      project: project,
+      metadata: {}
+    )
+    Automation::Strategies::AutoPick.new.evaluate(context)
+  end
+
   def evaluate_auto_merge(signals: nil)
     context = Automation::Context.build(
       record: nil,
@@ -69,20 +78,12 @@ RSpec.describe Automation::Strategy do
     end
 
     it "all strategies return Automation::Result from #evaluate" do
-      context = Automation::Context.build(
-        record: pull_request,
-        project: project,
-        metadata: {}
-      )
-
-      [
-        Automation::Strategies::AutoContinue.new,
-        Automation::Strategies::AutoReview.new
-      ].each do |strategy|
-        result = strategy.evaluate(context)
-        expect(result).to be_a(Automation::Result),
-          "#{strategy.class} must return an Automation::Result"
-      end
+      expect([
+        evaluate_auto_pick,
+        evaluate_auto_continue,
+        evaluate_auto_review,
+        evaluate_auto_merge
+      ]).to all(be_a(Automation::Result))
     end
   end
 

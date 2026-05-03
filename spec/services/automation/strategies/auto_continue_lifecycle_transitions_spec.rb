@@ -237,6 +237,7 @@ RSpec.describe Automation::Strategies::AutoContinue do
       decision = result.to_h[:decisions].first
       expect(decision[:type]).to eq("dismiss_escalation")
       expect(decision[:issue_id]).to eq(pull_request.id)
+      expect(decision[:draft]).to be(false)
     end
   end
 

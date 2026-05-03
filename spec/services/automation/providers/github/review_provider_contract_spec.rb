@@ -15,6 +15,22 @@ RSpec.describe Automation::Providers::Github::ReviewProvider do
   let(:adapter) { described_class.new(project, client: client) }
   let(:repo) { "acme/widgets" }
   let(:pr_number) { 42 }
+  let(:requested_reviewers) { [ "Alice", "Bob" ] }
+  let(:expected_new_reviewers) { [ "bob" ] }
+
+  def provider_failure_message = "review request failed"
+
+  def stub_expected_provider_failure
+    allow(client).to receive(:request_pull_request_review)
+      .with(repo, pr_number, reviewers: [ "bob" ])
+      .and_raise(GithubClient::ApiError.new(provider_failure_message, status: 500))
+  end
+
+  def invoke_expected_provider_failure
+    proc do
+      adapter.request_reviewers(repo: repo, pr_number: pr_number, reviewers: requested_reviewers)
+    end
+  end
 
   before do
     allow(client).to receive_messages(
