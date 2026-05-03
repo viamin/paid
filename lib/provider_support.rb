@@ -34,10 +34,14 @@ module ProviderSupport
 
   def supported_provider_keys_set
     @supported_provider_keys_set ||= begin
-      registry = AgentHarness::Providers::Registry.instance
-
+      registered = AgentHarness.providers
       APP_PROVIDER_KEYS.each_with_object(Set.new) do |provider_key, set|
-        set << provider_key if registry.registered?(provider_key)
+        metadata = AgentHarness.provider_metadata(provider_key.to_sym)
+        canonical = metadata&.dig(:canonical_provider)
+        set << provider_key if canonical && registered.include?(canonical)
+      rescue AgentHarness::ConfigurationError, KeyError
+        # Provider unknown/removed upstream — treat as unsupported.
+        nil
       end.freeze
     end
   end
@@ -67,7 +71,11 @@ module ProviderSupport
   end
 
   def harness_provider_key_for(provider_key)
-    AgentHarness::Providers::Registry.instance.canonical_name(provider_key.to_sym).to_s
+    metadata = AgentHarness.provider_metadata(provider_key.to_sym)
+    metadata.fetch(:canonical_provider).to_s
+  rescue KeyError
+    raise AgentHarness::ConfigurationError,
+      "provider_metadata for #{provider_key.inspect} missing :canonical_provider key"
   end
 
   def provider_key_for_agent_type(agent_type)
@@ -193,7 +201,7 @@ module ProviderSupport
   # names are resolved via the registry at load time.
   API_SERVICE_TYPE_TO_HARNESS_KEY = PROVIDER_API_SERVICE_TYPE
     .each_with_object({}) { |(provider_key, service_type), map| map[service_type] ||= provider_key }
-    .transform_values { |pk| AgentHarness::Providers::Registry.instance.canonical_name(pk.to_sym).to_s }
+    .transform_values { |pk| AgentHarness.provider_metadata(pk.to_sym)[:canonical_provider].to_s }
     .freeze
 
   # Maps provider keys to their upstream proxy API key name (used by

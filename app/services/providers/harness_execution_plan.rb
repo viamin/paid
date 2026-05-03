@@ -41,9 +41,8 @@ module Providers
     private
 
     def self.build_harness_provider(harness_key)
-      klass = AgentHarness::Providers::Registry.instance.get(harness_key)
-
-      config = AgentHarness::ProviderConfig.new(harness_key)
+      klass = AgentHarness.provider_class(harness_key)
+      config = AgentHarness.build_config(harness_key)
       config.externally_sandboxed = true
 
       klass.new(config: config)

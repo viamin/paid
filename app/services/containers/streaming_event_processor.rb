@@ -15,7 +15,7 @@ module Containers
   # parse_streaming_event (viamin/agent-harness#178).
   class StreamingEventProcessor
     PROGRESS_EVENT_TYPES = %w[progress token_usage].freeze
-    TURN_COMPLETE_EVENT_TYPES = %w[turn_complete turn.complete].freeze
+    TURN_COMPLETE_EVENT_TYPES = %w[turn_complete turn.complete turn.completed].freeze
     TURN_FAILED_EVENT_TYPES = %w[turn.failed turn_failed].freeze
     ERROR_EVENT_TYPES = %w[error].freeze
 
@@ -131,7 +131,10 @@ module Containers
       raw_event = event.respond_to?(:raw_event) ? event.raw_event : event
 
       if raw_event.is_a?(Hash)
-        raw_event["type"] || raw_event[:type]
+        # For wrapped events (e.g. Codex event_msg), prefer the payload type
+        # which carries semantic meaning (e.g. "turn.failed") over the
+        # transport type (e.g. "event_msg") which doesn't classify.
+        raw_event.dig("payload", "type") || raw_event["type"] || raw_event[:type]
       elsif raw_event.respond_to?(:[])
         raw_event["type"] || raw_event[:type]
       end
