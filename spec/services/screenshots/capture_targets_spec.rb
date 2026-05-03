@@ -67,7 +67,7 @@ RSpec.describe Screenshots::CaptureTargets do
     it "maps public assets to shared UI targets" do
       targets = described_class.call(changed_files: [ "public/icon.png" ])
 
-      expect(targets.map(&:slug)).to include("sign_in", "dashboard", "projects")
+      expect(targets.map(&:slug)).to eq([ "public_icon_png" ])
     end
 
     it "maps view partials to both new and edit targets" do
@@ -154,6 +154,14 @@ RSpec.describe Screenshots::CaptureTargets do
       expect(targets.map(&:slug)).to eq([ "projects" ])
     end
 
+    it "maps provider index partials to the providers index target" do
+      targets = described_class.call(changed_files: [ "app/views/providers/_settings.html.erb" ])
+      expect(targets.map(&:slug)).to eq([ "providers" ])
+
+      targets = described_class.call(changed_files: [ "app/views/providers/_usage_stats.html.erb" ])
+      expect(targets.map(&:slug)).to eq([ "providers" ])
+    end
+
     it "raises UnmappedUiChangeError for unmapped controllers" do
       expect {
         described_class.call(changed_files: [ "app/controllers/unknown_controller.rb" ])
@@ -181,7 +189,34 @@ RSpec.describe Screenshots::CaptureTargets do
     it "maps public HTML error pages to shared UI targets" do
       targets = described_class.call(changed_files: [ "public/404.html" ])
 
-      expect(targets.map(&:slug)).to include("sign_in", "dashboard", "projects")
+      expect(targets.map(&:slug)).to eq([ "public_404" ])
+    end
+
+    it "maps application_controller to representative authenticated pages" do
+      targets = described_class.call(changed_files: [ "app/controllers/application_controller.rb" ])
+
+      expect(targets.map(&:slug)).to include("dashboard", "projects", "providers")
+      expect(targets.map(&:slug)).not_to include("sign_in")
+    end
+
+    it "maps the custom Devise registrations controller to the sign-up page" do
+      targets = described_class.call(changed_files: [ "app/controllers/users/registrations_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "sign_up" ])
+    end
+
+    it "covers every current non-api controller that detect_ui_changes can surface" do
+      controller_paths = Dir[Rails.root.join("app/controllers/**/*_controller.rb")]
+        .map { |path| path.delete_prefix("#{Rails.root}/") }
+        .reject do |path|
+          path.include?("/api/") ||
+            path.include?("/concerns/") ||
+            path.end_with?("health_controller.rb")
+        end
+
+      expect {
+        described_class.call(changed_files: controller_paths)
+      }.not_to raise_error
     end
   end
 end

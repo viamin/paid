@@ -30,6 +30,8 @@ module Screenshots
       knowledge_search
     ].freeze
 
+    AUTHENTICATED_SHARED_TARGET_KEYS = (SHARED_TARGET_KEYS - [ :sign_in ]).freeze
+
     HELPER_TARGETS = {
       "application" => SHARED_TARGET_KEYS,
       "cost_dashboard" => %i[project_cost_dashboard project_cost_snapshot],
@@ -92,6 +94,13 @@ module Screenshots
       chat_session_show: Target.new(slug: "chat_session_show", path_builder: ->(seed_data) { "/chat/#{seed_data.fetch(:chat_session).id}" }, requires_auth: true),
       quality_dashboard: Target.new(slug: "quality_dashboard", path_builder: "/quality_dashboard", requires_auth: true),
       knowledge_search: Target.new(slug: "knowledge_search", path_builder: "/knowledge/search", requires_auth: true),
+      public_icon_png: Target.new(slug: "public_icon_png", path_builder: "/icon.png", requires_auth: false),
+      public_icon_svg: Target.new(slug: "public_icon_svg", path_builder: "/icon.svg", requires_auth: false),
+      public_400: Target.new(slug: "public_400", path_builder: "/400.html", requires_auth: false),
+      public_404: Target.new(slug: "public_404", path_builder: "/404.html", requires_auth: false),
+      public_406_unsupported_browser: Target.new(slug: "public_406_unsupported_browser", path_builder: "/406-unsupported-browser.html", requires_auth: false),
+      public_422: Target.new(slug: "public_422", path_builder: "/422.html", requires_auth: false),
+      public_500: Target.new(slug: "public_500", path_builder: "/500.html", requires_auth: false),
       projects: Target.new(slug: "projects", path_builder: "/projects", requires_auth: true),
       project_new: Target.new(slug: "project_new", path_builder: "/projects/new", requires_auth: true),
       project_show: Target.new(slug: "project_show", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}" }, requires_auth: true),
@@ -169,11 +178,13 @@ module Screenshots
       "account_pr_templates_controller.rb" => [ :project_edit ],
       "account_pre_commit_requirements_controller.rb" => [ :project_edit ],
       "user_pr_templates_controller.rb" => [ :user_settings ],
-      "user_pre_commit_requirements_controller.rb" => [ :user_settings ]
+      "user_pre_commit_requirements_controller.rb" => [ :user_settings ],
+      "application_controller.rb" => AUTHENTICATED_SHARED_TARGET_KEYS
     }.freeze
 
     # Nested controller path => target keys
     NESTED_CONTROLLER_TARGETS = {
+      "users/registrations_controller.rb" => [ :sign_up ],
       "projects/agent_runs_controller.rb" => %i[project_agent_runs project_agent_run_show],
       "projects/cost_dashboards_controller.rb" => [ :project_cost_dashboard ],
       "projects/cost_snapshots_controller.rb" => [ :project_cost_snapshot ],
@@ -202,7 +213,7 @@ module Screenshots
       elsif path.start_with?("app/controllers/")
         targets_for_controller(path.delete_prefix("app/controllers/"))
       elsif path.start_with?("public/")
-        SHARED_TARGET_KEYS
+        targets_for_public_file(path)
       else
         []
       end
@@ -247,7 +258,7 @@ module Screenshots
       when /\Auser_settings\// then [ :user_settings ]
       when /\Atenant_configurations\// then [ :tenant_configuration ]
       when /\Aprovider_api_keys\// then rest_resource_targets(relative_path, "provider_api_keys", index: :provider_api_keys, new: :provider_api_key_new, show: :provider_api_key_show, edit: :provider_api_key_edit)
-      when /\Aproviders\// then rest_resource_targets(relative_path, "providers", index: :providers, new: :providers_new, show: :providers, edit: :providers_edit)
+      when /\Aproviders\// then providers_targets(relative_path.delete_prefix("providers/"))
       when /\Aservice_containers\// then rest_resource_targets(relative_path, "service_containers", index: :service_containers, new: :service_container_new, show: :service_container_show, edit: :service_container_edit)
       when /\Aagent_runs\// then [ :agent_runs ]
       when /\Aprompt_reviews\// then prompt_review_targets(relative_path.delete_prefix("prompt_reviews/"))
@@ -315,6 +326,17 @@ module Screenshots
       end
     end
 
+    def providers_targets(leaf)
+      case leaf
+      when "index.html.erb", "_settings.html.erb", "_usage_stats.html.erb" then [ :providers ]
+      when "new.html.erb" then [ :providers_new ]
+      when "edit.html.erb" then [ :providers_edit ]
+      when /\A_/ then %i[providers_new providers_edit]
+      else
+        [ :providers ]
+      end
+    end
+
     def prompts_targets(leaf)
       case leaf
       when "index.html.erb" then [ :prompts ]
@@ -364,8 +386,8 @@ module Screenshots
     end
 
     def targets_for_controller(relative_path)
-      # Skip concerns and base controllers — they don't map to specific pages
-      return [] if relative_path.start_with?("concerns/") || relative_path == "application_controller.rb"
+      # Skip concerns — they don't map to specific pages
+      return [] if relative_path.start_with?("concerns/")
       # Skip API controllers — they don't render HTML
       return [] if relative_path.start_with?("api/")
       # Skip health check controller — infrastructure only
@@ -374,6 +396,20 @@ module Screenshots
       NESTED_CONTROLLER_TARGETS[relative_path] ||
         CONTROLLER_TARGETS[File.basename(relative_path)] ||
         [] # Return empty to surface unmapped controllers via UnmappedUiChangeError
+    end
+
+    def targets_for_public_file(path)
+      case path.delete_prefix("public/")
+      when "icon.png" then [ :public_icon_png ]
+      when "icon.svg" then [ :public_icon_svg ]
+      when "400.html" then [ :public_400 ]
+      when "404.html" then [ :public_404 ]
+      when "406-unsupported-browser.html" then [ :public_406_unsupported_browser ]
+      when "422.html" then [ :public_422 ]
+      when "500.html" then [ :public_500 ]
+      else
+        SHARED_TARGET_KEYS
+      end
     end
 
     def rest_resource_targets(relative_path, prefix, index:, new:, show:, edit:)
