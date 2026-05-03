@@ -52,6 +52,17 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include('aria-label="Average end-to-end composition by phase"')
       end
 
+      it "shows the stacked daily agent runs chart" do
+        create(:agent_run, :completed, project: project, created_at: 1.day.ago)
+        create(:agent_run, :failed, project: project, created_at: 1.day.ago)
+
+        get dashboard_path
+
+        expect(response.body).to include("Agent Runs per Day")
+        expect(response.body).to include("Completed runs are stacked above failed runs across the last 30 days.")
+        expect(response.body).to include('new Chartkick["ColumnChart"]')
+      end
+
       it "shows live metrics section with active runs" do
         create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
         create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago, duration_seconds: 42)

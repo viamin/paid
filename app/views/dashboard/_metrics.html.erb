@@ -73,6 +73,47 @@
         </div>
       </div>
     </div>
+
+    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-5 sm:p-6">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h3 class="text-sm font-medium text-gray-500">Agent Runs per Day</h3>
+            <p class="mt-1 text-sm text-gray-500">Completed runs are stacked above failed runs across the last 30 days.</p>
+          </div>
+        </div>
+        <div class="mt-4">
+          <%= column_chart stats[:daily_run_status_chart],
+              stacked: true,
+              height: "320px",
+              colors: ["#dc2626", "#16a34a"],
+              xtitle: "Day",
+              ytitle: "Runs",
+              discrete: true,
+              thousands: ",",
+              library: {
+                plugins: {
+                  legend: {
+                    display: true,
+                    position: "bottom"
+                  }
+                },
+                scales: {
+                  x: {
+                    stacked: true
+                  },
+                  y: {
+                    stacked: true,
+                    beginAtZero: true,
+                    ticks: {
+                      precision: 0
+                    }
+                  }
+                }
+              } %>
+        </div>
+      </div>
+    </div>
   </div>
 
   <%# Cost & Token Usage — hidden when all values are zero %>

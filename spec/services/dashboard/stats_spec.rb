@@ -33,6 +33,16 @@ RSpec.describe Dashboard::Stats do
         expect(stats[:run_volume][:failure_rate]).to eq(0.0)
       end
 
+      it "returns zero-filled daily run chart series for the last 30 days" do
+        travel_to(Time.zone.local(2026, 5, 3, 12, 0, 0)) do
+          series = stats[:daily_run_status_chart]
+
+          expect(series.map { |item| item[:name] }).to eq([ "Failed", "Completed" ])
+          expect(series.all? { |item| item[:data].size == 30 }).to be(true)
+          expect(series.flat_map { |item| item[:data].values }.uniq).to eq([ 0 ])
+        end
+      end
+
       it "returns nil-safe duration percentiles" do
         expect(stats[:duration_percentiles][:p50]).to eq(0)
         expect(stats[:duration_percentiles][:p75]).to eq(0)
@@ -114,6 +124,20 @@ RSpec.describe Dashboard::Stats do
         expect(stats[:duration_percentiles][:p50]).to eq(200)
         expect(stats[:duration_percentiles][:avg]).to eq(300)
         expect(stats[:duration_percentiles][:p90]).to be > 0
+      end
+
+      it "builds a zero-filled daily chart grouped by day and status" do
+        travel_to(Time.zone.local(2026, 5, 3, 12, 0, 0)) do
+          series = stats[:daily_run_status_chart].index_by { |item| item[:name] }
+
+          expect(series["Failed"][:data][Date.new(2026, 4, 30)]).to eq(1)
+          expect(series["Completed"][:data][Date.new(2026, 5, 1)]).to eq(1)
+          expect(series["Completed"][:data][Date.new(2026, 4, 28)]).to eq(1)
+          expect(series["Completed"][:data][Date.new(2026, 4, 13)]).to eq(1)
+          expect(series["Failed"][:data][Date.new(2026, 5, 2)]).to eq(0)
+          expect(series["Completed"][:data].keys.first).to eq(Date.new(2026, 4, 4))
+          expect(series["Completed"][:data].keys.last).to eq(Date.new(2026, 5, 3))
+        end
       end
 
       it "calculates phase breakdown percentiles" do
