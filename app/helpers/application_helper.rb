@@ -306,7 +306,7 @@ module ApplicationHelper
   end
 
   def agent_run_goal_text(run)
-    prompt = run.custom_prompt.to_s.squish
+    prompt = redacted_goal_text(run.custom_prompt)
     return prompt if prompt.present?
 
     return run.issue.title if run.issue&.title.present?
@@ -356,6 +356,13 @@ module ApplicationHelper
     else
       { type: :placeholder }
     end
+  end
+
+  def redacted_goal_text(text)
+    normalized = text.to_s.squish
+    return nil if normalized.blank?
+
+    Knowledge::Redaction::Redactor.call(text: normalized).clean_text.presence
   end
 
   def create_issue_context(run)

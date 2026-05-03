@@ -33,23 +33,42 @@ RSpec.describe "AgentRuns" do
 
       it "shows each run goal in the index table" do
         goal_text = "Implement multi-step OAuth token refresh handling for stale sessions"
-        create(:agent_run, :with_custom_prompt, project: project, custom_prompt: goal_text)
+        run = create(:agent_run, :with_custom_prompt, project: project, custom_prompt: goal_text)
 
         get agent_runs_path
 
-        expect(response.body).to include("Goal")
-        expect(response.body).to include(goal_text)
-        expect(response.body).to include(%(title="#{goal_text}"))
-        expect(response.body).to include("block truncate")
+        document = parsed_html
+
+        expect(goal_column_index(document)).not_to be_nil
+
+        goal_cell = goal_cell_for_run(document, run)
+
+        expect(goal_cell.text.squish).to eq(goal_text)
+        expect(goal_cell.at_css("span")["title"]).to eq(goal_text)
+        expect(goal_cell.at_css("span")["class"]).to include("block truncate")
       end
 
       it "falls back to the issue title when no custom goal text is present" do
         issue = create(:issue, project: project, title: "Fix flaky webhook retry handling")
-        create(:agent_run, project: project, issue: issue, custom_prompt: nil)
+        run = create(:agent_run, project: project, issue: issue, custom_prompt: nil)
 
         get agent_runs_path
 
-        expect(response.body).to include(issue.title)
+        goal_cell = goal_cell_for_run(parsed_html, run)
+
+        expect(goal_cell.text.squish).to eq(issue.title)
+      end
+
+      it "falls back to review pull request text when no custom goal text is present" do
+        run = create(:agent_run, :review_goal, project: project, custom_prompt: nil, issue: nil,
+          source_pull_request_number: 87)
+
+        get agent_runs_path
+
+        goal_cell = goal_cell_for_run(parsed_html, run)
+
+        expect(goal_cell.text.squish).to eq("Review pull request #87")
+        expect(goal_cell.at_css("span")["title"]).to eq("Review pull request #87")
       end
 
       it "shows a placeholder when a run has no goal text to display" do
@@ -58,8 +77,26 @@ RSpec.describe "AgentRuns" do
 
         get agent_runs_path
 
-        expect(response.body).to include(project_agent_run_path(project, run))
-        expect(response.body).to include('<span class="text-gray-400">-</span>')
+        goal_cell = goal_cell_for_run(parsed_html, run)
+
+        expect(goal_cell.text.squish).to eq("-")
+        expect(goal_cell.at_css("span")["class"]).to include("text-gray-400")
+      end
+
+      it "redacts secrets from custom goal text in the table cell and tooltip" do
+        token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
+        run = create(:agent_run, :with_custom_prompt, project: project,
+          custom_prompt: "Investigate deploy failure with GITHUB_TOKEN=#{token}")
+
+        get agent_runs_path
+
+        goal_cell = goal_cell_for_run(parsed_html, run)
+        goal_span = goal_cell.at_css("span")
+
+        expect(goal_span.text).to include("[REDACTED:github_token]")
+        expect(goal_span.text).not_to include(token)
+        expect(goal_span["title"]).to include("[REDACTED:github_token]")
+        expect(goal_span["title"]).not_to include(token)
       end
 
       it "shows empty state when no runs exist" do
@@ -2260,5 +2297,29 @@ RSpec.describe "AgentRuns" do
         expect(response).to have_http_status(:not_found)
       end
     end
+  end
+
+  def parsed_html
+    Nokogiri::HTML(response.body)
+  end
+
+  def goal_cell_for_run(document, run)
+    row = row_for_run(document, run)
+    goal_cell = row.css("td")[goal_column_index(document)]
+
+    expect(goal_cell).to be_present
+    goal_cell
+  end
+
+  def row_for_run(document, run)
+    run_path = project_agent_run_path(run.project, run)
+    row = document.at_css(%(a[href="#{run_path}"]))&.ancestors("tr")&.first
+
+    expect(row).to be_present
+    row
+  end
+
+  def goal_column_index(document)
+    document.css("table thead th").find_index { |header| header.text.squish == "Goal" }
   end
 end
