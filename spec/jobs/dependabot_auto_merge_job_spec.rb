@@ -226,28 +226,127 @@ RSpec.describe DependabotAutoMergeJob do
       expect(client).to have_received(:merge_pull_request)
     end
 
-    it "falls back to combined status when check_runs returns 403 and status is green" do
+    it "merges via workflow_runs when check_runs is forbidden and workflow runs are green" do
       allow(client).to receive(:check_runs_for_ref).and_raise(
         GithubClient::ApiError.new("Resource not accessible by personal access token", status: 403)
+      )
+      allow(client).to receive(:workflow_runs_for_sha).and_return([
+        { conclusion: "success", name: "ci.yml" }
+      ])
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:workflow_runs_for_sha).with(project.full_name, dependabot_pr.head.sha)
+      expect(client).to have_received(:merge_pull_request)
+    end
+
+    it "skips via workflow_runs when check_runs is forbidden and any workflow run failed" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::ApiError.new("Forbidden", status: 403)
+      )
+      allow(client).to receive(:workflow_runs_for_sha).and_return([
+        { conclusion: "success", name: "lint.yml" },
+        { conclusion: "failure", name: "test.yml" }
+      ])
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    it "skips when check_runs is forbidden, workflow runs are green, and commit statuses fail" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::ApiError.new("Forbidden", status: 403)
+      )
+      allow(client).to receive_messages(
+        workflow_runs_for_sha: [
+          { conclusion: "success", name: "lint.yml" },
+          { conclusion: "success", name: "test.yml" }
+        ],
+        combined_status: { state: "failure", total_count: 1 }
+      )
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    it "skips via workflow_runs when check_runs is forbidden and a workflow run is still in progress" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::ApiError.new("Forbidden", status: 403)
+      )
+      allow(client).to receive(:workflow_runs_for_sha).and_return([
+        { conclusion: "success", name: "lint.yml", status: "completed" },
+        { conclusion: nil, name: "test.yml", status: "in_progress" }
+      ])
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    it "falls through to combined status when check_runs is forbidden and workflow_runs is empty" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::ApiError.new("Forbidden", status: 403)
+      )
+      allow(client).to receive_messages(workflow_runs_for_sha: [], combined_status: { state: "success", total_count: 1 })
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:merge_pull_request)
+    end
+
+    it "skips when check_runs is forbidden, workflow_runs is empty, and combined_status reports no contexts" do
+      # Safety regression test: previously this case would merge by treating
+      # "pending + 0 contexts" as "no CI configured", even though the Checks
+      # API was forbidden so we never confirmed the absence of check runs.
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::ApiError.new("Forbidden", status: 403)
+      )
+      allow(client).to receive_messages(workflow_runs_for_sha: [], combined_status: { state: "pending", total_count: 0 })
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    it "skips when check_runs is forbidden and combined_status reports a non-success state" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::ApiError.new("Forbidden", status: 403)
+      )
+      allow(client).to receive_messages(workflow_runs_for_sha: [], combined_status: { state: "pending", total_count: 2 })
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    it "skips when both check_runs and workflow_runs are forbidden and no statuses are configured" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::ApiError.new("Forbidden", status: 403)
+      )
+      allow(client).to receive(:workflow_runs_for_sha).and_raise(
+        GithubClient::ApiError.new("Forbidden", status: 403)
+      )
+      allow(client).to receive(:combined_status).and_return(state: "pending", total_count: 0)
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    it "merges when both check_runs and workflow_runs are forbidden but combined_status reports success" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::ApiError.new("Forbidden", status: 403)
+      )
+      allow(client).to receive(:workflow_runs_for_sha).and_raise(
+        GithubClient::ApiError.new("Forbidden", status: 403)
       )
       allow(client).to receive(:combined_status).and_return(state: "success", total_count: 1)
 
       described_class.perform_now(project.id)
 
-      expect(client).to have_received(:combined_status).with(project.full_name, dependabot_pr.head.sha)
       expect(client).to have_received(:merge_pull_request)
-    end
-
-    it "skips when check_runs returns 403 and combined status is not green" do
-      allow(client).to receive(:check_runs_for_ref).and_raise(
-        GithubClient::ApiError.new("Resource not accessible by personal access token", status: 403)
-      )
-      allow(client).to receive(:combined_status).and_return(state: "pending", total_count: 2)
-
-      described_class.perform_now(project.id)
-
-      expect(client).to have_received(:combined_status).with(project.full_name, dependabot_pr.head.sha)
-      expect(client).not_to have_received(:merge_pull_request)
     end
 
     it "skips when check_runs fails with a non-403 error" do
