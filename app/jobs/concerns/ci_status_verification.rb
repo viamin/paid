@@ -48,7 +48,7 @@ module CiStatusVerification
   # the absence of check runs from non-Actions GitHub Apps.
   def workflow_runs_or_status_green?(client, project, sha)
     runs = client.workflow_runs_for_sha(project.full_name, sha)
-    return conclusions_green?(runs) if runs.any?
+    return workflow_runs_and_statuses_green?(client, project, sha, runs) if runs.any?
 
     combined_status_ok?(client, project, sha, strict: true)
   rescue GithubClient::ApiError => e
@@ -69,6 +69,15 @@ module CiStatusVerification
     false
   end
 
+  # When Actions runs are available, they prove GitHub Actions is green but do
+  # not cover third-party CI providers that only publish commit-status
+  # contexts. Consult combined_status as an additional gate when possible so a
+  # failing status context still blocks the merge. "pending + 0 contexts" means
+  # no status-based CI was reported, so green workflow runs remain sufficient.
+  def workflow_runs_and_statuses_green?(client, project, sha, runs)
+    conclusions_green?(runs) && combined_status_ok?(client, project, sha, strict: false, allow_forbidden: true)
+  end
+
   def conclusions_green?(items)
     items.all? { |i| %w[success skipped neutral].include?(i[:conclusion]) }
   end
@@ -78,10 +87,26 @@ module CiStatusVerification
   # empty check_runs response) that no check runs exist either. When +strict+
   # is true (e.g., the Checks API was forbidden), only an explicit "success"
   # passes, since absence of statuses cannot prove absence of check runs.
-  def combined_status_ok?(client, project, sha, strict:)
+  def combined_status_ok?(client, project, sha, strict:, allow_forbidden: false)
     status = client.combined_status(project.full_name, sha)
     return true if status[:state] == "success"
     !strict && status[:state] == "pending" && status[:total_count] == 0
+  rescue GithubClient::ApiError => e
+    if allow_forbidden && e.status == 403
+      Rails.logger.info(
+        message: "#{ci_log_component}.combined_status_forbidden",
+        project_id: project.id,
+        error: e.message
+      )
+      return true
+    end
+
+    Rails.logger.warn(
+      message: "#{ci_log_component}.combined_status_failed",
+      project_id: project.id,
+      error: e.message
+    )
+    false
   rescue GithubClient::Error => e
     Rails.logger.warn(
       message: "#{ci_log_component}.combined_status_failed",

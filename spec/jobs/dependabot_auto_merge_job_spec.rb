@@ -254,6 +254,23 @@ RSpec.describe DependabotAutoMergeJob do
       expect(client).not_to have_received(:merge_pull_request)
     end
 
+    it "skips when check_runs is forbidden, workflow runs are green, and commit statuses fail" do
+      allow(client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::ApiError.new("Forbidden", status: 403)
+      )
+      allow(client).to receive_messages(
+        workflow_runs_for_sha: [
+          { conclusion: "success", name: "lint.yml" },
+          { conclusion: "success", name: "test.yml" }
+        ],
+        combined_status: { state: "failure", total_count: 1 }
+      )
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
     it "skips via workflow_runs when check_runs is forbidden and a workflow run is still in progress" do
       allow(client).to receive(:check_runs_for_ref).and_raise(
         GithubClient::ApiError.new("Forbidden", status: 403)

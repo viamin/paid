@@ -163,6 +163,7 @@ RSpec.describe "GithubTokens" do
         get new_github_token_path
         expect(response.body).to include("Actions: Read-only")
         expect(response.body).to include("Dependabot auto-merge")
+        expect(response.body).to include("auto-release")
       end
     end
   end
