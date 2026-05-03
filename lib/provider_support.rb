@@ -3,22 +3,15 @@
 require "set"
 
 module ProviderSupport
-  # Maps app-level provider keys to agent-harness registry keys.
-  # This drives validation, UI, and configuration — providers listed here are
-  # "known" to the app and can be configured by users.
+  # App-level provider keys in priority/declaration order.
+  # These are the provider identifiers "known" to the app and configurable by
+  # users.  Harness-canonical names (e.g. "github_copilot" for "copilot") are
+  # resolved at runtime via the agent-harness registry, eliminating the need
+  # for a local mapping hash that can drift from upstream.
   #
   # NOTE: Inclusion here does NOT mean the provider's CLI is installed in the
   # agent Docker container. For container execution, see CONTAINER_EXECUTABLE_PROVIDER_KEYS.
-  APP_TO_HARNESS_PROVIDER_KEYS = {
-    "claude" => "claude",
-    "cursor" => "cursor",
-    "codex" => "codex",
-    "copilot" => "github_copilot",
-    "aider" => "aider",
-    "gemini" => "gemini",
-    "opencode" => "opencode",
-    "kilocode" => "kilocode"
-  }.freeze
+  APP_PROVIDER_KEYS = %w[claude cursor codex copilot aider gemini opencode kilocode].freeze
 
   # Provider keys whose CLIs are actually installed in the agent Docker container
   # and can execute repository-changing agent tasks. GitHub Copilot CLI is
@@ -29,10 +22,10 @@ module ProviderSupport
   module_function
 
   # Returns supported provider keys in a deterministic order matching
-  # APP_TO_HARNESS_PROVIDER_KEYS declaration order, so that provider
-  # priority and default selection are stable across boots.
+  # APP_PROVIDER_KEYS declaration order, so that provider priority and
+  # default selection are stable across boots.
   def supported_provider_keys
-    APP_TO_HARNESS_PROVIDER_KEYS.keys.select { |key| supported_provider_keys_set.include?(key) }
+    APP_PROVIDER_KEYS.select { |key| supported_provider_keys_set.include?(key) }
   end
 
   def supported_provider_key?(provider_key)
@@ -41,10 +34,10 @@ module ProviderSupport
 
   def supported_provider_keys_set
     @supported_provider_keys_set ||= begin
-      registry_keys = AgentHarness::Providers::Registry.instance.all.map(&:to_s).to_set
+      registry = AgentHarness::Providers::Registry.instance
 
-      APP_TO_HARNESS_PROVIDER_KEYS.each_with_object(Set.new) do |(provider_key, harness_key), set|
-        set << provider_key if registry_keys.include?(harness_key)
+      APP_PROVIDER_KEYS.each_with_object(Set.new) do |provider_key, set|
+        set << provider_key if registry.registered?(provider_key)
       end.freeze
     end
   end
@@ -74,7 +67,7 @@ module ProviderSupport
   end
 
   def harness_provider_key_for(provider_key)
-    APP_TO_HARNESS_PROVIDER_KEYS.fetch(provider_key.to_s, provider_key.to_s)
+    AgentHarness::Providers::Registry.instance.canonical_name(provider_key.to_sym).to_s
   end
 
   def provider_key_for_agent_type(agent_type)
@@ -103,7 +96,7 @@ module ProviderSupport
 
   def subscription_auth_unset_vars_for(provider_key)
     key = provider_key.to_s
-    return [] unless APP_TO_HARNESS_PROVIDER_KEYS.key?(key)
+    return [] unless APP_PROVIDER_KEYS.include?(key)
 
     # Intentionally no rescue — if the harness provider is misconfigured or
     # renamed upstream, we want AgentHarness::ConfigurationError to propagate
@@ -196,10 +189,11 @@ module ProviderSupport
 
   # Reverse mapping: API service type → harness provider key.
   # Used by the secrets proxy to delegate token extraction to the correct
-  # agent-harness provider class based on the proxy route.
+  # agent-harness provider class based on the proxy route.  Harness canonical
+  # names are resolved via the registry at load time.
   API_SERVICE_TYPE_TO_HARNESS_KEY = PROVIDER_API_SERVICE_TYPE
     .each_with_object({}) { |(provider_key, service_type), map| map[service_type] ||= provider_key }
-    .transform_values { |pk| APP_TO_HARNESS_PROVIDER_KEYS.fetch(pk, pk) }
+    .transform_values { |pk| AgentHarness::Providers::Registry.instance.canonical_name(pk.to_sym).to_s }
     .freeze
 
   # Maps provider keys to their upstream proxy API key name (used by
