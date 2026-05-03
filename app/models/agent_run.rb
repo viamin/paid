@@ -666,6 +666,10 @@ class AgentRun < ApplicationRecord
     next_queued_run_from(queued_with_priority)
   end
 
+  def self.peek_queued_runs(limit: nil, exclude_ids: [], scope: nil)
+    ordered_queued_runs_from(scope || schedulable_queued_with_priority, limit:, exclude_ids:)
+  end
+
   # Returns the next queued run without claiming it.
   # Used to check per-user capacity before acquiring the lock.
   #
@@ -673,14 +677,17 @@ class AgentRun < ApplicationRecord
   # excluded so a "pause all" toggle can hold new starts while still
   # accepting new queue entries from the project trigger button.
   def self.peek_next_queued_run(exclude_ids: [])
-    scope = queued_with_priority
+    scope = schedulable_queued_with_priority
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
-    scope = scope.joins(project: :account).where(accounts: { scheduler_paused_at: nil })
-    scope = scope.where(projects: { scheduler_paused_at: nil })
-    scope = scope.where(
-      "agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL"
-    )
     next_queued_run_from(scope)
+  end
+
+  def self.schedulable_queued_with_priority
+    queued_with_priority
+      .joins(project: :account)
+      .where(accounts: { scheduler_paused_at: nil })
+      .where(projects: { scheduler_paused_at: nil })
+      .where("agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL")
   end
 
   def self.next_queued_run_from(scope)
@@ -717,6 +724,95 @@ class AgentRun < ApplicationRecord
       .where("#{QUEUE_PRIORITY_CASE_SQL} = ?", first.queue_priority.to_i)
   end
   private_class_method :same_owner_priority_scope
+
+  def self.ordered_queued_runs_from(scope, limit:, exclude_ids:)
+    remaining = exclude_ids.any? ? scope.where.not(id: exclude_ids) : scope
+    remaining = remaining.to_a
+
+    project_counts = remaining.each_with_object({}) do |run, counts|
+      counts[run.project_id] ||= run.project_active_count.to_i
+    end
+    user_counts = remaining.each_with_object({}) do |run, counts|
+      next unless run.project_owner_user_id
+
+      counts[run.project_owner_user_id] ||= run.user_active_count.to_i
+    end
+
+    ordered_runs = []
+
+    loop do
+      break if remaining.empty?
+      break if limit && ordered_runs.size >= limit
+
+      run = next_queued_run_from_candidates(remaining, project_counts:, user_counts:)
+      break unless run
+
+      ordered_runs << run
+      remaining.reject! { |candidate| candidate.id == run.id }
+
+      project_counts[run.project_id] = project_counts.fetch(run.project_id, 0) + 1
+      if run.project_owner_user_id
+        user_counts[run.project_owner_user_id] = user_counts.fetch(run.project_owner_user_id, 0) + 1
+      end
+    end
+
+    ordered_runs
+  end
+  private_class_method :ordered_queued_runs_from
+
+  def self.next_queued_run_from_candidates(candidates, project_counts:, user_counts:)
+    first = candidates.min_by { |run| queue_order_key(run, user_counts:) }
+    return unless first
+    return first unless first.project_owner_user_id
+    return first unless truthy_queue_attribute?(first.fair_queue_across_projects)
+
+    boundary = candidates
+      .select do |run|
+        run.queue_priority.to_i == first.queue_priority.to_i &&
+          run.project_owner_user_id != first.project_owner_user_id
+      end
+      .min_by { |run| queue_order_key(run, user_counts:) }
+
+    same_owner_candidates = candidates.select do |run|
+      run.project_owner_user_id == first.project_owner_user_id &&
+        run.queue_priority.to_i == first.queue_priority.to_i
+    end
+
+    if boundary
+      same_owner_candidates.select! do |run|
+        (within_owner_order_key(run, project_counts:) <=> within_boundary_key(boundary)) == -1
+      end
+    end
+
+    same_owner_candidates.min_by { |run| within_owner_order_key(run, project_counts:) } || first
+  end
+  private_class_method :next_queued_run_from_candidates
+
+  def self.queue_order_key(run, user_counts:)
+    [
+      run.queue_priority.to_i,
+      user_counts.fetch(run.project_owner_user_id, 0),
+      run.goal_priority.to_i,
+      run.created_at,
+      run.id
+    ]
+  end
+  private_class_method :queue_order_key
+
+  def self.within_owner_order_key(run, project_counts:)
+    [
+      project_counts.fetch(run.project_id, 0),
+      run.goal_priority.to_i,
+      run.created_at,
+      run.id
+    ]
+  end
+  private_class_method :within_owner_order_key
+
+  def self.within_boundary_key(run)
+    [ run.goal_priority.to_i, run.created_at, run.id ]
+  end
+  private_class_method :within_boundary_key
 
   def self.truthy_queue_attribute?(value)
     value == true || %w[1 t true].include?(value.to_s)
