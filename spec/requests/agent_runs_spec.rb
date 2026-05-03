@@ -74,6 +74,19 @@ RSpec.describe "AgentRuns" do
         expect(goal_cell.at_css("span")["title"]).to eq("Review pull request #87")
       end
 
+      it "shows PR label for create_pr runs targeting an existing pull request" do
+        run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_pr", issue: nil,
+          custom_prompt: "Generated instructions that should not appear",
+          source_pull_request_number: 55)
+
+        get agent_runs_path
+
+        goal_cell = goal_cell_for_run(parsed_html, run)
+
+        expect(goal_cell.text.squish).to eq("PR pull request #55")
+        expect(goal_cell.at_css("span")["title"]).to eq("PR pull request #55")
+      end
+
       it "falls back to custom prompt text when no issue or review goal text is available" do
         goal_text = "Investigate the flaky deploy status check"
         run = create(:agent_run, :with_custom_prompt, project: project, issue: nil, custom_prompt: goal_text)
@@ -2320,7 +2333,11 @@ RSpec.describe "AgentRuns" do
 
   def goal_cell_for_run(document, run)
     row = row_for_run(document, run)
-    goal_cell = row.css("td")[goal_column_index(document)]
+    index = goal_column_index(document)
+
+    expect(index).not_to be_nil, "Expected a 'Goal' header column in the table but none was found"
+
+    goal_cell = row.css("td")[index]
 
     expect(goal_cell).to be_present
     goal_cell

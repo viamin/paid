@@ -305,11 +305,15 @@ module ApplicationHelper
     end
   end
 
+  # Precedence: issue title > PR label (any run with a source PR) > redacted custom_prompt.
+  # Issue title is the most user-meaningful label; the PR label covers both
+  # review runs and create_pr runs targeting an existing pull request.
   def agent_run_goal_text(run)
     return run.issue.title if run.issue&.title.present?
 
-    if run.review_goal? && run.source_pull_request_number.present?
-      return "Review pull request ##{run.source_pull_request_number}"
+    if run.source_pull_request_number.present?
+      label = run.review_goal? ? "Review" : "PR"
+      return "#{label} pull request ##{run.source_pull_request_number}"
     end
 
     redacted_goal_text(run.custom_prompt)

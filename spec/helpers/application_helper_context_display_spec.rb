@@ -243,6 +243,13 @@ RSpec.describe ApplicationHelper do
       expect(helper.agent_run_goal_text(run)).to eq("Review pull request #87")
     end
 
+    it "shows PR label for non-review runs with a source pull request number" do
+      run = goal_text_run(custom_prompt: "Generated instructions", review_goal: false,
+        source_pull_request_number: 42)
+
+      expect(helper.agent_run_goal_text(run)).to eq("PR pull request #42")
+    end
+
     it "falls back to redacted custom prompt text" do
       token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
       run = goal_text_run(custom_prompt: "Investigate GITHUB_TOKEN=#{token}")
