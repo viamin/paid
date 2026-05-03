@@ -232,7 +232,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect { command_collector.collect }.to raise_error(RuntimeError, "Command failed")
       end
 
-      it "fails when the command hits a database connection error" do
+      it "skips when the command hits a database connection error" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_raise(
@@ -241,8 +241,8 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           )
 
         expect { command_collector.collect }.to raise_error(
-          Knowledge::ContainerizedRunner::ContainerError,
-          /ActiveRecord::ConnectionNotEstablished/
+          Knowledge::SkipCollector,
+          /routes require database access during Rails boot/
         )
       end
 

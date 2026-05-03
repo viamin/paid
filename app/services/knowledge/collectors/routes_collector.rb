@@ -5,6 +5,15 @@ module Knowledge
     class RoutesCollector < BaseCollector
       SCOPE_PATH = "config/routes.rb"
       BUNDLE_HOME = "/tmp/paid-bundle-home"
+      DATABASE_CONNECTION_ERROR_PATTERNS = [
+        /ActiveRecord::ConnectionNotEstablished/,
+        /ActiveRecord::DatabaseConnectionError/,
+        /ActiveRecord::NoDatabaseError/,
+        /PG::(?:ConnectionBad|Error)/,
+        /connection to server .*PGSQL/i,
+        /could not connect to server/i,
+        /database .* does not exist/i
+      ].freeze
 
       def collect
         output = read_routes_output
@@ -85,6 +94,10 @@ module Knowledge
         end
 
         run_routes_command
+      rescue StandardError => error
+        raise unless database_connection_error?(error)
+
+        skip!("routes require database access during Rails boot")
       end
 
       def run_routes_command
@@ -165,6 +178,25 @@ module Knowledge
         end
 
         raise teardown_error if original_error.nil? && teardown_error
+      end
+
+      def database_connection_error?(error)
+        each_error_in_chain(error).any? do |current_error|
+          DATABASE_CONNECTION_ERROR_PATTERNS.any? do |pattern|
+            current_error.class.name.match?(pattern) || current_error.message.to_s.match?(pattern)
+          end
+        end
+      end
+
+      def each_error_in_chain(error)
+        [].tap do |errors|
+          current_error = error
+
+          while current_error && !errors.include?(current_error)
+            errors << current_error
+            current_error = current_error.cause
+          end
+        end
       end
 
       def parse_expanded_output(output)
