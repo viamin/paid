@@ -33,7 +33,19 @@ RSpec.describe Dashboard::QueuePreview do
       expect(preview.sole.waiting_reason).to eq("Waiting for capacity")
     end
 
-    it "reports waiting for project slot for same-owner same-tier work behind another queued run" do
+    it "reports 'Next up' when the run is first in line with free capacity" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account: account, created_by: user)
+
+      create(:agent_run, :queued, :manual, project:)
+
+      preview = described_class.call(user:)
+
+      expect(preview.sole.waiting_reason).to eq("Next up")
+    end
+
+    it "reports waiting for project slot for same-owner same-tier work from a different project" do
       account = create(:account)
       user = create(:user, account: account)
       user.settings.update!(fair_queue_across_projects: true, max_concurrent_runs: 3)
@@ -47,6 +59,21 @@ RSpec.describe Dashboard::QueuePreview do
       second_entry = preview.find { |entry| entry.run.id == second_run.id }
 
       expect(second_entry.waiting_reason).to eq("Waiting for project slot")
+    end
+
+    it "does not report project slot when both runs are from the same project" do
+      account = create(:account)
+      user = create(:user, account: account)
+      user.settings.update!(fair_queue_across_projects: true, max_concurrent_runs: 3)
+      project = create(:project, account: account, created_by: user)
+
+      create(:agent_run, :queued, :manual, project: project, created_at: 2.minutes.ago)
+      second_run = create(:agent_run, :queued, :manual, project: project, created_at: 1.minute.ago)
+
+      preview = described_class.call(user:)
+      second_entry = preview.find { |entry| entry.run.id == second_run.id }
+
+      expect(second_entry.waiting_reason).to eq("Next up")
     end
 
     it "keeps reporting capacity when earlier same-owner runs already consume the remaining slots" do

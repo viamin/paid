@@ -4,13 +4,17 @@ module Dashboard
   class QueuePreview
     Entry = Struct.new(:position, :run, :waiting_reason, keyword_init: true)
 
+    NEXT_UP = "Next up"
     WAITING_FOR_CAPACITY = "Waiting for capacity"
     WAITING_FOR_PROJECT_SLOT = "Waiting for project slot"
     LOWER_PRIORITY = "Lower priority"
     BUDGET_EXCEEDED = "Budget exceeded"
 
-    # Hard cap on queue iterations to prevent unbounded N+1 queries when
-    # the user has no visible runs near the front of the queue.
+    # Cap on the number of rows fetched from the queue. This limits the
+    # single snapshot query rather than controlling a loop, so there is no
+    # N+1 concern. The cap exists to keep the result set reasonable; when
+    # the user's visible runs are all beyond this window we show a
+    # truncation notice rather than silently dropping them.
     MAX_SCAN = 200
 
     def self.call(...)
@@ -25,14 +29,15 @@ module Dashboard
     def call
       return [] if visible_project_ids.empty?
 
-      snapshot, visible_runs = collect_visible_runs
+      snapshot = fetch_snapshot
+      visible_runs = snapshot.select { |run| visible_project_ids.include?(run.project_id) }
       preload_associations(visible_runs)
 
       entries = []
       earlier_runs = []
 
       snapshot.each do |run|
-        if visible_project_ids.include?(run.project_id)
+        if visible_project_ids.include?(run.project_id) && entries.size < limit
           entries << Entry.new(
             position: entries.size + 1,
             run:,
@@ -61,23 +66,17 @@ module Dashboard
       end
     end
 
-    def collect_visible_runs
-      visible_runs = []
-      snapshot = []
-      excluded_ids = []
-
-      # Walk the global queue order rather than filtering the scope up front:
-      # non-visible runs still determine why a visible run is waiting.
-      while visible_runs.size < limit && snapshot.size < MAX_SCAN
-        run = AgentRun.peek_next_queued_run(exclude_ids: excluded_ids)
-        break unless run
-
-        excluded_ids << run.id
-        snapshot << run
-        visible_runs << run if visible_project_ids.include?(run.project_id)
-      end
-
-      [ snapshot, visible_runs ]
+    # Fetch the ordered snapshot in a single query instead of iterating
+    # peek_next_queued_run one-at-a-time. This uses the raw QUEUE_ORDER
+    # rather than the fair-queue round-robin reordering that
+    # next_queued_run_from applies; for a read-only preview the scheduler
+    # consideration order is more informative and avoids up to 3 queries
+    # per iteration.
+    def fetch_snapshot
+      AgentRun.schedulable_queued_with_priority
+              .reorder(*AgentRun::QUEUE_ORDER)
+              .limit(MAX_SCAN)
+              .to_a
     end
 
     def preload_associations(runs)
@@ -91,11 +90,11 @@ module Dashboard
     def waiting_reason_for(run, earlier_runs)
       return BUDGET_EXCEEDED if budget_exceeded?(run)
       return WAITING_FOR_CAPACITY if user_at_capacity?(run, earlier_runs)
-
       return LOWER_PRIORITY if earlier_runs.any? { |candidate| candidate.queue_priority.to_i < run.queue_priority.to_i }
       return WAITING_FOR_PROJECT_SLOT if waiting_for_project_slot?(run, earlier_runs)
 
-      WAITING_FOR_CAPACITY
+      # First run in line with free capacity — ready to be picked up.
+      NEXT_UP
     end
 
     def budget_exceeded?(run)
@@ -146,14 +145,20 @@ module Dashboard
       return false unless truthy_queue_attribute?(run.fair_queue_across_projects)
       return false unless run.project_owner_user_id
 
+      # Only flag as a project-slot wait when an earlier run from a
+      # *different* project of the same owner at the same priority tier
+      # exists. Without the project_id check, a single-project owner
+      # would incorrectly see "Waiting for project slot" on their second
+      # queued run even though no cross-project rotation is happening.
       earlier_runs.any? do |candidate|
         candidate.project_owner_user_id == run.project_owner_user_id &&
-          candidate.queue_priority.to_i == run.queue_priority.to_i
+          candidate.queue_priority.to_i == run.queue_priority.to_i &&
+          candidate.project_id != run.project_id
       end
     end
 
     def truthy_queue_attribute?(value)
-      AgentRun.send(:truthy_queue_attribute?, value)
+      value == true || %w[1 t true].include?(value.to_s)
     end
   end
 end
