@@ -306,16 +306,13 @@ module ApplicationHelper
   end
 
   def agent_run_goal_text(run)
-    prompt = redacted_goal_text(run.custom_prompt)
-    return prompt if prompt.present?
-
     return run.issue.title if run.issue&.title.present?
 
     if run.review_goal? && run.source_pull_request_number.present?
       return "Review pull request ##{run.source_pull_request_number}"
     end
 
-    nil
+    redacted_goal_text(run.custom_prompt)
   end
 
   # Returns the best "back" URL: checks params[:return_to] first, then

@@ -48,19 +48,22 @@ RSpec.describe "AgentRuns" do
         expect(goal_cell.at_css("span")["class"]).to include("block truncate")
       end
 
-      it "falls back to the issue title when no custom goal text is present" do
+      it "prefers the issue title over custom prompt text" do
         issue = create(:issue, project: project, title: "Fix flaky webhook retry handling")
-        run = create(:agent_run, project: project, issue: issue, custom_prompt: nil)
+        run = create(:agent_run, :with_custom_prompt, project: project, issue: issue,
+          custom_prompt: "Rendered task instructions that should not appear")
 
         get agent_runs_path
 
         goal_cell = goal_cell_for_run(parsed_html, run)
 
         expect(goal_cell.text.squish).to eq(issue.title)
+        expect(goal_cell.at_css("span")["title"]).to eq(issue.title)
       end
 
-      it "falls back to review pull request text when no custom goal text is present" do
-        run = create(:agent_run, :review_goal, project: project, custom_prompt: nil, issue: nil,
+      it "prefers review pull request text over custom prompt text" do
+        run = create(:agent_run, :review_goal, :with_custom_prompt, project: project, issue: nil,
+          custom_prompt: "Generated review instructions that should not appear",
           source_pull_request_number: 87)
 
         get agent_runs_path
@@ -69,6 +72,18 @@ RSpec.describe "AgentRuns" do
 
         expect(goal_cell.text.squish).to eq("Review pull request #87")
         expect(goal_cell.at_css("span")["title"]).to eq("Review pull request #87")
+      end
+
+      it "falls back to custom prompt text when no issue or review goal text is available" do
+        goal_text = "Investigate the flaky deploy status check"
+        run = create(:agent_run, :with_custom_prompt, project: project, issue: nil, custom_prompt: goal_text)
+
+        get agent_runs_path
+
+        goal_cell = goal_cell_for_run(parsed_html, run)
+
+        expect(goal_cell.text.squish).to eq(goal_text)
+        expect(goal_cell.at_css("span")["title"]).to eq(goal_text)
       end
 
       it "shows a placeholder when a run has no goal text to display" do
