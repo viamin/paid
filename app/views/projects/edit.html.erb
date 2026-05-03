@@ -281,6 +281,7 @@
                 </div>
                 <div id="review_copilot_settings"
                   class="ml-7 grid grid-cols-2 gap-3 transition-all duration-200 ease-in-out <%= copilot["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
+                  aria-hidden="<%= copilot["enabled"] ? "false" : "true" %>"
                   <%= "hidden" unless copilot["enabled"] %>
                   data-collapsible-panel-target="panel">
                   <div>
@@ -328,6 +329,7 @@
                 </div>
                 <div id="review_paid_agent_settings"
                   class="ml-7 grid grid-cols-2 gap-3 transition-all duration-200 ease-in-out <%= paid["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
+                  aria-hidden="<%= paid["enabled"] ? "false" : "true" %>"
                   <%= "hidden" unless paid["enabled"] %>
                   data-collapsible-panel-target="panel">
                   <div>
@@ -376,6 +378,7 @@
                 </div>
                 <div id="review_codex_settings"
                   class="space-y-3 transition-all duration-200 ease-in-out <%= codex["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
+                  aria-hidden="<%= codex["enabled"] ? "false" : "true" %>"
                   <%= "hidden" unless codex["enabled"] %>
                   data-collapsible-panel-target="panel">
                   <p class="ml-7 text-xs text-gray-500">Waits for the <code>chatgpt-codex-connector</code> bot to review the PR and resolve its threads before advancing.</p>
@@ -426,6 +429,7 @@
                 </div>
                 <div id="review_ci_action_settings"
                   class="ml-7 space-y-3 transition-all duration-200 ease-in-out <%= ci["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
+                  aria-hidden="<%= ci["enabled"] ? "false" : "true" %>"
                   <%= "hidden" unless ci["enabled"] %>
                   data-collapsible-panel-target="panel">
                   <div>
@@ -485,6 +489,7 @@
                 </div>
                 <div id="review_manual_settings"
                   class="ml-7 space-y-3 transition-all duration-200 ease-in-out <%= manual["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
+                  aria-hidden="<%= manual["enabled"] ? "false" : "true" %>"
                   <%= "hidden" unless manual["enabled"] %>
                   data-collapsible-panel-target="panel">
                   <div>

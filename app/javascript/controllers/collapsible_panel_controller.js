@@ -14,7 +14,7 @@ export default class extends Controller {
     const expanded = this.checkboxTarget.checked
 
     this.checkboxTarget.setAttribute("aria-expanded", expanded.toString())
-    this.panelTarget.hidden = false
+    this.panelTarget.hidden = !expanded
     this.panelTarget.setAttribute("aria-hidden", (!expanded).toString())
 
     COLLAPSED_CLASSES.forEach((className) => {

@@ -1063,6 +1063,7 @@ RSpec.describe "Projects" do
         expect(panel).to be_present
         expect(panel["hidden"]).to eq("")
         expect(panel["data-collapsible-panel-target"]).to eq("panel")
+        expect(panel["aria-hidden"]).to eq("true")
         expect(checkbox["data-action"]).to eq("change->collapsible-panel#toggle")
         expect(checkbox["aria-expanded"]).to eq("false")
       end
@@ -1088,6 +1089,7 @@ RSpec.describe "Projects" do
         expect(panel).to be_present
         expect(panel["hidden"]).to be_nil
         expect(panel["class"]).to include("max-h-[2000px]")
+        expect(panel["aria-hidden"]).to eq("false")
         expect(checkbox["aria-expanded"]).to eq("true")
       end
     end
