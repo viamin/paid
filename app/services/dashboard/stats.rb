@@ -2,6 +2,8 @@
 
 module Dashboard
   class Stats
+    DAILY_RUN_CHART_WINDOW_DAYS = 30
+    DAILY_RUN_CHART_STATUSES = %w[failed completed].freeze
     PHASE_BREAKDOWN_WINDOW = 30.days
     PHASE_BREAKDOWN_RUN_LIMIT = 500
 
@@ -10,14 +12,14 @@ module Dashboard
     VALID_GOALS = %w[all create_pr create_issue review].freeze
 
     SECTIONS = %i[
-      run_volume duration_percentiles phase_breakdown cost_and_tokens
+      run_volume daily_run_status_chart duration_percentiles phase_breakdown cost_and_tokens
       performance_by_outcome performance_by_goal
       runs_by_agent_type runs_by_provider provider_fallback_stats
       runs_by_project cost_by_project issue_completion
     ].freeze
 
     METRICS_SECTIONS = %i[
-      run_volume cost_and_tokens duration_percentiles phase_breakdown
+      run_volume daily_run_status_chart cost_and_tokens duration_percentiles phase_breakdown
       issue_completion cost_by_project provider_fallback_stats
       runs_by_provider runs_by_project
     ].freeze
@@ -130,6 +132,22 @@ module Dashboard
         p90: result&.dig(2)&.to_i || 0,
         avg: result&.dig(3)&.to_i || 0
       }
+    end
+
+    def daily_run_status_chart
+      start_date = (DAILY_RUN_CHART_WINDOW_DAYS - 1).days.ago.to_date
+      end_date = Time.zone.today
+      date_range = (start_date..end_date).to_a
+      counts = agent_runs.where(created_at: start_date.beginning_of_day..end_date.end_of_day, status: DAILY_RUN_CHART_STATUSES)
+        .group(Arel.sql("DATE(agent_runs.created_at)"), :status)
+        .count
+
+      DAILY_RUN_CHART_STATUSES.map do |status|
+        {
+          name: status.titleize,
+          data: date_range.index_with { |date| counts.fetch([ date, status ], 0) }
+        }
+      end
     end
 
     def cost_and_tokens
