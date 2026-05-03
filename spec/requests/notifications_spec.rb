@@ -17,6 +17,22 @@ RSpec.describe "Notifications" do
       expect(response.body).to include("Test alert")
     end
 
+    it "renders the table with mobile horizontal scrolling constraints" do
+      create(:notification, account: account, title: "Scrollable alert")
+
+      get notifications_path
+
+      doc = Nokogiri::HTML(response.body)
+      scroll_wrapper = doc.at_css("div.overflow-x-auto > table.min-w-full")
+      header_classes = doc.css("table thead th").map { |header| header["class"] }
+
+      expect(scroll_wrapper).to be_present
+      expect(header_classes).to include(a_string_including("min-w-[5rem]"))
+      expect(header_classes).to include(a_string_including("min-w-[16rem]"))
+      expect(header_classes).to include(a_string_including("min-w-[6rem]"))
+      expect(header_classes).to include(a_string_including("min-w-[7rem]"))
+    end
+
     it "filters by unread" do
       unread = create(:notification, account: account, title: "Unread alert")
       create(:notification, :read, account: account, title: "Read alert")
