@@ -31,6 +31,37 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include(project.name)
       end
 
+      it "shows each run goal in the index table" do
+        goal_text = "Implement multi-step OAuth token refresh handling for stale sessions"
+        create(:agent_run, :with_custom_prompt, project: project, custom_prompt: goal_text)
+
+        get agent_runs_path
+
+        expect(response.body).to include("Goal")
+        expect(response.body).to include(goal_text)
+        expect(response.body).to include(%(title="#{goal_text}"))
+        expect(response.body).to include("block truncate")
+      end
+
+      it "falls back to the issue title when no custom goal text is present" do
+        issue = create(:issue, project: project, title: "Fix flaky webhook retry handling")
+        create(:agent_run, project: project, issue: issue, custom_prompt: nil)
+
+        get agent_runs_path
+
+        expect(response.body).to include(issue.title)
+      end
+
+      it "shows a placeholder when a run has no goal text to display" do
+        run = create(:agent_run, :with_custom_prompt, project: project, custom_prompt: "Temporary goal")
+        run.update_columns(custom_prompt: nil, issue_id: nil)
+
+        get agent_runs_path
+
+        expect(response.body).to include(project_agent_run_path(project, run))
+        expect(response.body).to include('<span class="text-gray-400">-</span>')
+      end
+
       it "shows empty state when no runs exist" do
         get agent_runs_path
         expect(response.body).to include("No agent runs yet")

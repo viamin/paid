@@ -305,6 +305,19 @@ module ApplicationHelper
     end
   end
 
+  def agent_run_goal_text(run)
+    prompt = run.custom_prompt.to_s.squish
+    return prompt if prompt.present?
+
+    return run.issue.title if run.issue&.title.present?
+
+    if run.review_goal? && run.source_pull_request_number.present?
+      return "Review pull request ##{run.source_pull_request_number}"
+    end
+
+    nil
+  end
+
   # Returns the best "back" URL: checks params[:return_to] first, then
   # request.referer, then falls back to the provided default path.
   # Only internal (same-host, path-only) URLs are accepted to prevent open redirects.

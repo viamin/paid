@@ -18,6 +18,9 @@
                   <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Project</th>
                 <% end %>
                 <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                  Goal
+                </th>
+                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                   Context
                 </th>
                 <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
@@ -45,6 +48,14 @@
                       <%= link_to run.project.name, project_path(run.project), class: "text-indigo-600 hover:text-indigo-900" %>
                     </td>
                   <% end %>
+                  <td class="max-w-md px-3 py-4 text-sm text-gray-500">
+                    <% goal_text = agent_run_goal_text(run) %>
+                    <% if goal_text.present? %>
+                      <span class="block truncate" title="<%= goal_text %>"><%= goal_text %></span>
+                    <% else %>
+                      <span class="text-gray-400">-</span>
+                    <% end %>
+                  </td>
                   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                     <%= agent_run_context_display(run) %>
                   </td>
