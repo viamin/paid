@@ -97,7 +97,15 @@ module Knowledge
 
       { collector_type: collector_type, status: "completed", artifacts_count: count }
     rescue SkipCollector => e
-      collector_run&.mark_skipped!(reason: e.reason) if collector_run&.persisted?
+      if collector_run&.persisted?
+        collector_run.mark_skipped!(
+          reason: e.reason,
+          artifacts_count: skipped_artifacts_count(
+            collector_type: collector_type,
+            preserve_existing_artifacts: e.preserve_existing_artifacts?
+          )
+        )
+      end
       Rails.logger.info(
         message: "knowledge.collector_skipped",
         collector_type: collector_type,
@@ -158,7 +166,7 @@ module Knowledge
           .where(project: project, status: "active")
           .where.not(collector_run_id: current_run_ids)
           .where(collector_runs: { project_version_id: older_version_ids })
-        stale_artifacts = stale_artifacts.where.not(collector_type: preserved_types) if preserved_types.any?
+        stale_artifacts = stale_artifacts.where.not(knowledge_artifacts: { collector_type: preserved_types }) if preserved_types.any?
 
         KnowledgeChunk
           .where(knowledge_artifact_id: stale_artifacts.select(:id), status: "active")
@@ -170,6 +178,12 @@ module Knowledge
 
     def collector_classes
       self.class.registry
+    end
+
+    def skipped_artifacts_count(collector_type:, preserve_existing_artifacts:)
+      return 0 unless preserve_existing_artifacts
+
+      project.knowledge_artifacts.active.where(collector_type: collector_type).count
     end
 
     def report_exception(exception, collector_type)

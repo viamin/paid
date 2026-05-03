@@ -193,6 +193,16 @@ RSpec.describe Knowledge::CollectorRunner do
           identifier:, content:, content_hash: Digest::SHA256.hexdigest(content))
       end
 
+      def collector_run_for(project_version, collector_type)
+        CollectorRun.find_by!(collector_type:, project_version:)
+      end
+
+      def register_preserving_skip_collector
+        described_class.reset_registry!
+        described_class.register("preserving_skip_collector", preserving_skip_collector_class)
+        described_class.register("test_collector", test_collector_class)
+      end
+
       it "marks the collector run as skipped with a reason" do
         result = described_class.call(project: project, commit_sha: commit_sha)
 
@@ -242,9 +252,7 @@ RSpec.describe Knowledge::CollectorRunner do
       end
 
       it "preserves prior artifacts when a skipped collector requests it" do
-        described_class.reset_registry!
-        described_class.register("preserving_skip_collector", preserving_skip_collector_class)
-        described_class.register("test_collector", test_collector_class)
+        register_preserving_skip_collector
 
         old_sha = "g" * 40
         described_class.call(project: project, commit_sha: old_sha, committed_at: 2.hours.ago)
@@ -265,12 +273,11 @@ RSpec.describe Knowledge::CollectorRunner do
           preserve_existing_artifacts: true
         )
         expect(extra.reload.status).to eq("active")
+        expect(collector_run_for(result[:project_version], "preserving_skip_collector").artifacts_count).to eq(1)
       end
 
       it "still marks other collectors' orphaned artifacts as stale" do
-        described_class.reset_registry!
-        described_class.register("preserving_skip_collector", preserving_skip_collector_class)
-        described_class.register("test_collector", test_collector_class)
+        register_preserving_skip_collector
 
         old_sha = "i" * 40
         described_class.call(project: project, commit_sha: old_sha, committed_at: 2.hours.ago)

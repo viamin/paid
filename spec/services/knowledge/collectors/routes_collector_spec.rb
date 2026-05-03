@@ -276,6 +276,34 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         end
       end
 
+      it "skips on mysql connection errors" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            "Command failed (exit 1): Mysql2::Error::ConnectionError: Can't connect to local MySQL server through socket '/run/mysqld/mysqld.sock'"
+          )
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
+      end
+
+      it "skips on sqlite database open errors" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            "Command failed (exit 1): SQLite3::CantOpenException: unable to open database file"
+          )
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
+      end
+
       it "cleans up credentials and disconnects network before running routes" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))

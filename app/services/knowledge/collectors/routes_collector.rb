@@ -9,8 +9,15 @@ module Knowledge
         /ActiveRecord::ConnectionNotEstablished/,
         /ActiveRecord::DatabaseConnectionError/,
         /ActiveRecord::NoDatabaseError/,
+        /Mysql2::Error(?:\:|\b)/,
+        /SQLite3::(?:CantOpenException|SQLException)/,
+        /Sequel::Database(?:Connection)?Error/,
         /PG::(?:ConnectionBad|Error)/,
         /connection to server .*PGSQL/i,
+        /can't connect to (?:local )?MySQL server/i,
+        /unknown database/i,
+        /unable to open database file/i,
+        /no such database/i,
         /could not connect to server/i,
         /database .* does not exist/i
       ].freeze
