@@ -54,6 +54,7 @@ RSpec.describe "Projects::KnowledgeRecommendations" do
           headers: { "Accept" => "text/vnd.turbo-stream.html" }
 
         expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+        expect(response.body).to include(%(action="update" target="knowledge_recommendations_alert"))
       end
 
       it "rejects an unsupported action type" do
@@ -64,6 +65,8 @@ RSpec.describe "Projects::KnowledgeRecommendations" do
         expect(response).to have_http_status(:bad_request)
         expect(response.media_type).to eq("text/vnd.turbo-stream.html")
         expect(response.body).to include("Unsupported action type")
+        expect(response.body).to include(%(action="update" target="knowledge_recommendations_alert"))
+        expect(response.body).not_to include(%(action="replace" target="knowledge_recommendations_alert"))
         expect(response.body).not_to include(%(action="remove"))
         expect(recommendation.reload.status).to eq("pending")
       end
