@@ -31,6 +31,7 @@ RSpec.describe Scaling::QueueMonitor do
     it "measures agent run queue depth globally" do
       create(:agent_run, project: project, status: "queued")
       create(:agent_run, project: project, status: "queued")
+      create(:agent_run, project: project, status: "queued", temporal_workflow_id: "wf-123")
       create(:agent_run, project: project, status: "running")
 
       result = described_class.call
@@ -44,6 +45,7 @@ RSpec.describe Scaling::QueueMonitor do
       other_project = create(:project, account: other_account)
 
       create(:agent_run, project: project, status: "queued")
+      create(:agent_run, project: project, status: "queued", temporal_workflow_id: "wf-123")
       create(:agent_run, project: other_project, status: "queued")
 
       result = described_class.call(account: account)
@@ -105,6 +107,15 @@ RSpec.describe Scaling::QueueMonitor do
 
       agent_depth = result.queue_depths.find { |d| d.type == :agent_run_queue }
       expect(agent_depth.depth).to eq(42)
+    end
+
+    it "uses a zero precomputed_depth instead of querying" do
+      create(:agent_run, project: project, status: "queued")
+
+      result = described_class.call(account: account, only: :agent_run_queue, precomputed_depth: 0)
+
+      agent_depth = result.queue_depths.find { |d| d.type == :agent_run_queue }
+      expect(agent_depth.depth).to eq(0)
     end
 
     it "accepts custom thresholds" do

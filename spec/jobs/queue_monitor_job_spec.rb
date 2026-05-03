@@ -42,6 +42,16 @@ RSpec.describe QueueMonitorJob do
       expect(Scaling::QueueMonitor).to have_received(:call).with(account: account, only: :agent_run_queue, precomputed_depth: 0)
     end
 
+    it "precomputes waiting queued depth without counting claimed runs" do
+      project = create(:project, account: account)
+      create(:agent_run, project: project, status: "queued")
+      create(:agent_run, project: project, status: "queued", temporal_workflow_id: "wf-123")
+
+      described_class.perform_now
+
+      expect(Scaling::QueueMonitor).to have_received(:call).with(account: account, only: :agent_run_queue, precomputed_depth: 1)
+    end
+
     it "broadcasts queue health to each account dashboard" do
       described_class.perform_now
 

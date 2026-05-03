@@ -100,6 +100,16 @@ RSpec.describe DockerOrphanCleanupJob do
         expect(container).not_to have_received(:delete)
       end
 
+      it "skips containers for claimed queued runs" do
+        claimed_run = create(:agent_run, status: "queued", temporal_workflow_id: "workflow-123")
+        container = make_container(labels: { "paid.agent_run_id" => claimed_run.id.to_s })
+        stub_agent_containers(container)
+
+        job.perform
+
+        expect(container).not_to have_received(:delete)
+      end
+
       it "skips containers for retained agent runs" do
         retained_run = create(:agent_run, :failed, container_retained_until: 2.hours.from_now)
         container = make_container(labels: { "paid.agent_run_id" => retained_run.id.to_s })
@@ -159,14 +169,14 @@ RSpec.describe DockerOrphanCleanupJob do
         stub_pool_containers
       end
 
-      it "removes service containers with zero active agent runs" do
+      it "removes service containers with zero in-flight capacity runs" do
         sc = create(:service_container, status: "running")
         container = make_container(labels: {
           "paid.service_container" => "true",
           "paid.service_container_id" => sc.id.to_s
         })
         stub_service_containers(container)
-        allow(sc).to receive(:active_agent_run_count).and_return(0)
+        allow(sc).to receive(:capacity_inflight_agent_run_count).and_return(0)
         allow(ServiceContainer).to receive(:find_by).with(id: sc.id.to_s).and_return(sc)
 
         job.perform
@@ -175,15 +185,33 @@ RSpec.describe DockerOrphanCleanupJob do
         expect(sc.reload.status).to eq("stopped")
       end
 
-      it "skips service containers with active agent runs" do
+      it "skips service containers with running agent runs" do
         sc = create(:service_container, status: "running")
         container = make_container(labels: {
           "paid.service_container" => "true",
           "paid.service_container_id" => sc.id.to_s
         })
         stub_service_containers(container)
-        allow(sc).to receive(:active_agent_run_count).and_return(1)
+        allow(sc).to receive(:capacity_inflight_agent_run_count).and_return(1)
         allow(ServiceContainer).to receive(:find_by).with(id: sc.id.to_s).and_return(sc)
+
+        job.perform
+
+        expect(container).not_to have_received(:delete)
+      end
+
+      it "skips service containers with claimed queued runs" do
+        sc = create(:service_container, status: "running")
+        project = create(:project)
+        create(:project_service_container, project: project, service_container: sc)
+        issue = create(:issue, project: project)
+        create(:agent_run, status: "queued", temporal_workflow_id: "workflow-123", project: project, issue: issue,
+          service_container_ids: [ sc.id ])
+        container = make_container(labels: {
+          "paid.service_container" => "true",
+          "paid.service_container_id" => sc.id.to_s
+        })
+        stub_service_containers(container)
 
         job.perform
 
@@ -250,6 +278,20 @@ RSpec.describe DockerOrphanCleanupJob do
 
         expect(container).not_to have_received(:delete)
       end
+
+      it "skips claimed pool containers for claimed queued runs" do
+        claimed_run = create(:agent_run, status: "queued", temporal_workflow_id: "workflow-123")
+        entry = create(:container_pool_entry, :claimed, agent_run: claimed_run)
+        container = make_container(labels: {
+          "paid.container_pool" => "true",
+          "paid.container_pool_entry_id" => entry.id.to_s
+        })
+        stub_pool_containers(container)
+
+        job.perform
+
+        expect(container).not_to have_received(:delete)
+      end
     end
 
     context "with volumes" do
@@ -263,6 +305,16 @@ RSpec.describe DockerOrphanCleanupJob do
         job.perform
 
         expect(volume).to have_received(:remove)
+      end
+
+      it "skips volumes for claimed queued runs" do
+        claimed_run = create(:agent_run, status: "queued", temporal_workflow_id: "workflow-123")
+        volume = instance_double(Docker::Volume, id: "paid-workspace-#{claimed_run.id}", remove: true)
+        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+
+        job.perform
+
+        expect(volume).not_to have_received(:remove)
       end
 
       it "skips volumes for active agent runs" do

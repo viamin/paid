@@ -38,6 +38,20 @@ namespace :dev do
         end
       end
 
+      AgentRun.stale_claimed.find_each do |run|
+        run.with_lock do
+          run.reload
+          next if run.finished?
+          next unless run.claimed?
+          next unless run.updated_at < AgentRun.stale_claimed_cutoff
+
+          run.timeout!(error: "#{AgentRun::STALE_CLEANUP_ERROR_PREFIX}: process was restarted")
+          run.log!("system", "Stale claimed run marked as timed out during startup cleanup")
+          run.issue&.update!(paid_state: "failed") unless run.issue&.paid_state == "failed"
+          stale_count += 1
+        end
+      end
+
       puts "  Resolved #{stale_count} stale agent run(s)" if stale_count > 0
 
       orphaned = DevCleanup.find_orphaned_containers
