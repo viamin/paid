@@ -6,20 +6,20 @@ module Knowledge
       SCOPE_PATH = "config/routes.rb"
       BUNDLE_HOME = "/tmp/paid-bundle-home"
       DATABASE_CONNECTION_ERROR_PATTERNS = [
-        /ActiveRecord::ConnectionNotEstablished/,
-        /ActiveRecord::DatabaseConnectionError/,
-        /ActiveRecord::NoDatabaseError/,
-        /Mysql2::Error(?:\:|\b)/,
-        /SQLite3::(?:CantOpenException|SQLException)/,
-        /Sequel::Database(?:Connection)?Error/,
-        /PG::(?:ConnectionBad|Error)/,
-        /connection to server .*PGSQL/i,
-        /can't connect to (?:local )?MySQL server/i,
-        /unknown database/i,
-        /unable to open database file/i,
-        /no such database/i,
-        /could not connect to server/i,
-        /database .* does not exist/i
+        { class_pattern: /\AActiveRecord::ConnectionNotEstablished\z/ },
+        { class_pattern: /\AActiveRecord::DatabaseConnectionError\z/ },
+        { class_pattern: /\AActiveRecord::NoDatabaseError\z/ },
+        { class_pattern: /\AMysql2::Error::ConnectionError\z/ },
+        { class_pattern: /\ASQLite3::CantOpenException\z/ },
+        { class_pattern: /\ASequel::DatabaseConnectionError\z/ },
+        { class_pattern: /\APG::ConnectionBad\z/ },
+        { message_pattern: /connection to server .*PGSQL.*failed/i },
+        { message_pattern: /can't connect to (?:local )?MySQL server/i },
+        { message_pattern: /unknown database/i },
+        { message_pattern: /unable to open database file/i },
+        { message_pattern: /no such database/i },
+        { message_pattern: /could not connect to server/i },
+        { message_pattern: /database .* does not exist/i }
       ].freeze
 
       def collect
@@ -193,9 +193,16 @@ module Knowledge
       def database_connection_error?(error)
         each_error_in_chain(error).any? do |current_error|
           DATABASE_CONNECTION_ERROR_PATTERNS.any? do |pattern|
-            current_error.class.name.match?(pattern) || current_error.message.to_s.match?(pattern)
+            matches_database_connection_pattern?(current_error, pattern)
           end
         end
+      end
+
+      def matches_database_connection_pattern?(error, pattern)
+        class_matches = pattern[:class_pattern] && error.class.name.match?(pattern[:class_pattern])
+        message_matches = pattern[:message_pattern] && error.message.to_s.match?(pattern[:message_pattern])
+
+        class_matches || message_matches
       end
 
       def each_error_in_chain(error)

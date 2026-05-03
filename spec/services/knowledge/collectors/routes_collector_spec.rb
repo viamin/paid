@@ -304,6 +304,48 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         end
       end
 
+      it "raises on postgres non-connection errors" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            'Command failed (exit 1): PG::UndefinedTable: ERROR: relation "widgets" does not exist'
+          )
+
+        expect { command_collector.collect }.to raise_error(
+          Knowledge::ContainerizedRunner::ContainerError,
+          /PG::UndefinedTable/
+        )
+      end
+
+      it "raises on mysql non-connection errors" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            "Command failed (exit 1): Mysql2::Error: You have an error in your SQL syntax"
+          )
+
+        expect { command_collector.collect }.to raise_error(
+          Knowledge::ContainerizedRunner::ContainerError,
+          /SQL syntax/
+        )
+      end
+
+      it "raises on sqlite non-connection errors" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            "Command failed (exit 1): SQLite3::SQLException: no such table: widgets"
+          )
+
+        expect { command_collector.collect }.to raise_error(
+          Knowledge::ContainerizedRunner::ContainerError,
+          /no such table/
+        )
+      end
+
       it "cleans up credentials and disconnects network before running routes" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
