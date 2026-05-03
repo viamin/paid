@@ -4,8 +4,9 @@ module ExceptionHandler
   # Creates a GitHub issue for a novel exception incident, or adds a comment
   # to an existing issue when a duplicate is detected with new context.
   class IssueFiler
+    class RetryableFilingInProgress < StandardError; end
+
     CLAIM_STALE_AFTER = 5.minutes
-    CLAIM_POLL_INTERVAL = 0.25.seconds
 
     def self.call(incident:, project:)
       new(incident: incident, project: project).call
@@ -59,15 +60,13 @@ module ExceptionHandler
     end
 
     def wait_for_filing_resolution(client:)
-      loop do
-        sleep CLAIM_POLL_INTERVAL
-
-        case action
-        when :add_comment
-          return add_comment_to_existing(client: client)
-        when :create_issue
-          return create_issue_with_claim(client: client)
-        end
+      case action
+      when :add_comment
+        add_comment_to_existing(client: client)
+      when :create_issue
+        create_issue_with_claim(client: client)
+      else
+        raise RetryableFilingInProgress, "GitHub issue filing already in progress for incident #{@incident.id}"
       end
     end
 

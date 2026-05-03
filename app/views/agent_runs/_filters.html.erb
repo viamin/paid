@@ -40,13 +40,14 @@
     <% end %>
 
     <div>
-      <label class="block text-sm font-medium text-gray-700">Sort</label>
-      <select name="sort" class="mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500">
-        <%= options_for_select([
+      <%= label_tag :sort, "Sort", class: "block text-sm font-medium text-gray-700" %>
+      <%= select_tag :sort,
+        options_for_select([
           ["Newest first", "newest"],
           ["Queue order (next to run)", "queue"]
-        ], params[:sort].presence || "newest") %>
-      </select>
+        ], params[:sort].presence || "newest"),
+        id: :sort,
+        class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
     </div>
 
     <div class="flex items-end gap-2">

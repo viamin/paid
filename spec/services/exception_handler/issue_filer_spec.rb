@@ -70,11 +70,13 @@ RSpec.describe ExceptionHandler::IssueFiler do
 
       thread_one = concurrent_call
       create_issue_started.pop
-      thread_two = concurrent_call
-      sleep 2.1
+      expect {
+        described_class.call(incident: ExceptionIncident.find(incident.id), project: project)
+      }.to raise_error(ExceptionHandler::IssueFiler::RetryableFilingInProgress)
       release_create_issue << true
 
-      [ thread_one, thread_two ].each(&:value)
+      thread_one.value
+      described_class.call(incident: ExceptionIncident.find(incident.id), project: project)
 
       expect(client).to have_received(:create_issue).once
       expect(client).to have_received(:add_comment).once.with(project.full_name, 56, kind_of(String))
