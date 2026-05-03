@@ -9,9 +9,10 @@ rescue LoadError => e
     "Run with RAILS_ENV=test or move them to a shared group."
 end
 require "fileutils"
+require_relative "../../app/services/screenshots/capture_targets"
 
 module Screenshots
-  # Captures rendered screenshots of key UI pages using Cuprite (headless Chrome).
+  # Captures rendered screenshots of changed UI routes using Cuprite (headless Chrome).
   #
   # Intended to run in CI against a booted Rails server with seeded data so
   # reviewers can see actual rendered pages rather than mocks.
@@ -20,34 +21,23 @@ module Screenshots
   # a locally installed Chromium on the developer machine.
   #
   # @example
-  #   paths = Screenshots::Capture.call(output_dir: "tmp/screenshots")
+  #   paths = Screenshots::Capture.call(
+  #     output_dir: "tmp/screenshots",
+  #     changed_files: ["app/views/projects/show.html.erb"]
+  #   )
   #   paths # => ["tmp/screenshots/sign_in.png", "tmp/screenshots/dashboard.png", ...]
   class Capture
-    # Key application pages to capture: [slug, path, requires_auth].
-    # This is intentionally a curated list of the main UI surfaces rather than
-    # dynamic route introspection, which would be fragile and capture many
-    # irrelevant pages (API endpoints, Devise flows, admin tools, etc.).
-    PAGES = [
-      [ "sign_in", "/users/sign_in", false ],
-      [ "dashboard", "/dashboard", true ],
-      [ "projects", "/projects", true ],
-      [ "agent_runs", "/agent_runs", true ],
-      [ "prompts", "/prompts", true ],
-      [ "providers", "/providers", true ],
-      [ "notifications", "/notifications", true ],
-      [ "service_containers", "/service_containers", true ],
-      [ "integrations", "/integrations", true ]
-    ].freeze
-
     SCREENSHOT_WIDTH = 1280
     SCREENSHOT_HEIGHT = 900
+    CAPYBARA_REMOTE_PORT = 4001
 
-    def self.call(output_dir: "tmp/screenshots")
-      new(output_dir: output_dir).call
+    def self.call(output_dir: "tmp/screenshots", changed_files: [])
+      new(output_dir: output_dir, changed_files: changed_files).call
     end
 
-    def initialize(output_dir:)
+    def initialize(output_dir:, changed_files:)
       @output_dir = output_dir
+      @changed_files = Array(changed_files)
     end
 
     def call
@@ -56,29 +46,36 @@ module Screenshots
       setup_capybara
 
       captured = []
+      failures = []
       session = Capybara::Session.new(:paid_screenshots)
+      begin
+        seed_data = ensure_seed_data!
+        targets = Screenshots::CaptureTargets.call(changed_files: @changed_files)
 
-      auth_user = ensure_seed_user!
-      sign_in(session, auth_user) if PAGES.any? { |_, _, auth| auth }
+        sign_in(session, seed_data.fetch(:user)) if targets.any?(&:requires_auth)
+        targets.each do |target|
+          path = target.path(seed_data)
+          file_path = File.join(@output_dir, "#{target.slug}.png")
+          begin
+            session.visit(path)
 
-      PAGES.each do |slug, path, requires_auth|
-        file_path = File.join(@output_dir, "#{slug}.png")
-        begin
-          session.visit(path)
+            if target.requires_auth && session.current_path&.include?("sign_in")
+              raise "redirected to sign-in page — authentication may have failed"
+            end
 
-          if requires_auth && session.current_path&.include?("sign_in")
-            raise "redirected to sign-in page — authentication may have failed"
+            session.save_screenshot(file_path, full: true)
+            captured << file_path
+            puts "  Captured: #{target.slug} -> #{file_path}"
+          rescue StandardError => e
+            failures << "#{target.slug} (#{path}): #{e.message}"
           end
-
-          session.save_screenshot(file_path, full: true)
-          captured << file_path
-          puts "  Captured: #{slug} -> #{file_path}"
-        rescue StandardError => e
-          warn "  Failed to capture #{slug} (#{path}): #{e.message}"
         end
+      ensure
+        session.driver.quit
       end
 
-      session.driver.quit
+      raise_capture_error!(failures) if failures.any?
+
       captured
     end
 
@@ -120,15 +117,26 @@ module Screenshots
 
     def setup_capybara
       Capybara.server = :puma, { Silent: true }
-      # Bind to all interfaces when using a remote Chrome container so the
-      # browser can reach the Rack server over the Docker network.
-      Capybara.server_host = ENV["CHROME_URL"] ? "0.0.0.0" : "127.0.0.1"
+      remote_host = ENV["CAPYBARA_APP_HOST"]
+
+      if ENV["CHROME_URL"].present? && remote_host.blank?
+        raise "CAPYBARA_APP_HOST must be set when CHROME_URL is configured"
+      end
+
+      if remote_host.present?
+        Capybara.server_host = "0.0.0.0"
+        Capybara.server_port = CAPYBARA_REMOTE_PORT
+        Capybara.app_host = "http://#{remote_host}:#{CAPYBARA_REMOTE_PORT}"
+      else
+        Capybara.server_host = "127.0.0.1"
+      end
+
       Capybara.default_max_wait_time = 10
     end
 
     SEED_PASSWORD = "screenshot-password-123"
 
-    def ensure_seed_user!
+    def ensure_seed_data!
       account = Account.find_or_create_by!(slug: "screenshot-account") do |a|
         a.name = "Screenshot Account"
       end
@@ -143,7 +151,60 @@ module Screenshots
         user.account_memberships.create!(account: account, role: :owner)
       end
 
-      user
+      user.settings.update!(allowed_service_images: [ "postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest" ])
+
+      github_token = GithubToken.find_or_create_by!(account: account, name: "Screenshot Token") do |token|
+        token.created_by = user
+        token.token = "ghp_#{'a' * 36}"
+        token.scopes = [ "repo" ]
+        token.validation_status = "validated"
+      end
+
+      project = Project.find_or_create_by!(account: account, github_id: 9_999_999) do |record|
+        record.github_token = github_token
+        record.created_by = user
+        record.name = "Screenshot Project"
+        record.owner = "paid"
+        record.repo = "screenshots"
+        record.default_branch = "main"
+        record.poll_interval_seconds = 60
+        record.label_mappings = {}
+        record.allowed_github_usernames = [ user.email ]
+      end
+
+      provider = user.providers.find_or_create_by!(provider_key: "cursor", auth_type: "subscription") do |record|
+        record.enabled_for_agent_runs = true
+        record.enabled_for_fallback = true
+        record.fallback_role = "standard"
+        record.config = {}
+      end
+
+      service_container = ServiceContainer.find_or_create_by!(account: account, name: "Screenshot Postgres") do |record|
+        record.image = "postgres:16"
+        record.port = 5432
+        record.env = {}
+        record.status = "stopped"
+      end
+
+      agent_run = project.agent_runs.where(custom_prompt: "Capture screenshot route coverage").first_or_create!(
+        agent_type: "codex",
+        goal: "create_pr",
+        status: "pending"
+      )
+
+      Prompt.find_or_create_by!(account: account, slug: "screenshots.prompt") do |record|
+        record.name = "Screenshots Prompt"
+        record.category = "coding"
+        record.active = true
+      end
+
+      {
+        user: user,
+        project: project,
+        provider: provider,
+        service_container: service_container,
+        agent_run: agent_run
+      }
     end
 
     def sign_in(session, user)
@@ -151,6 +212,10 @@ module Screenshots
       session.fill_in "Email", with: user.email
       session.fill_in "Password", with: SEED_PASSWORD
       session.click_button "Sign in"
+    end
+
+    def raise_capture_error!(failures)
+      raise "Screenshot capture failed:\n  #{failures.join("\n  ")}"
     end
   end
 end

@@ -20,7 +20,7 @@ namespace :screenshots do
     end
 
     output_dir = ENV.fetch("SCREENSHOT_OUTPUT_DIR", "tmp/screenshots")
-    screenshots = Screenshots::Capture.call(output_dir: output_dir)
+    screenshots = Screenshots::Capture.call(output_dir: output_dir, changed_files: changed_files)
 
     puts "\nCaptured #{screenshots.size} screenshot(s) in #{output_dir}/"
     screenshots.each { |path| puts "  #{path}" }

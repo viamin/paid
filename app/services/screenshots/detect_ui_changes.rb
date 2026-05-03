@@ -20,6 +20,7 @@ module Screenshots
       %r{\Aapp/helpers/.*_helper\.rb\z},
       %r{\Aapp/components/},
       %r{\Aapp/frontend/},
+      %r{\Aconfig/locales/.*\.yml\z},
       %r{\.html\.erb\z},
       %r{\.html\.haml\z},
       %r{\.html\.slim\z},

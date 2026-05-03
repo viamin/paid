@@ -45,6 +45,10 @@ RSpec.describe "screenshots:capture" do
       allow(Screenshots::Capture).to receive(:call).and_return([])
 
       expect { task.invoke }.to output(/Detected 1 UI-facing file change/).to_stdout
+      expect(Screenshots::Capture).to have_received(:call).with(
+        output_dir: output_dir,
+        changed_files: [ "app/views/projects/index.html.erb" ]
+      )
     end
   end
 
@@ -67,6 +71,10 @@ RSpec.describe "screenshots:capture" do
       allow(Screenshots::Capture).to receive(:call).and_return([])
 
       expect { task.invoke }.to output(/Captured 0 screenshot/).to_stdout
+      expect(Screenshots::Capture).to have_received(:call).with(
+        output_dir: output_dir,
+        changed_files: []
+      )
     end
   end
 end

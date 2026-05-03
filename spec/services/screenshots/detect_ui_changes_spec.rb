@@ -101,5 +101,12 @@ RSpec.describe Screenshots::DetectUiChanges do
 
       expect(result[:ui_changes?]).to be true
     end
+
+    it "detects locale file changes" do
+      result = described_class.call(changed_files: [ "config/locales/devise.en.yml" ])
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "config/locales/devise.en.yml" ])
+    end
   end
 end

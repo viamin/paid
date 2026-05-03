@@ -39,32 +39,14 @@ jobs:
             exit 0
           fi
 
-          # UI-facing file patterns — keep in sync with
-          # Screenshots::DetectUiChanges::UI_FILE_PATTERNS
-          ui_patterns=(
-            "^app/views/"
-            "^app/javascript/"
-            "^app/assets/stylesheets/"
-            "^app/assets/builds/"
-            "^app/helpers/.*_helper\.rb$"
-            "^app/components/"
-            "^app/frontend/"
-            "\.html\.erb$"
-            "\.html\.haml$"
-            "\.html\.slim$"
-            "\.js$"
-            "\.jsx$"
-            "\.ts$"
-            "\.tsx$"
-            "\.css$"
-            "\.scss$"
-            "\.sass$"
-            "\.vue$"
-            "\.svelte$"
+          ui_files=$(
+            DIFF_FILES="$diff_files" ruby -rjson -e '
+              require_relative "app/services/screenshots/detect_ui_changes"
+              changed_files = ENV.fetch("DIFF_FILES", "").split("\n").map(&:strip).reject(&:empty?)
+              result = Screenshots::DetectUiChanges.call(changed_files: changed_files)
+              print result.fetch(:ui_files).join("\n")
+            '
           )
-
-          combined_pattern=$(IFS='|'; echo "${ui_patterns[*]}")
-          ui_files=$(echo "$diff_files" | grep -E "$combined_pattern" || true)
 
           if [ -n "$ui_files" ]; then
             echo "has_ui_changes=true" >> "$GITHUB_OUTPUT"
@@ -143,24 +125,30 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
 
       - name: Verify Chrome service
-        # The chrome service container provides a containerized Chrome instance
-        # via CDP. Fall back to the runner's pre-installed Chrome if unavailable.
+        # The workflow requires the dedicated Chrome service container so the
+        # capture environment matches the CI contract for screenshot rendering.
         run: |
           if curl -sf http://localhost:9222/json/version > /dev/null 2>&1; then
             echo "Chrome service container is available via CHROME_URL"
           else
-            echo "::warning::Chrome service not reachable; falling back to local Chrome"
-            unset CHROME_URL
-            path="$(command -v google-chrome || command -v chromium-browser || command -v chromium)"
-            if [ -z "$path" ]; then
-              echo "::error::No Chrome/Chromium browser found."
-              exit 1
-            fi
-            echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"
-            # Clear CHROME_URL so capture.rb uses local Chrome
-            echo "CHROME_URL=" >> "$GITHUB_ENV"
-            "$path" --version
+            echo "::error::Chrome service container is not reachable at http://localhost:9222/json/version"
+            exit 1
           fi
+
+      - name: Export changed UI files
+        env:
+          UI_FILES_B64: ${{ needs.detect.outputs.ui_files }}
+        run: |
+          printf 'CHANGED_FILES<<EOF\n%s\nEOF\n' "$(printf '%s' "$UI_FILES_B64" | base64 -d)" >> "$GITHUB_ENV"
+
+      - name: Configure remote Capybara host
+        run: |
+          host_ip="$(ip route | awk '/default/ {print $3; exit}')"
+          if [ -z "$host_ip" ]; then
+            echo "::error::Could not determine the runner gateway IP for the Chrome service container."
+            exit 1
+          fi
+          echo "CAPYBARA_APP_HOST=$host_ip" >> "$GITHUB_ENV"
 
       - name: Build assets
         run: yarn build && yarn build:css
