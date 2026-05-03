@@ -41,6 +41,10 @@ module Screenshots
 
     TARGETS = {
       sign_in: Target.new(slug: "sign_in", path_builder: "/users/sign_in", requires_auth: false),
+      sign_up: Target.new(slug: "sign_up", path_builder: "/users/sign_up", requires_auth: false),
+      forgot_password: Target.new(slug: "forgot_password", path_builder: "/users/password/new", requires_auth: false),
+      confirmation: Target.new(slug: "confirmation", path_builder: "/users/confirmation/new", requires_auth: false),
+      unlock: Target.new(slug: "unlock", path_builder: "/users/unlock/new", requires_auth: false),
       dashboard: Target.new(slug: "dashboard", path_builder: "/dashboard", requires_auth: true),
       notifications: Target.new(slug: "notifications", path_builder: "/notifications", requires_auth: true),
       onboarding: Target.new(slug: "onboarding", path_builder: "/onboarding", requires_auth: true),
@@ -140,9 +144,9 @@ module Screenshots
     CONTROLLER_TARGETS = {
       "dashboard_controller.rb" => [ :dashboard ],
       "home_controller.rb" => [ :dashboard ],
-      "projects_controller.rb" => %i[projects project_show project_edit],
+      "projects_controller.rb" => %i[projects project_new project_show project_edit],
       "agent_runs_controller.rb" => [ :agent_runs ],
-      "prompts_controller.rb" => %i[prompts prompt_new prompt_show prompt_edit],
+      "prompts_controller.rb" => %i[prompts prompt_new prompt_show prompt_edit prompt_diff],
       "prompt_reviews_controller.rb" => %i[prompt_reviews_queue prompt_reviews prompt_review_show],
       "ab_tests_controller.rb" => %i[ab_tests ab_test_new ab_test_show],
       "providers_controller.rb" => %i[providers providers_new providers_edit],
@@ -160,7 +164,12 @@ module Screenshots
       "chat_sessions_controller.rb" => %i[chat_sessions chat_session_show],
       "chat_messages_controller.rb" => [ :chat_session_show ],
       "quality_dashboards_controller.rb" => [ :quality_dashboard ],
-      "workflow_statuses_controller.rb" => [ :workflow_status ]
+      "workflow_statuses_controller.rb" => [ :workflow_status ],
+      "tracker_configurations_controller.rb" => [ :project_edit ],
+      "account_pr_templates_controller.rb" => [ :project_edit ],
+      "account_pre_commit_requirements_controller.rb" => [ :project_edit ],
+      "user_pr_templates_controller.rb" => [ :user_settings ],
+      "user_pre_commit_requirements_controller.rb" => [ :user_settings ]
     }.freeze
 
     # Nested controller path => target keys
@@ -172,7 +181,13 @@ module Screenshots
       "knowledge/search_controller.rb" => %i[knowledge_search project_knowledge_search],
       "knowledge/browse_controller.rb" => %i[project_knowledge_browse project_knowledge_browse_show],
       "knowledge/artifacts_controller.rb" => [ :project_knowledge_artifact_show ],
-      "knowledge/context_intake_controller.rb" => [ :project_context_intake ]
+      "knowledge/context_intake_controller.rb" => [ :project_context_intake ],
+      "projects/cost_budgets_controller.rb" => [ :project_cost_dashboard ],
+      "projects/issue_merge_subscriptions_controller.rb" => [ :project_show ],
+      "projects/pr_templates_controller.rb" => [ :project_edit ],
+      "projects/pre_commit_requirements_controller.rb" => [ :project_edit ],
+      "projects/quality_thresholds_controller.rb" => [ :project_quality_dashboard ],
+      "projects/service_containers_controller.rb" => [ :project_edit ]
     }.freeze
 
     def targets_for(path)
@@ -215,6 +230,11 @@ module Screenshots
     def targets_for_view(relative_path)
       case relative_path
       when "devise/sessions/new.html.erb" then [ :sign_in ]
+      when /\Adevise\/registrations\// then [ :sign_up ]
+      when /\Adevise\/passwords\// then [ :forgot_password ]
+      when /\Adevise\/confirmations\// then [ :confirmation ]
+      when /\Adevise\/unlocks\// then [ :unlock ]
+      when /\Adevise\/shared\// then %i[sign_in sign_up forgot_password confirmation unlock]
       when /\Adevise\// then [ :sign_in ]
       when /\Adashboard\//, "dashboard/show.html.erb" then [ :dashboard ]
       when /\Ahome\// then [ :dashboard ]
@@ -246,7 +266,7 @@ module Screenshots
       when /\Aprojects\/cost_snapshots\// then [ :project_cost_snapshot ]
       when /\Aworkflow_statuses\// then [ :workflow_status ]
       when /\Aprojects\/quality_dashboards\// then [ :project_quality_dashboard ]
-      when /\Aprojects\// then rest_resource_targets(relative_path, "projects", index: :projects, new: :project_new, show: :project_show, edit: :project_edit)
+      when /\Aprojects\// then projects_targets(relative_path.delete_prefix("projects/"))
       else
         []
       end
@@ -308,6 +328,33 @@ module Screenshots
       end
     end
 
+    # Partials rendered on the projects/show page (Turbo frames, collections, etc.)
+    PROJECT_SHOW_PARTIALS = %w[
+      _issues _issue _pull_requests _pull_request _knowledge _stats
+      _quality_summary _cost_snapshot _agent_runs _agent_run
+      _recent_merged_pull_requests _issue_merge_subscription
+    ].freeze
+
+    def projects_targets(leaf)
+      case leaf
+      when "index.html.erb" then [ :projects ]
+      when "new.html.erb" then [ :project_new ]
+      when "show.html.erb" then [ :project_show ]
+      when "edit.html.erb" then [ :project_edit ]
+      when /\A_/
+        base = File.basename(leaf, ".html.erb")
+        if PROJECT_SHOW_PARTIALS.include?(base)
+          [ :project_show ]
+        elsif base.end_with?("_index")
+          [ :projects ]
+        else
+          %i[project_new project_edit]
+        end
+      else
+        [ :project_show ]
+      end
+    end
+
     def knowledge_search_targets(leaf)
       case leaf
       when "index.html.erb" then [ :knowledge_search ]
@@ -321,10 +368,12 @@ module Screenshots
       return [] if relative_path.start_with?("concerns/") || relative_path == "application_controller.rb"
       # Skip API controllers — they don't render HTML
       return [] if relative_path.start_with?("api/")
+      # Skip health check controller — infrastructure only
+      return [] if relative_path == "health_controller.rb"
 
       NESTED_CONTROLLER_TARGETS[relative_path] ||
         CONTROLLER_TARGETS[File.basename(relative_path)] ||
-        SHARED_TARGET_KEYS
+        [] # Return empty to surface unmapped controllers via UnmappedUiChangeError
     end
 
     def rest_resource_targets(relative_path, prefix, index:, new:, show:, edit:)

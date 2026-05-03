@@ -86,7 +86,7 @@ module Screenshots
       Capybara.register_driver(:paid_screenshots) do |app|
         options = {
           headless: true,
-          js_errors: false,
+          js_errors: true,
           timeout: 30,
           process_timeout: 60,
           browser_options: {
@@ -321,6 +321,7 @@ module Screenshots
       path = target.path(seed_data)
       file_path = File.join(@output_dir, "#{target.slug}.png")
       session.visit(path)
+      wait_for_async_content(session)
 
       if target.requires_auth && session.current_path&.include?("sign_in")
         raise "redirected to sign-in page — authentication may have failed"
@@ -338,6 +339,12 @@ module Screenshots
       session.fill_in "Email", with: user.email
       session.fill_in "Password", with: SEED_PASSWORD
       session.click_button "Sign in"
+    end
+
+    # Wait for the page to fully render, including lazy-loaded Turbo frames
+    # that pages like project_show use for cost snapshots and workflow status.
+    def wait_for_async_content(session)
+      session.has_no_css?("turbo-frame[busy]", wait: 5)
     end
 
     def raise_capture_error!(failures)

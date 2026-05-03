@@ -18,7 +18,7 @@ RSpec.describe Screenshots::Capture do
 
   before do
     allow(Capybara::Session).to receive(:new).with(:paid_screenshots).and_return(session)
-    allow(session).to receive(:driver).and_return(driver)
+    allow(session).to receive_messages(driver: driver, has_no_css?: true)
     allow(session).to receive(:visit)
     allow(session).to receive(:save_screenshot)
     allow(Screenshots::CaptureTargets).to receive(:call).and_return([ target ])

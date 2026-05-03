@@ -173,10 +173,17 @@ RSpec.describe Screenshots::DetectUiChanges do
     end
 
     it "ignores non-visual public files" do
-      result = described_class.call(changed_files: [ "public/robots.txt", "public/404.html" ])
+      result = described_class.call(changed_files: [ "public/robots.txt" ])
 
       expect(result[:ui_changes?]).to be false
       expect(result[:ui_files]).to be_empty
+    end
+
+    it "detects public HTML error pages as UI changes" do
+      result = described_class.call(changed_files: [ "public/404.html", "public/500.html" ])
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to contain_exactly("public/404.html", "public/500.html")
     end
   end
 end

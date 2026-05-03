@@ -115,5 +115,73 @@ RSpec.describe Screenshots::CaptureTargets do
       slugs = targets.map(&:slug)
       expect(slugs).to include("chat_sessions", "ab_tests", "style_guides", "knowledge_search")
     end
+
+    it "maps Devise registration views to sign_up target" do
+      targets = described_class.call(changed_files: [ "app/views/devise/registrations/new.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "sign_up" ])
+    end
+
+    it "maps Devise password views to forgot_password target" do
+      targets = described_class.call(changed_files: [ "app/views/devise/passwords/new.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "forgot_password" ])
+    end
+
+    it "maps Devise confirmation views to confirmation target" do
+      targets = described_class.call(changed_files: [ "app/views/devise/confirmations/new.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "confirmation" ])
+    end
+
+    it "maps Devise shared partials to all auth targets" do
+      targets = described_class.call(changed_files: [ "app/views/devise/shared/_links.html.erb" ])
+
+      expect(targets.map(&:slug)).to contain_exactly(
+        "sign_in", "sign_up", "forgot_password", "confirmation", "unlock"
+      )
+    end
+
+    it "maps project show partials to project_show target" do
+      targets = described_class.call(changed_files: [ "app/views/projects/_issues.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_show" ])
+    end
+
+    it "maps project index partials to projects target" do
+      targets = described_class.call(changed_files: [ "app/views/projects/_auto_pick_toggle_index.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "projects" ])
+    end
+
+    it "raises UnmappedUiChangeError for unmapped controllers" do
+      expect {
+        described_class.call(changed_files: [ "app/controllers/unknown_controller.rb" ])
+      }.to raise_error(described_class::UnmappedUiChangeError)
+    end
+
+    it "maps nested project controllers to their redirect targets" do
+      targets = described_class.call(changed_files: [ "app/controllers/projects/service_containers_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_edit" ])
+    end
+
+    it "maps projects controller to include project_new target" do
+      targets = described_class.call(changed_files: [ "app/controllers/projects_controller.rb" ])
+
+      expect(targets.map(&:slug)).to include("project_new")
+    end
+
+    it "maps prompts controller to include prompt_diff target" do
+      targets = described_class.call(changed_files: [ "app/controllers/prompts_controller.rb" ])
+
+      expect(targets.map(&:slug)).to include("prompt_diff")
+    end
+
+    it "maps public HTML error pages to shared UI targets" do
+      targets = described_class.call(changed_files: [ "public/404.html" ])
+
+      expect(targets.map(&:slug)).to include("sign_in", "dashboard", "projects")
+    end
   end
 end
