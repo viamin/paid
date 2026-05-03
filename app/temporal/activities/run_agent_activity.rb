@@ -769,17 +769,21 @@ module Activities
     end
 
     def run_provider_preflight!(agent_run:, container_service:, command_context:, provider:, execution_env:)
-      return unless provider_preflight_supported?(command_context)
+      return unless provider_preflight_enabled?(command_context)
 
-      # Run the provider-owned preflight first (auth, CLI version,
-      # OPENAI_BASE_URL reachability) — this surfaces actionable errors
-      # without spending a container exec on a smoke prompt.
-      run_harness_preflight!(
-        agent_run: agent_run,
-        command_context: command_context,
-        provider: provider,
-        execution_env: execution_env
-      )
+      # Run the provider-owned harness preflight (auth, CLI version,
+      # OPENAI_BASE_URL reachability) when available — fails fast before
+      # the smoke exec below.  When it isn't supported or config is
+      # unavailable the smoke exec still runs as a safety net.
+      harness_provider = preflight_provider_instance(command_context)
+      if harness_provider
+        run_harness_preflight!(
+          agent_run: agent_run,
+          harness_provider: harness_provider,
+          provider: provider,
+          execution_env: execution_env
+        )
+      end
 
       prompt = provider_preflight_prompt_for(provider)
       command = build_command(command_context, prompt)
@@ -841,8 +845,7 @@ module Activities
       )
     end
 
-    def run_harness_preflight!(agent_run:, command_context:, provider:, execution_env:)
-      harness_provider = preflight_provider_for(command_context)
+    def run_harness_preflight!(agent_run:, harness_provider:, provider:, execution_env:)
       result = harness_provider.preflight_check(env: execution_env, timeout: PREFLIGHT_TIMEOUT_SECONDS)
 
       return if result[:healthy]
@@ -1077,13 +1080,32 @@ module Activities
       )
     end
 
-    def provider_preflight_supported?(command_context)
-      provider = preflight_provider_for(command_context)
-      return false unless provider.respond_to?(:preflight_check)
+    # Checks whether the provider type supports preflight at all (class-level
+    # check via the registry).  This does NOT require provider config to be
+    # loadable — it only checks whether the provider class overrides
+    # preflight_check, so the smoke exec still runs even when config is broken.
+    def provider_preflight_enabled?(command_context)
+      app_key = ProviderSupport.provider_key_for_agent_type(command_context.provider)
+      harness_key = ProviderSupport.harness_provider_key_for(app_key).to_sym
+      klass = AgentHarness::Providers::Registry.instance.get(harness_key)
+      return false unless klass.method_defined?(:preflight_check)
 
-      provider.method(:preflight_check).owner != AgentHarness::Providers::Base
+      klass.instance_method(:preflight_check).owner != AgentHarness::Providers::Base
     rescue AgentHarness::ConfigurationError, KeyError
       false
+    end
+
+    # Returns an instantiated harness provider if it supports preflight_check,
+    # or nil when config is unavailable.  Callers reuse the returned instance
+    # to avoid double-instantiation overhead.
+    def preflight_provider_instance(command_context)
+      provider = preflight_provider_for(command_context)
+      return nil unless provider.respond_to?(:preflight_check)
+      return nil if provider.method(:preflight_check).owner == AgentHarness::Providers::Base
+
+      provider
+    rescue AgentHarness::ConfigurationError, KeyError
+      nil
     end
 
     def provider_preflight_prompt_for(provider_key)
