@@ -93,6 +93,16 @@ RSpec.describe "Dashboard" do
         expect(response.body).not_to include("hidden-owner/hidden-repo")
       end
 
+      it "shows orphaned queued projects for the account fallback owner" do
+        orphaned_project = create(:project, account: account, created_by: nil, owner: "fallback-owner", repo: "orphaned-repo")
+
+        create(:agent_run, :queued, :manual, project: orphaned_project)
+
+        get dashboard_path
+
+        expect(response.body).to include("fallback-owner/orphaned-repo")
+      end
+
       it "shows active runs and recent activity scoped to the account" do
         create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
         create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago, duration_seconds: 42)

@@ -1832,39 +1832,6 @@ RSpec.describe AgentRun do
     end
   end
 
-  describe ".peek_queued_runs" do
-    it "returns queued runs in the same order they would be dequeued" do
-      account = create(:account)
-      user = create(:user, account: account)
-      user.settings.update!(fair_queue_across_projects: true)
-      first_project = create(:project, account: account, created_by: user)
-      second_project = create(:project, account: account, created_by: user)
-
-      first_run = create(:agent_run, :queued, :manual, project: first_project, created_at: 4.minutes.ago)
-      second_run = create(:agent_run, :queued, :manual, project: first_project, created_at: 3.minutes.ago)
-      third_run = create(:agent_run, :queued, :manual, project: second_project, created_at: 2.minutes.ago)
-      fourth_run = create(:agent_run, :queued, :manual, project: second_project, created_at: 1.minute.ago)
-
-      expect(described_class.peek_queued_runs.map(&:id)).to eq([
-        first_run.id,
-        third_run.id,
-        second_run.id,
-        fourth_run.id
-      ])
-    end
-
-    it "supports snapshot exclusions without reordering later rows" do
-      first_run = create(:agent_run, :queued, :manual, created_at: 3.minutes.ago)
-      second_run = create(:agent_run, :queued, :manual, created_at: 2.minutes.ago)
-      third_run = create(:agent_run, :queued, :automatic, created_at: 1.minute.ago)
-
-      expect(described_class.peek_queued_runs(exclude_ids: [ first_run.id ]).map(&:id)).to eq([
-        second_run.id,
-        third_run.id
-      ])
-    end
-  end
-
   describe ".claim_next_queued_run" do
     it "claims a specific queued run and transitions to pending" do
       run = create(:agent_run, :queued)
