@@ -51,7 +51,8 @@ gem "docker-api", require: false
 gem "qdrant-ruby", require: false
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
-# Pin the merged plan_execution work until the next gem release lands.
+# Pin includes plan_execution work and the gem naming fix (lib/agent-harness.rb shim)
+# so Bundler auto-require resolves correctly without an explicit require: override.
 gem "agent-harness", git: "https://github.com/viamin/agent-harness.git", ref: "e4d2c1fa025bb36192e14d95fee018a23d4a309a"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]

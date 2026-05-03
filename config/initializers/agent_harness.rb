@@ -1,9 +1,5 @@
 # frozen_string_literal: true
 
-# Required explicitly because the gem name (agent-harness) uses a hyphen but
-# the entry file (agent_harness.rb) uses an underscore — Bundler.require
-# silently skips it.
-require "agent_harness"
 require Rails.root.join("lib/provider_support").to_s
 
 # Default agent timeout used for AgentHarness boot-time config and as a
