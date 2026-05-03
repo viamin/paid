@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe "Integrations" do
   let(:account) { create(:account) }
-  let(:owner_user) { create(:user, account: account) }
+  let(:owner_user) { create(:user, :owner, account: account) }
   let(:admin_user) { create(:user, :admin, account: account) }
   let(:member_user) { create(:user, :member, account: account) }
 
@@ -63,7 +63,8 @@ RSpec.describe "Integrations" do
         expect(response.body).to include("GitLab Prod")
       end
 
-      it "shows revoked and expired integration credentials with status" do
+      it "excludes revoked and expired integration credentials" do
+        create(:integration_credential, :gitlab, account: account, created_by: owner_user, name: "Active Cred")
         create(:integration_credential, :gitlab, :revoked, account: account, created_by: owner_user, name: "Revoked Cred")
         create(
           :integration_credential,
@@ -76,10 +77,9 @@ RSpec.describe "Integrations" do
 
         get integrations_path
 
-        expect(response.body).to include("Revoked Cred")
-        expect(response.body).to include("Expired Cred")
-        expect(response.body).to include("Revoked")
-        expect(response.body).to include("Expired")
+        expect(response.body).to include("Active Cred")
+        expect(response.body).not_to include("Revoked Cred")
+        expect(response.body).not_to include("Expired Cred")
       end
     end
 

@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe "IntegrationCredentials" do
   let(:account) { create(:account) }
-  let(:owner_user) { create(:user, account: account) }
+  let(:owner_user) { create(:user, :owner, account: account) }
   let(:admin_user) { create(:user, :admin, account: account) }
   let(:member_user) { create(:user, :member, account: account) }
 
@@ -55,6 +55,16 @@ RSpec.describe "IntegrationCredentials" do
       expect(response.body).to include("GitHub Signing")
     end
 
+    context "when user is an admin" do
+      before { sign_in admin_user }
+
+      it "allows access" do
+        get new_integration_credential_path
+
+        expect(response).to have_http_status(:ok)
+      end
+    end
+
     context "when user is a member" do
       before { sign_in member_user }
 
@@ -85,6 +95,42 @@ RSpec.describe "IntegrationCredentials" do
       expect(response).to redirect_to(integration_credential_path(credential, category: credential.category))
       expect(credential.service_key).to eq("gemini")
       expect(credential.created_by).to eq(owner_user)
+    end
+
+    context "when user is an admin" do
+      before { sign_in admin_user }
+
+      it "creates a credential" do
+        post integration_credentials_path, params: {
+          integration_credential: {
+            name: "Admin GitLab",
+            service_key: "gitlab",
+            category: "repository",
+            auth_kind: "api_key",
+            secret: "secret-456"
+          }
+        }
+
+        expect(IntegrationCredential.last.name).to eq("Admin GitLab")
+        expect(response).to redirect_to(integration_credential_path(IntegrationCredential.last, category: "repository"))
+      end
+    end
+
+    it "creates signing credentials with valid auth_kind" do
+      post integration_credentials_path, params: {
+        integration_credential: {
+          name: "My Signing Key",
+          service_key: "github_signing",
+          category: "signing",
+          auth_kind: "signing_token",
+          secret: "signing-secret-123"
+        }
+      }
+
+      credential = IntegrationCredential.last
+      expect(response).to redirect_to(integration_credential_path(credential, category: "signing"))
+      expect(credential.service_key).to eq("github_signing")
+      expect(credential.auth_kind).to eq("signing_token")
     end
 
     it "rejects invalid signing auth types" do
@@ -132,6 +178,19 @@ RSpec.describe "IntegrationCredentials" do
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("My Claude Key")
+    end
+
+    context "when user is an admin" do
+      before { sign_in admin_user }
+
+      it "shows the credential" do
+        credential = create(:integration_credential, account: account, created_by: owner_user, name: "Admin Visible Key")
+
+        get integration_credential_path(credential)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Admin Visible Key")
+      end
     end
 
     it "does not show credentials from other accounts" do
