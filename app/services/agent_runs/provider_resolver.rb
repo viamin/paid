@@ -69,8 +69,8 @@ module AgentRuns
       base_provider = runnable_provider(selected_provider) || runnable_provider(configured_provider)
       fallback_provider = Provider.first_enabled_for_owner(owner) || Provider.ensure_default_for(owner)
       tenant_api_key_provider(base_provider, owner) ||
-        tenant_api_key_provider(configured_provider, owner) ||
         base_provider ||
+        tenant_api_key_provider(configured_provider, owner) ||
         tenant_api_key_provider(fallback_provider, owner) ||
         fallback_provider
     end
