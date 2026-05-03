@@ -162,15 +162,9 @@ module Containers
       classified_type = classify_event(raw_type) || classify_harness_event_type(parsed.type)
       return nil unless classified_type
 
-      event = if parsed.respond_to?(:tokens)
-        harness_event_payload(parsed, raw_type)
-      else
-        parsed
-      end
-
       {
         type: classified_type,
-        event: event,
+        event: parsed,
         raw_type: raw_type
       }
     end
@@ -194,27 +188,6 @@ module Containers
       when :error
         :error
       end
-    end
-
-    def harness_event_payload(parsed, raw_type)
-      tokens = parsed.tokens.is_a?(Hash) ? parsed.tokens : {}
-      raw_event = parsed.raw_event.is_a?(Hash) ? parsed.raw_event : {}
-      usage = {
-        "input_tokens" => tokens[:input] || tokens["input"],
-        "output_tokens" => tokens[:output] || tokens["output"],
-        "total_tokens" => tokens[:total] || tokens["total"]
-      }.compact
-
-      {
-        "type" => raw_type,
-        "turn" => parsed.turn,
-        "message" => parsed.error_message,
-        "tool_name" => parsed.tool_name,
-        "duration_ms" => raw_event["duration_ms"] || raw_event.dig("payload", "duration_ms"),
-        "usage" => usage.presence,
-        "input_tokens" => usage["input_tokens"],
-        "output_tokens" => usage["output_tokens"]
-      }.compact
     end
 
     def log_progress_event(event)
