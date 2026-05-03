@@ -13,7 +13,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
   end
 
   let(:project) { instance_double(Project, id: 1, github_token: github_token) }
-  let(:project_version) { Struct.new(:id).new(1) }
+  let(:project_version) { Struct.new(:id, :commit_sha).new(1, "a" * 40) }
   let(:collector_run) { Struct.new(:id).new(1) }
   let(:fixture_file) { Rails.root.join("spec/fixtures/knowledge/routes_expanded.txt").to_s }
   let(:github_token) { nil }
@@ -232,7 +232,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect { command_collector.collect }.to raise_error(RuntimeError, "Command failed")
       end
 
-      it "fails when the command hits a database connection error" do
+      it "skips when the command hits a database connection error" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_raise(
@@ -241,8 +241,108 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           )
 
         expect { command_collector.collect }.to raise_error(
+          Knowledge::SkipCollector,
+          /routes require database access during Rails boot/
+        )
+      end
+
+      it "always preserves existing artifacts on db skip" do
+        cause = ActiveRecord::ConnectionNotEstablished.new("connection failed")
+        wrapped_error = Knowledge::ContainerizedRunner::ContainerError.new("Command failed (exit 1): boot aborted")
+        allow(wrapped_error).to receive(:cause).and_return(cause)
+
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(wrapped_error)
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.reason).to match(/routes require database access during Rails boot/)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
+      end
+
+      it "skips on alternate database error message patterns" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            "Command failed (exit 1): database app_development does not exist"
+          )
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
+      end
+
+      it "skips on mysql connection errors" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            "Command failed (exit 1): Mysql2::Error::ConnectionError: Can't connect to local MySQL server through socket '/run/mysqld/mysqld.sock'"
+          )
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
+      end
+
+      it "skips on sqlite database open errors" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            "Command failed (exit 1): SQLite3::CantOpenException: unable to open database file"
+          )
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
+      end
+
+      it "raises on postgres non-connection errors" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            'Command failed (exit 1): PG::UndefinedTable: ERROR: relation "widgets" does not exist'
+          )
+
+        expect { command_collector.collect }.to raise_error(
           Knowledge::ContainerizedRunner::ContainerError,
-          /ActiveRecord::ConnectionNotEstablished/
+          /PG::UndefinedTable/
+        )
+      end
+
+      it "raises on mysql non-connection errors" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            "Command failed (exit 1): Mysql2::Error: You have an error in your SQL syntax"
+          )
+
+        expect { command_collector.collect }.to raise_error(
+          Knowledge::ContainerizedRunner::ContainerError,
+          /SQL syntax/
+        )
+      end
+
+      it "raises on sqlite non-connection errors" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            "Command failed (exit 1): SQLite3::SQLException: no such table: widgets"
+          )
+
+        expect { command_collector.collect }.to raise_error(
+          Knowledge::ContainerizedRunner::ContainerError,
+          /no such table/
         )
       end
 

@@ -48,13 +48,13 @@ class CollectorRun < ApplicationRecord
     )
   end
 
-  def mark_skipped!(reason:)
+  def mark_skipped!(reason:, artifacts_count: 0)
     now = Time.current
     update!(
       status: "skipped",
       completed_at: now,
       duration_ms: started_at ? ((now - started_at) * 1000).to_i : nil,
-      artifacts_count: 0,
+      artifacts_count: artifacts_count,
       error_message: reason
     )
   end
