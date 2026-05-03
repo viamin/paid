@@ -18,6 +18,31 @@ RSpec.describe "IntegrationCredentials" do
       expect(response.body).to include(matching.name)
       expect(response.body).not_to include("GitLab Token")
     end
+
+    context "when user is an admin" do
+      let(:admin_user) { create(:user, :admin, account: user.account) }
+
+      before { sign_in admin_user }
+
+      it "allows access" do
+        get integration_credentials_path
+
+        expect(response).to have_http_status(:ok)
+      end
+    end
+
+    context "when user is a member" do
+      let(:member_user) { create(:user, :member, account: user.account) }
+
+      before { sign_in member_user }
+
+      it "denies access" do
+        get integration_credentials_path
+
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
   end
 
   describe "GET /integration_credentials/new" do
@@ -29,6 +54,19 @@ RSpec.describe "IntegrationCredentials" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Add Credential")
       expect(response.body).to include("GitHub Signing")
+    end
+
+    context "when user is a member" do
+      let(:member_user) { create(:user, :member, account: user.account) }
+
+      before { sign_in member_user }
+
+      it "denies access" do
+        get new_integration_credential_path
+
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
     end
   end
 
@@ -66,6 +104,27 @@ RSpec.describe "IntegrationCredentials" do
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("is not supported for GitHub Signing")
     end
+
+    context "when user is a member" do
+      let(:member_user) { create(:user, :member, account: user.account) }
+
+      before { sign_in member_user }
+
+      it "denies access" do
+        post integration_credentials_path, params: {
+          integration_credential: {
+            name: "Test",
+            service_key: "gitlab",
+            category: "repository",
+            auth_kind: "api_key",
+            secret: "secret-123"
+          }
+        }
+
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
   end
 
   describe "GET /integration_credentials/:id" do
@@ -87,6 +146,21 @@ RSpec.describe "IntegrationCredentials" do
       get integration_credential_path(other_credential)
 
       expect(response).to have_http_status(:not_found)
+    end
+
+    context "when user is a member" do
+      let(:member_user) { create(:user, :member, account: user.account) }
+
+      before { sign_in member_user }
+
+      it "denies access" do
+        credential = create(:integration_credential, account: user.account, created_by: user, name: "My Key")
+
+        get integration_credential_path(credential)
+
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
     end
   end
 
@@ -114,10 +188,25 @@ RSpec.describe "IntegrationCredentials" do
       end
     end
 
-    context "when user does not have owner role" do
-      let(:non_owner) { create(:user, account: user.account) }
+    context "when user has admin role" do
+      let(:admin_user) { create(:user, :admin, account: user.account) }
 
-      before { sign_in non_owner }
+      before { sign_in admin_user }
+
+      it "revokes the credential" do
+        credential = create(:integration_credential, account: user.account, created_by: user)
+
+        delete integration_credential_path(credential)
+
+        expect(credential.reload).to be_revoked
+        expect(response).to redirect_to(integration_credentials_path(category: credential.category))
+      end
+    end
+
+    context "when user is a member" do
+      let(:member_user) { create(:user, :member, account: user.account) }
+
+      before { sign_in member_user }
 
       it "denies access" do
         credential = create(:integration_credential, account: user.account, created_by: user)

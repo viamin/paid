@@ -45,6 +45,40 @@ RSpec.describe "Integrations" do
         expect(response.body).to include(provider_key.name)
         expect(response.body).not_to include("Issue Tracking")
       end
+
+      it "shows integration credentials section for admin users" do
+        credential = create(:integration_credential, :gitlab, account: user.account, created_by: user, name: "GitLab Prod")
+
+        get integrations_path
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Integration Credentials")
+        expect(response.body).to include("GitLab Prod")
+      end
+
+      it "does not show revoked integration credentials" do
+        create(:integration_credential, :gitlab, :revoked, account: user.account, created_by: user, name: "Revoked Cred")
+
+        get integrations_path
+
+        expect(response.body).not_to include("Revoked Cred")
+      end
+
+      context "when user is a member" do
+        let(:member_user) { create(:user, :member, account: user.account) }
+
+        before { sign_in member_user }
+
+        it "does not show integration credentials section" do
+          create(:integration_credential, :gitlab, account: user.account, created_by: user, name: "GitLab Prod")
+
+          get integrations_path
+
+          expect(response).to have_http_status(:ok)
+          expect(response.body).not_to include("Integration Credentials")
+          expect(response.body).not_to include("GitLab Prod")
+        end
+      end
     end
   end
 
@@ -68,6 +102,25 @@ RSpec.describe "Integrations" do
         expect(response.body).to include("Source code access token")
         expect(response.body).to include("Issue tracker API key")
         expect(response.body).to include("LLM provider API key")
+      end
+
+      it "shows integration credential option for admin users" do
+        get new_integration_path
+
+        expect(response.body).to include("Integration credential")
+        expect(response.body).to include("GitLab, Jira, Azure DevOps")
+      end
+
+      context "when user is a member" do
+        let(:member_user) { create(:user, :member, account: user.account) }
+
+        before { sign_in member_user }
+
+        it "does not show integration credential option" do
+          get new_integration_path
+
+          expect(response.body).not_to include("Integration credential")
+        end
       end
     end
   end

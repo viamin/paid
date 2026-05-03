@@ -2,11 +2,6 @@
 
 module Integrations
   class Hub
-    # TODO: Restore integration_credentials (GitLab, Jira, signing, per-provider LLM tokens)
-    # to the integrations UI once RBAC is implemented. Account admin role users should be
-    # able to manage account-scoped credentials via IntegrationCredential. The model,
-    # controller, and views are intact — just hidden from the hub until then.
-
     Section = Data.define(:key, :label, :description, :records)
 
     class << self
@@ -41,6 +36,18 @@ module Integrations
             description: "API keys for AI providers used by agent runs.",
             records: provider_api_keys
           )
+        end
+
+        if user.has_any_role?(:admin, :owner, account)
+          credentials = account.integration_credentials.active.order(created_at: :desc).load
+          if credentials.any?
+            sections << Section.new(
+              key: :integration_credentials,
+              label: "Integration Credentials",
+              description: "Account-managed credentials for additional providers and integrations.",
+              records: credentials
+            )
+          end
         end
 
         sections

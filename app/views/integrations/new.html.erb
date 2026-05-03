@@ -30,6 +30,13 @@
           <h3 class="text-sm font-semibold text-gray-900">LLM provider API key</h3>
           <p class="mt-1 text-sm text-gray-500">Add an API key for an AI provider such as Anthropic, OpenAI, OpenRouter, or Google.</p>
         <% end %>
+
+        <% if policy(IntegrationCredential.new(account: current_account)).create? %>
+          <%= link_to new_integration_credential_path, class: "block py-4 hover:bg-gray-50 -mx-6 px-6 transition-colors" do %>
+            <h3 class="text-sm font-semibold text-gray-900">Integration credential</h3>
+            <p class="mt-1 text-sm text-gray-500">Add an account-managed credential for services like GitLab, Jira, Azure DevOps, or commit signing.</p>
+          <% end %>
+        <% end %>
       </div>
     </div>
   </div>
