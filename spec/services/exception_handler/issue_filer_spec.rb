@@ -14,11 +14,20 @@ RSpec.describe ExceptionHandler::IssueFiler do
   let(:gh_issue) { double(html_url: issue_url, number: 12) }
 
   before do
+    clean_up_test_data
     allow(project).to receive(:github_token).and_return(github_token)
   end
 
   after do
+    clean_up_test_data
+  end
+
+  def clean_up_test_data
     ExceptionIncident.delete_all
+    WorkflowState.delete_all
+    ServiceContainerMetric.delete_all
+    ProjectServiceContainer.delete_all
+    ServiceContainer.delete_all
     Project.delete_all
     GithubToken.delete_all
     Provider.delete_all

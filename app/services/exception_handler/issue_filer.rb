@@ -106,6 +106,12 @@ module ExceptionHandler
 
         @incident.update_columns(action_taken: "notified", updated_at: Time.current)
       end
+    rescue ActiveRecord::RecordNotFound
+      Rails.logger.warn(
+        message: "exception_handler.release_claim_incident_gone",
+        incident_id: @incident.id
+      )
+      nil
     end
 
     def file_github_issue(client:)
