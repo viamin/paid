@@ -745,7 +745,11 @@ class AgentRun < ApplicationRecord
   # excluded so a "pause all" toggle can hold new starts while still
   # accepting new queue entries from the project trigger button.
   def self.peek_next_queued_run(exclude_ids: [])
-    scope = schedulable_queued_with_priority
+    scope = unclaimed_with_priority
+      .joins(project: :account)
+      .where(accounts: { scheduler_paused_at: nil })
+      .where(projects: { scheduler_paused_at: nil })
+      .where("agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL")
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     next_queued_run_from(scope)
   end
