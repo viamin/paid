@@ -161,6 +161,7 @@ jobs:
         run: bin/rails db:prepare
 
       - name: Capture screenshots
+        id: capture_screenshots
         run: bin/rails screenshots:capture
 
       - name: Upload screenshots
@@ -176,6 +177,7 @@ jobs:
       - name: Comment on PR with screenshot summary
         if: >-
           always()
+          && steps.capture_screenshots.outcome == 'success'
           && steps.upload_screenshots.outcome == 'success'
           && github.event.pull_request.head.repo.full_name == github.repository
         env:

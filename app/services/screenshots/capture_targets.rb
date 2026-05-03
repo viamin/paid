@@ -33,7 +33,7 @@ module Screenshots
     HELPER_TARGETS = {
       "application" => SHARED_TARGET_KEYS,
       "cost_dashboard" => %i[project_cost_dashboard project_cost_snapshot],
-      "integrations" => [ :integrations ],
+      "integrations" => %i[integrations integrations_new],
       "knowledge" => %i[knowledge_search project_knowledge_search project_knowledge_browse project_context_intake],
       "quality_metrics" => %i[quality_dashboard project_quality_dashboard],
       "workflow" => [ :workflow_status ]
@@ -45,6 +45,7 @@ module Screenshots
       notifications: Target.new(slug: "notifications", path_builder: "/notifications", requires_auth: true),
       onboarding: Target.new(slug: "onboarding", path_builder: "/onboarding", requires_auth: true),
       integrations: Target.new(slug: "integrations", path_builder: "/integrations", requires_auth: true),
+      integrations_new: Target.new(slug: "integrations_new", path_builder: "/integrations/new", requires_auth: true),
       integration_credentials: Target.new(slug: "integration_credentials", path_builder: "/integration_credentials", requires_auth: true),
       integration_credential_new: Target.new(slug: "integration_credential_new", path_builder: "/integration_credentials/new", requires_auth: true),
       integration_credential_show: Target.new(slug: "integration_credential_show", path_builder: ->(seed_data) { "/integration_credentials/#{seed_data.fetch(:integration_credential).id}" }, requires_auth: true),
@@ -69,6 +70,10 @@ module Screenshots
       service_container_edit: Target.new(slug: "service_container_edit", path_builder: ->(seed_data) { "/service_containers/#{seed_data.fetch(:service_container).id}/edit" }, requires_auth: true),
       agent_runs: Target.new(slug: "agent_runs", path_builder: "/agent_runs", requires_auth: true),
       prompts: Target.new(slug: "prompts", path_builder: "/prompts", requires_auth: true),
+      prompt_new: Target.new(slug: "prompt_new", path_builder: "/prompts/new", requires_auth: true),
+      prompt_show: Target.new(slug: "prompt_show", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}" }, requires_auth: true),
+      prompt_edit: Target.new(slug: "prompt_edit", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}/edit" }, requires_auth: true),
+      prompt_diff: Target.new(slug: "prompt_diff", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}/diff" }, requires_auth: true),
       prompt_reviews_queue: Target.new(slug: "prompt_reviews_queue", path_builder: "/prompt_reviews", requires_auth: true),
       prompt_reviews: Target.new(slug: "prompt_reviews", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}/reviews" }, requires_auth: true),
       prompt_review_show: Target.new(slug: "prompt_review_show", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}/reviews/#{seed_data.fetch(:pending_prompt_version).id}" }, requires_auth: true),
@@ -136,21 +141,21 @@ module Screenshots
       "home_controller.rb" => [ :dashboard ],
       "projects_controller.rb" => %i[projects project_show project_edit],
       "agent_runs_controller.rb" => [ :agent_runs ],
-      "prompts_controller.rb" => [ :prompts ],
+      "prompts_controller.rb" => %i[prompts prompt_new prompt_show prompt_edit],
       "prompt_reviews_controller.rb" => %i[prompt_reviews_queue prompt_reviews prompt_review_show],
-      "ab_tests_controller.rb" => %i[ab_tests ab_test_show],
+      "ab_tests_controller.rb" => %i[ab_tests ab_test_new ab_test_show],
       "providers_controller.rb" => %i[providers providers_new providers_edit],
-      "provider_api_keys_controller.rb" => %i[provider_api_keys provider_api_key_show],
-      "integrations_controller.rb" => [ :integrations ],
-      "integration_credentials_controller.rb" => %i[integration_credentials integration_credential_show],
-      "github_tokens_controller.rb" => %i[github_tokens github_token_show],
-      "linear_tokens_controller.rb" => %i[linear_tokens linear_token_show],
+      "provider_api_keys_controller.rb" => %i[provider_api_keys provider_api_key_new provider_api_key_show provider_api_key_edit],
+      "integrations_controller.rb" => %i[integrations integrations_new],
+      "integration_credentials_controller.rb" => %i[integration_credentials integration_credential_new integration_credential_show],
+      "github_tokens_controller.rb" => %i[github_tokens github_token_new github_token_show],
+      "linear_tokens_controller.rb" => %i[linear_tokens linear_token_new linear_token_show],
       "notifications_controller.rb" => [ :notifications ],
       "onboarding_controller.rb" => [ :onboarding ],
       "user_settings_controller.rb" => [ :user_settings ],
       "tenant_configurations_controller.rb" => [ :tenant_configuration ],
-      "service_containers_controller.rb" => %i[service_containers service_container_show],
-      "style_guides_controller.rb" => %i[style_guides style_guide_show],
+      "service_containers_controller.rb" => %i[service_containers service_container_new service_container_show service_container_edit],
+      "style_guides_controller.rb" => %i[style_guides style_guide_new style_guide_show style_guide_edit],
       "chat_sessions_controller.rb" => %i[chat_sessions chat_session_show],
       "chat_messages_controller.rb" => [ :chat_session_show ],
       "quality_dashboards_controller.rb" => [ :quality_dashboard ],
@@ -214,7 +219,7 @@ module Screenshots
       when /\Ahome\// then [ :dashboard ]
       when /\Anotifications\// then [ :notifications ]
       when /\Aonboarding\// then [ :onboarding ]
-      when /\Aintegrations\// then [ :integrations ]
+      when /\Aintegrations\// then integrations_targets(relative_path.delete_prefix("integrations/"))
       when /\Aintegration_credentials\// then rest_resource_targets(relative_path, "integration_credentials", index: :integration_credentials, new: :integration_credential_new, show: :integration_credential_show, edit: :integration_credential_show)
       when /\Agithub_tokens\// then rest_resource_targets(relative_path, "github_tokens", index: :github_tokens, new: :github_token_new, show: :github_token_show, edit: :github_token_show)
       when /\Alinear_tokens\// then rest_resource_targets(relative_path, "linear_tokens", index: :linear_tokens, new: :linear_token_new, show: :linear_token_show, edit: :linear_token_show)
@@ -226,7 +231,7 @@ module Screenshots
       when /\Aagent_runs\// then [ :agent_runs ]
       when /\Aprompt_reviews\// then prompt_review_targets(relative_path.delete_prefix("prompt_reviews/"))
       when /\Aab_tests\// then ab_test_targets(relative_path.delete_prefix("ab_tests/"))
-      when /\Aprompts\// then [ :prompts ]
+      when /\Aprompts\// then prompts_targets(relative_path.delete_prefix("prompts/"))
       when /\Astyle_guides\// then rest_resource_targets(relative_path, "style_guides", index: :style_guides, new: :style_guide_new, show: :style_guide_show, edit: :style_guide_edit)
       when /\Achat_sessions\// then chat_session_targets(relative_path.delete_prefix("chat_sessions/"))
       when /\Achat_messages\// then [ :chat_session_show ]
@@ -277,6 +282,28 @@ module Screenshots
       when "index.html.erb" then [ :project_knowledge_browse ]
       else
         [ :project_knowledge_browse_show ]
+      end
+    end
+
+    def integrations_targets(leaf)
+      case leaf
+      when "index.html.erb" then [ :integrations ]
+      when "new.html.erb" then [ :integrations_new ]
+      else
+        [ :integrations ]
+      end
+    end
+
+    def prompts_targets(leaf)
+      case leaf
+      when "index.html.erb" then [ :prompts ]
+      when "new.html.erb" then [ :prompt_new ]
+      when "show.html.erb" then [ :prompt_show ]
+      when "edit.html.erb" then [ :prompt_edit ]
+      when "diff.html.erb" then [ :prompt_diff ]
+      when /\A_/ then %i[prompt_new prompt_edit] # Partials used in form pages
+      else
+        [ :prompt_show ]
       end
     end
 

@@ -127,6 +127,16 @@ RSpec.describe Screenshots::DetectUiChanges do
       expect(result[:ui_files]).to be_empty
     end
 
+    it "ignores mailer layout files (both HTML and text variants)" do
+      result = described_class.call(changed_files: [
+        "app/views/layouts/mailer.html.erb",
+        "app/views/layouts/mailer.text.erb"
+      ])
+
+      expect(result[:ui_changes?]).to be false
+      expect(result[:ui_files]).to be_empty
+    end
+
     it "ignores pwa templates that do not map to rendered screenshots" do
       result = described_class.call(changed_files: [ "app/views/pwa/manifest.json.erb" ])
 

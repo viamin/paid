@@ -14,7 +14,7 @@ module Screenshots
   class DetectUiChanges
     UI_FILE_EXCLUSIONS = [
       %r{\Aapp/views/devise/mailer/},
-      %r{\Aapp/views/layouts/mailer(?:\.text)?\.erb\z},
+      %r{\Aapp/views/layouts/mailer(?:\.(?:html|text))?\.erb\z},
       %r{\Aapp/views/pwa/}
     ].freeze
 

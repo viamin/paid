@@ -52,22 +52,20 @@ module Screenshots
         seed_data = ensure_seed_data!
         targets = Screenshots::CaptureTargets.call(changed_files: @changed_files)
 
-        sign_in(session, seed_data.fetch(:user)) if targets.any?(&:requires_auth)
-        targets.each do |target|
-          path = target.path(seed_data)
-          file_path = File.join(@output_dir, "#{target.slug}.png")
-          begin
-            session.visit(path)
+        # Split targets into unauthenticated and authenticated groups so that
+        # guest-only pages (e.g. sign_in) are captured before signing in. Signing
+        # in first would cause Devise's require_no_authentication filter to redirect
+        # away from the login form.
+        unauthenticated_targets, authenticated_targets = targets.partition { |t| !t.requires_auth }
 
-            if target.requires_auth && session.current_path&.include?("sign_in")
-              raise "redirected to sign-in page — authentication may have failed"
-            end
+        unauthenticated_targets.each do |target|
+          capture_target(session, target, seed_data, captured, failures)
+        end
 
-            session.save_screenshot(file_path, full: true)
-            captured << file_path
-            puts "  Captured: #{target.slug} -> #{file_path}"
-          rescue StandardError => e
-            failures << "#{target.slug} (#{path}): #{e.message}"
+        if authenticated_targets.any?
+          sign_in(session, seed_data.fetch(:user))
+          authenticated_targets.each do |target|
+            capture_target(session, target, seed_data, captured, failures)
           end
         end
       ensure
@@ -317,6 +315,22 @@ module Screenshots
           knowledge_artifact: knowledge_artifact
         }
       end
+    end
+
+    def capture_target(session, target, seed_data, captured, failures)
+      path = target.path(seed_data)
+      file_path = File.join(@output_dir, "#{target.slug}.png")
+      session.visit(path)
+
+      if target.requires_auth && session.current_path&.include?("sign_in")
+        raise "redirected to sign-in page — authentication may have failed"
+      end
+
+      session.save_screenshot(file_path, full: true)
+      captured << file_path
+      puts "  Captured: #{target.slug} -> #{file_path}"
+    rescue StandardError => e
+      failures << "#{target.slug} (#{path}): #{e.message}"
     end
 
     def sign_in(session, user)

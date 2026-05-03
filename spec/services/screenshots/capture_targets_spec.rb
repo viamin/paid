@@ -76,6 +76,39 @@ RSpec.describe Screenshots::CaptureTargets do
       expect(targets.map(&:slug)).to contain_exactly("service_container_new", "service_container_edit")
     end
 
+    it "maps integrations new view to integrations_new target" do
+      targets = described_class.call(changed_files: [ "app/views/integrations/new.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "integrations_new" ])
+    end
+
+    it "maps prompt views to their specific targets" do
+      targets = described_class.call(changed_files: [ "app/views/prompts/new.html.erb" ])
+      expect(targets.map(&:slug)).to eq([ "prompt_new" ])
+
+      targets = described_class.call(changed_files: [ "app/views/prompts/show.html.erb" ])
+      expect(targets.map(&:slug)).to eq([ "prompt_show" ])
+
+      targets = described_class.call(changed_files: [ "app/views/prompts/edit.html.erb" ])
+      expect(targets.map(&:slug)).to eq([ "prompt_edit" ])
+
+      targets = described_class.call(changed_files: [ "app/views/prompts/diff.html.erb" ])
+      expect(targets.map(&:slug)).to eq([ "prompt_diff" ])
+    end
+
+    it "maps prompt partials to new and edit targets" do
+      targets = described_class.call(changed_files: [ "app/views/prompts/_form.html.erb" ])
+
+      expect(targets.map(&:slug)).to contain_exactly("prompt_new", "prompt_edit")
+    end
+
+    it "maps controller with new/edit actions to include those targets" do
+      targets = described_class.call(changed_files: [ "app/controllers/provider_api_keys_controller.rb" ])
+
+      slugs = targets.map(&:slug)
+      expect(slugs).to include("provider_api_key_new", "provider_api_key_edit")
+    end
+
     it "maps shared targets to include chat and ab_test pages" do
       targets = described_class.call(changed_files: [ "app/javascript/controllers/modal_controller.js" ])
 
