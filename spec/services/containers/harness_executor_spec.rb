@@ -11,6 +11,7 @@ RSpec.describe Containers::HarnessExecutor do
       container_result = Containers::Provision::Result.success(
         stdout: "OK", stderr: "", exit_code: 0
       )
+      allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC).and_return(100.0, 100.25)
       allow(agent_run).to receive(:execute_in_container).and_return(container_result)
 
       result = executor.execute(%w[echo hello], timeout: 30, env: { "FOO" => "bar" })
@@ -19,6 +20,7 @@ RSpec.describe Containers::HarnessExecutor do
       expect(result.stdout).to eq("OK")
       expect(result.stderr).to eq("")
       expect(result.exit_code).to eq(0)
+      expect(result.duration).to eq(0.25)
       expect(result).to be_success
     end
 
@@ -162,8 +164,59 @@ RSpec.describe Containers::HarnessExecutor do
   end
 
   describe "#which" do
-    it "returns a truthy path for any binary" do
-      expect(executor.which("claude")).to be_truthy
+    it "returns the resolved path for an installed binary" do
+      container_result = Containers::Provision::Result.success(
+        stdout: "/usr/local/bin/claude\n", stderr: "", exit_code: 0
+      )
+      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+
+      expect(executor.which("claude")).to eq("/usr/local/bin/claude")
+      expect(agent_run).to have_received(:execute_in_container).with(
+        [ "sh", "-c", "command -v -- claude" ],
+        stream: false,
+        env: {},
+        preparation: nil
+      )
+    end
+
+    it "shell-escapes the binary name for the command probe" do
+      container_result = Containers::Provision::Result.success(
+        stdout: "", stderr: "", exit_code: 0
+      )
+      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+      binary = "claude; rm -rf /"
+
+      executor.which(binary)
+
+      expect(agent_run).to have_received(:execute_in_container).with(
+        [ "sh", "-c", "command -v -- #{Shellwords.escape(binary)}" ],
+        stream: false,
+        env: {},
+        preparation: nil
+      )
+    end
+
+    it "returns nil when the binary is not installed" do
+      container_result = Containers::Provision::Result.failure(
+        error: "not found", stdout: "", stderr: "", exit_code: 1
+      )
+      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+
+      expect(executor.which("claude")).to be_nil
+    end
+  end
+
+  describe "#available?" do
+    it "returns true when which resolves a binary" do
+      allow(executor).to receive(:which).with("claude").and_return("/usr/local/bin/claude")
+
+      expect(executor.available?("claude")).to be(true)
+    end
+
+    it "returns false when which does not resolve a binary" do
+      allow(executor).to receive(:which).with("claude").and_return(nil)
+
+      expect(executor.available?("claude")).to be(false)
     end
   end
 end
