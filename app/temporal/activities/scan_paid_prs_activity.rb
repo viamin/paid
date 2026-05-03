@@ -67,7 +67,7 @@ module Activities
               pending_review_states << pending_review_state(issue, result)
               collect_scan_result(issue, result, prs_to_trigger, automation_results,
                 explicit_pr_decisions:,
-                lifecycle: build_lifecycle_signals(project, issue))
+                lifecycle: explicit_pr_decisions ? build_lifecycle_signals(project, issue) : nil)
               next
             end
           end
@@ -91,7 +91,7 @@ module Activities
         if result
           collect_scan_result(issue, result, prs_to_trigger, automation_results,
             explicit_pr_decisions:,
-            lifecycle: build_lifecycle_signals(project, issue))
+            lifecycle: explicit_pr_decisions ? build_lifecycle_signals(project, issue) : nil)
         end
       rescue Temporalio::Error::ApplicationError => e
         raise unless e.type == "RateLimit"
@@ -99,7 +99,7 @@ module Activities
         logger.warn(
           message: "pr_scanner.rate_budget_exhausted_mid_scan",
           project_id: project_id,
-          prs_collected: automation_results.size,
+          prs_collected: explicit_pr_decisions ? automation_results.size : prs_to_trigger.size,
           prs_remaining: paid_prs.size - paid_prs.index(issue) - 1
         )
         break
@@ -111,7 +111,7 @@ module Activities
         prs_found: paid_prs.size,
         prs_scanned: scanned_count,
         prs_skipped_unchanged: unchanged_count,
-        prs_triggered: automation_results.size
+        prs_triggered: explicit_pr_decisions ? automation_results.size : prs_to_trigger.size
       )
 
       {
