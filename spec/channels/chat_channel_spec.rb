@@ -72,6 +72,23 @@ RSpec.describe ChatChannel do
           .with(hash_including(type: "message_created", role: "tool", stream_message_id: nil))
     end
 
+    it "broadcasts streamed chunks before completion" do
+      allow(ChatSessions::SendMessage).to receive(:call) do |**args|
+        args[:on_chunk].call("I can ")
+        args[:on_chunk].call("help.")
+
+        create(:chat_message, :assistant, chat_session: chat_session,
+          content: "I can help.", tokens_input: 10, tokens_output: 5)
+      end
+
+      expect {
+        perform :send_message, content: "Hello"
+      }.to have_broadcasted_to("chat_session:#{chat_session.id}")
+        .with(hash_including(type: "message_chunk", content: "I can "))
+        .and have_broadcasted_to("chat_session:#{chat_session.id}")
+          .with(hash_including(type: "message_chunk", content: "help."))
+    end
+
     it "ignores blank content" do
       expect(ChatSessions::SendMessage).not_to receive(:call)
       perform :send_message, content: ""

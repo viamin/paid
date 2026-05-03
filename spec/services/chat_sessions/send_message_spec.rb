@@ -16,6 +16,22 @@ RSpec.describe ChatSessions::SendMessage do
     }
   end
   let(:llm_client) { instance_double(Proc, call: llm_response) }
+  let(:streaming_client) do
+    Class.new do
+      def call(_conversation, on_chunk: nil)
+        on_chunk&.call("I can ")
+        on_chunk&.call("help with that.")
+
+        {
+          content: "I can help with that.",
+          tool_calls: [],
+          tokens_input: 100,
+          tokens_output: 50,
+          model: "gpt-4o"
+        }
+      end
+    end.new
+  end
 
   describe ".call" do
     it "persists the user message" do
@@ -155,6 +171,33 @@ RSpec.describe ChatSessions::SendMessage do
         [ "user", "Hello", nil ],
         [ "assistant", "I can help with that.", "stream-123" ]
       ])
+    end
+
+    it "passes streamed chunks through when the llm client supports chunk callbacks" do
+      chunks = []
+
+      described_class.call(
+        chat_session: chat_session,
+        content: "Hello",
+        llm_client: streaming_client,
+        on_chunk: ->(chunk) { chunks << chunk }
+      )
+
+      expect(chunks).to eq([ "I can ", "help with that." ])
+    end
+
+    it "replays response content when the llm client does not support chunk callbacks" do
+      chunks = []
+
+      described_class.call(
+        chat_session: chat_session,
+        content: "Hello",
+        llm_client: llm_client,
+        on_chunk: ->(chunk) { chunks << chunk }
+      )
+
+      expect(chunks.join).to eq("I can help with that.")
+      expect(chunks.length).to be > 1
     end
 
     context "with tool calls in response" do

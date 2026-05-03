@@ -1936,6 +1936,128 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "when streaming JSONL events trigger abort" do
+      before do
+        allow(mock_container).to receive(:stop)
+      end
+
+      it "raises OutputAbortError on turn.failed event" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "{\"type\": \"turn.failed\", \"message\": \"context window exceeded\"}\n") if block
+          [ [], [], 1 ]
+        end
+
+        expect { service.execute("codex exec --json") }
+          .to raise_error(described_class::OutputAbortError) { |e|
+            expect(e.matched_output).to eq("streaming_event:turn.failed")
+          }
+      end
+
+      it "raises OutputAbortError on error event" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "{\"type\": \"error\", \"message\": \"fatal API error\"}\n") if block
+          [ [], [], 1 ]
+        end
+
+        expect { service.execute("codex exec --json") }
+          .to raise_error(described_class::OutputAbortError) { |e|
+            expect(e.matched_output).to eq("streaming_event:error")
+          }
+      end
+
+      it "stops the container immediately on abort event" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "{\"type\": \"turn.failed\", \"message\": \"failed\"}\n") if block
+          [ [], [], 1 ]
+        end
+
+        service.execute("codex exec --json") rescue nil
+
+        expect(mock_container).to have_received(:stop).with(timeout: 0)
+      end
+
+      it "handles JSONL events split across chunks" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          if block
+            # Split a single JSONL line across two chunks
+            block.call(:stdout, '{"type": "turn.fai')
+            block.call(:stdout, "led\", \"message\": \"exceeded\"}\n")
+          end
+          [ [], [], 1 ]
+        end
+
+        expect { service.execute("codex exec --json") }
+          .to raise_error(described_class::OutputAbortError) { |e|
+            expect(e.matched_output).to eq("streaming_event:turn.failed")
+          }
+      end
+
+      it "flushes turn metrics even on abort" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          if block
+            block.call(:stdout, "{\"type\": \"turn_complete\", \"usage\": {\"input_tokens\": 500, \"output_tokens\": 200}}\n")
+            block.call(:stdout, "{\"type\": \"turn.failed\", \"message\": \"context window exceeded\"}\n")
+          end
+          [ [], [], 1 ]
+        end
+
+        service.execute("codex exec --json") rescue nil
+
+        agent_run.reload
+        expect(agent_run.turns_completed).to eq(2)
+        expect(agent_run.streaming_turns_data.length).to eq(2)
+      end
+
+      it "swallows metric flush failures so the original error is preserved" do
+        processor = instance_double(Containers::StreamingEventProcessor)
+        allow(service).to receive(:build_streaming_event_processor).and_return(processor)
+        allow(processor).to receive_messages(handle_line: nil, last_event_type: nil)
+        allow(processor).to receive(:flush_metrics!).and_raise(ActiveRecord::ActiveRecordError, "flush failed")
+        allow(agent_run).to receive(:log!).and_call_original
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "{\"type\": \"progress\"}\n") if block
+          raise Docker::Error::DockerError, "exec failed"
+        end
+
+        expect { service.execute("codex exec --json") }
+          .to raise_error(described_class::ExecutionError, /Docker exec error: exec failed/)
+
+        expect(agent_run).to have_received(:log!).with(
+          "system",
+          "container.execute.streaming_metrics_flush_failed",
+          metadata: hash_including(error: "flush failed")
+        )
+      end
+
+      it "ignores streaming-looking JSON output from non-agent exec commands" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "{\"type\": \"error\", \"message\": \"helper output\"}\n") if block
+          [ [], [], 0 ]
+        end
+
+        expect { service.execute("echo '{\"type\":\"error\"}'") }.not_to raise_error
+        expect(mock_container).not_to have_received(:stop)
+      end
+
+      it "drops oversized partial JSONL buffers instead of growing without bound" do
+        overflow_chunk = "{" + ("x" * described_class::MAX_STREAMING_LINE_BUFFER_BYTES)
+
+        allow(agent_run).to receive(:log!).and_call_original
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, overflow_chunk) if block
+          [ [], [], 0 ]
+        end
+
+        service.execute("codex exec --json")
+
+        expect(agent_run).to have_received(:log!).with(
+          "system",
+          "container.execute.streaming_buffer_reset",
+          metadata: hash_including(dropped_bytes: overflow_chunk.bytesize)
+        )
+      end
+    end
+
     context "when container is not provisioned" do
       let(:unprovisioned_service) { described_class.new(agent_run: agent_run, worktree_path: worktree_path) }
 

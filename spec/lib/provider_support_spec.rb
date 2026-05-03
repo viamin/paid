@@ -375,8 +375,8 @@ RSpec.describe ProviderSupport do
     end
 
     describe "copilot exclusion" do
-      it "is listed in APP_TO_HARNESS_PROVIDER_KEYS as a known provider" do
-        expect(described_class::APP_TO_HARNESS_PROVIDER_KEYS).to have_key("copilot")
+      it "is listed in APP_PROVIDER_KEYS as a known provider" do
+        expect(described_class::APP_PROVIDER_KEYS).to include("copilot")
       end
 
       it "is not addable as a provider" do

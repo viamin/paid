@@ -112,8 +112,18 @@ module ChatSessions
     end
 
     def call_llm(conversation)
+      chunk_streamed = false
+      chunk_callback = lambda do |chunk|
+        next if chunk.blank?
+
+        chunk_streamed = true
+        on_chunk&.call(chunk)
+      end
+
       if llm_client
-        llm_client.call(conversation)
+        invoke_llm_client(conversation, chunk_callback).tap do |response|
+          replay_response_content(response, chunk_callback) unless chunk_streamed
+        end
       else
         # Delegate to agent-harness for LLM interaction.
         # Returns a response hash with :content, :tool_calls, :tokens_input, :tokens_output.
@@ -122,6 +132,36 @@ module ChatSessions
         # (depends on agent-harness AH-1, AH-2, AH-3).
         # In production, this calls provider.send_chat_message(conversation:, stream:).
         raise NotImplementedError, "agent-harness chat transport not yet integrated"
+      end
+    end
+
+    def invoke_llm_client(conversation, chunk_callback)
+      return llm_client.call(conversation) unless on_chunk
+
+      if llm_client_supports_chunk_callback?
+        llm_client.call(conversation, on_chunk: chunk_callback)
+      else
+        llm_client.call(conversation)
+      end
+    rescue ArgumentError => error
+      raise error unless unsupported_on_chunk_callback?(error)
+
+      llm_client.call(conversation)
+    end
+
+    def replay_response_content(response, chunk_callback)
+      response[:content].to_s.scan(/\S+\s*|\s+/).each do |chunk|
+        chunk_callback.call(chunk)
+      end
+    end
+
+    def unsupported_on_chunk_callback?(error)
+      error.message.include?("unknown keyword: :on_chunk") || error.message.match?(/wrong number of arguments/)
+    end
+
+    def llm_client_supports_chunk_callback?
+      llm_client.method(:call).parameters.any? do |kind, name|
+        (kind == :keyrest) || ([ :key, :keyreq ].include?(kind) && name == :on_chunk)
       end
     end
 

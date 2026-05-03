@@ -1,4 +1,6 @@
 <aside class="overflow-hidden rounded-[2rem] border border-white/70 bg-white/75 shadow-[0_20px_70px_-32px_rgba(15,23,42,0.45)] backdrop-blur">
+  <% can_create_chat_session = policy(ChatSession.new(account: current_account)).create? %>
+
   <div data-controller="chat-session-list"
        data-chat-session-list-active-session-id-value="<%= active_session&.id %>">
     <div class="border-b border-slate-200/80 p-5">
@@ -11,11 +13,13 @@
                  data-chat-session-list-target="searchInput"
                  data-action="input->chat-session-list#filter" />
         </label>
-        <button type="button"
-                class="inline-flex items-center rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
-                data-action="chat-session-list#openModal">
-          New Chat
-        </button>
+        <% if can_create_chat_session %>
+          <button type="button"
+                  class="inline-flex items-center rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
+                  data-action="chat-session-list#openModal">
+            New Chat
+          </button>
+        <% end %>
       </div>
     </div>
 
@@ -32,10 +36,12 @@
       <% end %>
     </div>
 
-    <%= render "new_session_modal",
-               chat_session: chat_session,
-               available_providers: available_providers,
-               available_projects: available_projects,
-               available_models: available_models %>
+    <% if can_create_chat_session %>
+      <%= render "new_session_modal",
+                 chat_session: chat_session,
+                 available_providers: available_providers,
+                 available_projects: available_projects,
+                 available_models: available_models %>
+    <% end %>
   </div>
 </aside>

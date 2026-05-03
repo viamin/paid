@@ -62,6 +62,20 @@ RSpec.describe "ChatSessions" do
         expect(response.body).to include("Planning Thread")
       end
     end
+
+    context "when authenticated as a viewer" do
+      let(:viewer) { create(:user, :viewer, account: account) }
+
+      before { sign_in viewer }
+
+      it "hides new-session controls" do
+        get chat_sessions_path
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).not_to include("New Chat")
+        expect(response.body).not_to include("Create session")
+      end
+    end
   end
 
   describe "POST /chat" do
@@ -193,6 +207,24 @@ RSpec.describe "ChatSessions" do
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include(%(data-session-id="#{chat_session.id}"))
+      end
+    end
+
+    context "when authenticated as a viewer" do
+      let(:viewer) { create(:user, :viewer, account: account) }
+
+      before { sign_in viewer }
+
+      it "renders a read-only chat view" do
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("You have read-only access to this chat.")
+        expect(response.body).not_to include(%(name="chat_session[title]"))
+        expect(response.body).not_to include(%(name="chat_session[provider_id]"))
+        expect(response.body).not_to include(%(name="chat_session[model]"))
+        expect(response.body).not_to include(%(name="content"))
+        expect(response.body).not_to include("New Chat")
       end
     end
   end

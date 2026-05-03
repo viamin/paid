@@ -156,6 +156,7 @@ class AgentRun < ApplicationRecord
   validates :provider_switches, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :stale_requeue_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :stale_skip_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :turns_completed, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :token_limit_status, inclusion: { in: TOKEN_LIMIT_STATUSES }, allow_nil: true
   validates :guardrail_violation_type, inclusion: { in: GUARDRAIL_VIOLATION_TYPES }, allow_nil: true
   validates :priority_tier, inclusion: { in: Project::PRIORITY_TIERS }, allow_nil: true
@@ -835,6 +836,19 @@ class AgentRun < ApplicationRecord
 
   def total_tokens
     tokens_input.to_i + tokens_output.to_i
+  end
+
+  # Returns total tokens consumed across all streaming turns.
+  def streaming_total_tokens
+    Array(streaming_turns_data).sum { |turn| turn["input_tokens"].to_i + turn["output_tokens"].to_i }
+  end
+
+  # Returns the average tokens per turn from streaming data.
+  def streaming_avg_tokens_per_turn
+    completed_turns = turns_completed.to_i
+    return 0 if completed_turns <= 0
+
+    streaming_total_tokens.to_f / completed_turns
   end
 
   def token_limit_exceeded?

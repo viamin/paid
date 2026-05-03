@@ -564,10 +564,26 @@ CREATE TABLE public.agent_runs (
     token_limit_status character varying(50),
     priority_tier character varying(10),
     cross_repo_issues jsonb DEFAULT '[]'::jsonb,
-    stale_skip_count integer DEFAULT 0 NOT NULL
+    stale_skip_count integer DEFAULT 0 NOT NULL,
+    turns_completed integer DEFAULT 0 NOT NULL,
+    streaming_turns_data jsonb DEFAULT '[]'::jsonb NOT NULL
 );
 
 ALTER TABLE ONLY public.agent_runs FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: COLUMN agent_runs.turns_completed; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_runs.turns_completed IS 'Number of agent turns completed, tracked via streaming JSONL progress events';
+
+
+--
+-- Name: COLUMN agent_runs.streaming_turns_data; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_runs.streaming_turns_data IS 'Per-turn metrics from streaming JSONL events (turn number, tokens, duration)';
 
 
 --
@@ -11004,6 +11020,7 @@ SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
 ('20260502201828'),
+('20260502200141'),
 ('20260428140000'),
 ('20260428130904'),
 ('20260428120000'),
