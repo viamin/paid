@@ -23,6 +23,11 @@ module Activities
       "claude_code" => "claude"
     }.freeze
 
+    # No-op executor for provider instances used only for response parsing.
+    NULL_EXECUTOR = Object.new.tap do |obj|
+      obj.define_singleton_method(:execute) { |*, **| raise "NULL_EXECUTOR: not meant for execution" }
+    end.freeze
+
     # Patterns that indicate a rate limit or quota error from provider output.
     RATE_LIMIT_PATTERNS = [
       /rate.?limit/i,
@@ -987,7 +992,11 @@ module Activities
       app_provider_key = ProviderSupport.provider_key_for_agent_type(provider_key)
       harness_key = ProviderSupport.harness_provider_key_for(app_provider_key).to_sym
       klass = AgentHarness.provider_class(harness_key)
-      klass.new(config: harness_response_config(harness_key, provider_candidate, user))
+      config = harness_response_config(harness_key, provider_candidate, user)
+      # Pass a no-op executor to satisfy providers whose initializer may
+      # require one (aligns with HarnessExecutionPlan construction pattern).
+      # This provider instance is only used for parse_response, never execution.
+      klass.new(executor: NULL_EXECUTOR, config: config)
     end
 
     def harness_response_config(harness_key, provider_candidate, user)

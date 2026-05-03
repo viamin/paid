@@ -36,7 +36,7 @@ module ProviderSupport
     @supported_provider_keys_set ||= begin
       registered = AgentHarness.providers
       APP_PROVIDER_KEYS.each_with_object(Set.new) do |provider_key, set|
-        canonical = AgentHarness::Providers::Registry.instance.canonical_name(provider_key.to_sym)
+        canonical = AgentHarness.provider_metadata(provider_key.to_sym)[:canonical_provider]
         set << provider_key if registered.include?(canonical)
       end.freeze
     end
@@ -67,7 +67,7 @@ module ProviderSupport
   end
 
   def harness_provider_key_for(provider_key)
-    AgentHarness::Providers::Registry.instance.canonical_name(provider_key.to_sym).to_s
+    AgentHarness.provider_metadata(provider_key.to_sym)[:canonical_provider].to_s
   end
 
   def provider_key_for_agent_type(agent_type)
@@ -193,7 +193,7 @@ module ProviderSupport
   # names are resolved via the registry at load time.
   API_SERVICE_TYPE_TO_HARNESS_KEY = PROVIDER_API_SERVICE_TYPE
     .each_with_object({}) { |(provider_key, service_type), map| map[service_type] ||= provider_key }
-    .transform_values { |pk| AgentHarness::Providers::Registry.instance.canonical_name(pk.to_sym).to_s }
+    .transform_values { |pk| AgentHarness.provider_metadata(pk.to_sym)[:canonical_provider].to_s }
     .freeze
 
   # Maps provider keys to their upstream proxy API key name (used by
