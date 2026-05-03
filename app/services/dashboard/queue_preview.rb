@@ -9,6 +9,10 @@ module Dashboard
     LOWER_PRIORITY = "Lower priority"
     BUDGET_EXCEEDED = "Budget exceeded"
 
+    # Hard cap on queue iterations to prevent unbounded N+1 queries when
+    # the user has no visible runs near the front of the queue.
+    MAX_SCAN = 200
+
     def self.call(...)
       new(...).call
     end
@@ -64,7 +68,7 @@ module Dashboard
 
       # Walk the global queue order rather than filtering the scope up front:
       # non-visible runs still determine why a visible run is waiting.
-      while visible_runs.size < limit
+      while visible_runs.size < limit && snapshot.size < MAX_SCAN
         run = AgentRun.peek_next_queued_run(exclude_ids: excluded_ids)
         break unless run
 
