@@ -162,9 +162,15 @@ module Containers
       classified_type = classify_event(raw_type) || classify_harness_event_type(parsed.type)
       return nil unless classified_type
 
+      event = if parsed.respond_to?(:tokens)
+        harness_event_payload(parsed, raw_type)
+      else
+        parsed
+      end
+
       {
         type: classified_type,
-        event: harness_event_payload(parsed, raw_type),
+        event: event,
         raw_type: raw_type
       }
     end
