@@ -126,6 +126,7 @@ module Workflows
       else
         Temporalio::Workflow.logger.warn(
           message: "workflow_decision_executor.unknown_decision_type",
+          project_id: project_id,
           type: decision[:type]
         )
       end

@@ -30,7 +30,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       # Temporal stores declared workflow_signal handlers on the class as they
       # are defined. Inspecting that registry avoids forcing lazy definition
       # construction, which is brittle in the current gem load order.
-      signal_names = described_class.instance_variable_get(:@workflow_signals).keys.map(&:to_s)
+      signal_names = (described_class.instance_variable_get(:@workflow_signals) || {}).keys.map(&:to_s)
 
       expect(signal_names).to include("request_sync")
     end
@@ -87,6 +87,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(logger).to have_received(:warn).with(
         message: "workflow_decision_executor.unknown_decision_type",
+        project_id: project_id,
         type: "future_decision_type"
       )
     end

@@ -122,7 +122,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           paid_state: "completed")
       end
 
-      before { pr_issue }
+      before do
+        FeatureFlags.disable!(:explicit_pr_automation_decisions, project:)
+        pr_issue
+      end
 
       it "returns only legacy trigger payloads" do
         stub_github_for_pr(checks: [ { name: "rspec", conclusion: "failure" } ])
@@ -6124,6 +6127,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "with structured logging" do
       before do
+        FeatureFlags.disable!(:explicit_pr_automation_decisions, project:)
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
