@@ -7,6 +7,9 @@ module QualityMetricsHelper
     format("%.1f%%", score * 100)
   end
 
+  # Dark-mode colors for these text classes are handled by the global
+  # unlayered overrides in application.tailwind.css (e.g. `.dark .text-green-600`),
+  # which have higher cascade priority than Tailwind dark: utilities.
   def quality_score_color(score)
     return "text-gray-400" if score.nil?
 

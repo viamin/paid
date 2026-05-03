@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 module ApplicationHelper
+  # Dark-mode colors for these badges are handled by the global unlayered
+  # overrides in application.tailwind.css (e.g. `.dark .bg-indigo-100`),
+  # which have higher cascade priority than Tailwind dark: utilities.
   AGENT_RUN_STATUS_STYLES = {
     "queued" => { bg: "bg-indigo-100", text: "text-indigo-700", label: "Queued" },
     "running" => { bg: "bg-blue-100", text: "text-blue-700", label: "Running" },
