@@ -1045,6 +1045,51 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Automatic work is not paused by quality gates.")
         expect(response.body).not_to include(quality_resume_project_path(project))
       end
+
+      it "hides review method settings for disabled review types" do
+        project = create(:project, account: account, github_token: github_token, review_settings: {
+          "enabled" => false,
+          "methods" => {
+            "copilot" => { "enabled" => false, "termination" => { "max_review_rounds" => 3 } }
+          }
+        })
+
+        get edit_project_path(project)
+
+        doc = Nokogiri::HTML(response.body)
+        panel = doc.at_css("#review_copilot_settings")
+        checkbox = doc.at_css("#review_copilot_enabled")
+
+        expect(panel).to be_present
+        expect(panel["hidden"]).to eq("")
+        expect(panel["data-collapsible-panel-target"]).to eq("panel")
+        expect(checkbox["data-action"]).to eq("change->collapsible-panel#toggle")
+        expect(checkbox["aria-expanded"]).to eq("false")
+      end
+
+      it "shows review method settings for enabled review types" do
+        project = create(:project, account: account, github_token: github_token, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "manual" => {
+              "enabled" => true,
+              "reviewer_login" => "octocat",
+              "termination" => { "max_review_rounds" => 2 }
+            }
+          }
+        })
+
+        get edit_project_path(project)
+
+        doc = Nokogiri::HTML(response.body)
+        panel = doc.at_css("#review_manual_settings")
+        checkbox = doc.at_css("#review_manual_enabled")
+
+        expect(panel).to be_present
+        expect(panel["hidden"]).to be_nil
+        expect(panel["class"]).to include("max-h-[2000px]")
+        expect(checkbox["aria-expanded"]).to eq("true")
+      end
     end
   end
 

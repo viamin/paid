@@ -13,6 +13,9 @@ application.register("checkbox-toggle", CheckboxToggleController)
 import ChatController from "./chat_controller"
 application.register("chat", ChatController)
 
+import CollapsiblePanelController from "./collapsible_panel_controller"
+application.register("collapsible-panel", CollapsiblePanelController)
+
 import ChatInputController from "./chat_input_controller"
 application.register("chat-input", ChatInputController)
 
