@@ -43,6 +43,7 @@ namespace :dev do
           run.reload
           next if run.finished?
           next unless run.claimed?
+          next unless run.updated_at < AgentRun.stale_claimed_cutoff
 
           run.timeout!(error: "#{AgentRun::STALE_CLEANUP_ERROR_PREFIX}: process was restarted")
           run.log!("system", "Stale claimed run marked as timed out during startup cleanup")
