@@ -993,9 +993,9 @@ module Activities
       harness_key = ProviderSupport.harness_provider_key_for(app_provider_key).to_sym
       klass = AgentHarness.provider_class(harness_key)
       config = harness_response_config(harness_key, provider_candidate, user)
-      # Pass a no-op executor to satisfy providers whose initializer may
-      # require one (aligns with HarnessExecutionPlan construction pattern).
-      # This provider instance is only used for parse_response, never execution.
+      # Pass a no-op executor to satisfy providers whose initializer requires
+      # one for execution. This instance is only used for parse_response, so
+      # the executor is never invoked.
       klass.new(executor: NULL_EXECUTOR, config: config)
     end
 

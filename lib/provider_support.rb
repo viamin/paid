@@ -36,8 +36,12 @@ module ProviderSupport
     @supported_provider_keys_set ||= begin
       registered = AgentHarness.providers
       APP_PROVIDER_KEYS.each_with_object(Set.new) do |provider_key, set|
-        canonical = AgentHarness.provider_metadata(provider_key.to_sym)[:canonical_provider]
-        set << provider_key if registered.include?(canonical)
+        metadata = AgentHarness.provider_metadata(provider_key.to_sym)
+        canonical = metadata&.dig(:canonical_provider)
+        set << provider_key if canonical && registered.include?(canonical)
+      rescue AgentHarness::ConfigurationError, KeyError
+        # Provider unknown/removed upstream — treat as unsupported.
+        nil
       end.freeze
     end
   end
