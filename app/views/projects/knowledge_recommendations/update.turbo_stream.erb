@@ -1,1 +1,10 @@
-<%= turbo_stream.remove dom_id(@recommendation) %>
+<% if @update_succeeded %>
+  <%= turbo_stream.remove dom_id(@recommendation) %>
+  <%= turbo_stream.update "knowledge_recommendations_alert", "" %>
+<% else %>
+  <%= turbo_stream.replace "knowledge_recommendations_alert" do %>
+    <div class="rounded-md bg-red-50 p-4" role="alert">
+      <p class="text-sm font-medium text-red-800"><%= @error_message %></p>
+    </div>
+  <% end %>
+<% end %>

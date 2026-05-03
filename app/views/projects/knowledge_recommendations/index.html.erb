@@ -12,6 +12,8 @@
 
   <h1 class="text-xl font-semibold text-gray-900">Knowledge Recommendations</h1>
 
+  <div id="knowledge_recommendations_alert" class="mt-4"></div>
+
   <% if @pending.any? %>
     <div class="mt-6">
       <h2 class="text-lg font-medium text-gray-900">Pending (<%= @pending.size %>)</h2>

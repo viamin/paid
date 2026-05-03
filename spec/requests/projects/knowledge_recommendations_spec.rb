@@ -11,6 +11,7 @@ RSpec.describe "Projects::KnowledgeRecommendations" do
 
   describe "GET /projects/:project_id/knowledge_recommendations" do
     it "shows the recommendations index" do
+      user.add_role(:admin, account)
       create(:knowledge_recommendation, project: project, status: "pending", priority: "high")
       create(:knowledge_recommendation, project: project, status: "accepted")
 
@@ -53,6 +54,30 @@ RSpec.describe "Projects::KnowledgeRecommendations" do
           headers: { "Accept" => "text/vnd.turbo-stream.html" }
 
         expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+      end
+
+      it "rejects an unsupported action type" do
+        patch project_knowledge_recommendation_path(project, recommendation),
+          params: { action_type: "ignore" },
+          headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to have_http_status(:bad_request)
+        expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+        expect(response.body).to include("Unsupported action type")
+        expect(response.body).not_to include(%(action="remove"))
+        expect(recommendation.reload.status).to eq("pending")
+      end
+
+      it "requires a dismissal reason" do
+        patch project_knowledge_recommendation_path(project, recommendation), params: {
+          action_type: "dismiss",
+          dismissal_reason: "   "
+        }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("Dismissal reason can&#39;t be blank")
+        expect(recommendation.reload.status).to eq("pending")
+        expect(recommendation.dismissal_reason).to be_nil
       end
     end
   end
