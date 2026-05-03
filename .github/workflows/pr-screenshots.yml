@@ -2,10 +2,11 @@ name: PR Screenshots
 
 on:
   pull_request:
-    types: [ opened, synchronize, reopened ]
+    types: [ opened, synchronize, reopened, ready_for_review ]
 
 permissions:
   contents: read
+  issues: write
   pull-requests: write
 
 # Cancel in-progress screenshot runs on the same PR when a new commit is pushed.
