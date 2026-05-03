@@ -64,13 +64,18 @@ module AgentRuns
       return unless owner
 
       settings = UserSettingsResolver.call(project: project, strict: false)
-      base_provider = provider_from_settings(settings, owner)
-      tenant_api_key_provider(base_provider || Provider.ensure_default_for(owner), owner) ||
+      selected_provider = selected_provider_from_settings(settings, owner)
+      configured_provider = configured_provider_from_raw_settings(settings)
+      base_provider = runnable_provider(selected_provider) || runnable_provider(configured_provider)
+      fallback_provider = Provider.first_enabled_for_owner(owner) || Provider.ensure_default_for(owner)
+      tenant_api_key_provider(base_provider, owner) ||
         base_provider ||
-        Provider.ensure_default_for(owner)
+        tenant_api_key_provider(configured_provider, owner) ||
+        tenant_api_key_provider(fallback_provider, owner) ||
+        fallback_provider
     end
 
-    def provider_from_settings(settings, owner)
+    def selected_provider_from_settings(settings, owner)
       return Provider.ensure_default_for(owner) unless settings
 
       identifier = settings.select_automated_provider_identifier(goal: goal) ||
@@ -78,8 +83,23 @@ module AgentRuns
       Provider.for_identifier(settings.user, identifier)
     end
 
+    def configured_provider_from_raw_settings(settings)
+      return unless settings
+
+      identifier = settings.default_agent_providers_by_goal[goal.to_s].presence || settings.default_agent_provider
+      Provider.for_identifier(settings.user, identifier)
+    end
+
+    def runnable_provider(provider)
+      return unless provider&.enabled_for_agent_runs?
+      return unless provider_runnable?(provider)
+
+      provider
+    end
+
     def tenant_api_key_provider(base_provider, owner)
       return unless base_provider
+      return unless provider_runnable?(base_provider)
 
       service_type = ProviderSupport.api_service_type_for(base_provider.provider_key)
       api_key = project.account.tenant_setting&.provider_api_key_for(service_type)

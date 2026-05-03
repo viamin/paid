@@ -36,13 +36,13 @@ module AgentRuns
     end
 
     def create_followup_run
-      provider = resolve_provider
+      provider, agent_type = resolve_provider_selection
 
       AgentRun.create!(
         project: agent_run.project,
         issue: agent_run.issue,
         provider: provider,
-        agent_type: provider ? Provider.agent_type_for(provider.provider_key) : fallback_agent_type,
+        agent_type: agent_type,
         status: "queued",
         trigger_type: "automatic",
         auto_pick: true,
@@ -50,11 +50,16 @@ module AgentRuns
       )
     end
 
-    def resolve_provider
-      return agent_run.provider if agent_run.provider
+    def resolve_provider_selection
+      if agent_run.provider
+        return [ agent_run.provider, Provider.agent_type_for(agent_run.provider.provider_key) ]
+      end
 
-      provider_id, = AgentRuns::ProviderResolver.call(project: agent_run.project, goal: goal)
-      Provider.find_by(id: provider_id) if provider_id
+      provider_id, agent_type = AgentRuns::ProviderResolver.call(project: agent_run.project, goal: goal)
+      provider = Provider.find_by(id: provider_id) if provider_id
+      agent_type ||= provider ? Provider.agent_type_for(provider.provider_key) : fallback_agent_type
+
+      [ provider, agent_type ]
     end
 
     def fallback_agent_type

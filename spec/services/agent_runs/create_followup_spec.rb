@@ -89,6 +89,16 @@ RSpec.describe AgentRuns::CreateFollowup do
 
         expect(followup.provider).to eq(resolved_provider)
       end
+
+      it "preserves the resolver agent_type when provider_id is nil" do
+        allow(AgentRuns::ProviderResolver).to receive(:call)
+          .and_return([ nil, "codex" ])
+
+        followup = described_class.call(agent_run: analysis_run, goal: "create_pr")
+
+        expect(followup.provider).to be_nil
+        expect(followup.agent_type).to eq("codex")
+      end
     end
 
     it "enqueues ProcessRunQueueJob" do

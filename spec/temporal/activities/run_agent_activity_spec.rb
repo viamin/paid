@@ -790,6 +790,29 @@ RSpec.describe Activities::RunAgentActivity do
       expect(providers).to eq([ user.providers.find_by!(provider_key: "claude").routing_key ])
       expect(providers).not_to include(copilot_provider.routing_key)
     end
+
+    it "keeps a runnable non-default agent type when no provider is saved" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude codex])
+      agent_run.update!(provider: nil, agent_type: "codex")
+      user.settings.update!(fallback_enabled: false)
+
+      providers = activity.send(:build_provider_order, agent_run, user.settings)
+
+      expect(providers).to eq([ "codex" ])
+    end
+
+    it "drops stale default-provider entries and keeps the first runnable fallback" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[codex])
+      agent_run.update!(provider: nil, agent_type: "claude_code")
+      # Persist a stale saved default plus fallback flag exactly as they could
+      # exist from older settings before provider availability changed.
+      user.settings.assign_attributes(fallback_enabled: false, default_agent_provider: "claude")
+      user.settings.save!(validate: false)
+
+      providers = activity.send(:build_provider_order, agent_run, user.settings)
+
+      expect(providers).to eq([ "codex" ])
+    end
   end
 
   def build_opencode_context(user)
@@ -1946,6 +1969,28 @@ RSpec.describe Activities::RunAgentActivity do
         expect(result[:final_provider]).to eq("cursor")
       end
 
+      it "falls back to the next provider on docker exec failures" do
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          call_count += 1
+          if call_count == 1
+            raise Containers::Provision::ExecutionError, "Connection reset by peer"
+          end
+
+          exec_success
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
+        expect(result[:final_provider]).to eq("cursor")
+        expect(agent_run.reload.providers_attempted).to contain_exactly(
+          hash_including("provider" => "claude_code", "success" => false, "error_type" => "error",
+            "error_message" => include("Docker exec error")),
+          hash_including("provider" => "cursor", "success" => true)
+        )
+      end
+
       it "includes configured fallback-only providers even when saved fallback order is empty" do
         user.providers.find_by!(provider_key: "cursor").update!(
           enabled_for_agent_runs: false,
@@ -2381,6 +2426,31 @@ RSpec.describe Activities::RunAgentActivity do
         agent_run.reload
         expect(agent_run.status).to eq("timeout")
         expect(agent_run.error_message).to include("wall_clock_timeout")
+      end
+
+      it "caps fallback attempts to the remaining project time budget" do
+        freeze_time do
+          agent_run.update!(status: "running", started_at: 10.seconds.ago)
+          project.update!(max_execution_seconds: 90)
+
+          call_count = 0
+          expect(container_service).to receive(:execute).twice do |_cmd, **opts|
+            call_count += 1
+            if call_count == 1
+              expect(opts[:timeout]).to eq(80)
+              agent_run.update!(started_at: 89.seconds.ago)
+              exec_failure
+            else
+              expect(opts[:timeout]).to eq(1)
+              exec_success
+            end
+          end
+
+          result = activity.execute(agent_run_id: agent_run.id)
+
+          expect(result[:success]).to be true
+          expect(result[:final_provider]).to eq("cursor")
+        end
       end
     end
 
