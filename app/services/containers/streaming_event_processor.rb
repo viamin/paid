@@ -36,15 +36,7 @@ module Containers
       return nil unless stripped.start_with?("{")
 
       parsed = parse_jsonl_event(stripped)
-      return nil unless parsed
-
-      raw_type = raw_event_type(parsed).to_s
-      semantic_type = semantic_event_type(parsed).to_s
-      return nil if raw_type.blank? && semantic_type.blank?
-
-      event_type = classify_event(raw_type) || classify_event(semantic_type)
-
-      { type: event_type, event: parsed, raw_type: raw_type.presence || semantic_type }
+      normalize_parsed_event(parsed)
     end
 
     # Processes a parsed event, updating internal state and returning an action
@@ -150,6 +142,53 @@ module Containers
       elsif TURN_FAILED_EVENT_TYPES.include?(event_type)
         :turn_failed
       elsif ERROR_EVENT_TYPES.include?(event_type)
+        :error
+      end
+    end
+
+    def normalize_parsed_event(parsed)
+      case parsed
+      when Hash
+        raw_type = parsed["type"].to_s
+        return nil if raw_type.blank?
+
+        { type: classify_event(raw_type), event: parsed, raw_type: raw_type }
+      else
+        normalize_harness_streaming_event(parsed)
+      end
+    end
+
+    def normalize_harness_streaming_event(parsed)
+      return nil unless parsed.respond_to?(:type) && parsed.respond_to?(:raw_event)
+
+      raw_type = extract_harness_raw_type(parsed)
+      classified_type = classify_event(raw_type) || classify_harness_event_type(parsed.type)
+      return nil unless classified_type
+
+      {
+        type: classified_type,
+        event: parsed,
+        raw_type: raw_type
+      }
+    end
+
+    def extract_harness_raw_type(parsed)
+      raw_event = parsed.raw_event
+      return raw_event.dig("payload", "type").to_s if raw_event.is_a?(Hash) && raw_event["type"] == "event_msg"
+      return raw_event["type"].to_s if raw_event.is_a?(Hash)
+
+      parsed.type.to_s
+    end
+
+    def classify_harness_event_type(event_type)
+      case event_type.to_sym
+      when :progress, :token_usage
+        :progress
+      when :turn_complete
+        :turn_complete
+      when :turn_failed
+        :turn_failed
+      when :error
         :error
       end
     end

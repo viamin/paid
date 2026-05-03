@@ -78,6 +78,7 @@ module Activities
     DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
     DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
     DEFAULT_CREATE_PR_IDLE_TIMEOUT = 300   # 5 minutes without output = stuck
+    PREFLIGHT_TIMEOUT_SECONDS = 10
     CHANGE_DETECTION_MAX_ATTEMPTS = 3
     CHANGE_DETECTION_RETRY_BACKOFF = 0.25
     POST_RUN_BOOKKEEPING_ERROR_TYPE = "PostRunBookkeepingFailed"
@@ -644,9 +645,17 @@ module Activities
         command_preparation = merge_preparations(command_preparation, heartbeat.preparation)
       end
 
+      raise ProviderExecutionError, "Agent run already finished with status #{agent_run.status}" if agent_run.finished?
+
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 
-      raise ProviderExecutionError, "Agent run already finished with status #{agent_run.status}" if agent_run.finished?
+      run_provider_preflight!(
+        agent_run: agent_run,
+        container_service: container_service,
+        command_context: command_context,
+        provider: provider,
+        execution_env: command_env
+      )
 
       # Only start! on first provider attempt.
       agent_run.start! unless agent_run.running?
@@ -762,6 +771,94 @@ module Activities
       )
     rescue Containers::Provision::ExecutionError => e
       raise ProviderExecutionError, "Docker exec error: #{e.message}"
+    end
+
+    def run_provider_preflight!(agent_run:, container_service:, command_context:, provider:, execution_env:)
+      # Run the provider-owned harness preflight (auth, CLI version,
+      # OPENAI_BASE_URL reachability) when available — fails fast before
+      # the smoke exec below.  The smoke exec always runs as a safety
+      # net regardless of whether the harness supports preflight_check.
+      harness_provider = preflight_provider_instance(command_context)
+      if harness_provider
+        run_harness_preflight!(
+          agent_run: agent_run,
+          harness_provider: harness_provider,
+          provider: provider,
+          execution_env: execution_env
+        )
+      end
+
+      prompt = provider_preflight_prompt_for(provider)
+      command = build_command(command_context, prompt)
+      env = command_env_for(command_context, prompt)
+      preparation = command_preparation_for(command_context, prompt)
+
+      result = container_service.execute(
+        command,
+        timeout: PREFLIGHT_TIMEOUT_SECONDS,
+        idle_timeout: PREFLIGHT_TIMEOUT_SECONDS,
+        env: env,
+        preparation: preparation,
+        abort_patterns: aggregated_abort_patterns
+      )
+      stdout = normalize_output_text(result[:stdout])
+      stderr = normalize_output_text(result[:stderr])
+      output = [ stderr.presence, stdout.presence ].compact.first.to_s.strip
+      sanitized_output = strip_prompt_echo(output, prompt)
+
+      if result.success?
+        if insufficient_credits_error?(sanitized_output)
+          raise_preflight_failure!(
+            agent_run: agent_run,
+            provider: provider,
+            reason: "Provider credit/quota error: #{sanitized_output.truncate(500)}"
+          )
+        end
+
+        return
+      end
+
+      if rate_limit_error?(sanitized_output)
+        reset_at = rate_limit_reset_at(provider, sanitized_output)
+        log_preflight_failure(agent_run: agent_run, provider: provider, reason: "Rate limited by #{provider} during preflight")
+        raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+      end
+
+      reason = if sanitized_output.present?
+        "Agent exited with code #{result[:exit_code]}: #{sanitized_output.truncate(500)}"
+      else
+        "No output before exit code #{result[:exit_code]}. Check proxy configuration, auth, and network policy."
+      end
+      raise_preflight_failure!(agent_run: agent_run, provider: provider, reason: reason)
+    rescue Containers::Provision::TimeoutError => e
+      reason = "Timed out after #{PREFLIGHT_TIMEOUT_SECONDS}s: #{e.message}. Check proxy configuration, auth, and network policy."
+      raise_preflight_failure!(agent_run: agent_run, provider: provider, reason: reason)
+    rescue Containers::Provision::OutputAbortError => e
+      reset_at = rate_limit_reset_at(provider, e.matched_output.to_s)
+      log_preflight_failure(agent_run: agent_run, provider: provider, reason: e.matched_output.to_s.truncate(200))
+      raise ProviderRateLimitError.new(
+        "Rate limited by #{provider}: #{e.matched_output.to_s.truncate(200)}",
+        reset_at: reset_at
+      )
+    rescue Containers::Provision::ExecutionError => e
+      raise_preflight_failure!(
+        agent_run: agent_run,
+        provider: provider,
+        reason: "Docker exec error: #{e.message}"
+      )
+    end
+
+    def run_harness_preflight!(agent_run:, harness_provider:, provider:, execution_env:)
+      result = harness_provider.preflight_check(env: execution_env, timeout: PREFLIGHT_TIMEOUT_SECONDS)
+
+      return if result[:healthy]
+
+      reason = result[:reason] || "Preflight check failed"
+      raise_preflight_failure!(agent_run: agent_run, provider: provider, reason: reason)
+    rescue AgentHarness::ConfigurationError, KeyError
+      # Provider config unavailable — skip harness preflight and let the
+      # smoke execution catch any real issues.
+      nil
     end
 
     # Checks if the agent run is stuck in an infinite loop by analyzing
@@ -980,6 +1077,48 @@ module Activities
       # one for execution. This instance is only used for parse_response, so
       # the executor is never invoked.
       klass.new(executor: NULL_EXECUTOR, config: config)
+    end
+
+    def preflight_provider_for(command_context)
+      harness_response_provider(
+        command_context.provider_candidate,
+        command_context.provider,
+        command_context.user
+      )
+    end
+
+    # Returns an instantiated harness provider if it supports preflight_check,
+    # or nil when config is unavailable.  Callers reuse the returned instance
+    # to avoid double-instantiation overhead.
+    def preflight_provider_instance(command_context)
+      provider = preflight_provider_for(command_context)
+      return nil unless provider.respond_to?(:preflight_check)
+      return nil if provider.method(:preflight_check).owner == AgentHarness::Providers::Base
+
+      provider
+    rescue AgentHarness::ConfigurationError, KeyError
+      nil
+    end
+
+    def provider_preflight_prompt_for(provider_key)
+      harness_provider = harness_provider_for(provider_key)
+      harness_provider.class.smoke_test_contract&.fetch(:prompt, nil).presence || "Reply with exactly OK."
+    rescue AgentHarness::ConfigurationError, KeyError
+      "Reply with exactly OK."
+    end
+
+    def log_preflight_failure(agent_run:, provider:, reason:)
+      logger.warn(
+        message: "agent_execution.preflight_failed",
+        provider: provider,
+        agent_run_id: agent_run.id,
+        reason: reason
+      )
+    end
+
+    def raise_preflight_failure!(agent_run:, provider:, reason:)
+      log_preflight_failure(agent_run: agent_run, provider: provider, reason: reason)
+      raise ProviderExecutionError, "Preflight check failed: #{reason}"
     end
 
     def harness_response_config(harness_key, provider_candidate, user)
