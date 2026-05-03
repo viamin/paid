@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.37.0](https://github.com/viamin/paid/compare/v0.36.0...v0.37.0) (2026-05-03)
+
+
+### Features
+
+* add interactive chat UI ([#1591](https://github.com/viamin/paid/issues/1591)) ([3ded7c8](https://github.com/viamin/paid/commit/3ded7c83a2a3c95373b6ee300eafda29a066cabc))
+* **agent-runs:** integrate streaming JSONL progress events into container watchdog ([#1602](https://github.com/viamin/paid/issues/1602)) ([defd7d0](https://github.com/viamin/paid/commit/defd7d07d785634740a3ee91c03dc2402b959deb))
+* **dashboard:** queue preview showing upcoming work order ([#1610](https://github.com/viamin/paid/issues/1610)) ([93d04da](https://github.com/viamin/paid/commit/93d04da17bc58b587429d61e02d40ae980627b12))
+* **integrations:** expose generic integration credentials in the integrations hub ([#1617](https://github.com/viamin/paid/issues/1617)) ([56a305c](https://github.com/viamin/paid/commit/56a305c1b027c17fb0f5b3c87f6d2c28c28454b4))
+* **notifications:** allow users to subscribe to issue/PR merge events ([#1609](https://github.com/viamin/paid/issues/1609)) ([8636fb1](https://github.com/viamin/paid/commit/8636fb1f90b1fb6ea546a7d677a16060b3e48731))
+
+
+### Bug Fixes
+
+* 1123: Thin workflows and jobs to orchestration-only ([#1608](https://github.com/viamin/paid/issues/1608)) ([ee2b6d3](https://github.com/viamin/paid/commit/ee2b6d361ec2b1e9052c9bfeb20a9e537cc86d2c))
+* 1381: Add stacked agent runs per day chart to dashboard ([#1614](https://github.com/viamin/paid/issues/1614)) ([86cebea](https://github.com/viamin/paid/commit/86cebea015572966856c391f561d3fdcc5de7454))
+* 1574: [P2] knowledge: Knowledge::ContainerizedRunner::ContainerError ([#1606](https://github.com/viamin/paid/issues/1606)) ([a812476](https://github.com/viamin/paid/commit/a8124766a6bba3dbc8b342995ae91e258504a426))
+* **agent-runs:** extend abort pattern matching to stdout for JSON-mode providers ([#1618](https://github.com/viamin/paid/issues/1618)) ([58240c7](https://github.com/viamin/paid/commit/58240c7bb90bd0590dea166c53809455167cd185))
+* **agent-runs:** remove pending status from AgentRun state machine ([#1598](https://github.com/viamin/paid/issues/1598)) ([8e91ee8](https://github.com/viamin/paid/commit/8e91ee8e2aa9065d22de0cec2613d1f11e87159f))
+* **auto-merge:** verify CI via Actions API to prevent unsafe Dependabot merges ([#1615](https://github.com/viamin/paid/issues/1615)) ([ebf16f3](https://github.com/viamin/paid/commit/ebf16f396392333c2b77e1de53b7b00319d3a1aa))
+* Remove explicit agent_harness require once gem naming is fixed ([#1622](https://github.com/viamin/paid/issues/1622)) ([b0077a2](https://github.com/viamin/paid/commit/b0077a27fa5f8409c1d5e8f0ae7fb9e5bb124ed4))
+* **scanner:** prevent review retry loop when run already posted a review ([#1601](https://github.com/viamin/paid/issues/1601)) ([2a230d3](https://github.com/viamin/paid/commit/2a230d367a7feeb3109dcbaca5bafadd8caa6c16))
+* **temporal:** isolate worker mode startup ([#1599](https://github.com/viamin/paid/issues/1599)) ([ae627a4](https://github.com/viamin/paid/commit/ae627a409bb340abe93276d68a1ba9ebd635f275))
+* **ui:** add dark-mode variants to agent run detail page ([#1613](https://github.com/viamin/paid/issues/1613)) ([26f531a](https://github.com/viamin/paid/commit/26f531a1d222cad11d395b60149cc3568a254c5b))
+
 ## [0.36.0](https://github.com/viamin/paid/compare/v0.35.0...v0.36.0) (2026-05-02)
 
 
