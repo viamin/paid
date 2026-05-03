@@ -7,14 +7,14 @@ import { Controller } from "@hotwired/stimulus"
 // this controller detects the change via MutationObserver and hides/shows
 // action sections accordingly:
 //
-//   data-when-active       — visible while the run is active (pending/running)
-//   data-when-unfinished   — visible while the run is unfinished (queued/pending/running/paused)
+//   data-when-active       — visible while the run is active (running)
+//   data-when-unfinished   — visible while the run is unfinished (queued/running/paused)
 //   data-when-paused       — visible only when the run is paused
 //   data-when-finished     — visible once the run has finished (any terminal status)
 //   data-when-auth-expired — visible when the run's status is auth_expired
 //   data-when-error        — visible when the run has an error message
-const ACTIVE_STATUSES = ["pending", "running"]
-const UNFINISHED_STATUSES = ["queued", "pending", "running", "paused"]
+const ACTIVE_STATUSES = ["running"]
+const UNFINISHED_STATUSES = ["queued", "running", "paused"]
 const FINISHED_STATUSES = [
   "completed",
   "no_output",

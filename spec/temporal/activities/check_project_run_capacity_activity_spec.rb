@@ -47,7 +47,7 @@ RSpec.describe Activities::CheckProjectRunCapacityActivity do
       user.settings.update!(max_parallel_agents_per_project: 2, max_concurrent_runs: 10)
 
       create(:agent_run, :running, project: project)
-      create(:agent_run, project: project) # pending (default status)
+      create(:agent_run, :running, project: project)
 
       result = activity.execute({ project_id: project.id })
 
@@ -92,7 +92,7 @@ RSpec.describe Activities::CheckProjectRunCapacityActivity do
       expect(result[:pr_aggregation_enabled]).to be true
     end
 
-    it "does not count queued runs as active" do
+    it "does not count unclaimed queued runs as active" do
       project = create(:project)
       user = project.created_by
       user.settings.update!(max_parallel_agents_per_project: 1, max_concurrent_runs: 10)
@@ -103,6 +103,19 @@ RSpec.describe Activities::CheckProjectRunCapacityActivity do
 
       expect(result[:has_capacity]).to be true
       expect(result[:available_slots]).to eq(1)
+    end
+
+    it "counts claimed queued runs against capacity" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(max_parallel_agents_per_project: 1, max_concurrent_runs: 10)
+
+      create(:agent_run, :queued, project: project, temporal_workflow_id: "claimed")
+
+      result = activity.execute({ project_id: project.id })
+
+      expect(result[:has_capacity]).to be false
+      expect(result[:available_slots]).to eq(0)
     end
   end
 end

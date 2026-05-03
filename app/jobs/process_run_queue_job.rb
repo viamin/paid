@@ -57,10 +57,10 @@ class ProcessRunQueueJob < ApplicationJob
       loop do
         iterations += 1
         break if iterations > MAX_ITERATIONS_PER_PERFORM
-        # Peek at the next queued run without claiming it, so we can check
-        # per-user capacity before transitioning to "pending". This avoids
-        # an unnecessary queued -> pending -> queued status flip (and its
-        # associated broadcasts/metrics) for runs that can't start yet.
+        # Peek at the next unclaimed queued run without claiming it, so we can check
+        # per-user capacity before claiming. This avoids an unnecessary claim +
+        # unclaim cycle (and its associated broadcasts/metrics) for runs that
+        # can't start yet.
         next_run = AgentRun.peek_next_queued_run(exclude_ids: skipped_ids.to_a)
 
         break unless next_run
@@ -285,8 +285,8 @@ class ProcessRunQueueJob < ApplicationJob
 
   # Queue-start failures are infrastructure failures, not business-rule
   # transitions. Skip validations so unrelated model state cannot strand
-  # the run in queued/pending, but still save normally so after_commit
-  # hooks broadcast the terminal status and enqueue finished-run followups.
+  # the run in queued, but still save normally so after_commit hooks
+  # broadcast the terminal status and enqueue finished-run followups.
   # Bundled with #1041 because knowledge fallback testing surfaced this
   # stranded-run bug; splitting would leave the failure path broken on main.
   def force_fail_run(agent_run, error:)

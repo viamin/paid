@@ -8,12 +8,12 @@ class AgentRun < ApplicationRecord
     [ %r{x-access-token:[^@/\s]+@github\.com}, "x-access-token:[REDACTED]@github.com" ],
     [ /(Bearer\s)[A-Za-z0-9\-._~+\/]+=*/i, "\\1[REDACTED]" ]
   ].freeze
-  STATUSES = %w[queued pending running paused completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
+  STATUSES = %w[queued running paused completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
-  ACTIVE_STATUSES = %w[pending running].freeze
+  ACTIVE_STATUSES = %w[running].freeze
   FINISHED_STATUSES = %w[completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
   TERMINAL_FAILURE_STATUSES = (FAILURE_STATUSES + %w[cancelled]).freeze
@@ -62,14 +62,15 @@ class AgentRun < ApplicationRecord
       excluded_status.and(Arel::Nodes::Not.new(failed_operational))
     )
   end
-  UNFINISHED_STATUSES = %w[queued pending running paused].freeze
+  UNFINISHED_STATUSES = %w[queued running paused].freeze
   GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
   TOKEN_LIMIT_STATUSES = %w[ok warning exceeded].freeze
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
   MAX_STALE_REQUEUES = 2
   MAX_STALE_SKIPS = 3
-  STALE_PENDING_TIMEOUT = 15.minutes
+  CLAIMED_SENTINEL = "claimed"
+  STALE_CLAIMED_TIMEOUT = 15.minutes
   STALE_PAUSED_TIMEOUT = 2.hours
   STALE_RUNNING_GRACE_PERIOD = 10.minutes
 
@@ -167,7 +168,9 @@ class AgentRun < ApplicationRecord
 
   scope :by_status, ->(status) { where(status: status) }
   scope :queued, -> { where(status: "queued") }
-  scope :pending, -> { where(status: "pending") }
+  scope :waiting, -> { queued.where(temporal_workflow_id: nil) }
+  scope :claimed, -> { queued.where.not(temporal_workflow_id: nil) }
+  scope :unclaimed, -> { waiting }
   scope :running, -> { where(status: "running") }
   scope :completed, -> { where(status: "completed") }
   scope :no_output, -> { where(status: "no_output") }
@@ -179,13 +182,14 @@ class AgentRun < ApplicationRecord
   scope :paused, -> { where(status: "paused") }
   scope :rate_limited, -> { where(status: "rate_limited") }
   scope :active, -> { where(status: ACTIVE_STATUSES) }
+  scope :capacity_inflight, -> { running.or(claimed) }
   scope :finished, -> { where(status: FINISHED_STATUSES) }
   scope :recent, -> { order(created_at: :desc) }
   scope :started_before, ->(time) { where("started_at < ?", time) }
   scope :updated_before, ->(time) { where("updated_at < ?", time) }
   scope :stale_running, -> { running.started_before(stale_running_cutoff) }
-  scope :stale_pending, -> { pending.updated_before(stale_pending_cutoff) }
-  scope :stale_for_cleanup, -> { stale_running.or(stale_pending) }
+  scope :stale_claimed, -> { claimed.updated_before(stale_claimed_cutoff) }
+  scope :stale_for_cleanup, -> { stale_running.or(stale_claimed) }
   scope :search_by_goal, lambda { |query|
     normalized_query = query.to_s.strip
 
@@ -318,11 +322,11 @@ class AgentRun < ApplicationRecord
   # but only when the user is the account's effective fallback owner
   # (matching Project#effective_owner's resolution chain).
   def self.active_count_for_user(user)
-    scope = active.joins(:project).where(projects: { created_by_id: user.id })
+    scope = capacity_inflight.joins(:project).where(projects: { created_by_id: user.id })
 
     if orphaned_project_owner?(user)
       scope = scope.or(
-        active.joins(:project).where(
+        capacity_inflight.joins(:project).where(
           projects: { created_by_id: nil, account_id: user.account_id }
         )
       )
@@ -333,10 +337,10 @@ class AgentRun < ApplicationRecord
 
   # Returns the count of active runs for a given project.
   def self.active_count_for_project(project)
-    active.where(project_id: project.id).count
+    capacity_inflight.where(project_id: project.id).count
   end
 
-  # Returns the count of unfinished (queued/pending/running/paused) auto-pick
+  # Returns the count of unfinished (queued/running/paused) auto-pick
   # runs attributable to the given user. Used by queue seeding to cap queued
   # auto-pick work at the user's max_concurrent_runs instead of seeding every
   # eligible issue. Mirrors active_count_for_user's owner-resolution chain.
@@ -363,8 +367,8 @@ class AgentRun < ApplicationRecord
     AGENT_TIMEOUT_DEFAULT.seconds + STALE_RUNNING_GRACE_PERIOD
   end
 
-  def self.stale_pending_timeout
-    STALE_PENDING_TIMEOUT
+  def self.stale_claimed_timeout
+    STALE_CLAIMED_TIMEOUT
   end
 
   def self.stale_paused_timeout
@@ -375,8 +379,8 @@ class AgentRun < ApplicationRecord
     now - stale_running_timeout
   end
 
-  def self.stale_pending_cutoff(now: Time.current)
-    now - stale_pending_timeout
+  def self.stale_claimed_cutoff(now: Time.current)
+    now - stale_claimed_timeout
   end
 
   def self.stale_paused_cutoff(now: Time.current)
@@ -597,9 +601,76 @@ class AgentRun < ApplicationRecord
   USER_ACTIVE_COUNT_SQL = Arel.sql("COALESCE(user_active_counts.user_active_count, 0) ASC").freeze
   QUEUE_ORDER = [ QUEUE_PRIORITY_SQL, USER_ACTIVE_COUNT_SQL, GOAL_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
   WITHIN_OWNER_QUEUE_ORDER = [ PROJECT_ACTIVE_COUNT_SQL, GOAL_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
+  STATUS_ORDER_CASE_SQL = <<~SQL.squish.freeze
+    CASE WHEN agent_runs.status = 'running' THEN 0
+         WHEN agent_runs.status = 'queued' AND agent_runs.temporal_workflow_id IS NOT NULL THEN 1
+         WHEN agent_runs.status = 'paused' THEN 3
+         ELSE 2 END
+  SQL
+  STATUS_ORDER_SQL = Arel.sql("#{STATUS_ORDER_CASE_SQL} ASC").freeze
 
   # Scope that adds the CTE and joins required by QUEUE_ORDER.
   # All queue-ordering methods use this instead of bare `queued`.
+  # Filters to unclaimed queued runs (temporal_workflow_id IS NULL) so
+  # claimed-but-not-yet-running runs are excluded from peek results.
+  scope :unclaimed_with_priority, -> {
+    unclaimed
+      .with(
+        project_active_counts: project_active_counts_cte,
+        user_active_counts: user_active_counts_cte
+      )
+      .joins(QUEUE_LATERAL_JOIN)
+      .joins("LEFT JOIN project_active_counts ON project_active_counts.project_id = agent_runs.project_id")
+      .joins("LEFT JOIN user_active_counts ON user_active_counts.user_id = project_owner.user_id")
+      .joins("LEFT JOIN user_settings ON user_settings.user_id = project_owner.user_id")
+      .select(
+        "agent_runs.*",
+        "#{QUEUE_PRIORITY_CASE_SQL} AS queue_priority",
+        "#{GOAL_PRIORITY_CASE_SQL} AS goal_priority",
+        "#{PROJECT_ACTIVE_COUNT_CASE_SQL} AS project_active_count",
+        "COALESCE(user_active_counts.user_active_count, 0) AS user_active_count",
+        "project_owner.user_id AS project_owner_user_id",
+        "COALESCE(user_settings.fair_queue_across_projects, TRUE) AS fair_queue_across_projects"
+      )
+  }
+
+  # Scope for the agent runs index page: orders ALL unfinished runs by queue
+  # priority so the user sees an approximate scheduler sort. Claimed queued
+  # runs (temporal_workflow_id set) sort ahead of unclaimed ones at the same
+  # tier, but the scheduler's within-owner fair-queue boundary logic still
+  # makes the exact dequeue order dynamic.
+  scope :queue_order_display, -> {
+    unfinished
+      .with(
+        project_active_counts: project_active_counts_cte,
+        user_active_counts: user_active_counts_cte
+      )
+      .joins(QUEUE_LATERAL_JOIN)
+      .joins("LEFT JOIN project_active_counts ON project_active_counts.project_id = agent_runs.project_id")
+      .joins("LEFT JOIN user_active_counts ON user_active_counts.user_id = project_owner.user_id")
+      .joins("LEFT JOIN user_settings ON user_settings.user_id = project_owner.user_id")
+      .select(
+        "agent_runs.*",
+        "#{QUEUE_PRIORITY_CASE_SQL} AS queue_priority",
+        "#{GOAL_PRIORITY_CASE_SQL} AS goal_priority",
+        "#{PROJECT_ACTIVE_COUNT_CASE_SQL} AS project_active_count",
+        "COALESCE(user_active_counts.user_active_count, 0) AS user_active_count",
+        "project_owner.user_id AS project_owner_user_id",
+        "COALESCE(user_settings.fair_queue_across_projects, TRUE) AS fair_queue_across_projects",
+        "#{STATUS_ORDER_CASE_SQL} AS status_order"
+      )
+      .reorder(
+        STATUS_ORDER_SQL,
+        QUEUE_PRIORITY_SQL,
+        USER_ACTIVE_COUNT_SQL,
+        GOAL_PRIORITY_SQL,
+        created_at: :asc,
+        id: :asc
+      )
+  }
+
+  # Scope that includes all queued runs (claimed + unclaimed) with priority
+  # data. Used for display and peek operations that include claimed runs.
   scope :queued_with_priority, -> {
     queued
       .with(
@@ -622,16 +693,16 @@ class AgentRun < ApplicationRecord
   }
 
   def self.project_active_counts_cte
-    active
+    capacity_inflight
       .select("project_id, COUNT(*) AS project_active_count")
       .group(:project_id)
   end
 
-  # CTE that counts pending + running runs per effective user (owner).
-  # Orphaned projects (created_by_id IS NULL) are attributed to the
-  # account's fallback owner using the same COALESCE chain as
-  # QUEUE_LATERAL_JOIN. Paused runs are excluded (only ACTIVE_STATUSES
-  # are counted) so a paused run does not inflate a user's stride.
+  # CTE that counts in-flight runs (running + claimed queued) per effective
+  # user (owner). Orphaned projects (created_by_id IS NULL) are attributed to
+  # the account's fallback owner using the same COALESCE chain as
+  # QUEUE_LATERAL_JOIN. Paused runs are excluded so a paused run does not
+  # inflate a user's stride.
   def self.user_active_counts_cte
     Arel.sql(<<~SQL.squish)
       SELECT owner.user_id AS user_id, COUNT(*) AS user_active_count
@@ -657,23 +728,28 @@ class AgentRun < ApplicationRecord
           )
         ) AS user_id
       ) owner ON TRUE
-      WHERE agent_runs.status IN ('pending', 'running')
+      WHERE agent_runs.status = 'running'
+             OR (agent_runs.status = 'queued' AND agent_runs.temporal_workflow_id IS NOT NULL)
       GROUP BY owner.user_id
     SQL
   end
 
   def self.next_queued_run
-    next_queued_run_from(queued_with_priority)
+    next_queued_run_from(unclaimed_with_priority)
   end
 
-  # Returns the next queued run without claiming it.
+  # Returns the next unclaimed queued run without claiming it.
   # Used to check per-user capacity before acquiring the lock.
   #
   # Runs whose project belongs to an account with a paused scheduler are
   # excluded so a "pause all" toggle can hold new starts while still
   # accepting new queue entries from the project trigger button.
   def self.peek_next_queued_run(exclude_ids: [])
-    scope = schedulable_queued_with_priority
+    scope = unclaimed_with_priority
+      .joins(project: :account)
+      .where(accounts: { scheduler_paused_at: nil })
+      .where(projects: { scheduler_paused_at: nil })
+      .where("agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL")
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     next_queued_run_from(scope)
   end
@@ -734,22 +810,24 @@ class AgentRun < ApplicationRecord
     errors.add(:provider, "must belong to the same user as the project owner")
   end
 
-  # Atomically claims a queued run by transitioning it to pending inside a
-  # transaction with FOR UPDATE SKIP LOCKED. Returns nil if the run is no
-  # longer queued or another process already claimed it.
+  # Atomically claims a queued run by setting temporal_workflow_id inside a
+  # transaction with FOR UPDATE SKIP LOCKED. The status stays "queued" — the
+  # run transitions to "running" only when RunAgentActivity#start! is called.
+  # Returns nil if the run is no longer unclaimed or another process already
+  # claimed it.
   #
   # @param target_id [Integer] the specific run to claim (identified by a
   #   prior peek_next_queued_run call)
   #
   # Note: if the transaction commits but the subsequent workflow start fails,
-  # the run stays "pending" without an associated workflow. ProcessRunQueueJob
-  # handles this by marking such runs as failed in its rescue block.
+  # the run stays "queued" with a claimed marker. StaleRunDetectorJob handles
+  # this by clearing the claim after STALE_CLAIMED_TIMEOUT.
   def self.claim_next_queued_run(target_id:)
     transaction do
-      run = queued.where(id: target_id).lock("FOR UPDATE SKIP LOCKED").first
+      run = unclaimed.where(id: target_id).lock("FOR UPDATE SKIP LOCKED").first
       return nil unless run
 
-      run.update!(status: "pending")
+      run.update!(temporal_workflow_id: CLAIMED_SENTINEL)
       run
     end
   end
@@ -797,6 +875,10 @@ class AgentRun < ApplicationRecord
 
   def queued?
     status == "queued"
+  end
+
+  def claimed?
+    status == "queued" && temporal_workflow_id.present?
   end
 
   def active?
@@ -904,9 +986,9 @@ class AgentRun < ApplicationRecord
   # status and completed phases. Returns nil for finished runs or when
   # the active phase cannot be determined.
   def current_phase_group(phases: nil)
-    return nil unless status.in?(%w[queued pending running])
+    return nil unless status.in?(%w[queued running])
 
-    return "queue" if status.in?(%w[queued pending])
+    return "queue" if status == "queued"
 
     phases ||= phase_timeline.to_a
     completed_groups = phases.map(&:phase_group).uniq
@@ -1651,7 +1733,7 @@ class AgentRun < ApplicationRecord
       project.broadcast_cost_snapshot_update if previous_changes.key?("status")
       # Only broadcast issues updates when they can affect auto-pick eligibility
       # or when the associated issue/agent type changes. This avoids redundant
-      # re-renders during intermediate status transitions (e.g., queued→pending→running).
+      # re-renders during intermediate status transitions (e.g., queued→running).
       if issue_id.present?
         should_broadcast_issues = false
 

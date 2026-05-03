@@ -2,7 +2,7 @@
 
 # Automatically retries issue goal agent runs that have timed out.
 #
-# When an issue goal run times out (stuck in pending/running beyond
+# When an issue goal run times out (stuck in queued/running beyond
 # the timeout threshold), this job creates a new queued run with the
 # same parameters so the issue creation is retried without manual
 # intervention. Respects a maximum retry count to avoid infinite loops.
