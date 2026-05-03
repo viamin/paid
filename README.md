@@ -24,8 +24,7 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 - **Knowledge Base**: Index repos into PostgreSQL + Qdrant for hybrid exact/semantic search and richer prompt context
   - Gap: some goal and prompt paths still need knowledge injection or container-accessible search; tracked by [#1265](https://github.com/viamin/paid/issues/1265) and [#1272](https://github.com/viamin/paid/issues/1272).
 - **Live Dashboards**: Track active runs, performance, quality, cost, and knowledge-collection health from the UI
-- **Provider and Integration Management**: Test provider auth from the UI and manage GitHub, Linear, and provider API keys
-  - Gap: generic integration credentials exist in the data model but are hidden from the main integrations hub pending RBAC/admin-role work; tracked by [#1283](https://github.com/viamin/paid/issues/1283).
+- **Provider and Integration Management**: Test provider auth from the UI and manage GitHub, Linear, provider API keys, and generic integration credentials (GitLab, Jira, Azure DevOps, signing) for account admins
 - **Service Containers**: Attach approved supporting services like Postgres, Redis, or Selenium to project runs when agents need dependencies beyond the app code. Service containers are attached to the same Docker network selected for the agent run across proxy-mode, subscription-auth, and direct-outbound provider runs. Shared-database isolation fallout is tracked separately by [#1280](https://github.com/viamin/paid/issues/1280).
 
 ## How It Works
