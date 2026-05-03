@@ -22,14 +22,15 @@
   </div>
 
   <div class="mt-6 overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+    <div class="overflow-x-auto">
     <table class="min-w-full divide-y divide-gray-300">
       <thead class="bg-gray-50">
         <tr>
-          <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Severity</th>
-          <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Notification</th>
-          <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Source</th>
-          <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Time</th>
-          <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6"><span class="sr-only">Actions</span></th>
+          <th scope="col" class="min-w-[5rem] py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Severity</th>
+          <th scope="col" class="min-w-[16rem] px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Notification</th>
+          <th scope="col" class="min-w-[6rem] px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Source</th>
+          <th scope="col" class="min-w-[7rem] px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Time</th>
+          <th scope="col" class="min-w-[6rem] relative py-3.5 pl-3 pr-4 sm:pr-6"><span class="sr-only">Actions</span></th>
         </tr>
       </thead>
       <%= tag.tbody id: "notifications_list", class: "divide-y divide-gray-200 bg-white" do %>
@@ -46,6 +47,7 @@
         <% end %>
       <% end %>
     </table>
+    </div>
   </div>
 
   <% if @pagy.pages > 1 %>
