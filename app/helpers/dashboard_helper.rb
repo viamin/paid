@@ -85,6 +85,9 @@ module DashboardHelper
     TIME_RANGE_LABELS.fetch(range, range.to_s.titleize)
   end
 
+  # Dark-mode colors for these badges are handled by the global unlayered
+  # overrides in application.tailwind.css (e.g. `.dark .bg-green-100`),
+  # which have higher cascade priority than Tailwind dark: utilities.
   TIER_BADGE_CLASSES = {
     "low" => "bg-green-100 text-green-700",
     "mid" => "bg-blue-100 text-blue-700",
