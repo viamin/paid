@@ -1,12 +1,7 @@
-<% frame_options =
-  if local_assigns.key?(:subscribed)
-    {}
-  else
-    { src: project_issue_merge_subscription_path(project, issue), loading: :lazy }
-  end %>
-
-<%= turbo_frame_tag dom_id(issue, :merge_subscription), **frame_options do %>
-  <% if local_assigns.key?(:subscribed) %>
+<%# When rendered from a broadcast (no user context), output an inert frame
+    that preserves the DOM slot without triggering a lazy-load GET per row. %>
+<% if local_assigns.key?(:subscribed) %>
+  <%= turbo_frame_tag dom_id(issue, :merge_subscription) do %>
     <% if subscribed %>
       <%= button_to issue.is_pull_request? ? "Stop merge alerts" : "Stop completion alerts",
                     project_issue_merge_subscription_path(project, issue),
@@ -20,7 +15,13 @@
                     class: "text-xs font-medium text-indigo-600 hover:text-indigo-900",
                     form: { data: { turbo_stream: true } } %>
     <% end %>
-  <% else %>
+  <% end %>
+<% elsif local_assigns.fetch(:broadcast, false) %>
+  <%= turbo_frame_tag dom_id(issue, :merge_subscription) %>
+<% else %>
+  <%= turbo_frame_tag dom_id(issue, :merge_subscription),
+        src: project_issue_merge_subscription_path(project, issue),
+        loading: :lazy do %>
     <span class="text-xs font-medium text-gray-400">Loading alerts...</span>
   <% end %>
 <% end %>

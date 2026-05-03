@@ -25,6 +25,8 @@
     <% subscription_locals = { issue: pull_request, project: project } %>
     <% if local_assigns.key?(:merge_notification_issue_ids) %>
       <% subscription_locals[:subscribed] = local_assigns[:merge_notification_issue_ids].include?(pull_request.id) %>
+    <% elsif local_assigns.fetch(:broadcast, false) %>
+      <% subscription_locals[:broadcast] = true %>
     <% end %>
     <%= render "projects/issue_merge_subscription", **subscription_locals %>
     <% if automation_enabled %>

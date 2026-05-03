@@ -480,7 +480,8 @@ class Project < ApplicationRecord
       partial: "projects/issues",
       locals: { project: self, issues: displayed,
                 issue_lifecycle_statuses: lifecycle_statuses,
-                paid_prs_by_issue_id: paid_prs_by_issue_id }
+                paid_prs_by_issue_id: paid_prs_by_issue_id,
+                broadcast: true }
     )
   end
 
@@ -506,7 +507,8 @@ class Project < ApplicationRecord
         project: self,
         pull_requests: open_items.pull_requests_only.limit(25),
         pr_numbers_with_queued_auto_continue: pr_numbers_with_queued_auto_continue,
-        pr_numbers_with_active_runs: pr_numbers_with_active_runs
+        pr_numbers_with_active_runs: pr_numbers_with_active_runs,
+        broadcast: true
       }
     )
   end
