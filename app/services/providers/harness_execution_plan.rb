@@ -30,43 +30,34 @@ module Providers
     # @return [Result] command, env, and preparation
     def self.for_provider_key(provider_key:, prompt:, options: {})
       harness_key = ProviderSupport.harness_provider_key_for(provider_key).to_sym
-      klass = AgentHarness.provider_class(harness_key)
-      capture = ExecutorCapture.new
+      capture = CaptureExecutor.new
 
+      klass = AgentHarness.provider_class(harness_key)
       config = AgentHarness.build_config(harness_key)
       config.externally_sandboxed = true
 
       provider_instance = klass.new(executor: capture, config: config)
       provider_instance.send_message(prompt: prompt, **options)
 
-      Result.new(
-        command: capture.command,
-        env: capture.env,
-        preparation: capture.preparation
-      )
+      Result.new(command: capture.command, env: capture.env, preparation: capture.preparation)
     end
 
     def call
-      harness_provider.send_message(prompt: @prompt, provider_runtime: provider_runtime, **@options)
+      capture = CaptureExecutor.new
+      provider_instance = build_harness_provider(executor: capture)
+      provider_instance.send_message(prompt: @prompt, provider_runtime: provider_runtime, **@options)
 
-      Result.new(
-        command: capture_executor.command,
-        env: capture_executor.env,
-        preparation: capture_executor.preparation
-      )
+      Result.new(command: capture.command, env: capture.env, preparation: capture.preparation)
     end
 
     private
 
-    def harness_provider
-      @harness_provider ||= begin
-        klass = AgentHarness.provider_class(harness_provider_name)
-        klass.new(executor: capture_executor)
-      end
-    end
+    def build_harness_provider(executor:)
+      klass = AgentHarness.provider_class(harness_provider_name)
+      config = AgentHarness.build_config(harness_provider_name)
+      config.externally_sandboxed = true
 
-    def capture_executor
-      @capture_executor ||= ExecutorCapture.new
+      klass.new(executor: executor, config: config)
     end
 
     def harness_provider_name
@@ -77,20 +68,17 @@ module Providers
       @provider.agent_harness_provider_runtime
     end
 
-    class ExecutorCapture
+    # Executor that captures command, env, and preparation without executing.
+    # Used to extract the execution plan from send_message without running
+    # the actual CLI command.
+    class CaptureExecutor
       attr_reader :command, :env, :preparation
 
       def execute(command, env: {}, preparation: nil, **)
         @command = command
         @env = env
         @preparation = preparation
-
-        AgentHarness::CommandExecutor::Result.new(
-          stdout: "",
-          stderr: "",
-          exit_code: 0,
-          duration: 0.0
-        )
+        AgentHarness::CommandExecutor::Result.new(stdout: "", stderr: "", exit_code: 0)
       end
     end
   end

@@ -172,23 +172,13 @@ RSpec.describe ProviderSupport do
   end
 
   describe ".supported_provider_keys" do
-    it "logs and skips providers with invalid harness configuration" do
-      allow(AgentHarness).to receive(:provider_class).and_call_original
-      allow(AgentHarness).to receive(:provider_class).with("gemini")
-        .and_raise(AgentHarness::ConfigurationError, "broken gemini")
-      allow(Rails.logger).to receive(:warn)
+    it "excludes providers not registered in the harness" do
+      allow(AgentHarness).to receive(:providers)
+        .and_return(AgentHarness.providers - [ :gemini ])
 
       supported_keys = described_class.supported_provider_keys
 
       expect(supported_keys).not_to include("gemini")
-      expect(Rails.logger).to have_received(:warn).with(
-        hash_including(
-          message: "providers.supported_provider_misconfigured",
-          provider_key: "gemini",
-          error_class: "AgentHarness::ConfigurationError",
-          error_message: "broken gemini"
-        )
-      )
     end
   end
 

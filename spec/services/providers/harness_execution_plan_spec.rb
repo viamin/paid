@@ -45,5 +45,29 @@ RSpec.describe Providers::HarnessExecutionPlan do
       expect(parsed["model"]).to eq("moonshotai/kimi-k2-0905")
       expect(parsed).not_to have_key("baseURL")
     end
+
+    it "constructs the harness provider with external sandboxing enabled" do
+      provider = instance_double(Provider, provider_key: "claude", agent_harness_provider_runtime: nil)
+      provider_class = class_double(AgentHarness::Providers::Anthropic)
+
+      allow(AgentHarness).to receive(:provider_class).with(:claude).and_return(provider_class)
+      allow(AgentHarness).to receive(:build_config).with(:claude).and_return(
+        AgentHarness::ProviderConfig.new(:claude)
+      )
+
+      allow(provider_class).to receive(:new) do |executor:, config:|
+        expect(config).to be_a(AgentHarness::ProviderConfig)
+        expect(config.name).to eq(:claude)
+        expect(config.externally_sandboxed).to be(true)
+
+        harness = instance_double(AgentHarness::Providers::Anthropic)
+        allow(harness).to receive(:send_message) do |prompt:, **|
+          executor.execute(%w[claude ping], env: {})
+        end
+        harness
+      end
+
+      described_class.call(provider: provider, prompt: "ping")
+    end
   end
 end

@@ -34,10 +34,10 @@ module ProviderSupport
 
   def supported_provider_keys_set
     @supported_provider_keys_set ||= begin
+      registered = AgentHarness.providers
       APP_PROVIDER_KEYS.each_with_object(Set.new) do |provider_key, set|
-        set << provider_key if AgentHarness.provider_class(provider_key)
-      rescue AgentHarness::ConfigurationError
-        log_supported_provider_configuration_error(provider_key, $!)
+        canonical = AgentHarness::Providers::Registry.instance.canonical_name(provider_key.to_sym)
+        set << provider_key if registered.include?(canonical)
       end.freeze
     end
   end
@@ -45,16 +45,6 @@ module ProviderSupport
   def reset_supported_provider_keys!
     @supported_provider_keys_set = nil
   end
-
-  def log_supported_provider_configuration_error(provider_key, error)
-    Rails.logger.warn(
-      message: "providers.supported_provider_misconfigured",
-      provider_key: provider_key,
-      error_class: error.class.name,
-      error_message: error.message
-    )
-  end
-  private_class_method :log_supported_provider_configuration_error
 
   def container_executable_provider_keys
     supported_provider_keys.select { |key| CONTAINER_EXECUTABLE_PROVIDER_KEYS.include?(key) }

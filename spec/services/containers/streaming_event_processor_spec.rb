@@ -240,6 +240,25 @@ RSpec.describe Containers::StreamingEventProcessor do
       expect(logged_events.last[:message]).to eq("container.execute.streaming_error")
       expect(logged_events.last[:error]).to eq("API error")
     end
+
+    it "logs agent-harness struct events using raw_event and tokens" do
+      event_class = Struct.new(:type, :tokens, :error_message, :raw_event, keyword_init: true)
+      parsed = {
+        type: :progress,
+        raw_type: "item.completed",
+        event: event_class.new(
+          type: :progress,
+          tokens: { input: 100, output: 50 },
+          raw_event: { "type" => "item.completed" }
+        )
+      }
+
+      expect(processor.process(parsed)).to eq(:activity)
+      expect(logged_events.last[:message]).to eq("container.execute.progress")
+      expect(logged_events.last[:event_type]).to eq("item.completed")
+      expect(logged_events.last[:tokens_input]).to eq(100)
+      expect(logged_events.last[:tokens_output]).to eq(50)
+    end
   end
 
   describe "agent-harness fallback" do

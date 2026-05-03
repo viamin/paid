@@ -38,7 +38,7 @@ module Containers
       parsed = parse_jsonl_event(stripped)
       return nil unless parsed
 
-      event_type = parsed["type"].to_s
+      event_type = event_value(parsed, "type").to_s
       return nil if event_type.blank?
 
       { type: classify_event(event_type), event: parsed, raw_type: event_type }
@@ -99,8 +99,6 @@ module Containers
       if harness_streaming_available?
         harness_event = AgentHarness::Providers::Codex.parse_streaming_event(line)
         return normalize_harness_event(harness_event) if harness_event
-      else
-        return fallback_parse(line)
       end
 
       fallback_parse(line)
@@ -174,22 +172,25 @@ module Containers
     end
 
     def log_progress_event(event)
+      tokens = token_counts(event)
+
       log_streaming("container.execute.progress",
-        event_type: event["type"],
+        event_type: event_type(event),
         turn_number: @turns_completed + 1,
-        tokens_input: event.dig("usage", "input_tokens") || event["input_tokens"],
-        tokens_output: event.dig("usage", "output_tokens") || event["output_tokens"])
+        tokens_input: tokens[:input],
+        tokens_output: tokens[:output])
     end
 
     def record_turn_complete(event)
       @turns_completed += 1
+      tokens = token_counts(event)
 
       turn_data = {
         "turn_number" => @turns_completed,
         "completed_at" => Time.current.iso8601,
-        "input_tokens" => event.dig("usage", "input_tokens") || event["input_tokens"],
-        "output_tokens" => event.dig("usage", "output_tokens") || event["output_tokens"],
-        "duration_ms" => event["duration_ms"] || event.dig("metrics", "duration_ms")
+        "input_tokens" => tokens[:input],
+        "output_tokens" => tokens[:output],
+        "duration_ms" => event_value(event, "duration_ms") || event_dig(event, "metrics", "duration_ms")
       }.compact
 
       @turns_data << turn_data
@@ -203,14 +204,15 @@ module Containers
 
     def record_turn_failed(event)
       @turns_completed += 1
+      tokens = token_counts(event)
 
       turn_data = {
         "turn_number" => @turns_completed,
         "completed_at" => Time.current.iso8601,
         "status" => "failed",
-        "error" => (event["message"] || event.dig("error", "message")).to_s.truncate(500),
-        "input_tokens" => event.dig("usage", "input_tokens") || event["input_tokens"],
-        "output_tokens" => event.dig("usage", "output_tokens") || event["output_tokens"]
+        "error" => error_message(event),
+        "input_tokens" => tokens[:input],
+        "output_tokens" => tokens[:output]
       }.compact
 
       @turns_data << turn_data
@@ -221,11 +223,9 @@ module Containers
     end
 
     def log_error_event(event)
-      error_message = (event["message"] || event.dig("error", "message")).to_s.truncate(500)
-
       log_streaming("container.execute.streaming_error",
-        event_type: event["type"],
-        error: error_message)
+        event_type: event_type(event),
+        error: error_message(event))
     end
 
     def renumbered_turns(offset)
@@ -240,6 +240,47 @@ module Containers
       elsif @agent_run
         @agent_run.log!("system", message, metadata: metadata)
       end
+    end
+
+    def event_type(event)
+      event_value(event, "type")
+    end
+
+    def error_message(event)
+      msg = event_value(event, "message") || event_dig(event, "error", "message") || (event.error_message if event.respond_to?(:error_message))
+      msg.to_s.truncate(500)
+    end
+
+    def token_counts(event)
+      tokens = event.respond_to?(:tokens) ? event.tokens : nil
+      return tokens if tokens.is_a?(Hash)
+
+      {
+        input: event_dig(event, "usage", "input_tokens") || event_value(event, "input_tokens"),
+        output: event_dig(event, "usage", "output_tokens") || event_value(event, "output_tokens")
+      }
+    end
+
+    def event_value(event, key)
+      raw_event = event.respond_to?(:raw_event) ? event.raw_event : event
+      if raw_event.is_a?(Hash)
+        return raw_event[key] if raw_event.key?(key)
+      elsif raw_event.respond_to?(:[])
+        begin
+          return raw_event[key]
+        rescue NameError
+          # Struct-like objects raise NameError for missing keys; fall through
+        end
+      end
+
+      event.public_send(key) if event.respond_to?(key)
+    end
+
+    def event_dig(event, *keys)
+      raw_event = event.respond_to?(:raw_event) ? event.raw_event : event
+      return raw_event.dig(*keys) if raw_event.respond_to?(:dig)
+
+      nil
     end
   end
 end
