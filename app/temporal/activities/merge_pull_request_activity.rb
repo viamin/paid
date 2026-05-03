@@ -49,6 +49,7 @@ module Activities
 
       if merged
         issue.update!(pr_review_phase: "merged")
+        IssueMergeSubscriptions::Deliver.call(issue: issue, event: :merged)
         # Only label and comment on PRs that this activity actually merged —
         # already-merged PRs may have been merged manually by a human.
         unless pr_data.merged

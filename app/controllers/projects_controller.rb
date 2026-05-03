@@ -33,6 +33,10 @@ class ProjectsController < ApplicationController
       project: @project, issue_ids: @issues.map(&:id)
     )
     @pull_requests = open_items.pull_requests_only.limit(settings.max_prs_per_page)
+    visible_issue_ids = @issues.map(&:id) + @pull_requests.map(&:id)
+    @merge_notification_issue_ids = current_user.issue_merge_subscriptions.on_merge
+      .where(issue_id: visible_issue_ids)
+      .pluck(:issue_id)
     @pr_numbers_with_queued_auto_continue = @project.pr_numbers_with_queued_auto_continue
     @pr_numbers_with_active_runs = @project.pr_numbers_with_active_runs
     @cost_budgets = @project.cost_budgets.load

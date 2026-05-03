@@ -43,7 +43,7 @@ module Notifications
       )
 
       notification.save!
-      broadcast_notification_updates(account)
+      broadcast_notification_updates(account, user: user)
       notification
     rescue ActiveRecord::RecordNotUnique
       retries ||= 0
