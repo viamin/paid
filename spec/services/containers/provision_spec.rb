@@ -1763,7 +1763,11 @@ RSpec.describe Containers::Provision do
       it "logs the abort pattern match with stream type" do
         allow(agent_run).to receive(:log!)
 
-        service.execute("kilo run --auto", abort_patterns: abort_patterns) rescue nil
+        begin
+          service.execute("kilo run --auto", abort_patterns: abort_patterns)
+        rescue described_class::OutputAbortError
+          # expected — we are testing the log side-effect, not the raise
+        end
 
         expect(agent_run).to have_received(:log!).with(
           "system", "container.execute.abort_pattern_matched",
@@ -1886,27 +1890,22 @@ RSpec.describe Containers::Provision do
       end
 
       it "logs stdout as the stream type when structured JSONL triggers abort" do
-        structured_error = {
-          "type" => "response.failed",
-          "error" => {
-            "message" => "Error: Free tier limit reached. Please upgrade to a paid plan."
-          }
-        }.to_json + "\n"
-
+        error_json = { "type" => "response.failed",
+                       "error" => { "message" => "Error: Free tier limit reached." } }.to_json + "\n"
         allow(agent_run).to receive(:log!)
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
-          block.call(:stdout, structured_error) if block
-          [ [ structured_error ], [], 1 ]
+          block.call(:stdout, error_json) if block
+          [ [ error_json ], [], 1 ]
         end
 
-        service.execute("codex exec --json", abort_patterns: abort_patterns) rescue nil
+        begin
+          service.execute("codex exec --json", abort_patterns: abort_patterns)
+        rescue described_class::OutputAbortError # expected
+        end
 
         expect(agent_run).to have_received(:log!).with(
           "system", "container.execute.abort_pattern_matched",
-          metadata: hash_including(
-            stream: "stdout",
-            output: a_string_matching(/Free tier limit reached/)
-          )
+          metadata: hash_including(stream: "stdout", output: a_string_matching(/Free tier limit reached/))
         )
       end
 
