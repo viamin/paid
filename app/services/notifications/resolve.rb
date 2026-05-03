@@ -27,7 +27,7 @@ module Notifications
       return unless notification
 
       notification.update!(resolved_at: Time.current)
-      broadcast_notification_updates(account)
+      broadcast_notification_updates(account, user: user)
       notification
     end
 

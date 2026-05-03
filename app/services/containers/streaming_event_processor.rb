@@ -112,6 +112,25 @@ module Containers
       nil
     end
 
+    def semantic_event_type(event)
+      event_type = event.type if !event.is_a?(Hash) && event.respond_to?(:type)
+      event_type = event_value(event, "type") if event_type.blank?
+
+      event_type.to_s
+    end
+
+    def raw_event_type(event)
+      raw_event = event.respond_to?(:raw_event) ? event.raw_event : event
+
+      if raw_event.is_a?(Hash)
+        raw_event["type"] || raw_event[:type]
+      elsif raw_event.respond_to?(:[])
+        raw_event["type"] || raw_event[:type]
+      end
+    rescue NameError
+      nil
+    end
+
     def classify_event(event_type)
       if PROGRESS_EVENT_TYPES.include?(event_type)
         :progress

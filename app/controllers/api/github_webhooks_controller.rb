@@ -80,6 +80,8 @@ module Api
         return
       end
 
+      notify_merge_subscribers(pr["number"])
+
       agent_run = find_agent_run(pr["number"])
       unless agent_run
         head :ok
@@ -246,6 +248,15 @@ module Api
         .where(created_issue_number: issue_number, status: "completed")
         .order(created_at: :desc)
         .first
+    end
+
+    def notify_merge_subscribers(pr_number)
+      return unless @project && pr_number
+
+      issue = @project.issues.find_by(github_number: pr_number, is_pull_request: true)
+      return unless issue
+
+      IssueMergeSubscriptions::Deliver.call(issue: issue, event: :merged)
     end
 
     def invalidate_cache(event)

@@ -7,9 +7,16 @@
       <div class="max-h-96 overflow-y-auto">
         <ul role="list" class="divide-y divide-gray-200">
           <% pull_requests.each do |pr| %>
-            <%= render "projects/pull_request", pull_request: pr, project: project,
-                     pr_numbers_with_queued_auto_continue: pr_numbers_with_queued_auto_continue,
-                     pr_numbers_with_active_runs: pr_numbers_with_active_runs %>
+            <% pull_request_locals = {
+              pull_request: pr,
+              project: project,
+              pr_numbers_with_queued_auto_continue: pr_numbers_with_queued_auto_continue,
+              pr_numbers_with_active_runs: pr_numbers_with_active_runs
+            } %>
+            <% if local_assigns.key?(:merge_notification_issue_ids) %>
+              <% pull_request_locals[:merge_notification_issue_ids] = local_assigns[:merge_notification_issue_ids] %>
+            <% end %>
+            <%= render "projects/pull_request", **pull_request_locals %>
           <% end %>
         </ul>
       </div>

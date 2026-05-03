@@ -92,6 +92,13 @@ RSpec.describe Activities::MergePullRequestActivity do
 
         expect(result[:merged]).to be true
       end
+
+      it "delivers merge subscription notifications" do
+        expect(IssueMergeSubscriptions::Deliver).to receive(:call)
+          .with(issue: issue, event: :merged)
+
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+      end
     end
 
     context "when PR is already merged" do
@@ -136,6 +143,13 @@ RSpec.describe Activities::MergePullRequestActivity do
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
         expect(provider).not_to have_received(:add_comment)
+      end
+
+      it "delivers merge subscription notifications" do
+        expect(IssueMergeSubscriptions::Deliver).to receive(:call)
+          .with(issue: issue, event: :merged)
+
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
       end
     end
 
@@ -238,6 +252,12 @@ RSpec.describe Activities::MergePullRequestActivity do
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
         expect(provider).not_to have_received(:add_labels)
+      end
+
+      it "does not deliver merge subscription notifications" do
+        expect(IssueMergeSubscriptions::Deliver).not_to receive(:call)
+
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
       end
     end
 
