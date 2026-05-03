@@ -1430,22 +1430,46 @@ class AgentRun < ApplicationRecord
   def extract_text_from_stdout(raw_stdout)
     return raw_stdout if raw_stdout.blank?
 
-    parsed = AgentHarness::Providers::Anthropic.parse_cli_json_envelope(raw_stdout)
-    if parsed
-      if parsed[:error].present?
-        return "Agent encountered an error: #{parsed[:error]}"
-      else
-        return parsed[:output].presence || raw_stdout
-      end
-    end
+    response = parse_structured_stdout(raw_stdout)
+    return raw_stdout unless response
 
-    jsonl_text = extract_text_from_jsonl_transcript(raw_stdout)
-    jsonl_text || raw_stdout
+    return "Agent encountered an error: #{response.error}" if response.error.present?
+
+    response.output.presence || raw_stdout
   end
 
-  def extract_text_from_jsonl_transcript(raw_stdout)
-    parsed = AgentHarness::Providers::Codex.parse_cli_jsonl_transcript(raw_stdout, max_events: 500)
-    parsed[:text].presence if parsed
+  def parse_structured_stdout(raw_stdout)
+    structured_stdout_parsers.each do |provider_key, provider|
+      parser_input = structured_stdout_input_for(provider_key, raw_stdout)
+      response = provider.parse_container_output(stdout: parser_input)
+      return response if structured_stdout_response?(response, parser_input)
+    end
+
+    nil
+  end
+
+  def structured_stdout_response?(response, raw_stdout)
+    response.error.present? || response.output != raw_stdout
+  end
+
+  def structured_stdout_parsers
+    [ effective_provider, "claude", "codex" ].uniq.filter_map do |provider_key|
+      provider = structured_stdout_parser_for(provider_key)
+      [ provider_key, provider ] if provider
+    end
+  end
+
+  def structured_stdout_parser_for(provider_key)
+    harness_key = ProviderSupport.harness_provider_key_for(provider_key).to_sym
+    AgentHarness.provider(harness_key)
+  rescue AgentHarness::ConfigurationError
+    nil
+  end
+
+  def structured_stdout_input_for(provider_key, raw_stdout)
+    return raw_stdout unless provider_key == "codex"
+
+    raw_stdout.lines.last(500).join
   end
 
   def normalize_log_content(content)

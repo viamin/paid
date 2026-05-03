@@ -51,8 +51,8 @@ gem "docker-api", require: false
 gem "qdrant-ruby", require: false
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
-# 0.11.0 fixes GithubCopilot provider CLI version detection for 0.1.x subcommand CLIs.
-gem "agent-harness", "~> 0.11.3"
+# 0.13.1 includes the public parse_container_output API used for container-run parsing.
+gem "agent-harness", "~> 0.13.1"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
 # Defer loading — invoked as CLI binary, not via Ruby API.

@@ -97,7 +97,10 @@ module Containers
 
     def parse_jsonl_event(line)
       if harness_streaming_available?
-        AgentHarness::Providers::Codex.parse_streaming_event(line)
+        parsed = normalize_harness_streaming_event(AgentHarness::Providers::Codex.parse_streaming_event(line))
+        return parsed if parsed
+
+        fallback_parse(line)
       else
         fallback_parse(line)
       end
@@ -115,6 +118,14 @@ module Containers
       parsed
     rescue JSON::ParserError, TypeError
       nil
+    end
+
+    def normalize_harness_streaming_event(event)
+      return event if event.is_a?(Hash)
+      return unless event&.respond_to?(:raw_event)
+
+      raw_event = event.raw_event
+      raw_event if raw_event.is_a?(Hash)
     end
 
     def classify_event(event_type)
