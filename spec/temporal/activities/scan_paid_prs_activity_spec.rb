@@ -113,6 +113,27 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when explicit PR decisions are disabled" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          paid_state: "completed")
+      end
+
+      before { pr_issue }
+
+      it "returns only legacy trigger payloads" do
+        stub_github_for_pr(checks: [ { name: "rspec", conclusion: "failure" } ])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).not_to be_empty
+        expect(result[:automation_results]).to eq([])
+      end
+    end
+
     context "when rate limit is low" do
       let(:pr_issue) do
         create(:issue, :pull_request,

@@ -317,7 +317,8 @@ module Workflows
     end
 
     def handle_pr_scan_results(scan_result, project_id)
-      if scan_result[:automation_results].present?
+      if feature_flag_enabled?(:explicit_pr_automation_decisions, project_id:) &&
+          scan_result[:automation_results].present?
         scan_result[:automation_results].each do |result|
           handle_automation_result(result, project_id)
         end

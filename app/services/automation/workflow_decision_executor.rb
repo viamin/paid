@@ -66,6 +66,11 @@ module Automation
           issue_id: decision[:issue_id],
           expected_review_goal_retry_count: decision[:expected_review_goal_retry_count]
         }, timeout: 30)
+      else
+        Temporalio::Workflow.logger.warn(
+          message: "workflow_decision_executor.unknown_decision_type",
+          type: decision[:type]
+        )
       end
     end
   end

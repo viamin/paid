@@ -1683,6 +1683,25 @@ RSpec.describe Workflows::GitHubPollWorkflow do
   describe "initial sync for existing PRs" do
     let(:workflow) { described_class.new }
     let(:project_id) { 1 }
+    let(:legacy_pr_scan_result) do
+      {
+        prs_to_trigger: [
+          {
+            issue_id: 10,
+            pr_number: 42,
+            phase: "ready",
+            triggers: [ { type: "paid_agent_review_pending" } ]
+          }
+        ],
+        automation_results: [
+          {
+            decisions: [
+              { type: "queue_create_pr_run", issue_id: 10, source_pull_request_number: 42 }
+            ]
+          }
+        ]
+      }
+    end
 
     def stub_initial_sync(trigger_result:)
       allow(workflow).to receive(:run_activity)
@@ -1804,6 +1823,25 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::QueueAgentRunActivity,
           hash_including(project_id: project_id, issue_id: 10,
             source_pull_request_number: 42, goal: "review"),
+          timeout: 30)
+    end
+
+    it "ignores explicit PR automation results when the rollout flag is disabled" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
+
+      workflow.send(:handle_pr_scan_results, legacy_pr_scan_result, project_id)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(project_id: project_id, issue_id: 10,
+            source_pull_request_number: 42, goal: "review"),
+          timeout: 30)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(project_id: project_id, issue_id: 10,
+            source_pull_request_number: 42, goal: "create_pr"),
           timeout: 30)
     end
   end

@@ -244,10 +244,6 @@ module Automation
         POSTED_BOT_FEEDBACK_TRIGGER_TYPES.any? { |type| trigger_types.include?(type) }
       end
 
-      def manual_request_decisions(plugins)
-        plugins.select { |p| p.kind == :human }.filter_map(&:decision)
-      end
-
       def non_bot_request_decisions(plugins)
         plugins.select { |p| p.kind.in?([ :human, :ci ]) }.filter_map(&:decision)
       end
