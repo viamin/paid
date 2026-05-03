@@ -508,10 +508,10 @@ RSpec.describe "Projects" do
         expect(response.body).not_to include("Clean Up Stale Runs")
       end
 
-      it "shows the stale cleanup button for stale pending runs" do
+      it "shows the stale cleanup button for stale claimed runs" do
         project = create(:project, account: account, github_token: github_token)
-        stale_run = create(:agent_run, status: "pending", project: project)
-        stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+        stale_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-wf", project: project)
+        stale_run.update_column(:updated_at, AgentRun.stale_claimed_cutoff - 1.minute)
 
         get project_path(project)
 
@@ -1413,16 +1413,22 @@ RSpec.describe "Projects" do
         expect(stale_run.reload.status).to eq("timeout")
       end
 
-      it "requeues stale pending runs" do
+      it "unclaims stale claimed runs" do
         project = create(:project, account: account, github_token: github_token)
-        stale_run = create(:agent_run, status: "pending", project: project)
-        stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+        stale_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-wf", project: project)
+        stale_run.update_column(:updated_at, AgentRun.stale_claimed_cutoff - 1.minute)
+
+        handle = instance_double(Temporalio::Client::WorkflowHandle)
+        temporal_client = instance_double(Temporalio::Client)
+        allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+        allow(temporal_client).to receive(:workflow_handle).with("test-wf").and_return(handle)
+        allow(handle).to receive(:cancel)
 
         post cleanup_stale_runs_project_path(project)
 
         expect(response).to redirect_to(project_path(project))
         expect(flash[:notice]).to eq("Cleaned up 1 stale agent run(s).")
-        expect(stale_run.reload.status).to eq("queued")
+        expect(stale_run.reload.temporal_workflow_id).to be_nil
         expect(stale_run.stale_requeue_count).to eq(1)
       end
 

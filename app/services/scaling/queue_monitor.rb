@@ -102,14 +102,16 @@ module Scaling
     end
 
     def measure_agent_run_queue
-      depth = if precomputed_depth
-        precomputed_depth
-      elsif account
-        AgentRun.joins(:project)
-          .where(projects: { account_id: account.id })
-          .where(status: "queued").count
+      depth = if precomputed_depth.nil?
+        if account
+          AgentRun.waiting.joins(:project)
+            .where(projects: { account_id: account.id })
+            .count
+        else
+          AgentRun.waiting.count
+        end
       else
-        AgentRun.where(status: "queued").count
+        precomputed_depth
       end
 
       [

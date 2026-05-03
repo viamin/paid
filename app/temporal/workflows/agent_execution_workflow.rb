@@ -86,11 +86,15 @@ module Workflows
       parent_workflow_id = input[:parent_workflow_id]
 
       # Step 1: Create agent run record (or resume a queued one)
+      # Pass the workflow ID so newly-created runs store the real Temporal
+      # workflow ID rather than CLAIMED_SENTINEL (which is only a pre-start
+      # claim marker used by the queue).
       create_input = { project_id: project_id, issue_id: issue_id, agent_type: agent_type,
         custom_prompt: custom_prompt,
         source_pull_request_number: source_pull_request_number,
         agent_run_id: agent_run_id, goal: goal,
         parent_workflow_id: parent_workflow_id,
+        workflow_id: current_workflow_id,
         count_toward_draft_review_round: input[:count_toward_draft_review_round],
         expected_draft_review_count: input[:expected_draft_review_count] }.compact
       agent_run_result = run_activity(Activities::CreateAgentRunActivity,

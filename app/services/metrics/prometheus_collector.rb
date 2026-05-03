@@ -37,7 +37,7 @@ module Metrics
       lines << "# TYPE paid_agent_runs_active gauge"
       lines << "paid_agent_runs_active #{active}"
 
-      queued = counts.fetch("queued") { 0 }
+      queued = AgentRun.waiting.count
       lines << "# HELP paid_agent_runs_queued Agent runs waiting in queue."
       lines << "# TYPE paid_agent_runs_queued gauge"
       lines << "paid_agent_runs_queued #{queued}"

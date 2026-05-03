@@ -7,8 +7,16 @@ class AgentRunsController < ApplicationController
   def index
     base_scope = policy_scope(AgentRun).includes(:project, issue: :project)
     @q = base_scope.ransack(params[:q])
-    @q.sorts = "created_at desc" if @q.sorts.empty?
-    @pagy, @agent_runs = pagy(@q.result)
+
+    if params[:sort] == "queue" && queue_sort_compatible?
+      @q.sorts.clear if @q.sorts.any?
+      @agent_runs = apply_ransack_filters(@q).queue_order_display
+    else
+      @q.sorts = "created_at desc" if @q.sorts.empty?
+      @agent_runs = @q.result
+    end
+
+    @pagy, @agent_runs = pagy(@agent_runs)
     AgentRun.preload_source_pull_requests(@agent_runs)
     cache_key = AgentRun.provider_options_cache_key_for(account_id: current_account.id)
     @provider_options = base_scope.distinct_effective_providers(cache_key: cache_key)
@@ -27,5 +35,21 @@ class AgentRunsController < ApplicationController
       ProcessRunQueueJob.perform_later
     end
     redirect_to agent_runs_path, notice: "Scheduler resumed."
+  end
+
+  private
+
+  def apply_ransack_filters(search)
+    search.result
+  end
+
+  def queue_sort_compatible?
+    status_filter = params.dig(:q, :status_eq)
+    # Queue sort is only meaningful when already filtered to an unfinished
+    # status — otherwise queue_order_display's .unfinished scope silently
+    # hides completed/failed runs from the default (unfiltered) view.
+    return false if status_filter.blank?
+
+    AgentRun::UNFINISHED_STATUSES.include?(status_filter)
   end
 end

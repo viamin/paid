@@ -547,16 +547,16 @@ RSpec.describe "Api::SecretsProxy" do
       end
     end
 
-    context "with pending agent run" do
-      it "allows pending runs (active but not yet running)" do
-        pending_run = create(:agent_run, project: project, status: "pending")
+    context "with claimed agent run" do
+      it "allows claimed runs (queued but claimed by a worker)" do
+        claimed_run = create(:agent_run, project: project, status: "queued", temporal_workflow_id: "test-wf")
 
         post "/api/proxy/anthropic/v1/messages",
           params: {}.to_json,
           headers: {
             "Content-Type" => "application/json",
-            "X-Agent-Run-Id" => pending_run.id.to_s,
-            "X-Proxy-Token" => pending_run.proxy_token
+            "X-Agent-Run-Id" => claimed_run.id.to_s,
+            "X-Proxy-Token" => claimed_run.proxy_token
           }
 
         expect(response).to have_http_status(:ok)

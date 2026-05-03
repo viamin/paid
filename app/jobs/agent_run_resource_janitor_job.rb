@@ -19,7 +19,7 @@ class AgentRunResourceJanitorJob < ApplicationJob
   def perform(agent_run_id)
     agent_run = AgentRun.find_by(id: agent_run_id)
     return unless agent_run
-    return if agent_run.active?
+    return unless agent_run.finished?
     return if agent_run.container_retained?
 
     container_cleaned = cleanup_container(agent_run)

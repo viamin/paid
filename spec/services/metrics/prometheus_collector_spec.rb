@@ -49,6 +49,7 @@ RSpec.describe Metrics::PrometheusCollector do
         create(:agent_run, :running, container_id: "ctr-1")
         create(:agent_run, :running, container_id: "ctr-2")
         create(:agent_run, :queued)
+        create(:agent_run, :queued, temporal_workflow_id: "wf-123")
         create(:agent_run, :completed)
       end
 

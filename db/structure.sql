@@ -508,7 +508,7 @@ CREATE TABLE public.agent_runs (
     temporal_workflow_id character varying(255),
     temporal_run_id character varying(255),
     agent_type character varying(50) NOT NULL,
-    status character varying(50) DEFAULT 'pending'::character varying NOT NULL,
+    status character varying(50) DEFAULT 'queued'::character varying NOT NULL,
     worktree_path character varying(500),
     branch_name character varying(255),
     base_commit_sha character varying(40),
@@ -11021,6 +11021,7 @@ SET search_path TO "$user", public;
 INSERT INTO "schema_migrations" (version) VALUES
 ('20260502201828'),
 ('20260502200141'),
+('20260502014212'),
 ('20260428140000'),
 ('20260428130904'),
 ('20260428120000'),
@@ -11258,4 +11259,3 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260128004342'),
 ('20260128004305'),
 ('20260127154444');
-

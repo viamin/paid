@@ -79,14 +79,14 @@ RSpec.describe "Api::GitCredentials" do
       end
     end
 
-    context "with pending agent run" do
-      let(:pending_run) { create(:agent_run, project: project, status: "pending") }
+    context "with claimed agent run" do
+      let(:claimed_run) { create(:agent_run, project: project, status: "queued", temporal_workflow_id: "test-wf") }
 
-      it "returns credentials (active but not yet running)" do
+      it "returns credentials for claimed runs" do
         get "/api/proxy/git-credentials",
           headers: {
-            "X-Agent-Run-Id" => pending_run.id.to_s,
-            "X-Proxy-Token" => pending_run.proxy_token
+            "X-Agent-Run-Id" => claimed_run.id.to_s,
+            "X-Proxy-Token" => claimed_run.proxy_token
           }
 
         expect(response).to have_http_status(:ok)
@@ -99,12 +99,12 @@ RSpec.describe "Api::GitCredentials" do
         expect(lines).to include("password=#{github_token.token}")
       end
 
-      it "touches last_used_at on the github token for pending runs" do
+      it "touches last_used_at on the github token for claimed runs" do
         expect do
           get "/api/proxy/git-credentials",
             headers: {
-              "X-Agent-Run-Id" => pending_run.id.to_s,
-              "X-Proxy-Token" => pending_run.proxy_token
+              "X-Agent-Run-Id" => claimed_run.id.to_s,
+              "X-Proxy-Token" => claimed_run.proxy_token
             }
         end.to change { github_token.reload.last_used_at }
       end

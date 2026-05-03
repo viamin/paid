@@ -24,12 +24,12 @@ RSpec.describe "dev:cleanup" do
 
   it "does not touch active runs by default" do
     running_run = create(:agent_run, :running)
-    pending_run = create(:agent_run, status: "pending")
+    queued_run = create(:agent_run, status: "queued")
 
     task.invoke
 
     expect(running_run.reload.status).to eq("running")
-    expect(pending_run.reload.status).to eq("pending")
+    expect(queued_run.reload.status).to eq("queued")
   end
 
   it "does not touch finished runs" do
@@ -88,14 +88,15 @@ RSpec.describe "dev:cleanup" do
       expect(running_run.completed_at).to be_present
     end
 
-    it "times out runs stuck in pending" do
-      pending_run = create(:agent_run, status: "pending")
+    it "times out runs stuck as stale claimed" do
+      stale_claimed = create(:agent_run, status: "queued", temporal_workflow_id: "test-wf")
+      stale_claimed.update_column(:updated_at, AgentRun.stale_claimed_cutoff - 1.minute)
 
       task.invoke
 
-      pending_run.reload
-      expect(pending_run.status).to eq("timeout")
-      expect(pending_run.error_message).to include("process was restarted")
+      stale_claimed.reload
+      expect(stale_claimed.status).to eq("timeout")
+      expect(stale_claimed.error_message).to include("process was restarted")
     end
 
     it "creates a system log entry on each resolved run" do
@@ -119,12 +120,13 @@ RSpec.describe "dev:cleanup" do
 
     it "resolves multiple stale runs in a single pass" do
       running = create(:agent_run, :running)
-      pending_run = create(:agent_run, status: "pending")
+      stale_claimed = create(:agent_run, status: "queued", temporal_workflow_id: "test-wf")
+      stale_claimed.update_column(:updated_at, AgentRun.stale_claimed_cutoff - 1.minute)
 
       task.invoke
 
       expect(running.reload.status).to eq("timeout")
-      expect(pending_run.reload.status).to eq("timeout")
+      expect(stale_claimed.reload.status).to eq("timeout")
     end
 
     it "triggers ProcessRunQueueJob when queued runs exist alongside resolved runs" do

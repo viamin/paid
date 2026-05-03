@@ -69,9 +69,9 @@ module Dashboard
     # Fetch the ordered snapshot in a single query instead of iterating
     # peek_next_queued_run one-at-a-time. This uses the raw QUEUE_ORDER
     # rather than the fair-queue round-robin reordering that
-    # next_queued_run_from applies; for a read-only preview the scheduler
-    # consideration order is more informative and avoids up to 3 queries
-    # per iteration.
+    # next_queued_run_from applies, so the result is an approximation of
+    # scheduler priority rather than an exact dequeue sequence. That keeps
+    # the preview informative while avoiding up to 3 queries per iteration.
     def fetch_snapshot
       AgentRun.schedulable_queued_with_priority
               .reorder(*AgentRun::QUEUE_ORDER)

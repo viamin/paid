@@ -5,8 +5,8 @@ require "rails_helper"
 RSpec.describe StaleRunDetectorJob do
   # Running runs: agent_timeout + GRACE_PERIOD
   let(:running_threshold) { AGENT_TIMEOUT_DEFAULT + described_class::GRACE_PERIOD.to_i }
-  # Pending runs: shorter dedicated threshold
-  let(:pending_threshold) { described_class::PENDING_TIMEOUT.to_i }
+  # Claimed queued runs: shorter dedicated threshold
+  let(:claimed_threshold) { described_class::CLAIMED_TIMEOUT.to_i }
   # Paused runs: guardrail pauses should not block auto-pick indefinitely
   let(:paused_threshold) { described_class::PAUSED_TIMEOUT.to_i }
 
@@ -133,39 +133,46 @@ RSpec.describe StaleRunDetectorJob do
       expect(stale_run.reload.status).to eq("timeout")
     end
 
-    context "with stale pending runs" do
-      it "requeues a stale pending run that has not exhausted requeue budget" do
-        stale_run = create(:agent_run, status: "pending")
-        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+    context "with stale claimed runs" do
+      before do
+        handle = double(cancel: true) # rubocop:disable RSpec/VerifiedDoubles
+        temporal_client = double(workflow_handle: handle, start_workflow: nil) # rubocop:disable RSpec/VerifiedDoubles
+        allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+      end
+
+      it "requeues a stale claimed run that has not exhausted requeue budget" do
+        stale_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id")
+        stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
 
         described_class.perform_now
 
         stale_run.reload
         expect(stale_run.status).to eq("queued")
+        expect(stale_run.temporal_workflow_id).to be_nil
         expect(stale_run.stale_requeue_count).to eq(1)
       end
 
       it "creates a log entry when requeuing" do
-        stale_run = create(:agent_run, status: "pending")
-        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        stale_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id")
+        stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
 
         described_class.perform_now
 
         log = stale_run.agent_run_logs.last
-        expect(log.content).to include("requeued")
+        expect(log.content).to include("unclaimed")
         expect(log.content).to include("attempt 1/#{described_class::MAX_STALE_REQUEUES}")
       end
 
       it "triggers ProcessRunQueueJob when runs are requeued" do
-        stale_run = create(:agent_run, status: "pending")
-        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        stale_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id")
+        stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
 
         expect { described_class.perform_now }.to have_enqueued_job(ProcessRunQueueJob)
       end
 
-      it "times out a stale pending run that has exhausted requeue budget" do
-        stale_run = create(:agent_run, status: "pending", stale_requeue_count: described_class::MAX_STALE_REQUEUES)
-        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+      it "times out a stale claimed run that has exhausted requeue budget" do
+        stale_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id", stale_requeue_count: described_class::MAX_STALE_REQUEUES)
+        stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
 
         described_class.perform_now
 
@@ -174,18 +181,18 @@ RSpec.describe StaleRunDetectorJob do
         expect(stale_run.error_message).to start_with(AgentRun::STALE_DETECTOR_ERROR_PREFIX)
       end
 
-      it "does not touch pending runs within the threshold" do
-        recent_run = create(:agent_run, status: "pending")
-        recent_run.update_columns(updated_at: (pending_threshold - 60).seconds.ago)
+      it "does not touch claimed runs within the threshold" do
+        recent_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id")
+        recent_run.update_columns(updated_at: (claimed_threshold - 60).seconds.ago)
 
         described_class.perform_now
 
-        expect(recent_run.reload.status).to eq("pending")
+        expect(recent_run.reload.status).to eq("queued")
       end
 
       it "cleans up docker resources when requeuing" do
-        stale_run = create(:agent_run, status: "pending", container_id: "orphaned-container")
-        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        stale_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id", container_id: "orphaned-container")
+        stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
         container_service = instance_double(Containers::Provision, cleanup: true)
         allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
         allow(Containers::ServiceProvisioner).to receive(:new)
@@ -197,8 +204,8 @@ RSpec.describe StaleRunDetectorJob do
       end
 
       it "destroys a claimed pool entry when requeue cleanup reconnects directly" do
-        stale_run = create(:agent_run, status: "pending", container_id: "pooled-container")
-        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        stale_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id", container_id: "pooled-container")
+        stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
         entry = create(:container_pool_entry, :claimed,
           project: stale_run.project,
           agent_run: stale_run,
@@ -222,10 +229,10 @@ RSpec.describe StaleRunDetectorJob do
       end
 
       it "clears container_id and service_container_ids inside the lock on requeue" do
-        stale_run = create(:agent_run, status: "pending",
+        stale_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id",
           container_id: "orphaned-container",
           service_container_ids: [ 1, 2, 3 ])
-        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
         container_service = instance_double(Containers::Provision, cleanup: true)
         allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
         allow(Containers::ServiceProvisioner).to receive(:new)
@@ -239,46 +246,42 @@ RSpec.describe StaleRunDetectorJob do
         expect(stale_run.service_container_ids).to eq([])
       end
 
-      it "skips a run that transitioned out of pending before requeue" do
-        # Simulate the race: run was pending at query time but transitions
-        # to running before the lock is acquired inside requeue_stale_pending_run.
-        run = create(:agent_run, status: "pending")
-        run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
-        # Transition to running before requeue_stale_pending_run acquires the lock
+      it "skips a run that transitioned out of claimed before unclaim" do
+        run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id")
+        run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
         run.update_columns(status: "running", started_at: Time.current, updated_at: Time.current)
 
         job = described_class.new
-        result = job.send(:requeue_stale_pending_run, run)
+        result = job.send(:unclaim_stale_claimed_run, run)
 
         expect(result).to eq(:skip)
         expect(run.reload.status).to eq("running")
       end
 
-      it "skips a pending run that was recently updated (no longer stale)" do
-        # Run is still pending but was updated after the staleness query
-        run = create(:agent_run, status: "pending")
+      it "skips a claimed run that was recently updated (no longer stale)" do
+        run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id")
         run.update_columns(updated_at: 1.minute.ago)
 
         job = described_class.new
-        result = job.send(:requeue_stale_pending_run, run)
+        result = job.send(:unclaim_stale_claimed_run, run)
 
         expect(result).to eq(:skip)
-        expect(run.reload.status).to eq("pending")
+        expect(run.reload.status).to eq("queued")
       end
 
-      it "does not requeue a pending run just inside the threshold boundary" do
-        # A run updated slightly less than PENDING_TIMEOUT ago is not stale
-        boundary_run = create(:agent_run, status: "pending")
-        boundary_run.update_columns(updated_at: (pending_threshold - 5).seconds.ago)
+      it "does not requeue a claimed run just inside the threshold boundary" do
+        # A run updated slightly less than CLAIMED_TIMEOUT ago is not stale
+        boundary_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id")
+        boundary_run.update_columns(updated_at: (claimed_threshold - 5).seconds.ago)
 
         described_class.perform_now
 
-        expect(boundary_run.reload.status).to eq("pending")
+        expect(boundary_run.reload.status).to eq("queued")
       end
 
       it "increments requeue count on successive requeues" do
-        stale_run = create(:agent_run, status: "pending", stale_requeue_count: 1)
-        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        stale_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id", stale_requeue_count: 1)
+        stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
 
         described_class.perform_now
 
@@ -288,11 +291,11 @@ RSpec.describe StaleRunDetectorJob do
       end
 
       it "cancels the existing Temporal workflow before requeuing" do
-        stale_run = create(:agent_run, status: "pending",
+        stale_run = create(:agent_run, status: "queued",
           started_at: 5.minutes.ago,
           temporal_workflow_id: "queued-1-2-123456",
           temporal_run_id: "run-abc")
-        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
 
         handle = double(cancel: true) # rubocop:disable RSpec/VerifiedDoubles
         temporal_client = double(workflow_handle: handle) # rubocop:disable RSpec/VerifiedDoubles
@@ -308,8 +311,8 @@ RSpec.describe StaleRunDetectorJob do
       end
 
       it "clears service_environment when requeuing" do
-        stale_run = create(:agent_run, status: "pending", service_environment: { "DATABASE_URL" => "postgres://old" })
-        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        stale_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id", service_environment: { "DATABASE_URL" => "postgres://old" })
+        stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
 
         described_class.perform_now
 
@@ -321,10 +324,10 @@ RSpec.describe StaleRunDetectorJob do
       it "passes captured service environment to service cleanup when requeuing" do
         service_container = create(:service_container)
         old_environment = { "DATABASE_URL" => "postgres://agent:agent@pg:5432/agent_run_old_attempt_0" }
-        stale_run = create(:agent_run, status: "pending",
+        stale_run = create(:agent_run, status: "queued", temporal_workflow_id: "test-workflow-id",
           service_container_ids: [ service_container.id ],
           service_environment: old_environment)
-        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
         provisioner = instance_double(Containers::ServiceProvisioner)
 
         allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
@@ -340,10 +343,10 @@ RSpec.describe StaleRunDetectorJob do
       end
 
       it "skips requeue when Temporal workflow cancel fails with non-NOT_FOUND error" do
-        stale_run = create(:agent_run, status: "pending",
+        stale_run = create(:agent_run, status: "queued",
           started_at: 5.minutes.ago,
           temporal_workflow_id: "queued-1-2-123456")
-        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
 
         allow(Rails.logger).to receive(:warn)
         handle = double # rubocop:disable RSpec/VerifiedDoubles
@@ -354,7 +357,7 @@ RSpec.describe StaleRunDetectorJob do
         described_class.perform_now
 
         stale_run.reload
-        expect(stale_run.status).to eq("pending")
+        expect(stale_run.status).to eq("queued")
         expect(stale_run.stale_requeue_count).to eq(0)
         expect(stale_run.stale_skip_count).to eq(1)
         expect(Rails.logger).to have_received(:warn).with(hash_including(
@@ -366,11 +369,11 @@ RSpec.describe StaleRunDetectorJob do
       end
 
       it "times out after repeated Temporal workflow cancel failures" do
-        stale_run = create(:agent_run, status: "pending",
+        stale_run = create(:agent_run, status: "queued",
           started_at: 5.minutes.ago,
           temporal_workflow_id: "queued-1-2-123456",
           stale_skip_count: described_class::MAX_STALE_SKIPS - 1)
-        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
 
         handle = double # rubocop:disable RSpec/VerifiedDoubles
         allow(handle).to receive(:cancel).and_raise(RuntimeError, "connection refused")
@@ -385,10 +388,10 @@ RSpec.describe StaleRunDetectorJob do
       end
 
       it "still cancels and requeues when only temporal_workflow_id is present" do
-        stale_run = create(:agent_run, status: "pending",
+        stale_run = create(:agent_run, status: "queued",
           started_at: nil,
           temporal_workflow_id: "queued-1-2-123456")
-        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
 
         handle = double(cancel: true) # rubocop:disable RSpec/VerifiedDoubles
         temporal_client = double(workflow_handle: handle) # rubocop:disable RSpec/VerifiedDoubles
@@ -403,11 +406,11 @@ RSpec.describe StaleRunDetectorJob do
       end
 
       it "still requeues when Temporal workflow cancel fails with not-found" do
-        stale_run = create(:agent_run, status: "pending",
+        stale_run = create(:agent_run, status: "queued",
           started_at: 5.minutes.ago,
           temporal_workflow_id: "queued-1-2-123456",
           stale_skip_count: 1)
-        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
 
         error = Temporalio::Error::RPCError.allocate
         allow(error).to receive(:code).and_return(Temporalio::Error::RPCError::Code::NOT_FOUND)
@@ -425,17 +428,6 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     context "when GitHub circuit is open" do
-      it "skips requeuing stale pending runs" do
-        create(:github_health_state, :circuit_open)
-
-        stale_run = create(:agent_run, status: "pending")
-        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
-
-        described_class.perform_now
-
-        expect(stale_run.reload.status).to eq("pending")
-      end
-
       it "still resolves stale running runs" do
         create(:github_health_state, :circuit_open)
 

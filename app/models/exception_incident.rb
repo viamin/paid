@@ -6,7 +6,7 @@ class ExceptionIncident < ApplicationRecord
 
   SUBSYSTEMS = %w[knowledge agent_runs github_sync container_manager secrets_proxy general].freeze
   SEVERITIES = %w[p1 p2].freeze
-  ACTIONS = %w[logged notified issue_filed].freeze
+  ACTIONS = %w[logged notified filing issue_filed].freeze
   STATUSES = %w[open resolved].freeze
 
   validates :fingerprint, presence: true, uniqueness: { scope: :account_id }

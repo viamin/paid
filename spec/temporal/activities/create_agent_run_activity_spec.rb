@@ -24,7 +24,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       agent_run = AgentRun.find(result[:agent_run_id])
       expect(agent_run.project).to eq(project)
       expect(agent_run.issue).to eq(issue)
-      expect(agent_run.status).to eq("pending")
+      expect(agent_run.status).to eq("queued")
       expect(agent_run.agent_type).to eq("claude_code")
     end
 
@@ -164,7 +164,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       agent_run = AgentRun.find(result[:agent_run_id])
       expect(agent_run.provider).to eq(codex_provider)
       expect(agent_run.agent_type).to eq("codex")
-      expect(agent_run.status).to eq("pending")
+      expect(agent_run.status).to eq("queued")
     end
 
     it "fails fast when a resumed queued run refreshes to a provider now disabled for agent runs" do
@@ -331,7 +331,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         result = activity.execute(project_id: project.id, issue_id: issue.id)
       }.not_to raise_error
 
-      expect(AgentRun.find(result[:agent_run_id]).status).to eq("pending")
+      expect(AgentRun.find(result[:agent_run_id]).status).to eq("queued")
       expect(issue.reload.paid_state).to eq("in_progress")
     end
 
@@ -515,13 +515,13 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     context "with agent_run_id (resuming queued run)" do
-      it "transitions a queued run to pending" do
+      it "refreshes a queued run without changing status" do
         queued_run = create(:agent_run, :queued, project: project, issue: issue)
 
         result = activity.execute(agent_run_id: queued_run.id, project_id: project.id)
 
         expect(result[:agent_run_id]).to eq(queued_run.id)
-        expect(queued_run.reload.status).to eq("pending")
+        expect(queued_run.reload.status).to eq("queued")
       end
 
       it "updates issue paid_state to in_progress" do
@@ -532,35 +532,36 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(issue.reload.paid_state).to eq("in_progress")
       end
 
-      it "does not change status if run is already pending" do
-        pending_run = create(:agent_run, project: project, issue: issue, status: "pending")
+      it "does not change status for claimed queued runs" do
+        claimed_run = create(:agent_run, :queued, project: project, issue: issue, temporal_workflow_id: "wf-123")
 
-        result = activity.execute(agent_run_id: pending_run.id, project_id: project.id)
+        result = activity.execute(agent_run_id: claimed_run.id, project_id: project.id)
 
-        expect(result[:agent_run_id]).to eq(pending_run.id)
-        expect(pending_run.reload.status).to eq("pending")
+        expect(result[:agent_run_id]).to eq(claimed_run.id)
+        expect(claimed_run.reload.status).to eq("queued")
       end
 
-      it "refreshes automatic pending runs to the current primary provider before starting" do
+      it "refreshes automatic claimed queued runs to the current primary provider before starting" do
         claude_provider = project.created_by.providers.find_by!(provider_key: "claude")
         codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
-        pending_run = create(
+        claimed_run = create(
           :agent_run,
+          :queued,
           project: project,
           issue: issue,
-          status: "pending",
+          temporal_workflow_id: "wf-123",
           trigger_type: "automatic",
           provider: claude_provider,
           agent_type: "claude_code"
         )
         project.created_by.settings.update!(default_agent_provider: codex_provider.routing_key)
 
-        activity.execute(agent_run_id: pending_run.id, project_id: project.id)
+        activity.execute(agent_run_id: claimed_run.id, project_id: project.id)
 
-        pending_run.reload
-        expect(pending_run.status).to eq("pending")
-        expect(pending_run.provider).to eq(codex_provider)
-        expect(pending_run.agent_type).to eq("codex")
+        claimed_run.reload
+        expect(claimed_run.status).to eq("queued")
+        expect(claimed_run.provider).to eq(codex_provider)
+        expect(claimed_run.agent_type).to eq("codex")
       end
 
       it "refreshes automatic queued runs to the current primary provider before starting" do
@@ -580,7 +581,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         activity.execute(agent_run_id: queued_run.id, project_id: project.id)
 
         queued_run.reload
-        expect(queued_run.status).to eq("pending")
+        expect(queued_run.status).to eq("queued")
         expect(queued_run.provider).to eq(codex_provider)
         expect(queued_run.agent_type).to eq("codex")
       end
@@ -602,7 +603,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         activity.execute(agent_run_id: queued_run.id, project_id: project.id)
 
         queued_run.reload
-        expect(queued_run.status).to eq("pending")
+        expect(queued_run.status).to eq("queued")
         expect(queued_run.provider).to eq(claude_provider)
         expect(queued_run.agent_type).to eq("claude_code")
       end

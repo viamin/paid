@@ -6,6 +6,12 @@ RSpec.describe AgentRuns::CleanupStale do
   describe ".call" do
     let(:project) { create(:project) }
 
+    before do
+      handle = double(cancel: true) # rubocop:disable RSpec/VerifiedDoubles
+      temporal_client = double(workflow_handle: handle, start_workflow: nil) # rubocop:disable RSpec/VerifiedDoubles
+      allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+    end
+
     it "times out stale running runs for the project" do
       stale_run = create(:agent_run, :running, project: project, started_at: AgentRun.stale_running_cutoff - 1.minute)
 
@@ -36,9 +42,9 @@ RSpec.describe AgentRuns::CleanupStale do
       expect(stale_run.agent_run_logs.pluck(:content)).not_to include("Run marked as timed out by manual stale run cleanup")
     end
 
-    it "requeues stale pending runs for the project" do
-      stale_run = create(:agent_run, status: "pending", project: project)
-      stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+    it "requeues stale claimed runs for the project" do
+      stale_run = create(:agent_run, status: "queued", project: project, temporal_workflow_id: "test-workflow")
+      stale_run.update_column(:updated_at, AgentRun.stale_claimed_cutoff - 1.minute)
 
       described_class.call(project: project)
 
@@ -49,26 +55,26 @@ RSpec.describe AgentRuns::CleanupStale do
       expect(stale_run.temporal_run_id).to be_nil
     end
 
-    it "times out stale pending runs that exhausted the requeue budget" do
-      stale_run = create(:agent_run, status: "pending", project: project, stale_requeue_count: AgentRun::MAX_STALE_REQUEUES)
-      stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+    it "times out stale claimed runs that exhausted the requeue budget" do
+      stale_run = create(:agent_run, status: "queued", project: project, temporal_workflow_id: "test-workflow", stale_requeue_count: AgentRun::MAX_STALE_REQUEUES)
+      stale_run.update_column(:updated_at, AgentRun.stale_claimed_cutoff - 1.minute)
 
       described_class.call(project: project)
 
       expect(stale_run.reload.status).to eq("timeout")
-      expect(stale_run.error_message).to eq("Manual stale run cleanup: exceeded pending requeue limit")
+      expect(stale_run.error_message).to eq("Manual stale run cleanup: exceeded claimed requeue limit")
     end
 
-    it "does not run timeout side effects when a stale pending run was already finished" do
-      stale_run = create(:agent_run, status: "pending", project: project, stale_requeue_count: AgentRun::MAX_STALE_REQUEUES)
+    it "does not run timeout side effects when a stale claimed run was already finished" do
+      stale_run = create(:agent_run, status: "queued", project: project, temporal_workflow_id: "test-workflow", stale_requeue_count: AgentRun::MAX_STALE_REQUEUES)
       stale_run.issue.update!(paid_state: "in_progress")
-      stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+      stale_run.update_column(:updated_at, AgentRun.stale_claimed_cutoff - 1.minute)
 
       allow(stale_run).to receive(:timeout!) do
         stale_run.update!(
           status: "timeout",
           completed_at: Time.current,
-          error_message: "#{AgentRun::STALE_DETECTOR_ERROR_PREFIX}: stuck in 'pending' beyond timeout threshold"
+          error_message: "#{AgentRun::STALE_DETECTOR_ERROR_PREFIX}: stuck in 'queued' beyond timeout threshold"
         )
         false
       end
@@ -78,18 +84,19 @@ RSpec.describe AgentRuns::CleanupStale do
 
       expect(described_class.call(project: project)).to eq(0)
       expect(stale_run.issue.reload.paid_state).to eq("in_progress")
-      expect(stale_run.agent_run_logs.pluck(:content)).not_to include("Stale pending run marked as timed out by manual stale run cleanup")
+      expect(stale_run.agent_run_logs.pluck(:content)).not_to include("Stale claimed run marked as timed out by manual stale run cleanup")
     end
 
     it "leaves fresh or non-stale runs untouched" do
       fresh_run = create(:agent_run, :running, project: project, started_at: AgentRun.stale_running_cutoff + 1.minute)
-      pending_run = create(:agent_run, status: "pending", project: project)
-      pending_run.update_column(:updated_at, AgentRun.stale_pending_cutoff + 1.minute)
+      claimed_run = create(:agent_run, status: "queued", project: project, temporal_workflow_id: "test-workflow")
+      claimed_run.update_column(:updated_at, AgentRun.stale_claimed_cutoff + 1.minute)
 
       described_class.call(project: project)
 
       expect(fresh_run.reload.status).to eq("running")
-      expect(pending_run.reload.status).to eq("pending")
+      expect(claimed_run.reload.status).to eq("queued")
+      expect(claimed_run.reload.temporal_workflow_id).to eq("test-workflow")
     end
 
     it "cleans up run and service containers" do
@@ -112,13 +119,13 @@ RSpec.describe AgentRuns::CleanupStale do
       expect(provisioner).to have_received(:cleanup).with(stale_run, stale_requeue_count: 0)
     end
 
-    it "passes captured service environment to service cleanup when requeuing pending runs" do
+    it "passes captured service environment to service cleanup when requeuing claimed runs" do
       service_container = create(:service_container)
       old_environment = { "DATABASE_URL" => "postgres://agent:agent@pg:5432/agent_run_old_attempt_0" }
-      stale_run = create(:agent_run, status: "pending", project: project,
+      stale_run = create(:agent_run, status: "queued", project: project, temporal_workflow_id: "test-workflow",
         service_container_ids: [ service_container.id ],
         service_environment: old_environment)
-      stale_run.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+      stale_run.update_column(:updated_at, AgentRun.stale_claimed_cutoff - 1.minute)
       provisioner = instance_double(Containers::ServiceProvisioner)
 
       allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
@@ -182,8 +189,8 @@ RSpec.describe AgentRuns::CleanupStale do
 
     it "returns the number of cleaned runs" do
       create(:agent_run, :running, project: project, started_at: AgentRun.stale_running_cutoff - 1.minute)
-      stale_pending = create(:agent_run, status: "pending", project: project)
-      stale_pending.update_column(:updated_at, AgentRun.stale_pending_cutoff - 1.minute)
+      stale_claimed = create(:agent_run, status: "queued", project: project, temporal_workflow_id: "test-workflow")
+      stale_claimed.update_column(:updated_at, AgentRun.stale_claimed_cutoff - 1.minute)
 
       expect(described_class.call(project: project)).to eq(2)
     end

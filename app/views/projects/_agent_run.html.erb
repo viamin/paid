@@ -23,7 +23,7 @@
       <%= link_to context[:label], context[:url], target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
     <% when :text %>
       <span class="<%= context[:classes] %>"><%= context[:label] %></span>
-    <% when :pending %>
+    <% when :in_progress %>
       <span class="italic text-gray-500">Creating issue&hellip;</span>
     <% else %>
       <span class="text-gray-400">-</span>

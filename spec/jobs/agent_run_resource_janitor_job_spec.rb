@@ -110,6 +110,20 @@ RSpec.describe AgentRunResourceJanitorJob do
       end
     end
 
+    context "when agent run is claimed but still queued" do
+      let(:agent_run) { create(:agent_run, status: "queued", temporal_workflow_id: "workflow-123") }
+
+      it "does not attempt any cleanup" do
+        allow(Docker::Container).to receive(:get)
+        allow(Docker::Volume).to receive(:get)
+
+        described_class.new.perform(agent_run.id)
+
+        expect(Docker::Container).not_to have_received(:get)
+        expect(Docker::Volume).not_to have_received(:get)
+      end
+    end
+
     context "when agent run does not exist" do
       it "returns without error" do
         expect { described_class.new.perform(-1) }.not_to raise_error

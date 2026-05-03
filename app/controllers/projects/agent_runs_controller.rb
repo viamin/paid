@@ -181,7 +181,7 @@ module Projects
 
       runs = @project.agent_runs
         .where(source_pull_request_number: pr.github_number, trigger_type: "automatic")
-        .where(status: "queued")
+        .where(status: "queued", temporal_workflow_id: nil)
 
       affected = runs.update_all(trigger_type: "manual", updated_at: Time.current)
 

@@ -64,6 +64,13 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("All Goals")
       end
 
+      it "associates the sort label with the sort select" do
+        get agent_runs_path
+
+        expect(response.body).to match(/<label[^>]*for="sort"[^>]*>Sort<\/label>/)
+        expect(response.body).to match(/<select[^>]*name="sort"[^>]*id="sort"[^>]*>/)
+      end
+
       it "sorts agent runs ascending via Ransack sort params" do
         other_project = create(:project, account: account, github_token: github_token, created_by: user)
         create(:agent_run, project: project, agent_type: "claude_code", status: "completed", created_at: 2.days.ago)

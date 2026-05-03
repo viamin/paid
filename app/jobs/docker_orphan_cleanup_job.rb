@@ -54,7 +54,7 @@ class DockerOrphanCleanupJob < ApplicationJob
 
     agent_run_ids = containers.filter_map { |c| c.info.dig("Labels", "paid.agent_run_id") }
     numeric_ids = agent_run_ids.select { |id| id.match?(/\A\d+\z/) }
-    active_ids = AgentRun.active.where(id: numeric_ids).pluck(:id).map(&:to_s).to_set
+    active_ids = AgentRun.capacity_inflight.where(id: numeric_ids).pluck(:id).map(&:to_s).to_set
     retained_ids = AgentRun.where(id: numeric_ids)
       .where("container_retained_until > ?", Time.current)
       .pluck(:id).map(&:to_s).to_set
@@ -87,7 +87,7 @@ class DockerOrphanCleanupJob < ApplicationJob
     removed
   end
 
-  # Phase 3: Remove service containers with zero active agent runs.
+  # Phase 3: Remove service containers with zero in-flight capacity runs.
   def cleanup_service_containers
     containers = list_containers_by_label("paid.service_container=true")
     return 0 if containers.empty?
@@ -97,7 +97,7 @@ class DockerOrphanCleanupJob < ApplicationJob
       sc_id = container.info.dig("Labels", "paid.service_container_id")
       service_container = ServiceContainer.find_by(id: sc_id) if sc_id.present?
 
-      if service_container.nil? || service_container.active_agent_run_count == 0
+      if service_container.nil? || service_container.capacity_inflight_agent_run_count == 0
         if stop_and_remove_container(container, "service", sc_id)
           begin
             service_container&.update!(status: "stopped", docker_container_id: nil)
@@ -125,7 +125,7 @@ class DockerOrphanCleanupJob < ApplicationJob
     numeric_agent_run_ids = volumes
                               .map { |v| v.id.delete_prefix(VOLUME_PREFIX) }
                               .select { |id| id.match?(/\A\d+\z/) }
-    active_ids = AgentRun.active.where(id: numeric_agent_run_ids).pluck(:id).map(&:to_s).to_set
+    active_ids = AgentRun.capacity_inflight.where(id: numeric_agent_run_ids).pluck(:id).map(&:to_s).to_set
     retained_ids = AgentRun.where(id: numeric_agent_run_ids)
       .where("container_retained_until > ?", Time.current)
       .pluck(:id).map(&:to_s).to_set

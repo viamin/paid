@@ -52,6 +52,8 @@ module ExceptionHandler
       notify_if_needed(incident, classification)
 
       Result.new(success: true, incident: incident, action: incident.action_taken)
+    rescue IssueFiler::RetryableFilingInProgress
+      raise
     rescue => e
       Rails.logger.error(
         message: "exception_handler.handle_failed",

@@ -96,5 +96,19 @@ RSpec.describe HandleExceptionJob do
         )
       }.not_to raise_error
     end
+
+    it "re-enqueues when issue filing is already in progress" do
+      allow(ExceptionHandler::Handle).to receive(:call)
+        .and_raise(ExceptionHandler::IssueFiler::RetryableFilingInProgress, "already filing")
+
+      expect {
+        described_class.perform_now(
+          account_id: account.id,
+          exception_class: "RuntimeError",
+          exception_message: "test",
+          exception_backtrace: []
+        )
+      }.to have_enqueued_job(described_class)
+    end
   end
 end

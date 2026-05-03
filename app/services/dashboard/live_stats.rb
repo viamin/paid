@@ -21,7 +21,7 @@ module Dashboard
       # for the dashboard broadcast cadence (status-change only).
       {
         active_runs: base.where(status: AgentRun::ACTIVE_STATUSES).count,
-        queued_runs: base.where(status: "queued").count,
+        queued_runs: base.merge(AgentRun.waiting).count,
         completed_today: base.where(status: "completed").where(completed_at: today..).count,
         failed_today: base.where(status: AgentRun::FAILURE_STATUSES).where(completed_at: today..).count,
         active_containers: base.where(status: "running").where.not(container_id: nil).distinct.count(:container_id),
