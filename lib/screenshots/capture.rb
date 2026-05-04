@@ -298,6 +298,13 @@ module Screenshots
           record.content_hash = Digest::SHA256.hexdigest("screenshots-seed-artifact-chunk")
         end
 
+        WorkflowState.find_or_create_by!(temporal_workflow_id: "github-poll-#{project.id}") do |record|
+          record.project = project
+          record.workflow_type = "GitHubPollWorkflow"
+          record.status = "running"
+          record.started_at = 1.hour.ago
+        end
+
         {
           user: user,
           project: project,
