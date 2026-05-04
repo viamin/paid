@@ -213,6 +213,7 @@ module Screenshots
           review_url: nil, review_posted_at: nil,
           result_commit_sha: nil, base_commit_sha: nil,
           worktree_path: nil, branch_name: nil,
+          provider_id: nil,
           providers_attempted: [], final_provider: nil, provider_switches: 0,
           iterations: 0, cost_cents: 0,
           tokens_input: 0, tokens_output: 0,

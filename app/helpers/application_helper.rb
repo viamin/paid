@@ -265,10 +265,15 @@ module ApplicationHelper
     context = agent_run_context(run)
     inner = case context[:type]
     when :link
+      tooltip_data = context[:tooltip].present? ? { action: "focusin->tooltip#show" } : {}
       link_to(context[:label], context[:url], target: "_blank", rel: "noopener noreferrer",
-        class: "text-indigo-600 hover:text-indigo-900", title: context[:tooltip])
+        class: "text-indigo-600 hover:text-indigo-900", title: context[:tooltip],
+        data: tooltip_data.presence)
     when :text
-      tag.span(context[:label], class: context[:classes], title: context[:tooltip])
+      tooltip_data = context[:tooltip].present? ? { action: "focusin->tooltip#show" } : {}
+      tag.span(context[:label], class: context[:classes], title: context[:tooltip],
+        tabindex: (context[:tooltip].present? ? "0" : nil),
+        data: tooltip_data.presence)
     when :in_progress
       tag.span("Creating issue\u2026", class: "italic text-gray-500")
     else
