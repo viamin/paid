@@ -15,8 +15,17 @@ class ChatSessionsController < ApplicationController
   def index
     respond_to do |format|
       format.html do
-        load_sidebar_data
-        @chat_messages = []
+        if policy(ChatSession.new(account: current_account)).create?
+          session = ChatSessions::Create.call(
+            account: current_account,
+            user: current_user
+          )
+          skip_policy_scope
+          redirect_to chat_session_path(session)
+        else
+          load_sidebar_data
+          @chat_messages = []
+        end
       end
 
       format.json do

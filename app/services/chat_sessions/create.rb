@@ -17,11 +17,11 @@ module ChatSessions
     attr_reader :account, :user, :mode, :provider_id, :model,
       :project_id, :system_prompt, :title
 
-    def initialize(account:, user:, mode: "api", provider_id: nil, model: nil,
+    def initialize(account:, user:, mode: nil, provider_id: nil, model: nil,
       project_id: nil, system_prompt: nil, title: nil)
       @account = account
       @user = user
-      @mode = mode
+      @mode = mode.presence || "api"
       @provider_id = provider_id
       @model = model
       @project_id = project_id
@@ -82,13 +82,19 @@ module ChatSessions
     end
 
     def resolved_provider
-      return nil unless provider_id
-
-      @resolved_provider ||= Provider.find(provider_id).tap do |provider|
-        unless provider.user&.account_id == account.id
-          raise ArgumentError, "provider must belong to the same account"
+      @resolved_provider ||= if provider_id.present?
+        Provider.find(provider_id).tap do |provider|
+          unless provider.user&.account_id == account.id
+            raise ArgumentError, "provider must belong to the same account"
+          end
         end
+      else
+        default_provider_for_user
       end
+    end
+
+    def default_provider_for_user
+      Provider.first_enabled_for_owner(user)
     end
   end
 end

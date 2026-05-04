@@ -67,7 +67,13 @@ module ChatSessions
       sorted.map { |s| s[:content] }.join("\n\n")
     end
 
+    CHAT_SYSTEM_PROMPT_SLUG = "chat.system_prompt"
+
     def base_identity
+      prompt = Prompt.find_by(slug: CHAT_SYSTEM_PROMPT_SLUG, project_id: nil)
+      template = prompt&.current_version&.template
+      return template.strip if template.present?
+
       <<~PROMPT.strip
         You are an AI assistant helping manage software projects via Paid, a platform for AI-driven development.
         You can help with:

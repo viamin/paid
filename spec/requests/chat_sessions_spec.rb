@@ -53,13 +53,12 @@ RSpec.describe "ChatSessions" do
         expect(body["pagination"]).to include("page" => 1, "pages" => 2, "count" => 26)
       end
 
-      it "renders the chat index page for html requests" do
-        create(:chat_session, account: account, created_by: user, title: "Planning Thread")
+      it "auto-creates a new session and redirects for html requests" do
+        expect {
+          get chat_sessions_path
+        }.to change(ChatSession, :count).by(1)
 
-        get chat_sessions_path
-        expect(response).to have_http_status(:ok)
-        expect(response.body).to include("Interactive Chat")
-        expect(response.body).to include("Planning Thread")
+        expect(response).to redirect_to(chat_session_path(ChatSession.last))
       end
 
       it "defaults wildcard accept requests to the existing json API" do
