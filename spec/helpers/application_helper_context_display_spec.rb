@@ -157,6 +157,20 @@ RSpec.describe ApplicationHelper do
         expect(result).to include("text-gray-700")
       end
 
+      it "truncates long prompts to 60 characters in the displayed label" do
+        long_prompt = "Refactor the entire authentication subsystem to use OAuth2 with PKCE flow instead of session cookies"
+        run = stub_run("create_pr_goal?": true, custom_prompt: long_prompt)
+        result = helper.agent_run_context_display(run)
+
+        truncated = long_prompt.truncate(60)
+        # The truncated version appears as visible text
+        expect(result).to include(truncated)
+        # The full prompt is NOT shown as the visible label (it ends with "...")
+        expect(truncated).to end_with("...")
+        # A longer version appears in the tooltip for hover context
+        expect(result).to include("title=")
+      end
+
       it "shows placeholder when no context" do
         run = stub_run("create_pr_goal?": true)
         result = helper.agent_run_context_display(run)
@@ -182,6 +196,20 @@ RSpec.describe ApplicationHelper do
 
         expect(result).to include("Add a login timeout feature")
         expect(result).to include("text-gray-700")
+      end
+
+      it "truncates long prompts to 60 characters in the displayed label" do
+        long_prompt = "Create a comprehensive issue documenting all the edge cases found during the security audit review"
+        run = stub_run("create_issue_goal?": true, custom_prompt: long_prompt)
+        result = helper.agent_run_context_display(run)
+
+        truncated = long_prompt.truncate(60)
+        # The truncated version appears as visible text
+        expect(result).to include(truncated)
+        # The full prompt is NOT shown as the visible label (it ends with "...")
+        expect(truncated).to end_with("...")
+        # A longer version appears in the tooltip for hover context
+        expect(result).to include("title=")
       end
 
       it "shows 'Creating issue...' when pending without custom prompt" do

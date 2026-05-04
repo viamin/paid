@@ -196,10 +196,13 @@ module Screenshots
         end
         agent_run.assign_attributes(
           agent_type: "codex", goal: "create_pr", status: "queued",
+          issue_id: nil, source_pull_request_number: nil,
           temporal_workflow_id: nil, temporal_run_id: nil,
           started_at: nil, completed_at: nil, duration_seconds: nil,
           container_id: nil, service_container_ids: [],
           error_message: nil, pull_request_url: nil, pull_request_number: nil,
+          created_issue_url: nil, created_issue_number: nil,
+          review_url: nil, review_posted_at: nil,
           result_commit_sha: nil, iterations: 0, cost_cents: 0,
           tokens_input: 0, tokens_output: 0
         )
