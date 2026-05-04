@@ -20,7 +20,7 @@
     "@hotwired/turbo-rails": "8.0.23",
     "@tailwindcss/cli": "4.2.4",
     "highlight.js": "11.11.1",
-    "marked": "16.4.1",
+    "marked": "18.0.3",
     "sortablejs": "1.15.7",
     "tailwindcss": "4.2.4"
   },
