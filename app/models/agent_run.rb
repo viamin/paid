@@ -1513,11 +1513,43 @@ class AgentRun < ApplicationRecord
     return raw_stdout if raw_stdout.blank?
 
     response = parse_structured_stdout(raw_stdout)
-    return raw_stdout unless response
+    if response
+      return "Agent encountered an error: #{response.error}" if response.error.present?
 
-    return "Agent encountered an error: #{response.error}" if response.error.present?
+      return response.output.presence || raw_stdout
+    end
 
-    response.output.presence || raw_stdout
+    extract_text_from_multiline_json(raw_stdout) || raw_stdout
+  end
+
+  def extract_text_from_multiline_json(raw_stdout)
+    results = []
+    error_message = nil
+
+    raw_stdout.each_line do |line|
+      line = line.strip
+      next if line.empty?
+
+      begin
+        parsed = JSON.parse(line)
+      rescue JSON::ParserError
+        next
+      end
+
+      next unless parsed.is_a?(Hash)
+
+      if parsed["is_error"]
+        error_message ||= parsed["result"] || "Unknown error"
+      elsif parsed.key?("result")
+        text = parsed["result"].to_s.strip
+        results << text if text.present?
+      end
+    end
+
+    return "Agent encountered an error: #{error_message}" if error_message.present? && results.empty?
+    return nil if results.empty?
+
+    results.join("\n\n").presence
   end
 
   def parse_structured_stdout(raw_stdout)
