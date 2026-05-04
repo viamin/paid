@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "securerandom"
 
 RSpec.describe Providers::HarnessExecutionPlan do
   describe ".for_provider_key" do
@@ -30,7 +31,11 @@ RSpec.describe Providers::HarnessExecutionPlan do
 
   describe ".call" do
     it "builds the OpenCode execution contract through agent-harness" do
-      user = create(:user)
+      user = create(
+        :user,
+        email: "harness-execution-plan-#{SecureRandom.hex(6)}@example.com",
+        account: create(:account, slug: "harness-execution-plan-#{SecureRandom.hex(6)}")
+      )
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
       provider = create(
         :provider,
@@ -45,13 +50,17 @@ RSpec.describe Providers::HarnessExecutionPlan do
 
       expect(plan.command).to eq(%w[opencode run ping])
       expect(plan.env).to include(
-        "OPENAI_API_KEY" => "sk-openrouter-secret",
+        "OPENROUTER_API_KEY" => "sk-openrouter-secret",
         "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
       )
     end
 
     it "writes opencode.json with provider as record, not string" do
-      user = create(:user)
+      user = create(
+        :user,
+        email: "harness-execution-plan-#{SecureRandom.hex(6)}@example.com",
+        account: create(:account, slug: "harness-execution-plan-#{SecureRandom.hex(6)}")
+      )
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
       provider = create(
         :provider,
@@ -67,7 +76,7 @@ RSpec.describe Providers::HarnessExecutionPlan do
       expect(plan.preparation.file_writes.first.path).to eq("~/.config/opencode/opencode.json")
       parsed = JSON.parse(plan.preparation.file_writes.first.content)
       expect(parsed["provider"]).to eq({ "openrouter" => {} })
-      expect(parsed["model"]).to eq("moonshotai/kimi-k2-0905")
+      expect(parsed["model"]).to eq("openrouter/moonshotai/kimi-k2-0905")
       expect(parsed).not_to have_key("baseURL")
     end
 

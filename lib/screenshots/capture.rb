@@ -9,8 +9,6 @@ rescue LoadError => e
     "Run with RAILS_ENV=test or move them to a shared group."
 end
 require "fileutils"
-require "json"
-require "net/http"
 require_relative "../../app/services/screenshots/capture_targets"
 
 module Screenshots
@@ -19,8 +17,10 @@ module Screenshots
   # Intended to run in CI against a booted Rails server with seeded data so
   # reviewers can see actual rendered pages rather than mocks.
   #
-  # The Chrome process is provided by a Chrome service container in CI or by
-  # a locally installed Chromium on the developer machine.
+  # Chrome is launched locally by Ferrum (via Cuprite). In CI this uses the
+  # runner's pre-installed Chrome; locally it finds Chromium via CHROMIUM_PATH
+  # or find_chrome_binary. A remote Chrome can be used by setting CHROME_URL
+  # and CAPYBARA_APP_HOST.
   #
   # @example
   #   paths = Screenshots::Capture.call(
@@ -100,34 +100,11 @@ module Screenshots
           }
         }
 
-        if chrome_url
-          # Ferrum normally discovers the WebSocket URL via /json/version, but
-          # the webSocketDebuggerUrl it returns may contain an internal container
-          # hostname unreachable from the host.  Fetch it ourselves and rewrite
-          # the host/port to match CHROME_URL so the connection succeeds.
-          options[:ws_url] = rewrite_ws_url(chrome_url)
-        else
-          options[:browser_path] = browser_path if browser_path
-        end
+        options[:browser_path] = browser_path if browser_path
+        options[:url] = chrome_url if chrome_url
 
         Capybara::Cuprite::Driver.new(app, **options)
       end
-    end
-
-    # Fetch /json/version from the Chrome service and return the
-    # webSocketDebuggerUrl with host/port rewritten to match +chrome_url+.
-    # Falls back to a simple scheme swap when /json/version is unavailable.
-    def rewrite_ws_url(chrome_url)
-      chrome_uri = URI.parse(chrome_url)
-      version_uri = URI.join(chrome_url, "/json/version")
-      response = JSON.parse(Net::HTTP.get(version_uri))
-      debugger_url = URI.parse(response.fetch("webSocketDebuggerUrl"))
-      debugger_url.host = chrome_uri.host
-      debugger_url.port = chrome_uri.port
-      debugger_url.to_s
-    rescue StandardError
-      # If /json/version is unavailable, fall back to the root WebSocket path.
-      chrome_url.sub(%r{\Ahttp(s?)://}, 'ws\1://').chomp("/")
     end
 
     def find_chrome_binary
@@ -213,8 +190,7 @@ module Screenshots
         agent_run = project.agent_runs.where(custom_prompt: "Capture screenshot route coverage").first_or_create!(
           agent_type: "codex",
           goal: "create_pr",
-          status: "queued",
-          trigger_type: "manual"
+          status: "queued"
         )
 
         prompt = Prompt.find_or_create_by!(account: account, slug: "screenshots.prompt") do |record|
@@ -274,7 +250,8 @@ module Screenshots
           record.validation_status = "validated"
         end
 
-        style_guide = StyleGuide.find_or_create_by!(account: account, project: project, name: "Screenshot Style Guide") do |record|
+        style_guide = StyleGuide.find_or_create_by!(project: project, name: "Screenshot Style Guide") do |record|
+          record.account = account
           record.raw_content = "Prefer small methods and explicit tests."
           record.language = "ruby"
           record.active = true
@@ -321,6 +298,29 @@ module Screenshots
           record.status = "active"
           record.content = "Screenshot artifact chunk seed"
           record.content_hash = Digest::SHA256.hexdigest("screenshots-seed-artifact-chunk")
+        end
+
+        KnowledgeRecommendation.find_or_create_by!(project: project, description: "Add database_schema collector") do |record|
+          record.recommendation_type = "add_collector"
+          record.collector_type = "database_schema"
+          record.priority = "high"
+          record.status = "pending"
+          record.evidence = { reason: "No schema artifacts found" }
+        end
+
+        KnowledgeRecommendation.find_or_create_by!(project: project, description: "Remove stale api_docs collector") do |record|
+          record.recommendation_type = "remove_collector"
+          record.collector_type = "api_docs"
+          record.priority = "medium"
+          record.status = "pending"
+          record.evidence = { reason: "Collector has produced no artifacts in 30 days" }
+        end
+
+        WorkflowState.find_or_create_by!(temporal_workflow_id: "github-poll-#{project.id}") do |record|
+          record.project = project
+          record.workflow_type = "GitHubPollWorkflow"
+          record.status = "running"
+          record.started_at = 1.hour.ago
         end
 
         {

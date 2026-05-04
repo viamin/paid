@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "securerandom"
 
 RSpec.describe Providers::TestAgent do
   # Clear provider API keys that control harness-vs-container path selection
@@ -15,8 +16,8 @@ RSpec.describe Providers::TestAgent do
     original_google ? ENV["GOOGLE_API_KEY"] = original_google : ENV.delete("GOOGLE_API_KEY")
   end
 
-  let(:account) { create(:account) }
-  let(:user) { create(:user, account: account) }
+  let(:account) { create(:account, slug: "providers-test-agent-#{SecureRandom.hex(6)}") }
+  let(:user) { create(:user, account: account, email: "providers-test-agent-#{SecureRandom.hex(6)}@example.com") }
   let(:github_token) { create(:github_token, account: account, created_by: user) }
   let!(:project) { create(:project, account: account, github_token: github_token, created_by: user) }
   let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude") }
@@ -49,6 +50,31 @@ RSpec.describe Providers::TestAgent do
     allow(AgentHarness).to receive(:check_provider).and_return(harness_result)
   end
 
+  def decoded_kilocode_config(encoded_config)
+    JSON.parse(Base64.strict_decode64(encoded_config))
+  end
+
+  def expected_anthropic_kilocode_config
+    {
+      "provider" => {
+        "anthropic" => {
+          "options" => {
+            "apiKey" => "{env:ANTHROPIC_API_KEY}",
+            "baseURL" => "https://api.anthropic.com"
+          },
+          "models" => {
+            "claude-sonnet-4-20250514" => {
+              "name" => "claude-sonnet-4-20250514",
+              "id" => "claude-sonnet-4-20250514",
+              "tool_call" => true
+            }
+          }
+        }
+      },
+      "model" => "anthropic/claude-sonnet-4-20250514"
+    }
+  end
+
   describe ".call" do
     context "when claude smoke test succeeds via container" do
       let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
@@ -76,8 +102,28 @@ RSpec.describe Providers::TestAgent do
           :claude,
           timeout: 60,
           executor: an_instance_of(Containers::HarnessExecutor),
-          provider_runtime: nil
+          provider_runtime: an_instance_of(AgentHarness::ProviderRuntime)
         )
+      end
+    end
+
+    context "when a provider returns the smoke-test success text with trailing punctuation" do
+      let(:provider_record) { user.providers.find_or_create_by!(provider_key: "kilocode").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        stub_container_smoke_test(
+          name: :kilocode, status: "error", message: "OK.", output: "OK.",
+          latency_ms: 10, error_category: nil, check: :smoke_test
+        )
+      end
+
+      it "treats the result as a successful smoke test" do
+        result = described_class.call(provider: provider)
+
+        expect(result).to be_success
+        expect(result.message).to eq("Agent is healthy")
       end
     end
 
@@ -330,7 +376,7 @@ RSpec.describe Providers::TestAgent do
           :codex,
           timeout: 60,
           executor: an_instance_of(Containers::HarnessExecutor),
-          provider_runtime: nil
+          provider_runtime: an_instance_of(AgentHarness::ProviderRuntime)
         )
       end
     end
@@ -629,11 +675,7 @@ RSpec.describe Providers::TestAgent do
         described_class.call(provider: provider)
 
         expect(captured_env).to include("KILOCODE_CONFIG_B64")
-        config = JSON.parse(Base64.strict_decode64(captured_env["KILOCODE_CONFIG_B64"]))
-        expect(config).to eq({
-          "provider" => { "anthropic" => {} },
-          "model" => "anthropic/claude-sonnet-4-20250514"
-        })
+        expect(decoded_kilocode_config(captured_env["KILOCODE_CONFIG_B64"])).to eq(expected_anthropic_kilocode_config)
       end
     end
 
@@ -879,7 +921,7 @@ RSpec.describe Providers::TestAgent do
       it "prefers the harness-classified error category over pattern matching" do
         stub_container_smoke_test(
           name: :gemini, status: "error",
-          message: "Process exited abnormally",
+          message: "Rate limit exceeded. Retry after 60",
           latency_ms: 10, error_category: :rate_limited, check: :smoke_test
         )
 
@@ -887,6 +929,31 @@ RSpec.describe Providers::TestAgent do
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
+      end
+    end
+
+    context "when the harness marks a noisy provider failure as rate limited" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        stub_container_smoke_test(
+          name: :kilocode,
+          status: "error",
+          message: "Performing one time database migration, may take a few minutes...\nModel not found: openai/glm-5.1.",
+          latency_ms: 10,
+          error_category: :rate_limited,
+          check: :smoke_test
+        )
+      end
+
+      it "uses the extracted provider failure instead of the noisy rate-limit classification" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:unexpected)
+        expect(result.message).to eq("Model not found: openai/glm-5.1.")
       end
     end
 
@@ -974,6 +1041,9 @@ RSpec.describe Providers::TestAgent do
   end
 
   describe "#rate_limit_reset_at" do
+    let(:account) { create(:account, slug: "test-agent-rate-limit-reset-account") }
+    let(:user) { create(:user, account: account, email: "test-agent-rate-limit-reset@example.com") }
+
     before do
       allow(ProviderSupport).to receive(:harness_provider_key_for).with("claude").and_return("claude")
     end

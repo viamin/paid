@@ -81,22 +81,6 @@ jobs:
           --health-timeout=5s
           --health-retries=5
 
-      # Chrome service for screenshot rendering. Uses the browserless image
-      # which exposes a CDP-compatible endpoint on port 3000. Port mapping
-      # aligns with CHROME_URL below so Ferrum/Cuprite can connect via WebSocket.
-      # (Updated from browserless/chromium:2.18.0 + host port 9222 to
-      # ghcr.io/browserless/chromium:v2.48.2 + host port 3000 to fix
-      # connection failures that prevented the capture job from completing.)
-      chrome:
-        image: ghcr.io/browserless/chromium:v2.48.2
-        ports:
-          - 3000:3000
-        options: >-
-          --health-cmd="curl -sf http://localhost:3000/json/version || exit 1"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-
     env:
       BUNDLE_FROZEN: "true"
       RAILS_ENV: test
@@ -104,7 +88,6 @@ jobs:
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
       SCREENSHOT_OUTPUT_DIR: tmp/screenshots
-      CHROME_URL: http://localhost:3000
 
     steps:
       - name: Checkout code
@@ -131,14 +114,22 @@ jobs:
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
 
-      - name: Verify Chrome service
-        # The workflow requires the dedicated Chrome service container so the
-        # capture environment matches the CI contract for screenshot rendering.
+      - name: Verify Chrome binary
         run: |
-          if curl -sf http://localhost:3000/json/version > /dev/null 2>&1; then
-            echo "Chrome service container is available via CHROME_URL"
+          chrome_path="${CHROMIUM_PATH:-}"
+          if [ -z "$chrome_path" ]; then
+            for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+              if [ -x "$candidate" ]; then
+                chrome_path="$candidate"
+                break
+              fi
+            done
+          fi
+          if [ -n "$chrome_path" ] && [ -x "$chrome_path" ]; then
+            echo "Chrome found at ${chrome_path}"
+            "$chrome_path" --version
           else
-            echo "::error::Chrome service container is not reachable at http://localhost:3000/json/version"
+            echo "::error::No Chrome/Chromium binary found"
             exit 1
           fi
 
@@ -147,18 +138,6 @@ jobs:
           UI_FILES_B64: ${{ needs.detect.outputs.ui_files }}
         run: |
           printf 'CHANGED_FILES<<EOF\n%s\nEOF\n' "$(printf '%s' "$UI_FILES_B64" | base64 -d)" >> "$GITHUB_ENV"
-
-      - name: Configure remote Capybara host
-        run: |
-          # Service containers share the runner's Docker network; use the
-          # runner's primary IP (not the upstream gateway) so Chrome can
-          # connect back to Puma.
-          host_ip="$(hostname -I | awk '{print $1}')"
-          if [ -z "$host_ip" ]; then
-            echo "::error::Could not determine the runner host IP for the Chrome service container."
-            exit 1
-          fi
-          echo "CAPYBARA_APP_HOST=$host_ip" >> "$GITHUB_ENV"
 
       - name: Build assets
         run: yarn build && yarn build:css

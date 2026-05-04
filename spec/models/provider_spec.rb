@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "securerandom"
 
 RSpec.describe Provider do
   describe "associations" do
@@ -199,8 +200,9 @@ RSpec.describe Provider do
     end
 
     it "prevents duplicate subscription entries for the same user and provider_key" do
-      create(:provider, user: provider.user, provider_key: "cursor", auth_type: "subscription")
-      duplicate = build(:provider, user: provider.user, provider_key: "cursor", auth_type: "subscription")
+      user = create(:user)
+      create(:provider, user: user, provider_key: "cursor", auth_type: "subscription")
+      duplicate = build(:provider, user: user, provider_key: "cursor", auth_type: "subscription")
 
       expect(duplicate).not_to be_valid
       expect(duplicate.errors[:provider_key]).to include("already has a subscription entry")
@@ -473,7 +475,8 @@ RSpec.describe Provider do
   end
 
   describe "KiloCode config generation" do
-    let(:user) { create(:user) }
+    let(:account) { create(:account, slug: "provider-kilocode-#{SecureRandom.hex(6)}") }
+    let(:user) { create(:user, account: account, email: "provider-kilocode-#{SecureRandom.hex(6)}@example.com") }
     let(:api_key) { create(:provider_api_key, user: user, api_service_type: "anthropic") }
     let(:provider) do
       create(
@@ -485,11 +488,35 @@ RSpec.describe Provider do
         config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-20250514" } }
       )
     end
+    let(:expected_kilocode_model_entry) do
+      {
+        "name" => "claude-sonnet-4-20250514",
+        "id" => "claude-sonnet-4-20250514",
+        "tool_call" => true
+      }
+    end
+    let(:expected_zai_model_entry) do
+      {
+        "name" => "glm-5.1",
+        "id" => "glm-5.1",
+        "tool_call" => true
+      }
+    end
 
     it "generates provider as a record with prefixed model" do
       config = JSON.parse(provider.kilocode_config_json)
 
-      expect(config["provider"]).to eq({ "anthropic" => {} })
+      expect(config["provider"]).to eq({
+        "anthropic" => {
+          "options" => {
+            "apiKey" => "{env:ANTHROPIC_API_KEY}",
+            "baseURL" => "https://api.anthropic.com"
+          },
+          "models" => {
+            "claude-sonnet-4-20250514" => expected_kilocode_model_entry
+          }
+        }
+      })
       expect(config["model"]).to eq("anthropic/claude-sonnet-4-20250514")
     end
 
@@ -501,7 +528,7 @@ RSpec.describe Provider do
       expect(config["model"]).to eq("anthropic/claude-opus-4")
     end
 
-    it "uses openai as default provider key for OpenAI-compatible backends" do
+    it "uses the native zai-coding-plan provider id for z.ai coding plan backends" do
       zai_key = create(:provider_api_key, user: user, api_service_type: "zai_coding")
       provider.update!(
         provider_api_key: zai_key,
@@ -510,8 +537,18 @@ RSpec.describe Provider do
 
       config = JSON.parse(provider.kilocode_config_json)
 
-      expect(config["provider"]).to eq({ "openai" => {} })
-      expect(config["model"]).to eq("openai/glm-5.1")
+      expect(config["provider"]).to eq({
+        "zai-coding-plan" => {
+          "options" => {
+            "apiKey" => "{env:ZAI_CODING_API_KEY}",
+            "baseURL" => "https://api.z.ai/api/coding/paas/v4"
+          },
+          "models" => {
+            "glm-5.1" => expected_zai_model_entry
+          }
+        }
+      })
+      expect(config["model"]).to eq("zai-coding-plan/glm-5.1")
     end
   end
 
@@ -532,11 +569,11 @@ RSpec.describe Provider do
     it "builds provider runtime inputs instead of a local bootstrap wrapper" do
       runtime = provider.agent_harness_provider_runtime
 
-      expect(runtime.model).to eq("moonshotai/kimi-k2-0905")
+      expect(runtime.model).to eq("openrouter/moonshotai/kimi-k2-0905")
       expect(runtime.api_provider).to be_nil
       expect(runtime.base_url).to be_nil
       expect(runtime.env).to include(
-        "OPENAI_API_KEY" => "sk-openrouter-secret",
+        "OPENROUTER_API_KEY" => "sk-openrouter-secret",
         "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
       )
       expect(runtime.unset_env).to include("OPENAI_HEADER_X_AGENT_RUN_ID", "OPENAI_HEADER_X_PROXY_TOKEN")

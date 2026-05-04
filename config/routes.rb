@@ -162,6 +162,9 @@ Rails.application.routes.draw do
     end
     post :ensure_labels, on: :member
 
+    resources :knowledge_recommendations, only: [ :index, :update ],
+      controller: "projects/knowledge_recommendations"
+
     # Project-scoped knowledge browsing and search
     namespace :knowledge do
       resources :browse, only: [ :index, :show ]
@@ -174,7 +177,7 @@ Rails.application.routes.draw do
   namespace :api do
     get "metrics", to: "metrics#show"
     match "proxy/anthropic/*path", to: "secrets_proxy#anthropic", via: :post, format: false
-    match "proxy/openai/*path", to: "secrets_proxy#openai", via: :post, format: false
+    match "proxy/openai/*path", to: "secrets_proxy#openai", via: [ :get, :post ], format: false
     match "proxy/google/*path", to: "secrets_proxy#google", via: :post, format: false
     match "proxy/github/*path", to: "github_proxy#proxy", via: [ :get, :post, :patch ], format: false
     get "proxy/knowledge/search", to: "proxy/knowledge_search#search"
