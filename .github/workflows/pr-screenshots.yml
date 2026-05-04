@@ -81,6 +81,11 @@ jobs:
           --health-timeout=5s
           --health-retries=5
 
+      # Chrome service for screenshot rendering. Uses the browserless image
+      # which exposes a CDP-compatible endpoint on port 3000. Port mapping
+      # aligns with CHROME_URL below so Ferrum/Cuprite can connect via WebSocket.
+      # (Changed from selenium image + port 9222 to fix connection failures that
+      # prevented the capture job from completing.)
       chrome:
         image: ghcr.io/browserless/chromium:v2.48.2
         ports:
