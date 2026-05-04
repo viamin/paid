@@ -34,7 +34,7 @@ RSpec.describe Containers::HeartbeatSetup do
       expect(setup).to be_available
     end
 
-    it "returns false for unsupported provider" do
+    it "returns false for unsupported provider without harness support" do
       setup = described_class.new(provider: "gemini", worktree_path: worktree_path, host_heartbeat_path: host_heartbeat_path)
       expect(setup).not_to be_available
     end
@@ -43,10 +43,58 @@ RSpec.describe Containers::HeartbeatSetup do
       setup = described_class.new(provider: "claude", worktree_path: worktree_path, host_heartbeat_path: nil)
       expect(setup).to be_available
     end
+
+    context "with upstream harness provider support" do
+      let(:harness_provider) { instance_double(AgentHarness::Providers::Base) }
+
+      it "returns true for opencode when harness reports heartbeat support" do
+        allow(harness_provider).to receive(:supports_activity_heartbeat?).and_return(true)
+        setup = described_class.new(
+          provider: "opencode", worktree_path: worktree_path,
+          host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
+        )
+        expect(setup).to be_available
+      end
+
+      it "returns true for kilocode when harness reports heartbeat support" do
+        allow(harness_provider).to receive(:supports_activity_heartbeat?).and_return(true)
+        setup = described_class.new(
+          provider: "kilocode", worktree_path: worktree_path,
+          host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
+        )
+        expect(setup).to be_available
+      end
+
+      it "returns false when harness provider does not support heartbeat" do
+        allow(harness_provider).to receive(:supports_activity_heartbeat?).and_return(false)
+        setup = described_class.new(
+          provider: "gemini", worktree_path: worktree_path,
+          host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
+        )
+        expect(setup).not_to be_available
+      end
+
+      it "handles harness provider that does not respond to supports_activity_heartbeat?" do
+        harness_provider = Object.new
+        setup = described_class.new(
+          provider: "opencode", worktree_path: worktree_path,
+          host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
+        )
+        expect(setup).not_to be_available
+      end
+
+      it "handles nil harness_provider gracefully" do
+        setup = described_class.new(
+          provider: "opencode", worktree_path: worktree_path,
+          host_heartbeat_path: host_heartbeat_path, harness_provider: nil
+        )
+        expect(setup).not_to be_available
+      end
+    end
   end
 
   describe "#env" do
-    it "returns AGENT_HEARTBEAT_PATH for supported provider" do
+    it "returns AGENT_HEARTBEAT_PATH for locally supported provider" do
       setup = described_class.new(provider: "claude", worktree_path: worktree_path, host_heartbeat_path: host_heartbeat_path)
       expect(setup.env).to eq("AGENT_HEARTBEAT_PATH" => "/paid-heartbeat/.paid-heartbeat")
     end
@@ -59,6 +107,23 @@ RSpec.describe Containers::HeartbeatSetup do
     it "returns AGENT_HEARTBEAT_PATH without host_heartbeat_path" do
       setup = described_class.new(provider: "claude", worktree_path: worktree_path, host_heartbeat_path: nil)
       expect(setup.env).to eq("AGENT_HEARTBEAT_PATH" => "/paid-heartbeat/.paid-heartbeat")
+    end
+
+    context "with upstream harness provider" do
+      let(:harness_provider) { instance_double(AgentHarness::Providers::Base) }
+      let(:upstream_env) { { "OPENCODE_HEARTBEAT_FILE" => "/paid-heartbeat/.paid-heartbeat" } }
+
+      before do
+        allow(harness_provider).to receive_messages(supports_activity_heartbeat?: true, heartbeat_integration: { supported: true, env: upstream_env, preparation: nil, granularity: :tool_call })
+      end
+
+      it "returns upstream env for harness-supported provider" do
+        setup = described_class.new(
+          provider: "opencode", worktree_path: worktree_path,
+          host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
+        )
+        expect(setup.env).to eq(upstream_env)
+      end
     end
   end
 
@@ -152,6 +217,31 @@ RSpec.describe Containers::HeartbeatSetup do
         expect(setup.preparation).to be_a(AgentHarness::ExecutionPreparation)
       end
     end
+
+    context "with upstream harness provider" do
+      let(:harness_provider) { instance_double(AgentHarness::Providers::Base) }
+      let(:upstream_preparation) { AgentHarness::ExecutionPreparation.new(file_writes: []) }
+
+      before do
+        allow(harness_provider).to receive_messages(supports_activity_heartbeat?: true, heartbeat_integration: { supported: true, env: {}, preparation: upstream_preparation, granularity: :tool_call })
+      end
+
+      it "returns upstream preparation for opencode" do
+        setup = described_class.new(
+          provider: "opencode", worktree_path: worktree_path,
+          host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
+        )
+        expect(setup.preparation).to eq(upstream_preparation)
+      end
+
+      it "returns upstream preparation for kilocode" do
+        setup = described_class.new(
+          provider: "kilocode", worktree_path: worktree_path,
+          host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
+        )
+        expect(setup.preparation).to eq(upstream_preparation)
+      end
+    end
   end
 
   describe "#reliable_heartbeat?" do
@@ -168,6 +258,37 @@ RSpec.describe Containers::HeartbeatSetup do
     it "returns false for codex" do
       setup = described_class.new(provider: "codex", worktree_path: worktree_path, host_heartbeat_path: host_heartbeat_path)
       expect(setup).not_to be_reliable_heartbeat
+    end
+
+    context "with upstream harness provider" do
+      let(:harness_provider) { instance_double(AgentHarness::Providers::Base) }
+
+      it "returns true for tool_call granularity" do
+        allow(harness_provider).to receive_messages(supports_activity_heartbeat?: true, heartbeat_integration: { supported: true, env: {}, preparation: nil, granularity: :tool_call })
+        setup = described_class.new(
+          provider: "opencode", worktree_path: worktree_path,
+          host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
+        )
+        expect(setup).to be_reliable_heartbeat
+      end
+
+      it "returns false for turn granularity" do
+        allow(harness_provider).to receive_messages(supports_activity_heartbeat?: true, heartbeat_integration: { supported: true, env: {}, preparation: nil, granularity: :turn })
+        setup = described_class.new(
+          provider: "opencode", worktree_path: worktree_path,
+          host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
+        )
+        expect(setup).not_to be_reliable_heartbeat
+      end
+
+      it "returns false for progress granularity" do
+        allow(harness_provider).to receive_messages(supports_activity_heartbeat?: true, heartbeat_integration: { supported: true, env: {}, preparation: nil, granularity: :progress })
+        setup = described_class.new(
+          provider: "opencode", worktree_path: worktree_path,
+          host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
+        )
+        expect(setup).not_to be_reliable_heartbeat
+      end
     end
   end
 
@@ -198,6 +319,29 @@ RSpec.describe Containers::HeartbeatSetup do
     it "returns nil for coarse heartbeat provider with nil base timeout" do
       setup = described_class.new(provider: "codex", worktree_path: worktree_path, host_heartbeat_path: host_heartbeat_path)
       expect(setup.idle_timeout_for(nil)).to be_nil
+    end
+
+    context "with upstream harness provider" do
+      let(:harness_provider) { instance_double(AgentHarness::Providers::Base) }
+
+      it "returns base timeout for upstream provider with tool_call granularity" do
+        allow(harness_provider).to receive_messages(supports_activity_heartbeat?: true, heartbeat_integration: { supported: true, env: {}, preparation: nil, granularity: :tool_call })
+        setup = described_class.new(
+          provider: "opencode", worktree_path: worktree_path,
+          host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
+        )
+        expect(setup.idle_timeout_for(base_timeout)).to eq(base_timeout)
+      end
+
+      it "returns extended timeout for upstream provider with turn granularity" do
+        allow(harness_provider).to receive_messages(supports_activity_heartbeat?: true, heartbeat_integration: { supported: true, env: {}, preparation: nil, granularity: :turn })
+        setup = described_class.new(
+          provider: "opencode", worktree_path: worktree_path,
+          host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
+        )
+        expected = base_timeout * described_class::COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER
+        expect(setup.idle_timeout_for(base_timeout)).to eq(expected)
+      end
     end
   end
 end
