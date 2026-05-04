@@ -2578,6 +2578,22 @@ RSpec.describe Containers::Provision do
           service.execute("hung_command", timeout: 0.1)
         }.to raise_error(described_class::TimeoutError, /timed out after 0.1 seconds/)
       end
+
+      it "reclassifies Docker API timeout as TimeoutError when elapsed is within poll interval of timeout" do
+        # The Docker API `wait:` parameter fires at ~timeout seconds, but
+        # Ruby's monotonic clock may show elapsed < timeout by a small margin.
+        # The reclassification check uses a tolerance of watchdog_poll_interval
+        # so this is caught as a TimeoutError instead of ExecutionError.
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          sleep 0.08 # close to but potentially under the 0.1s timeout
+          raise Docker::Error::DockerError, "read: connection reset by peer"
+        end
+        allow(service).to receive(:watchdog_poll_interval).and_return(10)
+
+        expect {
+          service.execute("hung_command", timeout: 0.1)
+        }.to raise_error(described_class::TimeoutError, /timed out after 0.1 seconds/)
+      end
     end
 
     context "without startup and idle timeouts" do

@@ -615,6 +615,24 @@ module Containers
           raise
         end
 
+        # The Docker API `wait:` parameter and the watchdog both track the
+        # same wall-clock timeout. If Docker fires first, elapsed time from
+        # Ruby's monotonic clock may still be fractionally below the timeout
+        # threshold (clock skew between the Docker daemon and CLOCK_MONOTONIC).
+        # Use a tolerance of the watchdog poll interval so the Docker API
+        # timeout is not misclassified as a generic execution error.
+        if timeout
+          elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
+          if elapsed >= timeout - watchdog_poll_interval
+            log_system("container.execute.timeout",
+              timeout_type: "wall_clock",
+              timeout: timeout,
+              elapsed_seconds: elapsed.round(1),
+              source: "docker_api_reclassified")
+            raise TimeoutError, "Command timed out after #{timeout} seconds"
+          end
+        end
+
         log_system("container.execute.failed", error: e.message)
 
         begin
