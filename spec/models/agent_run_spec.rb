@@ -2863,6 +2863,13 @@ RSpec.describe AgentRun do
       expect(agent_run.agent_summary).to eq("Agent encountered an error: Something went wrong")
     end
 
+    it "extracts error from type:error with top-level message field" do
+      error_line = { type: "error", message: "fatal API error" }.to_json
+      agent_run.log!("stdout", error_line)
+
+      expect(agent_run.agent_summary).to eq("Agent encountered an error: fatal API error")
+    end
+
     it "prefers result text over error JSONL when both present" do
       mixed = [
         { type: "result", subtype: "success", is_error: false, result: "OK", duration_ms: 100 },
@@ -2876,7 +2883,9 @@ RSpec.describe AgentRun do
     it "falls through to multiline JSON when structured parser returns blank output" do
       envelope = { type: "result", subtype: "success", is_error: false,
                    result: "OK", duration_ms: 2769, total_cost_usd: 0.06 }.to_json
-      allow(agent_run).to receive(:parse_structured_stdout).and_return(
+      mock_provider = instance_double(AgentHarness::Providers::Base)
+      allow(AgentHarness).to receive(:provider).and_return(mock_provider)
+      allow(mock_provider).to receive(:parse_container_output).and_return(
         double(error: nil, output: "")
       )
       agent_run.log!("stdout", envelope)

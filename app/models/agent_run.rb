@@ -1552,8 +1552,12 @@ class AgentRun < ApplicationRecord
         if error_obj.is_a?(Hash)
           msg = error_obj.dig("data", "message") || error_obj["message"] || error_obj["name"]
           error_messages << msg.to_s
-        else
+        elsif error_obj.present?
           error_messages << error_obj.to_s
+        end
+        # Also capture top-level "message" field (e.g., {"type":"error","message":"fatal API error"})
+        if parsed.key?("message") && parsed["message"].present?
+          error_messages << parsed["message"].to_s
         end
       when "text"
         part = parsed["part"]
