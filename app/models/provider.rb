@@ -218,8 +218,13 @@ class Provider < ApplicationRecord
     DIRECT_OUTBOUND_API_PROVIDERS.dig(aider_api_provider, :service_type)
   end
 
+  # NOTE: Aider is excluded here because the execution path does not yet have
+  # direct-outbound plumbing (no agent_harness_provider_runtime, no
+  # direct_outbound_exec_env/exec_command support). The config infrastructure
+  # (aider_config, aider_api_provider, aider_model_id) exists as prep work;
+  # add aider_direct_outbound? here once the runtime path is implemented.
   def requires_direct_outbound?
-    opencode_direct_outbound? || kilocode_direct_outbound? || aider_direct_outbound?
+    opencode_direct_outbound? || kilocode_direct_outbound?
   end
 
   def opencode_required_api_service_type
@@ -640,7 +645,7 @@ class Provider < ApplicationRecord
       model = LlmModel.find_by(model_id: model_id)
       if model.nil?
         errors.add(:tier_model_ids, "references unknown model #{model_id} for tier #{tier}")
-      elsif expected_provider && model.provider != expected_provider
+      elsif expected_provider && !requires_direct_outbound? && model.provider != expected_provider
         errors.add(:tier_model_ids, "model #{model_id} does not belong to provider #{provider_key}")
       end
     end
@@ -697,6 +702,9 @@ class Provider < ApplicationRecord
     end
   end
 
+  # NOTE: The provider UI/controller does not yet permit nested aider config
+  # keys (api_provider, model). This validation is prep work for when the
+  # controller is updated to support Aider API-key providers.
   def aider_api_key_config_must_be_valid
     return unless provider_key == "aider"
     return unless api_key?

@@ -10,7 +10,9 @@ module Providers
       "gemini" => "google"
     }.freeze
 
-    DIRECT_OUTBOUND_PROVIDER_KEYS = %w[aider kilocode opencode].freeze
+    # Aider is excluded until its execution path supports direct-outbound
+    # plumbing (see Provider#requires_direct_outbound? for details).
+    DIRECT_OUTBOUND_PROVIDER_KEYS = %w[kilocode opencode].freeze
 
     def self.call(provider_key:)
       new(provider_key: provider_key).call

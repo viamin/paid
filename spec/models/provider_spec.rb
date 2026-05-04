@@ -141,6 +141,23 @@ RSpec.describe Provider do
         expect(unmapped).not_to be_valid
         expect(unmapped.errors[:tier_model_ids].join).to include("not configurable")
       end
+
+      it "allows direct-outbound providers to reference models from any upstream provider" do
+        user = create(:user)
+        api_key = create(:provider_api_key, user: user, api_service_type: "zai")
+        create(:llm_model, model_id: "glm-5.1", provider: "zai", tier: "high")
+        provider = build(
+          :provider,
+          user: user,
+          provider_key: "kilocode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          config: { "kilocode" => { "api_provider" => "zai", "model" => "glm-5.1" } },
+          tier_model_ids: { "high" => "glm-5.1" }
+        )
+
+        expect(provider).to be_valid
+      end
     end
 
     it "validates auth_type inclusion" do
@@ -549,6 +566,101 @@ RSpec.describe Provider do
         }
       })
       expect(config["model"]).to eq("zai-coding-plan/glm-5.1")
+    end
+  end
+
+  describe "Aider config infrastructure" do
+    let(:account) { create(:account, slug: "provider-aider-#{SecureRandom.hex(6)}") }
+    let(:user) { create(:user, account: account, email: "provider-aider-#{SecureRandom.hex(6)}@example.com") }
+    let(:api_key) { create(:provider_api_key, user: user, api_service_type: "zai") }
+
+    it "reads aider config accessors from the config hash" do
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "aider",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "aider" => { "api_provider" => "zai", "model" => "glm-5.1" } }
+      )
+
+      expect(provider.aider_api_provider).to eq("zai")
+      expect(provider.aider_model_id).to eq("glm-5.1")
+      expect(provider.aider_required_api_service_type).to eq("zai")
+    end
+
+    it "defaults api_provider to openrouter when unset" do
+      provider = build(:provider, provider_key: "aider", auth_type: "api_key",
+        user: user, provider_api_key: api_key, config: { "aider" => { "model" => "glm-5.1" } })
+
+      expect(provider.aider_api_provider).to eq("openrouter")
+    end
+
+    it "returns nil accessors for non-aider providers" do
+      provider = build(:provider, provider_key: "claude")
+
+      expect(provider.aider_api_provider).to be_nil
+      expect(provider.aider_model_id).to be_nil
+    end
+
+    it "is not direct-outbound even when fully configured (no execution plumbing yet)" do
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "aider",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "aider" => { "api_provider" => "zai", "model" => "glm-5.1" } }
+      )
+
+      expect(provider.requires_direct_outbound?).to be(false)
+    end
+
+    it "validates api_provider presence for API-key aider providers" do
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "aider",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "aider" => { "api_provider" => "zai" } }
+      )
+
+      expect(provider).not_to be_valid
+      expect(provider.errors[:config].join).to include("Aider model id")
+    end
+
+    it "validates model presence for API-key aider providers" do
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "aider",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "aider" => {} }
+      )
+
+      expect(provider).not_to be_valid
+      expect(provider.errors[:config].join).to include("Aider model id")
+    end
+
+    it "accepts a fully configured API-key aider provider" do
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "aider",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "aider" => { "api_provider" => "zai", "model" => "glm-5.1" } }
+      )
+
+      expect(provider).to be_valid
+    end
+
+    it "skips aider config validation for subscription providers" do
+      provider = build(:provider, provider_key: "aider", auth_type: "subscription")
+
+      expect(provider.errors[:config]).to be_empty
     end
   end
 
