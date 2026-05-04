@@ -6,7 +6,7 @@ module Activities
   # Materializes npx definitions as stdio server specs and provisions
   # docker_image definitions as sidecar containers on the agent network.
   #
-  # Skipped when the run's mcp_server_snapshot is empty.
+  # Returns empty server lists when the run's mcp_server_snapshot is empty.
   class ProvisionMcpServersActivity < BaseActivity
     activity_name "ProvisionMcpServers"
 

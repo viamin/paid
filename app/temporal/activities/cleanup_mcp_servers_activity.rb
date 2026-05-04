@@ -29,6 +29,13 @@ module Activities
 
         { agent_run_id: agent_run_id }
       end
+    rescue => e
+      logger.warn(
+        message: "agent_execution.cleanup_mcp_servers_failed",
+        agent_run_id: agent_run_id,
+        error: e.message
+      )
+      { agent_run_id: agent_run_id }
     end
   end
 end

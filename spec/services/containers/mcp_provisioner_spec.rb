@@ -134,7 +134,7 @@ RSpec.describe Containers::McpProvisioner do
         expect(server["name"]).to eq("pg-mcp")
         expect(server["transport"]).to eq("sse")
         expect(server["url"]).to match(%r{^http://paid-mcp-.*:8080/sse$})
-        expect(server["env"]).to eq({ "PG_HOST" => "db" })
+        expect(server).not_to have_key("env")
       end
 
       it "tracks sidecar container IDs on the agent run" do

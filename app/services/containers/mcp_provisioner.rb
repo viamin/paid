@@ -22,7 +22,7 @@ module Containers
   # @example Provision MCP servers for a run
   #   provisioner = Containers::McpProvisioner.new
   #   result = provisioner.provision(agent_run, network: "paid_agent")
-  #   result[:stdio_servers]  # => [{ "name" => "...", "command" => "npx", ... }]
+  #   result[:stdio_servers]  # => [{ "name" => "...", "command" => "@modelcontextprotocol/server-github", ... }]
   #   result[:url_servers]    # => [{ "name" => "...", "url" => "http://..." }]
   #
   # @example Clean up after run
@@ -72,9 +72,10 @@ module Containers
         end
       end
 
-      updates = { mcp_provisioned_servers: { "stdio_servers" => stdio_servers, "url_servers" => url_servers } }
-      updates[:mcp_sidecar_container_ids] = sidecar_ids if sidecar_ids.any?
-      agent_run.update!(updates)
+      agent_run.update!(
+        mcp_provisioned_servers: { "stdio_servers" => stdio_servers, "url_servers" => url_servers },
+        mcp_sidecar_container_ids: sidecar_ids
+      )
 
       log_info("mcp_provisioner.provisioned",
         agent_run_id: agent_run.id,
@@ -170,8 +171,6 @@ module Containers
         "transport" => "sse",
         "url" => url
       }
-      server["env"] = env if env.present?
-
       { server: server, container_id: container.id }
     end
 
@@ -286,8 +285,8 @@ module Containers
 
     def remove_container(container)
       container.stop(timeout: 10)
-    rescue Docker::Error::NotFoundError, Docker::Error::ClientError
-      # Already stopped
+    rescue Docker::Error::NotFoundError, Docker::Error::ClientError, Docker::Error::ServerError
+      # Already stopped or daemon error — proceed to force-delete
     ensure
       begin
         container.delete(force: true, v: true)
