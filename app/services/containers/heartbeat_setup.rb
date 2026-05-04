@@ -20,11 +20,17 @@ module Containers
   # The watchdog must then inspect that path from inside the container rather
   # than reading it directly from the host filesystem.
   #
+  # Heartbeat availability is determined by querying the upstream agent-harness
+  # provider for +supports_activity_heartbeat?+ and its +heartbeat_integration+
+  # contract. Providers that the harness does not yet cover (Claude, Codex)
+  # fall back to locally managed heartbeat configuration.
+  #
   # @example
   #   setup = Containers::HeartbeatSetup.new(
   #     provider: "claude",
   #     worktree_path: "/workspace",
-  #     host_heartbeat_path: "/tmp/paid-heartbeat-abc123/.paid-heartbeat"
+  #     host_heartbeat_path: "/tmp/paid-heartbeat-abc123/.paid-heartbeat",
+  #     harness_provider: AgentHarness.provider(:claude)
   #   )
   #   setup.heartbeat_path  # => "/tmp/paid-heartbeat-abc123/.paid-heartbeat"
   #   setup.preparation     # => AgentHarness::ExecutionPreparation (with file writes)
@@ -34,24 +40,31 @@ module Containers
 
     CONTAINER_HEARTBEAT_PATH = "/paid-heartbeat/#{HEARTBEAT_FILENAME}"
 
-    SUPPORTED_PROVIDERS = %w[claude codex].freeze
+    # Providers with locally managed heartbeat configuration.
+    # These are providers where agent-harness does not yet provide
+    # heartbeat integration, so Paid handles the setup directly.
+    LOCAL_HEARTBEAT_PROVIDERS = %w[claude codex].freeze
 
     # Providers with per-tool heartbeat hooks (e.g. Claude PostToolUse)
     # that fire frequently enough to suppress idle timeouts reliably
-    # during long subprocess execution. Providers in SUPPORTED_PROVIDERS
-    # but NOT listed here use coarser heartbeat signals that only fire
-    # between CLI turns, so they need a longer idle timeout to avoid
-    # false positives during long-running commands like `bundle exec rspec`.
-    RELIABLE_HEARTBEAT_PROVIDERS = %w[claude].freeze
+    # during long subprocess execution. Providers using coarser heartbeat
+    # signals that only fire between CLI turns need a longer idle timeout
+    # to avoid false positives during long-running commands.
+    LOCAL_RELIABLE_HEARTBEAT_PROVIDERS = %w[claude].freeze
+
+    # Upstream heartbeat granularities considered reliable (fire often
+    # enough within a single tool execution to suppress idle timeout).
+    RELIABLE_GRANULARITIES = %i[tool_call].freeze
 
     COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER = 3
 
     attr_reader :provider, :worktree_path, :host_heartbeat_path
 
-    def initialize(provider:, worktree_path:, host_heartbeat_path: nil)
+    def initialize(provider:, worktree_path:, host_heartbeat_path: nil, harness_provider: nil)
       @provider = provider.to_s
       @worktree_path = worktree_path
       @host_heartbeat_path = host_heartbeat_path
+      @harness_provider = harness_provider
     end
 
     def heartbeat_path
@@ -59,7 +72,7 @@ module Containers
     end
 
     def available?
-      SUPPORTED_PROVIDERS.include?(canonical_provider)
+      local_heartbeat_provider? || upstream_heartbeat_supported?
     end
 
     # Returns the effective idle timeout for this provider given a base
@@ -73,22 +86,31 @@ module Containers
     end
 
     def reliable_heartbeat?
-      RELIABLE_HEARTBEAT_PROVIDERS.include?(canonical_provider)
+      if upstream_heartbeat_supported?
+        RELIABLE_GRANULARITIES.include?(upstream_integration[:granularity])
+      else
+        LOCAL_RELIABLE_HEARTBEAT_PROVIDERS.include?(canonical_provider)
+      end
     end
 
     def env
       return {} unless available?
 
-      { "AGENT_HEARTBEAT_PATH" => CONTAINER_HEARTBEAT_PATH }
+      if upstream_heartbeat_supported?
+        upstream_integration[:env] || {}
+      else
+        { "AGENT_HEARTBEAT_PATH" => CONTAINER_HEARTBEAT_PATH }
+      end
     end
 
     def preparation
       return nil unless available?
 
-      file_writes = preparation_file_writes
-      return nil if file_writes.empty?
-
-      AgentHarness::ExecutionPreparation.new(file_writes: file_writes)
+      if upstream_heartbeat_supported?
+        upstream_integration[:preparation]
+      else
+        local_preparation
+      end
     end
 
     private
@@ -100,7 +122,38 @@ module Containers
       end
     end
 
-    def preparation_file_writes
+    def local_heartbeat_provider?
+      LOCAL_HEARTBEAT_PROVIDERS.include?(canonical_provider)
+    end
+
+    def upstream_heartbeat_supported?
+      return false unless @harness_provider
+      return false unless @harness_provider.respond_to?(:supports_activity_heartbeat?)
+      return false unless @harness_provider.supports_activity_heartbeat?
+
+      integration = upstream_integration
+      integration.is_a?(Hash) && integration[:supported] == true
+    end
+
+    def upstream_integration
+      @upstream_integration ||=
+        if @harness_provider.respond_to?(:heartbeat_integration)
+          @harness_provider.heartbeat_integration(
+            heartbeat_file_path: CONTAINER_HEARTBEAT_PATH
+          ) || {}
+        else
+          {}
+        end
+    end
+
+    def local_preparation
+      file_writes = local_preparation_file_writes
+      return nil if file_writes.empty?
+
+      AgentHarness::ExecutionPreparation.new(file_writes: file_writes)
+    end
+
+    def local_preparation_file_writes
       case canonical_provider
       when "claude" then claude_file_writes
       when "codex" then []
