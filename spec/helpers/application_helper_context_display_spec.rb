@@ -111,8 +111,8 @@ RSpec.describe ApplicationHelper do
         run = stub_run(id: 99, "create_pr_goal?": true, issue: issue)
         result = helper.agent_run_context_display(run)
 
-        expect(result).to include('aria-controls="tooltip_99"')
-        expect(result).to include('aria-describedby="tooltip_99"')
+        expect(result).to include('aria-controls="context_99"')
+        expect(result).to include('aria-describedby="context_99"')
         expect(result).to include('aria-label="Show context title"')
         expect(result).to include('aria-expanded="false"')
         expect(result).to include('aria-hidden="true"')

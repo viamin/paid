@@ -273,41 +273,24 @@ module ApplicationHelper
       tag.span("-", class: "text-gray-400")
     end
 
-    if context[:tooltip].present?
-      tooltip_id = "tooltip_#{run.id}"
-      tag.span(class: "inline-flex items-center gap-1", data: { controller: "tooltip" }) do
-        safe_join([
-          inner,
-          tag.button(
-            tag.svg(
-              tag.path(d: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"),
-              class: "h-4 w-4", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor",
-              "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round",
-              aria: { hidden: "true" }, focusable: "false"
-            ),
-            type: "button",
-            class: "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:hidden text-gray-400 hover:text-gray-600",
-            data: { action: "click->tooltip#toggle" },
-            aria: { label: "Show context title", describedby: tooltip_id, expanded: "false", controls: tooltip_id }
-          ),
-          tag.span(
-            context[:tooltip],
-            id: tooltip_id,
-            role: "tooltip",
-            aria: { hidden: "true" },
-            class: "hidden fixed z-50 w-48 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg",
-            data: { tooltip_target: "content" }
-          )
-        ])
-      end
-    else
-      inner
-    end
+    mobile_tooltip_wrapper(inner, context[:tooltip], "context_#{run.id}", aria_label: "Show context title")
+  end
+
+  # Renders the goal cell for an agent run index table.
+  # Truncated text with a title attribute for desktop hover and a mobile tooltip.
+  def agent_run_goal_display(run)
+    text = agent_run_goal_text(run)
+    return tag.span("-", class: "text-gray-400") if text.blank?
+
+    inner = tag.span(text, class: "block truncate", title: text)
+    mobile_tooltip_wrapper(inner, text, "goal_#{run.id}", aria_label: "Show goal")
   end
 
   # Precedence: issue title > PR label (any run with a source PR) > redacted custom_prompt.
-  # Issue title is the most user-meaningful label; the PR label covers both
-  # review runs and create_pr runs targeting an existing pull request.
+  # The issue title is the most user-meaningful label for what the run is trying
+  # to accomplish; the PR label covers both review runs and create_pr runs
+  # targeting an existing pull request. custom_prompt is a generic fallback when
+  # no structured context (issue/PR) is available.
   def agent_run_goal_text(run)
     return run.issue.title if run.issue&.title.present?
 
@@ -406,6 +389,40 @@ module ApplicationHelper
     else
       distance = time_ago_in_words(utc)
       utc > Time.current ? "in #{distance}" : "#{distance} ago"
+    end
+  end
+
+  # Wraps content with a mobile-friendly info-icon tooltip using the Stimulus
+  # tooltip controller. Desktop users see the native title attribute; on touch
+  # devices the icon toggles a popover. Returns +inner+ unchanged when
+  # +tooltip_text+ is blank.
+  def mobile_tooltip_wrapper(inner, tooltip_text, dom_id, aria_label: "Show details")
+    return inner if tooltip_text.blank?
+
+    tag.span(class: "inline-flex items-center gap-1", data: { controller: "tooltip" }) do
+      safe_join([
+        inner,
+        tag.button(
+          tag.svg(
+            tag.path(d: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"),
+            class: "h-4 w-4", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor",
+            "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round",
+            aria: { hidden: "true" }, focusable: "false"
+          ),
+          type: "button",
+          class: "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:hidden text-gray-400 hover:text-gray-600",
+          data: { action: "click->tooltip#toggle" },
+          aria: { label: aria_label, describedby: dom_id, expanded: "false", controls: dom_id }
+        ),
+        tag.span(
+          tooltip_text,
+          id: dom_id,
+          role: "tooltip",
+          aria: { hidden: "true" },
+          class: "hidden fixed z-50 w-48 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg",
+          data: { tooltip_target: "content" }
+        )
+      ])
     end
   end
 
