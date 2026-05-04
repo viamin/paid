@@ -2582,17 +2582,34 @@ RSpec.describe Containers::Provision do
       it "reclassifies Docker API timeout as TimeoutError when elapsed is within poll interval of timeout" do
         # The Docker API `wait:` parameter fires at ~timeout seconds, but
         # Ruby's monotonic clock may show elapsed < timeout by a small margin.
-        # The reclassification check uses a tolerance of watchdog_poll_interval
+        # The reclassification check uses a tolerance of min(poll_interval, timeout*0.5)
         # so this is caught as a TimeoutError instead of ExecutionError.
+        # With poll_interval=0.05 and timeout=0.1, tolerance=0.05 so the
+        # threshold is 0.05s — sleep 0.08 lands inside the window.
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
           sleep 0.08 # close to but potentially under the 0.1s timeout
           raise Docker::Error::DockerError, "read: connection reset by peer"
         end
-        allow(service).to receive(:watchdog_poll_interval).and_return(10)
+        allow(service).to receive(:watchdog_poll_interval).and_return(0.05)
 
         expect {
           service.execute("hung_command", timeout: 0.1)
         }.to raise_error(described_class::TimeoutError, /timed out after 0.1 seconds/)
+      end
+
+      it "does not reclassify Docker error as timeout when elapsed is well below threshold" do
+        # A Docker error that occurs early in the timeout window should NOT be
+        # reclassified. With poll_interval=0.05 and timeout=0.5, tolerance=0.05
+        # so the threshold is 0.45s — sleep 0.01 is well outside the window.
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          sleep 0.01
+          raise Docker::Error::DockerError, "connection refused"
+        end
+        allow(service).to receive(:watchdog_poll_interval).and_return(0.05)
+
+        expect {
+          service.execute("normal_command", timeout: 0.5)
+        }.to raise_error(described_class::ExecutionError, /connection refused/)
       end
     end
 

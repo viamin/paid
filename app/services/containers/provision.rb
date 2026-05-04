@@ -619,11 +619,12 @@ module Containers
         # same wall-clock timeout. If Docker fires first, elapsed time from
         # Ruby's monotonic clock may still be fractionally below the timeout
         # threshold (clock skew between the Docker daemon and CLOCK_MONOTONIC).
-        # Use a tolerance of the watchdog poll interval so the Docker API
-        # timeout is not misclassified as a generic execution error.
+        # Clamp tolerance to at most half the timeout so short-timeout execs
+        # don't reclassify every Docker error as a timeout.
         if timeout
           elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
-          if elapsed >= timeout - watchdog_poll_interval
+          tolerance = [ watchdog_poll_interval, timeout * 0.5 ].min
+          if elapsed >= timeout - tolerance
             log_system("container.execute.timeout",
               timeout_type: "wall_clock",
               timeout: timeout,
