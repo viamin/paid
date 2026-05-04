@@ -115,7 +115,11 @@
 
   <%= render "usage_stats" %>
 
-  <div class="mt-6 rounded-lg border border-sky-200 bg-sky-50 p-4">
+  <div class="mt-8">
+    <%= render "settings" %>
+  </div>
+
+  <div class="mt-8 rounded-lg border border-sky-200 bg-sky-50 p-4">
     <h2 class="text-base font-semibold text-sky-950">Provider Auth Setup</h2>
     <p class="mt-1 text-sm text-sky-900">
       By default, Test Agent uses the same containerized auth path as real runs. For Codex and Gemini when using Paid-managed proxy keys, it can instead use the agent-harness auth path. Copilot currently stays on the container path because Paid's installed Copilot CLI is not yet invocation-compatible with the built-in agent-harness Copilot adapter. Configure either Paid-managed API keys on the <code>web</code> service or provider-specific subscription credentials that the agent container can copy at runtime.
@@ -151,9 +155,5 @@
     <p class="mt-4 text-xs text-sky-900">
       After changing env vars or credential mounts, restart the <code>web</code> and <code>worker</code> services before testing again. See <a href="https://github.com/viamin/paid#provider-auth-setup" class="font-medium underline">README: Provider Auth Setup</a> for the full checklist.
     </p>
-  </div>
-
-  <div class="mt-8">
-    <%= render "settings" %>
   </div>
 </div>
