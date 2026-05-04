@@ -62,6 +62,20 @@ RSpec.shared_examples "a WorkItemProvider implementation" do
       expect(result).to be_an(Array)
       expect(result).to all(be_a(Automation::Providers::Data::Issue))
     end
+
+    it "accepts and forwards the state filter" do
+      result = adapter.list_issues(repo: repo, state: :open)
+
+      expect(result).to be_an(Array)
+      expect(result).to all(be_a(Automation::Providers::Data::Issue))
+    end
+
+    it "accepts and forwards the labels filter" do
+      result = adapter.list_issues(repo: repo, labels: [ "bug" ])
+
+      expect(result).to be_an(Array)
+      expect(result).to all(be_a(Automation::Providers::Data::Issue))
+    end
   end
 
   describe "#fetch_issue_comments" do

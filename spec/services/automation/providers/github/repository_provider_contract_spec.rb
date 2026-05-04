@@ -38,6 +38,11 @@ RSpec.describe Automation::Providers::Github::RepositoryProvider do
       .and_raise(GithubClient::NotFoundError, "Label does not exist")
   end
 
+  def stub_already_merged_pull_request
+    allow(client).to receive(:merge_pull_request)
+      .and_return(OpenStruct.new(merged: true, sha: "abc123", message: "Pull Request already merged"))
+  end
+
   before do
     pr_resource = OpenStruct.new(
       number: 42, title: "Test", body: "desc", state: "open",

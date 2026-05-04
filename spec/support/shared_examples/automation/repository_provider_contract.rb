@@ -21,6 +21,9 @@
 #   stub_missing_label_provider_failure
 #                 — a lambda that stubs the provider's "label already
 #                   absent" failure for remove_label
+#   stub_already_merged_pull_request
+#                 — a lambda that stubs the provider's response for
+#                   merging an already-merged PR (must succeed, not raise)
 #   provider_failure_message
 #                 — the expected translated ProviderError message
 #
@@ -62,6 +65,20 @@ RSpec.shared_examples "a RepositoryProvider implementation" do
   describe "#list_pull_requests" do
     it "returns an Array of Data::PullRequest" do
       result = adapter.list_pull_requests(repo: repo)
+
+      expect(result).to be_an(Array)
+      expect(result).to all(be_a(Automation::Providers::Data::PullRequest))
+    end
+
+    it "accepts and forwards the state filter" do
+      result = adapter.list_pull_requests(repo: repo, state: :open)
+
+      expect(result).to be_an(Array)
+      expect(result).to all(be_a(Automation::Providers::Data::PullRequest))
+    end
+
+    it "accepts and forwards head and base filters" do
+      result = adapter.list_pull_requests(repo: repo, head: "owner:feature", base: "main")
 
       expect(result).to be_an(Array)
       expect(result).to all(be_a(Automation::Providers::Data::PullRequest))
@@ -130,6 +147,14 @@ RSpec.shared_examples "a RepositoryProvider implementation" do
 
       expect(result).to be_a(Automation::Providers::Data::MergeResult)
       expect(result.merged).to be(true).or be(false)
+    end
+
+    it "is idempotent when the PR is already merged" do
+      stub_already_merged_pull_request
+
+      result = adapter.merge_pull_request(repo: repo, number: pr_number, method: :squash)
+
+      expect(result).to be_a(Automation::Providers::Data::MergeResult)
     end
   end
 

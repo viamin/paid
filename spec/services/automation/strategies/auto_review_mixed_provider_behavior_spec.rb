@@ -45,21 +45,26 @@ RSpec.describe Automation::Strategies::AutoReview do
     end
   end
 
-  describe "copilot + codex both pending" do
-    it "emits request_review for the copilot bot only (copilot trigger takes priority)" do
+  describe "copilot + codex both pending (fallback chain)" do
+    # Production emits a single review_bot_review_pending trigger with
+    # request_logins containing the ordered fallback chain, not separate
+    # triggers per bot (see ScanPaidPrsActivity#review_bot_request_chain).
+    it "emits request_review with the full fallback chain from request_logins" do
       result = evaluate(scan: {
         issue_id: pull_request.id,
         pr_number: 42,
         phase: "draft",
         triggers: [
-          { type: "review_bot_review_pending", request_login: "copilot" },
-          { type: "review_bot_review_pending", request_login: "chatgpt-codex-connector" }
+          { type: "review_bot_review_pending",
+            request_login: "copilot",
+            request_logins: [ "copilot", "chatgpt-codex-connector" ] }
         ]
       })
 
       expect(result.to_h).to eq(
         decisions: [
-          { type: "request_review", pr_number: 42, reviewers: [ "copilot" ] }
+          { type: "request_review", pr_number: 42,
+            reviewers: [ "copilot", "chatgpt-codex-connector" ] }
         ]
       )
     end
