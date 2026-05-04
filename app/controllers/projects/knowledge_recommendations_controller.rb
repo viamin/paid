@@ -16,6 +16,7 @@ module Projects
       authorize @project, :update?
 
       update_recommendation!
+      load_recommendations
       @update_succeeded = true
 
       respond_to do |format|

@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe "Projects::KnowledgeRecommendations" do
+  include ActionView::RecordIdentifier
+
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:project) { create(:project, account: account) }
@@ -54,6 +56,9 @@ RSpec.describe "Projects::KnowledgeRecommendations" do
           headers: { "Accept" => "text/vnd.turbo-stream.html" }
 
         expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+        expect(response.body).to include(%(action="remove" target="#{dom_id(recommendation)}"))
+        expect(response.body).to include(%(action="replace" target="pending_recommendations_section"))
+        expect(response.body).to include(%(action="replace" target="resolved_recommendations_section"))
         expect(response.body).to include(%(action="update" target="knowledge_recommendations_alert"))
       end
 

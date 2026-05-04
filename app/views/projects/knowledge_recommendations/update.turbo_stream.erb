@@ -1,5 +1,11 @@
 <% if @update_succeeded %>
   <%= turbo_stream.remove dom_id(@recommendation) %>
+  <%= turbo_stream.replace "pending_recommendations_section" do %>
+    <%= render "projects/knowledge_recommendations/pending_section", pending: @pending, project: @project %>
+  <% end %>
+  <%= turbo_stream.replace "resolved_recommendations_section" do %>
+    <%= render "projects/knowledge_recommendations/resolved_section", resolved: @resolved %>
+  <% end %>
   <%= turbo_stream.update "knowledge_recommendations_alert", "" %>
 <% else %>
   <%= turbo_stream.update "knowledge_recommendations_alert" do %>
