@@ -635,10 +635,17 @@ module Activities
       command_env = command_env_for(command_context, prompt)
       command_preparation = command_preparation_for(command_context, prompt)
 
+      resolved_harness_provider = begin
+        harness_provider_for(provider)
+      rescue AgentHarness::ConfigurationError, KeyError
+        nil
+      end
+
       heartbeat = Containers::HeartbeatSetup.new(
         provider: provider,
         worktree_path: agent_run.worktree_path,
-        host_heartbeat_path: container_service.heartbeat_host_path
+        host_heartbeat_path: container_service.heartbeat_host_path,
+        harness_provider: resolved_harness_provider
       )
       if heartbeat.available?
         command_env = command_env.merge(heartbeat.env)
