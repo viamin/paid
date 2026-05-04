@@ -51,7 +51,26 @@
                   <td class="max-w-md px-3 py-4 text-sm text-gray-500">
                     <% goal_text = agent_run_goal_text(run) %>
                     <% if goal_text.present? %>
-                      <span class="block truncate" title="<%= goal_text %>"><%= goal_text %></span>
+                      <% goal_tooltip_id = "goal_tooltip_#{run.id}" %>
+                      <span class="inline-flex items-center gap-1" data-controller="tooltip">
+                        <span class="block truncate" title="<%= goal_text %>"><%= goal_text %></span>
+                        <button type="button"
+                          class="[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:hidden text-gray-400 hover:text-gray-600"
+                          data-action="click->tooltip#toggle"
+                          aria-label="Show goal"
+                          aria-describedby="<%= goal_tooltip_id %>"
+                          aria-expanded="false"
+                          aria-controls="<%= goal_tooltip_id %>">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                          </svg>
+                        </button>
+                        <span id="<%= goal_tooltip_id %>"
+                          role="tooltip"
+                          aria-hidden="true"
+                          class="hidden fixed z-50 w-48 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg"
+                          data-tooltip-target="content"><%= goal_text %></span>
+                      </span>
                     <% else %>
                       <span class="text-gray-400">-</span>
                     <% end %>

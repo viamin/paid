@@ -43,9 +43,9 @@ RSpec.describe "AgentRuns" do
 
         goal_cell = goal_cell_for_run(document, run)
 
-        expect(goal_cell.text.squish).to eq(goal_text)
-        expect(goal_cell.at_css("span")["title"]).to eq(goal_text)
-        expect(goal_cell.at_css("span")["class"]).to include("block truncate")
+        expect(goal_cell.text).to include(goal_text)
+        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq(goal_text)
+        expect(goal_cell.at_css('[data-controller="tooltip"]')).to be_present
       end
 
       it "prefers the issue title over custom prompt text" do
@@ -57,8 +57,8 @@ RSpec.describe "AgentRuns" do
 
         goal_cell = goal_cell_for_run(parsed_html, run)
 
-        expect(goal_cell.text.squish).to eq(issue.title)
-        expect(goal_cell.at_css("span")["title"]).to eq(issue.title)
+        expect(goal_cell.text).to include(issue.title)
+        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq(issue.title)
       end
 
       it "prefers review pull request text over custom prompt text" do
@@ -70,8 +70,8 @@ RSpec.describe "AgentRuns" do
 
         goal_cell = goal_cell_for_run(parsed_html, run)
 
-        expect(goal_cell.text.squish).to eq("Review pull request #87")
-        expect(goal_cell.at_css("span")["title"]).to eq("Review pull request #87")
+        expect(goal_cell.text).to include("Review PR #87")
+        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq("Review PR #87")
       end
 
       it "shows PR label for create_pr runs targeting an existing pull request" do
@@ -83,8 +83,8 @@ RSpec.describe "AgentRuns" do
 
         goal_cell = goal_cell_for_run(parsed_html, run)
 
-        expect(goal_cell.text.squish).to eq("PR pull request #55")
-        expect(goal_cell.at_css("span")["title"]).to eq("PR pull request #55")
+        expect(goal_cell.text).to include("PR #55")
+        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq("PR #55")
       end
 
       it "falls back to custom prompt text when no issue or review goal text is available" do
@@ -95,8 +95,8 @@ RSpec.describe "AgentRuns" do
 
         goal_cell = goal_cell_for_run(parsed_html, run)
 
-        expect(goal_cell.text.squish).to eq(goal_text)
-        expect(goal_cell.at_css("span")["title"]).to eq(goal_text)
+        expect(goal_cell.text).to include(goal_text)
+        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq(goal_text)
       end
 
       it "shows a placeholder when a run has no goal text to display" do
@@ -119,12 +119,12 @@ RSpec.describe "AgentRuns" do
         get agent_runs_path
 
         goal_cell = goal_cell_for_run(parsed_html, run)
-        goal_span = goal_cell.at_css("span")
+        truncated_span = goal_cell.at_css("span.block.truncate")
 
-        expect(goal_span.text).to include("[REDACTED:github_token]")
-        expect(goal_span.text).not_to include(token)
-        expect(goal_span["title"]).to include("[REDACTED:github_token]")
-        expect(goal_span["title"]).not_to include(token)
+        expect(truncated_span.text).to include("[REDACTED:github_token]")
+        expect(truncated_span.text).not_to include(token)
+        expect(truncated_span["title"]).to include("[REDACTED:github_token]")
+        expect(truncated_span["title"]).not_to include(token)
       end
 
       it "shows empty state when no runs exist" do

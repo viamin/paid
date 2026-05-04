@@ -312,8 +312,8 @@ module ApplicationHelper
     return run.issue.title if run.issue&.title.present?
 
     if run.source_pull_request_number.present?
-      label = run.review_goal? ? "Review" : "PR"
-      return "#{label} pull request ##{run.source_pull_request_number}"
+      prefix = run.review_goal? ? "Review PR" : "PR"
+      return "#{prefix} ##{run.source_pull_request_number}"
     end
 
     redacted_goal_text(run.custom_prompt)
