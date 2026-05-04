@@ -19,8 +19,42 @@ class McpServerDefinition < ApplicationRecord
   validate :npx_forbids_image
   validate :docker_image_requires_image
   validate :sse_requires_url
+  validate :args_json_valid
+  validate :env_json_valid
+  validate :metadata_json_valid
 
   scope :enabled, -> { where(enabled: true) }
+
+  # Virtual attributes for editing jsonb fields as JSON text in forms
+  def args_json
+    (args || []).to_json
+  end
+
+  def args_json=(value)
+    self.args = value.present? ? JSON.parse(value) : []
+  rescue JSON::ParserError
+    @args_json_invalid = true
+  end
+
+  def env_json
+    (env || {}).to_json
+  end
+
+  def env_json=(value)
+    self.env = value.present? ? JSON.parse(value) : {}
+  rescue JSON::ParserError
+    @env_json_invalid = true
+  end
+
+  def metadata_json
+    (metadata || {}).to_json
+  end
+
+  def metadata_json=(value)
+    self.metadata = value.present? ? JSON.parse(value) : {}
+  rescue JSON::ParserError
+    @metadata_json_invalid = true
+  end
 
   def to_snapshot
     {
@@ -64,5 +98,17 @@ class McpServerDefinition < ApplicationRecord
     return if url.present?
 
     errors.add(:url, "is required for sse transport")
+  end
+
+  def args_json_valid
+    errors.add(:args_json, "must be valid JSON") if @args_json_invalid
+  end
+
+  def env_json_valid
+    errors.add(:env_json, "must be valid JSON") if @env_json_invalid
+  end
+
+  def metadata_json_valid
+    errors.add(:metadata_json, "must be valid JSON") if @metadata_json_invalid
   end
 end

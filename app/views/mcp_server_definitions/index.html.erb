@@ -1,6 +1,11 @@
 <% content_for(:title) { "MCP Server Definitions - Paid" } %>
 
 <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-4 flex gap-x-4 border-b border-gray-200">
+    <%= link_to "Service Containers", service_containers_path, class: "border-b-2 border-transparent px-1 pb-2 text-sm font-medium text-gray-500 hover:border-gray-300 hover:text-gray-700" %>
+    <span class="border-b-2 border-indigo-500 px-1 pb-2 text-sm font-medium text-indigo-600">MCP Servers</span>
+  </div>
+
   <div class="sm:flex sm:items-center sm:justify-between">
     <div>
       <h1 class="text-2xl font-bold text-gray-900">MCP Server Definitions</h1>

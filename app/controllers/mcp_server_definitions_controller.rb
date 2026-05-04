@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class McpServerDefinitionsController < ApplicationController
-  before_action :set_mcp_server_definition, only: [:show, :edit, :update, :destroy]
+  before_action :set_mcp_server_definition, only: [ :show, :edit, :update, :destroy ]
 
   def index
     authorize McpServerDefinition
@@ -55,6 +55,6 @@ class McpServerDefinitionsController < ApplicationController
   end
 
   def mcp_server_definition_params
-    params.require(:mcp_server_definition).permit(:name, :transport, :install_type, :command, :args, :url, :image, :env, :enabled, :metadata)
+    params.require(:mcp_server_definition).permit(:name, :transport, :install_type, :command, :args_json, :url, :image, :env_json, :enabled, :metadata_json)
   end
 end

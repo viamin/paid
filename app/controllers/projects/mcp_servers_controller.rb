@@ -8,8 +8,6 @@ module Projects
       authorize @project, :update?
 
       mcp_server_definition = policy_scope(McpServerDefinition).find(params[:mcp_server_definition_id])
-      return unless mcp_server_definition
-
       project_mcp_server = @project.project_mcp_servers.find_or_create_by!(mcp_server_definition: mcp_server_definition)
 
       if project_mcp_server.previously_new_record?
