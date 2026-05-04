@@ -49,7 +49,7 @@ module Screenshots
 
       captured = []
       failures = []
-      session = Capybara::Session.new(:paid_screenshots)
+      session = Capybara::Session.new(:paid_screenshots, Capybara.app)
       begin
         seed_data = ensure_seed_data!
         targets = Screenshots::CaptureTargets.call(changed_files: @changed_files)
@@ -102,6 +102,7 @@ module Screenshots
 
         options[:browser_path] = browser_path if browser_path
         options[:url] = chrome_url if chrome_url
+        options[:base_url] = Capybara.app_host if Capybara.app_host
 
         Capybara::Cuprite::Driver.new(app, **options)
       end
