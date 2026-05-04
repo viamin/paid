@@ -566,7 +566,8 @@ CREATE TABLE public.agent_runs (
     cross_repo_issues jsonb DEFAULT '[]'::jsonb,
     stale_skip_count integer DEFAULT 0 NOT NULL,
     turns_completed integer DEFAULT 0 NOT NULL,
-    streaming_turns_data jsonb DEFAULT '[]'::jsonb NOT NULL
+    streaming_turns_data jsonb DEFAULT '[]'::jsonb NOT NULL,
+    mcp_sidecar_container_ids jsonb DEFAULT '[]'::jsonb NOT NULL
 );
 
 ALTER TABLE ONLY public.agent_runs FORCE ROW LEVEL SECURITY;
@@ -584,6 +585,13 @@ COMMENT ON COLUMN public.agent_runs.turns_completed IS 'Number of agent turns co
 --
 
 COMMENT ON COLUMN public.agent_runs.streaming_turns_data IS 'Per-turn metrics from streaming JSONL events (turn number, tokens, duration)';
+
+
+--
+-- Name: COLUMN agent_runs.mcp_sidecar_container_ids; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_runs.mcp_sidecar_container_ids IS 'Docker container IDs of MCP sidecar containers provisioned for this run';
 
 
 --
@@ -11157,6 +11165,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260504100425'),
 ('20260503093418'),
 ('20260502231624'),
 ('20260502201828'),
@@ -11399,3 +11408,4 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260128004342'),
 ('20260128004305'),
 ('20260127154444');
+
