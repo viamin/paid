@@ -188,7 +188,7 @@ module Screenshots
         agent_run = project.agent_runs.where(custom_prompt: "Capture screenshot route coverage").first_or_create!(
           agent_type: "codex",
           goal: "create_pr",
-          status: "pending"
+          status: "queued"
         )
 
         prompt = Prompt.find_or_create_by!(account: account, slug: "screenshots.prompt") do |record|
