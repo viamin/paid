@@ -2876,6 +2876,21 @@ RSpec.describe Activities::RunAgentActivity do
 
         activity.execute(agent_run_id: agent_run.id)
       end
+
+      it "does not reuse a cached plan when MCP servers change between executions" do
+        # First call: no MCP servers → plan built without --mcp-config
+        plan_without_mcp = activity.send(:harness_execution_plan_for, "claude_code", "do stuff")
+
+        # Simulate a second execution where MCP servers are now provisioned
+        activity.instance_variable_set(:@effective_mcp_servers, [
+          { name: "fs", transport: "stdio", command: "npx-pkg", args: [ "/ws" ] }
+        ])
+
+        plan_with_mcp = activity.send(:harness_execution_plan_for, "claude_code", "do stuff")
+
+        # The cache must produce distinct plans — not reuse the first one
+        expect(plan_with_mcp).not_to eq(plan_without_mcp)
+      end
     end
   end
 end

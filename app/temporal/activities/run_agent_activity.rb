@@ -1332,15 +1332,18 @@ module Activities
     # app-level key. Delegates command construction to agent-harness so
     # provider CLI flag semantics are owned upstream.
     #
-    # The plan is cached per (provider_key, prompt, harness_runtime?)
-    # tuple so that multiple branches within build_command can share
-    # the same capture without re-running the harness provider. The
-    # boolean discriminator ensures calls with and without a
-    # provider_entry that has an agent_harness_provider_runtime are
-    # never conflated.
+    # The plan is cached per (provider_key, prompt, harness_runtime?,
+    # effective_mcp_servers) tuple so that multiple branches within
+    # build_command can share the same capture without re-running the
+    # harness provider. The boolean discriminator ensures calls with
+    # and without a provider_entry that has an
+    # agent_harness_provider_runtime are never conflated. The MCP
+    # servers are included so that a later execution on the same
+    # activity instance with a different MCP setup does not reuse a
+    # stale plan.
     def harness_execution_plan_for(provider_key, prompt, provider_entry: nil)
       @harness_plan_cache ||= {}
-      cache_key = [ provider_key, prompt, provider_entry&.agent_harness_provider_runtime.present? ]
+      cache_key = [ provider_key, prompt, provider_entry&.agent_harness_provider_runtime.present?, @effective_mcp_servers ]
       return @harness_plan_cache[cache_key] if @harness_plan_cache.key?(cache_key)
 
       options = { dangerous_mode: true }
@@ -1430,6 +1433,14 @@ module Activities
       )
     end
 
+    # Builds an execution plan for providers that use the agent-harness
+    # runtime directly (e.g. opencode, copilot). MCP servers are
+    # intentionally NOT propagated here because none of the providers
+    # that route through this path currently support MCP — see
+    # validate_provider_mcp_support! which rejects them earlier. If a
+    # provider gains MCP support in the future, this method (and its
+    # cache key) must be updated to include @effective_mcp_servers,
+    # mirroring harness_execution_plan_for.
     def direct_outbound_execution_plan(provider_entry, prompt)
       @direct_outbound_execution_plan_cache ||= {}
       cache_key = [ provider_entry.id, prompt ]
