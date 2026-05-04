@@ -34,6 +34,7 @@ RSpec.describe ApplicationHelper do
         "review_goal?": false,
         "enhance_issue_goal?": false,
         issue: nil,
+        custom_prompt: nil,
         source_pull_request_number: nil,
         pull_request_number: nil,
         pull_request_url: nil,
@@ -145,6 +146,14 @@ RSpec.describe ApplicationHelper do
 
         expect(result).to include("PR #3")
         expect(result).to include("https://github.com/o/r/pull/3")
+      end
+
+      it "shows a custom prompt summary when no issue or PR context exists" do
+        run = stub_run("create_pr_goal?": true, custom_prompt: "Refactor the flaky dashboard queue preview rows")
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include("Refactor the flaky dashboard queue preview rows")
+        expect(result).to include("text-gray-700")
       end
 
       it "shows placeholder when no context" do
