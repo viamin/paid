@@ -282,15 +282,15 @@ module ApplicationHelper
     text = agent_run_goal_text(run)
     return tag.span("-", class: "text-gray-400") if text.blank?
 
-    inner = tag.span(text, class: "block truncate", title: text)
+    inner = tag.span(text, class: "min-w-0 block truncate", title: text)
     mobile_tooltip_wrapper(inner, text, "goal_#{run.id}", aria_label: "Show goal")
   end
 
-  # Precedence: issue title > PR label (any run with a source PR) > redacted custom_prompt.
-  # The issue title is the most user-meaningful label for what the run is trying
-  # to accomplish; the PR label covers both review runs and create_pr runs
-  # targeting an existing pull request. custom_prompt is a generic fallback when
-  # no structured context (issue/PR) is available.
+  # Goal text precedence (highest → lowest):
+  #   1. issue title — most user-meaningful label for the run's objective
+  #   2. PR label — covers review runs ("Review PR #N") and create_pr runs
+  #      targeting an existing pull request ("PR #N")
+  #   3. redacted custom_prompt — generic fallback when no structured context is available
   def agent_run_goal_text(run)
     return run.issue.title if run.issue&.title.present?
 
