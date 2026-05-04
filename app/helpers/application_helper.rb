@@ -181,6 +181,8 @@ module ApplicationHelper
       review_context(run)
     elsif run.enhance_issue_goal?
       enhance_issue_context(run)
+    elsif run.analyze_issue_goal?
+      analyze_issue_context(run)
     else
       { type: :placeholder }
     end
@@ -351,6 +353,8 @@ module ApplicationHelper
     if safe_github_url?(run.created_issue_url)
       label = run.created_issue_number.present? ? "Issue ##{run.created_issue_number}" : "Issue"
       { type: :link, label: label, url: run.created_issue_url }
+    elsif run.custom_prompt.present?
+      { type: :text, label: run.custom_prompt.truncate(60), classes: "text-gray-700", tooltip: run.custom_prompt }
     elsif run.finished?
       { type: :placeholder }
     else
@@ -369,6 +373,15 @@ module ApplicationHelper
   end
 
   def enhance_issue_context(run)
+    if run.issue.present?
+      label = "Issue ##{run.issue.github_number}"
+      github_link_or_text(label, label, run.issue.github_url, tooltip: run.issue.title)
+    else
+      { type: :placeholder }
+    end
+  end
+
+  def analyze_issue_context(run)
     if run.issue.present?
       label = "Issue ##{run.issue.github_number}"
       github_link_or_text(label, label, run.issue.github_url, tooltip: run.issue.title)

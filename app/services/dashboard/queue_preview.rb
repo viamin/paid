@@ -63,7 +63,7 @@ module Dashboard
     def preload_associations(runs)
       ActiveRecord::Associations::Preloader.new(
         records: runs,
-        associations: [ :issue, :project ]
+        associations: [ { issue: :project }, :project ]
       ).call
       AgentRun.preload_source_pull_requests(runs)
     end

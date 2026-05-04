@@ -33,6 +33,7 @@ RSpec.describe ApplicationHelper do
         "create_issue_goal?": false,
         "review_goal?": false,
         "enhance_issue_goal?": false,
+        "analyze_issue_goal?": false,
         issue: nil,
         custom_prompt: nil,
         source_pull_request_number: nil,
@@ -175,7 +176,15 @@ RSpec.describe ApplicationHelper do
         expect(result).to include("https://github.com/o/r/issues/42")
       end
 
-      it "shows 'Creating issue...' when pending" do
+      it "shows custom prompt when available and no created issue" do
+        run = stub_run("create_issue_goal?": true, custom_prompt: "Add a login timeout feature")
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include("Add a login timeout feature")
+        expect(result).to include("text-gray-700")
+      end
+
+      it "shows 'Creating issue...' when pending without custom prompt" do
         run = stub_run("create_issue_goal?": true, "finished?": false)
         result = helper.agent_run_context_display(run)
 
@@ -211,6 +220,24 @@ RSpec.describe ApplicationHelper do
 
       it "shows placeholder without PR number" do
         run = stub_run("review_goal?": true)
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include("-")
+      end
+    end
+
+    context "when analyze_issue goal" do
+      it "shows issue link when issue is present" do
+        issue = stub_issue(github_number: 55, github_url: "https://github.com/o/r/issues/55", title: "Investigate flaky test")
+        run = stub_run("analyze_issue_goal?": true, issue: issue)
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include("Issue #55")
+        expect(result).to include("https://github.com/o/r/issues/55")
+      end
+
+      it "shows placeholder when no issue" do
+        run = stub_run("analyze_issue_goal?": true)
         result = helper.agent_run_context_display(run)
 
         expect(result).to include("-")
