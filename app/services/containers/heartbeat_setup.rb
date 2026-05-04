@@ -136,13 +136,14 @@ module Containers
     end
 
     def upstream_integration
-      @upstream_integration ||= begin
-        return {} unless @harness_provider.respond_to?(:heartbeat_integration)
-
-        @harness_provider.heartbeat_integration(
-          heartbeat_file_path: CONTAINER_HEARTBEAT_PATH
-        ) || {}
-      end
+      @upstream_integration ||=
+        if @harness_provider.respond_to?(:heartbeat_integration)
+          @harness_provider.heartbeat_integration(
+            heartbeat_file_path: CONTAINER_HEARTBEAT_PATH
+          ) || {}
+        else
+          {}
+        end
     end
 
     def local_preparation
