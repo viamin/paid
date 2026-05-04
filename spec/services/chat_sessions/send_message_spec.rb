@@ -142,6 +142,30 @@ RSpec.describe ChatSessions::SendMessage do
       end
     end
 
+    it "auto-generates a title from the first user message when untitled" do
+      described_class.call(chat_session: chat_session, content: "How do I deploy to production?", llm_client: llm_client)
+      chat_session.reload
+
+      expect(chat_session.title).to eq("How do I deploy to production?")
+    end
+
+    it "does not overwrite an existing title" do
+      chat_session.update!(title: "Existing title")
+
+      described_class.call(chat_session: chat_session, content: "New message", llm_client: llm_client)
+      chat_session.reload
+
+      expect(chat_session.title).to eq("Existing title")
+    end
+
+    it "truncates long messages for the auto-generated title" do
+      long_content = "x" * 200
+      described_class.call(chat_session: chat_session, content: long_content, llm_client: llm_client)
+      chat_session.reload
+
+      expect(chat_session.title.length).to be <= 80
+    end
+
     it "builds conversation from message history" do
       create(:chat_message, :system, chat_session: chat_session)
       create(:chat_message, chat_session: chat_session, content: "First question")

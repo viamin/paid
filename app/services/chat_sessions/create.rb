@@ -94,7 +94,8 @@ module ChatSessions
     end
 
     def default_provider_for_user
-      Provider.first_enabled_for_owner(user)
+      identifier = user.settings.select_automated_provider_identifier
+      Provider.for_identifier(user, identifier) || Provider.first_enabled_for_owner(user)
     end
   end
 end
