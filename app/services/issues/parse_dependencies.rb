@@ -56,12 +56,6 @@ module Issues
   # @example
   #   Issues::ParseDependencies.call(issue: issue, comments: ["Depends on #101"])
   class ParseDependencies
-    DEPENDENCY_SECTION_PATTERN = /
-      ^\#+\s*Dependenc(?:y|ies)\b[^\n]*\n  # Header line (## Dependencies, etc.)
-      ([\s\S]*?)                           # Section body (non-greedy, up to next heading)
-      (?=^\#|\z)                           # Lookahead for next heading or end
-    /xim
-
     INLINE_DEPENDS_PATTERN = /
       \b(?:depends?\s+on|blocked?\s+by)\b   # Keyword
       :?\s*                                 # Optional colon
@@ -107,6 +101,11 @@ module Issues
 
     # Matches same-project references like #123
     ISSUE_REF_PATTERN = /\#(\d+)/
+
+    DEPENDENCY_HEADING_PATTERN = /\bdependenc(?:y|ies)\b/i
+    CHILD_LISTING_HEADING_PATTERN = /\b(?:child\s+issues?|sub[- ]?issues?|sub[- ]?tasks?)\b/i
+    MARKDOWN_HEADING_PATTERN = /^[ \t]{0,3}\#{1,6}[ \t]+(.+?)\s*#*\s*$/
+    FENCED_CODE_BLOCK_PATTERN = /^[ \t]{0,3}(```|~~~)/
 
     attr_reader :issue, :adjacency, :comments
 
@@ -212,13 +211,17 @@ module Issues
 
     # Extracts refs from body using both dependency sections and inline patterns.
     # Only dependency-scoped text is parsed — incidental #N mentions (e.g. in a
-    # "Notes" section) are intentionally ignored.
+    # "Notes" section) are intentionally ignored. Child/sub-issue listing
+    # sections are stripped before inline extraction so dependency phrases
+    # describing inter-sub-issue relationships are not attributed to the
+    # current issue.
     def extract_body_refs(body, local_deps, cross_deps)
-      body.scan(DEPENDENCY_SECTION_PATTERN) do |(section_body)|
+      markdown_sections(body, heading_pattern: DEPENDENCY_HEADING_PATTERN).each do |section_body|
         extract_section_refs(section_body, local_deps, cross_deps)
       end
 
-      extract_inline_refs(body, local_deps, cross_deps)
+      inline_text = strip_markdown_sections(body, heading_pattern: CHILD_LISTING_HEADING_PATTERN)
+      extract_inline_refs(inline_text, local_deps, cross_deps)
     end
 
     # Within a "## Dependencies" section, recognise both explicit
@@ -397,6 +400,69 @@ module Issues
       return if dependency.requires_deployment == requires_deployment
 
       dependency.update!(requires_deployment: requires_deployment)
+    end
+
+    def markdown_sections(text, heading_pattern:)
+      sections = []
+      buffer = nil
+
+      each_markdown_line(text) do |line, in_fenced_code_block|
+        if in_fenced_code_block
+          buffer << line if buffer
+          next
+        end
+
+        heading = markdown_heading_text(line)
+        if heading
+          sections << buffer.join if buffer
+          buffer = heading.match?(heading_pattern) ? [] : nil
+          next
+        end
+
+        buffer << line if buffer
+      end
+
+      sections << buffer.join if buffer
+      sections
+    end
+
+    def strip_markdown_sections(text, heading_pattern:)
+      output = +""
+      skipping = false
+
+      each_markdown_line(text) do |line, in_fenced_code_block|
+        if in_fenced_code_block
+          output << line unless skipping
+          next
+        end
+
+        heading = markdown_heading_text(line)
+        if heading
+          skipping = heading.match?(heading_pattern)
+          output << line unless skipping
+          next
+        end
+
+        output << line unless skipping
+      end
+
+      output
+    end
+
+    def each_markdown_line(text)
+      return enum_for(__method__, text) unless block_given?
+
+      in_fenced_code_block = false
+
+      text.to_s.scan(/.*?(?:\r?\n|\z)/) do |line|
+        yield line, in_fenced_code_block
+        in_fenced_code_block = !in_fenced_code_block if line.match?(FENCED_CODE_BLOCK_PATTERN)
+      end
+    end
+
+    def markdown_heading_text(line)
+      match_data = MARKDOWN_HEADING_PATTERN.match(line)
+      match_data[1] if match_data
     end
 
     # Batch-loads projects for all unique owner/repo pairs in cross_refs

@@ -63,25 +63,47 @@ module Automation
           end
 
           def eligible_scope(project)
-            scope = Issue.ready_for_work(project)
-              .where(paid_state: %w[new planning failed])
-              .where.not(id: AgentRun.where(project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).where.not(issue_id: nil).select(:issue_id))
+            blocking_issue_ids = AgentRun.where(
+              project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES
+            ).where.not(issue_id: nil).select(:issue_id)
+
+            subissue_parent_ids = Issue.where(
+              project: project, is_pull_request: false
+            ).where.not(parent_issue_id: nil).distinct.select(:parent_issue_id)
+
+            base = Issue.ready_for_work(project)
+              .where.not(id: blocking_issue_ids)
               .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
-              .where.not(id: Issue.where(project: project, is_pull_request: false).where.not(parent_issue_id: nil).distinct.select(:parent_issue_id))
+              .where.not(id: subissue_parent_ids)
               .where.not(id: Issue.open_pull_request_parent_issue_ids(project: project).distinct)
 
             trusted_usernames = Array(project.allowed_github_usernames).presence
-            scope = scope.where(github_creator_login: trusted_usernames) if trusted_usernames
+            base = base.where(github_creator_login: trusted_usernames) if trusted_usernames
 
-            scope = EXCLUDED_LABELS.reduce(scope) do |s, label|
+            base = EXCLUDED_LABELS.reduce(base) do |s, label|
               s.where.not("labels @> ?::jsonb", [ label ].to_json)
             end
 
-            # Exclude tracker/meta issues that still have open referenced
-            # issues. Trackers are pickable only once every issue referenced
-            # in their body is closed (per collaborator feedback). The
-            # ILIKE scan runs against +scope+ (not all open issues) to
-            # limit query cost.
+            scope = base.where(paid_state: %w[new planning failed])
+
+            recoverable_completed_issue_ids = AgentRun.where(
+              project: project,
+              status: "completed",
+              trigger_type: "automatic",
+              goal: "create_pr",
+              auto_pick: true,
+              pull_request_number: nil
+            ).where.not(issue_id: nil).select(:issue_id)
+
+            pr_produced_issue_ids = AgentRun.where(
+              project: project, status: "completed", goal: "create_pr"
+            ).where.not(pull_request_number: nil).where.not(issue_id: nil).select(:issue_id)
+
+            scope = scope.or(
+              base.where(paid_state: "completed", id: recoverable_completed_issue_ids)
+                .where.not(id: pr_produced_issue_ids)
+            )
+
             blocked_ids = tracker_ids_blocked_by_open_references(scope, project)
             scope = scope.where.not(id: blocked_ids) if blocked_ids.present?
 

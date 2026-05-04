@@ -170,6 +170,92 @@ RSpec.describe Issues::ParseDependencies do
       expect(issue.dependencies).to contain_exactly(dep)
     end
 
+    context "when child/sub-issue sections contain dependency phrases" do
+      it "ignores inline dependency phrases inside sub-issue sections" do
+        _dep_target = create(:issue, project: project, github_number: 9016)
+        create(:issue, project: project, github_number: 9017)
+        create(:issue, project: project, github_number: 9018)
+        body = <<~BODY
+          ## Implementation Sub-Issues
+
+          - [ ] #9017 — Add feature (depends on #9016)
+          - [ ] #9018 — Add tests (depends on #9017)
+        BODY
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to be_empty
+      end
+
+      it "still parses inline dependencies outside child sections" do
+        dep = create(:issue, project: project, github_number: 9019)
+        create(:issue, project: project, github_number: 9020)
+        body = <<~BODY
+          Depends on #9019
+
+          ## Sub-Issues
+
+          - [ ] #9020 — Some work
+        BODY
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to contain_exactly(dep)
+      end
+
+      it "recognizes 'Child Issues', 'Sub-Issues', and 'Subtasks' headings" do
+        create(:issue, project: project, github_number: 9021)
+        create(:issue, project: project, github_number: 9022)
+        create(:issue, project: project, github_number: 9023)
+
+        bodies = [
+          "## Child Issues\n- [ ] #9021 (depends on #9022)\n",
+          "## Sub-Issues\n- [ ] #9021 (depends on #9022)\n",
+          "## Subtasks\n- [ ] #9021 (depends on #9022)\n"
+        ]
+
+        bodies.each do |body_text|
+          issue = create(:issue, project: project, body: body_text)
+          described_class.call(issue: issue)
+          expect(issue.dependencies).to be_empty,
+            "Expected no dependencies for heading in: #{body_text.inspect}"
+        end
+      end
+
+      it "does not stop stripping a child section at plain issue-number lines" do
+        create(:issue, project: project, github_number: 9024)
+        create(:issue, project: project, github_number: 9025)
+        body = <<~BODY
+          ## Sub-Issues
+          - [ ] #9024 initial work
+          #9025 follow-up task (depends on #9024)
+        BODY
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to be_empty
+      end
+
+      it "does not stop stripping a child section inside fenced code blocks" do
+        create(:issue, project: project, github_number: 9026)
+        body = <<~BODY
+          ## Implementation Sub-Issues
+          ```text
+          # not a heading
+          depends on #9026
+          ```
+        BODY
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to be_empty
+      end
+    end
+
     context "with cross-project references" do
       let(:account) { project.account }
       let(:other_project) { create(:project, account: account, owner: "viamin", repo: "agent-harness") }
