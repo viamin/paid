@@ -39,9 +39,8 @@ module Projects
     end
 
     def load_recommendations
-      @recommendations = @project.knowledge_recommendations.order(created_at: :desc)
-      @pending = @recommendations.pending.by_priority
-      @resolved = @recommendations.where.not(status: "pending")
+      @pending = @project.knowledge_recommendations.pending.by_priority
+      @resolved = @project.knowledge_recommendations.where.not(status: "pending").order(created_at: :desc)
     end
 
     def update_recommendation!
