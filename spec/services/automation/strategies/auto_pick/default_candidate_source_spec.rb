@@ -35,6 +35,52 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
       expect(scope.pluck(:id)).to contain_exactly(eligible.id)
     end
+
+    it "includes completed issues with no PR-producing run (infrastructure failure recovery)" do
+      issue = create(:issue, project: project, paid_state: "completed")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: nil, pull_request_url: nil)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    it "excludes completed issues that had a PR-producing run" do
+      issue = create(:issue, project: project, paid_state: "completed")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
+    it "includes completed issues even when other PR-producing runs have NULL issue_id" do
+      issue = create(:issue, project: project, paid_state: "completed")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: nil, pull_request_url: nil)
+      create(:agent_run, :completed, project: project, issue: nil, pull_request_number: 99,
+        custom_prompt: "manual PR run")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    it "excludes completed issues whose completed run was not an auto-pick create_pr run" do
+      manual_issue = create(:issue, project: project, paid_state: "completed", github_number: 50)
+      analyze_issue = create(:issue, project: project, paid_state: "completed", github_number: 51)
+
+      create(:agent_run, :completed, :manual, project: project, issue: manual_issue,
+        goal: "create_pr", auto_pick: false, pull_request_number: nil, pull_request_url: nil)
+      create(:agent_run, :completed, :automatic, project: project, issue: analyze_issue,
+        goal: "analyze_issue", auto_pick: false, pull_request_number: nil, pull_request_url: nil)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
   end
 
   describe ".eligible_issue_ids" do
