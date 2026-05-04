@@ -2836,6 +2836,80 @@ RSpec.describe AgentRun do
 
       expect(agent_run.agent_summary).to eq("Extracted text")
     end
+
+    it "extracts error message from type:error JSONL lines" do
+      errors = [
+        { type: "error", timestamp: 1777909018637, sessionID: "ses_abc",
+          error: { name: "UnknownError", data: { message: "Model not found: openai/glm-5.1." } } },
+        { type: "error", timestamp: 1777909064953, sessionID: "ses_def",
+          error: { name: "UnknownError", data: { message: "Model not found: openai/glm-5.1." } } }
+      ].map(&:to_json).join("\n")
+      agent_run.log!("stdout", errors)
+
+      expect(agent_run.agent_summary).to eq("Agent encountered an error: Model not found: openai/glm-5.1.")
+    end
+
+    it "extracts error message from type:error with message field" do
+      error_line = { type: "error", error: { name: "FatalError", message: "Connection refused" } }.to_json
+      agent_run.log!("stdout", error_line)
+
+      expect(agent_run.agent_summary).to eq("Agent encountered an error: Connection refused")
+    end
+
+    it "extracts error message from type:error with string error" do
+      error_line = { type: "error", error: "Something went wrong" }.to_json
+      agent_run.log!("stdout", error_line)
+
+      expect(agent_run.agent_summary).to eq("Agent encountered an error: Something went wrong")
+    end
+
+    it "prefers result text over error JSONL when both present" do
+      mixed = [
+        { type: "result", subtype: "success", is_error: false, result: "OK", duration_ms: 100 },
+        { type: "error", error: { name: "Warn", data: { message: "Rate limit warning" } } }
+      ].map(&:to_json).join("\n")
+      agent_run.log!("stdout", mixed)
+
+      expect(agent_run.agent_summary).to eq("OK")
+    end
+
+    it "falls through to multiline JSON when structured parser returns blank output" do
+      envelope = { type: "result", subtype: "success", is_error: false,
+                   result: "OK", duration_ms: 2769, total_cost_usd: 0.06 }.to_json
+      allow(agent_run).to receive(:parse_structured_stdout).and_return(
+        double(error: nil, output: "")
+      )
+      agent_run.log!("stdout", envelope)
+
+      expect(agent_run.agent_summary).to eq("OK")
+    end
+
+    it "extracts text from opencode-style type:text JSONL with part.text" do
+      events = [
+        { type: "step_start", timestamp: 1777913612201, sessionID: "ses_abc",
+          part: { id: "prt_1", type: "step-start" } },
+        { type: "text", timestamp: 1777913612207, sessionID: "ses_abc",
+          part: { id: "prt_2", type: "text", text: "OK",
+                  time: { start: 1777913612203, end: 1777913612203 } } },
+        { type: "step_finish", timestamp: 1777913612232, sessionID: "ses_abc",
+          part: { id: "prt_3", type: "step-finish", reason: "stop" } }
+      ].map(&:to_json).join("\n")
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("OK")
+    end
+
+    it "extracts text from opencode JSONL ignoring non-text event types" do
+      events = [
+        { type: "step_start", part: { type: "step-start" } },
+        { type: "tool_use", part: { type: "tool", tool: "bash" } },
+        { type: "text", part: { type: "text", text: "All done" } },
+        { type: "step_finish", part: { type: "step-finish" } }
+      ].map(&:to_json).join("\n")
+      agent_run.log!("stdout", events)
+
+      expect(agent_run.agent_summary).to eq("All done")
+    end
   end
 
   describe "#current_phase_group" do

@@ -1515,22 +1515,21 @@ class AgentRun < ApplicationRecord
     return raw_stdout if raw_stdout.blank?
 
     response = parse_structured_stdout(raw_stdout)
-    if response
-      return "Agent encountered an error: #{response.error}" if response.error.present?
-
-      return response.output.presence || raw_stdout
+    if response&.error.present?
+      return "Agent encountered an error: #{response.error}"
     end
+    return response.output if response&.output.present?
 
     extract_text_from_multiline_json(raw_stdout) || raw_stdout
   end
 
   def extract_text_from_multiline_json(raw_stdout)
     results = []
-    error_message = nil
+    error_messages = []
 
     raw_stdout.lines.last(STDOUT_TAIL_LINES).each do |line|
       line = line.strip
-      next unless line.start_with?("{") && line.include?('"type"') && line.include?('"result"')
+      next unless line.start_with?("{") && line.include?('"type"')
 
       begin
         parsed = JSON.parse(line)
@@ -1538,17 +1537,34 @@ class AgentRun < ApplicationRecord
         next
       end
 
-      next unless parsed.is_a?(Hash) && parsed["type"] == "result"
+      next unless parsed.is_a?(Hash)
 
-      if parsed["is_error"]
-        error_message ||= parsed["result"] || "Unknown error"
-      elsif parsed.key?("result")
-        text = parsed["result"].to_s.strip
+      case parsed["type"]
+      when "result"
+        if parsed["is_error"]
+          error_messages << (parsed["result"] || "Unknown error").to_s
+        elsif parsed.key?("result")
+          text = parsed["result"].to_s.strip
+          results << text if text.present?
+        end
+      when "error"
+        error_obj = parsed["error"]
+        if error_obj.is_a?(Hash)
+          msg = error_obj.dig("data", "message") || error_obj["message"] || error_obj["name"]
+          error_messages << msg.to_s
+        else
+          error_messages << error_obj.to_s
+        end
+      when "text"
+        part = parsed["part"]
+        text = part.is_a?(Hash) ? part["text"].to_s.strip : parsed["text"].to_s.strip
         results << text if text.present?
       end
     end
 
-    return "Agent encountered an error: #{error_message}" if error_message.present? && results.empty?
+    if error_messages.present? && results.empty?
+      return "Agent encountered an error: #{error_messages.uniq.first.truncate(500)}"
+    end
     return nil if results.empty?
 
     results.join("\n\n").presence
