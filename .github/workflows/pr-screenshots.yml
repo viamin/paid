@@ -84,8 +84,9 @@ jobs:
       # Chrome service for screenshot rendering. Uses the browserless image
       # which exposes a CDP-compatible endpoint on port 3000. Port mapping
       # aligns with CHROME_URL below so Ferrum/Cuprite can connect via WebSocket.
-      # (Changed from selenium image + port 9222 to fix connection failures that
-      # prevented the capture job from completing.)
+      # (Updated from browserless/chromium:2.18.0 + host port 9222 to
+      # ghcr.io/browserless/chromium:v2.48.2 + host port 3000 to fix
+      # connection failures that prevented the capture job from completing.)
       chrome:
         image: ghcr.io/browserless/chromium:v2.48.2
         ports:

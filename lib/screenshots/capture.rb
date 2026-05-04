@@ -104,7 +104,7 @@ module Screenshots
           # (which may reference an internal container hostname unreachable from
           # the host). The browserless v2 image accepts CDP connections at the
           # /chromium path.
-          ws_url = chrome_url.sub(%r{\Ahttp(s?)://}, 'ws\1://') + "/chromium"
+          ws_url = chrome_url.sub(%r{\Ahttp(s?)://}, 'ws\1://').chomp("/") + "/chromium"
           options[:ws_url] = ws_url
         else
           options[:browser_path] = browser_path if browser_path

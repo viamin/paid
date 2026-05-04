@@ -73,4 +73,86 @@ RSpec.describe Screenshots::Capture do
       /CAPYBARA_APP_HOST must be set/
     )
   end
+
+  describe "#register_driver" do
+    it "sets ws_url from http CHROME_URL" do
+      ENV["CHROME_URL"] = "http://localhost:3000"
+      capture = described_class.new(output_dir: output_dir, changed_files: [])
+
+      registered_options = nil
+      allow(Capybara).to receive(:register_driver).with(:paid_screenshots) do |&block|
+        mock_app = instance_double(Capybara::Session)
+        allow(Capybara::Cuprite::Driver).to receive(:new) do |_app, **opts|
+          registered_options = opts
+          driver
+        end
+        block.call(mock_app)
+      end
+
+      capture.send(:register_driver)
+
+      expect(registered_options[:ws_url]).to eq("ws://localhost:3000/chromium")
+      expect(registered_options).not_to have_key(:browser_path)
+    end
+
+    it "sets ws_url from https CHROME_URL" do
+      ENV["CHROME_URL"] = "https://chrome.example.com"
+      capture = described_class.new(output_dir: output_dir, changed_files: [])
+
+      registered_options = nil
+      allow(Capybara).to receive(:register_driver).with(:paid_screenshots) do |&block|
+        mock_app = instance_double(Capybara::Session)
+        allow(Capybara::Cuprite::Driver).to receive(:new) do |_app, **opts|
+          registered_options = opts
+          driver
+        end
+        block.call(mock_app)
+      end
+
+      capture.send(:register_driver)
+
+      expect(registered_options[:ws_url]).to eq("wss://chrome.example.com/chromium")
+      expect(registered_options).not_to have_key(:browser_path)
+    end
+
+    it "strips trailing slash from CHROME_URL before appending path" do
+      ENV["CHROME_URL"] = "http://localhost:3000/"
+      capture = described_class.new(output_dir: output_dir, changed_files: [])
+
+      registered_options = nil
+      allow(Capybara).to receive(:register_driver).with(:paid_screenshots) do |&block|
+        mock_app = instance_double(Capybara::Session)
+        allow(Capybara::Cuprite::Driver).to receive(:new) do |_app, **opts|
+          registered_options = opts
+          driver
+        end
+        block.call(mock_app)
+      end
+
+      capture.send(:register_driver)
+
+      expect(registered_options[:ws_url]).to eq("ws://localhost:3000/chromium")
+    end
+
+    it "uses browser_path when CHROME_URL is not set" do
+      ENV.delete("CHROME_URL")
+      capture = described_class.new(output_dir: output_dir, changed_files: [])
+      allow(capture).to receive(:find_chrome_binary).and_return("/usr/bin/chromium")
+
+      registered_options = nil
+      allow(Capybara).to receive(:register_driver).with(:paid_screenshots) do |&block|
+        mock_app = instance_double(Capybara::Session)
+        allow(Capybara::Cuprite::Driver).to receive(:new) do |_app, **opts|
+          registered_options = opts
+          driver
+        end
+        block.call(mock_app)
+      end
+
+      capture.send(:register_driver)
+
+      expect(registered_options).not_to have_key(:ws_url)
+      expect(registered_options[:browser_path]).to eq("/usr/bin/chromium")
+    end
+  end
 end
