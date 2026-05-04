@@ -99,6 +99,23 @@ RSpec.describe GithubTokenHealthCheckJob do
       end
     end
 
+    context "when token was already failed before health check" do
+      let!(:token) { create(:github_token, :validation_failed, account: account) }
+
+      before { stub_auth_error_octokit }
+
+      it "marks token as failed" do
+        described_class.perform_now
+        expect(token.reload.validation_status).to eq("failed")
+      end
+
+      it "does not auto-pause projects again" do
+        allow(GithubTokens::AutoPauseProjects).to receive(:call)
+        described_class.perform_now
+        expect(GithubTokens::AutoPauseProjects).not_to have_received(:call)
+      end
+    end
+
     context "when GitHub returns a transient API error" do
       let!(:token) { create(:github_token, :pending_validation, account: account) }
 
