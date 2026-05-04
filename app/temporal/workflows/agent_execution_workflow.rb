@@ -260,10 +260,20 @@ module Workflows
             if plan
               create_cross_repo_issue_pair(agent_run_id, plan)
             else
-              # Longer timeout: includes an agent_harness LLM call for title
-              # generation, plus GitHub API and DB writes.
-              run_activity(Activities::CreateGithubIssueActivity,
-                { agent_run_id: agent_run_id }, timeout: 120, retry_policy: NO_RETRY)
+              # Check for multi-issue decomposition plan before falling back to single-issue creation
+              multi_issue_result = run_activity(Activities::ParseMultiIssuePlanActivity,
+                { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)
+
+              multi_plan = multi_issue_result[:plan]
+
+              if multi_plan
+                create_multiple_issues(agent_run_id, multi_plan)
+              else
+                # Longer timeout: includes an agent_harness LLM call for title
+                # generation, plus GitHub API and DB writes.
+                run_activity(Activities::CreateGithubIssueActivity,
+                  { agent_run_id: agent_run_id }, timeout: 120, retry_policy: NO_RETRY)
+              end
             end
           end
         elsif goal == "review"
@@ -733,6 +743,17 @@ module Workflows
           upstream_issue: upstream_ref,
           body_override: plan[:downstream_body] },
         timeout: 120, retry_policy: NO_RETRY)
+    end
+
+    # Creates multiple issues from a decomposition plan with dependency
+    # declarations wired between them. Uses a longer timeout to accommodate
+    # multiple GitHub API calls (one per issue plus the parent update).
+    def create_multiple_issues(agent_run_id, plan)
+      run_activity(Activities::CreateMultipleIssuesActivity,
+        { agent_run_id: agent_run_id,
+          tasks: plan[:tasks],
+          parent_issue_number: plan[:parent_issue_number] },
+        timeout: 300, retry_policy: NO_RETRY)
     end
 
     def request_project_resync(project_id)
