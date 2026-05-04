@@ -113,6 +113,17 @@ RSpec.shared_examples "a ReviewProvider implementation" do
       expect(result).to be_a(Automation::Providers::Data::Review)
       expect(Automation::Providers::Data::Review::STATES).to include(result.state)
     end
+
+    it "rejects unsupported review events loudly" do
+      expect {
+        adapter.submit_review(
+          repo: repo, pr_number: pr_number, body: "lgtm", event: :bogus
+        )
+      }.to raise_error(
+        Automation::Providers::ReviewProvider::ProviderError,
+        /Unsupported/
+      )
+    end
   end
 
   describe "#resolve_review_thread" do

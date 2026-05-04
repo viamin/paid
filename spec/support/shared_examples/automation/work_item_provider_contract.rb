@@ -18,6 +18,15 @@
 #   stub_missing_label_provider_failure
 #                 — a lambda that stubs the provider's "label already
 #                   absent" failure for remove_label
+#   invoke_list_issues_with_state_filter
+#                 — a lambda that performs #list_issues with a state
+#                   filter and asserts the provider client receives it
+#   invoke_list_issues_with_labels_filter
+#                 — a lambda that performs #list_issues with label
+#                   filters and asserts the provider client receives them
+#   invoke_list_issues_with_assignees_filter
+#                 — a lambda that performs #list_issues with assignee
+#                   filters and asserts the provider client receives them
 #   provider_failure_message
 #                 — the expected translated ProviderError message
 #
@@ -64,14 +73,21 @@ RSpec.shared_examples "a WorkItemProvider implementation" do
     end
 
     it "accepts and forwards the state filter" do
-      result = adapter.list_issues(repo: repo, state: :open)
+      result = invoke_list_issues_with_state_filter.call
 
       expect(result).to be_an(Array)
       expect(result).to all(be_a(Automation::Providers::Data::Issue))
     end
 
     it "accepts and forwards the labels filter" do
-      result = adapter.list_issues(repo: repo, labels: [ "bug" ])
+      result = invoke_list_issues_with_labels_filter.call
+
+      expect(result).to be_an(Array)
+      expect(result).to all(be_a(Automation::Providers::Data::Issue))
+    end
+
+    it "accepts and forwards the assignees filter" do
+      result = invoke_list_issues_with_assignees_filter.call
 
       expect(result).to be_an(Array)
       expect(result).to all(be_a(Automation::Providers::Data::Issue))

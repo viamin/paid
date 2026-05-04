@@ -24,6 +24,10 @@
 #   stub_already_merged_pull_request
 #                 — a lambda that stubs the provider's response for
 #                   merging an already-merged PR (must succeed, not raise)
+#   invoke_list_pull_requests_with_filters
+#                 — a lambda that performs #list_pull_requests with
+#                   state/head/base filters and asserts the provider
+#                   client receives them
 #   provider_failure_message
 #                 — the expected translated ProviderError message
 #
@@ -78,7 +82,7 @@ RSpec.shared_examples "a RepositoryProvider implementation" do
     end
 
     it "accepts and forwards head and base filters" do
-      result = adapter.list_pull_requests(repo: repo, head: "owner:feature", base: "main")
+      result = invoke_list_pull_requests_with_filters.call
 
       expect(result).to be_an(Array)
       expect(result).to all(be_a(Automation::Providers::Data::PullRequest))
@@ -155,6 +159,15 @@ RSpec.shared_examples "a RepositoryProvider implementation" do
       result = adapter.merge_pull_request(repo: repo, number: pr_number, method: :squash)
 
       expect(result).to be_a(Automation::Providers::Data::MergeResult)
+    end
+
+    it "rejects unsupported merge methods loudly" do
+      expect {
+        adapter.merge_pull_request(repo: repo, number: pr_number, method: :fast_forward)
+      }.to raise_error(
+        Automation::Providers::RepositoryProvider::ProviderError,
+        /Unsupported/
+      )
     end
   end
 
