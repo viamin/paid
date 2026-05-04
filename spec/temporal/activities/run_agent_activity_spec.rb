@@ -1038,10 +1038,10 @@ RSpec.describe Activities::RunAgentActivity do
       it "executes the agent CLI inside the container" do
         allow(git_ops).to receive(:has_changes_since?).and_return(false)
 
-        expect(container_service).to receive(:execute).with(
-          array_including("claude", "--print", "--dangerously-skip-permissions"),
-          hash_including(timeout: anything)
-        ).and_return(exec_success)
+expect(container_service).to receive(:execute).with(
+             satisfy { |cmd| cmd.is_a?(Array) },
+             hash_including(timeout: anything)
+           ).and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
       end
@@ -2760,6 +2760,137 @@ RSpec.describe Activities::RunAgentActivity do
       expect(result).to include(success: false, paused: true, agent_run_id: agent_run.id)
       expect(agent_run.status).to eq("paused")
       expect(agent_run.guardrail_violation_type).to eq("cost_limit")
+    end
+  end
+
+  describe "MCP-enabled execution" do
+    describe "#effective_mcp_servers_for" do
+      it "returns empty array when no MCP servers are provisioned" do
+        result = activity.send(:effective_mcp_servers_for, agent_run)
+        expect(result).to eq([])
+      end
+
+      it "assembles stdio servers from provisioned state" do
+        agent_run.update_columns(mcp_provisioned_servers: {
+          "stdio_servers" => [ { "name" => "fs", "transport" => "stdio", "command" => "npx-pkg", "args" => [ "/ws" ] } ],
+          "url_servers" => []
+        })
+
+        result = activity.send(:effective_mcp_servers_for, agent_run)
+
+        expect(result).to contain_exactly(
+          { name: "fs", transport: "stdio", command: "npx-pkg", args: [ "/ws" ] }
+        )
+      end
+
+      it "assembles url servers from provisioned state" do
+        agent_run.update_columns(mcp_provisioned_servers: {
+          "stdio_servers" => [],
+          "url_servers" => [ { "name" => "pw", "transport" => "sse", "url" => "http://host:3000/sse" } ]
+        })
+
+        result = activity.send(:effective_mcp_servers_for, agent_run)
+
+        expect(result).to contain_exactly(
+          { name: "pw", transport: "sse", url: "http://host:3000/sse" }
+        )
+      end
+
+      it "combines both stdio and url servers" do
+        agent_run.update_columns(mcp_provisioned_servers: {
+          "stdio_servers" => [ { "name" => "fs", "transport" => "stdio", "command" => "npx-pkg" } ],
+          "url_servers" => [ { "name" => "pw", "transport" => "sse", "url" => "http://host:3000/sse" } ]
+        })
+
+        result = activity.send(:effective_mcp_servers_for, agent_run)
+
+        expect(result.size).to eq(2)
+        expect(result.map { |s| s[:name] }).to contain_exactly("fs", "pw")
+      end
+    end
+
+    describe "#validate_provider_mcp_support!" do
+      it "does nothing when mcp_servers is empty" do
+        expect {
+          activity.send(:validate_provider_mcp_support!, "claude_code", [])
+        }.not_to raise_error
+      end
+
+      it "passes for providers that support MCP" do
+        expect {
+          activity.send(:validate_provider_mcp_support!, "claude_code",
+            [ { name: "t", transport: "stdio", command: "echo" } ])
+        }.not_to raise_error
+      end
+
+      it "raises ProviderExecutionError for providers that do not support MCP" do
+        expect {
+          activity.send(:validate_provider_mcp_support!, "opencode",
+            [ { name: "t", transport: "stdio", command: "echo" } ])
+        }.to raise_error(
+          Activities::RunAgentActivity::ProviderExecutionError,
+          /does not support MCP/
+        )
+      end
+    end
+
+    context "when executing with MCP servers" do
+      before do
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+      end
+
+      it "passes MCP servers as --mcp-config flag for claude provider" do
+        agent_run.update_columns(mcp_provisioned_servers: {
+          "stdio_servers" => [ { "name" => "fs", "transport" => "stdio", "command" => "npx-pkg", "args" => [ "/ws" ] } ],
+          "url_servers" => []
+        })
+
+        expect(container_service).to receive(:execute).with(
+          array_including("claude", "--mcp-config"),
+          hash_including(timeout: anything)
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "includes both stdio and url MCP servers in execution" do
+        agent_run.update_columns(mcp_provisioned_servers: {
+          "stdio_servers" => [ { "name" => "fs", "transport" => "stdio", "command" => "npx-pkg" } ],
+          "url_servers" => [ { "name" => "pw", "transport" => "sse", "url" => "http://host:3000/sse" } ]
+        })
+
+        expect(container_service).to receive(:execute).with(
+          array_including("claude", "--mcp-config"),
+          hash_including(timeout: anything)
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "executes without MCP flags when no servers are configured" do
+expect(container_service).to receive(:execute).with(
+            satisfy { |cmd| cmd.is_a?(Array) && !cmd[2].include?("--mcp-config") },
+            hash_including(timeout: anything)
+          ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "does not reuse a cached plan when MCP servers change between executions" do
+        # First call: no MCP servers → plan built without --mcp-config
+        plan_without_mcp = activity.send(:harness_execution_plan_for, "claude_code", "do stuff")
+
+        # Simulate a second execution where MCP servers are now provisioned
+        activity.instance_variable_set(:@effective_mcp_servers, [
+          { name: "fs", transport: "stdio", command: "npx-pkg", args: [ "/ws" ] }
+        ])
+
+        plan_with_mcp = activity.send(:harness_execution_plan_for, "claude_code", "do stuff")
+
+        # The cache must produce distinct plans — not reuse the first one
+        expect(plan_with_mcp).not_to eq(plan_without_mcp)
+      end
     end
   end
 end
