@@ -81,15 +81,23 @@ RSpec.describe "Dashboard" do
         owned_project = create(:project, account: account, created_by: user, owner: "visible-owner", repo: "visible-repo")
         other_user = create(:user, account: account)
         hidden_project = create(:project, account: account, created_by: other_user, owner: "hidden-owner", repo: "hidden-repo")
+        visible_issue = create(:issue, project: owned_project, github_number: 77, title: "Tighten queue preview context")
 
-        create(:agent_run, :queued, :manual, project: owned_project, created_at: 2.minutes.ago)
+        create(:agent_run, :queued, project: owned_project, issue: visible_issue, created_at: 2.minutes.ago)
         create(:agent_run, :queued, :manual, project: hidden_project, created_at: 1.minute.ago)
 
         get dashboard_path
+        doc = Nokogiri::HTML(response.body)
+        queue_section = doc.at_xpath("//h3[normalize-space(text())='Upcoming Queue']/ancestor::div[contains(@class, 'rounded-lg')][1]")
+        headers = queue_section.css("table thead th").map { |node| node.text.strip }
 
         expect(response.body).to include("Upcoming Queue")
         expect(response.body).to include("visible-owner/visible-repo")
-        expect(response.body).to include("Waiting")
+        expect(response.body).to include("Issue #77")
+        expect(queue_section).to be_present
+        expect(headers).to include("Context")
+        expect(headers).not_to include("Created")
+        expect(headers).not_to include("Waiting")
         expect(response.body).not_to include("hidden-owner/hidden-repo")
       end
 
