@@ -27,7 +27,11 @@ module Providers
       /API key not configured for/i,
       /\bauth(?:entication)?\b/i,
       /oauth/i,
-      /(?<!unexpected\s)token.*(?:expired|revoked|invalid|not found)|(?:invalid|expired|revoked)\s+token|api[_ -]?key.*token/i,
+      # Token-auth patterns — split for readability. The lookbehind prevents
+      # "unexpected token" (JSON parse errors) from matching.
+      /(?<!unexpected\s)token\s+(?:expired|revoked|invalid|not found)/i,
+      /(?:invalid|expired|revoked)\s+token/i,
+      /api[_ -]?key.*token/i,
       /unauthori[sz]ed/i,
       /invalid credentials/i,
       /session.*expired/i

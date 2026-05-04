@@ -913,6 +913,49 @@ RSpec.describe Providers::TestAgent do
     end
   end
 
+  describe "#classify_failed_response" do
+    subject(:service) { described_class.new(provider: provider) }
+
+    before do
+      allow(ProviderSupport).to receive_messages(
+        supported_provider_key?: true,
+        container_executable_provider_key?: true,
+        harness_provider_key_for: "claude",
+        error_classification_patterns_for: []
+      )
+    end
+
+    it "does not misclassify 'unexpected token' JSON parse errors as authentication" do
+      result = service.send(:classify_failed_response, "SyntaxError: unexpected token '<' at position 0")
+      expect(result).not_to eq(:authentication)
+    end
+
+    it "does not misclassify 'CSRF token mismatch' as authentication" do
+      result = service.send(:classify_failed_response, "CSRF token mismatch")
+      expect(result).not_to eq(:authentication)
+    end
+
+    it "does not misclassify 'unexpected token in JSON' as authentication" do
+      result = service.send(:classify_failed_response, "JSON.parse: unexpected token at line 1 column 1")
+      expect(result).not_to eq(:authentication)
+    end
+
+    it "correctly classifies a real token expiration as authentication" do
+      result = service.send(:classify_failed_response, "token expired")
+      expect(result).to eq(:authentication)
+    end
+
+    it "correctly classifies 'invalid token' as authentication" do
+      result = service.send(:classify_failed_response, "invalid token")
+      expect(result).to eq(:authentication)
+    end
+
+    it "correctly classifies 'revoked token' as authentication" do
+      result = service.send(:classify_failed_response, "revoked token")
+      expect(result).to eq(:authentication)
+    end
+  end
+
   describe "#rate_limit_reset_at" do
     before do
       allow(ProviderSupport).to receive(:harness_provider_key_for).with("claude").and_return("claude")
