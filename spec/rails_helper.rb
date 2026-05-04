@@ -45,6 +45,10 @@ rescue ActiveRecord::ConnectionNotEstablished => e
 end
 
 RSpec.configure do |config|
+  if ENV["CI"].present? || ENV["GITHUB_ACTIONS"].present?
+    config.filter_run_excluding local_only: true
+  end
+
   # Remove this line if you're not using ActiveRecord or ActiveRecord fixtures
   config.fixture_paths = [ Rails.root.join("spec/fixtures") ]
 
@@ -75,6 +79,23 @@ RSpec.configure do |config|
   # Reset memoized provider support data between tests
   config.after do
     ProviderSupport.reset_supported_provider_keys!
+  end
+
+  config.before(:each, :provider_smoke) do
+    next if ENV["RUN_PROVIDER_SMOKE"] == "true"
+
+    skip "Set RUN_PROVIDER_SMOKE=true to run local provider smoke specs"
+  end
+
+  config.around(:each, :provider_smoke) do |example|
+    # Provider smoke specs intentionally exercise the real Docker/container and
+    # provider auth paths, which use Excon over the local Docker Unix socket and
+    # may also reach upstream provider APIs. Allow real connections only for
+    # these explicitly opt-in local specs, then restore the repo default.
+    WebMock.allow_net_connect!
+    example.run
+  ensure
+    WebMock.disable_net_connect!(allow_localhost: true)
   end
 
   config.around do |example|

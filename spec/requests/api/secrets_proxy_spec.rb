@@ -351,6 +351,28 @@ RSpec.describe "Api::SecretsProxy" do
     end
   end
 
+  describe "GET /api/proxy/openai/*path" do
+    let(:target_url) { "https://api.openai.com/v1/models?limit=25&after=model_123" }
+
+    before do
+      stub_request(:get, target_url)
+        .to_return(status: 200, body: { data: [ { id: "gpt-4o" } ] }.to_json, headers: { "Content-Type" => "application/json" })
+    end
+
+    it "forwards auth, accept header, and query string to OpenAI" do
+      get "/api/proxy/openai/v1/models?limit=25&after=model_123",
+        headers: valid_headers.merge("Accept" => "application/json")
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)).to eq("data" => [ { "id" => "gpt-4o" } ])
+      expect(WebMock).to have_requested(:get, target_url)
+        .with(headers: {
+          "Authorization" => "Bearer sk-test-key",
+          "Accept" => "application/json"
+        })
+    end
+  end
+
   describe "POST /api/proxy/google/*path" do
     let(:target_url) { "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent" }
 

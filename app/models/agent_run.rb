@@ -71,6 +71,7 @@ class AgentRun < ApplicationRecord
   MAX_STALE_REQUEUES = 2
   MAX_STALE_SKIPS = 3
   CLAIMED_SENTINEL = "claimed"
+  SMOKE_TEST_CUSTOM_PROMPT = "smoke_test"
   STALE_CLAIMED_TIMEOUT = 15.minutes
   STALE_PAUSED_TIMEOUT = 2.hours
   STALE_RUNNING_GRACE_PERIOD = 10.minutes

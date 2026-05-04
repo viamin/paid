@@ -22,16 +22,20 @@ class Provider < ApplicationRecord
   # The opencode_npm / kilocode_api keys default to the openai-compatible
   # adapter and are overridden only for Anthropic.
   DIRECT_OUTBOUND_API_PROVIDERS = {
-    "openrouter" => { label: "OpenRouter", base_url: "https://openrouter.ai/api/v1", service_type: "openrouter" },
+    "openrouter" => { label: "OpenRouter", base_url: "https://openrouter.ai/api/v1", service_type: "openrouter",
+                      opencode_model_provider: "openrouter" },
     "anthropic" => { label: "Anthropic", base_url: "https://api.anthropic.com", service_type: "anthropic",
-                     opencode_npm: "@ai-sdk/anthropic", kilocode_api: "anthropic" },
-    "openai" => { label: "OpenAI", base_url: "https://api.openai.com/v1", service_type: "openai" },
-    "inception" => { label: "InceptionLabs", base_url: "https://api.inceptionlabs.ai/v1", service_type: "inception" },
+                     opencode_npm: "@ai-sdk/anthropic", kilocode_provider_id: "anthropic" },
+    "openai" => { label: "OpenAI", base_url: "https://api.openai.com/v1", service_type: "openai",
+                  kilocode_provider_id: "openai" },
+    "inception" => { label: "InceptionLabs", base_url: "https://api.inceptionlabs.ai/v1", service_type: "inception",
+                     kilocode_provider_id: "inception" },
     "deepseek" => { label: "DeepSeek", base_url: "https://api.deepseek.com/v1", service_type: "deepseek" },
     "mistral" => { label: "Mistral", base_url: "https://api.mistral.ai/v1", service_type: "mistral" },
     "xai" => { label: "xAI", base_url: "https://api.x.ai/v1", service_type: "xai" },
     "zai" => { label: "z.ai", base_url: "https://api.z.ai/api/paas/v4", service_type: "zai" },
-    "zai_coding" => { label: "z.ai (Coding Plan)", base_url: "https://api.z.ai/api/coding/paas/v4", service_type: "zai_coding" }
+    "zai_coding" => { label: "z.ai (Coding Plan)", base_url: "https://api.z.ai/api/coding/paas/v4", service_type: "zai_coding",
+                      kilocode_provider_id: "zai-coding-plan" }
   }.freeze
 
   DIRECT_OUTBOUND_SERVICE_TYPES = DIRECT_OUTBOUND_API_PROVIDERS.values.map { |c| c[:service_type] }.to_set.freeze
@@ -198,21 +202,61 @@ class Provider < ApplicationRecord
     raise ArgumentError, "Missing KiloCode model id for provider #{id || provider_key}" if model_id.blank?
 
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(kilocode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["anthropic"])
-    kilocode_provider_key = api_config[:kilocode_api] || "openai"
+    kilocode_provider_id = api_config[:kilocode_provider_id] || "openai-compatible"
+    options = { "apiKey" => "{env:#{kilocode_api_key_env_var}}" }
+    base_url = api_config[:base_url]
+    default_openai_url = DIRECT_OUTBOUND_API_PROVIDERS.dig("openai", :base_url)
+    options["baseURL"] = base_url if base_url.present? && base_url != default_openai_url
 
     {
-      provider: { kilocode_provider_key => {} },
-      model: kilocode_qualified_model(kilocode_provider_key, model_id)
+      provider: {
+        kilocode_provider_id => {
+          options: options,
+          models: {
+            model_id => {
+              name: model_id,
+              id: model_id,
+              tool_call: true
+            }
+          }
+        }
+      },
+      model: kilocode_qualified_model(kilocode_provider_id, model_id)
     }.to_json
   end
 
-  def kilocode_qualified_model(provider_key, model_id)
-    model_id.include?("/") ? model_id : "#{provider_key}/#{model_id}"
+  def kilocode_qualified_model(provider_id, model_id)
+    model_id.start_with?("#{provider_id}/") ? model_id : "#{provider_id}/#{model_id}"
+  end
+
+  def opencode_qualified_model
+    model_id = opencode_model_id
+    return if model_id.blank?
+
+    api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
+    provider_id = api_config[:opencode_model_provider]
+    return model_id if provider_id.blank? || model_id.start_with?("#{provider_id}/")
+
+    "#{provider_id}/#{model_id}"
+  end
+
+  def kilocode_api_key_env_var
+    service_type = kilocode_required_api_service_type
+    return "OPENAI_API_KEY" if service_type.blank?
+
+    "#{service_type.upcase.tr('-', '_')}_API_KEY"
+  end
+
+  def kilocode_runtime_env
+    api_key = provider_api_key&.api_key.to_s
+    return {} if api_key.blank?
+
+    { kilocode_api_key_env_var => api_key }
   end
 
   def direct_outbound_exec_env
     if kilocode_direct_outbound?
-      { "PAID_KILOCODE_CONFIG_B64" => Base64.strict_encode64(kilocode_config_json) }
+      kilocode_runtime_env.merge("PAID_KILOCODE_CONFIG_B64" => Base64.strict_encode64(kilocode_config_json))
     else
       {}
     end
@@ -596,12 +640,13 @@ class Provider < ApplicationRecord
   end
 
   def opencode_provider_runtime
-    model_id = opencode_model_id
+    model_id = opencode_qualified_model
     raise ArgumentError, "Missing OpenCode model id for provider #{id || provider_key}" if model_id.blank?
 
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
 
-    env = { "OPENAI_API_KEY" => provider_api_key&.api_key.to_s }
+    env_var = "#{api_config[:service_type].upcase.tr('-', '_')}_API_KEY"
+    env = { env_var => provider_api_key&.api_key.to_s }
     env["OPENAI_BASE_URL"] = api_config[:base_url] if api_config[:base_url]
 
     AgentHarness::ProviderRuntime.new(

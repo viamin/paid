@@ -35,7 +35,11 @@
       </thead>
       <tbody class="divide-y divide-gray-200 bg-white">
         <% @providers.each do |provider| %>
-          <tr data-controller="test-agent" data-test-agent-url-value="<%= test_agent_provider_path(provider) %>">
+          <tr
+            data-controller="test-agent"
+            data-test-agent-url-value="<%= test_agent_provider_path(provider) %>"
+            data-test-agent-csrf-token-value="<%= form_authenticity_token %>"
+          >
             <td class="px-4 py-3 text-sm font-medium text-gray-900">
               <%= provider.display_name %>
             </td>

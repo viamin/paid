@@ -51,6 +51,24 @@ RSpec.describe Activities::RunAgentActivity do
     variant_version
   end
 
+  def expected_kilocode_model_config
+    {
+      "anthropic" => {
+        "options" => {
+          "apiKey" => "{env:ANTHROPIC_API_KEY}",
+          "baseURL" => "https://api.anthropic.com"
+        },
+        "models" => {
+          "claude-sonnet-4-20250514" => {
+            "name" => "claude-sonnet-4-20250514",
+            "id" => "claude-sonnet-4-20250514",
+            "tool_call" => true
+          }
+        }
+      }
+    }
+  end
+
   def create_running_ab_test(slug:)
     prompt = create(:prompt, :for_project, project: project, slug: slug)
     control_version = prompt.create_version!(template: "control {{base_prompt}} {{repo}}")
@@ -490,9 +508,9 @@ RSpec.describe Activities::RunAgentActivity do
         preparation = activity.send(:command_preparation_for, opencode_context, "ping")
 
         expect(command).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", "ping" ])
-        expect(env).to include("OPENAI_API_KEY" => "sk-openrouter-secret", "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
+        expect(env).to include("OPENROUTER_API_KEY" => "sk-openrouter-secret", "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
         expect(preparation.file_writes.first.path).to eq("~/.config/opencode/opencode.json")
-        expect(preparation.file_writes.first.content).to include("\"model\": \"moonshotai/kimi-k2-0905\"")
+        expect(preparation.file_writes.first.content).to include("\"model\": \"openrouter/moonshotai/kimi-k2-0905\"")
       end
 
       it "preserves multi-line prompts when wrapping the harness runtime command" do
@@ -519,10 +537,11 @@ RSpec.describe Activities::RunAgentActivity do
         expect(command.last).to eq("ping")
 
         expect(env).to have_key("PAID_KILOCODE_CONFIG_B64")
+        expect(env).to include("ANTHROPIC_API_KEY" => "sk-anthropic-secret")
         expect(env).to have_key("PAID_PROVIDER_ID")
         config_json = JSON.parse(Base64.strict_decode64(env["PAID_KILOCODE_CONFIG_B64"]))
         expect(config_json["model"]).to eq("anthropic/claude-sonnet-4-20250514")
-        expect(config_json["provider"]).to eq({ "anthropic" => {} })
+        expect(config_json["provider"]).to eq(expected_kilocode_model_config)
       end
 
       it "does not include PAID_KILOCODE_CONFIG_B64 for subscription kilocode providers" do
