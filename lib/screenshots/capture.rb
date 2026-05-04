@@ -192,6 +192,8 @@ module Screenshots
         if agent_run.persisted?
           agent_run.agent_run_logs.destroy_all
           agent_run.agent_run_phases.destroy_all
+          agent_run.quality_metrics.destroy_all
+          agent_run.model_selection&.destroy
           agent_run.created_at = Time.current
         end
         agent_run.assign_attributes(
@@ -203,7 +205,10 @@ module Screenshots
           error_message: nil, pull_request_url: nil, pull_request_number: nil,
           created_issue_url: nil, created_issue_number: nil,
           review_url: nil, review_posted_at: nil,
-          result_commit_sha: nil, iterations: 0, cost_cents: 0,
+          result_commit_sha: nil, base_commit_sha: nil,
+          worktree_path: nil, branch_name: nil,
+          providers_attempted: [], final_provider: nil, provider_switches: 0,
+          iterations: 0, cost_cents: 0,
           tokens_input: 0, tokens_output: 0
         )
         agent_run.save!

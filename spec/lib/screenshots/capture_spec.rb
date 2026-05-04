@@ -123,6 +123,25 @@ RSpec.describe Screenshots::Capture do
         completed_at: nil
       )
     end
+
+    it "clears git metadata and provider fields" do
+      stale_agent_run.update!(
+        base_commit_sha: "a" * 40,
+        worktree_path: "/tmp/old-worktree",
+        branch_name: "old-branch",
+        providers_attempted: [ { "provider" => "openai" } ],
+        final_provider: "openai",
+        provider_switches: 2
+      )
+      expect(reused_run).to have_attributes(
+        base_commit_sha: nil,
+        worktree_path: nil,
+        branch_name: nil,
+        providers_attempted: [],
+        final_provider: nil,
+        provider_switches: 0
+      )
+    end
   end
 
   describe "#register_driver" do
