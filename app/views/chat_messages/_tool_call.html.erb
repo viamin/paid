@@ -1,13 +1,13 @@
 <% tool_title = message.role == "tool" ? "Tool Result" : "Tool Call" %>
 <% payload = message.role == "tool" ? (message.tool_result || message.content) : message.tool_arguments %>
-<details class="rounded-2xl border border-cyan-200 bg-white/70" <%= "open" if message.role == "tool" %>>
-  <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-slate-800">
+<details class="rounded-2xl border border-cyan-200 bg-white/70 dark:border-cyan-700 dark:bg-slate-800/70" <%= "open" if message.role == "tool" %>>
+  <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-slate-800 dark:text-slate-200">
     <span><%= tool_title %>: <%= message.tool_name.presence || "Unknown tool" %></span>
-    <span class="rounded-full bg-cyan-100 px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-cyan-700">
+    <span class="rounded-full bg-cyan-100 px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">
       <%= message.role == "tool" ? "result" : "args" %>
     </span>
   </summary>
-  <div class="border-t border-cyan-100 px-4 py-3">
+  <div class="border-t border-cyan-100 px-4 py-3 dark:border-cyan-800">
     <pre class="overflow-x-auto whitespace-pre-wrap break-words rounded-xl bg-slate-900/95 p-4 text-xs leading-6 text-slate-100"><%= pretty_chat_tool_payload(payload) %></pre>
   </div>
 </details>

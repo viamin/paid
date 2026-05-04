@@ -6,8 +6,8 @@
            data-message-id="<%= message.id %>">
     <div class="mb-2 flex items-center gap-2">
       <%= chat_message_role_badge(message) %>
-      <span class="text-xs font-medium text-slate-400"><%= chat_message_label(message) %></span>
-      <span class="text-xs text-slate-300"><%= local_time(message.created_at, format: :relative) %></span>
+      <span class="text-xs font-medium text-slate-400 dark:text-slate-500"><%= chat_message_label(message) %></span>
+      <span class="text-xs text-slate-300 dark:text-slate-500"><%= local_time(message.created_at, format: :relative) %></span>
     </div>
 
     <% if message.tool_name.present? || message.role == "tool" %>
