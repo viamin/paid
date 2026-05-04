@@ -334,14 +334,14 @@ module ApplicationHelper
       prefix = run.issue.is_pull_request? ? "PR" : "Issue"
       label = "#{prefix} ##{run.issue.github_number}"
       github_link_or_text(label, label, run.issue.github_url, tooltip: run.issue.title)
-    elsif run.custom_prompt.present?
-      { type: :text, label: run.custom_prompt.truncate(60), classes: "text-gray-700", tooltip: run.custom_prompt }
     elsif run.source_pull_request_number.present?
       url = source_pull_request_url(run)
       label = "PR ##{run.source_pull_request_number}"
       github_link_or_text(label, label, url)
     elsif run.pull_request_number.present?
       github_link_or_text("PR ##{run.pull_request_number}", "PR ##{run.pull_request_number}", run.pull_request_url)
+    elsif run.custom_prompt.present?
+      { type: :text, label: run.custom_prompt.truncate(60), classes: "text-gray-700", tooltip: run.custom_prompt }
     else
       { type: :placeholder }
     end
