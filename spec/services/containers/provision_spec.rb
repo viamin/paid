@@ -2578,6 +2578,37 @@ RSpec.describe Containers::Provision do
           service.execute("hung_command", timeout: 0.1)
         }.to raise_error(described_class::TimeoutError, /timed out after 0.1 seconds/)
       end
+
+      it "reclassifies Docker API timeout race as TimeoutError when elapsed is near the timeout" do
+        # Simulates the Docker `wait:` timer firing slightly before Ruby's
+        # monotonic clock reaches the timeout value — the exact race from #1547.
+        # We use a 1s timeout and sleep just under it so elapsed lands within
+        # the DOCKER_TIMEOUT_SKEW_TOLERANCE (0.5s) window, triggering
+        # reclassification of the Docker transport error as a TimeoutError.
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          sleep 0.85 # near but below the 1s timeout
+          raise Docker::Error::DockerError, "read: connection reset by peer"
+        end
+        allow(service).to receive(:watchdog_poll_interval).and_return(10)
+
+        expect {
+          service.execute("hung_command", timeout: 1)
+        }.to raise_error(described_class::TimeoutError, /timed out after 1 seconds/)
+      end
+
+      it "does not reclassify Docker error as timeout when elapsed is well below threshold" do
+        # A Docker error that occurs well before the timeout should NOT be
+        # reclassified — it is a genuine transport failure, not a timeout race.
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          sleep 0.01
+          raise Docker::Error::DockerError, "connection refused"
+        end
+        allow(service).to receive(:watchdog_poll_interval).and_return(10)
+
+        expect {
+          service.execute("normal_command", timeout: 2)
+        }.to raise_error(described_class::ExecutionError, /connection refused/)
+      end
     end
 
     context "without startup and idle timeouts" do
