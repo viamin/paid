@@ -113,11 +113,25 @@ RSpec.describe Screenshots::DetectUiChanges do
       expect(result[:ui_changes?]).to be true
     end
 
-    it "detects locale file changes" do
-      result = described_class.call(changed_files: [ "config/locales/devise.en.yml" ])
+    it "detects application locale file changes" do
+      result = described_class.call(changed_files: [ "config/locales/en.yml" ])
 
       expect(result[:ui_changes?]).to be true
-      expect(result[:ui_files]).to eq([ "config/locales/devise.en.yml" ])
+      expect(result[:ui_files]).to eq([ "config/locales/en.yml" ])
+    end
+
+    it "excludes devise locale files (mixed mailer and browser strings)" do
+      result = described_class.call(changed_files: [ "config/locales/devise.en.yml" ])
+
+      expect(result[:ui_changes?]).to be false
+      expect(result[:ui_files]).to be_empty
+    end
+
+    it "excludes the health controller (infrastructure only, no browser UI)" do
+      result = described_class.call(changed_files: [ "app/controllers/health_controller.rb" ])
+
+      expect(result[:ui_changes?]).to be false
+      expect(result[:ui_files]).to be_empty
     end
 
     it "ignores mailer templates that do not render browser UI" do

@@ -64,6 +64,12 @@ RSpec.describe Screenshots::CaptureTargets do
       expect(targets.map(&:slug)).to eq([ "project_cost_dashboard" ])
     end
 
+    it "maps projects/agent_runs_controller to include the new action target" do
+      targets = described_class.call(changed_files: [ "app/controllers/projects/agent_runs_controller.rb" ])
+
+      expect(targets.map(&:slug)).to contain_exactly("project_agent_runs", "project_agent_run_new", "project_agent_run_show")
+    end
+
     it "maps public assets to shared UI targets" do
       targets = described_class.call(changed_files: [ "public/icon.png" ])
 

@@ -114,6 +114,7 @@ module Screenshots
     end
 
     def setup_capybara
+      Capybara.app = Rails.application
       Capybara.server = :puma, { Silent: true }
       remote_host = ENV["CAPYBARA_APP_HOST"]
 
@@ -336,9 +337,12 @@ module Screenshots
 
     def sign_in(session, user)
       session.visit("/users/sign_in")
-      session.fill_in "Email", with: user.email
-      session.fill_in "Password", with: SEED_PASSWORD
-      session.click_button "Sign in"
+      # Use field names (form attribute) rather than visible labels so this
+      # continues to work even if the UI copy changes (which is exactly the
+      # kind of change this workflow is designed to capture screenshots of).
+      session.fill_in "user[email]", with: user.email
+      session.fill_in "user[password]", with: SEED_PASSWORD
+      session.click_button "commit"
     end
 
     # Wait for the page to fully render, including lazy-loaded Turbo frames

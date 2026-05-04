@@ -15,7 +15,9 @@ module Screenshots
     UI_FILE_EXCLUSIONS = [
       %r{\Aapp/views/devise/mailer/},
       %r{\Aapp/views/layouts/mailer(?:\.(?:html|text))?\.erb\z},
-      %r{\Aapp/views/pwa/}
+      %r{\Aapp/views/pwa/},
+      %r{\Aconfig/locales/devise\.},
+      %r{\Aapp/controllers/health_controller\.rb\z}
     ].freeze
 
     UI_FILE_PATTERNS = [

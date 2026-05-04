@@ -185,7 +185,7 @@ module Screenshots
     # Nested controller path => target keys
     NESTED_CONTROLLER_TARGETS = {
       "users/registrations_controller.rb" => [ :sign_up ],
-      "projects/agent_runs_controller.rb" => %i[project_agent_runs project_agent_run_show],
+      "projects/agent_runs_controller.rb" => %i[project_agent_runs project_agent_run_new project_agent_run_show],
       "projects/cost_dashboards_controller.rb" => [ :project_cost_dashboard ],
       "projects/cost_snapshots_controller.rb" => [ :project_cost_snapshot ],
       "projects/quality_dashboards_controller.rb" => [ :project_quality_dashboard ],
