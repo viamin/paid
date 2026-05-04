@@ -17,7 +17,9 @@ RSpec.describe Screenshots::Capture do
   end
 
   before do
-    allow(Capybara::Session).to receive(:new).with(:paid_screenshots).and_return(session)
+    allow(Capybara::Session).to receive(:new)
+      .with(:paid_screenshots, Capybara.app)
+      .and_return(session)
     allow(session).to receive_messages(driver: driver, has_no_css?: true)
     allow(session).to receive(:visit)
     allow(session).to receive(:save_screenshot)
@@ -72,5 +74,44 @@ RSpec.describe Screenshots::Capture do
       RuntimeError,
       /CAPYBARA_APP_HOST must be set/
     )
+  end
+
+  describe "#register_driver" do
+    it "passes base_url to Cuprite when app_host is set" do
+      capture = described_class.new(output_dir: output_dir, changed_files: [])
+      app_host = "http://127.0.0.1:3001"
+      cuprite_driver = instance_double(Capybara::Cuprite::Driver)
+
+      allow(Capybara).to receive(:app_host).and_return(app_host)
+      allow(Capybara::Cuprite::Driver).to receive(:new).and_return(cuprite_driver)
+
+      capture.send(:register_driver)
+
+      # Trigger the registered driver block by calling it with a mock app
+      mock_app = instance_double(Rack::Builder)
+      Capybara.drivers[:paid_screenshots].call(mock_app)
+
+      expect(Capybara::Cuprite::Driver).to have_received(:new) do |app, **options|
+        expect(app).to eq(mock_app)
+        expect(options[:base_url]).to eq(app_host)
+      end
+    end
+
+    it "omits base_url from Cuprite when app_host is nil" do
+      capture = described_class.new(output_dir: output_dir, changed_files: [])
+      cuprite_driver = instance_double(Capybara::Cuprite::Driver)
+
+      allow(Capybara).to receive(:app_host).and_return(nil)
+      allow(Capybara::Cuprite::Driver).to receive(:new).and_return(cuprite_driver)
+
+      capture.send(:register_driver)
+
+      mock_app = instance_double(Rack::Builder)
+      Capybara.drivers[:paid_screenshots].call(mock_app)
+
+      expect(Capybara::Cuprite::Driver).to have_received(:new) do |_app, **options|
+        expect(options).not_to have_key(:base_url)
+      end
+    end
   end
 end
