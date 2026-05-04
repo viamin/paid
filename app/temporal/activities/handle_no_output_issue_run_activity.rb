@@ -136,11 +136,24 @@ module Activities
     def handle_provider_error(agent_run, agent_summary)
       agent_run.fail!(error: "Provider error detected in output: #{agent_summary.to_s.truncate(500)}")
       agent_run.log!("system", "Failed: provider error detected in output (not a real agent response)")
+      transition_issue_to_failed(agent_run)
     end
 
     def handle_infrastructure_error(agent_run, agent_summary)
       agent_run.fail!(error: "Infrastructure error detected in output: #{agent_summary.to_s.truncate(500)}")
       agent_run.log!("system", "Failed: infrastructure error detected in output (container/sandbox failure)")
+      transition_issue_to_failed(agent_run)
+    end
+
+    # Transitions the issue to "failed" so it doesn't stay stuck in
+    # "in_progress". This mirrors MarkAgentRunFailedActivity's issue
+    # state handling — necessary here because this activity runs on
+    # the success path, so MarkAgentRunFailedActivity won't execute.
+    def transition_issue_to_failed(agent_run)
+      issue = agent_run.issue
+      return unless issue
+
+      issue.update!(paid_state: "failed") if issue.paid_state != "failed"
     end
 
     def handle_needs_input(client, agent_run, agent_summary)

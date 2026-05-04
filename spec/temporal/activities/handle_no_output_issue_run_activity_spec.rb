@@ -264,7 +264,7 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(agent_run.reload.status).to eq("failed")
       end
 
-      it "does not transition issue to recommend_close" do
+      it "transitions issue to failed so it is retryable by auto-pick" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue,
           iterations: 0, cost_cents: 0)
@@ -272,7 +272,7 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
-        expect(issue.reload.paid_state).not_to eq("recommend_close")
+        expect(issue.reload.paid_state).to eq("failed")
       end
 
       it "does not post a recommend-close comment on GitHub" do
@@ -371,7 +371,7 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(agent_run.reload.status).to eq("failed")
       end
 
-      it "does not transition issue to recommend_close" do
+      it "transitions issue to failed so it is retryable by auto-pick" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue,
           iterations: 0, cost_cents: 0)
@@ -379,7 +379,7 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
-        expect(issue.reload.paid_state).not_to eq("recommend_close")
+        expect(issue.reload.paid_state).to eq("failed")
       end
 
       it "detects sandbox error variants" do
