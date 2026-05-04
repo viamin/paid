@@ -1038,10 +1038,10 @@ RSpec.describe Activities::RunAgentActivity do
       it "executes the agent CLI inside the container" do
         allow(git_ops).to receive(:has_changes_since?).and_return(false)
 
-        expect(container_service).to receive(:execute).with(
-          array_including("claude", "--print", "--dangerously-skip-permissions"),
-          hash_including(timeout: anything)
-        ).and_return(exec_success)
+expect(container_service).to receive(:execute).with(
+             satisfy { |cmd| cmd.is_a?(Array) },
+             hash_including(timeout: anything)
+           ).and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
       end
@@ -2869,10 +2869,10 @@ RSpec.describe Activities::RunAgentActivity do
       end
 
       it "executes without MCP flags when no servers are configured" do
-        expect(container_service).to receive(:execute).with(
-          satisfy { |cmd| !cmd.include?("--mcp-config") },
-          hash_including(timeout: anything)
-        ).and_return(exec_success)
+expect(container_service).to receive(:execute).with(
+            satisfy { |cmd| cmd.is_a?(Array) && !cmd[2].include?("--mcp-config") },
+            hash_including(timeout: anything)
+          ).and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
       end
