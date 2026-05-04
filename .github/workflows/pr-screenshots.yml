@@ -84,7 +84,7 @@ jobs:
       chrome:
         image: ghcr.io/browserless/chromium:v2.48.2
         ports:
-          - 9222:3000
+          - 3000:3000
         options: >-
           --health-cmd="curl -sf http://localhost:3000/json/version || exit 1"
           --health-interval=10s
@@ -98,7 +98,7 @@ jobs:
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
       SCREENSHOT_OUTPUT_DIR: tmp/screenshots
-      CHROME_URL: http://localhost:9222
+      CHROME_URL: http://localhost:3000
 
     steps:
       - name: Checkout code
@@ -129,10 +129,10 @@ jobs:
         # The workflow requires the dedicated Chrome service container so the
         # capture environment matches the CI contract for screenshot rendering.
         run: |
-          if curl -sf http://localhost:9222/json/version > /dev/null 2>&1; then
+          if curl -sf http://localhost:3000/json/version > /dev/null 2>&1; then
             echo "Chrome service container is available via CHROME_URL"
           else
-            echo "::error::Chrome service container is not reachable at http://localhost:9222/json/version"
+            echo "::error::Chrome service container is not reachable at http://localhost:3000/json/version"
             exit 1
           fi
 
