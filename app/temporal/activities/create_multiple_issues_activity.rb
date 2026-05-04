@@ -26,22 +26,24 @@ module Activities
 
     def execute(input)
       agent_run = AgentRun.find(input[:agent_run_id])
+      return cached_result(agent_run) if agent_run.finished?
+
       tasks = validate_tasks!(input[:tasks])
       parent_issue_number = input[:parent_issue_number]
 
       project = agent_run.project
       client = project.github_token.client
 
-      creation_order = topological_sort(tasks)
+      creation_order = topological_sort!(tasks)
       index_to_github_number = {}
       created_issues = []
 
       create_issues_with_partial_failure_guard(
         tasks, creation_order, index_to_github_number, created_issues,
-        client, project, agent_run
+        client, project, agent_run, parent_issue_number
       )
 
-      complete_agent_run!(agent_run, created_issues)
+      completed = complete_agent_run!(agent_run, created_issues)
 
       parent_updated = false
       if parent_issue_number && created_issues.any?
@@ -49,6 +51,8 @@ module Activities
           client, project, parent_issue_number, created_issues
         )
       end
+
+      ProcessRunQueueJob.perform_later if completed
 
       {
         agent_run_id: agent_run.id,
@@ -61,15 +65,15 @@ module Activities
 
     def create_issues_with_partial_failure_guard(
       tasks, creation_order, index_to_github_number, created_issues,
-      client, project, agent_run
+      client, project, agent_run, parent_issue_number
     )
       creation_order.each_with_index do |task_index, step|
         task = tasks[task_index]
         heartbeat("creating_issue_#{step + 1}_of_#{creation_order.size}")
 
         title = task[:title].to_s.truncate(Llm::GenerateIssueTitle::MAX_TITLE_LENGTH)
-        body = build_body(task, index_to_github_number)
-        labels = build_labels(project)
+        body = build_body(task, index_to_github_number, parent_issue_number)
+        labels = build_labels(project, agent_run)
 
         gh_issue = client.create_issue(
           project.full_name,
@@ -103,8 +107,11 @@ module Activities
     rescue StandardError => e
       raise e if created_issues.empty?
 
+      issue_numbers = created_issues.map { |i| "##{i[:github_number]}" }.join(", ")
       raise Temporalio::Error::ApplicationError.new(
-        "Partial failure after creating #{created_issues.size}/#{creation_order.size} issues: #{e.message}",
+        "Partial failure after creating #{created_issues.size}/#{creation_order.size} issues " \
+        "(#{issue_numbers}): #{e.message}",
+        created_issues,
         type: "MultiIssueCreationPartialFailure",
         non_retryable: true
       )
@@ -128,9 +135,21 @@ module Activities
       tasks
     end
 
-    def build_body(task, index_to_github_number)
+    def cached_result(agent_run)
+      {
+        agent_run_id: agent_run.id,
+        created_issues: [],
+        parent_issue_updated: false
+      }
+    end
+
+    def build_body(task, index_to_github_number, parent_issue_number)
       parts = []
       parts << task[:body].to_s.truncate(50_000) if task[:body].present?
+
+      if parent_issue_number
+        parts << "Sub-issue of ##{parent_issue_number}"
+      end
 
       dep_indices = Array(task[:dependencies])
       if dep_indices.any?
@@ -148,14 +167,22 @@ module Activities
       parts.join("\n\n")
     end
 
-    def build_labels(project)
+    def build_labels(project, agent_run)
       labels = []
       labels << project.automation_label_name if project.automation_on_label_enabled?
       labels << project.generated_label_name if project.auto_add_labels_enabled?
+      priority_label = priority_label_for(agent_run)
+      labels << priority_label if priority_label.present?
       labels
     end
 
-    def topological_sort(tasks)
+    def priority_label_for(agent_run)
+      return nil if agent_run.priority_tier.blank?
+
+      agent_run.project.priority_label_for(agent_run.priority_tier)
+    end
+
+    def topological_sort!(tasks)
       task_count = tasks.size
       in_degree = Array.new(task_count, 0)
       adjacency = Array.new(task_count) { [] }
@@ -182,23 +209,28 @@ module Activities
       end
 
       if sorted.size < task_count
-        # Cycle detected — fall back to natural order
-        (0...task_count).to_a
-      else
-        sorted
+        raise Temporalio::Error::ApplicationError.new(
+          "Dependency cycle detected in task plan — cannot determine creation order",
+          type: "InvalidInput",
+          non_retryable: true
+        )
       end
+
+      sorted
     end
 
     def complete_agent_run!(agent_run, created_issues)
-      return if created_issues.empty?
+      return false if created_issues.empty?
 
       first = created_issues.first
-      agent_run.complete!(issue_url: first[:issue_url], issue_number: first[:github_number])
+      completed = agent_run.complete!(issue_url: first[:issue_url], issue_number: first[:github_number])
 
       agent_run.log!(
         "system",
         "Created #{created_issues.size} issues: #{created_issues.map { |i| "##{i[:github_number]}" }.join(', ')}"
       )
+
+      completed
     end
 
     def update_parent_issue(client, project, parent_issue_number, created_issues)
@@ -209,7 +241,8 @@ module Activities
       current_body = current_issue.body.to_s
 
       updated_body = if current_body.include?("## Sub-issues")
-        current_body.sub(/## Sub-issues\n.*?\z/m, "## Sub-issues\n\n#{task_list}")
+        # Replace only the Sub-issues section, preserving any content after the next heading
+        current_body.sub(/## Sub-issues\n.*?(?=\n## |\z)/m, "## Sub-issues\n\n#{task_list}")
       else
         current_body + section
       end

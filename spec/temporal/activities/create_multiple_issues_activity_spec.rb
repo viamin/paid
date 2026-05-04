@@ -303,5 +303,120 @@ RSpec.describe Activities::CreateMultipleIssuesActivity do
         activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: nil)
       end
     end
+
+    context "when the agent run is already finished" do
+      before { agent_run.update!(status: "completed") }
+
+      it "returns early without creating issues" do
+        expect(github_client).not_to receive(:create_issue)
+
+        result = activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: nil)
+
+        expect(result[:agent_run_id]).to eq(agent_run.id)
+        expect(result[:created_issues]).to eq([])
+        expect(result[:parent_issue_updated]).to be false
+      end
+    end
+
+    context "when agent run has a priority_tier" do
+      before do
+        agent_run.update!(priority_tier: "P1")
+        project.update!(priority_labels: { "P1" => "priority:critical" })
+      end
+
+      it "adds the priority label to created issues" do
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(labels: a_collection_including("priority:critical"))
+        ).exactly(3).times
+
+        activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: nil)
+      end
+    end
+
+    context "when child issues reference parent" do
+      it "includes Sub-issue of #N backlink in child issue bodies" do
+        call_args = []
+        allow(github_client).to receive(:create_issue) do |_repo, **opts|
+          call_args << opts
+          gh_issue_response(
+            number: 100 + call_args.size,
+            id: 200_000 + call_args.size,
+            title: opts[:title],
+            body: opts[:body]
+          )
+        end
+        allow(github_client).to receive(:issue).and_return(Struct.new(:body).new("Parent body"))
+        allow(github_client).to receive(:update_issue)
+
+        activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: 451)
+
+        call_args.each do |args|
+          expect(args[:body]).to include("Sub-issue of #451")
+        end
+      end
+    end
+
+    context "when parent issue has sections after Sub-issues" do
+      it "preserves content after the Sub-issues section" do
+        parent_body = "# Feature\n\nDesc.\n\n## Sub-issues\n\n- [ ] #99 — Old task\n\n## Notes\n\nKeep this."
+        allow(github_client).to receive(:issue).and_return(Struct.new(:body).new(parent_body))
+
+        updated_body = nil
+        allow(github_client).to receive(:update_issue) do |_repo, _number, body:|
+          updated_body = body
+        end
+
+        activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: 451)
+
+        expect(updated_body).to include("## Notes")
+        expect(updated_body).to include("Keep this.")
+        expect(updated_body).to include("- [ ] #101")
+        expect(updated_body).not_to include("- [ ] #99")
+      end
+    end
+
+    context "with dependency cycle" do
+      let(:cyclic_tasks) do
+        [
+          { index: 0, title: "Task A", body: "Body A", dependencies: [ 1 ] },
+          { index: 1, title: "Task B", body: "Body B", dependencies: [ 0 ] }
+        ]
+      end
+
+      it "raises a non-retryable error" do
+        expect {
+          activity.execute(agent_run_id: agent_run.id, tasks: cyclic_tasks, parent_issue_number: nil)
+        }.to raise_error(Temporalio::Error::ApplicationError, /Dependency cycle detected/)
+      end
+    end
+
+    context "with partial failure error details" do
+      it "includes created issue numbers in the error message and details" do
+        call_count = 0
+        allow(github_client).to receive(:create_issue) do |*_args|
+          call_count += 1
+          if call_count <= 1
+            gh_issue_response(number: 101, id: 200_001, title: "Add database migration", body: "body1")
+          else
+            raise StandardError, "GitHub API timeout"
+          end
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: nil)
+        }.to raise_error(Temporalio::Error::ApplicationError, /#101/) { |e|
+          expect(e.details).to be_present
+          expect(e.details.first).to be_an(Array)
+          expect(e.details.first.first[:github_number]).to eq(101)
+        }
+      end
+    end
+
+    it "enqueues ProcessRunQueueJob after completing the agent run" do
+      expect(ProcessRunQueueJob).to receive(:perform_later)
+
+      activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: nil)
+    end
   end
 end
