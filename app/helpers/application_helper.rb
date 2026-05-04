@@ -381,14 +381,9 @@ module ApplicationHelper
     end
   end
 
-  def analyze_issue_context(run)
-    if run.issue.present?
-      label = "Issue ##{run.issue.github_number}"
-      github_link_or_text(label, label, run.issue.github_url, tooltip: run.issue.title)
-    else
-      { type: :placeholder }
-    end
-  end
+  # analyze_issue and enhance_issue share the same context rendering: link to
+  # the associated issue when present, placeholder otherwise.
+  alias_method :analyze_issue_context, :enhance_issue_context
 
   def local_time_fallback(utc, format)
     format_key = format.to_sym
