@@ -446,8 +446,6 @@ module ApplicationHelper
     raise unless Rails.env.test?
   end
 
-  private
-
   def safe_return_path?(path)
     path.start_with?("/") && !path.start_with?("//")
   end
