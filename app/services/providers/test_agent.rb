@@ -27,9 +27,11 @@ module Providers
       /API key not configured for/i,
       /\bauth(?:entication)?\b/i,
       /oauth/i,
-      # Token-auth patterns — split for readability. The lookbehind prevents
-      # "unexpected token" (JSON parse errors) from matching.
-      /(?<!unexpected\s)token\s+(?:expired|revoked|invalid|not found)/i,
+      # Token-auth patterns — split for readability. Each pattern requires
+      # "token" adjacent to an auth-specific qualifier (expired/revoked/invalid/
+      # not found), so unrelated uses like "CSRF token" or "unexpected token"
+      # naturally fall through without matching.
+      /token\s+(?:expired|revoked|invalid|not found)/i,
       /(?:invalid|expired|revoked)\s+token/i,
       /api[_ -]?key.*token/i,
       /unauthori[sz]ed/i,
