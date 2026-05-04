@@ -25,9 +25,15 @@ module Providers
     BASE_AUTHENTICATION_ERROR_PATTERNS = [
       /api[_ -]?key/i,
       /API key not configured for/i,
-      /auth(?:entication)?/i,
+      /\bauth(?:entication)?\b/i,
       /oauth/i,
-      /token/i,
+      # Token-auth patterns — split for readability. Each pattern requires
+      # "token" adjacent to an auth-specific qualifier (expired/revoked/invalid/
+      # not found), so unrelated uses like "CSRF token" or "unexpected token"
+      # naturally fall through without matching.
+      /token\s+(?:expired|revoked|invalid|not found)/i,
+      /(?:invalid|expired|revoked)\s+token/i,
+      /api[_ -]?key.*token/i,
       /unauthori[sz]ed/i,
       /invalid credentials/i,
       /session.*expired/i
