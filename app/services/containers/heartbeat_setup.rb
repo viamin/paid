@@ -128,16 +128,21 @@ module Containers
 
     def upstream_heartbeat_supported?
       return false unless @harness_provider
+      return false unless @harness_provider.respond_to?(:supports_activity_heartbeat?)
+      return false unless @harness_provider.supports_activity_heartbeat?
 
-      @harness_provider.supports_activity_heartbeat?
-    rescue NoMethodError
-      false
+      integration = upstream_integration
+      integration.is_a?(Hash) && integration[:supported] == true
     end
 
     def upstream_integration
-      @upstream_integration ||= @harness_provider.heartbeat_integration(
-        heartbeat_file_path: CONTAINER_HEARTBEAT_PATH
-      )
+      @upstream_integration ||= begin
+        return {} unless @harness_provider.respond_to?(:heartbeat_integration)
+
+        @harness_provider.heartbeat_integration(
+          heartbeat_file_path: CONTAINER_HEARTBEAT_PATH
+        ) || {}
+      end
     end
 
     def local_preparation

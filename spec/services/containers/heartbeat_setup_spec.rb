@@ -48,7 +48,7 @@ RSpec.describe Containers::HeartbeatSetup do
       let(:harness_provider) { instance_double(AgentHarness::Providers::Base) }
 
       it "returns true for opencode when harness reports heartbeat support" do
-        allow(harness_provider).to receive(:supports_activity_heartbeat?).and_return(true)
+        allow(harness_provider).to receive_messages(supports_activity_heartbeat?: true, heartbeat_integration: { supported: true, env: {}, preparation: nil, granularity: :tool_call })
         setup = described_class.new(
           provider: "opencode", worktree_path: worktree_path,
           host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
@@ -57,7 +57,7 @@ RSpec.describe Containers::HeartbeatSetup do
       end
 
       it "returns true for kilocode when harness reports heartbeat support" do
-        allow(harness_provider).to receive(:supports_activity_heartbeat?).and_return(true)
+        allow(harness_provider).to receive_messages(supports_activity_heartbeat?: true, heartbeat_integration: { supported: true, env: {}, preparation: nil, granularity: :tool_call })
         setup = described_class.new(
           provider: "kilocode", worktree_path: worktree_path,
           host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
@@ -69,6 +69,24 @@ RSpec.describe Containers::HeartbeatSetup do
         allow(harness_provider).to receive(:supports_activity_heartbeat?).and_return(false)
         setup = described_class.new(
           provider: "gemini", worktree_path: worktree_path,
+          host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
+        )
+        expect(setup).not_to be_available
+      end
+
+      it "returns false when heartbeat_integration reports supported: false" do
+        allow(harness_provider).to receive_messages(supports_activity_heartbeat?: true, heartbeat_integration: { supported: false, env: {}, preparation: nil })
+        setup = described_class.new(
+          provider: "opencode", worktree_path: worktree_path,
+          host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
+        )
+        expect(setup).not_to be_available
+      end
+
+      it "returns false when heartbeat_integration returns nil" do
+        allow(harness_provider).to receive_messages(supports_activity_heartbeat?: true, heartbeat_integration: nil)
+        setup = described_class.new(
+          provider: "opencode", worktree_path: worktree_path,
           host_heartbeat_path: host_heartbeat_path, harness_provider: harness_provider
         )
         expect(setup).not_to be_available
