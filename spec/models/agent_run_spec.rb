@@ -2808,7 +2808,7 @@ RSpec.describe AgentRun do
       expect(agent_run.agent_summary).to eq("OK\n\nAll done. The commit succeeded.")
     end
 
-    it "surfaces error from multi-line Claude CLI JSON output" do
+    it "returns only successful results when mixed with errors in multi-line output" do
       r1 = { type: "result", subtype: "success", is_error: false,
              result: "OK", duration_ms: 2769, total_cost_usd: 0.06 }
       r2 = { type: "result", subtype: "error", is_error: true,
