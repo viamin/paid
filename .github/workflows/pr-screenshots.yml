@@ -1,0 +1,273 @@
+name: PR Screenshots
+
+on:
+  pull_request:
+    types: [ opened, synchronize, reopened, ready_for_review ]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+# Cancel in-progress screenshot runs on the same PR when a new commit is pushed.
+concurrency:
+  group: pr-screenshots-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      has_ui_changes: ${{ steps.check.outputs.has_ui_changes }}
+      ui_files: ${{ steps.check.outputs.ui_files }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Detect UI-facing changes
+        id: check
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          diff_files=$(git diff --name-only "${BASE_SHA}"..."${HEAD_SHA}")
+
+          if [ -z "$diff_files" ]; then
+            echo "has_ui_changes=false" >> "$GITHUB_OUTPUT"
+            echo "ui_files=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ui_files=$(
+            DIFF_FILES="$diff_files" ruby -rjson -e '
+              require_relative "app/services/screenshots/detect_ui_changes"
+              changed_files = ENV.fetch("DIFF_FILES", "").split("\n").map(&:strip).reject(&:empty?)
+              result = Screenshots::DetectUiChanges.call(changed_files: changed_files)
+              print result.fetch(:ui_files).join("\n")
+            '
+          )
+
+          if [ -n "$ui_files" ]; then
+            echo "has_ui_changes=true" >> "$GITHUB_OUTPUT"
+            # Store file list as base64 to preserve newlines
+            echo "ui_files=$(echo "$ui_files" | base64 -w 0)" >> "$GITHUB_OUTPUT"
+            echo "UI-facing files changed:"
+            echo "$ui_files" | sed 's/^/  /'
+          else
+            echo "has_ui_changes=false" >> "$GITHUB_OUTPUT"
+            echo "ui_files=" >> "$GITHUB_OUTPUT"
+            echo "No UI-facing file changes detected."
+          fi
+
+  capture:
+    needs: detect
+    if: needs.detect.outputs.has_ui_changes == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16.13
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      chrome:
+        image: browserless/chromium:2.18.0
+        ports:
+          - 9222:3000
+        options: >-
+          --health-cmd="curl -sf http://localhost:3000/json/version || exit 1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      BUNDLE_FROZEN: "true"
+      RAILS_ENV: test
+      DB_HOST: localhost
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      SCREENSHOT_OUTPUT_DIR: tmp/screenshots
+      CHROME_URL: http://localhost:9222
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@c4e5b1316158f92e3d49443a9d58b31d25ac0f8f
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version-file: .tool-versions
+          cache: 'yarn'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install JavaScript dependencies
+        run: yarn install --frozen-lockfile && bin/yarn-postinstall
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+
+      - name: Verify Chrome service
+        # The workflow requires the dedicated Chrome service container so the
+        # capture environment matches the CI contract for screenshot rendering.
+        run: |
+          if curl -sf http://localhost:9222/json/version > /dev/null 2>&1; then
+            echo "Chrome service container is available via CHROME_URL"
+          else
+            echo "::error::Chrome service container is not reachable at http://localhost:9222/json/version"
+            exit 1
+          fi
+
+      - name: Export changed UI files
+        env:
+          UI_FILES_B64: ${{ needs.detect.outputs.ui_files }}
+        run: |
+          printf 'CHANGED_FILES<<EOF\n%s\nEOF\n' "$(printf '%s' "$UI_FILES_B64" | base64 -d)" >> "$GITHUB_ENV"
+
+      - name: Configure remote Capybara host
+        run: |
+          # Service containers share the runner's Docker network; use the
+          # runner's primary IP (not the upstream gateway) so Chrome can
+          # connect back to Puma.
+          host_ip="$(hostname -I | awk '{print $1}')"
+          if [ -z "$host_ip" ]; then
+            echo "::error::Could not determine the runner host IP for the Chrome service container."
+            exit 1
+          fi
+          echo "CAPYBARA_APP_HOST=$host_ip" >> "$GITHUB_ENV"
+
+      - name: Build assets
+        run: yarn build && yarn build:css
+
+      - name: Set up database
+        run: bin/rails db:prepare
+
+      - name: Capture screenshots
+        id: capture_screenshots
+        run: bin/rails screenshots:capture
+
+      - name: Upload screenshots
+        id: upload_screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-screenshots
+          path: tmp/screenshots/*.png
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Refresh PR screenshot comment
+        if: >-
+          always()
+          && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          screenshot_count=$(find tmp/screenshots -name '*.png' 2>/dev/null | wc -l)
+          capture_outcome="${{ steps.capture_screenshots.outcome }}"
+          upload_outcome="${{ steps.upload_screenshots.outcome }}"
+
+          if [ "$capture_outcome" = "success" ] && [ "$upload_outcome" = "success" ] && [ "$screenshot_count" -gt 0 ]; then
+            body="## 📸 UI Screenshots\n\n"
+            body+="This PR includes **UI-facing changes**. "
+            body+="Screenshots of the rendered pages have been captured and uploaded as artifacts.\n\n"
+            body+="**${screenshot_count} screenshot(s)** captured from key application pages.\n\n"
+            body+="### How to review\n"
+            body+="1. Go to the **Actions** tab for this PR\n"
+            body+="2. Open the **PR Screenshots** workflow run\n"
+            body+="3. Download the **pr-screenshots** artifact\n"
+            body+="4. Review the \`.png\` files to verify the UI renders correctly\n\n"
+            body+="### Pages captured\n"
+            for file in tmp/screenshots/*.png; do
+              name=$(basename "$file" .png)
+              body+="- ✅ \`${name}\`\n"
+            done
+          else
+            body="## 📸 UI Screenshots\n\n"
+            body+="This PR still includes **UI-facing changes**, but screenshot capture for commit \`${{ github.event.pull_request.head.sha }}\` did not complete successfully.\n\n"
+            body+="Any screenshots linked from an earlier workflow run are now stale and should not be used for review.\n\n"
+            body+="### What happened\n"
+            body+="- Capture step: \`${capture_outcome}\`\n"
+            body+="- Upload step: \`${upload_outcome}\`\n\n"
+            body+="Open the latest [PR Screenshots](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) workflow run to inspect the failure.\n"
+          fi
+
+          body+="\n---\n"
+          body+="_Generated by the [PR Screenshots](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) workflow._"
+
+          # Use a marker comment so we update rather than duplicate
+          marker="<!-- pr-screenshots-comment -->"
+
+          # Check for existing comment
+          existing_comment_id=$(gh api \
+            "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" \
+            2>/dev/null | head -1)
+
+          full_body="${marker}\n${body}"
+
+          if [ -n "$existing_comment_id" ]; then
+            printf '%b' "$full_body" | gh api \
+              "repos/${{ github.repository }}/issues/comments/${existing_comment_id}" \
+              --method PATCH \
+              --field "body=@-"
+          else
+            printf '%b' "$full_body" | gh api \
+              "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+              --method POST \
+              --field "body=@-"
+          fi
+
+  # When a synchronize event removes all UI changes, update the stale comment
+  # so reviewers aren't misled by outdated screenshots.
+  cleanup:
+    needs: detect
+    if: >-
+      needs.detect.outputs.has_ui_changes == 'false'
+      && github.event.action == 'synchronize'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update stale screenshot comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          marker="<!-- pr-screenshots-comment -->"
+          existing_comment_id=$(gh api \
+            "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" \
+            2>/dev/null | head -1)
+
+          if [ -z "$existing_comment_id" ]; then
+            echo "No existing screenshot comment to clean up."
+            exit 0
+          fi
+
+          body="${marker}\n## 📸 UI Screenshots\n\n"
+          body+="This PR **no longer contains UI-facing changes**. "
+          body+="The previously captured screenshots are outdated and can be ignored.\n"
+
+          printf '%b' "$body" | gh api \
+            "repos/${{ github.repository }}/issues/comments/${existing_comment_id}" \
+            --method PATCH \
+            --field "body=@-"
