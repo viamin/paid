@@ -2,18 +2,23 @@ import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
   static targets = ["button", "result", "status"]
-  static values = { url: String }
+  static values = { url: String, csrfToken: String }
 
   async test() {
     this.showLoading()
+    const csrfToken = this.csrfToken
 
     try {
       const response = await fetch(this.urlValue, {
         method: "POST",
+        credentials: "same-origin",
         headers: {
-          "X-CSRF-Token": this.csrfToken,
-          "Accept": "application/json"
+          "X-CSRF-Token": csrfToken,
+          "Accept": "application/json",
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "X-Requested-With": "XMLHttpRequest"
         },
+        body: new window.URLSearchParams({ authenticity_token: csrfToken }),
         redirect: "follow"
       })
 
@@ -174,6 +179,8 @@ export default class extends Controller {
   }
 
   get csrfToken() {
+    if (this.hasCsrfTokenValue) return this.csrfTokenValue
+
     const meta = document.querySelector("meta[name=csrf-token]")
     return meta ? meta.content : ""
   }
