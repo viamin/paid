@@ -2579,36 +2579,34 @@ RSpec.describe Containers::Provision do
         }.to raise_error(described_class::TimeoutError, /timed out after 0.1 seconds/)
       end
 
-      it "reclassifies Docker API timeout as TimeoutError when elapsed is within poll interval of timeout" do
-        # The Docker API `wait:` parameter fires at ~timeout seconds, but
-        # Ruby's monotonic clock may show elapsed < timeout by a small margin.
-        # The reclassification check uses a tolerance of min(poll_interval, timeout*0.5)
-        # so this is caught as a TimeoutError instead of ExecutionError.
-        # With poll_interval=0.05 and timeout=0.1, tolerance=0.05 so the
-        # threshold is 0.05s — sleep 0.08 lands inside the window.
+      it "reclassifies Docker API timeout race as TimeoutError when elapsed is near the timeout" do
+        # Simulates the Docker `wait:` timer firing slightly before Ruby's
+        # monotonic clock reaches the timeout value — the exact race from #1547.
+        # We use a 1s timeout and sleep just under it so elapsed lands within
+        # the DOCKER_TIMEOUT_SKEW_TOLERANCE (0.5s) window, triggering
+        # reclassification of the Docker transport error as a TimeoutError.
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
-          sleep 0.08 # close to but potentially under the 0.1s timeout
+          sleep 0.85 # near but below the 1s timeout
           raise Docker::Error::DockerError, "read: connection reset by peer"
         end
-        allow(service).to receive(:watchdog_poll_interval).and_return(0.05)
+        allow(service).to receive(:watchdog_poll_interval).and_return(10)
 
         expect {
-          service.execute("hung_command", timeout: 0.1)
-        }.to raise_error(described_class::TimeoutError, /timed out after 0.1 seconds/)
+          service.execute("hung_command", timeout: 1)
+        }.to raise_error(described_class::TimeoutError, /timed out after 1 seconds/)
       end
 
       it "does not reclassify Docker error as timeout when elapsed is well below threshold" do
-        # A Docker error that occurs early in the timeout window should NOT be
-        # reclassified. With poll_interval=0.05 and timeout=0.5, tolerance=0.05
-        # so the threshold is 0.45s — sleep 0.01 is well outside the window.
+        # A Docker error that occurs well before the timeout should NOT be
+        # reclassified — it is a genuine transport failure, not a timeout race.
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
           sleep 0.01
           raise Docker::Error::DockerError, "connection refused"
         end
-        allow(service).to receive(:watchdog_poll_interval).and_return(0.05)
+        allow(service).to receive(:watchdog_poll_interval).and_return(10)
 
         expect {
-          service.execute("normal_command", timeout: 0.5)
+          service.execute("normal_command", timeout: 2)
         }.to raise_error(described_class::ExecutionError, /connection refused/)
       end
     end
