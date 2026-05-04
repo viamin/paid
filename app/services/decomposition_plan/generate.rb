@@ -25,17 +25,15 @@ module DecompositionPlan
   class Generate
     # Scope layer ordering (lower = earlier in dependency chain)
     LAYER_ORDER = {
-      "migration" => 0,
-      "model" => 1,
-      "service" => 2,
-      "controller" => 3,
-      "view" => 4
+      "model" => 0,
+      "service" => 1,
+      "controller" => 2,
+      "view" => 3
     }.freeze
 
     MAX_DESCRIPTION_LENGTH = 5000
     MAX_TITLE_LENGTH = 255
     MAX_TASKS = 20
-    MAX_SINGLE_TASK_COMPONENTS = 3
 
     attr_reader :title, :description, :sub_components
 
@@ -53,7 +51,6 @@ module DecompositionPlan
       tasks = build_tasks
       tasks = enforce_layer_ordering(tasks)
       tasks = assign_indices(tasks)
-      tasks = split_oversized_tasks(tasks)
 
       validation = ValidateDag.call(tasks: tasks)
       unless validation.valid?
@@ -91,12 +88,6 @@ module DecompositionPlan
         (grouped[layer] ||= []) << component
       end
 
-      # Ensure at least a model layer exists when we have components
-      # but none mapped to a known layer
-      if grouped.empty? && sub_components.any?
-        grouped["service"] = sub_components.dup
-      end
-
       grouped
     end
 
@@ -123,7 +114,7 @@ module DecompositionPlan
         description: "Implement #{component_list}. #{layer_guidance(layer)}".truncate(MAX_DESCRIPTION_LENGTH),
         scope: layer,
         deps: [],
-        _layer_order: LAYER_ORDER.fetch(layer, 2)
+        _layer_order: LAYER_ORDER.fetch(layer, 1)
       }
     end
 
@@ -133,7 +124,7 @@ module DecompositionPlan
         description: description.truncate(MAX_DESCRIPTION_LENGTH),
         scope: "service",
         deps: [],
-        _layer_order: 2
+        _layer_order: 1
       }
     end
 
@@ -199,35 +190,8 @@ module DecompositionPlan
       end
     end
 
-    # If any task covers too many components, split it into smaller tasks
-    # within the same layer.
-    def split_oversized_tasks(tasks)
-      return tasks if tasks.size >= MAX_TASKS
-
-      result = []
-      tasks.each do |task|
-        result << task
-      end
-
-      reindex(result)
-    end
-
-    def reindex(tasks)
-      index_map = {}
-      tasks.each_with_index do |task, new_index|
-        index_map[task[:index]] = new_index
-      end
-
-      tasks.each_with_index.map do |task, new_index|
-        {
-          title: task[:title],
-          description: task[:description],
-          scope: task[:scope],
-          deps: task[:deps].filter_map { |d| index_map[d] },
-          index: new_index
-        }
-      end
-    end
+    # TODO(#453): Split tasks covering too many components into smaller tasks
+    # within the same layer when we have room under MAX_TASKS.
 
     # Attempt to fix DAG issues by removing problematic dependency edges.
     def repair_dag(tasks)

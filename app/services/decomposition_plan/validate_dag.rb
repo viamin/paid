@@ -53,6 +53,10 @@ module DecompositionPlan
 
       tasks.each_with_index do |task, index|
         Array(task[:deps]).each do |dep|
+          unless dep.is_a?(Integer)
+            errors << "task #{index} (#{task[:title]}) depends on invalid index #{dep.inspect} (not an integer)"
+            next
+          end
           unless valid_range.cover?(dep)
             errors << "task #{index} (#{task[:title]}) depends on invalid index #{dep}"
           end

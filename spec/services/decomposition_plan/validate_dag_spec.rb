@@ -124,12 +124,12 @@ RSpec.describe DecompositionPlan::ValidateDag, :no_db do
       end
     end
 
-    context "with unreachable nodes" do
+    context "with a mutual dependency cycle" do
       let(:tasks) do
         [
           { title: "Leaf", deps: [], scope: "model" },
-          { title: "Orphan", deps: [ 2 ], scope: "service" },
-          { title: "Mid", deps: [ 1 ], scope: "service" }
+          { title: "Task A", deps: [ 2 ], scope: "service" },
+          { title: "Task B", deps: [ 1 ], scope: "service" }
         ]
       end
 
@@ -137,8 +137,43 @@ RSpec.describe DecompositionPlan::ValidateDag, :no_db do
         expect(result.valid?).to be false
       end
 
-      it "reports cycle (mutual dependency creates cycle)" do
+      it "reports cycle error" do
         expect(result.errors).to include("dependency graph contains a cycle")
+      end
+    end
+
+    context "with unreachable nodes" do
+      let(:tasks) do
+        [
+          { title: "Leaf", deps: [], scope: "model" },
+          { title: "Reachable", deps: [ 0 ], scope: "service" },
+          { title: "Unreachable island A", deps: [ 3 ], scope: "service" },
+          { title: "Unreachable island B", deps: [ 2 ], scope: "service" }
+        ]
+      end
+
+      it "is not valid" do
+        expect(result.valid?).to be false
+      end
+
+      it "reports unreachable and cycle errors" do
+        expect(result.errors.join(", ")).to include("cycle")
+      end
+    end
+
+    context "with non-integer dependency" do
+      let(:tasks) do
+        [
+          { title: "Task A", deps: [ "bad" ], scope: "service" }
+        ]
+      end
+
+      it "is not valid" do
+        expect(result.valid?).to be false
+      end
+
+      it "reports non-integer error" do
+        expect(result.errors.first).to include("not an integer")
       end
     end
 

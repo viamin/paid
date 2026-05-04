@@ -35,7 +35,8 @@ RSpec.describe DecompositionPlan::Generate, :no_db do
       it "follows layer ordering: model before service" do
         model_task = result.tasks.find { |t| t[:scope] == "model" }
         service_task = result.tasks.find { |t| t[:scope] == "service" }
-        next unless model_task && service_task
+        expect(model_task).not_to be_nil, "expected a model-scoped task"
+        expect(service_task).not_to be_nil, "expected a service-scoped task"
 
         expect(model_task[:index]).to be < service_task[:index]
       end
@@ -43,7 +44,8 @@ RSpec.describe DecompositionPlan::Generate, :no_db do
       it "follows layer ordering: service before controller" do
         service_task = result.tasks.find { |t| t[:scope] == "service" }
         controller_task = result.tasks.find { |t| t[:scope] == "controller" }
-        next unless service_task && controller_task
+        expect(service_task).not_to be_nil, "expected a service-scoped task"
+        expect(controller_task).not_to be_nil, "expected a controller-scoped task"
 
         expect(service_task[:index]).to be < controller_task[:index]
       end
@@ -51,13 +53,15 @@ RSpec.describe DecompositionPlan::Generate, :no_db do
       it "follows layer ordering: controller before view" do
         controller_task = result.tasks.find { |t| t[:scope] == "controller" }
         view_task = result.tasks.find { |t| t[:scope] == "view" }
-        next unless controller_task && view_task
+        expect(controller_task).not_to be_nil, "expected a controller-scoped task"
+        expect(view_task).not_to be_nil, "expected a view-scoped task"
 
         expect(controller_task[:index]).to be < view_task[:index]
       end
 
       it "has model tasks with no dependencies" do
         model_tasks = result.tasks.select { |t| t[:scope] == "model" }
+        expect(model_tasks).not_to be_empty, "expected at least one model-scoped task"
         model_tasks.each do |task|
           expect(task[:deps]).to be_empty
         end
@@ -66,7 +70,8 @@ RSpec.describe DecompositionPlan::Generate, :no_db do
       it "has later-layer tasks depending on earlier layers" do
         service_task = result.tasks.find { |t| t[:scope] == "service" }
         model_task = result.tasks.find { |t| t[:scope] == "model" }
-        next unless service_task && model_task
+        expect(service_task).not_to be_nil, "expected a service-scoped task"
+        expect(model_task).not_to be_nil, "expected a model-scoped task"
 
         expect(service_task[:deps]).to include(model_task[:index])
       end
