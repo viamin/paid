@@ -111,8 +111,8 @@ RSpec.describe ApplicationHelper do
         run = stub_run(id: 99, "create_pr_goal?": true, issue: issue)
         result = helper.agent_run_context_display(run)
 
-        expect(result).to include('aria-controls="tooltip_99"')
-        expect(result).to include('aria-describedby="tooltip_99"')
+        expect(result).to include('aria-controls="context_99"')
+        expect(result).to include('aria-describedby="context_99"')
         expect(result).to include('aria-label="Show context title"')
         expect(result).to include('aria-expanded="false"')
         expect(result).to include('aria-hidden="true"')
@@ -215,6 +215,53 @@ RSpec.describe ApplicationHelper do
 
         expect(result).to include("-")
       end
+    end
+  end
+
+  describe "#agent_run_goal_text" do
+    def goal_text_run(issue: nil, custom_prompt: nil, review_goal: false, source_pull_request_number: nil)
+      Struct.new(:issue, :custom_prompt, :source_pull_request_number, keyword_init: true) do
+        define_method(:review_goal?) { review_goal }
+      end.new(
+        issue: issue,
+        custom_prompt: custom_prompt,
+        source_pull_request_number: source_pull_request_number
+      )
+    end
+
+    it "prefers the issue title over custom prompt text" do
+      issue = Struct.new(:title, keyword_init: true).new(title: "Fix flaky webhook retry handling")
+      run = goal_text_run(issue: issue, custom_prompt: "Rendered task instructions")
+
+      expect(helper.agent_run_goal_text(run)).to eq(issue.title)
+    end
+
+    it "prefers the review pull request label over custom prompt text" do
+      run = goal_text_run(custom_prompt: "Generated review instructions", review_goal: true,
+        source_pull_request_number: 87)
+
+      expect(helper.agent_run_goal_text(run)).to eq("Review PR #87")
+    end
+
+    it "shows PR label for non-review runs with a source pull request number" do
+      run = goal_text_run(custom_prompt: "Generated instructions", review_goal: false,
+        source_pull_request_number: 42)
+
+      expect(helper.agent_run_goal_text(run)).to eq("PR #42")
+    end
+
+    it "falls back to redacted custom prompt text" do
+      token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
+      run = goal_text_run(custom_prompt: "Investigate GITHUB_TOKEN=#{token}")
+
+      expect(helper.agent_run_goal_text(run)).to include("[REDACTED:github_token]")
+      expect(helper.agent_run_goal_text(run)).not_to include(token)
+    end
+
+    it "returns nil when no goal text is available" do
+      run = goal_text_run
+
+      expect(helper.agent_run_goal_text(run)).to be_nil
     end
   end
 end
