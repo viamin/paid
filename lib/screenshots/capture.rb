@@ -9,6 +9,8 @@ rescue LoadError => e
     "Run with RAILS_ENV=test or move them to a shared group."
 end
 require "fileutils"
+require "json"
+require "net/http"
 require_relative "../../app/services/screenshots/capture_targets"
 
 module Screenshots
@@ -99,19 +101,33 @@ module Screenshots
         }
 
         if chrome_url
-          # Connect via WebSocket URL directly so Ferrum does not rely on the
-          # hostname inside the webSocketDebuggerUrl returned by /json/version
-          # (which may reference an internal container hostname unreachable from
-          # the host). The browserless v2 image accepts CDP connections at the
-          # /chromium path.
-          ws_url = chrome_url.sub(%r{\Ahttp(s?)://}, 'ws\1://').chomp("/") + "/chromium"
-          options[:ws_url] = ws_url
+          # Ferrum normally discovers the WebSocket URL via /json/version, but
+          # the webSocketDebuggerUrl it returns may contain an internal container
+          # hostname unreachable from the host.  Fetch it ourselves and rewrite
+          # the host/port to match CHROME_URL so the connection succeeds.
+          options[:ws_url] = rewrite_ws_url(chrome_url)
         else
           options[:browser_path] = browser_path if browser_path
         end
 
         Capybara::Cuprite::Driver.new(app, **options)
       end
+    end
+
+    # Fetch /json/version from the Chrome service and return the
+    # webSocketDebuggerUrl with host/port rewritten to match +chrome_url+.
+    # Falls back to a simple scheme swap when /json/version is unavailable.
+    def rewrite_ws_url(chrome_url)
+      chrome_uri = URI.parse(chrome_url)
+      version_uri = URI.join(chrome_url, "/json/version")
+      response = JSON.parse(Net::HTTP.get(version_uri))
+      debugger_url = URI.parse(response.fetch("webSocketDebuggerUrl"))
+      debugger_url.host = chrome_uri.host
+      debugger_url.port = chrome_uri.port
+      debugger_url.to_s
+    rescue StandardError
+      # If /json/version is unavailable, fall back to the root WebSocket path.
+      chrome_url.sub(%r{\Ahttp(s?)://}, 'ws\1://').chomp("/")
     end
 
     def find_chrome_binary

@@ -75,10 +75,13 @@ RSpec.describe Screenshots::Capture do
   end
 
   describe "#register_driver" do
-    it "sets ws_url from http CHROME_URL" do
+    it "rewrites ws_url host from /json/version response" do
       ENV["CHROME_URL"] = "http://localhost:3000"
       capture = described_class.new(output_dir: output_dir, changed_files: [])
 
+      version_json = { "webSocketDebuggerUrl" => "ws://container-abc:3000/devtools/browser/uuid-1" }.to_json
+      allow(Net::HTTP).to receive(:get).and_return(version_json)
+
       registered_options = nil
       allow(Capybara).to receive(:register_driver).with(:paid_screenshots) do |&block|
         mock_app = instance_double(Capybara::Session)
@@ -91,14 +94,17 @@ RSpec.describe Screenshots::Capture do
 
       capture.send(:register_driver)
 
-      expect(registered_options[:ws_url]).to eq("ws://localhost:3000/chromium")
+      expect(registered_options[:ws_url]).to eq("ws://localhost:3000/devtools/browser/uuid-1")
       expect(registered_options).not_to have_key(:browser_path)
     end
 
-    it "sets ws_url from https CHROME_URL" do
+    it "rewrites ws_url host for https CHROME_URL" do
       ENV["CHROME_URL"] = "https://chrome.example.com"
       capture = described_class.new(output_dir: output_dir, changed_files: [])
 
+      version_json = { "webSocketDebuggerUrl" => "ws://internal:3000/devtools/browser/uuid-2" }.to_json
+      allow(Net::HTTP).to receive(:get).and_return(version_json)
+
       registered_options = nil
       allow(Capybara).to receive(:register_driver).with(:paid_screenshots) do |&block|
         mock_app = instance_double(Capybara::Session)
@@ -111,13 +117,15 @@ RSpec.describe Screenshots::Capture do
 
       capture.send(:register_driver)
 
-      expect(registered_options[:ws_url]).to eq("wss://chrome.example.com/chromium")
+      expect(registered_options[:ws_url]).to eq("ws://chrome.example.com:443/devtools/browser/uuid-2")
       expect(registered_options).not_to have_key(:browser_path)
     end
 
-    it "strips trailing slash from CHROME_URL before appending path" do
+    it "falls back to scheme-swapped URL when /json/version is unavailable" do
       ENV["CHROME_URL"] = "http://localhost:3000/"
       capture = described_class.new(output_dir: output_dir, changed_files: [])
+
+      allow(Net::HTTP).to receive(:get).and_raise(Errno::ECONNREFUSED)
 
       registered_options = nil
       allow(Capybara).to receive(:register_driver).with(:paid_screenshots) do |&block|
@@ -131,7 +139,7 @@ RSpec.describe Screenshots::Capture do
 
       capture.send(:register_driver)
 
-      expect(registered_options[:ws_url]).to eq("ws://localhost:3000/chromium")
+      expect(registered_options[:ws_url]).to eq("ws://localhost:3000")
     end
 
     it "uses browser_path when CHROME_URL is not set" do
