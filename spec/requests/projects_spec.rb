@@ -1082,7 +1082,6 @@ RSpec.describe "Projects" do
 
         doc = Nokogiri::HTML(response.body)
         panel = doc.at_css("#review_manual_settings")
-        checkbox = doc.at_css("#review_manual_enabled")
 
         expect(panel).to be_present
         expect(panel.has_attribute?("inert")).to be false
