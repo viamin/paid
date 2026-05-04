@@ -54,7 +54,10 @@ RSpec.describe Activities::RunAgentActivity do
   def expected_kilocode_model_config
     {
       "anthropic" => {
-        "options" => { "apiKey" => "{env:ANTHROPIC_API_KEY}" },
+        "options" => {
+          "apiKey" => "{env:ANTHROPIC_API_KEY}",
+          "baseURL" => "https://api.anthropic.com"
+        },
         "models" => {
           "claude-sonnet-4-20250514" => {
             "name" => "claude-sonnet-4-20250514",

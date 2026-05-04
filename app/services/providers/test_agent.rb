@@ -323,7 +323,7 @@ module Providers
           temporal_workflow_id: AgentRun::CLAIMED_SENTINEL,
           goal: "create_pr",
           trigger_type: "manual",
-          custom_prompt: "smoke_test",
+          custom_prompt: AgentRun::SMOKE_TEST_CUSTOM_PROMPT,
           proxy_token: SecureRandom.hex(32),
           created_at: now,
           updated_at: now
