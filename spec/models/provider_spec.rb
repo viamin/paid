@@ -488,6 +488,20 @@ RSpec.describe Provider do
         config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-20250514" } }
       )
     end
+    let(:expected_kilocode_model_entry) do
+      {
+        "name" => "claude-sonnet-4-20250514",
+        "id" => "claude-sonnet-4-20250514",
+        "tool_call" => true
+      }
+    end
+    let(:expected_zai_model_entry) do
+      {
+        "name" => "glm-5.1",
+        "id" => "glm-5.1",
+        "tool_call" => true
+      }
+    end
 
     it "generates provider as a record with prefixed model" do
       config = JSON.parse(provider.kilocode_config_json)
@@ -499,11 +513,7 @@ RSpec.describe Provider do
             "baseURL" => "https://api.anthropic.com"
           },
           "models" => {
-            "claude-sonnet-4-20250514" => {
-              "name" => "claude-sonnet-4-20250514",
-              "id" => "claude-sonnet-4-20250514",
-              "tool_call" => true
-            }
+            "claude-sonnet-4-20250514" => expected_kilocode_model_entry
           }
         }
       })
@@ -534,11 +544,7 @@ RSpec.describe Provider do
             "baseURL" => "https://api.z.ai/api/coding/paas/v4"
           },
           "models" => {
-            "glm-5.1" => {
-              "name" => "glm-5.1",
-              "id" => "glm-5.1",
-              "tool_call" => true
-            }
+            "glm-5.1" => expected_zai_model_entry
           }
         }
       })

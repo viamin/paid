@@ -50,6 +50,31 @@ RSpec.describe Providers::TestAgent do
     allow(AgentHarness).to receive(:check_provider).and_return(harness_result)
   end
 
+  def decoded_kilocode_config(encoded_config)
+    JSON.parse(Base64.strict_decode64(encoded_config))
+  end
+
+  def expected_anthropic_kilocode_config
+    {
+      "provider" => {
+        "anthropic" => {
+          "options" => {
+            "apiKey" => "{env:ANTHROPIC_API_KEY}",
+            "baseURL" => "https://api.anthropic.com"
+          },
+          "models" => {
+            "claude-sonnet-4-20250514" => {
+              "name" => "claude-sonnet-4-20250514",
+              "id" => "claude-sonnet-4-20250514",
+              "tool_call" => true
+            }
+          }
+        }
+      },
+      "model" => "anthropic/claude-sonnet-4-20250514"
+    }
+  end
+
   describe ".call" do
     context "when claude smoke test succeeds via container" do
       let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
@@ -650,25 +675,7 @@ RSpec.describe Providers::TestAgent do
         described_class.call(provider: provider)
 
         expect(captured_env).to include("KILOCODE_CONFIG_B64")
-        config = JSON.parse(Base64.strict_decode64(captured_env["KILOCODE_CONFIG_B64"]))
-        expect(config).to eq({
-          "provider" => {
-            "anthropic" => {
-              "options" => {
-                "apiKey" => "{env:ANTHROPIC_API_KEY}",
-                "baseURL" => "https://api.anthropic.com"
-              },
-              "models" => {
-                "claude-sonnet-4-20250514" => {
-                  "name" => "claude-sonnet-4-20250514",
-                  "id" => "claude-sonnet-4-20250514",
-                  "tool_call" => true
-                }
-              }
-            }
-          },
-          "model" => "anthropic/claude-sonnet-4-20250514"
-        })
+        expect(decoded_kilocode_config(captured_env["KILOCODE_CONFIG_B64"])).to eq(expected_anthropic_kilocode_config)
       end
     end
 
