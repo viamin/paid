@@ -188,6 +188,12 @@ module Screenshots
           record.status = "stopped"
         end
 
+        mcp_server_definition = McpServerDefinition.find_or_create_by!(account: account, name: "Screenshot MCP Server") do |record|
+          record.transport = "stdio"
+          record.install_type = "npx"
+          record.command = "@modelcontextprotocol/server-filesystem"
+        end
+
         agent_run = project.agent_runs.find_or_initialize_by(custom_prompt: "Capture screenshot route coverage")
         if agent_run.persisted?
           agent_run.agent_run_logs.destroy_all
@@ -347,6 +353,7 @@ module Screenshots
           linear_token: linear_token,
           provider_api_key: provider_api_key,
           service_container: service_container,
+          mcp_server_definition: mcp_server_definition,
           agent_run: agent_run,
           prompt: prompt,
           pending_prompt_version: pending_prompt_version,

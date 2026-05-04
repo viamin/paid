@@ -113,6 +113,8 @@ class ProjectsController < ApplicationController
     authorize @project
     @github_tokens = policy_scope(GithubToken).where(revoked_at: nil)
     @available_service_containers = policy_scope(ServiceContainer).where.not(id: @project.service_container_ids).order(:name)
+    @available_mcp_server_definitions = policy_scope(McpServerDefinition).where.not(id: @project.mcp_server_definition_ids).order(:name)
+    @project_mcp_servers = @project.project_mcp_servers.includes(:mcp_server_definition).to_a
   end
 
   def update
@@ -128,6 +130,8 @@ class ProjectsController < ApplicationController
       redirect_to @project, notice: "Project was successfully updated."
     else
       @available_service_containers = policy_scope(ServiceContainer).where.not(id: @project.service_container_ids).order(:name)
+      @available_mcp_server_definitions = policy_scope(McpServerDefinition).where.not(id: @project.mcp_server_definition_ids).order(:name)
+      @project_mcp_servers = @project.project_mcp_servers.includes(:mcp_server_definition).to_a
       render :edit, status: :unprocessable_content
     end
   end

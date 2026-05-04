@@ -21,6 +21,7 @@ module Screenshots
       integrations
       notifications
       service_containers
+      mcp_server_definitions
       onboarding
       user_settings
       quality_dashboard
@@ -74,6 +75,10 @@ module Screenshots
       service_container_new: Target.new(slug: "service_container_new", path_builder: "/service_containers/new", requires_auth: true),
       service_container_show: Target.new(slug: "service_container_show", path_builder: ->(seed_data) { "/service_containers/#{seed_data.fetch(:service_container).id}" }, requires_auth: true),
       service_container_edit: Target.new(slug: "service_container_edit", path_builder: ->(seed_data) { "/service_containers/#{seed_data.fetch(:service_container).id}/edit" }, requires_auth: true),
+      mcp_server_definitions: Target.new(slug: "mcp_server_definitions", path_builder: "/mcp_server_definitions", requires_auth: true),
+      mcp_server_definition_new: Target.new(slug: "mcp_server_definition_new", path_builder: "/mcp_server_definitions/new", requires_auth: true),
+      mcp_server_definition_show: Target.new(slug: "mcp_server_definition_show", path_builder: ->(seed_data) { "/mcp_server_definitions/#{seed_data.fetch(:mcp_server_definition).id}" }, requires_auth: true),
+      mcp_server_definition_edit: Target.new(slug: "mcp_server_definition_edit", path_builder: ->(seed_data) { "/mcp_server_definitions/#{seed_data.fetch(:mcp_server_definition).id}/edit" }, requires_auth: true),
       agent_runs: Target.new(slug: "agent_runs", path_builder: "/agent_runs", requires_auth: true),
       prompts: Target.new(slug: "prompts", path_builder: "/prompts", requires_auth: true),
       prompt_new: Target.new(slug: "prompt_new", path_builder: "/prompts/new", requires_auth: true),
@@ -170,6 +175,7 @@ module Screenshots
       "user_settings_controller.rb" => [ :user_settings ],
       "tenant_configurations_controller.rb" => [ :tenant_configuration ],
       "service_containers_controller.rb" => %i[service_containers service_container_new service_container_show service_container_edit],
+      "mcp_server_definitions_controller.rb" => %i[mcp_server_definitions mcp_server_definition_new mcp_server_definition_show mcp_server_definition_edit],
       "style_guides_controller.rb" => %i[style_guides style_guide_new style_guide_show style_guide_edit],
       "chat_sessions_controller.rb" => %i[chat_sessions chat_session_show],
       "chat_messages_controller.rb" => [ :chat_session_show ],
@@ -200,6 +206,7 @@ module Screenshots
       "projects/pre_commit_requirements_controller.rb" => [ :project_edit ],
       "projects/quality_thresholds_controller.rb" => [ :project_quality_dashboard ],
       "projects/service_containers_controller.rb" => [ :project_edit ],
+      "projects/mcp_servers_controller.rb" => [ :project_edit ],
       "projects/knowledge_recommendations_controller.rb" => [ :project_knowledge_recommendations ]
     }.freeze
 
@@ -262,6 +269,7 @@ module Screenshots
       when /\Aprovider_api_keys\// then rest_resource_targets(relative_path, "provider_api_keys", index: :provider_api_keys, new: :provider_api_key_new, show: :provider_api_key_show, edit: :provider_api_key_edit)
       when /\Aproviders\// then providers_targets(relative_path.delete_prefix("providers/"))
       when /\Aservice_containers\// then rest_resource_targets(relative_path, "service_containers", index: :service_containers, new: :service_container_new, show: :service_container_show, edit: :service_container_edit)
+      when /\Amcp_server_definitions\// then rest_resource_targets(relative_path, "mcp_server_definitions", index: :mcp_server_definitions, new: :mcp_server_definition_new, show: :mcp_server_definition_show, edit: :mcp_server_definition_edit)
       when /\Aagent_runs\// then [ :agent_runs ]
       when /\Aprompt_reviews\// then prompt_review_targets(relative_path.delete_prefix("prompt_reviews/"))
       when /\Aab_tests\// then ab_test_targets(relative_path.delete_prefix("ab_tests/"))

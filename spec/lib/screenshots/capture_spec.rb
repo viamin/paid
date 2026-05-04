@@ -76,11 +76,18 @@ RSpec.describe Screenshots::Capture do
     )
   end
 
-  describe "#ensure_seed_data! reuse path", :db do
-    let(:capture) { described_class.new(output_dir: output_dir, changed_files: []) }
-    let(:first_result) { capture.send(:ensure_seed_data!) }
-    let(:stale_agent_run) do
-      first_result[:agent_run].tap do |run|
+  describe "seed data reuse across consecutive calls", :db do
+    def run_capture(dir)
+      capture = described_class.new(output_dir: dir, changed_files: [])
+      allow(capture).to receive(:register_driver)
+      allow(capture).to receive(:setup_capybara)
+      allow(capture).to receive(:sign_in)
+      capture.call
+    end
+
+    def seed_and_dirty_agent_run(dir)
+      run_capture(dir)
+      AgentRun.find_by!(custom_prompt: "Capture screenshot route coverage").tap do |run|
         run.update!(
           status: "completed",
           source_pull_request_number: 42,
@@ -95,14 +102,16 @@ RSpec.describe Screenshots::Capture do
         )
       end
     end
+
     let(:reused_run) do
-      stale_agent_run # force creation
-      capture.send(:ensure_seed_data!)[:agent_run]
+      original = seed_and_dirty_agent_run(output_dir)
+      run_capture(output_dir)
+      original.reload
     end
 
-    it "reuses the same record" do
-      expect(reused_run.id).to eq(stale_agent_run.id)
+    it "reuses the same record and resets status" do
       expect(reused_run.status).to eq("queued")
+      expect(AgentRun.where(custom_prompt: "Capture screenshot route coverage").count).to eq(1)
     end
 
     it "clears issue and PR context fields" do

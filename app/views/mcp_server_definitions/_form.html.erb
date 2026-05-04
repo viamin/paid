@@ -1,0 +1,112 @@
+<% if mcp_server_definition.errors.any? %>
+  <div class="mb-6 rounded-md bg-red-50 p-4">
+    <div class="flex">
+      <div class="flex-shrink-0">
+        <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM8.28 7.22a.75.75 0 0 0-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 1 0 1.06 1.06L10 11.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L11.06 10l1.72-1.72a.75.75 0 0 0-1.06-1.06L10 8.94 8.28 7.22Z" clip-rule="evenodd" />
+        </svg>
+      </div>
+      <div class="ml-3">
+        <h3 class="text-sm font-medium text-red-800">
+          <%= pluralize(mcp_server_definition.errors.count, "error") %> prevented this MCP server definition from being saved:
+        </h3>
+        <div class="mt-2 text-sm text-red-700">
+          <ul class="list-disc space-y-1 pl-5">
+            <% mcp_server_definition.errors.full_messages.each do |message| %>
+              <li><%= message %></li>
+            <% end %>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<div class="space-y-6">
+  <div>
+    <%= form.label :name, "Name", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.text_field :name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", required: true, placeholder: "my-mcp" %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">Unique name for this MCP server.</p>
+  </div>
+
+  <div>
+    <%= form.label :install_type, "Install Type", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.select :install_type, McpServerDefinition::INSTALL_TYPES.map { |t| [t.titleize, t] }, {}, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">How the server is provisioned.</p>
+  </div>
+
+  <div>
+    <%= form.label :transport, "Transport", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.select :transport, McpServerDefinition::TRANSPORTS.map { |t| [t.upcase, t] }, {}, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">Transport method for communication.</p>
+  </div>
+
+  <div>
+    <%= form.label :command, "Command", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.text_field :command, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">Command to run for npx servers.</p>
+  </div>
+
+  <div>
+    <%= form.label :args_json, "Arguments (JSON)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.text_area :args_json, rows: 3, class: "block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: '["--flag", "value"]' %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">JSON array of arguments.</p>
+  </div>
+
+  <div>
+    <%= form.label :env_json, "Environment Variables (JSON)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.text_area :env_json, rows: 4, class: "block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: '{"API_KEY": "your-key"}' %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">Environment variables passed to the server.</p>
+  </div>
+
+  <div>
+    <%= form.label :metadata_json, "Metadata (JSON)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.text_area :metadata_json, rows: 4, class: "block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: '{"key": "value"}' %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">Arbitrary metadata as a JSON object.</p>
+  </div>
+
+  <div>
+    <%= form.label :url, "URL", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.text_field :url, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">URL for sse transport.</p>
+  </div>
+
+  <div>
+    <%= form.label :image, "Docker Image", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.text_field :image, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">Docker image for docker_image install type.</p>
+  </div>
+
+  <div>
+    <%= form.label :enabled, "Enabled", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.check_box :enabled %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">Whether this definition is active.</p>
+  </div>
+
+  <% if mcp_server_definition.persisted? %>
+    <div>
+      <label class="block text-sm font-medium leading-6 text-gray-900">Created At</label>
+      <div class="mt-2 text-sm text-gray-500"><%= mcp_server_definition.created_at %></div>
+    </div>
+  <% end %>
+</div>
