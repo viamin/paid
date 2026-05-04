@@ -248,8 +248,8 @@ module Screenshots
           record.validation_status = "validated"
         end
 
-        style_guide = account.style_guides.find_or_create_by!(name: "Screenshot Style Guide") do |record|
-          record.project = project
+        style_guide = StyleGuide.find_or_create_by!(project: project, name: "Screenshot Style Guide") do |record|
+          record.account = account
           record.raw_content = "Prefer small methods and explicit tests."
           record.language = "ruby"
           record.active = true
@@ -296,6 +296,29 @@ module Screenshots
           record.status = "active"
           record.content = "Screenshot artifact chunk seed"
           record.content_hash = Digest::SHA256.hexdigest("screenshots-seed-artifact-chunk")
+        end
+
+        KnowledgeRecommendation.find_or_create_by!(project: project, description: "Add database_schema collector") do |record|
+          record.recommendation_type = "add_collector"
+          record.collector_type = "database_schema"
+          record.priority = "high"
+          record.status = "pending"
+          record.evidence = { reason: "No schema artifacts found" }
+        end
+
+        KnowledgeRecommendation.find_or_create_by!(project: project, description: "Remove stale api_docs collector") do |record|
+          record.recommendation_type = "remove_collector"
+          record.collector_type = "api_docs"
+          record.priority = "medium"
+          record.status = "pending"
+          record.evidence = { reason: "Collector has produced no artifacts in 30 days" }
+        end
+
+        WorkflowState.find_or_create_by!(temporal_workflow_id: "github-poll-#{project.id}") do |record|
+          record.project = project
+          record.workflow_type = "GitHubPollWorkflow"
+          record.status = "running"
+          record.started_at = 1.hour.ago
         end
 
         {

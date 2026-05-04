@@ -56,6 +56,7 @@ module Workflows
       AllProvidersExhausted
       AgentExecutionFailed
       IssueDraftInvalid
+      McpProvisioningFailed
       MissingPrompt
       MissingUser
       ContainerNotProvisioned
@@ -153,6 +154,15 @@ module Workflows
         # break Temporal's deterministic replay requirement.
         run_activity(Activities::ProvisionServicesActivity,
           { agent_run_id: agent_run_id }, timeout: 120)
+
+        # Step 1.6: Provision MCP servers (npx stdio + docker_image sidecars).
+        # Always run unconditionally — returns empty lists when no MCP servers
+        # are configured. Must run before container provisioning so sidecar
+        # URLs are available when the agent starts.
+        if Temporalio::Workflow.patched("provision_mcp_servers_v1")
+          run_activity(Activities::ProvisionMcpServersActivity,
+            { agent_run_id: agent_run_id }, timeout: 120)
+        end
 
         # Step 2: Provision container (with empty workspace directory)
         run_activity(Activities::ProvisionContainerActivity,
@@ -404,6 +414,22 @@ module Workflows
             rescue => e
               Temporalio::Workflow.logger.warn(
                 message: "agent_execution.cleanup_container_failed",
+                agent_run_id: agent_run_id,
+                error_class: e.class.name,
+                error: e.message
+              )
+            end
+          end
+
+          if Temporalio::Workflow.patched("provision_mcp_servers_v1")
+            begin
+              run_activity(Activities::CleanupMcpServersActivity,
+                { agent_run_id: agent_run_id },
+                start_to_close_timeout: 120, schedule_to_close_timeout: 300,
+                retry_policy: CLEANUP_RETRY_POLICY)
+            rescue => e
+              Temporalio::Workflow.logger.warn(
+                message: "agent_execution.cleanup_mcp_servers_failed",
                 agent_run_id: agent_run_id,
                 error_class: e.class.name,
                 error: e.message

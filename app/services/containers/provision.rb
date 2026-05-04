@@ -34,6 +34,11 @@ module Containers
     HEARTBEAT_MOUNT_POINT = "/paid-heartbeat"
     MAX_STREAMING_LINE_BUFFER_BYTES = 64 * 1024
 
+    # Maximum clock skew tolerance (seconds) between the Docker daemon's
+    # `wait:` timer and Ruby's CLOCK_MONOTONIC when reclassifying a Docker
+    # transport error as a timeout. Kept small to avoid false reclassification.
+    DOCKER_TIMEOUT_SKEW_TOLERANCE = 0.5
+
     # Base error for all container service errors
     class Error < StandardError; end
 
@@ -613,6 +618,28 @@ module Containers
             **output_summary_diagnostics(stdout_buffer, stderr_buffer)
           )
           raise
+        end
+
+        # The Docker API `wait:` parameter and the watchdog both track the
+        # same wall-clock timeout. If Docker fires first, elapsed time from
+        # Ruby's monotonic clock may still be fractionally below the timeout
+        # threshold (clock skew between the Docker daemon and CLOCK_MONOTONIC).
+        # Use a small fixed tolerance (0.5s) to cover typical clock skew
+        # without being so wide that unrelated Docker errors get reclassified.
+        # Clamp to at most half the timeout so short-timeout execs are safe.
+        if timeout
+          elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
+          tolerance = [ DOCKER_TIMEOUT_SKEW_TOLERANCE, timeout * 0.5 ].min
+          if elapsed >= timeout - tolerance
+            log_system("container.execute.timeout",
+              timeout_type: "wall_clock",
+              timeout: timeout,
+              elapsed_seconds: elapsed.round(1),
+              source: "docker_api_reclassified",
+              **timeout_diagnostics(started_at, output_received, last_activity_at, heartbeat_path),
+              **output_summary_diagnostics(stdout_buffer, stderr_buffer))
+            raise TimeoutError, "Command timed out after #{timeout} seconds"
+          end
         end
 
         log_system("container.execute.failed", error: e.message)
