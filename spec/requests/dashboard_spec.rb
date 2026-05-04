@@ -89,12 +89,13 @@ RSpec.describe "Dashboard" do
         get dashboard_path
         doc = Nokogiri::HTML(response.body)
         queue_section = doc.at_xpath("//h3[normalize-space(text())='Upcoming Queue']/ancestor::div[contains(@class, 'rounded-lg')][1]")
-        headers = queue_section.css("table thead th").map { |node| node.text.strip }
 
         expect(response.body).to include("Upcoming Queue")
         expect(response.body).to include("visible-owner/visible-repo")
         expect(response.body).to include("Issue #77")
         expect(queue_section).to be_present
+
+        headers = queue_section.css("table thead th").map { |node| node.text.strip }
         expect(headers).to include("Context")
         expect(headers).not_to include("Created")
         expect(headers).not_to include("Waiting")
