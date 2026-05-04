@@ -669,66 +669,66 @@
     </div>
   </div>
 
-    <%# Service Containers section %>
-    <%# MCP Servers section %>
-    <div class="mt-6 bg-white shadow sm:rounded-lg">
-      <div class="px-4 py-5 sm:p-6">
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="text-lg font-semibold text-gray-900">MCP Servers</h2>
-            <p class="mt-1 text-sm text-gray-500">
-              Associate MCP server definitions with this project. Agents will use these definitions during runs.
-            </p>
-          </div>
+  <%# MCP Servers section %>
+  <div class="mt-6 bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:p-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-gray-900">MCP Servers</h2>
+          <p class="mt-1 text-sm text-gray-500">
+            Associate MCP server definitions with this project. Agents will use these definitions during runs.
+          </p>
         </div>
-
-        <% project_mcp_servers = @project_mcp_servers %>
-        <% if project_mcp_servers.any? %>
-          <div class="mt-4 overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-              <thead class="bg-gray-50">
-                <tr>
-                  <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Name</th>
-                  <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Install Type</th>
-                  <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Transport</th>
-                  <th scope="col" class="relative px-4 py-2"><span class="sr-only">Remove</span></th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-200 bg-white">
-                <% project_mcp_servers.each do |pscp| %>
-                  <tr>
-                    <td class="whitespace-nowrap px-4 py-2 text-sm font-medium text-gray-900">
-                      <%= link_to pscp.mcp_server_definition.name, mcp_server_definition_path(pscp.mcp_server_definition), class: "text-indigo-600 hover:text-indigo-900" %>
-                    </td>
-                    <td class="whitespace-nowrap px-4 py-2 text-sm text-gray-500"><%= pscp.mcp_server_definition.install_type %></td>
-                    <td class="whitespace-nowrap px-4 py-2 text-sm text-gray-500"><%= pscp.mcp_server_definition.transport %></td>
-                    <td class="whitespace-nowrap px-4 py-2 text-right text-sm">
-                      <%= button_to "Remove", project_project_mcp_server_path(@project, pscp), method: :delete, class: "text-red-600 hover:text-red-900 text-sm font-medium", data: { turbo_confirm: "Remove this MCP server from the project?" } %>
-                    </td>
-                  </tr>
-                <% end %>
-              </tbody>
-            </table>
-          </div>
-        <% end %>
-
-        <% if @available_mcp_server_definitions.any? %>
-          <%= form_with url: project_project_mcp_servers_path(@project), method: :post, class: "mt-4 flex items-end gap-x-3" do |f| %>
-            <div>
-              <%= f.label :mcp_server_definition_id, "Add MCP Server", class: "block text-sm font-medium leading-6 text-gray-900" %>
-              <div class="mt-1">
-                <%= f.select :mcp_server_definition_id, @available_mcp_server_definitions.map { |m| ["#{m.name} (#{m.install_type})", m.id] }, {}, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
-              </div>
-            </div>
-            <%= f.submit "Add", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
-          <% end %>
-        <% elsif project_mcp_servers.empty? %>
-          <div class="mt-4 text-sm text-gray-500">
-            No MCP server definitions available. <%= link_to "Create one", new_mcp_server_definition_path, class: "text-indigo-600 hover:text-indigo-900" %> first.
-          </div>
-        <% end %>
       </div>
+
+      <% project_mcp_servers = @project_mcp_servers %>
+      <% if project_mcp_servers.any? %>
+        <div class="mt-4 overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Name</th>
+                <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Install Type</th>
+                <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Transport</th>
+                <th scope="col" class="relative px-4 py-2"><span class="sr-only">Remove</span></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% project_mcp_servers.each do |pscp| %>
+                <tr>
+                  <td class="whitespace-nowrap px-4 py-2 text-sm font-medium text-gray-900">
+                    <%= link_to pscp.mcp_server_definition.name, mcp_server_definition_path(pscp.mcp_server_definition), class: "text-indigo-600 hover:text-indigo-900" %>
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-2 text-sm text-gray-500"><%= pscp.mcp_server_definition.install_type %></td>
+                  <td class="whitespace-nowrap px-4 py-2 text-sm text-gray-500"><%= pscp.mcp_server_definition.transport %></td>
+                  <td class="whitespace-nowrap px-4 py-2 text-right text-sm">
+                    <%= button_to "Remove", project_project_mcp_server_path(@project, pscp), method: :delete, class: "text-red-600 hover:text-red-900 text-sm font-medium", data: { turbo_confirm: "Remove this MCP server from the project?" } %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% end %>
+
+      <% if @available_mcp_server_definitions.any? %>
+        <%= form_with url: project_project_mcp_servers_path(@project), method: :post, class: "mt-4 flex items-end gap-x-3" do |f| %>
+          <div>
+            <%= f.label :mcp_server_definition_id, "Add MCP Server", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-1">
+              <%= f.select :mcp_server_definition_id, @available_mcp_server_definitions.map { |m| ["#{m.name} (#{m.install_type})", m.id] }, {}, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+          </div>
+          <%= f.submit "Add", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
+        <% end %>
+      <% elsif project_mcp_servers.empty? %>
+        <div class="mt-4 text-sm text-gray-500">
+          No MCP server definitions available. <%= link_to "Create one", new_mcp_server_definition_path, class: "text-indigo-600 hover:text-indigo-900" %> first.
+        </div>
+      <% end %>
     </div>
+  </div>
+  <%# Service Containers section %>
   <div class="mt-6 bg-white shadow sm:rounded-lg">
     <div class="px-4 py-5 sm:p-6">
       <div class="flex items-center justify-between">
