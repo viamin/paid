@@ -76,6 +76,16 @@ RSpec.describe "Projects::KnowledgeRecommendations" do
         expect(recommendation.reload.status).to eq("pending")
       end
 
+      it "rejects updates to already-resolved recommendations" do
+        recommendation.accept!
+
+        patch project_knowledge_recommendation_path(project, recommendation), params: {
+          action_type: "accept"
+        }
+
+        expect(response).to have_http_status(:not_found)
+      end
+
       it "requires a dismissal reason" do
         patch project_knowledge_recommendation_path(project, recommendation), params: {
           action_type: "dismiss",

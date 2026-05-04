@@ -16,11 +16,10 @@ module Projects
       authorize @project, :update?
 
       update_recommendation!
-      load_recommendations
       @update_succeeded = true
 
       respond_to do |format|
-        format.turbo_stream
+        format.turbo_stream { load_recommendations }
         format.html { redirect_to project_knowledge_recommendations_path(@project) }
       end
     rescue ArgumentError => e
@@ -36,7 +35,7 @@ module Projects
     end
 
     def set_recommendation
-      @recommendation = @project.knowledge_recommendations.find(params[:id])
+      @recommendation = @project.knowledge_recommendations.pending.find(params[:id])
     end
 
     def load_recommendations

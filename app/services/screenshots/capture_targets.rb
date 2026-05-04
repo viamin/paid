@@ -198,7 +198,8 @@ module Screenshots
       "projects/pr_templates_controller.rb" => [ :project_edit ],
       "projects/pre_commit_requirements_controller.rb" => [ :project_edit ],
       "projects/quality_thresholds_controller.rb" => [ :project_quality_dashboard ],
-      "projects/service_containers_controller.rb" => [ :project_edit ]
+      "projects/service_containers_controller.rb" => [ :project_edit ],
+      "projects/knowledge_recommendations_controller.rb" => [ :project_show ]
     }.freeze
 
     def targets_for(path)
