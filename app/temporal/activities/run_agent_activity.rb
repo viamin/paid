@@ -616,6 +616,13 @@ module Activities
         raise ProviderExecutionError, "Unsupported provider: #{provider}"
       end
 
+      # Assemble effective MCP servers from the run's provisioned state so
+      # harness_execution_plan_for can pass them to agent-harness for
+      # provider-specific translation. Stored as an instance variable so the
+      # plan builder (which does not receive agent_run) can read it.
+      @effective_mcp_servers = effective_mcp_servers_for(agent_run)
+      validate_provider_mcp_support!(provider, @effective_mcp_servers)
+
       # Refresh the co-author trailer file before the agent runs so any
       # intermediate commits it creates via the commit-msg hook carry the
       # trailer for the provider actually producing them. Without this,
@@ -1325,18 +1332,22 @@ module Activities
     # app-level key. Delegates command construction to agent-harness so
     # provider CLI flag semantics are owned upstream.
     #
-    # The plan is cached per (provider_key, prompt, harness_runtime?)
-    # tuple so that multiple branches within build_command can share
-    # the same capture without re-running the harness provider. The
-    # boolean discriminator ensures calls with and without a
-    # provider_entry that has an agent_harness_provider_runtime are
-    # never conflated.
+    # The plan is cached per (provider_key, prompt, harness_runtime?,
+    # effective_mcp_servers) tuple so that multiple branches within
+    # build_command can share the same capture without re-running the
+    # harness provider. The boolean discriminator ensures calls with
+    # and without a provider_entry that has an
+    # agent_harness_provider_runtime are never conflated. The MCP
+    # servers are included so that a later execution on the same
+    # activity instance with a different MCP setup does not reuse a
+    # stale plan.
     def harness_execution_plan_for(provider_key, prompt, provider_entry: nil)
       @harness_plan_cache ||= {}
-      cache_key = [ provider_key, prompt, provider_entry&.agent_harness_provider_runtime.present? ]
+      cache_key = [ provider_key, prompt, provider_entry&.agent_harness_provider_runtime.present?, @effective_mcp_servers ]
       return @harness_plan_cache[cache_key] if @harness_plan_cache.key?(cache_key)
 
       options = { dangerous_mode: true }
+      options[:mcp_servers] = @effective_mcp_servers if @effective_mcp_servers&.any?
 
       @harness_plan_cache[cache_key] = if provider_entry&.agent_harness_provider_runtime
         Providers::HarnessExecutionPlan.call(
@@ -1371,6 +1382,46 @@ module Activities
       direct_outbound_execution_plan(provider_entry, prompt).preparation
     end
 
+    # Assembles the effective MCP server list from the agent run's
+    # provisioned servers into the format expected by agent-harness
+    # (array of Hashes with :name, :transport, :command/:url, etc.).
+    #
+    # Returns an empty array when no MCP servers are configured.
+    def effective_mcp_servers_for(agent_run)
+      provisioned = agent_run.mcp_provisioned_servers
+      return [] if provisioned.blank?
+
+      servers = []
+      Array(provisioned["stdio_servers"]).each do |server|
+        servers << server.symbolize_keys.slice(:name, :transport, :command, :args, :env)
+      end
+      Array(provisioned["url_servers"]).each do |server|
+        servers << server.symbolize_keys.slice(:name, :transport, :url)
+      end
+      servers
+    end
+
+    # Validates that the provider supports MCP before attempting execution.
+    # Raises ProviderExecutionError with a clear message when a run has MCP
+    # servers but the selected provider does not support them, allowing the
+    # fallback loop to try the next provider.
+    def validate_provider_mcp_support!(provider_key, mcp_servers)
+      return if mcp_servers.blank?
+
+      harness_provider = begin
+        harness_provider_for(provider_key)
+      rescue AgentHarness::ConfigurationError, KeyError
+        raise ProviderExecutionError,
+          "Provider #{provider_key} is not recognized and cannot be validated for MCP support"
+      end
+
+      unless harness_provider.supports_mcp?
+        raise ProviderExecutionError,
+          "Provider #{provider_key} does not support MCP servers. " \
+          "Select a provider with MCP capability or remove MCP servers from this project."
+      end
+    end
+
     # Combines two ExecutionPreparation instances by concatenating their
     # file_writes. Returns whichever is non-nil when only one is present.
     def merge_preparations(base, additional)
@@ -1382,6 +1433,14 @@ module Activities
       )
     end
 
+    # Builds an execution plan for providers that use the agent-harness
+    # runtime directly (e.g. opencode, copilot). MCP servers are
+    # intentionally NOT propagated here because none of the providers
+    # that route through this path currently support MCP — see
+    # validate_provider_mcp_support! which rejects them earlier. If a
+    # provider gains MCP support in the future, this method (and its
+    # cache key) must be updated to include @effective_mcp_servers,
+    # mirroring harness_execution_plan_for.
     def direct_outbound_execution_plan(provider_entry, prompt)
       @direct_outbound_execution_plan_cache ||= {}
       cache_key = [ provider_entry.id, prompt ]
