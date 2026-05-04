@@ -36,7 +36,7 @@ module Screenshots
       "application" => SHARED_TARGET_KEYS,
       "cost_dashboard" => %i[project_cost_dashboard project_cost_snapshot],
       "integrations" => %i[integrations integrations_new],
-      "knowledge" => %i[knowledge_search project_knowledge_search project_knowledge_browse project_context_intake],
+      "knowledge" => %i[knowledge_search project_knowledge_search project_knowledge_browse project_context_intake project_knowledge_recommendations],
       "quality_metrics" => %i[quality_dashboard project_quality_dashboard],
       "workflow" => [ :workflow_status ]
     }.freeze
@@ -116,6 +116,7 @@ module Screenshots
       project_knowledge_browse: Target.new(slug: "project_knowledge_browse", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge/browse" }, requires_auth: true),
       project_knowledge_browse_show: Target.new(slug: "project_knowledge_browse_show", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge/browse/route" }, requires_auth: true),
       project_knowledge_artifact_show: Target.new(slug: "project_knowledge_artifact_show", path_builder: ->(seed_data) { "/knowledge_artifacts/#{seed_data.fetch(:knowledge_artifact).id}" }, requires_auth: true),
+      project_knowledge_recommendations: Target.new(slug: "project_knowledge_recommendations", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge_recommendations" }, requires_auth: true),
       workflow_status: Target.new(slug: "workflow_status", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/workflow_status" }, requires_auth: true)
     }.freeze
 
@@ -198,7 +199,8 @@ module Screenshots
       "projects/pr_templates_controller.rb" => [ :project_edit ],
       "projects/pre_commit_requirements_controller.rb" => [ :project_edit ],
       "projects/quality_thresholds_controller.rb" => [ :project_quality_dashboard ],
-      "projects/service_containers_controller.rb" => [ :project_edit ]
+      "projects/service_containers_controller.rb" => [ :project_edit ],
+      "projects/knowledge_recommendations_controller.rb" => [ :project_knowledge_recommendations ]
     }.freeze
 
     def targets_for(path)
@@ -277,6 +279,7 @@ module Screenshots
       when /\Aprojects\/cost_snapshots\// then [ :project_cost_snapshot ]
       when /\Aworkflow_statuses\// then [ :workflow_status ]
       when /\Aprojects\/quality_dashboards\// then [ :project_quality_dashboard ]
+      when /\Aprojects\/knowledge_recommendations\// then [ :project_knowledge_recommendations ]
       when /\Aprojects\// then projects_targets(relative_path.delete_prefix("projects/"))
       else
         []

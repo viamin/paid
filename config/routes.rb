@@ -162,6 +162,9 @@ Rails.application.routes.draw do
     end
     post :ensure_labels, on: :member
 
+    resources :knowledge_recommendations, only: [ :index, :update ],
+      controller: "projects/knowledge_recommendations"
+
     # Project-scoped knowledge browsing and search
     namespace :knowledge do
       resources :browse, only: [ :index, :show ]

@@ -17,6 +17,14 @@ RSpec.describe KnowledgeRecommendation do
     it { is_expected.to validate_presence_of(:status) }
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
     it { is_expected.to validate_presence_of(:description) }
+
+    it "requires a dismissal reason for dismissed recommendations" do
+      recommendation.status = "dismissed"
+      recommendation.dismissal_reason = nil
+
+      expect(recommendation).not_to be_valid
+      expect(recommendation.errors[:dismissal_reason]).to include("can't be blank")
+    end
   end
 
   describe "scopes" do

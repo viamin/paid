@@ -11,6 +11,7 @@ class KnowledgeRecommendation < ApplicationRecord
   validates :priority, presence: true, inclusion: { in: PRIORITIES }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :description, presence: true
+  validates :dismissal_reason, presence: true, if: :dismissed?
 
   scope :pending, -> { where(status: "pending") }
   scope :accepted, -> { where(status: "accepted") }
@@ -22,5 +23,11 @@ class KnowledgeRecommendation < ApplicationRecord
 
   def accept!
     update!(status: "accepted")
+  end
+
+  private
+
+  def dismissed?
+    status == "dismissed"
   end
 end

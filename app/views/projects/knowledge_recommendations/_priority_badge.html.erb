@@ -1,0 +1,9 @@
+<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+  <%= case priority
+      when 'critical' then 'bg-red-100 text-red-700'
+      when 'high' then 'bg-orange-100 text-orange-700'
+      when 'medium' then 'bg-yellow-100 text-yellow-700'
+      when 'low' then 'bg-green-100 text-green-700'
+      end %>">
+  <%= priority.capitalize %>
+</span>
