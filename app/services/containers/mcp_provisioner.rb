@@ -51,6 +51,8 @@ module Containers
       snapshot = agent_run.mcp_server_snapshot
       return { stdio_servers: [], url_servers: [] } if snapshot.blank?
 
+      sidecar_ids = []
+
       # Clean up stale sidecars from a prior failed attempt to avoid leaks.
       stale_ids = agent_run.mcp_sidecar_container_ids
       cleanup_containers(stale_ids) if stale_ids.present?
@@ -58,7 +60,6 @@ module Containers
       @network = network
       stdio_servers = []
       url_servers = []
-      sidecar_ids = []
 
       snapshot.each do |definition|
         case definition["install_type"]
