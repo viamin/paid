@@ -265,16 +265,23 @@
 
               <%# GitHub Copilot %>
               <% copilot = rs.dig("methods", "copilot") || {} %>
-              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3">
+              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3"
+                data-controller="collapsible-panel">
                 <div class="flex items-center">
                   <input type="hidden" name="project[review_settings][methods][copilot][enabled]" value="0" />
                   <input type="checkbox" name="project[review_settings][methods][copilot][enabled]" value="1" id="review_copilot_enabled"
                     <%= "checked" if copilot["enabled"] %>
-                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                    aria-controls="review_copilot_settings"
+                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                    data-action="change->collapsible-panel#toggle"
+                    data-collapsible-panel-target="checkbox" />
                   <label for="review_copilot_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">GitHub Copilot</label>
                   <span class="ml-2 inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">GitHub-hosted only</span>
                 </div>
-                <div class="ml-7 grid grid-cols-2 gap-3">
+                <div id="review_copilot_settings"
+                  class="ml-7 grid grid-cols-2 gap-3 transition-all duration-200 ease-in-out <%= copilot["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
+                  <%= "inert" unless copilot["enabled"] %>
+                  data-collapsible-panel-target="panel">
                   <div>
                     <label for="review_copilot_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
                     <input type="number" name="project[review_settings][methods][copilot][termination][max_review_rounds]" id="review_copilot_max_rounds"
@@ -305,15 +312,22 @@
 
               <%# Paid PR Code Review Agent %>
               <% paid = rs.dig("methods", "paid_agent") || {} %>
-              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3">
+              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3"
+                data-controller="collapsible-panel">
                 <div class="flex items-center">
                   <input type="hidden" name="project[review_settings][methods][paid_agent][enabled]" value="0" />
                   <input type="checkbox" name="project[review_settings][methods][paid_agent][enabled]" value="1" id="review_paid_agent_enabled"
                     <%= "checked" if paid["enabled"] %>
-                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                    aria-controls="review_paid_agent_settings"
+                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                    data-action="change->collapsible-panel#toggle"
+                    data-collapsible-panel-target="checkbox" />
                   <label for="review_paid_agent_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">Paid PR Code Review Agent</label>
                 </div>
-                <div class="ml-7 grid grid-cols-2 gap-3">
+                <div id="review_paid_agent_settings"
+                  class="ml-7 grid grid-cols-2 gap-3 transition-all duration-200 ease-in-out <%= paid["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
+                  <%= "inert" unless paid["enabled"] %>
+                  data-collapsible-panel-target="panel">
                   <div>
                     <label for="review_paid_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
                     <input type="number" name="project[review_settings][methods][paid_agent][termination][max_review_rounds]" id="review_paid_max_rounds"
@@ -344,56 +358,72 @@
 
               <%# OpenAI Codex %>
               <% codex = rs.dig("methods", "codex") || {} %>
-              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3">
+              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3"
+                data-controller="collapsible-panel">
                 <div class="flex items-center">
                   <input type="hidden" name="project[review_settings][methods][codex][enabled]" value="0" />
                   <input type="checkbox" name="project[review_settings][methods][codex][enabled]" value="1" id="review_codex_enabled"
                     <%= "checked" if codex["enabled"] %>
-                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                    aria-controls="review_codex_settings"
+                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                    data-action="change->collapsible-panel#toggle"
+                    data-collapsible-panel-target="checkbox" />
                   <label for="review_codex_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">OpenAI Codex</label>
                   <span class="ml-2 inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">GitHub-hosted only</span>
                 </div>
-                <p class="ml-7 text-xs text-gray-500">Waits for the <code>chatgpt-codex-connector</code> bot to review the PR and resolve its threads before advancing.</p>
-                <div class="ml-7 grid grid-cols-2 gap-3">
-                  <div>
-                    <label for="review_codex_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
-                    <input type="number" name="project[review_settings][methods][codex][termination][max_review_rounds]" id="review_codex_max_rounds"
-                      value="<%= codex.dig("termination", "max_review_rounds") %>" min="1" placeholder="e.g. 15"
-                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
-                  </div>
-                  <div>
-                    <label for="review_codex_timeout" class="block text-xs font-medium text-gray-600">Timeout (minutes)</label>
-                    <input type="number" name="project[review_settings][methods][codex][termination][timeout_minutes]" id="review_codex_timeout"
-                      value="<%= codex.dig("termination", "timeout_minutes") %>" min="1" placeholder="e.g. 60"
-                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
-                  </div>
-                  <div>
-                    <label for="review_codex_quality" class="block text-xs font-medium text-gray-600">Quality Threshold</label>
-                    <input type="text" name="project[review_settings][methods][codex][termination][quality_threshold]" id="review_codex_quality"
-                      value="<%= codex.dig("termination", "quality_threshold") %>" placeholder="e.g. approved"
-                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
-                  </div>
-                  <div class="flex items-center col-span-2">
-                    <input type="hidden" name="project[review_settings][methods][codex][termination][stop_when_no_comments]" value="0" />
-                    <input type="checkbox" name="project[review_settings][methods][codex][termination][stop_when_no_comments]" value="1" id="review_codex_stop_no_comments"
-                      <%= "checked" if codex.dig("termination", "stop_when_no_comments") %>
-                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
-                    <label for="review_codex_stop_no_comments" class="ml-2 block text-xs text-gray-600">Stop when no new comments</label>
+                <div id="review_codex_settings"
+                  class="space-y-3 transition-all duration-200 ease-in-out <%= codex["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
+                  <%= "inert" unless codex["enabled"] %>
+                  data-collapsible-panel-target="panel">
+                  <p class="ml-7 text-xs text-gray-500">Waits for the <code>chatgpt-codex-connector</code> bot to review the PR and resolve its threads before advancing.</p>
+                  <div class="ml-7 grid grid-cols-2 gap-3">
+                    <div>
+                      <label for="review_codex_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
+                      <input type="number" name="project[review_settings][methods][codex][termination][max_review_rounds]" id="review_codex_max_rounds"
+                        value="<%= codex.dig("termination", "max_review_rounds") %>" min="1" placeholder="e.g. 15"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                    </div>
+                    <div>
+                      <label for="review_codex_timeout" class="block text-xs font-medium text-gray-600">Timeout (minutes)</label>
+                      <input type="number" name="project[review_settings][methods][codex][termination][timeout_minutes]" id="review_codex_timeout"
+                        value="<%= codex.dig("termination", "timeout_minutes") %>" min="1" placeholder="e.g. 60"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                    </div>
+                    <div>
+                      <label for="review_codex_quality" class="block text-xs font-medium text-gray-600">Quality Threshold</label>
+                      <input type="text" name="project[review_settings][methods][codex][termination][quality_threshold]" id="review_codex_quality"
+                        value="<%= codex.dig("termination", "quality_threshold") %>" placeholder="e.g. approved"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                    </div>
+                    <div class="flex items-center col-span-2">
+                      <input type="hidden" name="project[review_settings][methods][codex][termination][stop_when_no_comments]" value="0" />
+                      <input type="checkbox" name="project[review_settings][methods][codex][termination][stop_when_no_comments]" value="1" id="review_codex_stop_no_comments"
+                        <%= "checked" if codex.dig("termination", "stop_when_no_comments") %>
+                        class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                      <label for="review_codex_stop_no_comments" class="ml-2 block text-xs text-gray-600">Stop when no new comments</label>
+                    </div>
                   </div>
                 </div>
               </div>
 
               <%# CI Review Action %>
               <% ci = rs.dig("methods", "ci_action") || {} %>
-              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3">
+              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3"
+                data-controller="collapsible-panel">
                 <div class="flex items-center">
                   <input type="hidden" name="project[review_settings][methods][ci_action][enabled]" value="0" />
                   <input type="checkbox" name="project[review_settings][methods][ci_action][enabled]" value="1" id="review_ci_action_enabled"
                     <%= "checked" if ci["enabled"] %>
-                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                    aria-controls="review_ci_action_settings"
+                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                    data-action="change->collapsible-panel#toggle"
+                    data-collapsible-panel-target="checkbox" />
                   <label for="review_ci_action_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">CI Review Action</label>
                 </div>
-                <div class="ml-7 space-y-3">
+                <div id="review_ci_action_settings"
+                  class="ml-7 space-y-3 transition-all duration-200 ease-in-out <%= ci["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
+                  <%= "inert" unless ci["enabled"] %>
+                  data-collapsible-panel-target="panel">
                   <div>
                     <label for="review_ci_action_name" class="block text-xs font-medium text-gray-600">Action Name</label>
                     <input type="text" name="project[review_settings][methods][ci_action][action_name]" id="review_ci_action_name"
@@ -436,15 +466,22 @@
 
               <%# Manual Review %>
               <% manual = rs.dig("methods", "manual") || {} %>
-              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3">
+              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3"
+                data-controller="collapsible-panel">
                 <div class="flex items-center">
                   <input type="hidden" name="project[review_settings][methods][manual][enabled]" value="0" />
                   <input type="checkbox" name="project[review_settings][methods][manual][enabled]" value="1" id="review_manual_enabled"
                     <%= "checked" if manual["enabled"] %>
-                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                    aria-controls="review_manual_settings"
+                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                    data-action="change->collapsible-panel#toggle"
+                    data-collapsible-panel-target="checkbox" />
                   <label for="review_manual_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">Manual Review</label>
                 </div>
-                <div class="ml-7 space-y-3">
+                <div id="review_manual_settings"
+                  class="ml-7 space-y-3 transition-all duration-200 ease-in-out <%= manual["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
+                  <%= "inert" unless manual["enabled"] %>
+                  data-collapsible-panel-target="panel">
                   <div>
                     <label for="review_manual_reviewer_login" class="block text-xs font-medium text-gray-600">Reviewer Login</label>
                     <input type="text" name="project[review_settings][methods][manual][reviewer_login]" id="review_manual_reviewer_login"
@@ -452,31 +489,31 @@
                       class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
                   </div>
                   <div class="grid grid-cols-2 gap-3">
-                  <div>
-                    <label for="review_manual_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
-                    <input type="number" name="project[review_settings][methods][manual][termination][max_review_rounds]" id="review_manual_max_rounds"
-                      value="<%= manual.dig("termination", "max_review_rounds") %>" min="1" placeholder="optional"
-                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
-                  </div>
-                  <div>
-                    <label for="review_manual_timeout" class="block text-xs font-medium text-gray-600">Timeout (minutes)</label>
-                    <input type="number" name="project[review_settings][methods][manual][termination][timeout_minutes]" id="review_manual_timeout"
-                      value="<%= manual.dig("termination", "timeout_minutes") %>" min="1" placeholder="e.g. 1440 (24h)"
-                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
-                  </div>
-                  <div>
-                    <label for="review_manual_quality" class="block text-xs font-medium text-gray-600">Quality Threshold</label>
-                    <input type="text" name="project[review_settings][methods][manual][termination][quality_threshold]" id="review_manual_quality"
-                      value="<%= manual.dig("termination", "quality_threshold") %>" placeholder="e.g. approved"
-                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
-                  </div>
-                  <div class="flex items-center">
-                    <input type="hidden" name="project[review_settings][methods][manual][termination][stop_when_no_comments]" value="0" />
-                    <input type="checkbox" name="project[review_settings][methods][manual][termination][stop_when_no_comments]" value="1" id="review_manual_stop_no_comments"
-                      <%= "checked" if manual.dig("termination", "stop_when_no_comments") %>
-                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
-                    <label for="review_manual_stop_no_comments" class="ml-2 block text-xs text-gray-600">Stop when no new comments</label>
-                  </div>
+                    <div>
+                      <label for="review_manual_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
+                      <input type="number" name="project[review_settings][methods][manual][termination][max_review_rounds]" id="review_manual_max_rounds"
+                        value="<%= manual.dig("termination", "max_review_rounds") %>" min="1" placeholder="optional"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                    </div>
+                    <div>
+                      <label for="review_manual_timeout" class="block text-xs font-medium text-gray-600">Timeout (minutes)</label>
+                      <input type="number" name="project[review_settings][methods][manual][termination][timeout_minutes]" id="review_manual_timeout"
+                        value="<%= manual.dig("termination", "timeout_minutes") %>" min="1" placeholder="e.g. 1440 (24h)"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                    </div>
+                    <div>
+                      <label for="review_manual_quality" class="block text-xs font-medium text-gray-600">Quality Threshold</label>
+                      <input type="text" name="project[review_settings][methods][manual][termination][quality_threshold]" id="review_manual_quality"
+                        value="<%= manual.dig("termination", "quality_threshold") %>" placeholder="e.g. approved"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                    </div>
+                    <div class="flex items-center">
+                      <input type="hidden" name="project[review_settings][methods][manual][termination][stop_when_no_comments]" value="0" />
+                      <input type="checkbox" name="project[review_settings][methods][manual][termination][stop_when_no_comments]" value="1" id="review_manual_stop_no_comments"
+                        <%= "checked" if manual.dig("termination", "stop_when_no_comments") %>
+                        class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                      <label for="review_manual_stop_no_comments" class="ml-2 block text-xs text-gray-600">Stop when no new comments</label>
+                    </div>
                   </div>
                 </div>
               </div>
