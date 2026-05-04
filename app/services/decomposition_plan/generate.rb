@@ -59,7 +59,7 @@ module DecompositionPlan
       end
 
       Result.new(
-        tasks: tasks.freeze,
+        tasks: deep_freeze(tasks),
         valid: validation.valid?,
         sorted_indices: validation.sorted_indices,
         errors: validation.errors
@@ -85,6 +85,8 @@ module DecompositionPlan
 
       sub_components.each do |component|
         layer = classify_component(component)
+        next unless layer
+
         (grouped[layer] ||= []) << component
       end
 
@@ -102,6 +104,10 @@ module DecompositionPlan
         "controller"
       when "views", "ui", "helpers"
         "view"
+      when "tests", "specs", "testing"
+        # Tests are included within each layer's guidance already; skip as a
+        # standalone layer to avoid nonsensical "Implement service layer: tests" tasks.
+        nil
       else
         "service"
       end
@@ -188,6 +194,11 @@ module DecompositionPlan
           index: index
         }
       end
+    end
+
+    def deep_freeze(tasks)
+      tasks.each { |task| task.each_value { |v| v.freeze unless v.frozen? }.freeze }
+      tasks.freeze
     end
 
     # TODO(#453): Split tasks covering too many components into smaller tasks

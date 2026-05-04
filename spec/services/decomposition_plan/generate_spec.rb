@@ -162,6 +162,43 @@ RSpec.describe DecompositionPlan::Generate, :no_db do
       end
     end
 
+    context "with test/spec components" do
+      let(:title) { "Add user notifications" }
+      let(:description) { "Build notifications." }
+      let(:sub_components) { [ "database", "tests", "specs", "testing" ] }
+
+      it "excludes test components from tasks" do
+        titles = result.tasks.map { |t| t[:title] }
+        titles.each do |t|
+          expect(t).not_to include("tests")
+          expect(t).not_to include("specs")
+          expect(t).not_to include("testing")
+        end
+      end
+
+      it "still produces a model task from the database component" do
+        expect(result.tasks.first[:scope]).to eq("model")
+      end
+
+      it "is valid" do
+        expect(result.valid?).to be true
+      end
+    end
+
+    context "with only test components" do
+      let(:title) { "Add tests" }
+      let(:description) { "Add test coverage." }
+      let(:sub_components) { [ "tests", "specs" ] }
+
+      it "falls back to a single task" do
+        expect(result.task_count).to eq(1)
+      end
+
+      it "is valid" do
+        expect(result.valid?).to be true
+      end
+    end
+
     context "with a very long title" do
       let(:title) { "A" * 500 }
       let(:description) { "Description" }
@@ -192,6 +229,24 @@ RSpec.describe DecompositionPlan::Generate, :no_db do
 
       it "sorted indices cover all tasks" do
         expect(result.sorted_indices.sort).to eq((0...result.task_count).to_a)
+      end
+    end
+  end
+
+  describe "immutability" do
+    subject(:result) do
+      described_class.call(
+        title: "Feature",
+        description: "Desc",
+        sub_components: [ "database", "service layer" ]
+      )
+    end
+
+    it "returns fully frozen tasks" do
+      expect(result.tasks).to be_frozen
+      result.tasks.each do |task|
+        expect(task).to be_frozen
+        expect(task[:deps]).to be_frozen
       end
     end
   end
