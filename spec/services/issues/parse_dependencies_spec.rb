@@ -223,6 +223,37 @@ RSpec.describe Issues::ParseDependencies do
             "Expected no dependencies for heading in: #{body_text.inspect}"
         end
       end
+
+      it "does not stop stripping a child section at plain issue-number lines" do
+        create(:issue, project: project, github_number: 9024)
+        create(:issue, project: project, github_number: 9025)
+        body = <<~BODY
+          ## Sub-Issues
+          - [ ] #9024 initial work
+          #9025 follow-up task (depends on #9024)
+        BODY
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to be_empty
+      end
+
+      it "does not stop stripping a child section inside fenced code blocks" do
+        create(:issue, project: project, github_number: 9026)
+        body = <<~BODY
+          ## Implementation Sub-Issues
+          ```text
+          # not a heading
+          depends on #9026
+          ```
+        BODY
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to be_empty
+      end
     end
 
     context "with cross-project references" do

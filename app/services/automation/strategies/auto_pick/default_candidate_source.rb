@@ -63,7 +63,7 @@ module Automation
           end
 
           def eligible_scope(project)
-            blocking_run_ids = AgentRun.where(
+            blocking_issue_ids = AgentRun.where(
               project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES
             ).where.not(issue_id: nil).select(:issue_id)
 
@@ -72,7 +72,7 @@ module Automation
             ).where.not(parent_issue_id: nil).distinct.select(:parent_issue_id)
 
             base = Issue.ready_for_work(project)
-              .where.not(id: blocking_run_ids)
+              .where.not(id: blocking_issue_ids)
               .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
               .where.not(id: subissue_parent_ids)
               .where.not(id: Issue.open_pull_request_parent_issue_ids(project: project).distinct)
@@ -86,12 +86,22 @@ module Automation
 
             scope = base.where(paid_state: %w[new planning failed])
 
-            pr_produced_ids = AgentRun.where(
-              project: project, status: "completed"
+            recoverable_completed_issue_ids = AgentRun.where(
+              project: project,
+              status: "completed",
+              trigger_type: "automatic",
+              goal: "create_pr",
+              auto_pick: true,
+              pull_request_number: nil
+            ).where.not(issue_id: nil).select(:issue_id)
+
+            pr_produced_issue_ids = AgentRun.where(
+              project: project, status: "completed", goal: "create_pr"
             ).where.not(pull_request_number: nil).where.not(issue_id: nil).select(:issue_id)
 
             scope = scope.or(
-              base.where(paid_state: "completed").where.not(id: pr_produced_ids)
+              base.where(paid_state: "completed", id: recoverable_completed_issue_ids)
+                .where.not(id: pr_produced_issue_ids)
             )
 
             blocked_ids = tracker_ids_blocked_by_open_references(scope, project)
