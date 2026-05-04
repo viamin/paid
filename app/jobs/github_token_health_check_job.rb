@@ -84,8 +84,11 @@ class GithubTokenHealthCheckJob < ApplicationJob
       github_token_id: token.id,
       error: e.message
     )
-    # Always auto-pause: the service is idempotent (skips already-paused projects),
-    # and projects can be associated with a failed token after the initial failure.
+    # No was_already_failed guard here intentionally: the service is idempotent
+    # (only pauses projects where scheduler_paused_at IS NULL), and new projects
+    # can be associated with a failed token between health-check runs. Skipping
+    # this call when the token was already failed would leave those new projects
+    # unpaused until the token is fixed and fails again.
     GithubTokens::AutoPauseProjects.call(github_token: token)
     false
   rescue GithubClient::RateLimitError, GithubClient::ApiError => e

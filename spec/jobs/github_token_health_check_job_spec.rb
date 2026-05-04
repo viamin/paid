@@ -109,10 +109,14 @@ RSpec.describe GithubTokenHealthCheckJob do
         expect(token.reload.validation_status).to eq("failed")
       end
 
-      it "still auto-pauses to catch newly associated projects" do
-        allow(GithubTokens::AutoPauseProjects).to receive(:call)
+      it "pauses a project associated after the initial token failure" do
+        # Simulate a project added after the token was already in failed state
+        project = create(:project, github_token: token, account: account)
+
         described_class.perform_now
-        expect(GithubTokens::AutoPauseProjects).to have_received(:call).with(github_token: token)
+
+        expect(project.reload.scheduler_paused_at).to be_present
+        expect(project.scheduler_pause_reason).to include("failed validation")
       end
     end
 
