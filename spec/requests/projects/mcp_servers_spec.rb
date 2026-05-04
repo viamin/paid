@@ -29,6 +29,12 @@ RSpec.describe "Projects::McpServers" do
         expect(flash[:notice]).to include("added")
       end
 
+      it "handles non-existent MCP server definition" do
+        post project_project_mcp_servers_path(project), params: { mcp_server_definition_id: 0 }
+        expect(response).to redirect_to(edit_project_path(project))
+        expect(flash[:alert]).to include("not found")
+      end
+
       it "does not create duplicate associations" do
         mcp = create(:mcp_server_definition, account: account)
         create(:project_mcp_server, project: project, mcp_server_definition: mcp)
@@ -79,6 +85,12 @@ RSpec.describe "Projects::McpServers" do
 
     context "when authenticated" do
       before { sign_in user }
+
+      it "handles non-existent project MCP server" do
+        delete project_project_mcp_server_path(project, 0)
+        expect(response).to redirect_to(edit_project_path(project))
+        expect(flash[:alert]).to include("not found")
+      end
 
       it "removes the MCP server from the project" do
         mcp = create(:mcp_server_definition, account: account)
