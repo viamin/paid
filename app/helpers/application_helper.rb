@@ -343,7 +343,7 @@ module ApplicationHelper
     elsif run.pull_request_number.present?
       github_link_or_text("PR ##{run.pull_request_number}", "PR ##{run.pull_request_number}", run.pull_request_url)
     elsif run.custom_prompt.present?
-      { type: :text, label: "Custom prompt", classes: "text-gray-700", tooltip: run.custom_prompt.truncate(200) }
+      { type: :text, label: run.custom_prompt.truncate(60), classes: "text-gray-700", tooltip: run.custom_prompt.truncate(200) }
     else
       { type: :placeholder }
     end
@@ -354,7 +354,7 @@ module ApplicationHelper
       label = run.created_issue_number.present? ? "Issue ##{run.created_issue_number}" : "Issue"
       { type: :link, label: label, url: run.created_issue_url }
     elsif run.custom_prompt.present?
-      { type: :text, label: "Custom prompt", classes: "text-gray-700", tooltip: run.custom_prompt.truncate(200) }
+      { type: :text, label: run.custom_prompt.truncate(60), classes: "text-gray-700", tooltip: run.custom_prompt.truncate(200) }
     elsif run.finished?
       { type: :placeholder }
     else

@@ -188,11 +188,8 @@ module Screenshots
           record.status = "stopped"
         end
 
-        agent_run = project.agent_runs.where(custom_prompt: "Capture screenshot route coverage").first_or_create!(
-          agent_type: "codex",
-          goal: "create_pr",
-          status: "queued"
-        )
+        agent_run = project.agent_runs.find_or_initialize_by(custom_prompt: "Capture screenshot route coverage")
+        agent_run.update!(agent_type: "codex", goal: "create_pr", status: "queued")
 
         prompt = Prompt.find_or_create_by!(account: account, slug: "screenshots.prompt") do |record|
           record.name = "Screenshots Prompt"
