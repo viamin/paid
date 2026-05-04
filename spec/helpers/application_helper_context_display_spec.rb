@@ -149,13 +149,12 @@ RSpec.describe ApplicationHelper do
         expect(result).to include("https://github.com/o/r/pull/3")
       end
 
-      it "shows a generic label with tooltip when no issue or PR context exists" do
+      it "shows truncated prompt text with tooltip when no issue or PR context exists" do
         run = stub_run("create_pr_goal?": true, custom_prompt: "Refactor the flaky dashboard queue preview rows")
         result = helper.agent_run_context_display(run)
 
-        expect(result).to include("Custom prompt")
-        expect(result).to include("text-gray-700")
         expect(result).to include("Refactor the flaky dashboard queue preview rows")
+        expect(result).to include("text-gray-700")
       end
 
       it "shows placeholder when no context" do
@@ -177,13 +176,12 @@ RSpec.describe ApplicationHelper do
         expect(result).to include("https://github.com/o/r/issues/42")
       end
 
-      it "shows generic label with tooltip when available and no created issue" do
+      it "shows truncated prompt text with tooltip when available and no created issue" do
         run = stub_run("create_issue_goal?": true, custom_prompt: "Add a login timeout feature")
         result = helper.agent_run_context_display(run)
 
-        expect(result).to include("Custom prompt")
-        expect(result).to include("text-gray-700")
         expect(result).to include("Add a login timeout feature")
+        expect(result).to include("text-gray-700")
       end
 
       it "shows 'Creating issue...' when pending without custom prompt" do
