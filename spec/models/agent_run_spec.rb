@@ -2797,6 +2797,16 @@ RSpec.describe AgentRun do
       expect(agent_run.agent_summary).to eq(events)
       expect(parsed_inputs).not_to include(stale_line)
     end
+
+    it "extracts result text from multi-line Claude CLI JSON output" do
+      r1 = { type: "result", subtype: "success", is_error: false,
+             result: "OK", duration_ms: 2769, total_cost_usd: 0.06 }
+      r2 = { type: "result", subtype: "success", is_error: false,
+             result: "All done. The commit succeeded.", duration_ms: 830592, total_cost_usd: 0.74 }
+      agent_run.log!("stdout", [ r1, r2 ].map(&:to_json).join("\n"))
+
+      expect(agent_run.agent_summary).to eq("OK\n\nAll done. The commit succeeded.")
+    end
   end
 
   describe "#current_phase_group" do
