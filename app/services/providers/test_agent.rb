@@ -25,9 +25,9 @@ module Providers
     BASE_AUTHENTICATION_ERROR_PATTERNS = [
       /api[_ -]?key/i,
       /API key not configured for/i,
-      /auth(?:entication)?/i,
+      /\bauth(?:entication)?\b/i,
       /oauth/i,
-      /token/i,
+      /(?<!unexpected\s)token.*(?:expired|revoked|invalid|not found)|(?:invalid|expired|revoked)\s+token|api[_ -]?key.*token/i,
       /unauthori[sz]ed/i,
       /invalid credentials/i,
       /session.*expired/i
