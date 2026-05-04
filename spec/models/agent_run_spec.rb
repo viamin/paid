@@ -2807,6 +2807,35 @@ RSpec.describe AgentRun do
 
       expect(agent_run.agent_summary).to eq("OK\n\nAll done. The commit succeeded.")
     end
+
+    it "returns only successful results when mixed with errors in multi-line output" do
+      r1 = { type: "result", subtype: "success", is_error: false,
+             result: "OK", duration_ms: 2769, total_cost_usd: 0.06 }
+      r2 = { type: "result", subtype: "error", is_error: true,
+             result: "Authentication failed", duration_ms: 500, total_cost_usd: 0.0 }
+      agent_run.log!("stdout", [ r1, r2 ].map(&:to_json).join("\n"))
+
+      expect(agent_run.agent_summary).to eq("OK")
+    end
+
+    it "returns error message when all multi-line results are errors" do
+      r1 = { type: "result", subtype: "error", is_error: true,
+             result: "Authentication failed", duration_ms: 500, total_cost_usd: 0.0 }
+      r2 = { type: "result", subtype: "error", is_error: true,
+             result: "Retry also failed", duration_ms: 200, total_cost_usd: 0.0 }
+      agent_run.log!("stdout", [ r1, r2 ].map(&:to_json).join("\n"))
+
+      expect(agent_run.agent_summary).to eq("Agent encountered an error: Authentication failed")
+    end
+
+    it "ignores JSON lines without type: result in multiline fallback" do
+      non_result = { type: "agent_message", role: "assistant", result: "should be ignored" }
+      result = { type: "result", subtype: "success", is_error: false,
+                 result: "Extracted text", duration_ms: 100, total_cost_usd: 0.01 }
+      agent_run.log!("stdout", [ non_result, result ].map(&:to_json).join("\n"))
+
+      expect(agent_run.agent_summary).to eq("Extracted text")
+    end
   end
 
   describe "#current_phase_group" do

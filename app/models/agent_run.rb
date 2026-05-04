@@ -18,6 +18,7 @@ class AgentRun < ApplicationRecord
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
   TERMINAL_FAILURE_STATUSES = (FAILURE_STATUSES + %w[cancelled]).freeze
   QUALITY_EXCLUDED_STATUSES = %w[timeout auth_expired rate_limited].freeze
+  STDOUT_TAIL_LINES = 500
 
   OPERATIONAL_FAILURE_KEYWORDS = [
     "providers exhausted",
@@ -1526,9 +1527,9 @@ class AgentRun < ApplicationRecord
     results = []
     error_message = nil
 
-    raw_stdout.each_line do |line|
+    raw_stdout.lines.last(STDOUT_TAIL_LINES).each do |line|
       line = line.strip
-      next if line.empty?
+      next unless line.start_with?("{") && line.include?('"type"') && line.include?('"result"')
 
       begin
         parsed = JSON.parse(line)
@@ -1536,7 +1537,7 @@ class AgentRun < ApplicationRecord
         next
       end
 
-      next unless parsed.is_a?(Hash)
+      next unless parsed.is_a?(Hash) && parsed["type"] == "result"
 
       if parsed["is_error"]
         error_message ||= parsed["result"] || "Unknown error"
@@ -1583,7 +1584,7 @@ class AgentRun < ApplicationRecord
   def structured_stdout_input_for(provider_key, raw_stdout)
     return raw_stdout unless provider_key == "codex"
 
-    raw_stdout.lines.last(500).join
+    raw_stdout.lines.last(STDOUT_TAIL_LINES).join
   end
 
   def normalize_log_content(content)

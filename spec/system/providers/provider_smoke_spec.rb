@@ -19,12 +19,10 @@ RSpec.describe "Provider smoke test UI", :local_only, :provider_smoke, type: :sy
       password: "password123"
     )
   end
-  let!(:provider) { ProviderSmokeHelpers.build_provider!(user: user, scenario: scenario) }
 
   before do
     Warden.test_mode!
     login_as(user, scope: :user)
-    ProviderSmokeHelpers.create_smoke_project!(user: user)
   end
 
   after do
@@ -33,6 +31,9 @@ RSpec.describe "Provider smoke test UI", :local_only, :provider_smoke, type: :sy
 
   it "runs the provider smoke test from the providers page" do
     skip "No provider smoke scenarios configured" if scenario.nil?
+
+    ProviderSmokeHelpers.create_smoke_project!(user: user)
+    provider = ProviderSmokeHelpers.build_provider!(user: user, scenario: scenario)
 
     visit providers_path
 

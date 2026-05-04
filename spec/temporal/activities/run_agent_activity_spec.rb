@@ -2007,7 +2007,7 @@ RSpec.describe Activities::RunAgentActivity do
       end
 
       it "does not apply idle timeout to providers without heartbeat support" do
-        agent_run.update!(agent_type: "kilocode")
+        agent_run.update!(agent_type: "gemini")
         project.update!(max_execution_seconds: 86_400)
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
@@ -2018,6 +2018,42 @@ RSpec.describe Activities::RunAgentActivity do
             timeout: AGENT_TIMEOUT_DEFAULT,
             idle_timeout: nil,
             heartbeat_path: nil
+          )
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "applies heartbeat-backed idle timeout to kilocode via upstream harness" do
+        agent_run.update!(agent_type: "kilocode")
+        project.update!(max_execution_seconds: 86_400)
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(
+            timeout: AGENT_TIMEOUT_DEFAULT,
+            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
+            heartbeat_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
+          )
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "applies heartbeat-backed idle timeout to opencode via upstream harness" do
+        agent_run.update!(agent_type: "opencode")
+        project.update!(max_execution_seconds: 86_400)
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(
+            timeout: AGENT_TIMEOUT_DEFAULT,
+            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
+            heartbeat_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
           )
         ).and_return(exec_success)
 
