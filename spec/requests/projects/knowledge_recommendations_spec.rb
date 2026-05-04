@@ -9,26 +9,87 @@ RSpec.describe "Projects::KnowledgeRecommendations" do
   let(:user) { create(:user, account: account) }
   let(:project) { create(:project, account: account) }
 
-  before { sign_in user }
-
   describe "GET /projects/:project_id/knowledge_recommendations" do
-    it "shows the recommendations index" do
-      user.add_role(:admin, account)
-      create(:knowledge_recommendation, project: project, status: "pending", priority: "high")
-      create(:knowledge_recommendation, project: project, status: "accepted")
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        get project_knowledge_recommendations_path(project)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
 
-      get project_knowledge_recommendations_path(project)
+    context "when authenticated as admin" do
+      before do
+        sign_in user
+        user.add_role(:admin, account)
+      end
 
-      expect(response).to have_http_status(:ok)
-      expect(response.body).to include("Knowledge Recommendations")
+      it "shows the recommendations index" do
+        create(:knowledge_recommendation, project: project, status: "pending", priority: "high")
+        create(:knowledge_recommendation, project: project, status: "accepted")
+
+        get project_knowledge_recommendations_path(project)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Knowledge Recommendations")
+      end
+    end
+
+    context "when authenticated as member" do
+      let(:member) { create(:user, :member, account: account) }
+
+      before { sign_in member }
+
+      it "redirects with authorization error" do
+        get project_knowledge_recommendations_path(project)
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
+
+    context "when authenticated as viewer" do
+      let(:viewer) { create(:user, :viewer, account: account) }
+
+      before { sign_in viewer }
+
+      it "redirects with authorization error" do
+        get project_knowledge_recommendations_path(project)
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
     end
   end
 
   describe "PATCH /projects/:project_id/knowledge_recommendations/:id" do
     let!(:recommendation) { create(:knowledge_recommendation, project: project, status: "pending") }
 
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        patch project_knowledge_recommendation_path(project, recommendation), params: {
+          action_type: "accept"
+        }
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated as member" do
+      let(:member) { create(:user, :member, account: account) }
+
+      before { sign_in member }
+
+      it "redirects with authorization error" do
+        patch project_knowledge_recommendation_path(project, recommendation), params: {
+          action_type: "accept"
+        }
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
+
     context "when user has update permission" do
-      before { user.add_role(:admin, account) }
+      before do
+        sign_in user
+        user.add_role(:admin, account)
+      end
 
       it "accepts a recommendation" do
         patch project_knowledge_recommendation_path(project, recommendation), params: {

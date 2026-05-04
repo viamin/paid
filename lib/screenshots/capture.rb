@@ -298,6 +298,22 @@ module Screenshots
           record.content_hash = Digest::SHA256.hexdigest("screenshots-seed-artifact-chunk")
         end
 
+        KnowledgeRecommendation.find_or_create_by!(project: project, description: "Add database_schema collector") do |record|
+          record.recommendation_type = "add_collector"
+          record.collector_type = "database_schema"
+          record.priority = "high"
+          record.status = "pending"
+          record.evidence = { reason: "No schema artifacts found" }
+        end
+
+        KnowledgeRecommendation.find_or_create_by!(project: project, description: "Remove stale api_docs collector") do |record|
+          record.recommendation_type = "remove_collector"
+          record.collector_type = "api_docs"
+          record.priority = "medium"
+          record.status = "pending"
+          record.evidence = { reason: "Collector has produced no artifacts in 30 days" }
+        end
+
         WorkflowState.find_or_create_by!(temporal_workflow_id: "github-poll-#{project.id}") do |record|
           record.project = project
           record.workflow_type = "GitHubPollWorkflow"
