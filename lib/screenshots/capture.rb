@@ -17,8 +17,10 @@ module Screenshots
   # Intended to run in CI against a booted Rails server with seeded data so
   # reviewers can see actual rendered pages rather than mocks.
   #
-  # The Chrome process is provided by a Chrome service container in CI or by
-  # a locally installed Chromium on the developer machine.
+  # Chrome is launched locally by Ferrum (via Cuprite). In CI this uses the
+  # runner's pre-installed Chrome; locally it finds Chromium via CHROMIUM_PATH
+  # or find_chrome_binary. A remote Chrome can be used by setting CHROME_URL
+  # and CAPYBARA_APP_HOST.
   #
   # @example
   #   paths = Screenshots::Capture.call(
