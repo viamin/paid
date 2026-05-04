@@ -1526,7 +1526,7 @@ class AgentRun < ApplicationRecord
     results = []
     error_message = nil
 
-    raw_stdout.each_line do |line|
+    raw_stdout.lines.last(500).each do |line|
       line = line.strip
       next if line.empty?
 
@@ -1536,7 +1536,7 @@ class AgentRun < ApplicationRecord
         next
       end
 
-      next unless parsed.is_a?(Hash)
+      next unless parsed.is_a?(Hash) && parsed["type"] == "result"
 
       if parsed["is_error"]
         error_message ||= parsed["result"] || "Unknown error"
