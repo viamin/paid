@@ -2,15 +2,15 @@
 
 module ChatSessionsHelper
   CHAT_SESSION_STATUS_STYLES = {
-    "active" => "bg-emerald-100 text-emerald-700 dark:bg-emerald-100 dark:text-emerald-400",
-    "idle" => "bg-amber-100 text-amber-700 dark:bg-amber-100 dark:text-amber-400",
-    "closed" => "bg-slate-100 text-slate-600 dark:bg-slate-100 dark:text-slate-300",
-    "archived" => "bg-gray-100 text-gray-600 dark:bg-gray-100 dark:text-gray-400"
+    "active" => "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+    "idle" => "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+    "closed" => "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
+    "archived" => "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
   }.freeze
 
   CHAT_MODE_STYLES = {
-    "api" => "bg-sky-100 text-sky-700 dark:bg-sky-100 dark:text-sky-300",
-    "workspace" => "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-100 dark:text-fuchsia-300"
+    "api" => "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300",
+    "workspace" => "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-300"
   }.freeze
 
   def chat_session_status_badge(chat_session)
@@ -35,10 +35,10 @@ module ChatSessionsHelper
 
     classes =
       case label
-      when "Running" then "bg-emerald-100 text-emerald-700 dark:bg-emerald-100 dark:text-emerald-400"
-      when "Idle" then "bg-amber-100 text-amber-700 dark:bg-amber-100 dark:text-amber-400"
-      when "API" then "bg-slate-100 text-slate-600 dark:bg-slate-100 dark:text-slate-300"
-      else "bg-gray-100 text-gray-600 dark:bg-gray-100 dark:text-gray-400"
+      when "Running" then "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+      when "Idle" then "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+      when "API" then "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+      else "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
       end
 
     badge_label(label, classes)

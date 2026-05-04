@@ -10,6 +10,13 @@ export default class extends Controller {
   }
 
   connect() {
+    // localStorage is the source of truth for the toggle so the preference
+    // survives page navigations without a round-trip to the server.
+    const stored = window.localStorage.getItem("theme_preference")
+    if (stored && stored !== this.preferenceValue) {
+      this.preferenceValue = stored
+    }
+
     this.mediaQuery.addEventListener("change", this.handleSystemChange)
     this.applyTheme()
   }
@@ -41,7 +48,26 @@ export default class extends Controller {
 
     document.documentElement.classList.toggle("dark", dark)
     window.localStorage.setItem("theme_preference", preference)
+    this.persistToServer(preference)
     this.updateIcons(preference, dark)
+  }
+
+  persistToServer(preference) {
+    const csrfToken = document.querySelector("meta[name='csrf-token']")?.content
+    if (!csrfToken) return
+
+    fetch("/user_settings.json", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": csrfToken,
+        Accept: "application/json"
+      },
+      body: JSON.stringify({ user_setting: { theme_preference: preference } })
+    }).catch(() => {
+      // Best-effort — localStorage already has the value so the UI stays
+      // consistent even if the server request fails.
+    })
   }
 
   updateIcons(preference, dark) {

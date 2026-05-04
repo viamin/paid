@@ -13,9 +13,15 @@ class UserSettingsController < ApplicationController
     authorize @user_setting
 
     if @user_setting.update(user_setting_params)
-      redirect_to edit_user_settings_path, notice: "Settings saved successfully."
+      respond_to do |format|
+        format.html { redirect_to edit_user_settings_path, notice: "Settings saved successfully." }
+        format.json { head :ok }
+      end
     else
-      render :edit, status: :unprocessable_content
+      respond_to do |format|
+        format.html { render :edit, status: :unprocessable_content }
+        format.json { render json: { errors: @user_setting.errors }, status: :unprocessable_content }
+      end
     end
   end
 

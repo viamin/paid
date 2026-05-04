@@ -382,43 +382,6 @@
   background-color: rgb(12 74 110 / 0.3);
 }
 
-/* Dark mode: slate color overrides for chat */
-.dark .text-slate-900 {
-  color: #f1f5f9; /* slate-100 */
-}
-
-.dark .text-slate-800 {
-  color: #e2e8f0; /* slate-200 */
-}
-
-.dark .text-slate-500 {
-  color: #94a3b8; /* slate-400 */
-}
-
-.dark .text-slate-400 {
-  color: #94a3b8; /* slate-400 */
-}
-
-.dark .text-slate-300 {
-  color: #94a3b8; /* slate-400 */
-}
-
-.dark .border-slate-200 {
-  border-color: #475569; /* slate-600 */
-}
-
-.dark .border-slate-200\/80 {
-  border-color: rgb(71 85 104 / 0.8); /* slate-600/80 */
-}
-
-.dark .bg-slate-50 {
-  background-color: #1e293b; /* slate-800 */
-}
-
-.dark .bg-slate-100\/70 {
-  background-color: rgb(51 65 85 / 0.7); /* slate-700/70 */
-}
-
 /* Dark mode: chat background gradient */
 .dark .bg-\[radial-gradient\(circle_at_top_left\,_rgba\(125\,211\,252\,0\.22\)\,_transparent_32\%\)\,radial-gradient\(circle_at_bottom_right\,_rgba\(253\,224\,71\,0\.18\)\,_transparent_28\%\)\,linear-gradient\(180deg\,_\#f8fafc_0\%\,_\#e2e8f0_100\%\)\] {
   background: radial-gradient(circle at top left, rgba(56, 189, 248, 0.1), transparent 32%),
