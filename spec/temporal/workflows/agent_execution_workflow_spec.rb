@@ -62,6 +62,39 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       end
     end
 
+    def stub_multi_issue_plan_activities
+      multi_plan = { tasks: [ { index: 0, title: "Task A", body: "Body", dependencies: [] } ], parent_issue_number: 10 }
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: true }
+        when "Activities::CompleteIssueGoalActivity"
+          { agent_run_id: 42, success: true, issue_created: false }
+        when "Activities::ParseCrossRepoIssuePlanActivity" then { plan: nil }
+        when "Activities::ParseMultiIssuePlanActivity" then { plan: multi_plan }
+        when "Activities::CreateMultipleIssuesActivity"
+          { agent_run_id: 42, created_issues: [ { github_number: 101 } ], parent_issue_updated: true }
+        else {}
+        end
+      end
+    end
+
+    def stub_no_multi_issue_plan_activities
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: true }
+        when "Activities::CompleteIssueGoalActivity"
+          { agent_run_id: 42, success: true, issue_created: false }
+        when "Activities::ParseCrossRepoIssuePlanActivity" then { plan: nil }
+        when "Activities::ParseMultiIssuePlanActivity" then { plan: nil }
+        when "Activities::CreateGithubIssueActivity"
+          { agent_run_id: 42, issue_url: "https://github.com/o/r/issues/1", issue_number: 1 }
+        else {}
+        end
+      end
+    end
+
     def stub_issue_creation_rejected
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
@@ -142,6 +175,35 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
           hash_including(agent_run_id: 42,
             error: "Agent already attempted and failed to create the GitHub issue; refusing fallback issue creation"),
           timeout: 30)
+    end
+
+    it "runs CreateMultipleIssuesActivity when a multi-issue plan is detected" do
+      stub_multi_issue_plan_activities
+
+      result = workflow.execute(input)
+
+      expect(result[:success]).to be true
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CreateMultipleIssuesActivity,
+          hash_including(agent_run_id: 42, tasks: anything, parent_issue_number: 10),
+          timeout: 300, retry_policy: described_class::NO_RETRY)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CreateGithubIssueActivity, anything,
+          timeout: anything, retry_policy: anything)
+    end
+
+    it "falls back to single-issue creation when no multi-issue plan is detected" do
+      stub_no_multi_issue_plan_activities
+
+      result = workflow.execute(input)
+
+      expect(result[:success]).to be true
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CreateGithubIssueActivity, { agent_run_id: 42 },
+          timeout: 120, retry_policy: described_class::NO_RETRY)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CreateMultipleIssuesActivity, anything,
+          timeout: anything, retry_policy: anything)
     end
   end
 
