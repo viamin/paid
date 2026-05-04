@@ -913,6 +913,66 @@ RSpec.describe Providers::TestAgent do
     end
   end
 
+  describe "token and auth pattern classification via .call" do
+    let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
+
+    before do
+      allow(ProviderSupport).to receive_messages(
+        supported_provider_key?: true,
+        container_executable_provider_key?: true,
+        harness_provider_key_for: "claude"
+      )
+    end
+
+    def call_with_message(message)
+      stub_container_smoke_test(
+        name: :claude, status: "error", message: message,
+        latency_ms: 10, error_category: nil, check: :smoke_test
+      )
+      described_class.call(provider: provider)
+    end
+
+    it "does not misclassify 'unexpected token' JSON parse errors as authentication" do
+      result = call_with_message("SyntaxError: unexpected token '<' at position 0")
+      expect(result.error_type).not_to eq(:authentication)
+    end
+
+    it "does not misclassify 'CSRF token mismatch' as authentication" do
+      result = call_with_message("CSRF token mismatch")
+      expect(result.error_type).not_to eq(:authentication)
+    end
+
+    it "does not misclassify 'unexpected token in JSON' as authentication" do
+      result = call_with_message("JSON.parse: unexpected token at line 1 column 1")
+      expect(result.error_type).not_to eq(:authentication)
+    end
+
+    it "does not misclassify 'Invalid authenticity token' as authentication" do
+      result = call_with_message("ActionController::InvalidAuthenticityToken: Invalid authenticity token")
+      expect(result.error_type).not_to eq(:authentication)
+    end
+
+    it "does not misclassify 'authorization failed' as authentication" do
+      result = call_with_message("authorization failed: insufficient permissions")
+      expect(result.error_type).not_to eq(:authentication)
+    end
+
+    it "correctly classifies a real token expiration as authentication" do
+      result = call_with_message("token expired")
+      expect(result.error_type).to eq(:authentication)
+    end
+
+    it "correctly classifies 'invalid token' as authentication" do
+      result = call_with_message("invalid token")
+      expect(result.error_type).to eq(:authentication)
+    end
+
+    it "correctly classifies 'revoked token' as authentication" do
+      result = call_with_message("revoked token")
+      expect(result.error_type).to eq(:authentication)
+    end
+  end
+
   describe "#rate_limit_reset_at" do
     before do
       allow(ProviderSupport).to receive(:harness_provider_key_for).with("claude").and_return("claude")
