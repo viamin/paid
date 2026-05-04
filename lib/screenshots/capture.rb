@@ -189,7 +189,18 @@ module Screenshots
         end
 
         agent_run = project.agent_runs.find_or_initialize_by(custom_prompt: "Capture screenshot route coverage")
-        agent_run.update!(agent_type: "codex", goal: "create_pr", status: "queued")
+        agent_run.assign_attributes(
+          agent_type: "codex", goal: "create_pr", status: "queued",
+          # Reset execution state so a reused seed record looks like a fresh
+          # queue entry — avoids stale fields from any prior run.
+          temporal_workflow_id: nil, temporal_run_id: nil,
+          started_at: nil, completed_at: nil, duration_seconds: nil,
+          container_id: nil, service_container_ids: [],
+          error_message: nil, pull_request_url: nil, pull_request_number: nil,
+          result_commit_sha: nil, iterations: 0, cost_cents: 0,
+          tokens_input: 0, tokens_output: 0
+        )
+        agent_run.save!
 
         prompt = Prompt.find_or_create_by!(account: account, slug: "screenshots.prompt") do |record|
           record.name = "Screenshots Prompt"
