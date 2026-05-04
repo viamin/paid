@@ -57,6 +57,7 @@ module Providers
       /ECONN/i
     ].freeze
     USER_FACING_ERROR_EXTRACTORS = [
+      /Model not found:.*?(?=\n|$)/i,
       /Free model usage limit reached\..*?(?="|\n|$)/i,
       /\[API Error: \{"error":"API key not configured for google"\}\]/i,
       /\[API Error: \{"error":"API key not configured for openai"\}\]/i,
@@ -212,13 +213,16 @@ module Providers
     def process_harness_result(result)
       status = result[:status].to_s
       message = normalize_output_text(result[:message]).presence || "Provider health check returned no message"
+      output = normalize_output_text(result[:output]).presence
 
-      if status == "ok"
+      if status == "ok" || smoke_test_output_success?(output || message)
         Result.new(success: true, error_type: nil, message: "Agent is healthy")
       else
-        error_type = map_harness_error_category(result[:error_category]) ||
-          classify_failed_response(message)
         translated_message = translate_and_extract_error(message)
+        error_type = resolve_error_type(
+          harness_error_type: map_harness_error_category(result[:error_category]),
+          message: translated_message.presence || message
+        )
 
         Result.new(
           success: false,
@@ -228,10 +232,23 @@ module Providers
       end
     end
 
+    def smoke_test_output_success?(text)
+      text.to_s.strip.match?(/\AOK[.!]?\z/i)
+    end
+
     def map_harness_error_category(category)
       return nil unless category
 
       HARNESS_ERROR_CATEGORY_MAP[category.to_sym]
+    end
+
+    def resolve_error_type(harness_error_type:, message:)
+      classified_error_type = classify_failed_response(message)
+      return :unexpected if message.match?(/Model not found:/i)
+      return classified_error_type if harness_error_type.nil? || harness_error_type == :unexpected
+      return classified_error_type if harness_error_type == :rate_limited && classified_error_type != :rate_limited
+
+      harness_error_type
     end
 
     # Builds a ProviderRuntime for container-based smoke tests.
@@ -240,12 +257,25 @@ module Providers
     # the provider's full runtime with env/base_url overrides. For kilocode
     # direct-outbound, this builds a runtime with the upstream API key env
     # (config file bootstrap is handled by prepare_kilocode_config!).
-    # For standard subscription-auth providers, this returns nil (the provider
-    # runs through the Paid proxy with inherited container env).
+    # For subscription-auth providers, this strips the Paid proxy credential
+    # env vars so the CLI uses its mounted local auth state, matching the
+    # behavior of RunAgentActivity.subscription_auth_command.
     def container_provider_runtime
       return kilocode_provider_runtime if kilocode_direct_outbound?
+      return subscription_provider_runtime if subscription_provider_runtime?
 
       provider.agent_harness_provider_runtime
+    end
+
+    def subscription_provider_runtime?
+      provider.subscription? &&
+        ProviderSupport.subscription_auth_unset_vars_for(provider.provider_key).any?
+    end
+
+    def subscription_provider_runtime
+      AgentHarness::ProviderRuntime.new(
+        unset_env: ProviderSupport.subscription_auth_unset_vars_for(provider.provider_key)
+      )
     end
 
     # Builds a ProviderRuntime for kilocode direct-outbound smoke tests.
@@ -253,32 +283,9 @@ module Providers
     # Kilocode reads its model/provider config from ~/.config/kilo/config.json
     # (materialized by prepare_kilocode_config!) and picks up the upstream API
     # key from environment variables. This runtime passes the API key through
-    # the correct env var for the configured upstream provider.
+    # the env var referenced by the generated config.
     def kilocode_provider_runtime
-      api_key = provider.provider_api_key&.api_key.to_s
-      api_provider = provider.kilocode_api_provider
-      api_config = Provider::DIRECT_OUTBOUND_API_PROVIDERS.fetch(
-        api_provider, Provider::DIRECT_OUTBOUND_API_PROVIDERS["anthropic"]
-      )
-
-      env_var = if api_config[:kilocode_api] && api_config[:kilocode_api] != "openai-compatible"
-        "#{api_provider.upcase}_API_KEY"
-      else
-        "OPENAI_API_KEY"
-      end
-
-      env = { env_var => api_key }
-      base_url = api_config[:base_url]
-      if base_url && !api_config[:kilocode_api]
-        default_openai_url = Provider::DIRECT_OUTBOUND_API_PROVIDERS.dig("openai", :base_url)
-        env["OPENAI_BASE_URL"] = base_url if base_url != default_openai_url
-      end
-
-      AgentHarness::ProviderRuntime.new(
-        model: provider.kilocode_model_id,
-        api_provider: api_provider,
-        env: env
-      )
+      AgentHarness::ProviderRuntime.new(env: provider.kilocode_runtime_env)
     end
 
     def kilocode_direct_outbound?

@@ -2242,6 +2242,7 @@ module Containers
 
     def build_streaming_event_processor(command)
       return nil unless agent_run && streaming_event_command?(command)
+      return nil if agent_run.custom_prompt == "smoke_test"
 
       StreamingEventProcessor.new(
         agent_run: agent_run,
