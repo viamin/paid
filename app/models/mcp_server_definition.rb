@@ -31,7 +31,12 @@ class McpServerDefinition < ApplicationRecord
   end
 
   def args_json=(value)
-    self.args = value.present? ? JSON.parse(value) : []
+    parsed = value.present? ? JSON.parse(value) : []
+    if parsed.is_a?(Array)
+      self.args = parsed
+    else
+      @args_json_invalid = true
+    end
   rescue JSON::ParserError
     @args_json_invalid = true
   end
@@ -41,7 +46,12 @@ class McpServerDefinition < ApplicationRecord
   end
 
   def env_json=(value)
-    self.env = value.present? ? JSON.parse(value) : {}
+    parsed = value.present? ? JSON.parse(value) : {}
+    if parsed.is_a?(Hash)
+      self.env = parsed
+    else
+      @env_json_invalid = true
+    end
   rescue JSON::ParserError
     @env_json_invalid = true
   end
@@ -51,7 +61,12 @@ class McpServerDefinition < ApplicationRecord
   end
 
   def metadata_json=(value)
-    self.metadata = value.present? ? JSON.parse(value) : {}
+    parsed = value.present? ? JSON.parse(value) : {}
+    if parsed.is_a?(Hash)
+      self.metadata = parsed
+    else
+      @metadata_json_invalid = true
+    end
   rescue JSON::ParserError
     @metadata_json_invalid = true
   end
@@ -101,14 +116,14 @@ class McpServerDefinition < ApplicationRecord
   end
 
   def args_json_valid
-    errors.add(:args_json, "must be valid JSON") if @args_json_invalid
+    errors.add(:args_json, "must be a valid JSON array") if @args_json_invalid
   end
 
   def env_json_valid
-    errors.add(:env_json, "must be valid JSON") if @env_json_invalid
+    errors.add(:env_json, "must be a valid JSON object") if @env_json_invalid
   end
 
   def metadata_json_valid
-    errors.add(:metadata_json, "must be valid JSON") if @metadata_json_invalid
+    errors.add(:metadata_json, "must be a valid JSON object") if @metadata_json_invalid
   end
 end

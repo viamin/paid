@@ -72,6 +72,14 @@
   </div>
 
   <div>
+    <%= form.label :metadata_json, "Metadata (JSON)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.text_area :metadata_json, rows: 4, class: "block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: '{"key": "value"}' %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">Arbitrary metadata as a JSON object.</p>
+  </div>
+
+  <div>
     <%= form.label :url, "URL", class: "block text-sm font-medium leading-6 text-gray-900" %>
     <div class="mt-2">
       <%= form.text_field :url, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>

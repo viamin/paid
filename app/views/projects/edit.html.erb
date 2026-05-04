@@ -694,15 +694,15 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 bg-white">
-              <% project_mcp_servers.each do |pscp| %>
+              <% project_mcp_servers.each do |pms| %>
                 <tr>
                   <td class="whitespace-nowrap px-4 py-2 text-sm font-medium text-gray-900">
-                    <%= link_to pscp.mcp_server_definition.name, mcp_server_definition_path(pscp.mcp_server_definition), class: "text-indigo-600 hover:text-indigo-900" %>
+                    <%= link_to pms.mcp_server_definition.name, mcp_server_definition_path(pms.mcp_server_definition), class: "text-indigo-600 hover:text-indigo-900" %>
                   </td>
-                  <td class="whitespace-nowrap px-4 py-2 text-sm text-gray-500"><%= pscp.mcp_server_definition.install_type %></td>
-                  <td class="whitespace-nowrap px-4 py-2 text-sm text-gray-500"><%= pscp.mcp_server_definition.transport %></td>
+                  <td class="whitespace-nowrap px-4 py-2 text-sm text-gray-500"><%= pms.mcp_server_definition.install_type %></td>
+                  <td class="whitespace-nowrap px-4 py-2 text-sm text-gray-500"><%= pms.mcp_server_definition.transport %></td>
                   <td class="whitespace-nowrap px-4 py-2 text-right text-sm">
-                    <%= button_to "Remove", project_project_mcp_server_path(@project, pscp), method: :delete, class: "text-red-600 hover:text-red-900 text-sm font-medium", data: { turbo_confirm: "Remove this MCP server from the project?" } %>
+                    <%= button_to "Remove", project_project_mcp_server_path(@project, pms), method: :delete, class: "text-red-600 hover:text-red-900 text-sm font-medium", data: { turbo_confirm: "Remove this MCP server from the project?" } %>
                   </td>
                 </tr>
               <% end %>
