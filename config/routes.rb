@@ -79,6 +79,8 @@ Rails.application.routes.draw do
 
   # Service container management
   resources :service_containers
+  # MCP server definitions management
+  resources :mcp_server_definitions
 
   # All agent runs across projects
   resources :agent_runs, only: [ :index ] do
@@ -151,6 +153,7 @@ Rails.application.routes.draw do
     resources :pr_templates, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pr_templates"
     resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"
+    resources :project_mcp_servers, only: [ :create, :destroy ], controller: "projects/mcp_servers"
     resources :issues, only: [] do
       resource :merge_subscription, only: [ :show, :create, :destroy ],
         controller: "projects/issue_merge_subscriptions"

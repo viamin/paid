@@ -19,8 +19,57 @@ class McpServerDefinition < ApplicationRecord
   validate :npx_forbids_image
   validate :docker_image_requires_image
   validate :sse_requires_url
+  validate :args_json_valid
+  validate :env_json_valid
+  validate :metadata_json_valid
 
   scope :enabled, -> { where(enabled: true) }
+
+  # Virtual attributes for editing jsonb fields as JSON text in forms
+  def args_json
+    (args || []).to_json
+  end
+
+  def args_json=(value)
+    parsed = value.present? ? JSON.parse(value) : []
+    if parsed.is_a?(Array)
+      self.args = parsed
+    else
+      @args_json_invalid = true
+    end
+  rescue JSON::ParserError
+    @args_json_invalid = true
+  end
+
+  def env_json
+    (env || {}).to_json
+  end
+
+  def env_json=(value)
+    parsed = value.present? ? JSON.parse(value) : {}
+    if parsed.is_a?(Hash)
+      self.env = parsed
+    else
+      @env_json_invalid = true
+    end
+  rescue JSON::ParserError
+    @env_json_invalid = true
+  end
+
+  def metadata_json
+    (metadata || {}).to_json
+  end
+
+  def metadata_json=(value)
+    parsed = value.present? ? JSON.parse(value) : {}
+    if parsed.is_a?(Hash)
+      self.metadata = parsed
+    else
+      @metadata_json_invalid = true
+    end
+  rescue JSON::ParserError
+    @metadata_json_invalid = true
+  end
 
   def to_snapshot
     {
@@ -64,5 +113,17 @@ class McpServerDefinition < ApplicationRecord
     return if url.present?
 
     errors.add(:url, "is required for sse transport")
+  end
+
+  def args_json_valid
+    errors.add(:args_json, "must be a valid JSON array") if @args_json_invalid
+  end
+
+  def env_json_valid
+    errors.add(:env_json, "must be a valid JSON object") if @env_json_invalid
+  end
+
+  def metadata_json_valid
+    errors.add(:metadata_json, "must be a valid JSON object") if @metadata_json_invalid
   end
 end
