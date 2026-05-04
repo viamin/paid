@@ -115,7 +115,7 @@ RSpec.describe ApplicationHelper do
 
         expect(result).to include('aria-controls="tooltip_99"')
         expect(result).to include('aria-describedby="tooltip_99"')
-        expect(result).to include('aria-label="Show context title"')
+        expect(result).to include('aria-label="Show context details"')
         expect(result).to include('aria-expanded="false"')
         expect(result).to include('aria-hidden="true"')
       end

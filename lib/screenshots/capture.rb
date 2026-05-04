@@ -189,10 +189,13 @@ module Screenshots
         end
 
         agent_run = project.agent_runs.find_or_initialize_by(custom_prompt: "Capture screenshot route coverage")
+        if agent_run.persisted?
+          agent_run.agent_run_logs.destroy_all
+          agent_run.agent_run_phases.destroy_all
+          agent_run.created_at = Time.current
+        end
         agent_run.assign_attributes(
           agent_type: "codex", goal: "create_pr", status: "queued",
-          # Reset execution state so a reused seed record looks like a fresh
-          # queue entry — avoids stale fields from any prior run.
           temporal_workflow_id: nil, temporal_run_id: nil,
           started_at: nil, completed_at: nil, duration_seconds: nil,
           container_id: nil, service_container_ids: [],
