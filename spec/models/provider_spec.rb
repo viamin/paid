@@ -616,7 +616,7 @@ RSpec.describe Provider do
       expect(provider.requires_direct_outbound?).to be(false)
     end
 
-    it "validates api_provider presence for API-key aider providers" do
+    it "validates model presence for API-key aider providers when api_provider is set" do
       provider = build(
         :provider,
         user: user,
@@ -660,7 +660,81 @@ RSpec.describe Provider do
     it "skips aider config validation for subscription providers" do
       provider = build(:provider, provider_key: "aider", auth_type: "subscription")
 
+      provider.valid?
       expect(provider.errors[:config]).to be_empty
+    end
+  end
+
+  describe "sync_direct_outbound_tier_models callback" do
+    let(:account) { create(:account, slug: "sync-tier-#{SecureRandom.hex(6)}") }
+    let(:user) { create(:user, account: account, email: "sync-tier-#{SecureRandom.hex(6)}@example.com") }
+    let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
+
+    it "clears stale tier_model_ids when provider no longer qualifies for direct-outbound" do
+      provider = create(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "test-model-1" } }
+      )
+
+      expect(provider.tier_model_ids).to be_present
+
+      provider.update_columns(config: { "opencode" => { "api_provider" => "openrouter" } })
+
+      provider.valid?
+      expect(provider.tier_model_ids).to be_blank
+    end
+
+    it "clears stale tier_model_ids when model is removed from config" do
+      provider = create(
+        :provider,
+        user: user,
+        provider_key: "kilocode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "kilocode" => { "api_provider" => "openrouter", "model" => "test-model-2" } }
+      )
+
+      expect(provider.tier_model_ids).to be_present
+
+      provider.update_columns(config: { "kilocode" => { "api_provider" => "openrouter", "model" => "" } })
+
+      provider.valid?
+      expect(provider.tier_model_ids).to be_blank
+    end
+
+    it "preserves tier_model_ids on unrelated attribute saves when config is unchanged" do
+      provider = create(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "test-model-3" } }
+      )
+
+      original_tier_model_ids = provider.tier_model_ids.dup
+      provider.update!(name: "Renamed Provider")
+
+      expect(provider.reload.tier_model_ids).to eq(original_tier_model_ids)
+    end
+
+    it "updates tier_model_ids when the configured model changes" do
+      provider = create(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "test-model-old" } }
+      )
+
+      provider.update!(config: { "opencode" => { "api_provider" => "openrouter", "model" => "test-model-new" } })
+
+      expect(provider.reload.tier_model_ids.values.uniq).to eq([ "test-model-new" ])
     end
   end
 

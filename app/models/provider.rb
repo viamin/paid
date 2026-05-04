@@ -71,6 +71,7 @@ class Provider < ApplicationRecord
   scope :rate_limit_fallback, -> { where(fallback_role: "rate_limit_fallback") }
 
   before_validation :normalize_agent_co_author_trailer
+  before_validation :clear_stale_direct_outbound_tier_models
   before_save :sync_direct_outbound_tier_models
 
   validates :weight, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: MAX_WEIGHT }
@@ -483,12 +484,24 @@ class Provider < ApplicationRecord
   private
 
   def sync_direct_outbound_tier_models
-    return unless direct_outbound_model_id.present?
     return unless requires_direct_outbound?
+    return unless direct_outbound_model_id.present?
     return unless will_save_change_to_config? || tier_model_ids.blank?
 
     model = ensure_direct_outbound_llm_model!
     self.tier_model_ids = LlmModel::TIERS.each_with_object({}) { |t, h| h[t] = model.model_id }
+  end
+
+  def clear_stale_direct_outbound_tier_models
+    return unless tier_model_ids.present?
+    return unless direct_outbound_capable_provider?
+    return if requires_direct_outbound? && direct_outbound_model_id.present?
+
+    self.tier_model_ids = {}
+  end
+
+  def direct_outbound_capable_provider?
+    %w[kilocode opencode aider].include?(provider_key)
   end
 
   def direct_outbound_display_name(model_id)
