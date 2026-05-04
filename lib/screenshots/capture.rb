@@ -98,8 +98,17 @@ module Screenshots
           }
         }
 
-        options[:browser_path] = browser_path if browser_path
-        options[:url] = chrome_url if chrome_url
+        if chrome_url
+          # Connect via WebSocket URL directly so Ferrum does not rely on the
+          # hostname inside the webSocketDebuggerUrl returned by /json/version
+          # (which may reference an internal container hostname unreachable from
+          # the host). The browserless v2 image accepts CDP connections at the
+          # /chromium path.
+          ws_url = chrome_url.sub(%r{\Ahttp(s?)://}, 'ws\1://') + "/chromium"
+          options[:ws_url] = ws_url
+        else
+          options[:browser_path] = browser_path if browser_path
+        end
 
         Capybara::Cuprite::Driver.new(app, **options)
       end
