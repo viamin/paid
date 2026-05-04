@@ -290,7 +290,7 @@ module ApplicationHelper
             type: "button",
             class: "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:hidden text-gray-400 hover:text-gray-600",
             data: { action: "click->tooltip#toggle" },
-            aria: { label: "Show context title", describedby: tooltip_id, expanded: "false", controls: tooltip_id }
+            aria: { label: "Show context details", describedby: tooltip_id, expanded: "false", controls: tooltip_id }
           ),
           tag.span(
             context[:tooltip],
