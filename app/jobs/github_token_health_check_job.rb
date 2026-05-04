@@ -64,7 +64,6 @@ class GithubTokenHealthCheckJob < ApplicationJob
   end
 
   def check_token(token)
-    was_already_failed = token.validation_failed?
     token.mark_validating!
 
     result = token.validate_with_github!
@@ -85,7 +84,9 @@ class GithubTokenHealthCheckJob < ApplicationJob
       github_token_id: token.id,
       error: e.message
     )
-    GithubTokens::AutoPauseProjects.call(github_token: token) unless was_already_failed
+    # Always auto-pause: the service is idempotent (skips already-paused projects),
+    # and projects can be associated with a failed token after the initial failure.
+    GithubTokens::AutoPauseProjects.call(github_token: token)
     false
   rescue GithubClient::RateLimitError, GithubClient::ApiError => e
     # Transient GitHub errors should not mark the token as failed.

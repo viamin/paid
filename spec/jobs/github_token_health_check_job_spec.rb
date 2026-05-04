@@ -109,10 +109,10 @@ RSpec.describe GithubTokenHealthCheckJob do
         expect(token.reload.validation_status).to eq("failed")
       end
 
-      it "does not auto-pause projects again" do
+      it "still auto-pauses to catch newly associated projects" do
         allow(GithubTokens::AutoPauseProjects).to receive(:call)
         described_class.perform_now
-        expect(GithubTokens::AutoPauseProjects).not_to have_received(:call)
+        expect(GithubTokens::AutoPauseProjects).to have_received(:call).with(github_token: token)
       end
     end
 
