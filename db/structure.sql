@@ -567,7 +567,8 @@ CREATE TABLE public.agent_runs (
     stale_skip_count integer DEFAULT 0 NOT NULL,
     turns_completed integer DEFAULT 0 NOT NULL,
     streaming_turns_data jsonb DEFAULT '[]'::jsonb NOT NULL,
-    mcp_sidecar_container_ids jsonb DEFAULT '[]'::jsonb NOT NULL
+    mcp_sidecar_container_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
+    mcp_provisioned_servers jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 ALTER TABLE ONLY public.agent_runs FORCE ROW LEVEL SECURITY;
@@ -592,6 +593,13 @@ COMMENT ON COLUMN public.agent_runs.streaming_turns_data IS 'Per-turn metrics fr
 --
 
 COMMENT ON COLUMN public.agent_runs.mcp_sidecar_container_ids IS 'Docker container IDs of MCP sidecar containers provisioned for this run';
+
+
+--
+-- Name: COLUMN agent_runs.mcp_provisioned_servers; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_runs.mcp_provisioned_servers IS 'Materialized MCP server specs (stdio_servers + url_servers) produced by provisioning';
 
 
 --
@@ -11165,6 +11173,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260504105047'),
 ('20260504100425'),
 ('20260503093418'),
 ('20260502231624'),

@@ -421,18 +421,20 @@ module Workflows
             end
           end
 
-          begin
-            run_activity(Activities::CleanupMcpServersActivity,
-              { agent_run_id: agent_run_id },
-              start_to_close_timeout: 120, schedule_to_close_timeout: 300,
-              retry_policy: CLEANUP_RETRY_POLICY)
-          rescue => e
-            Temporalio::Workflow.logger.warn(
-              message: "agent_execution.cleanup_mcp_servers_failed",
-              agent_run_id: agent_run_id,
-              error_class: e.class.name,
-              error: e.message
-            )
+          if Temporalio::Workflow.patched("provision_mcp_servers_v1")
+            begin
+              run_activity(Activities::CleanupMcpServersActivity,
+                { agent_run_id: agent_run_id },
+                start_to_close_timeout: 120, schedule_to_close_timeout: 300,
+                retry_policy: CLEANUP_RETRY_POLICY)
+            rescue => e
+              Temporalio::Workflow.logger.warn(
+                message: "agent_execution.cleanup_mcp_servers_failed",
+                agent_run_id: agent_run_id,
+                error_class: e.class.name,
+                error: e.message
+              )
+            end
           end
 
           begin

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "docker-api"
+require "socket"
 
 module Containers
   # Provisions MCP (Model Context Protocol) servers for agent runs.
@@ -50,6 +51,10 @@ module Containers
       snapshot = agent_run.mcp_server_snapshot
       return { stdio_servers: [], url_servers: [] } if snapshot.blank?
 
+      # Clean up stale sidecars from a prior failed attempt to avoid leaks.
+      stale_ids = agent_run.mcp_sidecar_container_ids
+      cleanup_containers(stale_ids) if stale_ids.present?
+
       @network = network
       stdio_servers = []
       url_servers = []
@@ -66,7 +71,9 @@ module Containers
         end
       end
 
-      agent_run.update!(mcp_sidecar_container_ids: sidecar_ids) if sidecar_ids.any?
+      updates = { mcp_provisioned_servers: { "stdio_servers" => stdio_servers, "url_servers" => url_servers } }
+      updates[:mcp_sidecar_container_ids] = sidecar_ids if sidecar_ids.any?
+      agent_run.update!(updates)
 
       log_info("mcp_provisioner.provisioned",
         agent_run_id: agent_run.id,
@@ -113,9 +120,16 @@ module Containers
     end
 
     # Provisions a Docker sidecar container for a docker_image MCP definition.
+    # Only SSE transport is supported for docker_image definitions — the agent
+    # reaches the sidecar over HTTP.
     #
     # @return [Hash] with :server (connection spec) and :container_id
     def provision_docker_sidecar(agent_run, definition)
+      transport = definition["transport"]
+      unless transport == "sse"
+        raise Error, "docker_image MCP server #{definition["name"].inspect} requires transport \"sse\", got #{transport.inspect}"
+      end
+
       NetworkPolicy.ensure_network!(network: @network)
 
       image = definition["image"]
@@ -125,7 +139,7 @@ module Containers
       env = definition.fetch("env", {})
 
       pull_image(image)
-      container = create_sidecar_container(
+      container = adopt_or_create_sidecar(
         image: image,
         hostname: hostname,
         port: port,
@@ -134,7 +148,7 @@ module Containers
       )
 
       begin
-        container.start
+        container.start unless container_running?(container)
         wait_for_health!(hostname, port)
       rescue => e
         remove_container(container)
@@ -158,6 +172,21 @@ module Containers
       server["env"] = env if env.present?
 
       { server: server, container_id: container.id }
+    end
+
+    # Adopts an existing sidecar container (from a prior attempt) or creates
+    # a new one. This makes provisioning idempotent across activity retries.
+    def adopt_or_create_sidecar(image:, hostname:, port:, env:, agent_run:)
+      Docker::Container.get(hostname)
+    rescue Docker::Error::NotFoundError
+      create_sidecar_container(image: image, hostname: hostname, port: port, env: env, agent_run: agent_run)
+    end
+
+    def container_running?(container)
+      state = container.json.dig("State", "Running")
+      state == true
+    rescue Docker::Error::DockerError
+      false
     end
 
     def create_sidecar_container(image:, hostname:, port:, env:, agent_run:)
@@ -235,9 +264,17 @@ module Containers
         .presence || "mcp"
     end
 
+    VALID_PORT_RANGE = (1..65535).freeze
+
     def resolve_port(definition)
       metadata = definition.fetch("metadata", {})
-      metadata["port"]&.to_i || DEFAULT_PORT
+      port = metadata["port"]&.to_i || DEFAULT_PORT
+
+      unless VALID_PORT_RANGE.cover?(port)
+        raise Error, "Invalid port #{port} for MCP server #{definition["name"].inspect}; must be 1..65535"
+      end
+
+      port
     end
 
     def cleanup_containers(container_ids)
@@ -268,12 +305,22 @@ module Containers
       rescue Docker::Error::NotFoundError, Docker::Error::ClientError
         # Already stopped
       end
-      container.delete(force: true, v: true)
     rescue Docker::Error::NotFoundError
-      # Already gone
+      # Already gone — nothing to delete
     rescue Docker::Error::DockerError => e
       log_warn("mcp_provisioner.cleanup_failed",
         container_id: container_id, error: e.message)
+    ensure
+      if container
+        begin
+          container.delete(force: true, v: true)
+        rescue Docker::Error::NotFoundError
+          # Already gone
+        rescue Docker::Error::DockerError => e
+          log_warn("mcp_provisioner.container_delete_failed",
+            container_id: container_id, error: e.message)
+        end
+      end
     end
 
     def log_info(message, **metadata)

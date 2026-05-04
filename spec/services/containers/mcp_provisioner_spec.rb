@@ -48,6 +48,11 @@ RSpec.describe Containers::McpProvisioner do
         provisioner.provision(agent_run)
         expect(agent_run.reload.mcp_sidecar_container_ids).to eq([])
       end
+
+      it "does not update mcp_provisioned_servers" do
+        provisioner.provision(agent_run)
+        expect(agent_run.reload.mcp_provisioned_servers).to eq({})
+      end
     end
 
     context "with npx definitions" do
@@ -83,6 +88,15 @@ RSpec.describe Containers::McpProvisioner do
         provisioner.provision(agent_run)
         expect(agent_run.reload.mcp_sidecar_container_ids).to eq([])
       end
+
+      it "persists materialized server specs on the agent run" do
+        provisioner.provision(agent_run)
+
+        provisioned = agent_run.reload.mcp_provisioned_servers
+        expect(provisioned["stdio_servers"].size).to eq(1)
+        expect(provisioned["stdio_servers"].first["name"]).to eq("fs-server")
+        expect(provisioned["url_servers"]).to eq([])
+      end
     end
 
     context "with docker_image definitions" do
@@ -103,8 +117,12 @@ RSpec.describe Containers::McpProvisioner do
       before do
         allow(NetworkPolicy).to receive(:ensure_network!)
         allow(Docker::Image).to receive(:create)
+        # adopt_or_create_sidecar tries get first; raise NotFound to fall through to create
+        allow(Docker::Container).to receive(:get)
+          .with(satisfy { |name| name.start_with?("paid-mcp-") })
+          .and_raise(Docker::Error::NotFoundError)
         allow(Docker::Container).to receive(:create).and_return(docker_container)
-        allow(docker_container).to receive(:start)
+        allow(docker_container).to receive_messages(start: nil, json: { "State" => { "Running" => false } })
         allow(provisioner).to receive(:tcp_port_open?).and_return(true)
       end
 
@@ -159,6 +177,102 @@ RSpec.describe Containers::McpProvisioner do
         server = result[:url_servers].first
         expect(server["url"]).to match(/:3000\/sse$/)
       end
+
+      it "persists materialized server specs on the agent run" do
+        provisioner.provision(agent_run)
+
+        provisioned = agent_run.reload.mcp_provisioned_servers
+        expect(provisioned["url_servers"].size).to eq(1)
+        expect(provisioned["url_servers"].first["name"]).to eq("pg-mcp")
+        expect(provisioned["stdio_servers"]).to eq([])
+      end
+
+      it "rejects docker_image definitions with non-sse transport" do
+        run = create_run_with_snapshot([
+          {
+            "name" => "stdio-docker",
+            "transport" => "stdio",
+            "install_type" => "docker_image",
+            "image" => "mcp/postgres:latest"
+          }
+        ])
+
+        expect { provisioner.provision(run) }.to raise_error(
+          Containers::McpProvisioner::Error, /requires transport "sse"/
+        )
+      end
+
+      it "rejects invalid port values" do
+        run = create_run_with_snapshot([
+          {
+            "name" => "bad-port",
+            "transport" => "sse",
+            "install_type" => "docker_image",
+            "image" => "mcp/postgres:latest",
+            "metadata" => { "port" => 0 }
+          }
+        ])
+
+        expect { provisioner.provision(run) }.to raise_error(
+          Containers::McpProvisioner::Error, /Invalid port 0/
+        )
+      end
+
+      it "rejects out-of-range port values" do
+        run = create_run_with_snapshot([
+          {
+            "name" => "big-port",
+            "transport" => "sse",
+            "install_type" => "docker_image",
+            "image" => "mcp/postgres:latest",
+            "metadata" => { "port" => 70_000 }
+          }
+        ])
+
+        expect { provisioner.provision(run) }.to raise_error(
+          Containers::McpProvisioner::Error, /Invalid port 70000/
+        )
+      end
+
+      context "when a prior attempt left stale containers" do
+        let(:stale_container) { instance_double(Docker::Container, id: "stale-abc") }
+
+        before do
+          agent_run.update_columns(mcp_sidecar_container_ids: [ "stale-abc" ])
+          allow(Docker::Container).to receive(:get).with("stale-abc").and_return(stale_container)
+          allow(stale_container).to receive(:stop)
+          allow(stale_container).to receive(:delete)
+        end
+
+        it "cleans up stale containers before provisioning" do
+          provisioner.provision(agent_run)
+
+          expect(stale_container).to have_received(:stop)
+          expect(stale_container).to have_received(:delete)
+        end
+      end
+
+      context "when a container already exists from a prior attempt" do
+        let(:existing_container) { instance_double(Docker::Container, id: "mcp-existing") }
+
+        before do
+          # adopt_or_create_sidecar tries Docker::Container.get first
+          allow(Docker::Container).to receive(:get)
+            .with(satisfy { |name| name.start_with?("paid-mcp-") })
+            .and_return(existing_container)
+          allow(existing_container).to receive_messages(
+            json: { "State" => { "Running" => true } },
+            start: nil
+          )
+        end
+
+        it "adopts the existing container without creating a new one" do
+          provisioner.provision(agent_run)
+
+          expect(Docker::Container).not_to have_received(:create)
+          expect(existing_container).not_to have_received(:start)
+        end
+      end
     end
 
     context "with mixed npx and docker_image definitions" do
@@ -185,8 +299,11 @@ RSpec.describe Containers::McpProvisioner do
       before do
         allow(NetworkPolicy).to receive(:ensure_network!)
         allow(Docker::Image).to receive(:create)
+        allow(Docker::Container).to receive(:get)
+          .with(satisfy { |name| name.start_with?("paid-mcp-") })
+          .and_raise(Docker::Error::NotFoundError)
         allow(Docker::Container).to receive(:create).and_return(docker_container)
-        allow(docker_container).to receive(:start)
+        allow(docker_container).to receive_messages(start: nil, json: { "State" => { "Running" => false } })
         allow(provisioner).to receive(:tcp_port_open?).and_return(true)
       end
 
@@ -217,10 +334,16 @@ RSpec.describe Containers::McpProvisioner do
       before do
         allow(NetworkPolicy).to receive(:ensure_network!)
         allow(Docker::Image).to receive(:create)
+        allow(Docker::Container).to receive(:get)
+          .with(satisfy { |name| name.start_with?("paid-mcp-") })
+          .and_raise(Docker::Error::NotFoundError)
         allow(Docker::Container).to receive(:create).and_return(docker_container)
+        allow(docker_container).to receive_messages(
+          json: { "State" => { "Running" => false } },
+          stop: nil,
+          delete: nil
+        )
         allow(docker_container).to receive(:start).and_raise(Docker::Error::ServerError, "container start failed")
-        allow(docker_container).to receive(:stop)
-        allow(docker_container).to receive(:delete)
       end
 
       it "raises an Error and cleans up" do

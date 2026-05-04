@@ -35,11 +35,26 @@ module Activities
         }
       rescue Containers::McpProvisioner::Error => e
         raise Temporalio::Error::ApplicationError.new(
-          "MCP provisioning failed: #{e.message}",
+          e.message,
           type: "McpProvisioningFailed",
-          non_retryable: true
+          non_retryable: non_retryable_provisioning_error?(e)
         )
       end
+    end
+
+    private
+
+    # Configuration errors (invalid port, wrong transport, missing image) are
+    # non-retryable — retrying won't fix them. Transient Docker/network errors
+    # benefit from Temporal's default retry policy.
+    NON_RETRYABLE_PATTERNS = [
+      /invalid port/i,
+      /requires transport/i,
+      /image not found/i
+    ].freeze
+
+    def non_retryable_provisioning_error?(error)
+      NON_RETRYABLE_PATTERNS.any? { |pattern| pattern.match?(error.message) }
     end
   end
 end
