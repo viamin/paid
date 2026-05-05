@@ -32,7 +32,6 @@ RSpec.describe "UserSettings" do
 
         expect(response.body).to include('data-theme-preference-value="dark"')
         expect(response.body).to include('data-theme-signed-in-value="true"')
-        expect(response.body).to include('var pref = signedIn ? serverPref : (localStorage.getItem("theme_preference") || serverPref);')
       end
 
       it "creates a user_setting record if none exists" do

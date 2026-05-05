@@ -10,7 +10,12 @@
         var root = document.documentElement;
         var serverPref = root.dataset.themePreferenceValue || "system";
         var signedIn = root.dataset.themeSignedInValue === "true";
-        var pref = signedIn ? serverPref : (localStorage.getItem("theme_preference") || serverPref);
+        var pref = serverPref;
+
+        if (!signedIn) {
+          pref = localStorage.getItem("theme_preference") || serverPref;
+        }
+
         var dark = pref === "dark" || (pref === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
         if (dark) root.classList.add("dark");
       })();

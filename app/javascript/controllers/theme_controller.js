@@ -64,28 +64,49 @@ export default class extends Controller {
     window.localStorage.setItem("theme_preference", preference)
 
     if (this.signedInValue && this._lastPersisted !== preference) {
-      this._lastPersisted = preference
       this.persistToServer(preference)
     }
     this.updateIcons(preference, dark)
   }
 
-  persistToServer(preference) {
+  async persistToServer(preference) {
+    if (this._persistingPreference === preference) return
+
     const csrfToken = document.querySelector("meta[name='csrf-token']")?.content
     if (!csrfToken) return
 
-    fetch("/user_settings.json", {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRF-Token": csrfToken,
-        Accept: "application/json"
-      },
-      body: JSON.stringify({ user_setting: { theme_preference: preference } })
-    }).catch(() => {
-      // Best-effort — localStorage already has the value so the UI stays
-      // consistent even if the server request fails.
-    })
+    this._persistingPreference = preference
+
+    try {
+      const response = await fetch("/user_settings.json", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+          Accept: "application/json"
+        },
+        body: JSON.stringify({ user_setting: { theme_preference: preference } })
+      })
+
+      if (!response.ok) throw new Error(`Theme update failed with status ${response.status}`)
+
+      this._lastPersisted = preference
+    } catch {
+      // Keep the UI preference locally and allow a later applyTheme cycle to retry
+      // the server update if the persisted value is still stale.
+    } finally {
+      if (this._persistingPreference === preference) {
+        this._persistingPreference = null
+      }
+
+      if (
+        this.signedInValue &&
+        this.preferenceValue !== preference &&
+        this._lastPersisted !== this.preferenceValue
+      ) {
+        this.persistToServer(this.preferenceValue)
+      }
+    }
   }
 
   updateIcons(preference, dark) {
