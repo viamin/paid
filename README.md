@@ -2,7 +2,7 @@
 
 Paid is a Rails 8 application that orchestrates AI agents to build software. Users add GitHub projects, and Paid watches for labeled issues, plans implementations, and runs agents in isolated Docker containers to create pull requests.
 
-Phase 2 (Intelligence) is complete as of 2026-04-01. The app now includes prompt versioning and A/B tests, model selection, semantic code search, quality and cost dashboards, provider management, and service-container support in addition to the original issue-to-PR workflow.
+Phase 3.5 (Completion & Hardening) is substantially complete as of 2026-05-05. The app now includes MCP server support, screenshot visual regression, interactive chat with streaming UI, self-healing exception handling, knowledge provider resilience, enhanced agent runs (decomposition plans, streaming events, pre-flight health checks), notification subscriptions, and comprehensive dashboard improvements in addition to all previous features.
 
 ## Philosophy
 
@@ -24,6 +24,11 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 - **Knowledge Base**: Index repos into PostgreSQL + Qdrant for hybrid exact/semantic search and richer prompt context
   - Gap: some goal and prompt paths still need knowledge injection or container-accessible search; tracked by [#1265](https://github.com/viamin/paid/issues/1265) and [#1272](https://github.com/viamin/paid/issues/1272).
 - **Live Dashboards**: Track active runs, performance, quality, cost, and knowledge-collection health from the UI
+- **MCP Server Support**: Configure MCP (Model Context Protocol) servers per project so agents can use external tools during execution. Both npx-based and docker-image sidecar servers are supported. Paid also exposes its own operations as MCP tools for the chat interface.
+- **Interactive Chat**: Conversational interface with real-time streaming (SSE), project context injection, cost tracking, and container workspace sessions
+- **Screenshot Visual Regression**: Automatically capture and display rendered screenshots in PR comments when UI changes are detected
+- **Self-Healing Exception Handling**: Centralized exception pipeline that fingerprints, classifies, deduplicates, and auto-files GitHub issues for P1/P2 errors
+- **Notification Subscriptions**: Subscribe to individual issue and PR merge events with real-time Turbo Stream delivery
 - **Provider and Integration Management**: Test provider auth from the UI and manage GitHub, Linear, provider API keys, and generic integration credentials (GitLab, Jira, Azure DevOps, signing) for account admins
 - **Service Containers**: Attach approved supporting services like Postgres, Redis, or Selenium to project runs when agents need dependencies beyond the app code. Service containers are attached to the same Docker network selected for the agent run across proxy-mode, subscription-auth, and direct-outbound provider runs. Shared-database isolation fallout is tracked separately by [#1280](https://github.com/viamin/paid/issues/1280).
 
@@ -35,9 +40,10 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
    - Prompt resolution, provider selection, and project policy checks
    - Knowledge-base retrieval and style-guide injection when available
    - Docker container provisioning on the network selected for the provider auth mode
+   - MCP server provisioning (npx or docker sidecar) when configured for the project
    - Repository clone and branch creation inside the container
    - Agent execution (e.g., Claude Code) with the issue as prompt
-   - Branch push, PR creation, issue update, and optional review follow-up
+   - Branch push, PR creation (with optional screenshot attachments for UI changes), issue update, and optional review follow-up
 4. User reviews and merges the PR
 
 ## GitHub Labels
@@ -366,7 +372,7 @@ Paid is inspired by [aidp](https://github.com/viamin/aidp), a CLI tool for AI-dr
 
 ## Status
 
-Phase 2 (Intelligence) is complete. Phase 3.5 (Completion & Hardening) is in progress — security, core features, fair queueing, and quality recovery are done; performance fundamentals and provider quota polling remain. See [ROADMAP.md](docs/ROADMAP.md) for the current implementation phases.
+Phase 2 (Intelligence) is complete. Phase 3.5 (Completion & Hardening) is substantially complete. Security, core features, fair queueing, quality recovery, interactive chat, knowledge evolution, MCP server support, screenshot visual regression, self-healing exception handling, and dashboard enhancements are done. Performance fundamentals and provider quota polling remain. See [ROADMAP.md](docs/ROADMAP.md) for the current implementation phases.
 
 ## License
 
