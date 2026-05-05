@@ -151,6 +151,15 @@ RSpec.describe "UserSettings" do
         expect(flash[:notice]).to eq("Settings saved successfully.")
       end
 
+      it "redirects turbo-stream PATCH requests with see other" do
+        patch user_settings_path,
+          params: { user_setting: { default_poll_interval_seconds: 120 } },
+          headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to have_http_status(:see_other)
+        expect(response).to redirect_to(edit_user_settings_path)
+      end
+
       it "updates theme settings over json" do
         patch user_settings_path,
           params: { user_setting: { theme_preference: "dark" } },

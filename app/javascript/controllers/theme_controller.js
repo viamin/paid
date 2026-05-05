@@ -14,16 +14,7 @@ export default class extends Controller {
   }
 
   connect() {
-    const stored = window.localStorage.getItem("theme_preference")
-
-    if (this.signedInValue) {
-      if (stored !== this.preferenceValue) {
-        window.localStorage.setItem("theme_preference", this.preferenceValue)
-      }
-      this.applyTheme()
-      this.mediaQuery.addEventListener("change", this.handleSystemChange)
-      return
-    }
+    const stored = this.storedPreference()
 
     if (stored && stored !== this.preferenceValue) {
       this.preferenceValue = stored // triggers preferenceValueChanged -> applyTheme
@@ -113,16 +104,24 @@ export default class extends Controller {
     if (!this.hasIconTarget) return
 
     const label = preference === "system" ? (dark ? "System (dark)" : "System (light)") : preference.charAt(0).toUpperCase() + preference.slice(1)
-    this.iconTargets.forEach((icon) => {
-      icon.setAttribute("aria-label", `Theme: ${label}`)
-      icon.setAttribute("title", `Theme: ${label}. Click to cycle.`)
+    document.documentElement.dataset.themeEffectivePreference = preference
 
-      const sun = icon.querySelector("[data-icon=sun]")
-      const moon = icon.querySelector("[data-icon=moon]")
-      const system = icon.querySelector("[data-icon=system]")
+    this.iconTargets.forEach((icon) => {
+      icon.setAttribute("aria-label", `Cycle theme (current: ${label})`)
+      icon.setAttribute("title", `Cycle theme. Current: ${label}.`)
+
+      const sun = icon.querySelector("[data-theme-icon=sun]")
+      const moon = icon.querySelector("[data-theme-icon=moon]")
+      const system = icon.querySelector("[data-theme-icon=system]")
       if (sun) sun.classList.toggle("hidden", preference !== "light")
       if (moon) moon.classList.toggle("hidden", preference !== "dark")
       if (system) system.classList.toggle("hidden", preference !== "system")
     })
+  }
+
+  storedPreference() {
+    const stored = window.localStorage.getItem("theme_preference")
+
+    return ["light", "dark", "system"].includes(stored) ? stored : null
   }
 }

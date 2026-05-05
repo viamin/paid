@@ -14,6 +14,43 @@ class ThemeControllerNodeHarness
 
     const ThemeController = new Function(transformed)();
 
+    function iconNode() {
+      const node = { hidden: false };
+      node.classList = {
+        toggle(_name, force) {
+          node.hidden = force;
+        }
+      };
+
+      return node;
+    }
+
+    function iconButton() {
+      const attributes = {};
+      const icons = {
+        sun: iconNode(),
+        moon: iconNode(),
+        system: iconNode()
+      };
+
+      return {
+        attributes,
+        setAttribute(name, value) {
+          attributes[name] = value;
+        },
+        querySelector(selector) {
+          const match = selector.match(/\\[data-theme-icon=(.+)\\]/);
+          return match ? icons[match[1]] : null;
+        },
+        icons
+      };
+    }
+
+    const button = iconButton();
+    const localStorageState = {
+      theme_preference: "dark"
+    };
+
     global.window = {
       matchMedia: () => ({
         matches: false,
@@ -21,30 +58,64 @@ class ThemeControllerNodeHarness
         removeEventListener() {}
       }),
       localStorage: {
-        getItem() { return null; },
-        setItem() {}
+        getItem(key) { return localStorageState[key] ?? null; },
+        setItem(key, value) { localStorageState[key] = value; }
       }
     };
 
     global.document = {
       documentElement: {
-        classList: { toggle() {} }
+        classList: { toggle() {} },
+        dataset: {}
       },
       querySelector() { return null; }
     };
 
     let persistedCalls = 0;
     const controller = Object.create(ThemeController.prototype);
-    controller.preferenceValue = "dark";
     controller.signedInValue = true;
-    controller.updateIcons = () => {};
+    controller.hasIconTarget = true;
+    controller.iconTargets = [button];
     controller.persistToServer = () => { persistedCalls += 1; };
+    controller._preferenceValue = "light";
+    Object.defineProperty(controller, "preferenceValue", {
+      get() {
+        return this._preferenceValue;
+      },
+      set(value) {
+        this._preferenceValue = value;
+        this.preferenceValueChanged();
+      }
+    });
 
     controller.initialize();
+    controller._preferenceValue = "dark";
+    controller._lastPersisted = "dark";
     controller.preferenceValueChanged();
 
     if (persistedCalls !== 0) {
       throw new Error(`Expected no persistence on initial callback, saw ${persistedCalls}`);
+    }
+
+    controller._preferenceValue = "light";
+    controller._lastPersisted = "light";
+    persistedCalls = 0;
+    controller.connect();
+
+    if (controller.preferenceValue !== "dark") {
+      throw new Error(`Expected connect() to prefer stored theme, saw ${controller.preferenceValue}`);
+    }
+
+    if (persistedCalls !== 1) {
+      throw new Error(`Expected stored signed-in theme to be re-persisted once, saw ${persistedCalls}`);
+    }
+
+    if (button.attributes["aria-label"] !== "Cycle theme (current: Dark)") {
+      throw new Error(`Unexpected aria-label: ${button.attributes["aria-label"]}`);
+    }
+
+    if (document.documentElement.dataset.themeEffectivePreference !== "dark") {
+      throw new Error(`Expected effective preference dataset to be dark, saw ${document.documentElement.dataset.themeEffectivePreference}`);
     }
   JAVASCRIPT
 
@@ -54,7 +125,7 @@ class ThemeControllerNodeHarness
 end
 
 RSpec.describe ThemeControllerNodeHarness, :no_db do
-  it "does not persist the signed-in preference during the first value callback" do
+  it "keeps the signed-in theme optimistic and updates accessible labels" do
     stdout, stderr, status = described_class.run
 
     expect(status.success?).to be(true), <<~MESSAGE

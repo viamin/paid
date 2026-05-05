@@ -14,8 +14,8 @@ class UserSettingsController < ApplicationController
 
     if @user_setting.update(user_setting_params)
       respond_to do |format|
-        format.html { redirect_to edit_user_settings_path, notice: "Settings saved successfully." }
-        format.turbo_stream { redirect_to edit_user_settings_path, notice: "Settings saved successfully." }
+        format.html { redirect_to edit_user_settings_path, status: :see_other, notice: "Settings saved successfully." }
+        format.turbo_stream { redirect_to edit_user_settings_path, status: :see_other, notice: "Settings saved successfully." }
         format.json { head :ok }
       end
     else
