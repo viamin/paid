@@ -83,9 +83,7 @@ module ApplicationHelper
 
   def agent_run_provider_displays(runs)
     runs = runs.to_a
-    final_provider_keys = runs.map(&:final_provider).compact_blank.uniq
-    routed_providers_by_id = Provider.where(id: final_provider_keys.filter_map { |identifier| Provider.id_from_routing_key(identifier) })
-      .index_by(&:id)
+    routed_providers_by_owner_and_id = routed_providers_for_runs(runs)
     configured_providers_by_owner_and_key = configured_providers_for_runs(runs)
 
     runs.each_with_object({}) do |run, displays|
@@ -93,7 +91,7 @@ module ApplicationHelper
         if run.final_provider.present?
           provider_display_for_identifier(
             run.final_provider,
-            provider: provider_for_identifier(run, configured_providers_by_owner_and_key, routed_providers_by_id)
+            provider: provider_for_identifier(run, configured_providers_by_owner_and_key, routed_providers_by_owner_and_id)
           )
         elsif run.provider.present?
           run.provider.display_name
@@ -498,11 +496,31 @@ module ApplicationHelper
     Provider.display_name_for(identifier)
   end
 
-  def provider_for_identifier(run, configured_providers_by_owner_and_key, routed_providers_by_id)
-    return routed_providers_by_id[Provider.id_from_routing_key(run.final_provider)] if Provider.routing_key?(run.final_provider)
+  def provider_for_identifier(run, configured_providers_by_owner_and_key, routed_providers_by_owner_and_id)
+    if Provider.routing_key?(run.final_provider)
+      owner_id = run.project&.effective_owner&.id
+      provider_id = Provider.id_from_routing_key(run.final_provider)
+      return routed_providers_by_owner_and_id[[ owner_id, provider_id ]]
+    end
 
     configured_providers_by_owner_and_key[[ run.project&.effective_owner&.id, run.final_provider ]] ||
       (run.provider if run.provider&.matches_identifier?(run.final_provider))
+  end
+
+  def routed_providers_for_runs(runs)
+    provider_ids_by_owner_id = runs.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |run, provider_ids|
+      next unless Provider.routing_key?(run.final_provider)
+
+      owner_id = run.project&.effective_owner&.id
+      provider_id = Provider.id_from_routing_key(run.final_provider)
+      next unless owner_id && provider_id
+
+      provider_ids[owner_id] << provider_id
+    end
+    return {} if provider_ids_by_owner_id.empty?
+
+    Provider.where(user_id: provider_ids_by_owner_id.keys, id: provider_ids_by_owner_id.values.flatten.uniq)
+      .index_by { |provider| [ provider.user_id, provider.id ] }
   end
 
   def configured_providers_for_runs(runs)

@@ -89,6 +89,20 @@ RSpec.describe "AgentRuns" do
         expect(provider_cell.text.squish).to eq(ApplicationHelper::MISSING_PROVIDER_ENTRY_LABEL)
       end
 
+      it "does not show another owner's routed provider label in the Provider column" do
+        other_user = create(:user)
+        other_provider = create(:provider, user: other_user, provider_key: "cursor", name: "Other Owner Cursor")
+        run = create(:agent_run, :with_custom_prompt, project: project, provider: nil,
+          final_provider: other_provider.routing_key)
+
+        get agent_runs_path
+
+        provider_cell = cell_for_run(parsed_html, run, "Provider")
+
+        expect(provider_cell.text.squish).to eq(ApplicationHelper::MISSING_PROVIDER_ENTRY_LABEL)
+        expect(response.body).not_to include(other_provider.display_name)
+      end
+
       it "prefers the issue title over custom prompt text" do
         issue = create(:issue, project: project, title: "Fix flaky webhook retry handling")
         run = create(:agent_run, :with_custom_prompt, project: project, issue: issue,
