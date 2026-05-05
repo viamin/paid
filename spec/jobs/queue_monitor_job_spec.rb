@@ -57,7 +57,7 @@ RSpec.describe QueueMonitorJob do
 
       expect(Turbo::StreamsChannel).to have_received(:broadcast_update_to).with(
         [ account, :live_dashboard ],
-        hash_including(target: "queue-health")
+        hash_including(target: "dashboard-queue-health")
       )
     end
 

@@ -46,9 +46,9 @@
         <%= render "dashboard/queue_preview", queue_preview: @queue_preview %>
       </div>
 
-      <div id="queue-health" class="mt-6">
-        <%= render "dashboard/queue_health", queue_depths: @queue_health.queue_depths, healthy: @queue_health.healthy? %>
-      </div>
+      <turbo-frame id="dashboard-queue-health" src="<%= dashboard_queue_health_path %>" loading="lazy" class="mt-6 block">
+        <div class="animate-pulse rounded-lg bg-gray-100 h-24"></div>
+      </turbo-frame>
 
       <div id="dashboard-alerts" class="mt-6 space-y-3"></div>
 
@@ -64,8 +64,19 @@
       Cumulative / Periodic Metrics
     </summary>
     <div class="mt-4">
-      <%= render "dashboard/metrics", stats: @stats, account: current_account, time_range: @time_range %>
-      <%= render "dashboard/knowledge_widget", knowledge_stats: @knowledge_stats %>
+      <turbo-frame id="dashboard-metrics" src="<%= dashboard_metrics_path(time_range: @time_range) %>" loading="lazy">
+        <div class="animate-pulse space-y-4">
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="rounded-lg bg-gray-100 h-24"></div>
+            <div class="rounded-lg bg-gray-100 h-24"></div>
+            <div class="rounded-lg bg-gray-100 h-24"></div>
+            <div class="rounded-lg bg-gray-100 h-24"></div>
+          </div>
+        </div>
+      </turbo-frame>
+      <turbo-frame id="dashboard-knowledge-stats" src="<%= dashboard_knowledge_stats_path %>" loading="lazy">
+        <div class="animate-pulse mt-8 rounded-lg bg-gray-100 h-24"></div>
+      </turbo-frame>
     </div>
   </details>
 
@@ -75,7 +86,12 @@
       Performance
     </summary>
     <div class="mt-4">
-      <%= render "dashboard/performance", stats: @stats, time_range: @time_range, status_filter: @status_filter, goal_filter: @goal_filter %>
+      <turbo-frame id="dashboard-performance" src="<%= dashboard_performance_path(time_range: @time_range, status: @status_filter, goal: @goal_filter) %>" loading="lazy">
+        <div class="animate-pulse space-y-4">
+          <div class="rounded-lg bg-gray-100 h-48"></div>
+          <div class="rounded-lg bg-gray-100 h-48"></div>
+        </div>
+      </turbo-frame>
     </div>
   </details>
 

@@ -33,6 +33,8 @@ Rails.application.routes.draw do
   get "dashboard/live", to: redirect("/dashboard")
   get "dashboard/metrics", to: "dashboard#metrics", as: :dashboard_metrics
   get "dashboard/performance", to: "dashboard#performance", as: :dashboard_performance
+  get "dashboard/knowledge_stats", to: "dashboard#knowledge_stats", as: :dashboard_knowledge_stats
+  get "dashboard/queue_health", to: "dashboard#queue_health", as: :dashboard_queue_health
   post "dashboard/cancel_run/:id", to: "dashboard#cancel_run", as: :dashboard_cancel_run
 
   # Integrations hub
