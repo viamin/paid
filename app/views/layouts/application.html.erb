@@ -1,11 +1,18 @@
 <!DOCTYPE html>
-<html data-controller="theme" data-theme-preference-value="<%= user_signed_in? ? current_user.settings.theme_preference : 'system' %>">
+<html
+  data-controller="theme"
+  data-theme-preference-value="<%= user_signed_in? ? current_user.settings.theme_preference : 'system' %>"
+  data-theme-signed-in-value="<%= user_signed_in? %>"
+>
   <head>
     <script>
       (function() {
-        var pref = localStorage.getItem("theme_preference") || "system";
+        var root = document.documentElement;
+        var serverPref = root.dataset.themePreferenceValue || "system";
+        var signedIn = root.dataset.themeSignedInValue === "true";
+        var pref = signedIn ? serverPref : (localStorage.getItem("theme_preference") || serverPref);
         var dark = pref === "dark" || (pref === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-        if (dark) document.documentElement.classList.add("dark");
+        if (dark) root.classList.add("dark");
       })();
     </script>
     <title><%= content_for(:title) || "Paid" %></title>

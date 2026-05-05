@@ -1,7 +1,10 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static values = { preference: { type: String, default: "system" } }
+  static values = {
+    preference: { type: String, default: "system" },
+    signedIn: { type: Boolean, default: false }
+  }
   static targets = ["icon"]
 
   initialize() {
@@ -10,18 +13,25 @@ export default class extends Controller {
   }
 
   connect() {
-    // localStorage is the source of truth for the toggle so the preference
-    // survives page navigations without a round-trip to the server.
     const stored = window.localStorage.getItem("theme_preference")
-    // Seed _lastPersisted so applyTheme() won't fire a redundant PATCH when
-    // the preference hasn't actually changed since the last server sync.
-    this._lastPersisted = stored || this.preferenceValue
-    if (stored && stored !== this.preferenceValue) {
-      this.preferenceValue = stored // triggers preferenceValueChanged → applyTheme
-    } else {
+    this._lastPersisted = this.preferenceValue
+
+    if (this.signedInValue) {
+      if (stored !== this.preferenceValue) {
+        window.localStorage.setItem("theme_preference", this.preferenceValue)
+      }
       this.applyTheme()
+      this.mediaQuery.addEventListener("change", this.handleSystemChange)
+      return
     }
 
+    if (stored && stored !== this.preferenceValue) {
+      this.preferenceValue = stored // triggers preferenceValueChanged -> applyTheme
+      this.mediaQuery.addEventListener("change", this.handleSystemChange)
+      return
+    }
+
+    this.applyTheme()
     this.mediaQuery.addEventListener("change", this.handleSystemChange)
   }
 
@@ -52,7 +62,8 @@ export default class extends Controller {
 
     document.documentElement.classList.toggle("dark", dark)
     window.localStorage.setItem("theme_preference", preference)
-    if (this._lastPersisted !== preference) {
+
+    if (this.signedInValue && this._lastPersisted !== preference) {
       this._lastPersisted = preference
       this.persistToServer(preference)
     }

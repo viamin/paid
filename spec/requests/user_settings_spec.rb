@@ -25,6 +25,16 @@ RSpec.describe "UserSettings" do
         expect(response.body).not_to include("Default Agent Provider")
       end
 
+      it "renders the signed-in theme preference as authoritative" do
+        user.settings.update!(theme_preference: "dark")
+
+        get edit_user_settings_path
+
+        expect(response.body).to include('data-theme-preference-value="dark"')
+        expect(response.body).to include('data-theme-signed-in-value="true"')
+        expect(response.body).to include('var pref = signedIn ? serverPref : (localStorage.getItem("theme_preference") || serverPref);')
+      end
+
       it "creates a user_setting record if none exists" do
         expect { get edit_user_settings_path }.to change(UserSetting, :count).by(1)
       end
@@ -140,6 +150,15 @@ RSpec.describe "UserSettings" do
       it "shows a success notice" do
         patch user_settings_path, params: { user_setting: { default_poll_interval_seconds: 120 } }
         expect(flash[:notice]).to eq("Settings saved successfully.")
+      end
+
+      it "updates theme settings over json" do
+        patch user_settings_path,
+          params: { user_setting: { theme_preference: "dark" } },
+          as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect(user.reload.settings.theme_preference).to eq("dark")
       end
 
       it "renders errors for invalid settings" do
