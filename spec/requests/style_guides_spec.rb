@@ -64,4 +64,46 @@ RSpec.describe "StyleGuides" do
       end
     end
   end
+
+  describe "GET /style_guides/new" do
+    context "when not authenticated" do
+      it "redirects to sign in" do
+        get new_style_guide_path
+
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when signed in as an account owner" do
+      let(:user) { create(:user, :owner, account: account) }
+
+      before do
+        sign_in user
+        create(:project, account: account, created_by: user, name: "Alpha")
+      end
+
+      it "renders the new style guide form" do
+        get new_style_guide_path
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("New Style Guide")
+        expect(response.body).to include("Create Style Guide")
+        expect(response.body).to include("Account-level (applies to all projects)")
+        expect(response.body).to include("Alpha")
+      end
+    end
+
+    context "when signed in as an account member" do
+      let(:user) { create(:user, :member, account: account) }
+
+      before { sign_in user }
+
+      it "redirects back with an authorization alert" do
+        get new_style_guide_path
+
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to eq("You are not authorized to perform this action.")
+      end
+    end
+  end
 end
