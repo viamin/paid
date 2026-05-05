@@ -3,9 +3,12 @@ name: PR Screenshots
 on:
   pull_request:
     types: [ opened, synchronize, reopened, ready_for_review ]
+  # Clean up screenshot directories when PRs are closed/merged
+  pull_request_target:
+    types: [ closed ]
 
 permissions:
-  contents: read
+  contents: write
   issues: write
   pull-requests: write
 
@@ -16,6 +19,7 @@ concurrency:
 
 jobs:
   detect:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     outputs:
       has_ui_changes: ${{ steps.check.outputs.has_ui_changes }}
@@ -149,7 +153,7 @@ jobs:
         id: capture_screenshots
         run: bin/rails screenshots:capture
 
-      - name: Upload screenshots
+      - name: Upload screenshots to artifacts
         id: upload_screenshots
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -159,6 +163,67 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Push screenshots to branch
+        id: push_screenshots
+        if: >-
+          steps.capture_screenshots.outcome == 'success'
+          && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          short_sha="${COMMIT_SHA:0:8}"
+          screenshot_dir="screenshots/${PR_NUMBER}/${short_sha}"
+
+          # Configure git for the push
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Fetch the screenshots branch or create it as an orphan
+          if git ls-remote --exit-code origin refs/heads/screenshots >/dev/null 2>&1; then
+            git fetch origin screenshots --depth=1
+            git checkout screenshots
+          else
+            git checkout --orphan screenshots
+            git rm -rf . 2>/dev/null || true
+            git clean -fd
+            echo "# Screenshots Branch" > README.md
+            echo "" >> README.md
+            echo "This branch stores PR screenshot images for inline display in PR comments." >> README.md
+            echo "Do not merge this branch into main." >> README.md
+            git add README.md
+            git commit -m "chore: initialize screenshots branch"
+          fi
+
+          # Create directory structure and copy screenshots
+          mkdir -p "${screenshot_dir}"
+          cp tmp/screenshots/*.png "${screenshot_dir}/"
+
+          # Stage and commit
+          git add "${screenshot_dir}"
+          git commit -m "screenshots: PR #${PR_NUMBER} @ ${short_sha}"
+
+          # Push with retry for concurrent PR conflicts
+          push_attempts=0
+          max_attempts=3
+          while [ "$push_attempts" -lt "$max_attempts" ]; do
+            if git push origin screenshots; then
+              echo "push_success=true" >> "$GITHUB_OUTPUT"
+              echo "screenshot_dir=${screenshot_dir}" >> "$GITHUB_OUTPUT"
+              echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            push_attempts=$((push_attempts + 1))
+            if [ "$push_attempts" -lt "$max_attempts" ]; then
+              echo "Push failed, retrying (attempt $((push_attempts + 1))/${max_attempts})..."
+              git pull --rebase origin screenshots
+            fi
+          done
+
+          echo "push_success=false" >> "$GITHUB_OUTPUT"
+          echo "::warning::Failed to push screenshots to branch after ${max_attempts} attempts"
+
       - name: Refresh PR screenshot comment
         if: >-
           always()
@@ -166,29 +231,45 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           screenshot_count=$(find tmp/screenshots -name '*.png' 2>/dev/null | wc -l)
           capture_outcome="${{ steps.capture_screenshots.outcome }}"
           upload_outcome="${{ steps.upload_screenshots.outcome }}"
+          push_success="${{ steps.push_screenshots.outputs.push_success }}"
+          short_sha="${COMMIT_SHA:0:8}"
 
           if [ "$capture_outcome" = "success" ] && [ "$upload_outcome" = "success" ] && [ "$screenshot_count" -gt 0 ]; then
             body="## 📸 UI Screenshots\n\n"
             body+="This PR includes **UI-facing changes**. "
-            body+="Screenshots of the rendered pages have been captured and uploaded as artifacts.\n\n"
-            body+="**${screenshot_count} screenshot(s)** captured from key application pages.\n\n"
-            body+="### How to review\n"
-            body+="1. Go to the **Actions** tab for this PR\n"
-            body+="2. Open the **PR Screenshots** workflow run\n"
-            body+="3. Download the **pr-screenshots** artifact\n"
-            body+="4. Review the \`.png\` files to verify the UI renders correctly\n\n"
-            body+="### Pages captured\n"
-            for file in tmp/screenshots/*.png; do
-              name=$(basename "$file" .png)
-              body+="- ✅ \`${name}\`\n"
-            done
+
+            if [ "$push_success" = "true" ]; then
+              body+="Screenshots of the rendered pages are displayed inline below.\n\n"
+              body+="**${screenshot_count} screenshot(s)** captured at commit \`${short_sha}\`.\n\n"
+              body+="| Page | Screenshot |\n"
+              body+="| :--- | :---: |\n"
+              for file in tmp/screenshots/*.png; do
+                name=$(basename "$file" .png)
+                raw_url="https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/screenshots/${PR_NUMBER}/${short_sha}/${name}.png"
+                body+="| \`${name}\` | ![${name}](${raw_url}) |\n"
+              done
+            else
+              body+="Screenshots have been uploaded as artifacts (inline display unavailable).\n\n"
+              body+="**${screenshot_count} screenshot(s)** captured from key application pages.\n\n"
+              body+="### How to review\n"
+              body+="1. Go to the **Actions** tab for this PR\n"
+              body+="2. Open the **PR Screenshots** workflow run\n"
+              body+="3. Download the **pr-screenshots** artifact\n"
+              body+="4. Review the \`.png\` files to verify the UI renders correctly\n\n"
+              body+="### Pages captured\n"
+              for file in tmp/screenshots/*.png; do
+                name=$(basename "$file" .png)
+                body+="- ✅ \`${name}\`\n"
+              done
+            fi
           else
             body="## 📸 UI Screenshots\n\n"
-            body+="This PR still includes **UI-facing changes**, but screenshot capture for commit \`${{ github.event.pull_request.head.sha }}\` did not complete successfully.\n\n"
+            body+="This PR still includes **UI-facing changes**, but screenshot capture for commit \`${short_sha}\` did not complete successfully.\n\n"
             body+="Any screenshots linked from an earlier workflow run are now stale and should not be used for review.\n\n"
             body+="### What happened\n"
             body+="- Capture step: \`${capture_outcome}\`\n"
@@ -256,3 +337,33 @@ jobs:
             "repos/${{ github.repository }}/issues/comments/${existing_comment_id}" \
             --method PATCH \
             --field "body=@-"
+
+  # Clean up screenshot directories when a PR is closed or merged
+  cleanup-branch:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout screenshots branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: screenshots
+          fetch-depth: 1
+
+      - name: Remove PR screenshot directory
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          pr_dir="screenshots/${PR_NUMBER}"
+
+          if [ ! -d "$pr_dir" ]; then
+            echo "No screenshot directory for PR #${PR_NUMBER}, nothing to clean up."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git rm -rf "${pr_dir}"
+          git commit -m "cleanup: remove screenshots for PR #${PR_NUMBER}"
+          git push origin screenshots
