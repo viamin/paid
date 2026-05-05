@@ -33,13 +33,16 @@ RSpec.describe ApplicationHelper do
         "create_issue_goal?": false,
         "review_goal?": false,
         "enhance_issue_goal?": false,
+        "analyze_issue_goal?": false,
         issue: nil,
+        custom_prompt: nil,
         source_pull_request_number: nil,
         pull_request_number: nil,
         pull_request_url: nil,
         created_issue_url: nil,
         created_issue_number: nil,
         "finished?": false,
+        "running?": false,
         project: nil
       }
       attrs = defaults.merge(overrides)
@@ -113,7 +116,7 @@ RSpec.describe ApplicationHelper do
 
         expect(result).to include('aria-controls="context_99"')
         expect(result).to include('aria-describedby="context_99"')
-        expect(result).to include('aria-label="Show context title"')
+        expect(result).to include('aria-label="Show context details"')
         expect(result).to include('aria-expanded="false"')
         expect(result).to include('aria-hidden="true"')
       end
@@ -147,6 +150,28 @@ RSpec.describe ApplicationHelper do
         expect(result).to include("https://github.com/o/r/pull/3")
       end
 
+      it "shows truncated prompt text with tooltip when no issue or PR context exists" do
+        run = stub_run("create_pr_goal?": true, custom_prompt: "Refactor the flaky dashboard queue preview rows")
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include("Refactor the flaky dashboard queue preview rows")
+        expect(result).to include("text-gray-700")
+      end
+
+      it "truncates long prompts to 60 characters in the displayed label" do
+        long_prompt = "Refactor the entire authentication subsystem to use OAuth2 with PKCE flow instead of session cookies"
+        run = stub_run("create_pr_goal?": true, custom_prompt: long_prompt)
+        result = helper.agent_run_context_display(run)
+
+        truncated = long_prompt.truncate(60)
+        # The truncated version appears as visible text
+        expect(result).to include(truncated)
+        # The full prompt is NOT shown as the visible label (it ends with "...")
+        expect(truncated).to end_with("...")
+        # A longer version appears in the tooltip for hover context
+        expect(result).to include("title=")
+      end
+
       it "shows placeholder when no context" do
         run = stub_run("create_pr_goal?": true)
         result = helper.agent_run_context_display(run)
@@ -166,14 +191,43 @@ RSpec.describe ApplicationHelper do
         expect(result).to include("https://github.com/o/r/issues/42")
       end
 
-      it "shows 'Creating issue...' when pending" do
-        run = stub_run("create_issue_goal?": true, "finished?": false)
+      it "shows truncated prompt text with tooltip when available and no created issue" do
+        run = stub_run("create_issue_goal?": true, custom_prompt: "Add a login timeout feature")
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include("Add a login timeout feature")
+        expect(result).to include("text-gray-700")
+      end
+
+      it "truncates long prompts to 60 characters in the displayed label" do
+        long_prompt = "Create a comprehensive issue documenting all the edge cases found during the security audit review"
+        run = stub_run("create_issue_goal?": true, custom_prompt: long_prompt)
+        result = helper.agent_run_context_display(run)
+
+        truncated = long_prompt.truncate(60)
+        # The truncated version appears as visible text
+        expect(result).to include(truncated)
+        # The full prompt is NOT shown as the visible label (it ends with "...")
+        expect(truncated).to end_with("...")
+        # A longer version appears in the tooltip for hover context
+        expect(result).to include("title=")
+      end
+
+      it "shows 'Creating issue...' when in progress without custom prompt" do
+        run = stub_run("create_issue_goal?": true, "running?": true)
         result = helper.agent_run_context_display(run)
 
         expect(result).to include("Creating issue")
       end
 
-      it "shows placeholder when finished without issue" do
+      it "shows 'Creating issue...' when paused without custom prompt" do
+        run = stub_run("create_issue_goal?": true, "running?": false, "finished?": false)
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include("Creating issue")
+      end
+
+      it "shows placeholder when finished and no context available" do
         run = stub_run("create_issue_goal?": true, "finished?": true)
         result = helper.agent_run_context_display(run)
 
@@ -202,6 +256,24 @@ RSpec.describe ApplicationHelper do
 
       it "shows placeholder without PR number" do
         run = stub_run("review_goal?": true)
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include("-")
+      end
+    end
+
+    context "when analyze_issue goal" do
+      it "shows issue link when issue is present" do
+        issue = stub_issue(github_number: 55, github_url: "https://github.com/o/r/issues/55", title: "Investigate flaky test")
+        run = stub_run("analyze_issue_goal?": true, issue: issue)
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include("Issue #55")
+        expect(result).to include("https://github.com/o/r/issues/55")
+      end
+
+      it "shows placeholder when no issue" do
+        run = stub_run("analyze_issue_goal?": true)
         result = helper.agent_run_context_display(run)
 
         expect(result).to include("-")
