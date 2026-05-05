@@ -23,7 +23,8 @@ module Scaling
     QueueDepth = Struct.new(:name, :type, :depth, :threshold_warning, :threshold_critical, :status, keyword_init: true)
     Alert = Struct.new(:queue_name, :queue_type, :depth, :threshold, :severity, keyword_init: true)
 
-    CACHE_TTL = 5.minutes
+    CACHE_TTL = 6.minutes
+    FALLBACK_CACHE_TTL = 1.minute
 
     def self.call(...)
       new(...).call
@@ -37,15 +38,17 @@ module Scaling
       return deserialize(data) if data
 
       # Cache miss: return lightweight result without Temporal RPC
-      new(account: account, skip_temporal: true).call
+      result = new(account: account, skip_temporal: true).call
+      write_cache(account, result, expires_in: FALLBACK_CACHE_TTL)
+      result
     end
 
     def self.cache_key(account)
       "scaling/queue_monitor/#{account.id}"
     end
 
-    def self.write_cache(account, result)
-      Rails.cache.write(cache_key(account), serialize(result), expires_in: CACHE_TTL)
+    def self.write_cache(account, result, expires_in: CACHE_TTL)
+      Rails.cache.write(cache_key(account), serialize(result), expires_in: expires_in)
     end
 
     def self.serialize(result)

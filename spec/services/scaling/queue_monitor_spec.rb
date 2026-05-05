@@ -165,6 +165,28 @@ RSpec.describe Scaling::QueueMonitor do
       expect(temporal_depths).to be_empty
       expect(result.queue_depths.select { |d| d.type == :good_job }).not_to be_empty
     end
+
+    it "writes the lightweight fallback to cache on miss" do
+      cached = described_class.cached_for_account(account)
+
+      stored = memory_store.read(described_class.cache_key(account))
+
+      expect(stored).to be_present
+      expect(described_class.deserialize(stored).queue_depths.map(&:name)).to eq(cached.queue_depths.map(&:name))
+    end
+
+    it "uses a short ttl for the lightweight fallback cache" do
+      allow(Rails.cache).to receive(:read).and_return(nil)
+      allow(Rails.cache).to receive(:write).and_call_original
+
+      described_class.cached_for_account(account)
+
+      expect(Rails.cache).to have_received(:write).with(
+        described_class.cache_key(account),
+        kind_of(Hash),
+        expires_in: described_class::FALLBACK_CACHE_TTL
+      )
+    end
   end
 
   describe ".serialize / .deserialize" do
@@ -188,6 +210,30 @@ RSpec.describe Scaling::QueueMonitor do
         expect(round_tripped.depth).to eq(depth.depth)
         expect(round_tripped.status).to eq(depth.status)
       end
+    end
+  end
+
+  describe ".write_cache" do
+    let(:account) { create(:account) }
+
+    before do
+      allow(Paid).to receive(:temporal_client).and_raise(StandardError, "Temporal unavailable")
+    end
+
+    it "uses a ttl longer than the scheduler interval by default" do
+      result = described_class.call(account: account)
+      cache = instance_spy(ActiveSupport::Cache::Store)
+
+      allow(Rails).to receive(:cache).and_return(cache)
+
+      described_class.write_cache(account, result)
+
+      expect(cache).to have_received(:write).with(
+        described_class.cache_key(account),
+        kind_of(Hash),
+        expires_in: described_class::CACHE_TTL
+      )
+      expect(described_class::CACHE_TTL).to be > 5.minutes
     end
   end
 end
