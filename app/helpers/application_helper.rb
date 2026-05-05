@@ -263,24 +263,27 @@ module ApplicationHelper
   # Desktop: native title tooltip on hover. Mobile: tappable info icon.
   def agent_run_context_display(run)
     context = agent_run_context(run)
+    tooltip_id = "context_#{run.id}"
     inner = case context[:type]
     when :link
       tooltip_data = context[:tooltip].present? ? { action: "focusin->tooltip#show" } : {}
+      aria_attrs = context[:tooltip].present? ? { describedby: tooltip_id } : {}
       link_to(context[:label], context[:url], target: "_blank", rel: "noopener noreferrer",
         class: "text-indigo-600 hover:text-indigo-900", title: context[:tooltip],
-        data: tooltip_data.presence)
+        aria: aria_attrs.presence, data: tooltip_data.presence)
     when :text
       tooltip_data = context[:tooltip].present? ? { action: "focusin->tooltip#show" } : {}
+      aria_attrs = context[:tooltip].present? ? { describedby: tooltip_id } : {}
       tag.span(context[:label], class: context[:classes], title: context[:tooltip],
         tabindex: (context[:tooltip].present? ? "0" : nil),
-        data: tooltip_data.presence)
+        aria: aria_attrs.presence, data: tooltip_data.presence)
     when :in_progress
       tag.span("Creating issue\u2026", class: "italic text-gray-500")
     else
       tag.span("-", class: "text-gray-400")
     end
 
-    mobile_tooltip_wrapper(inner, context[:tooltip], "context_#{run.id}", aria_label: "Show context details")
+    mobile_tooltip_wrapper(inner, context[:tooltip], tooltip_id, aria_label: "Show context details")
   end
 
   def agent_run_goal_display(run)
@@ -338,7 +341,12 @@ module ApplicationHelper
     elsif run.pull_request_number.present?
       github_link_or_text("PR ##{run.pull_request_number}", "PR ##{run.pull_request_number}", run.pull_request_url)
     elsif run.custom_prompt.present?
-      { type: :text, label: run.custom_prompt.truncate(60), classes: "text-gray-700", tooltip: run.custom_prompt }
+      redacted = redacted_goal_text(run.custom_prompt)
+      if redacted.present?
+        { type: :text, label: redacted.truncate(60), classes: "text-gray-700", tooltip: redacted }
+      else
+        { type: :placeholder }
+      end
     else
       { type: :placeholder }
     end
@@ -356,7 +364,12 @@ module ApplicationHelper
       label = run.created_issue_number.present? ? "Issue ##{run.created_issue_number}" : "Issue"
       { type: :link, label: label, url: run.created_issue_url }
     elsif run.custom_prompt.present?
-      { type: :text, label: run.custom_prompt.truncate(60), classes: "text-gray-700", tooltip: run.custom_prompt }
+      redacted = redacted_goal_text(run.custom_prompt)
+      if redacted.present?
+        { type: :text, label: redacted.truncate(60), classes: "text-gray-700", tooltip: redacted }
+      else
+        { type: :placeholder }
+      end
     elsif run.running?
       { type: :in_progress }
     else
