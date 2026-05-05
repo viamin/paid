@@ -2,15 +2,15 @@
 
 module ChatSessionsHelper
   CHAT_SESSION_STATUS_STYLES = {
-    "active" => "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
-    "idle" => "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-    "closed" => "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
-    "archived" => "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
+    "active" => "bg-green-100 text-green-700",
+    "idle" => "bg-yellow-100 text-yellow-800",
+    "closed" => "bg-gray-100 text-gray-600",
+    "archived" => "bg-gray-100 text-gray-600"
   }.freeze
 
   CHAT_MODE_STYLES = {
-    "api" => "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300",
-    "workspace" => "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-300"
+    "api" => "bg-blue-100 text-blue-700",
+    "workspace" => "bg-indigo-100 text-indigo-700"
   }.freeze
 
   def chat_session_status_badge(chat_session)
@@ -35,10 +35,10 @@ module ChatSessionsHelper
 
     classes =
       case label
-      when "Running" then "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-      when "Idle" then "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-      when "API" then "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
-      else "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
+      when "Running" then "bg-green-100 text-green-700"
+      when "Idle" then "bg-yellow-100 text-yellow-800"
+      when "API" then "bg-gray-100 text-gray-600"
+      else "bg-gray-100 text-gray-600"
       end
 
     badge_label(label, classes)
@@ -72,13 +72,13 @@ module ChatSessionsHelper
   def chat_message_bubble_classes(message)
     case message.role
     when "user"
-      "ml-auto max-w-3xl rounded-[1.5rem] rounded-br-md bg-slate-900 px-4 py-3 text-sm text-white shadow-sm dark:bg-sky-900"
+      "ml-auto max-w-3xl rounded-lg rounded-br-sm bg-gray-900 px-4 py-3 text-sm text-white shadow-sm"
     when "assistant"
-      "max-w-3xl rounded-[1.5rem] rounded-bl-md bg-white px-4 py-3 text-sm text-slate-900 shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:ring-slate-600"
+      "max-w-3xl rounded-lg rounded-bl-sm bg-white px-4 py-3 text-sm text-gray-900 shadow-sm ring-1 ring-gray-200"
     when "tool"
-      "max-w-3xl rounded-2xl border border-dashed border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-slate-800 dark:bg-cyan-950/30 dark:border-cyan-700 dark:text-slate-200"
+      "max-w-3xl rounded-lg border border-dashed border-blue-200 bg-blue-50 px-4 py-3 text-sm text-gray-800"
     else
-      "mx-auto max-w-2xl rounded-full bg-white/70 px-4 py-2 text-center text-xs font-medium text-slate-500 ring-1 ring-slate-200 dark:bg-slate-800/70 dark:text-slate-400 dark:ring-slate-600"
+      "mx-auto max-w-2xl rounded-md bg-white px-4 py-2 text-center text-xs font-medium text-gray-500 ring-1 ring-gray-200"
     end
   end
 
@@ -101,10 +101,10 @@ module ChatSessionsHelper
   def chat_message_role_badge(message)
     classes =
       case message.role
-      when "assistant" then "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
-      when "user" then "bg-slate-800 text-slate-100 dark:bg-slate-600 dark:text-slate-200"
-      when "tool" then "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300"
-      else "bg-white/70 text-slate-500 dark:bg-slate-700/70 dark:text-slate-400"
+      when "assistant" then "bg-gray-100 text-gray-600"
+      when "user" then "bg-gray-800 text-gray-100"
+      when "tool" then "bg-blue-100 text-blue-700"
+      else "bg-gray-100 text-gray-500"
       end
 
     badge_label(message.role.titleize, classes)
@@ -133,6 +133,6 @@ module ChatSessionsHelper
   end
 
   def badge_label(label, classes)
-    tag.span(label, class: "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold #{classes}")
+    tag.span(label, class: "inline-flex items-center rounded-full px-2 py-1 text-xs font-medium #{classes}")
   end
 end

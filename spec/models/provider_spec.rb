@@ -141,6 +141,60 @@ RSpec.describe Provider do
         expect(unmapped).not_to be_valid
         expect(unmapped.errors[:tier_model_ids].join).to include("not configurable")
       end
+
+      it "allows direct-outbound providers to reference models from any upstream provider" do
+        user = create(:user)
+        api_key = create(:provider_api_key, user: user, api_service_type: "zai")
+        create(:llm_model, model_id: "glm-5.1", provider: "zai", tier: "high")
+        provider = build(
+          :provider,
+          user: user,
+          provider_key: "kilocode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          config: { "kilocode" => { "api_provider" => "zai", "model" => "glm-5.1" } },
+          tier_model_ids: { "high" => "glm-5.1", "mid" => "glm-5.1", "low" => "glm-5.1" }
+        )
+
+        expect(provider).to be_valid
+      end
+
+      it "rejects partial tier_model_ids for direct-outbound providers" do
+        user = create(:user)
+        api_key = create(:provider_api_key, user: user, api_service_type: "zai")
+        create(:llm_model, model_id: "glm-5.1", provider: "zai", tier: "high")
+        provider = create(
+          :provider,
+          user: user,
+          provider_key: "kilocode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          config: { "kilocode" => { "api_provider" => "zai", "model" => "glm-5.1" } }
+        )
+
+        provider.tier_model_ids = { "high" => "glm-5.1" }
+        expect(provider).not_to be_valid
+        expect(provider.errors[:tier_model_ids].join).to include("must map all tiers")
+      end
+
+      it "rejects crafted tier_model_ids that pin a direct-outbound provider to a different model" do
+        user = create(:user)
+        api_key = create(:provider_api_key, user: user, api_service_type: "zai")
+        create(:llm_model, model_id: "glm-5.1", provider: "zai", tier: "high")
+        wrong_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "high")
+        provider = create(
+          :provider,
+          user: user,
+          provider_key: "kilocode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          config: { "kilocode" => { "api_provider" => "zai", "model" => "glm-5.1" } }
+        )
+
+        provider.tier_model_ids = { "high" => wrong_model.model_id, "mid" => wrong_model.model_id, "low" => wrong_model.model_id }
+        expect(provider).not_to be_valid
+        expect(provider.errors[:tier_model_ids].join).to include("must match the configured direct-outbound model")
+      end
     end
 
     it "validates auth_type inclusion" do
@@ -549,6 +603,207 @@ RSpec.describe Provider do
         }
       })
       expect(config["model"]).to eq("zai-coding-plan/glm-5.1")
+    end
+  end
+
+  describe "Aider config infrastructure" do
+    let(:account) { create(:account, slug: "provider-aider-#{SecureRandom.hex(6)}") }
+    let(:user) { create(:user, account: account, email: "provider-aider-#{SecureRandom.hex(6)}@example.com") }
+    let(:api_key) { create(:provider_api_key, user: user, api_service_type: "zai") }
+
+    it "reads aider config accessors from the config hash" do
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "aider",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "aider" => { "api_provider" => "zai", "model" => "glm-5.1" } }
+      )
+
+      expect(provider.aider_api_provider).to eq("zai")
+      expect(provider.aider_model_id).to eq("glm-5.1")
+      expect(provider.aider_required_api_service_type).to eq("zai")
+    end
+
+    it "defaults api_provider to openrouter when unset" do
+      provider = build(:provider, provider_key: "aider", auth_type: "api_key",
+        user: user, provider_api_key: api_key, config: { "aider" => { "model" => "glm-5.1" } })
+
+      expect(provider.aider_api_provider).to eq("openrouter")
+    end
+
+    it "returns nil accessors for non-aider providers" do
+      provider = build(:provider, provider_key: "claude")
+
+      expect(provider.aider_api_provider).to be_nil
+      expect(provider.aider_model_id).to be_nil
+    end
+
+    it "is not direct-outbound even when fully configured (no execution plumbing yet)" do
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "aider",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "aider" => { "api_provider" => "zai", "model" => "glm-5.1" } }
+      )
+
+      expect(provider.requires_direct_outbound?).to be(false)
+    end
+
+    it "validates model presence for API-key aider providers when api_provider is set" do
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "aider",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "aider" => { "api_provider" => "zai" } }
+      )
+
+      expect(provider).not_to be_valid
+      expect(provider.errors[:config].join).to include("Aider model id")
+    end
+
+    it "validates model presence for API-key aider providers" do
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "aider",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "aider" => {} }
+      )
+
+      expect(provider).not_to be_valid
+      expect(provider.errors[:config].join).to include("Aider model id")
+    end
+
+    it "accepts a fully configured API-key aider provider" do
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "aider",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "aider" => { "api_provider" => "zai", "model" => "glm-5.1" } }
+      )
+
+      expect(provider).to be_valid
+    end
+
+    it "skips aider config validation for subscription providers" do
+      provider = build(:provider, provider_key: "aider", auth_type: "subscription")
+
+      provider.valid?
+      expect(provider.errors[:config]).to be_empty
+    end
+
+    it "skips aider config validation for tenant-key providers with no config" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "aider",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: nil
+      )
+
+      provider.valid?
+      expect(provider.errors[:config]).to be_empty
+    end
+  end
+
+  describe "sync_direct_outbound_tier_models callback" do
+    let(:account) { create(:account, slug: "sync-tier-#{SecureRandom.hex(6)}") }
+    let(:user) { create(:user, account: account, email: "sync-tier-#{SecureRandom.hex(6)}@example.com") }
+    let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
+
+    it "clears stale tier_model_ids when provider no longer qualifies for direct-outbound" do
+      provider = create(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "test-model-1" } }
+      )
+
+      expect(provider.tier_model_ids).to be_present
+
+      provider.update_columns(config: { "opencode" => { "api_provider" => "openrouter" } })
+
+      provider.valid?
+      expect(provider.tier_model_ids).to be_blank
+    end
+
+    it "clears stale tier_model_ids when model is removed from config" do
+      provider = create(
+        :provider,
+        user: user,
+        provider_key: "kilocode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "kilocode" => { "api_provider" => "openrouter", "model" => "test-model-2" } }
+      )
+
+      expect(provider.tier_model_ids).to be_present
+
+      provider.update_columns(config: { "kilocode" => { "api_provider" => "openrouter", "model" => "" } })
+
+      provider.valid?
+      expect(provider.tier_model_ids).to be_blank
+    end
+
+    it "preserves tier_model_ids on unrelated attribute saves when config is unchanged" do
+      provider = create(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "test-model-3" } }
+      )
+
+      original_tier_model_ids = provider.tier_model_ids.dup
+      provider.update!(name: "Renamed Provider")
+
+      expect(provider.reload.tier_model_ids).to eq(original_tier_model_ids)
+    end
+
+    it "updates tier_model_ids when the configured model changes" do
+      provider = create(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "test-model-old" } }
+      )
+
+      provider.update!(config: { "opencode" => { "api_provider" => "openrouter", "model" => "test-model-new" } })
+
+      expect(provider.reload.tier_model_ids.values.uniq).to eq([ "test-model-new" ])
+    end
+
+    it "reactivates an inactive LlmModel when reused for a direct-outbound provider" do
+      inactive_model = create(:llm_model, model_id: "inactive-test-model", provider: "zai", tier: "mid", active: false)
+
+      provider = create(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "inactive-test-model" } }
+      )
+
+      expect(inactive_model.reload).to be_active
+      expect(provider.tier_model_ids.values.uniq).to eq([ "inactive-test-model" ])
     end
   end
 

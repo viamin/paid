@@ -4,7 +4,7 @@
   <% end %>
   <% if next_frame_id && next_params %>
     <%= turbo_frame_tag next_frame_id, src: sidebar_page_chat_sessions_path(next_params), loading: :lazy do %>
-      <p class="py-3 text-center text-xs text-slate-400">Loading more…</p>
+      <p class="py-3 text-center text-xs text-gray-400">Loading more...</p>
     <% end %>
   <% end %>
 <% end %>
