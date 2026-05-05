@@ -254,7 +254,7 @@ jobs:
             push_attempts=$((push_attempts + 1))
             if [ "$push_attempts" -lt "$max_attempts" ]; then
               echo "Push failed, retrying (attempt $((push_attempts + 1))/${max_attempts})..."
-              git fetch origin screenshots
+              git fetch --depth=1 origin screenshots
               git reset --hard origin/screenshots
               mkdir -p "${screenshot_dir}"
               cp ../screenshots-download/*.png "${screenshot_dir}/"
@@ -316,10 +316,15 @@ jobs:
             fi
           else
             body="## 📸 UI Screenshots\n\n"
-            body+="This PR still includes **UI-facing changes**, but screenshot capture for commit \`${short_sha}\` did not complete successfully.\n\n"
+            body+="This PR still includes **UI-facing changes**, but screenshots for commit \`${short_sha}\` are not available.\n\n"
             body+="Any screenshots linked from an earlier workflow run are now stale and should not be used for review.\n\n"
             body+="### What happened\n"
-            body+="- Capture: \`${capture_result}\`\n\n"
+            if [ "$capture_result" != "success" ]; then
+              body+="- Capture: \`${capture_result}\` (screenshot capture did not complete successfully)\n"
+            else
+              body+="- Capture: \`success\` but no screenshot files were found (artifact download may have failed)\n"
+            fi
+            body+="\n"
             body+="Open the latest [PR Screenshots](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) workflow run to inspect the failure.\n"
           fi
 
@@ -408,7 +413,6 @@ jobs:
       - name: Remove PR screenshot directory
         if: steps.checkout_screenshots.outcome == 'success'
         env:
-          GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           pr_dir="screenshots/${PR_NUMBER}"
