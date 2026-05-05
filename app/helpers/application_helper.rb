@@ -79,6 +79,17 @@ module ApplicationHelper
     )
   end
 
+  def agent_run_provider_display(run, placeholder: "-", missing_provider_label: "Deleted provider entry")
+    provider = run.effective_provider_record
+    return provider.display_name if provider.present?
+
+    identifier = run.final_provider.presence || run.effective_provider.presence
+    return placeholder if identifier.blank?
+    return missing_provider_label if Provider.routing_key?(identifier)
+
+    Provider.display_name_for(Provider.provider_key_for_agent_type(identifier))
+  end
+
   PAID_STATE_STYLES = {
     "new" => { bg: "bg-gray-100", text: "text-gray-700", label: "New" },
     "planning" => { bg: "bg-purple-100", text: "text-purple-700", label: "Planning" },

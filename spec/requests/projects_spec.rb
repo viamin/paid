@@ -546,6 +546,25 @@ RSpec.describe "Projects" do
         expect(response.body).to include(project_agent_run_path(project, run))
       end
 
+      it "shows the provider column for recent agent runs" do
+        project = create(:project, account: account, github_token: github_token, created_by: user)
+        provider = create(:provider, user: user, provider_key: "codex")
+        run = create(:agent_run, project: project, provider: provider, final_provider: provider.routing_key)
+
+        get project_path(project)
+
+        document = Nokogiri::HTML(response.body)
+        section = document.at_css(%(div[id="#{ActionView::RecordIdentifier.dom_id(project, :agent_runs)}"]))
+
+        expect(section).to be_present
+        expect(section.css("thead th").map { |header| header.text.squish }).to include("Provider")
+
+        row = section.at_css(%(a[href="#{project_agent_run_path(project, run)}"]))&.ancestors("tr")&.first
+
+        expect(row).to be_present
+        expect(row.text).to include(provider.display_name)
+      end
+
       it "links to PR in context column for review goal runs on project page" do
         project = create(:project, account: account, github_token: github_token)
         run = create(:agent_run, :review_goal, :completed, project: project)
