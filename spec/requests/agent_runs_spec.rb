@@ -193,6 +193,44 @@ RSpec.describe "AgentRuns" do
         expect(truncated_span["title"]).not_to include(token)
       end
 
+      it "shows the provider column with the resolved provider name" do
+        provider = create(:provider, user: user, provider_key: "codex")
+        run = create(:agent_run, project: project, provider: provider, final_provider: provider.routing_key)
+
+        get agent_runs_path
+
+        document = parsed_html
+
+        expect(column_index(document, "Provider")).not_to be_nil
+        expect(cell_for_run(document, run, "Provider").text.squish).to eq(provider.display_name)
+      end
+
+      it "shows a fallback label when the final provider record is missing" do
+        run = create(:agent_run, project: project, final_provider: "provider:999999")
+
+        get agent_runs_path
+
+        expect(cell_for_run(parsed_html, run, "Provider").text.squish).to eq("Deleted provider entry")
+      end
+
+      it "shows the final provider label for legacy fallback runs" do
+        initial_provider = create(:provider, user: user, provider_key: "codex")
+        run = create(:agent_run, project: project, provider: initial_provider, final_provider: "cursor")
+
+        get agent_runs_path
+
+        expect(cell_for_run(parsed_html, run, "Provider").text.squish).to eq(Provider.display_name_for("cursor"))
+      end
+
+      it "renders unsupported provider identifiers without error" do
+        run = create(:agent_run, project: project, provider: nil, final_provider: "api", agent_type: "api")
+
+        get agent_runs_path
+
+        expect(response).to have_http_status(:ok)
+        expect(cell_for_run(parsed_html, run, "Provider").text.squish).to eq("Api")
+      end
+
       it "shows empty state when no runs exist" do
         get agent_runs_path
         expect(response.body).to include("No agent runs yet")
@@ -543,6 +581,36 @@ RSpec.describe "AgentRuns" do
         get project_agent_runs_path(project)
         expect(response.body).to include("Review")
         expect(response.body).to include("https://github.com/example/repo/pull/10#pullrequestreview-123456")
+      end
+
+      it "shows the provider column with the resolved provider name" do
+        provider = create(:provider, user: user, provider_key: "cursor")
+        run = create(:agent_run, project: project, provider: provider, final_provider: provider.routing_key)
+
+        get project_agent_runs_path(project)
+
+        document = parsed_html
+
+        expect(column_index(document, "Provider")).not_to be_nil
+        expect(cell_for_run(document, run, "Provider").text.squish).to eq(provider.display_name)
+      end
+
+      it "shows the final provider label for legacy fallback runs" do
+        initial_provider = create(:provider, user: user, provider_key: "codex")
+        run = create(:agent_run, project: project, provider: initial_provider, final_provider: "cursor")
+
+        get project_agent_runs_path(project)
+
+        expect(cell_for_run(parsed_html, run, "Provider").text.squish).to eq(Provider.display_name_for("cursor"))
+      end
+
+      it "renders unsupported provider identifiers without error" do
+        run = create(:agent_run, project: project, provider: nil, final_provider: "api", agent_type: "api")
+
+        get project_agent_runs_path(project)
+
+        expect(response).to have_http_status(:ok)
+        expect(cell_for_run(parsed_html, run, "Provider").text.squish).to eq("Api")
       end
 
       it "shows PR link in actions column for completed create_pr runs" do

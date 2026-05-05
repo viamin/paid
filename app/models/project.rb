@@ -429,7 +429,8 @@ class Project < ApplicationRecord
   end
 
   def broadcast_agent_runs_update
-    runs = agent_runs.recent.includes(:issue).limit(10).to_a
+    runs = agent_runs.recent.includes(:provider, :issue, project: [ :created_by, :account ]).limit(10).to_a
+    AgentRun.preload_final_provider_records(runs)
     AgentRun.preload_source_pull_requests(runs)
     broadcast_replace_to(
       self, :project_updates,
@@ -440,7 +441,8 @@ class Project < ApplicationRecord
   end
 
   def broadcast_agent_runs_list_update
-    runs = agent_runs.recent.includes(:issue).limit(50).to_a
+    runs = agent_runs.recent.includes(:provider, :issue, project: [ :created_by, :account ]).limit(50).to_a
+    AgentRun.preload_final_provider_records(runs)
     AgentRun.preload_source_pull_requests(runs)
     broadcast_replace_to(
       self, :agent_runs_list,
