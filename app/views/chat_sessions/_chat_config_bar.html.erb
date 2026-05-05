@@ -1,0 +1,24 @@
+<%= form_with model: chat_session,
+              url: chat_session_path(chat_session),
+              method: :patch,
+              class: "inline-flex items-center gap-2",
+              data: { action: "change->chat#submitForm" } do |form| %>
+  <%= form.label :project_id, "Project", class: "sr-only" %>
+  <%= form.select :project_id,
+                  options_from_collection_for_select(available_projects, :id, :name, chat_session.project_id),
+                  { include_blank: "No project" },
+                  class: "rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-200",
+                  "aria-label": "Project" %>
+  <%= form.label :model, "Model", class: "sr-only" %>
+  <%= form.select :model,
+                  options_for_select(available_models.map { |model| ["#{model.display_name}", model.model_id] }, chat_session.model),
+                  { include_blank: "Auto" },
+                  class: "rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-200",
+                  "aria-label": "Model" %>
+  <%= form.label :provider_id, "Provider", class: "sr-only" %>
+  <%= form.select :provider_id,
+                  options_from_collection_for_select(available_providers, :id, :display_name, chat_session.provider_id),
+                  { include_blank: "Default" },
+                  class: "rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-200",
+                  "aria-label": "Provider" %>
+<% end %>

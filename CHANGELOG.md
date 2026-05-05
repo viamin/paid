@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.38.0](https://github.com/viamin/paid/compare/v0.37.0...v0.38.0) (2026-05-05)
+
+
+### Features
+
+* **agent-runs:** add pre-flight provider health check before agent execution ([#1620](https://github.com/viamin/paid/issues/1620)) ([1db4793](https://github.com/viamin/paid/commit/1db4793adc2c10ad0ce52cf1f47a1e361a7e5638))
+* **agent-runs:** adopt agent-harness heartbeat support for OpenCode/KiloCode fallbacks ([#1641](https://github.com/viamin/paid/issues/1641)) ([a39b102](https://github.com/viamin/paid/commit/a39b10290aaa688c5123b3007244254dcfc904c7))
+* **agent-runs:** create multiple issues with dependency declarations in create-issue mode ([#1658](https://github.com/viamin/paid/issues/1658)) ([e0e6e87](https://github.com/viamin/paid/commit/e0e6e8738cfdd85329299886269907683b408149))
+* **agent-runs:** generate decomposition plan with dependency ordering ([#1656](https://github.com/viamin/paid/issues/1656)) ([5f73ddb](https://github.com/viamin/paid/commit/5f73ddb9d832418dfe8c5db698be70a6b29cc317))
+* **agent-runs:** integrate MCP-enabled execution through agent-harness ([#1660](https://github.com/viamin/paid/issues/1660)) ([9d85949](https://github.com/viamin/paid/commit/9d85949bbe94844167ccc1ca2fad54892d923a20))
+* **mcp:** add Services-page and project configuration UI for MCP servers ([#1664](https://github.com/viamin/paid/issues/1664)) ([5d04623](https://github.com/viamin/paid/commit/5d0462345723508b96e4e250c8ed71e56214b358))
+* **mcp:** provision npx and docker-image MCP servers for agent runs ([#1657](https://github.com/viamin/paid/issues/1657)) ([f48ba18](https://github.com/viamin/paid/commit/f48ba188cb865374e8d7e8617b6f725ece4d16a5))
+* **ui:** add KnowledgeRecommendation review UI for project owners ([#1627](https://github.com/viamin/paid/issues/1627)) ([88db7f5](https://github.com/viamin/paid/commit/88db7f54ccc6e9d2a2f3593ef12ec0782815597a))
+
+
+### Bug Fixes
+
+* /token/i pattern in test_agent.rb misclassifies non-auth errors as authentication ([#1639](https://github.com/viamin/paid/issues/1639)) ([f1fc586](https://github.com/viamin/paid/commit/f1fc58622fb664630e8859e464b43407ba3f929c))
+* 1124: Add contract and parity tests for automation modules ([#1631](https://github.com/viamin/paid/issues/1631)) ([b2803ee](https://github.com/viamin/paid/commit/b2803ee9ab3d16ed75262699a9c0decd2bcce051))
+* 1258: Move provider auth setup info to bottom of providers index page ([#1640](https://github.com/viamin/paid/issues/1640)) ([453cee2](https://github.com/viamin/paid/commit/453cee2112ec213dbedf0d868148a7d470cf7f82))
+* 1312: Hide review settings fields until review type is selected ([#1626](https://github.com/viamin/paid/issues/1626)) ([87c11b1](https://github.com/viamin/paid/commit/87c11b14b772a45fffb3b7aa2935d9c94d45743c))
+* 1334: Show agent run goal on main agent runs index page table ([#1630](https://github.com/viamin/paid/issues/1630)) ([8ba6161](https://github.com/viamin/paid/commit/8ba6161b4471d804666f8a014b9b02d5af337c9d))
+* 1457: Make notifications table horizontally scrollable on mobile ([#1628](https://github.com/viamin/paid/issues/1628)) ([a8a63cb](https://github.com/viamin/paid/commit/a8a63cb13602f9e56e45dba575ec86bab392c3c2))
+* 1611: Require rendered screenshots for PRs with UI changes ([#1623](https://github.com/viamin/paid/issues/1623)) ([39c63a9](https://github.com/viamin/paid/commit/39c63a920a5c8be706d81c92481f15cbb10ecda6))
+* 1616: [P2] knowledge: Knowledge::ContainerizedRunner::ContainerError ([#1625](https://github.com/viamin/paid/issues/1625)) ([7a12fd3](https://github.com/viamin/paid/commit/7a12fd31892a10b567fab8976688835bf2a62de3))
+* 1667: Simplify chat setup with sensible defaults ([#1673](https://github.com/viamin/paid/issues/1673)) ([f72df69](https://github.com/viamin/paid/commit/f72df69da7485a3da7c6def415e48f0ec7055433))
+* **agent-runs:** handle type:error JSONL and blank structured parser output in agent comments ([#1662](https://github.com/viamin/paid/issues/1662)) ([11a2089](https://github.com/viamin/paid/commit/11a20896eb9187677041b98b434a05537b3eb52b))
+* **agent-runs:** parse multi-line Claude CLI JSON output in agent comments ([#1650](https://github.com/viamin/paid/issues/1650)) ([e5787a3](https://github.com/viamin/paid/commit/e5787a36252a852f8f53fca43ec4c2563b41dc48))
+* **auto-pick:** recover issues stuck in completed state and classify infrastructure errors ([#1633](https://github.com/viamin/paid/issues/1633)) ([307b114](https://github.com/viamin/paid/commit/307b114c507b7b96c5b7fa1b0c47a5b872b4c921))
+* **ci:** switch pr-screenshots to ghcr.io browserless image ([#1646](https://github.com/viamin/paid/issues/1646)) ([22ae12d](https://github.com/viamin/paid/commit/22ae12d5d3acd65cb280ca0c0d323ee6831aea45))
+* **ci:** use runner Chrome instead of browserless service container ([#1661](https://github.com/viamin/paid/issues/1661)) ([7b502d0](https://github.com/viamin/paid/commit/7b502d0d0c0bcaa8026b49446042ef82a4a7c08b))
+* **dashboard:** move upcoming queue above queue health section ([#1669](https://github.com/viamin/paid/issues/1669)) ([af77472](https://github.com/viamin/paid/commit/af7747259b4e65ee9193e491cc42e60c27239e68)), closes [#1665](https://github.com/viamin/paid/issues/1665)
+* Docker API timeout races with watchdog, misclassifying errors as non-timeout ([#1637](https://github.com/viamin/paid/issues/1637)) ([b364578](https://github.com/viamin/paid/commit/b3645787590f93ffac13cb57a30862144e4278ba))
+* GithubTokenHealthCheckJob auto-pauses without was_already_failed guard ([#1638](https://github.com/viamin/paid/issues/1638)) ([7beca8e](https://github.com/viamin/paid/commit/7beca8eb65f9982f59c5fdf2a432dbb7b6ddefe9))
+* HarnessExecutor which/available always returns truthy, masking missing binaries ([#1629](https://github.com/viamin/paid/issues/1629)) ([c1dc96c](https://github.com/viamin/paid/commit/c1dc96cbaadb9ce09c4f0e4a26d200036a93278e))
+* **providers:** add local provider smoke coverage ([#1659](https://github.com/viamin/paid/issues/1659)) ([56ad71f](https://github.com/viamin/paid/commit/56ad71f5f55515bc190a6e4a0d8318d362b125f4))
+* **screenshots:** resolve Ferrum base_url error in CI screenshot capture ([#1663](https://github.com/viamin/paid/issues/1663)) ([e3d6617](https://github.com/viamin/paid/commit/e3d6617731098fb3c424e185a9bdc29599fd7c7d))
+
 ## [0.37.0](https://github.com/viamin/paid/compare/v0.36.0...v0.37.0) (2026-05-03)
 
 
