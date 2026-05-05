@@ -58,7 +58,7 @@ module ChatSessions
         created_by: user,
         mode: mode,
         provider_id: resolved_provider&.id,
-        model: model,
+        model: resolved_model,
         project_id: project_id,
         system_prompt: system_prompt,
         title: title,
@@ -93,9 +93,17 @@ module ChatSessions
       end
     end
 
+    def resolved_model
+      return model if model.present?
+
+      provider = resolved_provider
+      return nil unless provider
+
+      LlmModel.active.by_provider(provider.provider_key).by_capability.first&.model_id
+    end
+
     def default_provider_for_user
-      identifier = user.settings.select_automated_provider_identifier
-      Provider.for_identifier(user, identifier) || Provider.first_enabled_for_owner(user)
+      Provider.first_enabled_for_owner(user)
     end
   end
 end

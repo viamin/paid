@@ -53,7 +53,17 @@ RSpec.describe "ChatSessions" do
         expect(body["pagination"]).to include("page" => 1, "pages" => 2, "count" => 26)
       end
 
-      it "auto-creates a new session and redirects for html requests" do
+      it "redirects to existing active session for html requests" do
+        existing = create(:chat_session, account: account, created_by: user, status: "active")
+
+        expect {
+          get chat_sessions_path
+        }.not_to change(ChatSession, :count)
+
+        expect(response).to redirect_to(chat_session_path(existing))
+      end
+
+      it "auto-creates a new session when no active sessions exist" do
         expect {
           get chat_sessions_path
         }.to change(ChatSession, :count).by(1)

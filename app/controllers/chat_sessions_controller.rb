@@ -15,7 +15,11 @@ class ChatSessionsController < ApplicationController
   def index
     respond_to do |format|
       format.html do
-        if policy(ChatSession.new(account: current_account)).create?
+        existing = policy_scope(ChatSession).where(status: "active").order(updated_at: :desc).first
+        if existing
+          skip_policy_scope
+          redirect_to chat_session_path(existing)
+        elsif policy(ChatSession.new(account: current_account)).create?
           return render_create_rate_limit_exceeded if create_rate_limited?
 
           session = ChatSessions::Create.call(
@@ -106,7 +110,9 @@ class ChatSessionsController < ApplicationController
 
   def update
     authorize @chat_session
+    project_changed = update_params.key?(:project_id) && update_params[:project_id].to_s != @chat_session.project_id.to_s
     @chat_session.update!(update_params)
+    regenerate_system_message! if project_changed
 
     respond_to do |format|
       format.html { redirect_to chat_session_path(@chat_session), notice: "Chat session updated." }
@@ -135,6 +141,12 @@ class ChatSessionsController < ApplicationController
 
   def set_chat_session
     @chat_session = session_scope.find(params[:id])
+  end
+
+  def regenerate_system_message!
+    new_prompt = ChatSessions::BuildSystemPrompt.call(chat_session: @chat_session.reload)
+    system_message = @chat_session.messages.where(role: "system").order(:created_at).first
+    system_message&.update!(content: new_prompt)
   end
 
   def create_params

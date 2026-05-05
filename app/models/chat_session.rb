@@ -53,7 +53,7 @@ class ChatSession < ApplicationRecord
     return unless first_user_message&.content.present?
 
     generated = first_user_message.content.to_s.tr("\n", " ").truncate(80)
-    update!(title: generated)
+    update_columns(title: generated)
   end
 
   def ensure_proxy_token!
