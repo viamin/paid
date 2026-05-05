@@ -35,7 +35,9 @@ module Knowledge
     def for_embedding_candidate_providers
       configured_embedding_providers.filter_map do |provider|
         next log_unsupported_provider(provider) unless UserSetting::KB_EMBEDDING_PROVIDERS.include?(provider)
-        next log_unsupported_provider(provider) unless Provider::DIRECT_OUTBOUND_API_PROVIDERS.key?(provider)
+        config = Provider::DIRECT_OUTBOUND_API_PROVIDERS[provider]
+        next log_unsupported_provider(provider) unless config
+        next log_missing_credentials(provider) unless embedding_credentials_available?(provider, config)
 
         Result.new(provider: provider)
       end
@@ -102,11 +104,34 @@ module Knowledge
         &.first
     end
 
+    def embedding_credentials_available?(provider, config)
+      return true if provider == "openai" && platform_openai_api_key_available?
+
+      owner
+        &.provider_api_keys
+        &.for_api_service_type(config.fetch(:service_type))
+        &.exists? || false
+    end
+
+    def platform_openai_api_key_available?
+      Rails.application.credentials.dig(:llm, :openai_api_key).present? || ENV["OPENAI_API_KEY"].present?
+    end
+
     def log_unsupported_provider(provider)
       Rails.logger.warn(
         message: "knowledge.provider_configuration.unsupported_embedding_provider",
         project_id: project&.id,
         provider: provider
+      )
+      nil
+    end
+
+    def log_missing_credentials(provider)
+      Rails.logger.info(
+        message: "knowledge.provider_configuration.embedding_provider_unavailable",
+        project_id: project&.id,
+        provider: provider,
+        reason: "missing_api_key"
       )
       nil
     end

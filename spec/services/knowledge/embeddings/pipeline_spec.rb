@@ -114,6 +114,23 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
       expect(Knowledge::ProviderConfiguration).to have_received(:for_embedding_candidate_providers).with(project: project).once
     end
 
+    it "logs and skips projects without embedding providers" do
+      allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
+      allow(Knowledge::ProviderConfiguration).to receive(:for_embedding_candidate_providers)
+        .with(project: project)
+        .and_return([])
+      allow(Rails.logger).to receive(:info)
+
+      result = described_class.call(project: project)
+
+      expect(result[:chunks_embedded]).to eq(0)
+      expect(Rails.logger).to have_received(:info).with(hash_including(
+        message: "knowledge.embeddings.project_skipped",
+        project_id: project.id,
+        reason: "no_embedding_provider"
+      ))
+    end
+
     it "respects configurable batch size" do
       allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
 

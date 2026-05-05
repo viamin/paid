@@ -64,7 +64,10 @@ module Knowledge
 
         chunks.group_by(&:project).each_with_object([]) do |(project, project_chunks), results|
           configs = provider_configs_for(project)
-          next if configs.empty?
+          if configs.empty?
+            log_missing_provider_for_project(project, chunk_count: project_chunks.size)
+            next
+          end
 
           results << process_batch(project_chunks, generator_for(project, configs))
         end
@@ -212,6 +215,10 @@ module Knowledge
         @managed_provider_configs ||= {}
       end
 
+      def skipped_projects
+        @skipped_projects ||= {}
+      end
+
       def build_generator(api_key:, api_base_url:)
         return if api_key.blank? && api_base_url.blank?
 
@@ -226,6 +233,18 @@ module Knowledge
 
       def close_managed_generators
         managed_generators.each_value(&:close)
+      end
+
+      def log_missing_provider_for_project(project, chunk_count:)
+        return if skipped_projects[project.id]
+
+        Rails.logger.info(
+          message: "knowledge.embeddings.project_skipped",
+          project_id: project.id,
+          chunk_count: chunk_count,
+          reason: "no_embedding_provider"
+        )
+        skipped_projects[project.id] = true
       end
     end
   end

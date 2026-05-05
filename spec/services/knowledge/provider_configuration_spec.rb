@@ -85,11 +85,34 @@ RSpec.describe Knowledge::ProviderConfiguration do
         kb_embedding_fallback_providers: [ "openai" ]
       )
       create(:provider_api_key, user: owner, api_service_type: "openrouter", api_key: "sk-openrouter")
+      create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-openai")
 
       candidates = described_class.for_embedding_candidate_providers(project: project)
 
       expect(candidates.map(&:provider)).to eq(%w[openrouter openai])
       expect(candidates).to all(satisfy { |c| c.api_key.nil? })
+    end
+
+    it "filters out providers without configured credentials" do
+      owner.settings.update!(
+        kb_embedding_provider: "openrouter",
+        kb_embedding_fallback_providers: [ "deepseek", "openai" ]
+      )
+      allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return(nil)
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
+      allow(Rails.logger).to receive(:info)
+
+      candidates = described_class.for_embedding_candidate_providers(project: project)
+
+      expect(candidates).to be_empty
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(
+          message: "knowledge.provider_configuration.embedding_provider_unavailable",
+          project_id: project.id,
+          reason: "missing_api_key"
+        )
+      ).at_least(:once)
     end
   end
 end

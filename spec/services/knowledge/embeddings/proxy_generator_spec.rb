@@ -59,6 +59,18 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
       expect(knowledge_run.provider_attempts).to eq(%w[openrouter openai])
     end
 
+    it "avoids redundant final provider updates across successful batches" do
+      allow(Knowledge::Embeddings::Generate).to receive(:call).and_return([ result ])
+
+      generator.call(texts: [ "hello" ])
+      expect(knowledge_run.reload.final_provider).to eq("openrouter")
+
+      allow(knowledge_run).to receive(:update!).and_call_original
+      generator.call(texts: [ "again" ])
+
+      expect(knowledge_run).not_to have_received(:update!).with(hash_including(final_provider: "openrouter"))
+    end
+
     it "marks the knowledge run failed when every provider fails" do
       allow(Knowledge::Embeddings::Generate).to receive(:call)
         .and_raise(Knowledge::Embeddings::EmbeddingError, "no providers available")

@@ -95,6 +95,8 @@ module Knowledge
 
       def mark_success!(provider)
         @successful = true
+        return if knowledge_run.final_provider == provider
+
         knowledge_run.update!(final_provider: provider)
       end
 
