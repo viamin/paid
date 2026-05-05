@@ -6,6 +6,15 @@ RSpec.describe Knowledge::DashboardStats do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
 
+  around do |example|
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    Rails.cache.clear
+    example.run
+  ensure
+    Rails.cache = original_cache
+  end
+
   describe ".call" do
     subject(:stats) { described_class.call(account: account) }
 
@@ -247,6 +256,25 @@ RSpec.describe Knowledge::DashboardStats do
       it "returns empty pipeline metrics" do
         expect(stats[:pipeline_metrics]["embedding"]).to include(total_runs: 0, success_rate: 0.0)
         expect(stats[:pipeline_metrics]["decision_drafting"]).to include(total_runs: 0, success_rate: 0.0)
+      end
+
+      it "reuses cached pipeline metrics until the cache entry expires" do
+        first_dashboard = described_class.new(account: account)
+        second_dashboard = described_class.new(account: account)
+
+        allow(first_dashboard).to receive(:build_pipeline_metrics).and_call_original
+        allow(second_dashboard).to receive(:build_pipeline_metrics).and_call_original
+
+        expect(first_dashboard.call[:pipeline_metrics]["embedding"][:total_runs]).to eq(0)
+
+        create(:knowledge_run, :completed,
+          project: project,
+          operation_type: "embedding",
+          final_provider: "openai")
+
+        expect(second_dashboard.call[:pipeline_metrics]["embedding"][:total_runs]).to eq(0)
+        expect(first_dashboard).to have_received(:build_pipeline_metrics).once
+        expect(second_dashboard).not_to have_received(:build_pipeline_metrics)
       end
     end
 

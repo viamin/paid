@@ -432,8 +432,9 @@ RSpec.describe QualityPause::Check do
       it "does not count runs of a different goal toward grace period window" do
         create(:quality_pause_event, :resumed, project: project, created_at: 1.hour.ago)
 
-        (QualityThreshold::DEFAULT_WINDOW_SIZE + 3).times do
-          run = create(:agent_run, :completed, project: project, goal: "enhance_issue")
+        # Enough different-goal runs that counting them would exceed the window (3 matching + 8 other > 10)
+        (QualityThreshold::DEFAULT_WINDOW_SIZE - 2).times do
+          run = create(:agent_run, :completed, :create_issue_goal, project: project)
           create(:quality_metric, agent_run: run, composite_score: 0.1)
         end
 
@@ -500,14 +501,14 @@ RSpec.describe QualityPause::Check do
 
   def create_quality_metrics(project, scores:, prompt_version: nil)
     scores.each do |score|
-      run = create(:agent_run, :completed, project: project, prompt_version: prompt_version)
+      run = create(:agent_run, :completed, project: project, prompt_version: prompt_version, issue: nil, custom_prompt: "quality metric fixture")
       create(:quality_metric, agent_run: run, prompt_version: prompt_version, composite_score: score)
     end
   end
 
   def create_metric_scores(project, metric_type:, scores:, completed_at: Time.current, prompt_version: nil)
     scores.each do |score|
-      run = create(:agent_run, :completed, project: project, completed_at: completed_at, prompt_version: prompt_version)
+      run = create(:agent_run, :completed, project: project, completed_at: completed_at, prompt_version: prompt_version, issue: nil, custom_prompt: "quality metric fixture")
       create(:quality_metric, agent_run: run, prompt_version: prompt_version, composite_score: 0.8, scores: { metric_type => score })
     end
   end
@@ -516,7 +517,7 @@ RSpec.describe QualityPause::Check do
     high_model = LlmModel.find_by!(tier: "high")
 
     scores.each do |score|
-      run = create(:agent_run, :completed, project: project, goal: agent_run.goal)
+      run = create(:agent_run, :completed, project: project, goal: agent_run.goal, issue: nil, custom_prompt: "quality metric fixture")
       create(:model_selection,
         agent_run: run,
         llm_model: high_model,

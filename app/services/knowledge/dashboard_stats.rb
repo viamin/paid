@@ -212,12 +212,9 @@ module Knowledge
     end
 
     def pipeline_metrics_cache_key
-      relation = knowledge_runs.where(created_at: PIPELINE_LOOKBACK.ago..Time.current)
       [
         "knowledge/dashboard_stats/pipeline_metrics",
-        account.id,
-        relation.maximum(:updated_at)&.to_i || "none",
-        relation.count
+        account.id
       ].join("/")
     end
 
