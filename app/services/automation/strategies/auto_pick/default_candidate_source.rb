@@ -14,7 +14,7 @@ module Automation
       # - No unfinished agent run already attached to the issue
       # - No open PR linked back to the issue via +parent_issue_id+
       # - Not labeled with any of {EXCLUDED_LABELS}
-      # - Not a parent/tracking issue (has sub-issues), and not a tracker /
+      # - Not a parent issue with still-open sub-issues, and not a tracker /
       #   meta issue whose body still references open work items
       # - Issue creator is in the project's trusted allowlist when one is
       #   configured
@@ -63,26 +63,7 @@ module Automation
           end
 
           def eligible_scope(project)
-            blocking_issue_ids = AgentRun.where(
-              project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES
-            ).where.not(issue_id: nil).select(:issue_id)
-
-            subissue_parent_ids = Issue.where(
-              project: project, is_pull_request: false
-            ).where.not(parent_issue_id: nil).distinct.select(:parent_issue_id)
-
-            base = Issue.ready_for_work(project)
-              .where.not(id: blocking_issue_ids)
-              .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
-              .where.not(id: subissue_parent_ids)
-              .where.not(id: Issue.open_pull_request_parent_issue_ids(project: project).distinct)
-
-            trusted_usernames = Array(project.allowed_github_usernames).presence
-            base = base.where(github_creator_login: trusted_usernames) if trusted_usernames
-
-            base = EXCLUDED_LABELS.reduce(base) do |s, label|
-              s.where.not("labels @> ?::jsonb", [ label ].to_json)
-            end
+            base = without_open_non_pr_subissues(base_scope(project))
 
             scope = base.where(paid_state: %w[new planning failed])
 
@@ -108,6 +89,11 @@ module Automation
             scope = scope.where.not(id: blocked_ids) if blocked_ids.present?
 
             scope
+          end
+
+          def review_required_parent_scope(project)
+            with_open_non_pr_subissues(parent_review_scope(project))
+              .where(id: blocking_parent_issue_ids(project))
           end
 
           def next_candidate(project)
@@ -192,6 +178,63 @@ module Automation
           end
 
           private
+
+          def base_scope(project)
+            blocking_issue_ids = AgentRun.where(
+              project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES
+            ).where.not(issue_id: nil).select(:issue_id)
+
+            base = Issue.ready_for_work(project)
+              .where.not(id: blocking_issue_ids)
+              .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
+              .where.not(id: Issue.open_pull_request_parent_issue_ids(project: project).distinct)
+
+            trusted_usernames = Array(project.allowed_github_usernames).presence
+            base = base.where(github_creator_login: trusted_usernames) if trusted_usernames
+
+            EXCLUDED_LABELS.reduce(base) do |scope, label|
+              scope.where.not("labels @> ?::jsonb", [ label ].to_json)
+            end
+          end
+
+          def parent_review_scope(project)
+            Issue.where(project: project, github_state: "open", is_pull_request: false)
+              .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
+          end
+
+          def without_open_non_pr_subissues(scope)
+            scope.where(<<~SQL.squish)
+              NOT EXISTS (
+                SELECT 1
+                FROM issues sub_issues
+                WHERE sub_issues.parent_issue_id = issues.id
+                  AND sub_issues.project_id = issues.project_id
+                  AND sub_issues.is_pull_request = FALSE
+                  AND sub_issues.github_state = 'open'
+              )
+            SQL
+          end
+
+          def with_open_non_pr_subissues(scope)
+            scope.where(<<~SQL.squish)
+              EXISTS (
+                SELECT 1
+                FROM issues sub_issues
+                WHERE sub_issues.parent_issue_id = issues.id
+                  AND sub_issues.project_id = issues.project_id
+                  AND sub_issues.is_pull_request = FALSE
+                  AND sub_issues.github_state = 'open'
+              )
+            SQL
+          end
+
+          def blocking_parent_issue_ids(project)
+            IssueDependency.joins(:issue)
+              .where(issues: { project_id: project.id, github_state: "open", is_pull_request: false })
+              .where.not(depends_on_issue_id: nil)
+              .distinct
+              .select(:depends_on_issue_id)
+          end
 
           # Returns a CASE expression that maps each issue to a numeric
           # priority rank based on the project's configured priority

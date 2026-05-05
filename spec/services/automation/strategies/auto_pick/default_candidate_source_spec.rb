@@ -81,6 +81,71 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
       expect(scope.pluck(:id)).to be_empty
     end
+
+    it "keeps a parent issue eligible when all of its sub-issues are closed" do
+      parent = create(:issue, project: project, github_number: 1)
+      create(:issue, :closed, project: project, github_number: 2, parent_issue: parent)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(parent.id)
+    end
+
+    it "excludes a parent issue while it still has open non-PR sub-issues" do
+      parent = create(:issue, project: project, github_number: 1)
+      child = create(:issue, project: project, github_number: 2, parent_issue: parent)
+      standalone = create(:issue, project: project, github_number: 3)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(child.id, standalone.id)
+    end
+  end
+
+  describe ".review_required_parent_scope" do
+    it "returns blocking parent issues that still have open sub-issues" do
+      parent = create(:issue, project: project, github_number: 1)
+      child = create(:issue, project: project, github_number: 2, parent_issue: parent)
+      blocked = create(:issue, project: project, github_number: 3)
+      create(:issue_dependency, issue: blocked, depends_on_issue: parent)
+
+      scope = described_class.review_required_parent_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(parent.id)
+      expect(child).to be_present
+    end
+
+    it "returns blocking parent issues even when auto-pick label exclusions make them ineligible" do
+      parent = create(:issue, project: project, github_number: 1, labels: [ "tracking" ])
+      create(:issue, project: project, github_number: 2, parent_issue: parent)
+      blocked = create(:issue, project: project, github_number: 3)
+      create(:issue_dependency, issue: blocked, depends_on_issue: parent)
+
+      scope = described_class.review_required_parent_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(parent.id)
+    end
+
+    it "returns blocking parent issues even when trusted-user auto-pick filters exclude them" do
+      project.update!(allowed_github_usernames: [ "trusted-user" ])
+      parent = create(:issue, project: project, github_number: 1, github_creator_login: "external-user")
+      create(:issue, project: project, github_number: 2, parent_issue: parent)
+      blocked = create(:issue, project: project, github_number: 3)
+      create(:issue_dependency, issue: blocked, depends_on_issue: parent)
+
+      scope = described_class.review_required_parent_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(parent.id)
+    end
+
+    it "does not return parents that are not blocking downstream issues" do
+      parent = create(:issue, project: project, github_number: 1)
+      create(:issue, project: project, github_number: 2, parent_issue: parent)
+
+      scope = described_class.review_required_parent_scope(project)
+
+      expect(scope).to be_empty
+    end
   end
 
   describe ".eligible_issue_ids" do
