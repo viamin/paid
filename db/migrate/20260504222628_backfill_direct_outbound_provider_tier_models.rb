@@ -17,7 +17,7 @@ class BackfillDirectOutboundProviderTierModels < ActiveRecord::Migration[8.1]
       next if provider.tier_model_ids.present?
 
       provider.save!
-    rescue => e # rubocop:disable Style/RescueStandardError
+    rescue StandardError => e
       failures << { id: provider.id, error: e.message }
       Rails.logger.warn(
         message: "backfill_direct_outbound_tier_models.skip",
