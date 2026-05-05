@@ -3,7 +3,7 @@
 require "rails_helper"
 require "securerandom"
 
-RSpec.describe Providers::TestAgent, :local_only, :provider_smoke do
+RSpec.describe Providers::TestAgent, :provider_smoke do
   ProviderSmokeHelpers.scenarios_from_env.each do |scenario|
     it "passes the real smoke test for #{scenario.label}" do
       unique_suffix = SecureRandom.hex(6)
