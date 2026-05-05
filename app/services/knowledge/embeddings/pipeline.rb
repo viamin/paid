@@ -7,7 +7,8 @@ module Knowledge
 
       attr_reader :batch_size, :generator
 
-      def initialize(batch_size: nil, generator: nil, api_key: nil, api_base_url: nil)
+      def initialize(batch_size: nil, generator: nil, api_key: nil, api_base_url: nil,
+                     user_setting: nil, knowledge_run: nil)
         raw = batch_size || ENV.fetch("EMBEDDING_BATCH_SIZE", DEFAULT_BATCH_SIZE)
         @batch_size = raw.to_i
         if @batch_size <= 0
@@ -15,10 +16,14 @@ module Knowledge
             "batch_size must be a positive integer; got #{raw.inspect}. Check EMBEDDING_BATCH_SIZE env var."
         end
         @generator = generator || Generate.new(api_key: api_key, api_base_url: api_base_url)
+        @user_setting = user_setting
+        @knowledge_run = knowledge_run
       end
 
-      def self.call(project: nil, batch_size: nil, generator: nil, api_key: nil, api_base_url: nil)
-        new(batch_size: batch_size, generator: generator, api_key: api_key, api_base_url: api_base_url).call(project: project)
+      def self.call(project: nil, batch_size: nil, generator: nil, api_key: nil, api_base_url: nil,
+                    user_setting: nil, knowledge_run: nil)
+        new(batch_size: batch_size, generator: generator, api_key: api_key, api_base_url: api_base_url,
+            user_setting: user_setting, knowledge_run: knowledge_run).call(project: project)
       end
 
       def call(project: nil)
@@ -63,7 +68,7 @@ module Knowledge
         return { embedded: 0, tokens: 0 } if embeddable.empty?
 
         texts = embeddable.map(&:content)
-        results = generator.call(texts: texts)
+        results = generate_embeddings(texts)
 
         if results.size != embeddable.size
           raise EmbeddingError,
@@ -155,6 +160,21 @@ module Knowledge
             fully_redacted: fully_redacted
           }
         }
+      end
+
+      def generate_embeddings(texts)
+        if @user_setting
+          executor = Knowledge::ProviderExecutor.new(
+            user_setting: @user_setting,
+            operation: :embedding,
+            knowledge_run: @knowledge_run
+          )
+          executor.execute do |_provider|
+            generator.call(texts: texts)
+          end
+        else
+          generator.call(texts: texts)
+        end
       end
 
       def log_completion(total_embedded, total_tokens, cost, duration)

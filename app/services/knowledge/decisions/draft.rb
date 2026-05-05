@@ -152,6 +152,38 @@ module Knowledge
       end
 
       def send_to_llm_in_process(prompt)
+        setting = effective_user_setting
+
+        if setting
+          executor = Knowledge::ProviderExecutor.new(
+            user_setting: setting,
+            operation: :chat,
+            knowledge_run: current_knowledge_run
+          )
+
+          executor.execute do |provider|
+            response = AgentHarness.send_message(prompt, **llm_request_options(provider))
+            parsed = parse_response(response)
+            unless parsed
+              raise AgentHarness::ProviderError.new(
+                "Provider #{provider} returned unparseable response"
+              )
+            end
+            parsed
+          end
+        else
+          send_to_llm_in_process_without_executor(prompt)
+        end
+      rescue Knowledge::ProviderExecutor::AllProvidersExhausted => e
+        Rails.logger.warn(
+          message: "knowledge.decisions.draft_all_providers_exhausted",
+          agent_run_id: agent_run.id,
+          error: e.message
+        )
+        nil
+      end
+
+      def send_to_llm_in_process_without_executor(prompt)
         chat_providers.each do |provider|
           response = AgentHarness.send_message(
             prompt,
@@ -183,9 +215,16 @@ module Knowledge
         parsed
       end
 
+      def effective_user_setting
+        agent_run.project&.effective_owner&.settings
+      end
+
+      def current_knowledge_run
+        @current_knowledge_run
+      end
+
       def chat_providers
-        owner = agent_run.project&.effective_owner
-        setting = owner&.settings
+        setting = effective_user_setting
         providers = setting ? Knowledge::ProviderSelector.for_chat(user_setting: setting) : []
 
         providers.presence || [ DEFAULT_PROVIDER ]
@@ -243,7 +282,7 @@ module Knowledge
       end
 
       def create_knowledge_run!
-        KnowledgeRun.create!(
+        @current_knowledge_run = KnowledgeRun.create!(
           project: agent_run.project,
           operation_type: "decision_drafting",
           status: "running"

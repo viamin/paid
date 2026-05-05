@@ -29,6 +29,14 @@ class KnowledgeRun < ApplicationRecord
     max_tokens || DEFAULT_MAX_TOKENS_PER_RUN
   end
 
+  def record_provider_attempt(provider)
+    attempt = {
+      "provider" => provider,
+      "attempted_at" => Time.current.iso8601
+    }
+    update!(provider_attempts: provider_attempts + [ attempt ])
+  end
+
   def ensure_proxy_token!
     return proxy_token if proxy_token.present?
 
