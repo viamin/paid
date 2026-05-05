@@ -75,9 +75,8 @@ module Knowledge
 
     def perform_search
       mode = @search_mode
-      provider_config = mode == "exact" ? nil : @project.knowledge_embedding_provider_configuration
 
-      if provider_config.nil?
+      if mode != "exact" && !@project.semantic_search_available?
         @search_mode = mode = "exact"
       end
 
@@ -112,6 +111,8 @@ module Knowledge
         @semantic_search_source = :user_key
       elsif config&.source == :platform_env
         @semantic_search_source = :platform_env
+      elsif @project.semantic_search_available?
+        @semantic_search_source = :available
       else
         @semantic_search_source = :none
       end

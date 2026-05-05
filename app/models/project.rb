@@ -330,10 +330,10 @@ class Project < ApplicationRecord
     Knowledge::ProviderConfiguration.for_embedding(project: self)
   end
 
-  # Returns true when a configured knowledge embedding provider can be
-  # resolved from either a user API key or the platform OpenAI env fallback.
+  # Returns true when at least one configured embedding provider can be
+  # resolved by the proxy-backed provider selection flow.
   def semantic_search_available?
-    knowledge_embedding_provider_configuration.present?
+    Knowledge::ProviderConfiguration.for_embedding_candidate_providers(project: self).present?
   end
 
   def trusted_github_user?(login)

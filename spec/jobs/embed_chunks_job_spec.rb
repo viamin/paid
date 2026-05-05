@@ -16,7 +16,7 @@ RSpec.describe EmbedChunksJob do
 
     it "skips the embedding pipeline when no provider is configured for the project" do
       allow(Knowledge::Embeddings::Pipeline).to receive(:call)
-      allow(project).to receive(:knowledge_embedding_provider_configuration).and_return(nil)
+      allow(project).to receive(:semantic_search_available?).and_return(false)
       allow(Project).to receive(:find).with(project.id).and_return(project)
 
       described_class.perform_now(project.id)
@@ -29,6 +29,17 @@ RSpec.describe EmbedChunksJob do
       owner = project.effective_owner
       owner.settings.update!(kb_embedding_provider: "openrouter", kb_embedding_fallback_providers: [ "openai" ])
       create(:provider_api_key, user: owner, api_service_type: "openrouter", api_key: "sk-openrouter")
+
+      described_class.perform_now(project.id)
+
+      expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(project: project)
+    end
+
+    it "runs the embedding pipeline when only a platform OpenAI credential is available" do
+      allow(Knowledge::Embeddings::Pipeline).to receive(:call)
+      owner = project.effective_owner
+      owner.settings.update!(kb_embedding_provider: "openai", kb_embedding_fallback_providers: [])
+      allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return("sk-platform")
 
       described_class.perform_now(project.id)
 

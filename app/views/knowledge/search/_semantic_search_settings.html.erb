@@ -21,6 +21,11 @@
             <span class="ml-2 text-sm text-gray-700">
               Using platform-provided <%= @semantic_search_provider_config.provider_label %> key
             </span>
+          <% when :available %>
+            <span class="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-blue-500"></span>
+            <span class="ml-2 text-sm text-gray-700">
+              Semantic search is available through the configured embedding provider.
+            </span>
           <% when :none %>
             <span class="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-yellow-500"></span>
             <span class="ml-2 text-sm text-yellow-700">No configured knowledge embedding provider is available. Only exact search is available.</span>

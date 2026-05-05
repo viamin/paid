@@ -52,6 +52,17 @@ RSpec.describe Knowledge::ProviderConfiguration do
       expect(config.source).to eq(:platform_env)
     end
 
+    it "uses the platform OpenAI key from Rails credentials when no user key exists" do
+      owner.settings.update!(kb_embedding_provider: "openai", kb_embedding_fallback_providers: [])
+      allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return("sk-platform")
+
+      config = described_class.for_embedding(project: project)
+
+      expect(config.provider).to eq("openai")
+      expect(config.api_key).to eq("sk-platform")
+      expect(config.source).to eq(:platform_env)
+    end
+
     it "ignores legacy embedding providers that are not OpenAI-compatible" do
       owner.settings.update_columns(
         kb_embedding_provider: "anthropic",

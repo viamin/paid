@@ -78,11 +78,11 @@ module Knowledge
           api_key_record: api_key_record,
           source: :user_key
         )
-      elsif provider == "openai" && ENV["OPENAI_API_KEY"].present?
+      elsif provider == "openai" && platform_openai_api_key.present?
         Result.new(
           provider: provider,
           provider_label: config.fetch(:label, provider.to_s.titleize),
-          api_key: ENV["OPENAI_API_KEY"],
+          api_key: platform_openai_api_key,
           api_base_url: api_base_url_for(provider, config),
           api_key_record: nil,
           source: :platform_env
@@ -114,7 +114,11 @@ module Knowledge
     end
 
     def platform_openai_api_key_available?
-      Rails.application.credentials.dig(:llm, :openai_api_key).present? || ENV["OPENAI_API_KEY"].present?
+      platform_openai_api_key.present?
+    end
+
+    def platform_openai_api_key
+      Rails.application.credentials.dig(:llm, :openai_api_key).presence || ENV["OPENAI_API_KEY"].presence
     end
 
     def log_unsupported_provider(provider)

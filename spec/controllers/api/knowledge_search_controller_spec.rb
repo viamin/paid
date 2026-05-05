@@ -109,6 +109,19 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
       )
     end
 
+    it "preserves semantic mode when only a platform OpenAI credential is available" do
+      owner = project.effective_owner
+      owner.settings.update!(kb_embedding_provider: "openai", kb_embedding_fallback_providers: [])
+      allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return("sk-platform")
+      allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "semantic", total: 0, took_ms: 0, exact_count: 0, semantic_count: 0 } })
+
+      get "/api/knowledge/search", params: { project_id: project.id, q: "test", mode: "semantic" }
+
+      expect(Knowledge::Search).to have_received(:call).with(
+        hash_including(project: project, query: "test", mode: "semantic")
+      )
+    end
+
     it "skips semantic provider resolution for exact mode" do
       owner = project.effective_owner
       create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-api")

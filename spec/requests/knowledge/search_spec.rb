@@ -221,6 +221,20 @@ RSpec.describe "Knowledge::Search" do
           hash_including(project: project, query: "test", mode: "hybrid", limit: 20)
         )
       end
+
+      it "keeps hybrid search enabled when only a platform OpenAI credential is available" do
+        owner = project.effective_owner
+        owner.settings.update!(kb_embedding_provider: "openai", kb_embedding_fallback_providers: [])
+        allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return("sk-platform")
+        allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "hybrid", total: 0, took_ms: 0, exact_count: 0, semantic_count: 0 } })
+
+        get project_knowledge_search_results_path(project), params: { q: "test", mode: "hybrid" }
+
+        expect(Knowledge::Search).to have_received(:call).with(
+          hash_including(project: project, query: "test", mode: "hybrid", limit: 20)
+        )
+        expect(response.body).not_to include("(mode: exact)")
+      end
     end
 
     context "when no API key is available" do

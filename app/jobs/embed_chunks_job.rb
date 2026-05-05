@@ -8,9 +8,8 @@ class EmbedChunksJob < ApplicationJob
 
   def perform(project_id = nil)
     project = project_id ? Project.find(project_id) : nil
-    provider_config = project&.knowledge_embedding_provider_configuration
 
-    if project && provider_config.nil?
+    if project && !project.semantic_search_available?
       Rails.logger.info(
         message: "knowledge.embed_chunks.skipped",
         project_id: project.id,
