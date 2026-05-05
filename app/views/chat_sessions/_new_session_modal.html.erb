@@ -23,28 +23,28 @@
           <%= form.select :mode,
                           options_for_select(ChatSession::MODES.map { |mode| [mode.titleize, mode] }, chat_session.mode),
                           {},
-                          class: "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200" %>
+                          class: "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100" %>
         </div>
         <div>
           <%= form.label :provider_id, "Provider", class: "mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300" %>
           <%= form.select :provider_id,
                           options_from_collection_for_select(available_providers, :id, :display_name),
                           { include_blank: "Default provider" },
-                          class: "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200" %>
+                          class: "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100" %>
         </div>
         <div>
           <%= form.label :model, class: "mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300" %>
           <%= form.select :model,
                           options_for_select(available_models.map { |model| ["#{model.display_name} (#{model.model_id})", model.model_id] }),
                           { include_blank: "Automatic" },
-                          class: "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200" %>
+                          class: "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100" %>
         </div>
         <div>
           <%= form.label :project_id, "Project", class: "mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300" %>
           <%= form.select :project_id,
                           options_from_collection_for_select(available_projects, :id, :name),
                           { include_blank: "No project" },
-                          class: "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200" %>
+                          class: "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100" %>
         </div>
       </div>
 
@@ -52,7 +52,7 @@
         <%= form.label :title, class: "mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300" %>
         <%= form.text_field :title,
                             placeholder: "Planning assistant for onboarding flow",
-                            class: "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200" %>
+                            class: "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500" %>
       </div>
 
       <div>
@@ -60,7 +60,7 @@
         <%= form.text_area :system_prompt,
                            rows: 4,
                            placeholder: "Optional advanced instructions for the session…",
-                           class: "w-full rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200" %>
+                           class: "w-full rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500" %>
       </div>
 
       <div class="flex items-center justify-end gap-3">

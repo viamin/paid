@@ -14,11 +14,12 @@ export default class extends Controller {
     // survives page navigations without a round-trip to the server.
     const stored = window.localStorage.getItem("theme_preference")
     if (stored && stored !== this.preferenceValue) {
-      this.preferenceValue = stored
+      this.preferenceValue = stored // triggers preferenceValueChanged → applyTheme
+    } else {
+      this.applyTheme()
     }
 
     this.mediaQuery.addEventListener("change", this.handleSystemChange)
-    this.applyTheme()
   }
 
   disconnect() {
@@ -48,7 +49,10 @@ export default class extends Controller {
 
     document.documentElement.classList.toggle("dark", dark)
     window.localStorage.setItem("theme_preference", preference)
-    this.persistToServer(preference)
+    if (this._lastPersisted !== preference) {
+      this._lastPersisted = preference
+      this.persistToServer(preference)
+    }
     this.updateIcons(preference, dark)
   }
 
