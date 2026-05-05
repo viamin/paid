@@ -32,9 +32,11 @@ module Dashboard
     end
 
     def broadcast_active_runs
-      active_runs = account_agent_runs.active.includes(:project, :issue, :model_selection)
+      active_runs = account_agent_runs.active.includes(:provider, :issue, :model_selection, project: [ :created_by, :account ])
         .order("agent_runs.created_at DESC")
         .limit(20)
+        .to_a
+      AgentRun.preload_final_provider_records(active_runs)
 
       Turbo::StreamsChannel.broadcast_update_to(
         stream_name,

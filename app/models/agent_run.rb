@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
-  attr_accessor :preloaded_final_provider_record
+  attr_accessor :preloaded_final_provider_record, :preloaded_final_provider_record_loaded
 
   MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500
   PROVIDER_ATTEMPT_SECRET_PATTERNS = [
@@ -307,6 +307,7 @@ class AgentRun < ApplicationRecord
       final_identifier = run.final_provider.presence
       next if final_identifier.blank?
 
+      run.preloaded_final_provider_record_loaded = true
       run.preloaded_final_provider_record =
         if run.provider.present? && run.provider.matches_identifier?(final_identifier)
           run.provider

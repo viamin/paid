@@ -83,8 +83,7 @@ module ApplicationHelper
     final_identifier = run.final_provider.presence
 
     if final_identifier.present?
-      provider = run.preloaded_final_provider_record
-      provider ||= run.provider if run.provider.present? && run.provider.matches_identifier?(final_identifier)
+      provider = final_provider_display_record(run, final_identifier)
       return provider.display_name if provider.present?
 
       return missing_provider_label if Provider.routing_key?(final_identifier)
@@ -99,17 +98,6 @@ module ApplicationHelper
 
     provider_display_label(identifier)
   end
-
-  private
-
-  def provider_display_label(identifier)
-    provider_key = Provider.provider_key_for_agent_type(identifier)
-    return identifier.to_s.titleize unless Provider.supported_provider_key?(provider_key)
-
-    Provider.display_name_for(provider_key)
-  end
-
-  public
 
   PAID_STATE_STYLES = {
     "new" => { bg: "bg-gray-100", text: "text-gray-700", label: "New" },
@@ -360,6 +348,20 @@ module ApplicationHelper
   end
 
   private
+
+  def provider_display_label(identifier)
+    provider_key = Provider.provider_key_for_agent_type(identifier)
+    return identifier.to_s.titleize unless Provider.supported_provider_key?(provider_key)
+
+    Provider.display_name_for(provider_key)
+  end
+
+  def final_provider_display_record(run, final_identifier)
+    return run.provider if run.provider.present? && run.provider.matches_identifier?(final_identifier)
+    return run.preloaded_final_provider_record if run.preloaded_final_provider_record_loaded
+
+    run.final_provider_record
+  end
 
   def create_pr_context(run)
     if run.issue.present?
