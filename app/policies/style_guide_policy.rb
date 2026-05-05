@@ -14,7 +14,7 @@ class StyleGuidePolicy < ApplicationPolicy
   end
 
   def create?
-    return false if record.global?
+    return false if global_record?
 
     has_any_account_role?(:owner, :admin)
   end
@@ -25,14 +25,14 @@ class StyleGuidePolicy < ApplicationPolicy
 
   def update?
     return false unless visible?
-    return false if record.global?
+    return false if global_record?
 
     has_any_account_role?(:owner, :admin)
   end
 
   def destroy?
     return false unless visible?
-    return false if record.global?
+    return false if global_record?
 
     has_account_role?(:owner)
   end
@@ -45,12 +45,18 @@ class StyleGuidePolicy < ApplicationPolicy
 
   def visible?
     return false unless user.present?
-    return true if record.global?
+    return true if global_record?
 
     user_in_account?
   end
 
+  def global_record?
+    record.respond_to?(:global?) && record.global?
+  end
+
   def account_for_record
+    return user&.account if record == StyleGuide
+
     record.account || record.project&.account
   end
 
