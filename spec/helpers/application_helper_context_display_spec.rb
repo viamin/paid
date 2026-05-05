@@ -213,15 +213,22 @@ RSpec.describe ApplicationHelper do
         expect(result).to include("title=")
       end
 
-      it "shows 'Creating issue...' when running without custom prompt" do
+      it "shows 'Creating issue...' when in progress without custom prompt" do
         run = stub_run("create_issue_goal?": true, "running?": true)
         result = helper.agent_run_context_display(run)
 
         expect(result).to include("Creating issue")
       end
 
-      it "shows placeholder when not running and no context available" do
-        run = stub_run("create_issue_goal?": true, "running?": false)
+      it "shows 'Creating issue...' when paused without custom prompt" do
+        run = stub_run("create_issue_goal?": true, "running?": false, "finished?": false)
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include("Creating issue")
+      end
+
+      it "shows placeholder when finished and no context available" do
+        run = stub_run("create_issue_goal?": true, "finished?": true)
         result = helper.agent_run_context_display(run)
 
         expect(result).to include("-")

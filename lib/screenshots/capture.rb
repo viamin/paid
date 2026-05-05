@@ -217,6 +217,7 @@ module Screenshots
           providers_attempted: [], final_provider: nil, provider_switches: 0,
           iterations: 0, cost_cents: 0,
           tokens_input: 0, tokens_output: 0,
+          trigger_type: "automatic",
           token_limit_status: nil, cross_repo_issues: []
         )
         agent_run.save!

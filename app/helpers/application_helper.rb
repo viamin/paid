@@ -370,7 +370,7 @@ module ApplicationHelper
       else
         { type: :placeholder }
       end
-    elsif run.running?
+    elsif !run.finished?
       { type: :in_progress }
     else
       { type: :placeholder }
