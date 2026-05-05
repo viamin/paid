@@ -122,6 +122,21 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("42s")
       end
 
+      it "shows knowledge provider health and pipeline metrics" do
+        create(:provider_state, :rate_limited, user: user, provider_name: user.settings.kb_embedding_provider)
+        create(:provider_state, user: user, provider_name: user.settings.kb_chat_provider, failure_count: 2)
+        create(:knowledge_run, :completed, project: project, operation_type: "embedding", final_provider: "openai")
+        create(:knowledge_run, :failed, :decision_drafting, project: project, provider_attempts: [ { "provider" => "claude" } ])
+
+        get dashboard_path
+
+        expect(response.body).to include("Provider Health")
+        expect(response.body).to include("Unavailable")
+        expect(response.body).to include("LLM Pipeline Metrics (Last 30 Days)")
+        expect(response.body).to include("Decision Drafting")
+        expect(response.body).to include("Embedding")
+      end
+
       it "shows quality-paused projects on the dashboard" do
         project.update!(
           name: "Paused Project",

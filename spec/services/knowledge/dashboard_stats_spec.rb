@@ -20,6 +20,40 @@ RSpec.describe Knowledge::DashboardStats do
         expect(stats[:stale_percent]).to eq(0)
         expect(stats[:artifacts_by_type]).to be_empty
         expect(stats[:last_collection_at]).to be_nil
+        expect(stats[:operational_status]).to eq("healthy")
+        expect(stats[:provider_health][:embedding_available]).to be true
+        expect(stats[:provider_health][:chat_available]).to be true
+      end
+    end
+
+    context "with unavailable provider states" do
+      let(:owner) { create(:user, account: account) }
+      let(:project) do
+        create(:project,
+          account: account,
+          created_by: owner,
+          github_token: create(:github_token, account: account, created_by: owner))
+      end
+
+      before do
+        project
+        create(:provider_state, :rate_limited, user: owner, provider_name: owner.settings.kb_embedding_provider)
+        create(:provider_state, :circuit_open, user: owner, provider_name: owner.settings.kb_chat_provider)
+      end
+
+      it "reports provider health and degraded operational status" do
+        embedding = stats[:provider_health][:embedding].first
+        chat = stats[:provider_health][:chat].first
+
+        expect(embedding[:provider]).to eq(owner.settings.kb_embedding_provider)
+        expect(embedding[:available]).to be false
+        expect(embedding[:rate_limited]).to be true
+
+        expect(chat[:provider]).to eq(owner.settings.kb_chat_provider)
+        expect(chat[:available]).to be false
+        expect(chat[:circuit_state]).to eq("open")
+
+        expect(stats[:operational_status]).to eq("unavailable")
       end
     end
 
@@ -83,9 +117,57 @@ RSpec.describe Knowledge::DashboardStats do
       end
     end
 
+    context "with pipeline metrics" do
+      before do
+        create(:knowledge_run, :completed,
+          project: project,
+          operation_type: "embedding",
+          final_provider: "openai",
+          created_at: 20.minutes.ago,
+          updated_at: 10.minutes.ago)
+        create(:knowledge_run, :failed,
+          project: project,
+          operation_type: "embedding",
+          provider_attempts: [ { "provider" => "azure_openai" } ],
+          created_at: 9.minutes.ago,
+          updated_at: 5.minutes.ago)
+        create(:knowledge_run, :completed, :decision_drafting,
+          project: project,
+          final_provider: "claude",
+          created_at: 7.minutes.ago,
+          updated_at: 4.minutes.ago)
+      end
+
+      it "summarizes success rate, latency, and provider distribution by operation" do
+        embedding = stats[:pipeline_metrics]["embedding"]
+        drafting = stats[:pipeline_metrics]["decision_drafting"]
+
+        expect(embedding[:total_runs]).to eq(2)
+        expect(embedding[:successful_runs]).to eq(1)
+        expect(embedding[:failed_runs]).to eq(1)
+        expect(embedding[:success_rate]).to eq(50.0)
+        expect(embedding[:avg_duration_seconds]).to eq(420.0)
+        expect(embedding[:provider_distribution]).to contain_exactly(
+          hash_including(provider: "azure_openai", run_count: 1, success_rate: 0.0, avg_duration_seconds: 240.0),
+          hash_including(provider: "openai", run_count: 1, success_rate: 100.0, avg_duration_seconds: 600.0)
+        )
+
+        expect(drafting[:total_runs]).to eq(1)
+        expect(drafting[:success_rate]).to eq(100.0)
+        expect(drafting[:provider_distribution]).to contain_exactly(
+          hash_including(provider: "claude", run_count: 1, success_rate: 100.0)
+        )
+      end
+    end
+
     context "with no knowledge runs" do
       it "returns empty token usage summary" do
         expect(stats[:token_usage_summary]).to be_empty
+      end
+
+      it "returns empty pipeline metrics" do
+        expect(stats[:pipeline_metrics]["embedding"]).to include(total_runs: 0, success_rate: 0.0)
+        expect(stats[:pipeline_metrics]["decision_drafting"]).to include(total_runs: 0, success_rate: 0.0)
       end
     end
 

@@ -3,6 +3,7 @@
 class KnowledgeRun < ApplicationRecord
   STATUSES = %w[pending running completed failed].freeze
   ACTIVE_STATUSES = %w[pending running].freeze
+  FINISHED_STATUSES = %w[completed failed].freeze
   OPERATION_TYPES = %w[embedding decision_drafting].freeze
   TOKEN_LIMIT_STATUSES = AgentRun::TOKEN_LIMIT_STATUSES
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000
@@ -20,6 +21,7 @@ class KnowledgeRun < ApplicationRecord
   validates :total_tokens, numericality: { greater_than_or_equal_to: 0 }
 
   scope :active, -> { where(status: ACTIVE_STATUSES) }
+  scope :finished, -> { where(status: FINISHED_STATUSES) }
 
   def active?
     ACTIVE_STATUSES.include?(status)
@@ -27,6 +29,10 @@ class KnowledgeRun < ApplicationRecord
 
   def effective_max_tokens_per_run
     max_tokens || DEFAULT_MAX_TOKENS_PER_RUN
+  end
+
+  def effective_provider
+    final_provider.presence || provider_attempts.last&.fetch("provider", nil) || "unknown"
   end
 
   def record_provider_attempt(provider)
@@ -50,6 +56,14 @@ class KnowledgeRun < ApplicationRecord
     end
 
     proxy_token
+  end
+
+  def complete!
+    update!(status: "completed") if active?
+  end
+
+  def fail!
+    update!(status: "failed") if active?
   end
 
   private
