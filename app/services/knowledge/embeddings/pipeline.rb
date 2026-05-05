@@ -159,12 +159,12 @@ module Knowledge
       end
 
       def generate_embeddings(texts)
-        # NOTE: ProviderExecutor fallback is not wired here because
-        # Generate#call does not accept a provider parameter — the generator
-        # always targets a single pre-configured embedding endpoint.
-        # Wrapping a fixed-provider call in a multi-provider loop would just
-        # retry the same backend. Fallback support will be added when
-        # Generate#call gains provider-aware routing.
+        # Known limitation: ProviderExecutor fallback is not wired here.
+        # Generate#call targets a single pre-configured embedding endpoint and
+        # does not accept a provider parameter — wrapping it in a multi-provider
+        # loop would just retry the same backend. Embedding provider fallback
+        # requires upstream support in agent-harness for provider-aware
+        # embedding routing (Generate#call accepting a provider argument).
         generator.call(texts: texts)
       end
 
