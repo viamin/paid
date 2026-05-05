@@ -10,13 +10,6 @@ class DashboardController < ApplicationController
     @time_range = valid_time_range
     @status_filter = valid_status_filter
     @goal_filter = valid_goal_filter
-    @stats = Dashboard::Stats.call(
-      account: current_account,
-      time_range: @time_range,
-      status_filter: @status_filter,
-      goal_filter: @goal_filter
-    )
-    @knowledge_stats = Knowledge::DashboardStats.call(account: current_account)
     @live_stats = Dashboard::LiveStats.call(account: current_account)
     @queue_health = Scaling::QueueMonitor.call(account: current_account)
     @queue_preview = Dashboard::QueuePreview.call(user: current_user)
@@ -38,7 +31,9 @@ class DashboardController < ApplicationController
       time_range: @time_range,
       only: Dashboard::Stats::METRICS_SECTIONS
     )
-    render partial: "dashboard/metrics", locals: { stats: @stats, account: current_account, time_range: @time_range }
+    @knowledge_stats = Knowledge::DashboardStats.call(account: current_account)
+    render partial: "dashboard/metrics",
+      locals: { stats: @stats, account: current_account, time_range: @time_range, knowledge_stats: @knowledge_stats }
   end
 
   def performance

@@ -44,26 +44,20 @@ RSpec.describe "Dashboard" do
         expect(mobile_settings_link.text.strip).to eq("Settings")
       end
 
-      it "shows the run phase breakdown section" do
-        get dashboard_path
-
-        expect(response.body).to include("Run Phase Breakdown")
-        expect(response.body).to include("Average End-to-End Composition")
-        expect(response.body).to include('aria-label="Average end-to-end composition by phase"')
-      end
-
-      it "shows the stacked daily agent runs chart" do
-        create(:agent_run, :completed, project: project, created_at: 1.day.ago)
-        create(:agent_run, :failed, project: project, created_at: 1.day.ago)
-
+      it "includes lazy metrics and performance frames" do
         get dashboard_path
 
         doc = Nokogiri::HTML(response.body)
-        chart = doc.at_css("div#daily-runs-chart")
+        metrics_frame = doc.at_css("turbo-frame#dashboard-metrics")
+        performance_frame = doc.at_css("turbo-frame#dashboard-performance")
 
-        expect(response.body).to include("Agent Runs per Day")
-        expect(response.body).to include("Completed runs are stacked above failed runs across the last 30 days.")
-        expect(chart).to be_present
+        expect(metrics_frame).to be_present
+        expect(metrics_frame["src"]).to eq(dashboard_metrics_path(time_range: "cumulative"))
+        expect(metrics_frame.text).to include("Loading metrics")
+
+        expect(performance_frame).to be_present
+        expect(performance_frame["src"]).to eq(dashboard_performance_path(time_range: "cumulative", status: "all", goal: "all"))
+        expect(performance_frame.text).to include("Loading performance metrics")
       end
 
       it "shows live metrics section with active runs" do
@@ -279,6 +273,22 @@ RSpec.describe "Dashboard" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("dashboard-metrics")
       expect(response.body).to include("Run Volume")
+    end
+
+    it "renders the phase breakdown, chart, and knowledge widget inside the frame" do
+      project = create(:project, account: account)
+      create(:agent_run, :completed, project: project, created_at: 1.day.ago)
+      create(:agent_run, :failed, project: project, created_at: 1.day.ago)
+
+      get dashboard_metrics_path(time_range: "7d")
+
+      doc = Nokogiri::HTML(response.body)
+      chart = doc.at_css("div#daily-runs-chart")
+
+      expect(response.body).to include("Agent Runs per Day")
+      expect(response.body).to include("Run Phase Breakdown")
+      expect(response.body).to include("Knowledge Base")
+      expect(chart).to be_present
     end
 
     it "defaults to cumulative when time_range is invalid" do

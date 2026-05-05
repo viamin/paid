@@ -2,6 +2,8 @@
 
 module Knowledge
   class DashboardStats
+    CACHE_TTL = 5.minutes
+
     attr_reader :account
 
     def initialize(account:)
@@ -13,6 +15,12 @@ module Knowledge
     end
 
     def call
+      Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { build_stats }
+    end
+
+    private
+
+    def build_stats
       {
         projects_indexed: projects_indexed,
         projects_total: projects_total,
@@ -26,8 +34,6 @@ module Knowledge
         usage_by_goal: usage_by_goal
       }
     end
-
-    private
 
     def artifacts
       @artifacts ||= KnowledgeArtifact
@@ -104,6 +110,10 @@ module Knowledge
         .group(:goal)
         .sum(:artifact_count)
         .sort_by { |_, v| -v }
+    end
+
+    def cache_key
+      "knowledge/dashboard_stats/#{account.id}"
     end
   end
 end

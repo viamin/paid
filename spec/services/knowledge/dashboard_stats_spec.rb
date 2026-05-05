@@ -6,6 +6,14 @@ RSpec.describe Knowledge::DashboardStats do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
 
+  around do |example|
+    original_store = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    example.run
+  ensure
+    Rails.cache = original_store
+  end
+
   describe ".call" do
     subject(:stats) { described_class.call(account: account) }
 
@@ -125,6 +133,24 @@ RSpec.describe Knowledge::DashboardStats do
 
       it "returns empty usage by goal" do
         expect(stats[:usage_by_goal]).to be_empty
+      end
+    end
+
+    context "with caching" do
+      let(:version) { create(:project_version, project: project) }
+      let(:run) { create(:collector_run, :completed, project_version: version) }
+
+      it "reuses cached results until the cache is cleared" do
+        first = described_class.call(account: account)
+        create(:knowledge_artifact, collector_run: run, project: project, artifact_type: "route")
+
+        cached = described_class.call(account: account)
+        Rails.cache.clear
+        refreshed = described_class.call(account: account)
+
+        expect(first[:total_artifacts]).to eq(0)
+        expect(cached[:total_artifacts]).to eq(0)
+        expect(refreshed[:total_artifacts]).to eq(1)
       end
     end
 

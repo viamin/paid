@@ -64,8 +64,13 @@
       Cumulative / Periodic Metrics
     </summary>
     <div class="mt-4">
-      <%= render "dashboard/metrics", stats: @stats, account: current_account, time_range: @time_range %>
-      <%= render "dashboard/knowledge_widget", knowledge_stats: @knowledge_stats %>
+      <%= turbo_frame_tag "dashboard-metrics",
+            src: dashboard_metrics_path(time_range: @time_range),
+            loading: :lazy do %>
+        <div class="rounded-lg border border-gray-200 bg-white px-4 py-6 text-sm text-gray-500 shadow-sm">
+          Loading metrics…
+        </div>
+      <% end %>
     </div>
   </details>
 
@@ -75,7 +80,13 @@
       Performance
     </summary>
     <div class="mt-4">
-      <%= render "dashboard/performance", stats: @stats, time_range: @time_range, status_filter: @status_filter, goal_filter: @goal_filter %>
+      <%= turbo_frame_tag "dashboard-performance",
+            src: dashboard_performance_path(time_range: @time_range, status: @status_filter, goal: @goal_filter),
+            loading: :lazy do %>
+        <div class="rounded-lg border border-gray-200 bg-white px-4 py-6 text-sm text-gray-500 shadow-sm">
+          Loading performance metrics…
+        </div>
+      <% end %>
     </div>
   </details>
 
