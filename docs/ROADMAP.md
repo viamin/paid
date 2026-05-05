@@ -2,7 +2,7 @@
 
 This document outlines the phased implementation plan for Paid. Each phase builds on the previous, delivering usable functionality at each step while progressing toward the complete vision.
 
-**Current Status**: Phase 3 (Scale) in progress as of 2026-05-05. Sections 3.1–3.3, 3.4, and 3.6 are complete; 3.5 and 3.7 are partially done. Phase 3.5 (Completion & Hardening) is substantially complete — sections 3.5.1–3.5.3, 3.5.5, 3.5.7–3.5.19 are done; 3.5.4 (Performance Fundamentals) has partial progress; 3.5.6 (Provider Quota Tracking) Steps 1–2 are done, Steps 3–6 remain. MCP server support, screenshot visual regression, agent run enhancements, self-healing exception handling, and knowledge provider resilience shipped in the latest cycle.
+**Current Status**: Phase 3 (Scale) in progress as of 2026-05-05. Sections 3.1–3.3, 3.4, and 3.6 are complete; 3.5 and 3.7 are partially done. Phase 3.5 (Completion & Hardening) is substantially complete — sections 3.5.1–3.5.3, 3.5.5, 3.5.7–3.5.17 are done; 3.5.4 (Performance Fundamentals) has partial progress; 3.5.6 (Provider Quota Tracking) Steps 1–2 are done, Steps 3–6 remain. MCP server support, screenshot visual regression, agent run enhancements, self-healing exception handling, and knowledge provider resilience shipped in the latest cycle.
 
 ## Phase Overview
 
@@ -1653,7 +1653,7 @@ Phase 4 (AI-Native Evolution) ────────────────�
 
 1. Clone this repository
 2. Review [ARCHITECTURE.md](./ARCHITECTURE.md) for system design
-3. Review [db/structure.sql](../../db/structure.sql) for the canonical database schema
+3. Review [db/structure.sql](../db/structure.sql) for the canonical database schema
 4. Start with Phase 1.1: Rails Application Skeleton
 5. Use the task lists above as implementation checklists
 
