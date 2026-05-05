@@ -23,6 +23,7 @@
       </span>
     </div>
     <div class="flex items-center space-x-3">
+      <%= link_to "Business Context", project_context_intake_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
       <% if policy(project).update? %>
         <%= link_to "Recommendations", project_knowledge_recommendations_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
       <% end %>

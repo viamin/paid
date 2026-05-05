@@ -186,6 +186,27 @@
   </div>
 
   <div data-show-actions="<%= policy(@project).run_agent? %>">
+    <% if policy(@project).show? %>
+      <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:px-6">
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <h2 class="text-lg font-medium text-gray-900">Project Shortcuts</h2>
+              <p class="mt-1 text-sm text-gray-500">Jump to the project-specific context and configuration surfaces that shape agent output.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-3">
+              <%= link_to "Business Context", project_context_intake_path(@project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+              <% if policy(@project).update? %>
+                <%= link_to "Automation Settings", edit_project_path(@project, anchor: "automation"), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+                <%= link_to "Labels", edit_project_path(@project, anchor: "labels"), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+                <%= link_to "MCP Servers", edit_project_path(@project, anchor: "mcp-servers"), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+              <% end %>
+            </div>
+          </div>
+        </div>
+      </div>
+    <% end %>
+
     <%= render "projects/stats", project: @project, budgets: @cost_budgets %>
     <%= turbo_frame_tag dom_id(@project, :cost_snapshot), src: project_cost_snapshot_path(@project), loading: :lazy do %>
       <div class="mt-4 h-14 animate-pulse rounded-lg bg-gray-100"></div>
