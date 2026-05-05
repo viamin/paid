@@ -25,6 +25,7 @@ module Issues
     NoRunnableProviderError = Class.new(StandardError)
 
     PAID_READY_LABEL = "paid-ready"
+    BLOCKING_PARENT_REVIEW_SOURCE = "blocking_parent_issue_review"
 
     # Returns the Set of issue IDs from +displayed_issues+ that are
     # currently eligible for auto-picking (per-issue criteria only;
@@ -41,6 +42,8 @@ module Issues
     end
 
     def call
+      sync_blocking_parent_review_notifications if should_sync_blocking_parent_reviews?
+
       result = strategy.evaluate(build_context)
       decision = result.decisions.first
       return nil if decision.nil? || decision.type == "noop"
@@ -107,6 +110,74 @@ module Issues
 
     def strategy
       @strategy ||= Automation::Strategies::AutoPick.new
+    end
+
+    def should_sync_blocking_parent_reviews?
+      @project.auto_pick_enabled? && !@project.quality_paused?
+    end
+
+    def sync_blocking_parent_review_notifications
+      review_issues = Automation::Strategies::AutoPick::DefaultCandidateSource
+        .review_required_parent_scope(@project)
+        .includes(:sub_issues)
+        .to_a
+
+      review_issues.each { |issue| publish_blocking_parent_review_notification(issue) }
+
+      unresolved_blocking_parent_notifications(review_issues.map(&:id)).find_each do |notification|
+        Notifications::Resolve.call(
+          account: notification.account,
+          user: notification.user,
+          source: BLOCKING_PARENT_REVIEW_SOURCE,
+          subject: notification.subject
+        )
+      end
+    end
+
+    def publish_blocking_parent_review_notification(issue)
+      open_child_numbers = issue.sub_issues
+        .select { |sub_issue| !sub_issue.is_pull_request? && sub_issue.github_state == "open" }
+        .map(&:github_number)
+        .sort
+
+      blocking_issue_count = IssueDependency.joins(:issue)
+        .where(depends_on_issue: issue)
+        .where(issues: { project_id: @project.id, github_state: "open", is_pull_request: false })
+        .distinct
+        .count(:issue_id)
+
+      Notifications::Publish.call(
+        account: @project.account,
+        user: @project.effective_owner,
+        source: BLOCKING_PARENT_REVIEW_SOURCE,
+        subject: issue,
+        severity: :warning,
+        title: "Parent issue ##{issue.github_number} is blocking auto-pick",
+        description: "Open child issues: #{open_child_numbers.map { |n| "##{n}" }.join(", ")}. " \
+          "Review close-out work so #{blocking_issue_count} blocked issue#{'s' unless blocking_issue_count == 1} can move forward.",
+        nav_section: "dashboard",
+        action_url: "/projects/#{@project.id}",
+        metadata: {
+          issue_number: issue.github_number,
+          open_child_issue_numbers: open_child_numbers,
+          blocking_issue_count: blocking_issue_count
+        }
+      )
+    end
+
+    def unresolved_blocking_parent_notifications(active_issue_ids)
+      scope = Notification.where(
+        account: @project.account,
+        user: @project.effective_owner,
+        source: BLOCKING_PARENT_REVIEW_SOURCE,
+        subject_type: "Issue",
+        subject_id: @project.issues.select(:id),
+        resolved_at: nil
+      )
+
+      return scope if active_issue_ids.empty?
+
+      scope.where.not(subject_id: active_issue_ids)
     end
 
     def build_context
