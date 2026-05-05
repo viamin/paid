@@ -686,6 +686,75 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
+  describe "#decomposition_instructions_for" do
+    before do
+      allow(Prompt).to receive(:resolve).and_return(nil)
+    end
+
+    it "returns decomposition instructions when scope analysis triggers decomposition" do
+      large_body = <<~TEXT
+        ## Feature: User Notification System
+
+        Redesign the notification system to support multiple channels.
+
+        ### Requirements
+        1. Create database migrations for notification preferences
+        2. Build service layer for dispatching notifications
+        3. Add API endpoints for managing preferences
+        4. Build dashboard UI for notification history
+        5. Add background jobs for async delivery
+        6. Implement caching for notification templates
+      TEXT
+      decompose_issue = create(:issue, project: project, body: large_body)
+      run = create(:agent_run, :create_issue_goal, project: project, issue: decompose_issue)
+
+      result = activity.send(:decomposition_instructions_for, run)
+
+      expect(result).to include("Feature Decomposition")
+      expect(result).to include("multi-issue-plan-start")
+    end
+
+    it "returns empty string when scope analysis does not trigger decomposition" do
+      small_issue = create(:issue, project: project, body: "Fix the login button color")
+      run = create(:agent_run, :create_issue_goal, project: project, issue: small_issue)
+
+      result = activity.send(:decomposition_instructions_for, run)
+
+      expect(result).to eq("")
+    end
+
+    it "returns empty string when issue has no-decompose label" do
+      large_body = <<~TEXT
+        Redesign the notification system with models, services, controllers,
+        views, background jobs, caching, and authentication. Step 1: create
+        migrations. Step 2: build services. Step 3: add API endpoints.
+      TEXT
+      no_decompose_issue = create(:issue, project: project, body: large_body, labels: [ "no-decompose" ])
+      run = create(:agent_run, :create_issue_goal, project: project, issue: no_decompose_issue)
+
+      result = activity.send(:decomposition_instructions_for, run)
+
+      expect(result).to eq("")
+    end
+
+    it "returns empty string when issue has no body" do
+      no_body_issue = create(:issue, project: project, body: nil)
+      run = create(:agent_run, :create_issue_goal, project: project, issue: no_body_issue)
+
+      result = activity.send(:decomposition_instructions_for, run)
+
+      expect(result).to eq("")
+    end
+
+    it "returns empty string when agent run has no issue" do
+      run = create(:agent_run, :create_issue_goal, project: project, issue: nil)
+
+      result = activity.send(:decomposition_instructions_for, run)
+
+      expect(result).to eq("")
+    end
+  end
+
   describe "A/B test goal prompt assignment" do
     it "assigns a running test before rendering the issue-goal prompt" do
       run = create(:agent_run, :create_issue_goal, project: project)

@@ -100,6 +100,7 @@ module Automation
             eligible_scope(project)
               .order(
                 Arel.sql("#{priority_label_order_sql(project)} ASC"),
+                Arel.sql("#{leaf_node_order_sql(project)} ASC"),
                 Arel.sql("issues.github_number ASC")
               )
               .first
@@ -243,6 +244,24 @@ module Automation
           # P3/unlabeled, and P3 beats unlabeled. Label names are
           # interpolated via +connection.quote+ to keep the CASE safe
           # for use with +Arel.sql+.
+          # Leaf-node preference: issues that no other open issue depends on
+          # sort first (rank 1). Issues that block other open issues sort
+          # second (rank 2). This ensures auto-pick prefers unblocked leaf
+          # issues from dependency trees, producing small focused PRs that
+          # unblock downstream work when merged.
+          def leaf_node_order_sql(project)
+            <<~SQL.squish
+              CASE WHEN EXISTS (
+                SELECT 1 FROM issue_dependencies id_dep
+                JOIN issues dep_issue ON dep_issue.id = id_dep.issue_id
+                WHERE id_dep.depends_on_issue_id = issues.id
+                  AND dep_issue.project_id = #{Issue.connection.quote(project.id)}
+                  AND dep_issue.github_state = 'open'
+                  AND dep_issue.is_pull_request = FALSE
+              ) THEN 2 ELSE 1 END
+            SQL
+          end
+
           def priority_label_order_sql(project)
             effective = project.effective_priority_labels
             conn = Issue.connection

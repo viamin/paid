@@ -1938,7 +1938,51 @@ module Activities
       - POST $GITHUB_API_URL/repos/{{repo}}/issues/{number}/labels — add labels
 
       Do NOT push code or create a pull request. Only create the GitHub issue.
+
+      {{decomposition_instructions}}
     AUGMENTED
+
+    NO_DECOMPOSE_LABEL = "no-decompose"
+
+    DECOMPOSITION_INSTRUCTIONS = <<~'INSTRUCTIONS'
+      ## Feature Decomposition
+
+      The feature request you are analyzing is large enough to benefit from decomposition
+      into multiple smaller, focused issues. Instead of creating a single large issue,
+      you should:
+
+      1. Create a main tracking issue describing the overall feature
+      2. Output a structured decomposition plan as a JSON array wrapped in HTML comment markers
+
+      The decomposition plan should break the feature into small, focused sub-issues that
+      each produce a single PR. Order them so foundational work (data model, migrations)
+      comes before dependent work (services, controllers, views).
+
+      Each sub-issue must declare its dependencies using zero-based indices into the plan array.
+
+      Output format — place this AFTER your main issue creation:
+
+      <!-- parent-issue: PARENT_ISSUE_NUMBER -->
+      <!-- multi-issue-plan-start -->
+      [
+        {"title": "Add data model for feature X", "body": "Create migrations and models...", "dependencies": []},
+        {"title": "Implement service layer for X", "body": "Build service objects...", "dependencies": [0]},
+        {"title": "Add API endpoints for X", "body": "Create controller actions...", "dependencies": [1]},
+        {"title": "Build UI views for X", "body": "Add view components...", "dependencies": [2]}
+      ]
+      <!-- multi-issue-plan-end -->
+
+      Replace PARENT_ISSUE_NUMBER with the GitHub issue number of the main tracking issue
+      you created. Each task's `dependencies` array contains indices of tasks that must be
+      completed first.
+
+      Rules:
+      - Each sub-issue should be scoped to a single focused PR
+      - Dependencies must form a valid DAG (no cycles)
+      - Include clear acceptance criteria in each sub-issue body
+      - Maximum 20 sub-issues
+      - Use `Depends on #N` syntax in sub-issue bodies for human readability
+    INSTRUCTIONS
 
     REVIEW_GOAL_PROMPT_SLUG = "goal.review_pull_request"
 
@@ -2181,7 +2225,13 @@ module Activities
         prompt = inject_knowledge_into_prompt(prompt, agent_run.issue, agent_run.project, agent_run)
       end
 
-      vars = { base_prompt: prompt, repo: validated_repo_name(agent_run) }
+      decomposition = decomposition_instructions_for(agent_run)
+
+      vars = {
+        base_prompt: prompt,
+        repo: validated_repo_name(agent_run),
+        decomposition_instructions: decomposition
+      }
 
       rendered = resolve_and_persist_goal_prompt(
         agent_run: agent_run,
@@ -2191,6 +2241,24 @@ module Activities
       )
 
       maybe_assign_ab_test_variant(agent_run, ISSUE_GOAL_PROMPT_SLUG, rendered, vars)
+    end
+
+    def decomposition_instructions_for(agent_run)
+      issue = agent_run.issue
+      return "" unless issue&.body.present?
+      return "" if issue.has_label?(NO_DECOMPOSE_LABEL)
+
+      scope_result = ScopeAnalysis::Analyze.call(text: issue.body)
+      return "" unless scope_result.should_decompose?
+
+      logger.info(
+        message: "agent_execution.decomposition_instructions_injected",
+        agent_run_id: agent_run.id,
+        confidence: scope_result.confidence,
+        sub_components: scope_result.sub_components
+      )
+
+      DECOMPOSITION_INSTRUCTIONS
     end
 
     def augment_prompt_for_review_goal(agent_run, prompt)
