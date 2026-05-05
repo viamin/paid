@@ -323,11 +323,18 @@ class ProvidersController < ApplicationController
 
   def load_index_context
     @providers = policy_scope(Provider).ordered
-    @provider_states = current_user.provider_states.index_by(&:provider_name)
+    @provider_states = cached_provider_states
     @user_setting = current_user.settings
-    @enabled_agent_providers = enabled_agent_provider_identifiers
+
+    # Derive enabled/fallback identifiers from the already-loaded @providers
+    # collection to avoid 2 extra queries.
+    executable_keys = ProviderSupport.container_executable_provider_keys
+    enabled_providers = @providers.select { |p| p.enabled_for_agent_runs? && executable_keys.include?(p.provider_key) }
+    fallback_providers = @providers.select { |p| p.enabled_for_fallback? && executable_keys.include?(p.provider_key) }
+
+    @enabled_agent_providers = UserSetting.provider_identifiers_for(enabled_providers, identifiers: true)
     @run_enabled_providers = run_enabled_providers_in_identifier_order(@enabled_agent_providers)
-    @fallback_candidate_providers = fallback_candidate_provider_identifiers
+    @fallback_candidate_providers = UserSetting.provider_identifiers_for(fallback_providers, identifiers: true)
     @default_provider_identifier = @user_setting.default_provider_identifier
     @goal_provider_labels = {
       "create_pr" => "PR Agent",
@@ -348,8 +355,13 @@ class ProvidersController < ApplicationController
       aliases[provider.routing_key] = provider.provider_key
     end
     @usage_stats = Providers::UsageStats.call(user: current_user)
+    # Pre-index stats per provider to avoid duplicate lookups in views
+    @provider_stats_by_id = @providers.each_with_object({}) do |provider, hash|
+      stats = @usage_stats[provider.provider_key] || @usage_stats[provider.routing_key]
+      hash[provider.id] = stats
+    end
     @available_api_keys = current_user.provider_api_keys.ordered
-    existing_subscription_keys = current_user.providers.subscription.pluck(:provider_key)
+    existing_subscription_keys = @providers.select(&:subscription?).map(&:provider_key)
     addable_keys = Provider.addable_provider_keys
     api_key_compatible_addable_keys =
       addable_keys.select do |key|
@@ -448,6 +460,12 @@ class ProvidersController < ApplicationController
     end
 
     !invalid
+  end
+
+  def cached_provider_states
+    Rails.cache.fetch("providers/states/#{current_user.id}", expires_in: 30.seconds) do
+      current_user.provider_states.index_by(&:provider_name)
+    end
   end
 
   def compatible_api_key_for_provider?(api_key:, provider_key:)
