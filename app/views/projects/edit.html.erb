@@ -520,7 +520,7 @@
             </div>
           </fieldset>
 
-          <fieldset class="space-y-4">
+          <fieldset id="labels" class="space-y-4">
             <div class="flex items-center justify-between">
               <legend class="text-sm font-semibold leading-6 text-gray-900">Labels</legend>
               <%= link_to "Sync Labels to GitHub", ensure_labels_project_path(@project), data: { turbo_method: :post }, class: "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
@@ -670,7 +670,7 @@
   </div>
 
   <%# MCP Servers section %>
-  <div class="mt-6 bg-white shadow sm:rounded-lg">
+  <div id="mcp-servers" class="mt-6 bg-white shadow sm:rounded-lg">
     <div class="px-4 py-5 sm:p-6">
       <div class="flex items-center justify-between">
         <div>

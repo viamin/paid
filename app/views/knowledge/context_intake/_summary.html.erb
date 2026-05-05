@@ -19,12 +19,14 @@
           </p>
         <% end %>
       </div>
-      <div>
-        <%= button_to "Refresh Business Context",
-              project_context_intake_path(@project),
-              method: :post,
-              class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
-      </div>
+      <% if policy(@project).update? %>
+        <div>
+          <%= button_to "Refresh Business Context",
+                project_context_intake_path(@project),
+                method: :post,
+                class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
+        </div>
+      <% end %>
     </div>
   </div>
 
