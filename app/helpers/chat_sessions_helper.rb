@@ -133,6 +133,6 @@ module ChatSessionsHelper
   end
 
   def badge_label(label, classes)
-    tag.span(label, class: "inline-flex items-center rounded-md px-2 py-1 text-xs font-medium #{classes}")
+    tag.span(label, class: "inline-flex items-center rounded-full px-2 py-1 text-xs font-medium #{classes}")
   end
 end
