@@ -16,7 +16,7 @@ module Knowledge
     end
 
     def call
-      Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { build_stats }
+      build_stats
     end
 
     private
@@ -133,10 +133,6 @@ module Knowledge
         .group(:goal)
         .sum(:artifact_count)
         .sort_by { |_, v| -v }
-    end
-
-    def cache_key
-      "knowledge/dashboard_stats/#{account.id}"
     end
 
     def provider_health_cache_key

@@ -321,16 +321,13 @@ RSpec.describe Knowledge::DashboardStats do
       let(:version) { create(:project_version, project: project) }
       let(:run) { create(:collector_run, :completed, project_version: version) }
 
-      it "reuses cached results until the cache is cleared" do
+      it "returns fresh artifact counts on each call (no outer cache)" do
         first = described_class.call(account: account)
         create(:knowledge_artifact, collector_run: run, project: project, artifact_type: "route")
 
-        cached = described_class.call(account: account)
-        Rails.cache.clear
         refreshed = described_class.call(account: account)
 
         expect(first[:total_artifacts]).to eq(0)
-        expect(cached[:total_artifacts]).to eq(0)
         expect(refreshed[:total_artifacts]).to eq(1)
       end
     end

@@ -11,7 +11,6 @@ class DashboardController < ApplicationController
     @status_filter = valid_status_filter
     @goal_filter = valid_goal_filter
     @live_stats = Dashboard::LiveStats.call(account: current_account)
-    @queue_health = Scaling::QueueMonitor.call(account: current_account)
     @queue_preview = Dashboard::QueuePreview.call(user: current_user)
     @active_runs = live_agent_runs.active.includes(:provider, :issue, :model_selection, project: [ :created_by, :account ])
       .order("agent_runs.created_at DESC")
@@ -31,9 +30,8 @@ class DashboardController < ApplicationController
       time_range: @time_range,
       only: Dashboard::Stats::METRICS_SECTIONS
     )
-    @knowledge_stats = Knowledge::DashboardStats.call(account: current_account)
     render partial: "dashboard/metrics",
-      locals: { stats: @stats, account: current_account, time_range: @time_range, knowledge_stats: @knowledge_stats }
+      locals: { stats: @stats, account: current_account, time_range: @time_range }
   end
 
   def performance
@@ -49,6 +47,16 @@ class DashboardController < ApplicationController
     )
     render partial: "dashboard/performance",
       locals: { stats: @stats, time_range: @time_range, status_filter: @status_filter, goal_filter: @goal_filter }
+  end
+
+  def knowledge_stats
+    @knowledge_stats = Knowledge::DashboardStats.call(account: current_account)
+    render partial: "dashboard/knowledge_widget", locals: { knowledge_stats: @knowledge_stats }
+  end
+
+  def queue_health
+    @queue_health = Scaling::QueueMonitor.call(account: current_account)
+    render partial: "dashboard/queue_health", locals: { queue_depths: @queue_health.queue_depths, healthy: @queue_health.healthy? }
   end
 
   def cancel_run

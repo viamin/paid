@@ -44,20 +44,35 @@ RSpec.describe "Dashboard" do
         expect(mobile_settings_link.text.strip).to eq("Settings")
       end
 
-      it "includes lazy metrics and performance frames" do
+      it "shows the run phase breakdown section via metrics frame" do
+        get dashboard_metrics_path(time_range: "cumulative")
+
+        expect(response.body).to include("Run Phase Breakdown")
+        expect(response.body).to include("Average End-to-End Composition")
+        expect(response.body).to include('aria-label="Average end-to-end composition by phase"')
+      end
+
+      it "shows the stacked daily agent runs chart via metrics frame" do
+        create(:agent_run, :completed, project: project, created_at: 1.day.ago)
+        create(:agent_run, :failed, project: project, created_at: 1.day.ago)
+
+        get dashboard_metrics_path(time_range: "cumulative")
+
+        doc = Nokogiri::HTML(response.body)
+        chart = doc.at_css("div#daily-runs-chart")
+
+        expect(response.body).to include("Agent Runs per Day")
+        expect(chart).to be_present
+      end
+
+      it "renders lazy turbo frames for metrics, performance, knowledge, and queue health" do
         get dashboard_path
 
         doc = Nokogiri::HTML(response.body)
-        metrics_frame = doc.at_css("turbo-frame#dashboard-metrics")
-        performance_frame = doc.at_css("turbo-frame#dashboard-performance")
-
-        expect(metrics_frame).to be_present
-        expect(metrics_frame["src"]).to eq(dashboard_metrics_path(time_range: "cumulative"))
-        expect(metrics_frame.text).to include("Loading metrics")
-
-        expect(performance_frame).to be_present
-        expect(performance_frame["src"]).to eq(dashboard_performance_path(time_range: "cumulative", status: "all", goal: "all"))
-        expect(performance_frame.text).to include("Loading performance metrics")
+        expect(doc.at_css("turbo-frame#dashboard-metrics[loading='lazy']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-performance[loading='lazy']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[loading='lazy']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-queue-health[loading='lazy']")).to be_present
       end
 
       it "shows live metrics section with active runs" do
@@ -122,7 +137,7 @@ RSpec.describe "Dashboard" do
         create(:knowledge_run, :completed, project: project, operation_type: "embedding", final_provider: "openai")
         create(:knowledge_run, :failed, :decision_drafting, project: project, provider_attempts: [ { "provider" => "claude" } ])
 
-        get dashboard_metrics_path
+        get dashboard_knowledge_stats_path
 
         expect(response.body).to include("Provider Health")
         expect(response.body).to include("Unavailable")
@@ -135,7 +150,7 @@ RSpec.describe "Dashboard" do
         create(:provider_state, :rate_limited, user: user, provider_name: user.settings.kb_embedding_provider)
         create(:provider_state, :circuit_open, user: user, provider_name: user.settings.kb_chat_provider)
 
-        get dashboard_metrics_path
+        get dashboard_knowledge_stats_path
 
         expect(response.body).to include("Knowledge capabilities are unavailable because both provider groups are down.")
         expect(response.body).not_to include("Knowledge capabilities are degraded while one provider group remains available.")
@@ -312,7 +327,6 @@ RSpec.describe "Dashboard" do
 
       expect(response.body).to include("Agent Runs per Day")
       expect(response.body).to include("Run Phase Breakdown")
-      expect(response.body).to include("Knowledge Base")
       expect(chart).to be_present
     end
 
@@ -349,6 +363,36 @@ RSpec.describe "Dashboard" do
       get dashboard_performance_path(status: "invalid", goal: "invalid")
 
       expect(response).to have_http_status(:ok)
+    end
+  end
+
+  describe "GET /dashboard/knowledge_stats" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+
+    before { sign_in user }
+
+    it "returns knowledge stats partial within a turbo frame" do
+      get dashboard_knowledge_stats_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("dashboard-knowledge-stats")
+      expect(response.body).to include("Knowledge Base")
+    end
+  end
+
+  describe "GET /dashboard/queue_health" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+
+    before { sign_in user }
+
+    it "returns queue health partial within a turbo frame" do
+      get dashboard_queue_health_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("dashboard-queue-health")
+      expect(response.body).to include("Queue Health")
     end
   end
 
