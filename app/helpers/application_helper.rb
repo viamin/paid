@@ -81,11 +81,32 @@ module ApplicationHelper
     )
   end
 
-  def agent_run_provider_display(run)
-    return run.effective_provider_record.display_name if run.effective_provider_record
-    return MISSING_PROVIDER_ENTRY_LABEL if Provider.routing_key?(run.final_provider)
+  def agent_run_provider_displays(runs)
+    runs = runs.to_a
+    final_provider_keys = runs.map(&:final_provider).compact_blank.uniq
+    routed_providers_by_id = Provider.where(id: final_provider_keys.filter_map { |identifier| Provider.id_from_routing_key(identifier) })
+      .index_by(&:id)
+    configured_providers_by_owner_and_key = configured_providers_for_runs(runs)
 
-    Provider.display_name_for(run.effective_provider)
+    runs.each_with_object({}) do |run, displays|
+      displays[run.id] =
+        if run.final_provider.present?
+          provider_display_for_identifier(
+            run.final_provider,
+            provider: provider_for_identifier(run, configured_providers_by_owner_and_key, routed_providers_by_id)
+          )
+        elsif run.provider.present?
+          run.provider.display_name
+        else
+          Provider.display_name_for(run.effective_provider)
+        end
+    end
+  end
+
+  def agent_run_provider_display(run, provider_displays = nil)
+    return provider_displays.fetch(run.id) if provider_displays
+
+    agent_run_provider_displays([ run ]).fetch(run.id)
   end
 
   PAID_STATE_STYLES = {
@@ -468,6 +489,38 @@ module ApplicationHelper
     return nil unless run.source_pull_request_number.present? && run.project.present?
 
     "#{run.project.github_url}/pull/#{run.source_pull_request_number}"
+  end
+
+  def provider_display_for_identifier(identifier, provider: nil)
+    return provider.display_name if provider
+    return MISSING_PROVIDER_ENTRY_LABEL if Provider.routing_key?(identifier)
+
+    Provider.display_name_for(identifier)
+  end
+
+  def provider_for_identifier(run, configured_providers_by_owner_and_key, routed_providers_by_id)
+    return routed_providers_by_id[Provider.id_from_routing_key(run.final_provider)] if Provider.routing_key?(run.final_provider)
+
+    configured_providers_by_owner_and_key[[ run.project&.effective_owner&.id, run.final_provider ]] ||
+      (run.provider if run.provider&.matches_identifier?(run.final_provider))
+  end
+
+  def configured_providers_for_runs(runs)
+    owner_ids_by_provider_key = runs.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |run, provider_keys|
+      next if run.final_provider.blank? || Provider.routing_key?(run.final_provider)
+
+      owner_id = run.project&.effective_owner&.id
+      next unless owner_id
+
+      provider_keys[run.final_provider] << owner_id
+    end
+    return {} if owner_ids_by_provider_key.empty?
+
+    Provider.where(
+      user_id: owner_ids_by_provider_key.values.flatten.uniq,
+      provider_key: owner_ids_by_provider_key.keys
+    ).ordered.group_by { |provider| [ provider.user_id, provider.provider_key ] }
+      .transform_values { |providers| providers.find(&:subscription?) || providers.first }
   end
 
   def safe_asset_tag

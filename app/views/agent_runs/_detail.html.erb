@@ -6,7 +6,7 @@
           <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-100">Agent Run #<%= agent_run.id %></h1>
           <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
             <% final_provider_record = local_assigns.fetch(:final_provider_record, nil) %>
-            <% missing_provider_entry_label = "Deleted provider entry" %>
+            <% missing_provider_entry_label = ApplicationHelper::MISSING_PROVIDER_ENTRY_LABEL %>
             <% provider_label = lambda do |identifier, resolved_provider = nil|
                  resolved_provider&.display_name ||
                    if Provider.routing_key?(identifier)
