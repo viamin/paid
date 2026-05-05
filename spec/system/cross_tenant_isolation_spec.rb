@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe "Cross-tenant isolation", type: :system do
+RSpec.describe "Cross-tenant isolation", system_driver: :rack_test, type: :system do
   let!(:account_a) { create(:account, name: "Account A") }
   let!(:user_a)    { create(:user, :owner, account: account_a, email: "a@example.com", password: "password123") }
   let!(:project_a) { create(:project, account: account_a, name: "Project A") }
@@ -22,10 +22,8 @@ RSpec.describe "Cross-tenant isolation", type: :system do
     expect(page).not_to have_content(project_b.name)
 
     visit project_path(project_b)
-    expect(page).to(
-      have_text("The page you were looking for doesn't exist.")
-        .or(have_text("Sign in to your account"))
-    )
+    expect(page.status_code).to eq(404)
+    expect(page).to have_text("The page you were looking for doesn't exist.")
     expect(page).not_to have_content(project_b.name)
   end
 
