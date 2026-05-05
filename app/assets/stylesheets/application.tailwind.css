@@ -354,6 +354,7 @@
   background-color: rgb(120 53 15 / 0.45);
 }
 
+.dark .text-amber-950,
 .dark .text-amber-900,
 .dark .text-amber-800,
 .dark .text-amber-700 {
@@ -461,6 +462,10 @@
   border-color: rgba(120, 53, 15, 0.6);
 }
 
+.dark .divide-amber-200 > :not(:last-child) {
+  border-color: rgba(120, 53, 15, 0.6);
+}
+
 .dark .border-purple-200 {
   border-color: rgba(88, 28, 135, 0.6);
 }
@@ -526,7 +531,8 @@
   color: #93c5fd;
 }
 
-.dark .hover\:text-amber-900:hover {
+.dark .hover\:text-amber-900:hover,
+.dark .hover\:text-amber-700:hover {
   color: #fcd34d;
 }
 

@@ -198,3 +198,6 @@ __pycache__/
 
 # Database backups
 /backups/
+
+# Dev Container feature lockfile (machine-generated, not reproducible across machines)
+.devcontainer/devcontainer-lock.json
