@@ -116,9 +116,7 @@ module Knowledge
         end
       end
 
-      def base_url
-        @base_url
-      end
+      attr_reader :base_url
 
       def embeddings_path
         path = URI.parse(base_url).path.to_s.sub(%r{/\z}, "")
@@ -128,9 +126,7 @@ module Knowledge
         "/v1/embeddings"
       end
 
-      def headers
-        @headers
-      end
+      attr_reader :headers
 
       def self.estimate_cost(token_count)
         (token_count.to_f / 1_000_000 * COST_PER_MILLION_TOKENS).round(6)

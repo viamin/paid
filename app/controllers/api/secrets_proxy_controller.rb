@@ -33,7 +33,7 @@ module Api
       return if performed?
 
       proxy_request(
-        base_url: "https://api.openai.com",
+        base_url: resolve_openai_base_url,
         auth_header: "Authorization",
         api_key: "Bearer #{api_key}"
       )
@@ -224,6 +224,18 @@ module Api
       log_error("secrets_proxy.missing_knowledge_provider_key", "No API key configured for knowledge provider #{provider_key}")
       render json: { error: "API key not configured for knowledge provider #{provider_key}" }, status: :service_unavailable
       nil
+    end
+
+    def resolve_openai_base_url
+      provider_key = request.headers["X-Paid-Knowledge-Provider"].presence
+      return "https://api.openai.com" unless provider_key && @knowledge_run
+
+      config = Provider::DIRECT_OUTBOUND_API_PROVIDERS[provider_key]
+      return "https://api.openai.com" unless config
+
+      # Strip the /v1 suffix from the provider's base URL since the request
+      # path already includes the versioned prefix (e.g. v1/chat/completions).
+      config[:base_url].sub(%r{/v\d+\z}, "")
     end
 
     def compatible_proxy_route?(provider, provider_key)

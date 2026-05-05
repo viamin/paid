@@ -47,6 +47,11 @@ module Knowledge
       )
 
       parse_results(result)
+    rescue ContainerError
+      # After a container failure or timeout the container may be stopped.
+      # Reset so the next provider attempt reprovisions a fresh container.
+      cleanup_container!
+      raise
     end
 
     def cleanup!

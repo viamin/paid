@@ -60,9 +60,7 @@ module Knowledge
 
       attr_reader :attempted_providers
 
-      def provider_configs
-        @provider_configs
-      end
+      attr_reader :provider_configs
 
       def use_container?
         @containerize && Knowledge::EmbeddingRunner.available?
