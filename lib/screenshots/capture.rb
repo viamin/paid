@@ -194,11 +194,33 @@ module Screenshots
           record.command = "@modelcontextprotocol/server-filesystem"
         end
 
-        agent_run = project.agent_runs.where(custom_prompt: "Capture screenshot route coverage").first_or_create!(
-          agent_type: "codex",
-          goal: "create_pr",
-          status: "queued"
+        agent_run = project.agent_runs.find_or_initialize_by(custom_prompt: "Capture screenshot route coverage")
+        if agent_run.persisted?
+          agent_run.agent_run_logs.destroy_all
+          agent_run.agent_run_phases.destroy_all
+          agent_run.quality_metrics.destroy_all
+          agent_run.model_selection&.destroy
+          agent_run.created_at = Time.current
+        end
+        agent_run.assign_attributes(
+          agent_type: "codex", goal: "create_pr", status: "queued",
+          issue_id: nil, source_pull_request_number: nil,
+          temporal_workflow_id: nil, temporal_run_id: nil,
+          started_at: nil, completed_at: nil, duration_seconds: nil,
+          container_id: nil, service_container_ids: [],
+          error_message: nil, pull_request_url: nil, pull_request_number: nil,
+          created_issue_url: nil, created_issue_number: nil,
+          review_url: nil, review_posted_at: nil,
+          result_commit_sha: nil, base_commit_sha: nil,
+          worktree_path: nil, branch_name: nil,
+          provider_id: nil,
+          providers_attempted: [], final_provider: nil, provider_switches: 0,
+          iterations: 0, cost_cents: 0,
+          tokens_input: 0, tokens_output: 0,
+          trigger_type: "automatic",
+          token_limit_status: nil, cross_repo_issues: []
         )
+        agent_run.save!
 
         prompt = Prompt.find_or_create_by!(account: account, slug: "screenshots.prompt") do |record|
           record.name = "Screenshots Prompt"

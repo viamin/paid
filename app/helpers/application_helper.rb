@@ -181,6 +181,8 @@ module ApplicationHelper
       review_context(run)
     elsif run.enhance_issue_goal?
       enhance_issue_context(run)
+    elsif run.analyze_issue_goal?
+      analyze_issue_context(run)
     else
       { type: :placeholder }
     end
@@ -261,23 +263,29 @@ module ApplicationHelper
   # Desktop: native title tooltip on hover. Mobile: tappable info icon.
   def agent_run_context_display(run)
     context = agent_run_context(run)
+    tooltip_id = "context_#{run.id}"
     inner = case context[:type]
     when :link
+      tooltip_data = context[:tooltip].present? ? { action: "focusin->tooltip#show" } : {}
+      aria_attrs = context[:tooltip].present? ? { describedby: tooltip_id } : {}
       link_to(context[:label], context[:url], target: "_blank", rel: "noopener noreferrer",
-        class: "text-indigo-600 hover:text-indigo-900", title: context[:tooltip])
+        class: "text-indigo-600 hover:text-indigo-900", title: context[:tooltip],
+        aria: aria_attrs.presence, data: tooltip_data.presence)
     when :text
-      tag.span(context[:label], class: context[:classes], title: context[:tooltip])
+      tooltip_data = context[:tooltip].present? ? { action: "focusin->tooltip#show" } : {}
+      aria_attrs = context[:tooltip].present? ? { describedby: tooltip_id } : {}
+      tag.span(context[:label], class: context[:classes], title: context[:tooltip],
+        tabindex: (context[:tooltip].present? ? "0" : nil),
+        aria: aria_attrs.presence, data: tooltip_data.presence)
     when :in_progress
       tag.span("Creating issue\u2026", class: "italic text-gray-500")
     else
       tag.span("-", class: "text-gray-400")
     end
 
-    mobile_tooltip_wrapper(inner, context[:tooltip], "context_#{run.id}", aria_label: "Show context title")
+    mobile_tooltip_wrapper(inner, context[:tooltip], tooltip_id, aria_label: "Show context details")
   end
 
-  # Renders the goal cell for an agent run index table.
-  # Truncated text with a title attribute for desktop hover and a mobile tooltip.
   def agent_run_goal_display(run)
     text = agent_run_goal_text(run)
     return tag.span("-", class: "text-gray-400") if text.blank?
@@ -286,13 +294,8 @@ module ApplicationHelper
     mobile_tooltip_wrapper(inner, text, "goal_#{run.id}", aria_label: "Show goal")
   end
 
-  # Goal text precedence (highest → lowest):
-  #   1. issue title — most user-meaningful label for the run's objective
-  #   2. PR label — covers review runs ("Review PR #N") and create_pr runs
-  #      targeting an existing pull request ("PR #N")
-  #   3. redacted custom_prompt — generic fallback when no structured context is available
   def agent_run_goal_text(run)
-    return run.issue.title if run.issue&.title.present?
+    return run.issue&.title if run.issue&.title.present?
 
     if run.source_pull_request_number.present?
       prefix = run.review_goal? ? "Review PR" : "PR"
@@ -337,6 +340,13 @@ module ApplicationHelper
       github_link_or_text(label, label, url)
     elsif run.pull_request_number.present?
       github_link_or_text("PR ##{run.pull_request_number}", "PR ##{run.pull_request_number}", run.pull_request_url)
+    elsif run.custom_prompt.present?
+      redacted = redacted_goal_text(run.custom_prompt)
+      if redacted.present?
+        { type: :text, label: redacted.truncate(60), classes: "text-gray-700", tooltip: redacted }
+      else
+        { type: :placeholder }
+      end
     else
       { type: :placeholder }
     end
@@ -353,10 +363,17 @@ module ApplicationHelper
     if safe_github_url?(run.created_issue_url)
       label = run.created_issue_number.present? ? "Issue ##{run.created_issue_number}" : "Issue"
       { type: :link, label: label, url: run.created_issue_url }
-    elsif run.finished?
-      { type: :placeholder }
-    else
+    elsif run.custom_prompt.present?
+      redacted = redacted_goal_text(run.custom_prompt)
+      if redacted.present?
+        { type: :text, label: redacted.truncate(60), classes: "text-gray-700", tooltip: redacted }
+      else
+        { type: :placeholder }
+      end
+    elsif !run.finished?
       { type: :in_progress }
+    else
+      { type: :placeholder }
     end
   end
 
@@ -378,6 +395,10 @@ module ApplicationHelper
       { type: :placeholder }
     end
   end
+
+  # analyze_issue and enhance_issue share the same context rendering: link to
+  # the associated issue when present, placeholder otherwise.
+  alias_method :analyze_issue_context, :enhance_issue_context
 
   def local_time_fallback(utc, format)
     format_key = format.to_sym
