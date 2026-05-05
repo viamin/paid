@@ -598,7 +598,7 @@ Deliverables:
 
 **Why this phase exists**: Phase 3's core features are built (multi-agent orchestration, prompt evolution, guardrails, scaling infrastructure), but open issues reveal unfinished wiring in Phase 2's intelligence layer and several security/reliability gaps. Phase 4's learning systems require these foundations to be solid — A/B tests must produce real data, multi-provider must work end-to-end, and the system must handle concurrent load without credential leaks or data drift.
 
-**Status**: Substantially complete. Sections 3.5.1–3.5.3, 3.5.5, 3.5.7–3.5.19 are done. Section 3.5.4 (Performance Fundamentals) has partial progress (benchmarking suite, targeted query optimizations). Section 3.5.6 (Provider Quota Tracking) Steps 1–2 are done; Steps 3–6 remain.
+**Status**: Substantially complete. Sections 3.5.1–3.5.3, 3.5.5, 3.5.7–3.5.17 are done. Section 3.5.4 (Performance Fundamentals) has partial progress (benchmarking suite, targeted query optimizations). Section 3.5.6 (Provider Quota Tracking) Steps 1–2 are done; Steps 3–6 remain.
 
 ### 3.5.1 Security & Reliability
 
