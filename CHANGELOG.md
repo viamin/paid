@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.39.0](https://github.com/viamin/paid/compare/v0.38.0...v0.39.0) (2026-05-05)
+
+
+### Features
+
+* **providers:** tie model selection to direct-outbound provider capabilities ([#1670](https://github.com/viamin/paid/issues/1670)) ([e619a53](https://github.com/viamin/paid/commit/e619a538475603f6184285bd7758da067f60f708))
+* **screenshots:** inline image display in PR comments for current workflow ([#1676](https://github.com/viamin/paid/issues/1676)) ([9dc4adf](https://github.com/viamin/paid/commit/9dc4adf5c0e40d44056c086a17f53466c2251cb8))
+
+
+### Bug Fixes
+
+* 1398: Improve dark-mode contrast in dashboard quality pause info block ([#1635](https://github.com/viamin/paid/issues/1635)) ([012bcb3](https://github.com/viamin/paid/commit/012bcb3b7f3be2af0b96c46dab61bc90827c3ff4))
+* 1634: Dashboard upcoming queue table: replace Created with Context and remove Waiting ([#1636](https://github.com/viamin/paid/issues/1636)) ([0768da2](https://github.com/viamin/paid/commit/0768da238e4d2fc21638db8c0ec884c787856eb8))
+* 1668: Align chat interface design with paid's existing design patterns ([#1675](https://github.com/viamin/paid/issues/1675)) ([88a3604](https://github.com/viamin/paid/commit/88a3604024257bd700230054f5e2660e6d3a59d2))
+* **agent-runs:** skip harness preflight for subscription-auth providers ([#1680](https://github.com/viamin/paid/issues/1680)) ([967933c](https://github.com/viamin/paid/commit/967933c6b0a8f73f08f46346d7e51cae65b7a3b5))
+* **dev:** disable Rails log rotation to prevent development.log deletion ([#1679](https://github.com/viamin/paid/issues/1679)) ([62ce09c](https://github.com/viamin/paid/commit/62ce09c5ab7266e9a63b29b866a83bd5fbf15f11))
+* **style-guides:** harden policy checks and add regression coverage ([#1677](https://github.com/viamin/paid/issues/1677)) ([d1bee77](https://github.com/viamin/paid/commit/d1bee77c80839158ca706082806bed6c7287a84c))
+
 ## [0.38.0](https://github.com/viamin/paid/compare/v0.37.0...v0.38.0) (2026-05-05)
 
 
