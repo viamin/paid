@@ -98,6 +98,16 @@ RSpec.configure do |config|
   # This setting enables warnings.
   config.warnings = true
 
+  module Warning
+    class << self
+      alias_method :warn_without_filter, :warn
+
+      def warn(message, category: nil, **)
+        super unless message.include?("/gems/")
+      end
+    end
+  end
+
   # Print the 10 slowest examples at the end of the spec run.
   config.profile_examples = 10 if config.files_to_run.one?
 
