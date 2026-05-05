@@ -339,12 +339,16 @@ RSpec.describe Knowledge::Decisions::Draft do
       expect(AgentHarness).to have_received(:send_message)
     end
 
-    it "does not create a KnowledgeRun for in-process path" do
+    it "creates and finalizes a KnowledgeRun for in-process executor path" do
       allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
 
       expect {
         described_class.call(agent_run: agent_run)
-      }.not_to change(KnowledgeRun, :count)
+      }.to change(KnowledgeRun, :count).by(1)
+
+      kr = KnowledgeRun.last
+      expect(kr.status).to eq("completed")
+      expect(kr.operation_type).to eq("decision_drafting")
     end
   end
 end

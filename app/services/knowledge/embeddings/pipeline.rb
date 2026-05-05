@@ -18,7 +18,8 @@ module Knowledge
       end
 
       def self.call(project: nil, batch_size: nil, generator: nil, api_key: nil, api_base_url: nil)
-        new(batch_size: batch_size, generator: generator, api_key: api_key, api_base_url: api_base_url).call(project: project)
+        new(batch_size: batch_size, generator: generator, api_key: api_key, api_base_url: api_base_url)
+          .call(project: project)
       end
 
       def call(project: nil)
@@ -63,7 +64,7 @@ module Knowledge
         return { embedded: 0, tokens: 0 } if embeddable.empty?
 
         texts = embeddable.map(&:content)
-        results = generator.call(texts: texts)
+        results = generate_embeddings(texts)
 
         if results.size != embeddable.size
           raise EmbeddingError,
@@ -155,6 +156,16 @@ module Knowledge
             fully_redacted: fully_redacted
           }
         }
+      end
+
+      def generate_embeddings(texts)
+        # Known limitation: ProviderExecutor fallback is not wired here.
+        # Generate#call targets a single pre-configured embedding endpoint and
+        # does not accept a provider parameter — wrapping it in a multi-provider
+        # loop would just retry the same backend. Embedding provider fallback
+        # requires upstream support in agent-harness for provider-aware
+        # embedding routing (Generate#call accepting a provider argument).
+        generator.call(texts: texts)
       end
 
       def log_completion(total_embedded, total_tokens, cost, duration)
