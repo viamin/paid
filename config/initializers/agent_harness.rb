@@ -2,196 +2,66 @@
 
 require Rails.root.join("lib/provider_support").to_s
 
-# Backport fix for viamin/agent-harness#173 — the gem's
-# ProviderHealthCheck.perform_check passes `nil` as the smoke-test timeout
-# when a contract exists, so the adapter falls back to the contract's 30s
-# default. Slow models (e.g. Kilocode GLM 5.1) need the caller-specified
-# timeout honoured. This patch forwards `max(caller_timeout, contract_timeout)`
-# instead of nil. Remove once agent-harness >= 0.18 ships the fix.
+# Backport fix for viamin/agent-harness#173 — agent-harness 0.17.x passes
+# `nil` as the smoke-test timeout when a contract exists, so the adapter
+# falls back to the contract's 30s default. Slow models (e.g. Kilocode
+# GLM 5.1) need the caller-specified timeout honoured.
+#
+# Keep this patch narrow and version-gated: only intercept the nil timeout
+# forwarded into the provider smoke test, and only until agent-harness 0.18
+# ships the upstream fix.
 # TODO(#1538): remove this monkey-patch when agent-harness ships the upstream fix
+module AgentHarnessSmokeTestTimeoutProviderPatch
+  def smoke_test(timeout:, provider_runtime:)
+    super(
+      timeout: effective_smoke_test_timeout(timeout),
+      provider_runtime: provider_runtime
+    )
+  end
+
+  private
+
+  def effective_smoke_test_timeout(timeout)
+    return timeout unless timeout.nil?
+
+    caller_timeout = instance_variable_get(:@paid_smoke_test_timeout)
+    contract_timeout = smoke_test_contract&.dig(:timeout)
+
+    if caller_timeout.is_a?(Numeric) && contract_timeout.is_a?(Numeric)
+      [ caller_timeout, contract_timeout ].max
+    else
+      caller_timeout || contract_timeout
+    end
+  end
+end
+
 module AgentHarnessSmokeTestTimeoutPatch
   private
 
   def perform_check(provider_name, start_time, timeout:, executor:, provider_runtime:)
-    registry = AgentHarness::Providers::Registry.instance
-    unless registry.registered?(provider_name)
-      return build_result(
-        name: provider_name,
-        status: "error",
-        message: "Provider not registered",
-        start_time: start_time,
-        error_category: :installation,
-        check: :registration
-      )
-    end
+    previous_timeout = Thread.current[:paid_agent_harness_smoke_test_timeout]
+    Thread.current[:paid_agent_harness_smoke_test_timeout] = timeout
+    super
+  ensure
+    Thread.current[:paid_agent_harness_smoke_test_timeout] = previous_timeout
+  end
 
-    klass = registry.get(provider_name)
-    provider_instance = build_provider(provider_name, klass, executor: executor)
-    host_preflight_allowed = host_preflight_allowed?(executor: executor, provider_runtime: provider_runtime)
-    provider_preflight_allowed = provider_preflight_allowed?(executor: executor)
-
-    auth_degraded = false
-    if host_preflight_allowed
-      if executor.nil? && !klass.available?
-        return build_result(
-          name: provider_name,
-          status: "error",
-          message: "Provider '#{klass.binary_name}' is not available (#{klass}.available? returned false)",
-          start_time: start_time,
-          error_category: :installation,
-          check: :availability
-        )
-      end
-
-      unless provider_instance.executor.which(klass.binary_name)
-        return build_result(
-          name: provider_name,
-          status: "error",
-          message: "CLI '#{klass.binary_name}' not found in PATH",
-          start_time: start_time,
-          error_category: :installation,
-          check: :availability
-        )
-      end
-
-      auth = AgentHarness::Authentication.auth_status(provider_name)
-      unless auth[:valid]
-        unless auth_not_implemented?(auth)
-          return build_result(
-            name: provider_name,
-            status: "error",
-            message: auth[:error] || "Authentication failed",
-            start_time: start_time,
-            error_category: :authentication,
-            check: :authentication
-          )
-        end
-        auth_degraded = true
-      end
-
-      health = provider_instance.health_status
-      unless health[:healthy]
-        return build_result(
-          name: provider_name,
-          status: "degraded",
-          message: health[:message] || "Provider health check failed",
-          start_time: start_time,
-          error_category: :transient,
-          check: :provider_health
-        )
-      end
-    end
-
-    validation = provider_instance.validate_config
-    unless validation[:valid]
-      errors_msg = Array(validation[:errors]).join(", ")
-      errors_msg = "check provider configuration" if errors_msg.empty?
-      return build_result(
-        name: provider_name,
-        status: "degraded",
-        message: "Configuration issues: #{errors_msg}",
-        start_time: start_time,
-        error_category: :configuration,
-        check: :configuration
-      )
-    end
-
-    if provider_preflight_allowed
-      preflight_env = build_preflight_env(provider_instance, provider_runtime)
-      preflight = provider_instance.preflight_check(env: preflight_env, timeout: timeout)
-      unless preflight[:healthy]
-        return build_result(
-          name: provider_name,
-          status: "error",
-          message: preflight[:reason] || "Preflight check failed",
-          start_time: start_time,
-          error_category: normalize_preflight_error_category(preflight[:error_category]),
-          check: :preflight
-        )
-      end
-    end
-
-    smoke_contract = provider_instance.smoke_test_contract
-    if smoke_contract.nil? && !provider_overrides_method?(provider_instance, :smoke_test)
-      message = if host_preflight_allowed && auth_degraded
-        "Auth status check not implemented; health and config checks passed (smoke test unavailable)"
-      elsif host_preflight_allowed && (provider_overrides_method?(provider_instance, :health_status) ||
-        provider_overrides_method?(provider_instance, :validate_config))
-        "Health and config checks passed (smoke test unavailable)"
-      elsif host_preflight_allowed
-        "Registered and authenticated; health/config checks use defaults and smoke test is unavailable"
-      elsif provider_overrides_method?(provider_instance, :validate_config)
-        "Configuration checks passed, but smoke test is unavailable for the supplied execution context"
-      else
-        "Smoke test is unavailable for the supplied execution context"
-      end
-
-      return build_result(
-        name: provider_name,
-        status: "degraded",
-        message: message,
-        start_time: start_time,
-        error_category: :configuration,
-        check: :smoke_test
-      )
-    end
-
-    # --- PATCHED: pass max(caller_timeout, contract_timeout) instead of nil ---
-    smoke_timeout = if smoke_contract
-      contract_timeout = smoke_contract[:timeout]
-      if timeout.is_a?(Numeric) && contract_timeout.is_a?(Numeric)
-        [ timeout, contract_timeout ].max
-      else
-        timeout || contract_timeout
-      end
-    else
-      timeout
-    end
-    smoke = provider_instance.smoke_test(timeout: smoke_timeout, provider_runtime: provider_runtime)
-    unless smoke[:ok]
-      return build_result(
-        name: provider_name,
-        status: smoke[:status] || "error",
-        message: smoke[:message] || "Smoke test failed",
-        start_time: start_time,
-        error_category: normalize_smoke_error_category(smoke[:error_category], smoke[:message]),
-        check: :smoke_test
-      )
-    end
-
-    if auth_degraded
-      return build_result(
-        name: provider_name,
-        status: "degraded",
-        message: "Auth status check not implemented; health, config, and smoke tests passed",
-        start_time: start_time,
-        error_category: :authentication,
-        check: :authentication
-      )
-    end
-
-    message = if !host_preflight_allowed && provider_overrides_method?(provider_instance, :validate_config)
-      "Configuration and smoke test passed using the supplied execution context"
-    elsif !host_preflight_allowed
-      "Smoke test passed using the supplied execution context"
-    elsif provider_overrides_method?(provider_instance, :health_status) ||
-        provider_overrides_method?(provider_instance, :validate_config)
-      "All checks passed"
-    else
-      "Registered, authenticated, and smoke test passed (health/config checks use defaults)"
-    end
-
-    build_result(
-      name: provider_name,
-      status: "ok",
-      message: message,
-      start_time: start_time,
-      check: :smoke_test
+  def build_provider(provider_name, klass, executor:)
+    provider_instance = super
+    provider_instance.instance_variable_set(
+      :@paid_smoke_test_timeout,
+      Thread.current[:paid_agent_harness_smoke_test_timeout]
     )
+    provider_instance.singleton_class.prepend(AgentHarnessSmokeTestTimeoutProviderPatch) unless
+      provider_instance.singleton_class < AgentHarnessSmokeTestTimeoutProviderPatch
+    provider_instance
   end
 end
 
-AgentHarness::ProviderHealthCheck.singleton_class.prepend(AgentHarnessSmokeTestTimeoutPatch)
+agent_harness_version = Gem.loaded_specs.fetch("agent-harness").version
+if agent_harness_version < Gem::Version.new("0.18.0")
+  AgentHarness::ProviderHealthCheck.singleton_class.prepend(AgentHarnessSmokeTestTimeoutPatch)
+end
 
 # Default agent timeout used for AgentHarness boot-time config and as a
 # fallback when per-user settings are unavailable. Runtime code should

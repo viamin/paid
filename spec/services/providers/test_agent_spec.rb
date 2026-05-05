@@ -1044,30 +1044,93 @@ RSpec.describe Providers::TestAgent do
   end
 
   describe "smoke test timeout forwarding (issue #1538)" do
-    it "forwards max(caller_timeout, contract_timeout) to the provider smoke_test" do
-      provider_instance = instance_double(
-        AgentHarness::Providers::Base,
-        executor: instance_double(AgentHarness::CommandExecutor, which: "/usr/bin/kilo"),
-        validate_config: { valid: true, errors: [] },
-        smoke_test_contract: { prompt: "Reply with exactly OK.", timeout: 30, expected_output: "OK", require_output: true },
-        smoke_test: { ok: true, status: "ok", message: "Smoke test passed" }
-      )
+    let(:provider_class) do
+      Class.new(AgentHarness::Providers::Base) do
+        class << self
+          attr_accessor :contract_timeout, :provider_instance
 
+          def provider_name
+            :kilocode
+          end
+
+          def binary_name
+            "kilo"
+          end
+
+          def available?
+            true
+          end
+
+          def smoke_test_contract
+            {
+              prompt: "Reply with exactly OK.",
+              timeout: contract_timeout,
+              expected_output: "OK",
+              require_output: true
+            }
+          end
+
+          private
+
+          def build_provider_instance(config:, executor:, logger:)
+            provider_instance || new(config: config, executor: executor, logger: logger)
+          end
+        end
+
+        attr_reader :received_smoke_test_timeout, :received_provider_runtime
+
+        def validate_config
+          { valid: true, errors: [] }
+        end
+
+        def smoke_test(timeout:, provider_runtime:)
+          @received_smoke_test_timeout = timeout
+          @received_provider_runtime = provider_runtime
+          { ok: true, status: "ok", message: "Smoke test passed" }
+        end
+      end
+    end
+
+    def run_health_check(provider_instance:, contract_timeout:, caller_timeout:)
       allow(AgentHarness::Providers::Registry.instance).to receive(:registered?).with(:kilocode).and_return(true)
-      allow(AgentHarness::Providers::Registry.instance).to receive(:get).with(:kilocode).and_return(AgentHarness::Providers::Kilocode)
+      allow(AgentHarness::Providers::Registry.instance).to receive(:get).with(:kilocode).and_return(provider_class)
       allow(AgentHarness::Providers::Registry.instance).to receive(:canonical_name).with(:kilocode).and_return(:kilocode)
-      allow(AgentHarness::Providers::Registry.instance).to receive(:smoke_test_contract).with(:kilocode).and_return({ timeout: 30 })
-      allow(AgentHarness::ProviderHealthCheck).to receive(:build_provider).and_return(provider_instance)
+      allow(AgentHarness::Providers::Registry.instance).to receive(:smoke_test_contract).with(:kilocode).and_return({ timeout: contract_timeout })
+      provider_class.contract_timeout = contract_timeout
+      provider_class.provider_instance = provider_instance
 
       executor = instance_double(AgentHarness::DockerCommandExecutor)
       runtime = AgentHarness::ProviderRuntime.new(env: { "FOO" => "bar" })
 
-      AgentHarness::ProviderHealthCheck.check(:kilocode, timeout: 60, executor: executor, provider_runtime: runtime)
-
-      expect(provider_instance).to have_received(:smoke_test).with(
-        timeout: 60,
+      AgentHarness::ProviderHealthCheck.check(
+        :kilocode,
+        timeout: caller_timeout,
+        executor: executor,
         provider_runtime: runtime
       )
+      runtime
+    end
+
+    it "uses the caller timeout when it exceeds the smoke-test contract timeout" do
+      provider_instance = provider_class.new(
+        executor: instance_double(AgentHarness::CommandExecutor, which: "/usr/bin/kilo")
+      )
+
+      runtime = run_health_check(provider_instance: provider_instance, contract_timeout: 30, caller_timeout: 60)
+
+      expect(provider_instance.received_smoke_test_timeout).to eq(60)
+      expect(provider_instance.received_provider_runtime).to eq(runtime)
+    end
+
+    it "preserves the smoke-test contract timeout when it exceeds the caller timeout" do
+      provider_instance = provider_class.new(
+        executor: instance_double(AgentHarness::CommandExecutor, which: "/usr/bin/kilo")
+      )
+
+      runtime = run_health_check(provider_instance: provider_instance, contract_timeout: 90, caller_timeout: 60)
+
+      expect(provider_instance.received_smoke_test_timeout).to eq(90)
+      expect(provider_instance.received_provider_runtime).to eq(runtime)
     end
   end
 
