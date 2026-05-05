@@ -346,27 +346,21 @@
   color: #94a3b8;
 }
 
-.dark .bg-amber-50 {
+.dark .quality-pause-card.bg-amber-50 {
   background-color: rgba(120, 53, 15, 0.2);
 }
 
-.dark .bg-amber-100 {
+.dark .quality-pause-card .bg-amber-100 {
   background-color: rgb(120 53 15 / 0.45);
 }
 
-.dark .text-amber-950,
-.dark .text-amber-900,
-.dark .text-amber-800,
-.dark .text-amber-700 {
-  color: #fcd34d; /* amber-300 */
-}
-
-.dark .text-amber-600 {
-  color: #fcd34d;
-}
-
-.dark .text-amber-400 {
-  color: #fcd34d;
+.dark .quality-pause-card .text-amber-950,
+.dark .quality-pause-card .text-amber-900,
+.dark .quality-pause-card .text-amber-800,
+.dark .quality-pause-card .text-amber-700,
+.dark .quality-pause-card .text-amber-600,
+.dark .quality-pause-card .text-amber-400 {
+  color: #fcd34d; /* amber-300 — high-contrast text for dark-mode pause card */
 }
 
 .dark .bg-sky-50 {
@@ -462,7 +456,7 @@
   border-color: rgba(120, 53, 15, 0.6);
 }
 
-.dark .divide-amber-200 > :not(:last-child) {
+.dark .quality-pause-card .divide-amber-200 > :not(:last-child) {
   border-color: rgba(120, 53, 15, 0.6);
 }
 

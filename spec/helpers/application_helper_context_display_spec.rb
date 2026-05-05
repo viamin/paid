@@ -42,6 +42,7 @@ RSpec.describe ApplicationHelper do
         created_issue_url: nil,
         created_issue_number: nil,
         "finished?": false,
+        "running?": false,
         project: nil
       }
       attrs = defaults.merge(overrides)
@@ -115,7 +116,7 @@ RSpec.describe ApplicationHelper do
 
         expect(result).to include('aria-controls="context_99"')
         expect(result).to include('aria-describedby="context_99"')
-        expect(result).to include('aria-label="Show context title"')
+        expect(result).to include('aria-label="Show context details"')
         expect(result).to include('aria-expanded="false"')
         expect(result).to include('aria-hidden="true"')
       end
@@ -212,14 +213,21 @@ RSpec.describe ApplicationHelper do
         expect(result).to include("title=")
       end
 
-      it "shows 'Creating issue...' when pending without custom prompt" do
-        run = stub_run("create_issue_goal?": true, "finished?": false)
+      it "shows 'Creating issue...' when in progress without custom prompt" do
+        run = stub_run("create_issue_goal?": true, "running?": true)
         result = helper.agent_run_context_display(run)
 
         expect(result).to include("Creating issue")
       end
 
-      it "shows placeholder when finished without issue" do
+      it "shows 'Creating issue...' when paused without custom prompt" do
+        run = stub_run("create_issue_goal?": true, "running?": false, "finished?": false)
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include("Creating issue")
+      end
+
+      it "shows placeholder when finished and no context available" do
         run = stub_run("create_issue_goal?": true, "finished?": true)
         result = helper.agent_run_context_display(run)
 
