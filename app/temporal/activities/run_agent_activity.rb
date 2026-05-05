@@ -792,8 +792,18 @@ module Activities
       # OPENAI_BASE_URL reachability) when available — fails fast before
       # the smoke exec below.  The smoke exec always runs as a safety
       # net regardless of whether the harness supports preflight_check.
+      #
+      # Skip the harness preflight for subscription-auth providers: it
+      # runs outside the container where OAuth credentials (auth.json,
+      # .credentials.json) are unavailable.  The harness auth check only
+      # understands API keys, so subscription auth always appears invalid.
+      # The smoke-exec preflight below runs inside the container with the
+      # correct environment and will catch real auth failures.
+      provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
+      subscription_auth = provider_entry&.subscription? &&
+        ProviderSupport.subscription_auth_unset_vars_for(provider).any?
       harness_provider = preflight_provider_instance(command_context)
-      if harness_provider
+      if harness_provider && !subscription_auth
         run_harness_preflight!(
           agent_run: agent_run,
           harness_provider: harness_provider,
