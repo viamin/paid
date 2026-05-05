@@ -48,6 +48,72 @@ RSpec.describe "AgentRuns" do
         expect(goal_cell.at_css('[data-controller="tooltip"]')).to be_present
       end
 
+      it "aligns the Provider header with provider values in each row" do
+        owner = project.effective_owner
+        configured_provider = owner.providers.create!(
+          provider_key: "cursor",
+          auth_type: "subscription",
+          name: "Cursor Stable",
+          enabled_for_agent_runs: true
+        )
+        run = create(:agent_run, :with_custom_prompt, project: project, provider: configured_provider,
+          final_provider: configured_provider.routing_key)
+
+        get agent_runs_path
+
+        provider_cell = cell_for_run(parsed_html, run, "Provider")
+
+        expect(provider_cell.text.squish).to eq(configured_provider.display_name)
+      end
+
+      it "shows a deleted-provider fallback label in the Provider column" do
+        run = create(:agent_run, :with_custom_prompt, project: project, provider: nil,
+          final_provider: "provider:999999")
+
+        get agent_runs_path
+
+        provider_cell = cell_for_run(parsed_html, run, "Provider")
+
+        expect(provider_cell.text.squish).to eq(ApplicationHelper::MISSING_PROVIDER_ENTRY_LABEL)
+      end
+
+      it "shows the deleted-provider fallback label when the final routed provider is missing" do
+        initial_provider = project.effective_owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+        run = create(:agent_run, :with_custom_prompt, project: project, provider: initial_provider,
+          final_provider: "provider:999999")
+
+        get agent_runs_path
+
+        provider_cell = cell_for_run(parsed_html, run, "Provider")
+
+        expect(provider_cell.text.squish).to eq(ApplicationHelper::MISSING_PROVIDER_ENTRY_LABEL)
+      end
+
+      it "does not show another owner's routed provider label in the Provider column" do
+        other_user = create(:user)
+        other_provider = create(:provider, user: other_user, provider_key: "cursor", name: "Other Owner Cursor")
+        run = create(:agent_run, :with_custom_prompt, project: project, provider: nil,
+          final_provider: other_provider.routing_key)
+
+        get agent_runs_path
+
+        provider_cell = cell_for_run(parsed_html, run, "Provider")
+
+        expect(provider_cell.text.squish).to eq(ApplicationHelper::MISSING_PROVIDER_ENTRY_LABEL)
+        expect(response.body).not_to include(other_provider.display_name)
+      end
+
+      it "normalizes legacy final_provider aliases in the Provider column" do
+        run = create(:agent_run, :with_custom_prompt, project: project, provider: nil,
+          final_provider: "claude_code", agent_type: "claude_code")
+
+        get agent_runs_path
+
+        provider_cell = cell_for_run(parsed_html, run, "Provider")
+
+        expect(provider_cell.text.squish).to eq(Provider.display_name_for("claude"))
+      end
+
       it "prefers the issue title over custom prompt text" do
         issue = create(:issue, project: project, title: "Fix flaky webhook retry handling")
         run = create(:agent_run, :with_custom_prompt, project: project, issue: issue,
@@ -725,8 +791,18 @@ RSpec.describe "AgentRuns" do
 
         get project_agent_run_path(project, agent_run)
 
-        expect(response.body).to include("Deleted provider entry")
+        expect(response.body).to include(ApplicationHelper::MISSING_PROVIDER_ENTRY_LABEL)
         expect(response.body).not_to include("Provider:999999")
+      end
+
+      it "normalizes legacy final_provider aliases in the header provider label" do
+        agent_run = create(:agent_run, :completed, project: project, provider: nil,
+          agent_type: "claude_code", final_provider: "claude_code")
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include(Provider.display_name_for("claude"))
+        expect(response.body).not_to include(">Claude Code<")
       end
 
       it "shows metrics" do
@@ -814,7 +890,7 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("1 attempt")
         expect(response.body).to include(initial_provider.display_name)
         expect(response.body).to include("Skipped due to cached rate limit until 2026-04-30T05:59:15Z")
-        expect(response.body).not_to include("Deleted provider entry")
+        expect(response.body).not_to include(ApplicationHelper::MISSING_PROVIDER_ENTRY_LABEL)
       end
 
       it "shows auth type in provider section when provider record exists" do
@@ -2411,10 +2487,6 @@ RSpec.describe "AgentRuns" do
     row
   end
 
-  def goal_column_index(document)
-    column_index(document, "Goal")
-  end
-
   def cell_for_run(document, run, header_text)
     row = row_for_run(document, run)
     index = column_index(document, header_text)
@@ -2425,6 +2497,10 @@ RSpec.describe "AgentRuns" do
 
     expect(cell).to be_present
     cell
+  end
+
+  def goal_column_index(document)
+    column_index(document, "Goal")
   end
 
   def column_index(document, header_text)

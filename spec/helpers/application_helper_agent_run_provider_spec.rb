@@ -21,21 +21,6 @@ RSpec.describe ApplicationHelper do
       expect(provider_queries).to be_empty
     end
 
-    it "uses the preloaded final provider record for routed fallback runs without extra provider queries" do
-      initial_provider = create(:provider, user: user, provider_key: "codex")
-      fallback_provider = create(:provider, user: user, provider_key: "cursor")
-      run = create(:agent_run, project: project, provider: initial_provider, final_provider: fallback_provider.routing_key)
-      preloaded_run = AgentRun.includes(:provider, project: [ :created_by, :account ]).find(run.id)
-      AgentRun.preload_final_provider_records([ preloaded_run ])
-
-      queries = capture_queries do
-        expect(helper.agent_run_provider_display(preloaded_run)).to eq(fallback_provider.display_name)
-      end
-
-      provider_queries = queries.grep(/FROM "providers"/)
-      expect(provider_queries).to be_empty
-    end
-
     it "resolves an unloaded routed fallback run to the final provider record" do
       initial_provider = create(:provider, user: user, provider_key: "codex")
       fallback_provider = create(:provider, user: user, provider_key: "cursor")

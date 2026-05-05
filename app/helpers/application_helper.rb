@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 module ApplicationHelper
+  MISSING_PROVIDER_ENTRY_LABEL = "Deleted provider entry"
+
   # Dark-mode colors for these badges are handled by the global unlayered
   # overrides in application.tailwind.css (e.g. `.dark .bg-indigo-100`),
   # which have higher cascade priority than Tailwind dark: utilities.
@@ -79,24 +81,30 @@ module ApplicationHelper
     )
   end
 
-  def agent_run_provider_display(run, placeholder: "-", missing_provider_label: "Deleted provider entry")
-    final_identifier = run.final_provider.presence
+  def agent_run_provider_displays(runs)
+    runs = runs.to_a
+    routed_providers_by_owner_and_id = routed_providers_for_runs(runs)
+    configured_providers_by_owner_and_key = configured_providers_for_runs(runs)
 
-    if final_identifier.present?
-      provider = final_provider_display_record(run, final_identifier)
-      return provider.display_name if provider.present?
-
-      return missing_provider_label if Provider.routing_key?(final_identifier)
-
-      return provider_display_label(final_identifier)
+    runs.each_with_object({}) do |run, displays|
+      displays[run.id] =
+        if run.final_provider.present?
+          provider_display_for_identifier(
+            run.final_provider,
+            provider: provider_for_identifier(run, configured_providers_by_owner_and_key, routed_providers_by_owner_and_id)
+          )
+        elsif run.provider.present?
+          run.provider.display_name
+        else
+          Provider.display_name_for(run.effective_provider)
+        end
     end
+  end
 
-    return run.provider.display_name if run.provider.present?
+  def agent_run_provider_display(run, provider_displays = nil)
+    return provider_displays.fetch(run.id) if provider_displays
 
-    identifier = run.effective_provider.presence
-    return placeholder if identifier.blank?
-
-    provider_display_label(identifier)
+    agent_run_provider_displays([ run ]).fetch(run.id)
   end
 
   PAID_STATE_STYLES = {
@@ -349,20 +357,6 @@ module ApplicationHelper
 
   private
 
-  def provider_display_label(identifier)
-    provider_key = Provider.provider_key_for_agent_type(identifier)
-    return identifier.to_s.titleize unless Provider.supported_provider_key?(provider_key)
-
-    Provider.display_name_for(provider_key)
-  end
-
-  def final_provider_display_record(run, final_identifier)
-    return run.provider if run.provider.present? && run.provider.matches_identifier?(final_identifier)
-    return run.preloaded_final_provider_record if run.preloaded_final_provider_record_loaded
-
-    run.final_provider_record
-  end
-
   def create_pr_context(run)
     if run.issue.present?
       prefix = run.issue.is_pull_request? ? "PR" : "Issue"
@@ -495,10 +489,68 @@ module ApplicationHelper
     "#{run.project.github_url}/pull/#{run.source_pull_request_number}"
   end
 
+  def provider_display_for_identifier(identifier, provider: nil)
+    return provider.display_name if provider
+    return MISSING_PROVIDER_ENTRY_LABEL if Provider.routing_key?(identifier)
+
+    Provider.display_name_for(normalized_provider_identifier(identifier))
+  end
+
+  def provider_for_identifier(run, configured_providers_by_owner_and_key, routed_providers_by_owner_and_id)
+    if Provider.routing_key?(run.final_provider)
+      owner_id = run.project&.effective_owner&.id
+      provider_id = Provider.id_from_routing_key(run.final_provider)
+      return routed_providers_by_owner_and_id[[ owner_id, provider_id ]]
+    end
+
+    normalized_identifier = normalized_provider_identifier(run.final_provider)
+
+    configured_providers_by_owner_and_key[[ run.project&.effective_owner&.id, normalized_identifier ]] ||
+      (run.provider if run.provider&.matches_identifier?(run.final_provider))
+  end
+
+  def routed_providers_for_runs(runs)
+    provider_ids_by_owner_id = runs.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |run, provider_ids|
+      next unless Provider.routing_key?(run.final_provider)
+
+      owner_id = run.project&.effective_owner&.id
+      provider_id = Provider.id_from_routing_key(run.final_provider)
+      next unless owner_id && provider_id
+
+      provider_ids[owner_id] << provider_id
+    end
+    return {} if provider_ids_by_owner_id.empty?
+
+    Provider.where(user_id: provider_ids_by_owner_id.keys, id: provider_ids_by_owner_id.values.flatten.uniq)
+      .index_by { |provider| [ provider.user_id, provider.id ] }
+  end
+
+  def configured_providers_for_runs(runs)
+    owner_ids_by_provider_key = runs.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |run, provider_keys|
+      next if run.final_provider.blank? || Provider.routing_key?(run.final_provider)
+
+      owner_id = run.project&.effective_owner&.id
+      next unless owner_id
+
+      provider_keys[normalized_provider_identifier(run.final_provider)] << owner_id
+    end
+    return {} if owner_ids_by_provider_key.empty?
+
+    Provider.where(
+      user_id: owner_ids_by_provider_key.values.flatten.uniq,
+      provider_key: owner_ids_by_provider_key.keys
+    ).ordered.group_by { |provider| [ provider.user_id, provider.provider_key ] }
+      .transform_values { |providers| providers.find(&:subscription?) || providers.first }
+  end
+
   def safe_asset_tag
     yield
   rescue Propshaft::MissingAssetError
     raise unless Rails.env.test?
+  end
+
+  def normalized_provider_identifier(identifier)
+    ProviderSupport.provider_key_for_agent_type(identifier)
   end
 
   def safe_return_path?(path)
