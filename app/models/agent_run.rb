@@ -122,7 +122,7 @@ class AgentRun < ApplicationRecord
   before_create :generate_proxy_token
   before_create :snapshot_mcp_servers
 
-  after_commit :update_completed_agent_runs_count, on: [ :create, :update, :destroy ]
+  after_commit :update_completed_agent_runs_count, on: [ :update, :destroy ]
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
   after_commit :invalidate_provider_options_cache_on_change, on: [ :create, :update ]
@@ -1850,7 +1850,10 @@ class AgentRun < ApplicationRecord
   end
 
   def update_completed_agent_runs_count
-    return unless destroyed? || previous_changes.key?("status")
+    return unless destroyed? ||
+      (previous_changes.key?("status") &&
+        [ status, previous_changes["status"]&.first ].include?("completed"))
+    return if destroyed? && project&.destroyed?
 
     Project.where(id: project_id).update_all(
       completed_agent_runs_count: AgentRun.where(project_id: project_id, status: "completed").count

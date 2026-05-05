@@ -3248,4 +3248,56 @@ RSpec.describe AgentRun do
       end
     end
   end
+
+  describe "counter caches" do
+    let(:project) { create(:project) }
+
+    describe "agent_runs_count" do
+      it "increments on create" do
+        expect { create(:agent_run, project: project) }
+          .to change { project.reload.agent_runs_count }.by(1)
+      end
+
+      it "decrements on destroy" do
+        agent_run = create(:agent_run, project: project)
+        expect { agent_run.destroy! }
+          .to change { project.reload.agent_runs_count }.by(-1)
+      end
+    end
+
+    describe "completed_agent_runs_count" do
+      it "does not recount when a non-completed run is created" do
+        expect { create(:agent_run, project: project, status: "queued") }
+          .not_to change { project.reload.completed_agent_runs_count }
+      end
+
+      it "recounts when a run transitions to completed" do
+        agent_run = create(:agent_run, :running, project: project)
+        expect { agent_run.update!(status: "completed", completed_at: Time.current) }
+          .to change { project.reload.completed_agent_runs_count }.by(1)
+      end
+
+      it "recounts when a run transitions from completed to another status" do
+        agent_run = create(:agent_run, :running, project: project)
+        agent_run.update!(status: "completed", completed_at: Time.current)
+        project.reload
+        expect { agent_run.update!(status: "failed") }
+          .to change { project.reload.completed_agent_runs_count }.by(-1)
+      end
+
+      it "does not recount on status changes not involving completed" do
+        agent_run = create(:agent_run, project: project, status: "queued")
+        expect { agent_run.update!(status: "running", started_at: Time.current) }
+          .not_to change { project.reload.completed_agent_runs_count }
+      end
+
+      it "recounts when a completed run is destroyed" do
+        agent_run = create(:agent_run, :running, project: project)
+        agent_run.update!(status: "completed", completed_at: Time.current)
+        project.reload
+        expect { agent_run.destroy! }
+          .to change { project.reload.completed_agent_runs_count }.by(-1)
+      end
+    end
+  end
 end
