@@ -64,6 +64,7 @@ module ChatSessions
         content: content
       )
 
+      chat_session.generate_title_from_content!
       on_message_persisted&.call(message)
       message
     end
