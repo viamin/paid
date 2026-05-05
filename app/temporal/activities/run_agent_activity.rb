@@ -801,7 +801,7 @@ module Activities
       # correct environment and will catch real auth failures.
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
       subscription_auth = provider_entry&.subscription? &&
-        ProviderSupport.subscription_auth_unset_vars_for(provider).any?
+        ProviderSupport.subscription_auth_unset_vars_for(provider_entry.provider_key).any?
       harness_provider = preflight_provider_instance(command_context)
       if harness_provider && !subscription_auth
         run_harness_preflight!(
