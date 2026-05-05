@@ -2,7 +2,7 @@
 
 module Providers
   class UsageStats
-    CACHE_TTL = 5.minutes
+    CACHE_TTL = 15.minutes
 
     attr_reader :user
 

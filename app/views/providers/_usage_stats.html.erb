@@ -9,7 +9,7 @@
       </summary>
       <div class="border-t border-gray-200 divide-y divide-gray-100">
         <% @providers.each do |provider| %>
-          <% stats = provider_usage_stats_for(provider) %>
+          <% stats = @provider_stats_by_id[provider.id] %>
           <% next unless stats %>
           <div class="px-4 py-3">
             <h3 class="text-sm font-semibold text-gray-900"><%= provider.display_name %></h3>

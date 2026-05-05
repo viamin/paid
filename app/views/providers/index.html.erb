@@ -58,7 +58,7 @@
                 <%= provider.enabled_for_fallback? ? "Enabled" : "Disabled" %>
               <% end %>
             </td>
-            <% stats = provider_usage_stats_for(provider) %>
+            <% stats = @provider_stats_by_id[provider.id] %>
             <td class="px-4 py-3 text-sm text-gray-700">
               <% if stats && stats[:runs_7d] > 0 %>
                 <span class="font-medium"><%= number_to_currency(stats[:cost_cents_7d] / 100.0) %></span>
