@@ -92,7 +92,7 @@ module Automation
           end
 
           def review_required_parent_scope(project)
-            with_open_non_pr_subissues(base_scope(project))
+            with_open_non_pr_subissues(parent_review_scope(project))
               .where(id: blocking_parent_issue_ids(project))
           end
 
@@ -195,6 +195,11 @@ module Automation
             EXCLUDED_LABELS.reduce(base) do |scope, label|
               scope.where.not("labels @> ?::jsonb", [ label ].to_json)
             end
+          end
+
+          def parent_review_scope(project)
+            Issue.where(project: project, github_state: "open", is_pull_request: false)
+              .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
           end
 
           def without_open_non_pr_subissues(scope)

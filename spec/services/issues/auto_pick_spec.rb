@@ -398,6 +398,22 @@ RSpec.describe Issues::AutoPick do
       )
     end
 
+    it "publishes a review notification for a blocking parent even when auto-pick excludes it by label" do
+      parent = create(:issue, project: project, github_number: 1, labels: [ "epic" ])
+      create(:issue, project: project, github_number: 2, parent_issue: parent)
+      blocked = create(:issue, project: project, github_number: 3)
+      create(:issue_dependency, issue: blocked, depends_on_issue: parent)
+
+      described_class.new(project).call
+
+      expect(Notification.find_by(
+        account: project.account,
+        user: project.effective_owner,
+        source: "blocking_parent_issue_review",
+        subject: parent
+      )).to be_present
+    end
+
     it "resolves a blocking-parent review notification once the parent is no longer blocking" do
       parent = create(:issue, project: project, github_number: 1)
       child = create(:issue, project: project, github_number: 2, parent_issue: parent)

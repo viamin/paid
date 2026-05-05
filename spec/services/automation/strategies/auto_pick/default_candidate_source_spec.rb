@@ -115,6 +115,29 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(child).to be_present
     end
 
+    it "returns blocking parent issues even when auto-pick label exclusions make them ineligible" do
+      parent = create(:issue, project: project, github_number: 1, labels: [ "tracking" ])
+      create(:issue, project: project, github_number: 2, parent_issue: parent)
+      blocked = create(:issue, project: project, github_number: 3)
+      create(:issue_dependency, issue: blocked, depends_on_issue: parent)
+
+      scope = described_class.review_required_parent_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(parent.id)
+    end
+
+    it "returns blocking parent issues even when trusted-user auto-pick filters exclude them" do
+      project.update!(allowed_github_usernames: [ "trusted-user" ])
+      parent = create(:issue, project: project, github_number: 1, github_creator_login: "external-user")
+      create(:issue, project: project, github_number: 2, parent_issue: parent)
+      blocked = create(:issue, project: project, github_number: 3)
+      create(:issue_dependency, issue: blocked, depends_on_issue: parent)
+
+      scope = described_class.review_required_parent_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(parent.id)
+    end
+
     it "does not return parents that are not blocking downstream issues" do
       parent = create(:issue, project: project, github_number: 1)
       create(:issue, project: project, github_number: 2, parent_issue: parent)
