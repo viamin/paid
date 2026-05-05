@@ -51,8 +51,8 @@ RSpec.configure do |config|
     class << self
       alias_method :warn_without_filter, :warn
 
-      def warn(message, category: nil, **)
-        super unless message.include?("/gems/")
+      def warn(message, category: nil, **kwargs)
+        warn_without_filter(message, category: category, **kwargs) unless message.include?("/gems/")
       end
     end
   end
