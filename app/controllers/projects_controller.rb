@@ -22,6 +22,7 @@ class ProjectsController < ApplicationController
   def show
     authorize @project
     @recent_agent_runs = @project.agent_runs.recent.includes(:provider, :issue, project: [ :created_by, :account ]).limit(10).to_a
+    AgentRun.preload_final_provider_records(@recent_agent_runs)
     @stale_agent_runs_count = @project.agent_runs.stale_for_cleanup.count
     @show_stale_cleanup_action = policy(@project).update? && @stale_agent_runs_count.positive?
     AgentRun.preload_source_pull_requests(@recent_agent_runs)

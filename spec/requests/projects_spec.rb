@@ -565,6 +565,21 @@ RSpec.describe "Projects" do
         expect(row.text).to include(provider.display_name)
       end
 
+      it "shows the final provider label for legacy fallback runs in recent agent runs" do
+        project = create(:project, account: account, github_token: github_token, created_by: user)
+        initial_provider = create(:provider, user: user, provider_key: "codex")
+        run = create(:agent_run, project: project, provider: initial_provider, final_provider: "cursor")
+
+        get project_path(project)
+
+        document = Nokogiri::HTML(response.body)
+        section = document.at_css(%(div[id="#{ActionView::RecordIdentifier.dom_id(project, :agent_runs)}"]))
+        row = section.at_css(%(a[href="#{project_agent_run_path(project, run)}"]))&.ancestors("tr")&.first
+
+        expect(row).to be_present
+        expect(row.text).to include(Provider.display_name_for("cursor"))
+      end
+
       it "renders unsupported provider identifiers in recent agent runs without error" do
         project = create(:project, account: account, github_token: github_token, created_by: user)
         run = create(:agent_run, project: project, provider: nil, final_provider: "api", agent_type: "api")

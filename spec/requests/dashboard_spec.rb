@@ -140,6 +140,17 @@ RSpec.describe "Dashboard" do
         expect(row.text).to include(provider.display_name)
       end
 
+      it "shows the final provider label for legacy fallback runs in the active runs table" do
+        initial_provider = create(:provider, user: user, provider_key: "codex")
+        run = create(:agent_run, :running, project: project, provider: initial_provider, final_provider: "cursor")
+
+        get dashboard_path
+
+        row = Nokogiri::HTML(response.body).at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
+        expect(row).to be_present
+        expect(row.text).to include(Provider.display_name_for("cursor"))
+      end
+
       it "renders unsupported provider identifiers in the active runs table without error" do
         run = create(:agent_run, :running, project: project, provider: nil, final_provider: "api", agent_type: "api")
 

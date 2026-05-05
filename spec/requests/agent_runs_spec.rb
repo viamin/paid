@@ -147,6 +147,15 @@ RSpec.describe "AgentRuns" do
         expect(cell_for_run(parsed_html, run, "Provider").text.squish).to eq("Deleted provider entry")
       end
 
+      it "shows the final provider label for legacy fallback runs" do
+        initial_provider = create(:provider, user: user, provider_key: "codex")
+        run = create(:agent_run, project: project, provider: initial_provider, final_provider: "cursor")
+
+        get agent_runs_path
+
+        expect(cell_for_run(parsed_html, run, "Provider").text.squish).to eq(Provider.display_name_for("cursor"))
+      end
+
       it "renders unsupported provider identifiers without error" do
         run = create(:agent_run, project: project, provider: nil, final_provider: "api", agent_type: "api")
 
@@ -518,6 +527,15 @@ RSpec.describe "AgentRuns" do
 
         expect(column_index(document, "Provider")).not_to be_nil
         expect(cell_for_run(document, run, "Provider").text.squish).to eq(provider.display_name)
+      end
+
+      it "shows the final provider label for legacy fallback runs" do
+        initial_provider = create(:provider, user: user, provider_key: "codex")
+        run = create(:agent_run, project: project, provider: initial_provider, final_provider: "cursor")
+
+        get project_agent_runs_path(project)
+
+        expect(cell_for_run(parsed_html, run, "Provider").text.squish).to eq(Provider.display_name_for("cursor"))
       end
 
       it "renders unsupported provider identifiers without error" do
