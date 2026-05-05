@@ -122,6 +122,31 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("42s")
       end
 
+      it "shows knowledge provider health and pipeline metrics" do
+        create(:provider_state, :rate_limited, user: user, provider_name: user.settings.kb_embedding_provider)
+        create(:provider_state, user: user, provider_name: user.settings.kb_chat_provider, failure_count: 2)
+        create(:knowledge_run, :completed, project: project, operation_type: "embedding", final_provider: "openai")
+        create(:knowledge_run, :failed, :decision_drafting, project: project, provider_attempts: [ { "provider" => "claude" } ])
+
+        get dashboard_path
+
+        expect(response.body).to include("Provider Health")
+        expect(response.body).to include("Unavailable")
+        expect(response.body).to include("LLM Pipeline Metrics (Last 30 Days)")
+        expect(response.body).to include("Decision Drafting")
+        expect(response.body).to include("Embedding")
+      end
+
+      it "shows unavailable helper copy when both provider groups are down" do
+        create(:provider_state, :rate_limited, user: user, provider_name: user.settings.kb_embedding_provider)
+        create(:provider_state, :circuit_open, user: user, provider_name: user.settings.kb_chat_provider)
+
+        get dashboard_path
+
+        expect(response.body).to include("Knowledge capabilities are unavailable because both provider groups are down.")
+        expect(response.body).not_to include("Knowledge capabilities are degraded while one provider group remains available.")
+      end
+
       it "shows the provider column in the active runs table" do
         provider = create(:provider, user: user, provider_key: "codex")
         run = create(:agent_run, :running, project: project, provider: provider, final_provider: provider.routing_key)

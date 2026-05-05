@@ -107,7 +107,19 @@ module Knowledge
       end
 
       def send_to_llm_containerized(prompt)
+        success = false
         knowledge_run = create_knowledge_run!
+        configured_providers = chat_providers
+        providers = configured_providers.select { |provider| Knowledge::AnalysisRunner.supported_provider?(provider) }
+
+        if providers.empty?
+          log_all_providers_unavailable(
+            knowledge_run,
+            reason: "no_supported_container_providers",
+            providers: configured_providers
+          )
+          return nil
+        end
 
         runner = Knowledge::AnalysisRunner.new(
           project: agent_run.project,
@@ -115,9 +127,8 @@ module Knowledge
         )
 
         runner.with_container do |r|
-          chat_providers.each do |provider|
-            next unless Knowledge::AnalysisRunner.supported_provider?(provider)
-
+          providers.each_with_index do |provider, index|
+            knowledge_run.record_provider_attempt(provider)
             output = r.call_llm(
               prompt,
               provider: provider,
@@ -126,18 +137,38 @@ module Knowledge
             )
 
             parsed = parse_text_output(output)
-            return parsed if parsed
+            if parsed
+              knowledge_run.update!(final_provider: provider)
+              success = true
+              return parsed
+            end
+
+            log_provider_switch(
+              from_provider: provider,
+              to_provider: providers[index + 1],
+              reason: "unparseable_response",
+              knowledge_run: knowledge_run
+            )
           rescue Knowledge::AnalysisRunner::Error => e
             Rails.logger.warn(
               message: "knowledge.decisions.draft_container_provider_failed",
               agent_run_id: agent_run.id,
+              knowledge_run_id: knowledge_run.id,
               provider: provider,
               error_class: e.class.name,
               error: e.message
             )
+            log_provider_switch(
+              from_provider: provider,
+              to_provider: providers[index + 1],
+              reason: "container_provider_failed",
+              knowledge_run: knowledge_run,
+              error: e
+            )
           end
         end
 
+        log_all_providers_unavailable(knowledge_run, reason: "containerized_providers_failed")
         nil
       rescue Knowledge::AnalysisRunner::Error => e
         Rails.logger.warn(
@@ -146,15 +177,18 @@ module Knowledge
           error_class: e.class.name,
           error: e.message
         )
-        send_to_llm_in_process(prompt)
+        fallback_result = send_to_llm_in_process(prompt)
+        success = fallback_result.present?
+        fallback_result
       ensure
-        finalize_knowledge_run!(knowledge_run)
+        finalize_knowledge_run!(knowledge_run, success: success)
       end
 
       def send_to_llm_in_process(prompt)
+        success = false
         setting = effective_user_setting
 
-        if setting
+        result = if setting
           create_knowledge_run! unless current_knowledge_run
 
           executor = Knowledge::ProviderExecutor.new(
@@ -176,36 +210,63 @@ module Knowledge
         else
           send_to_llm_in_process_without_executor(prompt)
         end
+
+        success = result.present?
+        result
       rescue Knowledge::ProviderExecutor::AllProvidersExhausted => e
         Rails.logger.warn(
           message: "knowledge.decisions.draft_all_providers_exhausted",
           agent_run_id: agent_run.id,
+          knowledge_run_id: current_knowledge_run&.id,
           error: e.message
         )
         nil
       ensure
-        finalize_knowledge_run!(current_knowledge_run) unless Knowledge::AnalysisRunner.available?
+        finalize_knowledge_run!(current_knowledge_run, success: success) unless Knowledge::AnalysisRunner.available?
       end
 
       def send_to_llm_in_process_without_executor(prompt)
-        chat_providers.each do |provider|
+        create_knowledge_run! unless current_knowledge_run
+        providers = chat_providers
+
+        providers.each_with_index do |provider, index|
+          current_knowledge_run.record_provider_attempt(provider)
           response = AgentHarness.send_message(
             prompt,
             **llm_request_options(provider)
           )
 
           parsed = parse_response(response)
-          return parsed if parsed
+          if parsed
+            current_knowledge_run.update!(final_provider: provider)
+            return parsed
+          end
+
+          log_provider_switch(
+            from_provider: provider,
+            to_provider: providers[index + 1],
+            reason: "invalid_response",
+            knowledge_run: current_knowledge_run
+          )
         rescue AgentHarness::Error => e
           Rails.logger.warn(
             message: "knowledge.decisions.draft_provider_failed",
             agent_run_id: agent_run.id,
+            knowledge_run_id: current_knowledge_run.id,
             provider: provider,
             error_class: e.class.name,
             error: e.message
           )
+          log_provider_switch(
+            from_provider: provider,
+            to_provider: providers[index + 1],
+            reason: "provider_failed",
+            knowledge_run: current_knowledge_run,
+            error: e
+          )
         end
 
+        log_all_providers_unavailable(current_knowledge_run, reason: "in_process_providers_failed")
         nil
       end
 
@@ -291,15 +352,44 @@ module Knowledge
         )
       end
 
-      def finalize_knowledge_run!(knowledge_run)
+      def finalize_knowledge_run!(knowledge_run, success:)
         return unless knowledge_run&.persisted?
 
-        knowledge_run.update!(status: "completed") if knowledge_run.active?
+        success ? knowledge_run.complete! : knowledge_run.fail!
       rescue ActiveRecord::RecordInvalid => e
         Rails.logger.warn(
           message: "knowledge.decisions.draft_knowledge_run_finalize_failed",
           knowledge_run_id: knowledge_run.id,
           error: e.message
+        )
+      end
+
+      def log_provider_switch(from_provider:, to_provider:, reason:, knowledge_run:, error: nil)
+        return if to_provider.blank?
+
+        payload = {
+          message: "knowledge.provider_switch",
+          operation: "decision_drafting",
+          from_provider: from_provider,
+          to_provider: to_provider,
+          reason: reason,
+          knowledge_run_id: knowledge_run.id,
+          agent_run_id: agent_run.id
+        }
+        payload[:error_class] = error.class.name if error
+        payload[:error] = error.message if error
+
+        Rails.logger.warn(payload)
+      end
+
+      def log_all_providers_unavailable(knowledge_run, reason:, providers: nil)
+        Rails.logger.warn(
+          message: "knowledge.providers_unavailable",
+          operation: "decision_drafting",
+          reason: reason,
+          providers: providers || knowledge_run.provider_attempts.map { |attempt| attempt["provider"] },
+          knowledge_run_id: knowledge_run.id,
+          agent_run_id: agent_run.id
         )
       end
 

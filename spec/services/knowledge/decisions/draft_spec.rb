@@ -327,6 +327,24 @@ RSpec.describe Knowledge::Decisions::Draft do
 
       expect(result).to be_nil
     end
+
+    it "logs unavailable providers when only non-container providers are configured" do
+      allow(Rails.logger).to receive(:warn)
+      allow(Knowledge::AnalysisRunner).to receive(:supported_provider?).with("cursor").and_return(false)
+      allow(Knowledge::AnalysisRunner).to receive(:supported_provider?).with("codex").and_return(false)
+      project.created_by.settings.update!(kb_chat_provider: "cursor", kb_chat_fallback_providers: [ "codex" ])
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result).to be_nil
+      expect(Rails.logger).to have_received(:warn).with(hash_including(
+        message: "knowledge.providers_unavailable",
+        operation: "decision_drafting",
+        reason: "no_supported_container_providers",
+        providers: %w[cursor codex]
+      ))
+      expect(KnowledgeRun.last.status).to eq("failed")
+    end
   end
 
   describe "in-process fallback" do
@@ -349,6 +367,35 @@ RSpec.describe Knowledge::Decisions::Draft do
       kr = KnowledgeRun.last
       expect(kr.status).to eq("completed")
       expect(kr.operation_type).to eq("decision_drafting")
+    end
+
+    it "marks the KnowledgeRun failed when all providers fail" do
+      allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
+      allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::Error, "timeout")
+
+      described_class.call(agent_run: agent_run)
+
+      expect(KnowledgeRun.last.status).to eq("failed")
+    end
+
+    it "logs provider switches for non-executor fallback paths" do
+      draft = described_class.new(agent_run: agent_run)
+
+      allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
+      allow(Rails.logger).to receive(:warn)
+      allow(draft).to receive_messages(effective_user_setting: nil, chat_providers: %w[cursor claude])
+      failed_response = instance_double(AgentHarness::Response, success?: false, error: "cursor unavailable")
+      allow(AgentHarness).to receive(:send_message).and_return(failed_response, llm_response)
+
+      draft.call
+
+      expect(Rails.logger).to have_received(:warn).with(hash_including(
+        message: "knowledge.provider_switch",
+        operation: "decision_drafting",
+        from_provider: "cursor",
+        to_provider: "claude",
+        knowledge_run_id: KnowledgeRun.last.id
+      ))
     end
   end
 end

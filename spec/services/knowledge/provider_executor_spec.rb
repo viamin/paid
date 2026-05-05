@@ -158,5 +158,48 @@ RSpec.describe Knowledge::ProviderExecutor do
         expect(state.failure_count).to eq(1)
       end
     end
+
+    context "with structured logging" do
+      it "logs provider switches when falling back" do
+        allow(Rails.logger).to receive(:warn)
+        executor = described_class.new(
+          user_setting: user_setting,
+          operation: :chat,
+          knowledge_run: knowledge_run
+        )
+
+        executor.execute do |provider|
+          raise AgentHarness::RateLimitError, "rate limited" if provider == "claude"
+          "ok"
+        end
+
+        expect(Rails.logger).to have_received(:warn).with(hash_including(
+          message: "knowledge.provider_switch",
+          from_provider: "claude",
+          to_provider: "openai",
+          operation: "chat",
+          knowledge_run_id: knowledge_run.id
+        ))
+      end
+
+      it "logs when all providers are unavailable before execution starts" do
+        allow(Rails.logger).to receive(:warn)
+        allow(Knowledge::ProviderSelector).to receive(:for_chat)
+          .with(user_setting: user_setting)
+          .and_return([])
+
+        executor = described_class.new(user_setting: user_setting, operation: :chat)
+
+        expect {
+          executor.execute { |_provider| "ok" }
+        }.to raise_error(Knowledge::ProviderExecutor::AllProvidersExhausted)
+
+        expect(Rails.logger).to have_received(:warn).with(hash_including(
+          message: "knowledge.providers_unavailable",
+          operation: "chat",
+          reason: "no_available_providers"
+        ))
+      end
+    end
   end
 end
