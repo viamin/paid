@@ -1043,6 +1043,34 @@ RSpec.describe Providers::TestAgent do
     end
   end
 
+  describe "smoke test timeout forwarding (issue #1538)" do
+    it "forwards max(caller_timeout, contract_timeout) to the provider smoke_test" do
+      provider_instance = instance_double(
+        AgentHarness::Providers::Base,
+        executor: instance_double(AgentHarness::CommandExecutor, which: "/usr/bin/kilo"),
+        validate_config: { valid: true, errors: [] },
+        smoke_test_contract: { prompt: "Reply with exactly OK.", timeout: 30, expected_output: "OK", require_output: true },
+        smoke_test: { ok: true, status: "ok", message: "Smoke test passed" }
+      )
+
+      allow(AgentHarness::Providers::Registry.instance).to receive(:registered?).with(:kilocode).and_return(true)
+      allow(AgentHarness::Providers::Registry.instance).to receive(:get).with(:kilocode).and_return(AgentHarness::Providers::Kilocode)
+      allow(AgentHarness::Providers::Registry.instance).to receive(:canonical_name).with(:kilocode).and_return(:kilocode)
+      allow(AgentHarness::Providers::Registry.instance).to receive(:smoke_test_contract).with(:kilocode).and_return({ timeout: 30 })
+      allow(AgentHarness::ProviderHealthCheck).to receive(:build_provider).and_return(provider_instance)
+
+      executor = instance_double(AgentHarness::DockerCommandExecutor)
+      runtime = AgentHarness::ProviderRuntime.new(env: { "FOO" => "bar" })
+
+      AgentHarness::ProviderHealthCheck.check(:kilocode, timeout: 60, executor: executor, provider_runtime: runtime)
+
+      expect(provider_instance).to have_received(:smoke_test).with(
+        timeout: 60,
+        provider_runtime: runtime
+      )
+    end
+  end
+
   describe "#rate_limit_reset_at" do
     let(:account) { create(:account, slug: "test-agent-rate-limit-reset-account") }
     let(:user) { create(:user, account: account, email: "test-agent-rate-limit-reset@example.com") }
