@@ -127,5 +127,67 @@ RSpec.describe Scaling::QueueMonitor do
       expect(good_job_depth.threshold_warning).to eq(1)
       expect(good_job_depth.threshold_critical).to eq(5)
     end
+
+    it "skips Temporal queues when skip_temporal is true" do
+      result = described_class.call(skip_temporal: true)
+
+      temporal_depths = result.queue_depths.select { |d| d.type == :temporal }
+      expect(temporal_depths).to be_empty
+    end
+  end
+
+  describe ".cached_for_account" do
+    let(:account) { create(:account) }
+    let(:memory_store) { ActiveSupport::Cache::MemoryStore.new }
+
+    before do
+      allow(Paid).to receive(:temporal_client).and_raise(StandardError, "Temporal unavailable")
+      allow(Rails).to receive(:cache).and_return(memory_store)
+    end
+
+    it "returns cached result when available" do
+      original = described_class.call(account: account)
+      described_class.write_cache(account, original)
+
+      cached = described_class.cached_for_account(account)
+
+      expect(cached.queue_depths.map(&:name)).to eq(original.queue_depths.map(&:name))
+      expect(cached.healthy?).to eq(original.healthy?)
+    end
+
+    it "falls back to lightweight result without Temporal on cache miss" do
+      allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::NullStore.new)
+
+      result = described_class.cached_for_account(account)
+
+      expect(result).to be_a(described_class::Result)
+      temporal_depths = result.queue_depths.select { |d| d.type == :temporal }
+      expect(temporal_depths).to be_empty
+      expect(result.queue_depths.select { |d| d.type == :good_job }).not_to be_empty
+    end
+  end
+
+  describe ".serialize / .deserialize" do
+    before do
+      allow(Paid).to receive(:temporal_client).and_raise(StandardError, "Temporal unavailable")
+    end
+
+    it "round-trips a Result through serialization" do
+      original = described_class.call
+
+      deserialized = described_class.deserialize(described_class.serialize(original))
+
+      expect(deserialized.queue_depths.size).to eq(original.queue_depths.size)
+      expect(deserialized.alerts.size).to eq(original.alerts.size)
+      expect(deserialized.healthy?).to eq(original.healthy?)
+
+      original.queue_depths.each_with_index do |depth, i|
+        round_tripped = deserialized.queue_depths[i]
+        expect(round_tripped.name).to eq(depth.name)
+        expect(round_tripped.type).to eq(depth.type)
+        expect(round_tripped.depth).to eq(depth.depth)
+        expect(round_tripped.status).to eq(depth.status)
+      end
+    end
   end
 end
