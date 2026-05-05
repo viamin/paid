@@ -73,6 +73,13 @@ Rails.application.configure do
   # Raise error when a before_action's only/except options reference missing actions.
   config.action_controller.raise_on_missing_callback_actions = true
 
+  # Disable Rails' built-in log rotation (shift_age/shift_size), which renames
+  # development.log to .0 and can leave it missing if recreation fails.  The
+  # 7.1 framework defaults enable rotation at 100 MB for local envs, but
+  # bin/setup already removes stale logs at startup, and Paid::LogTruncator
+  # handles unbounded growth for dev-update logs.
+  config.log_file_size = nil
+
   # Allow agent containers to reach the web service via Docker network aliases.
   config.hosts << "web"
 
