@@ -531,8 +531,7 @@
   color: #93c5fd;
 }
 
-.dark .hover\:text-amber-900:hover,
-.dark .hover\:text-amber-700:hover {
+.dark .hover\:text-amber-900:hover {
   color: #fcd34d;
 }
 

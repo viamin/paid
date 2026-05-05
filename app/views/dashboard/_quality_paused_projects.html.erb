@@ -13,7 +13,7 @@
       <% projects.each do |project| %>
         <div class="flex items-center justify-between gap-4 py-2">
           <div class="min-w-0">
-            <%= link_to project.name, project_path(project), class: "truncate text-sm font-medium text-amber-950 hover:text-amber-700" %>
+            <%= link_to project.name, project_path(project), class: "truncate text-sm font-medium text-amber-950 hover:text-amber-700 dark:hover:text-amber-300" %>
             <p class="mt-0.5 text-xs text-amber-700">
               Paused <%= local_time(project.quality_paused_at, format: :relative) %>
               <% if project.quality_pause_metadata["composite_score"].present? && project.quality_pause_metadata["threshold"].present? %>
@@ -23,9 +23,9 @@
             </p>
           </div>
           <% if policy(project).update? %>
-            <%= link_to "Review", edit_project_path(project), class: "shrink-0 text-sm font-medium text-amber-900 hover:text-amber-700" %>
+            <%= link_to "Review", edit_project_path(project), class: "shrink-0 text-sm font-medium text-amber-900 hover:text-amber-700 dark:hover:text-amber-300" %>
           <% else %>
-            <%= link_to "View", project_path(project), class: "shrink-0 text-sm font-medium text-amber-900 hover:text-amber-700" %>
+            <%= link_to "View", project_path(project), class: "shrink-0 text-sm font-medium text-amber-900 hover:text-amber-700 dark:hover:text-amber-300" %>
           <% end %>
         </div>
       <% end %>
