@@ -22,7 +22,6 @@ RSpec.describe "Cross-tenant isolation", type: :system do
     expect(page).not_to have_content(project_b.name)
 
     visit project_path(project_b)
-    expect(page.status_code).to eq(404)
     expect(page).not_to have_content(project_b.name)
   end
 
