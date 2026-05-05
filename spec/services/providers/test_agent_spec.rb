@@ -1132,6 +1132,52 @@ RSpec.describe Providers::TestAgent do
       expect(provider_instance.received_smoke_test_timeout).to eq(90)
       expect(provider_instance.received_provider_runtime).to eq(runtime)
     end
+
+    it "forwards unrelated smoke-test keywords while replacing a nil timeout" do
+      provider_instance = Class.new do
+        attr_reader :received_kwargs
+
+        def smoke_test_contract
+          { timeout: 30 }
+        end
+
+        def smoke_test(*args, **kwargs)
+          @received_kwargs = kwargs
+          { ok: true }
+        end
+      end.new
+
+      provider_instance.instance_variable_set(:@paid_smoke_test_timeout, 60)
+      provider_instance.singleton_class.prepend(AgentHarnessSmokeTestTimeoutProviderPatch)
+
+      provider_instance.smoke_test(timeout: nil, provider_runtime: :runtime, sentinel: :value)
+
+      expect(provider_instance.received_kwargs).to eq(
+        timeout: 60,
+        provider_runtime: :runtime,
+        sentinel: :value
+      )
+    end
+
+    it "forwards unrelated health-check keywords while storing the caller timeout" do
+      health_check_class = Class.new do
+        class << self
+          attr_reader :received_args, :received_kwargs
+
+          def perform_check(*args, **kwargs)
+            @received_args = args
+            @received_kwargs = kwargs
+          end
+        end
+      end
+      health_check_class.singleton_class.prepend(AgentHarnessSmokeTestTimeoutPatch)
+
+      health_check_class.send(:perform_check, :kilocode, :start, timeout: 60, sentinel: :value)
+
+      expect(health_check_class.received_args).to eq([ :kilocode, :start ])
+      expect(health_check_class.received_kwargs).to eq(timeout: 60, sentinel: :value)
+      expect(Thread.current[:paid_agent_harness_smoke_test_timeout]).to be_nil
+    end
   end
 
   describe "#rate_limit_reset_at" do

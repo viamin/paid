@@ -12,11 +12,12 @@ require Rails.root.join("lib/provider_support").to_s
 # ships the upstream fix.
 # TODO(#1538): remove this monkey-patch when agent-harness ships the upstream fix
 module AgentHarnessSmokeTestTimeoutProviderPatch
-  def smoke_test(timeout:, provider_runtime:)
-    super(
-      timeout: effective_smoke_test_timeout(timeout),
-      provider_runtime: provider_runtime
-    )
+  def smoke_test(*args, **kwargs, &block)
+    if kwargs.key?(:timeout)
+      kwargs = kwargs.merge(timeout: effective_smoke_test_timeout(kwargs[:timeout]))
+    end
+
+    super(*args, **kwargs, &block)
   end
 
   private
@@ -38,10 +39,10 @@ end
 module AgentHarnessSmokeTestTimeoutPatch
   private
 
-  def perform_check(provider_name, start_time, timeout:, executor:, provider_runtime:)
+  def perform_check(*args, timeout: nil, **kwargs, &block)
     previous_timeout = Thread.current[:paid_agent_harness_smoke_test_timeout]
     Thread.current[:paid_agent_harness_smoke_test_timeout] = timeout
-    super
+    super(*args, timeout: timeout, **kwargs, &block)
   ensure
     Thread.current[:paid_agent_harness_smoke_test_timeout] = previous_timeout
   end
@@ -59,7 +60,7 @@ module AgentHarnessSmokeTestTimeoutPatch
 end
 
 agent_harness_version = Gem.loaded_specs.fetch("agent-harness").version
-if agent_harness_version < Gem::Version.new("0.18.0")
+if agent_harness_version == Gem::Version.new("0.17.0")
   AgentHarness::ProviderHealthCheck.singleton_class.prepend(AgentHarnessSmokeTestTimeoutPatch)
 end
 
