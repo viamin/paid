@@ -38,6 +38,25 @@ RSpec.describe Containers::PoolManager do
       )
     end
 
+    it "uses two queries to load grouped counts and active project total" do
+      create(:container_pool_entry, project: project)
+      create(:container_pool_entry, :warming, project: project)
+
+      query_count = count_queries do
+        result = described_class.metrics(projects: Project.where(id: project.id))
+
+        expect(result).to eq(
+          warm: 1,
+          warming: 1,
+          claimed: 0,
+          error: 0,
+          target: described_class.target_size * 1
+        )
+      end
+
+      expect(query_count).to eq(2)
+    end
+
     it "returns zeros when no entries exist" do
       result = described_class.metrics(projects: Project.where(id: project.id))
 
