@@ -74,4 +74,22 @@ RSpec.describe Knowledge::ProviderConfiguration do
       )
     end
   end
+
+  describe ".for_embedding_candidate_providers" do
+    let(:project) { create(:project) }
+    let(:owner) { project.effective_owner }
+
+    it "returns provider identifiers without loading API keys" do
+      owner.settings.update!(
+        kb_embedding_provider: "openrouter",
+        kb_embedding_fallback_providers: [ "openai" ]
+      )
+      create(:provider_api_key, user: owner, api_service_type: "openrouter", api_key: "sk-openrouter")
+
+      candidates = described_class.for_embedding_candidate_providers(project: project)
+
+      expect(candidates.map(&:provider)).to eq(%w[openrouter openai])
+      expect(candidates).to all(satisfy { |c| c.api_key.nil? })
+    end
+  end
 end

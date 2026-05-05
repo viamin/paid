@@ -12,6 +12,12 @@ module Knowledge
       new(project:).for_embedding_candidates
     end
 
+    # Returns provider identifiers only, without loading API keys.
+    # Used by the proxy-based embedding path where the proxy resolves credentials.
+    def self.for_embedding_candidate_providers(project:)
+      new(project:).for_embedding_candidate_providers
+    end
+
     def initialize(project:)
       @project = project
     end
@@ -23,6 +29,15 @@ module Knowledge
     def for_embedding_candidates
       configured_embedding_providers.filter_map do |provider|
         build_embedding_config(provider)
+      end
+    end
+
+    def for_embedding_candidate_providers
+      configured_embedding_providers.filter_map do |provider|
+        next log_unsupported_provider(provider) unless UserSetting::KB_EMBEDDING_PROVIDERS.include?(provider)
+        next log_unsupported_provider(provider) unless Provider::DIRECT_OUTBOUND_API_PROVIDERS.key?(provider)
+
+        Result.new(provider: provider)
       end
     end
 

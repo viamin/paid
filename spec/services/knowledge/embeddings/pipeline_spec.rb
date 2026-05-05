@@ -86,7 +86,7 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
     it "uses a managed proxy generator when no generator is injected" do
       allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
       proxy_generator = instance_double(Knowledge::Embeddings::ProxyGenerator, call: [ embed_result ], model: "text-embedding-3-large", close: true)
-      allow(Knowledge::ProviderConfiguration).to receive(:for_embedding_candidates).with(project: project).and_return([ double(provider: "openai") ])
+      allow(Knowledge::ProviderConfiguration).to receive(:for_embedding_candidate_providers).with(project: project).and_return([ double(provider: "openai") ])
       allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new).and_return(proxy_generator)
 
       described_class.call(project: project)

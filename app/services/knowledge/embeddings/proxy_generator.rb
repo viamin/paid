@@ -7,7 +7,7 @@ module Knowledge
 
       def initialize(project:, provider_configs: nil, knowledge_run: nil, containerize: false)
         @project = project
-        @provider_configs = Array(provider_configs || Knowledge::ProviderConfiguration.for_embedding_candidates(project: project))
+        @provider_configs = Array(provider_configs || Knowledge::ProviderConfiguration.for_embedding_candidate_providers(project: project))
         @knowledge_run = knowledge_run
         @containerize = containerize
         @model = Generate::MODEL
@@ -78,7 +78,12 @@ module Knowledge
       end
 
       def proxy_embeddings_url
-        "http://127.0.0.1:#{Rails.application.config.x.paid_proxy_port}/api/proxy/openai/v1"
+        "#{proxy_base_url}/api/proxy/openai/v1"
+      end
+
+      def proxy_base_url
+        ENV["PAID_PROXY_URL"].presence ||
+          "http://web:#{Rails.application.config.x.paid_proxy_port}"
       end
 
       def record_attempt!(provider)

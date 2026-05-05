@@ -17,8 +17,7 @@ module Knowledge
       memory_bytes: 256 * 1024 * 1024,
       cpu_quota: 100_000,
       pids_limit: 100,
-      timeout_seconds: 120,
-      network_mode: "bridge"
+      timeout_seconds: 120
     }.freeze
 
     attr_reader :project, :knowledge_run
@@ -214,7 +213,7 @@ module Knowledge
           "Tmpfs" => {
             "/tmp" => "size=#{64 * 1024 * 1024},mode=1777"
           },
-          "NetworkMode" => CONTAINER_DEFAULTS[:network_mode],
+          "NetworkMode" => NetworkPolicy::NETWORK_NAME,
           "Binds" => [ "#{@input_dir}:/paid-input" ]
         },
         "Env" => [

@@ -62,7 +62,7 @@ module Knowledge
         return [ process_batch(chunks, generator) ] if generator
 
         chunks.group_by(&:project).each_with_object([]) do |(project, project_chunks), results|
-          configs = Knowledge::ProviderConfiguration.for_embedding_candidates(project: project)
+          configs = Knowledge::ProviderConfiguration.for_embedding_candidate_providers(project: project)
           next if configs.empty?
 
           results << process_batch(project_chunks, generator_for(project, configs))

@@ -31,7 +31,7 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
       expect(results).to eq([ result ])
       expect(Knowledge::Embeddings::Generate).to have_received(:call).with(
         texts: [ "hello" ],
-        base_url: "http://127.0.0.1:3000/api/proxy/openai/v1",
+        base_url: "http://web:3000/api/proxy/openai/v1",
         headers: hash_including(
           "Authorization" => "Bearer paid-knowledge-run:#{knowledge_run.id}:#{knowledge_run.proxy_token}",
           "X-Paid-Knowledge-Provider" => "openrouter"
