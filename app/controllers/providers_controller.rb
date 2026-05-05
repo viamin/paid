@@ -1,6 +1,15 @@
 # frozen_string_literal: true
 
 class ProvidersController < ApplicationController
+  # Lightweight stand-in for ProviderState used by the cached_provider_states
+  # method.  Caching full ActiveRecord objects is brittle across deploys and
+  # bloats the cache payload; this struct holds only the primitive attributes
+  # the views actually read.
+  CachedState = Struct.new(:circuit_state, :rate_limited_until, keyword_init: true) do
+    def rate_limited?  = rate_limited_until.present? && rate_limited_until > Time.current
+    def circuit_open?  = circuit_state == "open"
+    def circuit_half_open? = circuit_state == "half_open"
+  end
   before_action :set_provider, only: [ :edit, :update, :destroy, :test_agent ]
   before_action :load_provider_options, only: [ :new, :create, :edit, :update ]
 
@@ -328,7 +337,7 @@ class ProvidersController < ApplicationController
 
     # Derive enabled/fallback identifiers from the already-loaded @providers
     # collection to avoid 2 extra queries.
-    executable_keys = ProviderSupport.container_executable_provider_keys
+    executable_keys = ProviderSupport.container_executable_provider_keys.to_set
     enabled_providers = @providers.select { |p| p.enabled_for_agent_runs? && executable_keys.include?(p.provider_key) }
     fallback_providers = @providers.select { |p| p.enabled_for_fallback? && executable_keys.include?(p.provider_key) }
 
@@ -464,7 +473,12 @@ class ProvidersController < ApplicationController
 
   def cached_provider_states
     Rails.cache.fetch("providers/states/#{current_user.id}", expires_in: 30.seconds) do
-      current_user.provider_states.index_by(&:provider_name)
+      current_user.provider_states.each_with_object({}) do |state, hash|
+        hash[state.provider_name] = CachedState.new(
+          circuit_state: state.circuit_state,
+          rate_limited_until: state.rate_limited_until
+        )
+      end
     end
   end
 
