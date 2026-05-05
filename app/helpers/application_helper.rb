@@ -493,7 +493,7 @@ module ApplicationHelper
     return provider.display_name if provider
     return MISSING_PROVIDER_ENTRY_LABEL if Provider.routing_key?(identifier)
 
-    Provider.display_name_for(identifier)
+    Provider.display_name_for(normalized_provider_identifier(identifier))
   end
 
   def provider_for_identifier(run, configured_providers_by_owner_and_key, routed_providers_by_owner_and_id)
@@ -503,7 +503,9 @@ module ApplicationHelper
       return routed_providers_by_owner_and_id[[ owner_id, provider_id ]]
     end
 
-    configured_providers_by_owner_and_key[[ run.project&.effective_owner&.id, run.final_provider ]] ||
+    normalized_identifier = normalized_provider_identifier(run.final_provider)
+
+    configured_providers_by_owner_and_key[[ run.project&.effective_owner&.id, normalized_identifier ]] ||
       (run.provider if run.provider&.matches_identifier?(run.final_provider))
   end
 
@@ -530,7 +532,7 @@ module ApplicationHelper
       owner_id = run.project&.effective_owner&.id
       next unless owner_id
 
-      provider_keys[run.final_provider] << owner_id
+      provider_keys[normalized_provider_identifier(run.final_provider)] << owner_id
     end
     return {} if owner_ids_by_provider_key.empty?
 
@@ -545,6 +547,10 @@ module ApplicationHelper
     yield
   rescue Propshaft::MissingAssetError
     raise unless Rails.env.test?
+  end
+
+  def normalized_provider_identifier(identifier)
+    ProviderSupport.provider_key_for_agent_type(identifier)
   end
 
   def safe_return_path?(path)
