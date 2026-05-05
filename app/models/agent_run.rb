@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
+  attr_accessor :preloaded_final_provider_record, :preloaded_final_provider_record_loaded
+
   MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500
   PROVIDER_ATTEMPT_SECRET_PATTERNS = [
     [ /\bsk-[A-Za-z0-9][A-Za-z0-9_-]{10,}\b/, "[REDACTED:api_key]" ],
@@ -292,12 +294,86 @@ class AgentRun < ApplicationRecord
     keys.each { |key| Rails.cache.delete(key) }
   end
 
+  def self.preload_final_provider_records(runs)
+    runs = runs.to_a
+    return runs if runs.empty?
+
+    fallback_owner_ids = fallback_owner_ids_by_account(
+      runs.filter_map { |run| run.project&.account_id if run.project&.created_by_id.nil? }.uniq
+    )
+    records_by_lookup = final_provider_records_by_lookup(runs, fallback_owner_ids)
+
+    runs.each do |run|
+      final_identifier = run.final_provider.presence
+      next if final_identifier.blank?
+
+      run.preloaded_final_provider_record_loaded = true
+      run.preloaded_final_provider_record =
+        if run.provider.present? && run.provider.matches_identifier?(final_identifier)
+          run.provider
+        else
+          owner_id = effective_owner_id_for(run, fallback_owner_ids)
+          records_by_lookup[[ owner_id, final_identifier ]]
+        end
+    end
+
+    runs
+  end
+
   def self.compute_distinct_effective_providers
     pluck(Arel.sql("DISTINCT #{effective_provider_sql}"))
       .compact
       .sort
   end
   private_class_method :compute_distinct_effective_providers
+
+  def self.final_provider_records_by_lookup(runs, fallback_owner_ids)
+    lookup_pairs = runs.filter_map do |run|
+      final_identifier = run.final_provider.presence
+      next unless Provider.routing_key?(final_identifier)
+
+      owner_id = effective_owner_id_for(run, fallback_owner_ids)
+      next unless owner_id
+
+      [ owner_id, final_identifier ]
+    end.uniq
+    return {} if lookup_pairs.empty?
+
+    provider_ids = lookup_pairs.map { |(_, identifier)| Provider.id_from_routing_key(identifier) }.uniq
+    owner_ids = lookup_pairs.map(&:first).uniq
+
+    Provider.where(id: provider_ids, user_id: owner_ids).index_by { |provider| [ provider.user_id, provider.routing_key ] }
+  end
+  private_class_method :final_provider_records_by_lookup
+
+  def self.effective_owner_id_for(run, fallback_owner_ids)
+    project = run.project
+    return unless project
+
+    project.created_by_id || fallback_owner_ids[project.account_id]
+  end
+  private_class_method :effective_owner_id_for
+
+  def self.fallback_owner_ids_by_account(account_ids)
+    account_ids = account_ids.compact.uniq
+    return {} if account_ids.empty?
+
+    owner_ids = AccountMembership.where(account_id: account_ids, role: :owner)
+      .order(:account_id, :id)
+      .pluck(:account_id, :user_id)
+      .each_with_object({}) { |(account_id, user_id), memo| memo[account_id] ||= user_id }
+
+    missing_account_ids = account_ids - owner_ids.keys
+    return owner_ids if missing_account_ids.empty?
+
+    User.where(account_id: missing_account_ids)
+      .order(:account_id, :id)
+      .pluck(:account_id, :id)
+      .each { |account_id, user_id| owner_ids[account_id] ||= user_id }
+
+    owner_ids
+  end
+  private_class_method :fallback_owner_ids_by_account
 
   def duration
     return nil unless started_at
