@@ -175,6 +175,15 @@ RSpec.describe "UserSettings" do
         expect(response.body).to include("error")
       end
 
+      it "renders the edit template for invalid turbo-stream requests" do
+        patch user_settings_path,
+          params: { user_setting: { default_poll_interval_seconds: 0 } },
+          headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("Default Poll Interval")
+      end
+
       it "renders errors for invalid agent provider" do
         patch user_settings_path, params: { user_setting: { default_agent_provider: "invalid" } }
         expect(response).to redirect_to(edit_user_settings_path)
