@@ -14,6 +14,9 @@
                 <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                   Priority
                 </th>
+                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                  Provider
+                </th>
                 <% if show_project %>
                   <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Project</th>
                 <% end %>
@@ -42,6 +45,9 @@
                   </td>
                   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                     <%= agent_run_priority_badge(run) %>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    <%= agent_run_provider_display(run) %>
                   </td>
                   <% if show_project %>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">

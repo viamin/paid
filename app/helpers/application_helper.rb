@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 module ApplicationHelper
+  MISSING_PROVIDER_ENTRY_LABEL = "Deleted provider entry"
+
   # Dark-mode colors for these badges are handled by the global unlayered
   # overrides in application.tailwind.css (e.g. `.dark .bg-indigo-100`),
   # which have higher cascade priority than Tailwind dark: utilities.
@@ -77,6 +79,13 @@ module ApplicationHelper
       run.queue_priority_label,
       class: "inline-flex items-center rounded-md #{styles[:bg]} px-2 py-1 text-xs font-medium #{styles[:text]}"
     )
+  end
+
+  def agent_run_provider_display(run)
+    return run.effective_provider_record.display_name if run.effective_provider_record
+    return MISSING_PROVIDER_ENTRY_LABEL if Provider.routing_key?(run.final_provider)
+
+    Provider.display_name_for(run.effective_provider)
   end
 
   PAID_STATE_STYLES = {

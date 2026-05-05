@@ -48,6 +48,35 @@ RSpec.describe "AgentRuns" do
         expect(goal_cell.at_css('[data-controller="tooltip"]')).to be_present
       end
 
+      it "aligns the Provider header with provider values in each row" do
+        owner = project.effective_owner
+        configured_provider = owner.providers.create!(
+          provider_key: "cursor",
+          auth_type: "subscription",
+          name: "Cursor Stable",
+          enabled_for_agent_runs: true
+        )
+        run = create(:agent_run, :with_custom_prompt, project: project, provider: configured_provider,
+          final_provider: configured_provider.routing_key)
+
+        get agent_runs_path
+
+        provider_cell = cell_for_run(parsed_html, run, "Provider")
+
+        expect(provider_cell.text.squish).to eq(configured_provider.display_name)
+      end
+
+      it "shows a deleted-provider fallback label in the Provider column" do
+        run = create(:agent_run, :with_custom_prompt, project: project, provider: nil,
+          final_provider: "provider:999999")
+
+        get agent_runs_path
+
+        provider_cell = cell_for_run(parsed_html, run, "Provider")
+
+        expect(provider_cell.text.squish).to eq("Deleted provider entry")
+      end
+
       it "prefers the issue title over custom prompt text" do
         issue = create(:issue, project: project, title: "Fix flaky webhook retry handling")
         run = create(:agent_run, :with_custom_prompt, project: project, issue: issue,
@@ -2332,15 +2361,7 @@ RSpec.describe "AgentRuns" do
   end
 
   def goal_cell_for_run(document, run)
-    row = row_for_run(document, run)
-    index = goal_column_index(document)
-
-    expect(index).not_to be_nil, "Expected a 'Goal' header column in the table but none was found"
-
-    goal_cell = row.css("td")[index]
-
-    expect(goal_cell).to be_present
-    goal_cell
+    cell_for_run(document, run, "Goal")
   end
 
   def row_for_run(document, run)
@@ -2351,7 +2372,23 @@ RSpec.describe "AgentRuns" do
     row
   end
 
+  def cell_for_run(document, run, header_text)
+    row = row_for_run(document, run)
+    index = column_index(document, header_text)
+
+    expect(index).not_to be_nil, "Expected a '#{header_text}' header column in the table but none was found"
+
+    cell = row.css("td")[index]
+
+    expect(cell).to be_present
+    cell
+  end
+
   def goal_column_index(document)
-    document.css("table thead th").find_index { |header| header.text.squish == "Goal" }
+    column_index(document, "Goal")
+  end
+
+  def column_index(document, header_text)
+    document.css("table thead th").find_index { |header| header.text.squish == header_text }
   end
 end
