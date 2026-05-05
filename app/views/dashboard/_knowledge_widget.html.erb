@@ -91,7 +91,7 @@
                       </div>
                       <div>
                         <dt class="font-medium text-gray-500">Rate Limit</dt>
-                        <dd><%= provider[:rate_limited_until] ? time_ago_in_words(provider[:rate_limited_until]) + " remaining" : "Clear" %></dd>
+                        <dd><%= provider[:rate_limited] ? time_ago_in_words(provider[:rate_limited_until]) + " remaining" : "Clear" %></dd>
                       </div>
                       <div>
                         <dt class="font-medium text-gray-500">Failures</dt>

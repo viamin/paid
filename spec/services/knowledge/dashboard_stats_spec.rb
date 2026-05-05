@@ -64,6 +64,17 @@ RSpec.describe Knowledge::DashboardStats do
 
         expect(dashboard).to have_received(:provider_status).twice
       end
+
+      it "does not report an expired rate limit as active" do
+        expired_time = 2.minutes.ago
+        owner.provider_states.find_by!(provider_name: owner.settings.kb_embedding_provider)
+          .update!(rate_limited_until: expired_time)
+
+        embedding = stats[:provider_health][:embedding].first
+
+        expect(embedding[:rate_limited]).to be(false)
+        expect(embedding[:rate_limited_until]).to be_within(1.second).of(expired_time)
+      end
     end
 
     context "with knowledge artifacts" do
