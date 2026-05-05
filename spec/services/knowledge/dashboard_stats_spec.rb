@@ -55,6 +55,15 @@ RSpec.describe Knowledge::DashboardStats do
 
         expect(stats[:operational_status]).to eq("unavailable")
       end
+
+      it "checks circuit recovery once per configured provider state" do
+        dashboard = described_class.new(account: account)
+        allow(dashboard).to receive(:provider_status).and_call_original
+
+        dashboard.call
+
+        expect(dashboard).to have_received(:provider_status).twice
+      end
     end
 
     context "with knowledge artifacts" do
@@ -156,6 +165,22 @@ RSpec.describe Knowledge::DashboardStats do
         expect(drafting[:success_rate]).to eq(100.0)
         expect(drafting[:provider_distribution]).to contain_exactly(
           hash_including(provider: "claude", run_count: 1, success_rate: 100.0)
+        )
+      end
+
+      it "falls back to unknown when a run has no recorded provider" do
+        create(:knowledge_run, :failed,
+          project: project,
+          operation_type: "embedding",
+          final_provider: nil,
+          provider_attempts: [],
+          created_at: 6.minutes.ago,
+          updated_at: 3.minutes.ago)
+
+        distribution = stats[:pipeline_metrics]["embedding"][:provider_distribution]
+
+        expect(distribution).to include(
+          hash_including(provider: "unknown", run_count: 1, success_rate: 0.0)
         )
       end
     end

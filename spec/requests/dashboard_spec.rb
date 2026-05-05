@@ -137,6 +137,16 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Embedding")
       end
 
+      it "shows unavailable helper copy when both provider groups are down" do
+        create(:provider_state, :rate_limited, user: user, provider_name: user.settings.kb_embedding_provider)
+        create(:provider_state, :circuit_open, user: user, provider_name: user.settings.kb_chat_provider)
+
+        get dashboard_path
+
+        expect(response.body).to include("Knowledge capabilities are unavailable because both provider groups are down.")
+        expect(response.body).not_to include("Knowledge capabilities are degraded while one provider group remains available.")
+      end
+
       it "shows quality-paused projects on the dashboard" do
         project.update!(
           name: "Paused Project",

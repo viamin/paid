@@ -56,9 +56,13 @@
         </span>
       </div>
 
-      <% if operational_status != "healthy" %>
+      <% if operational_status == "degraded" %>
         <p class="mt-3 text-sm text-amber-700">
-          Knowledge capabilities are degraded while one or more provider groups are unavailable.
+          Knowledge capabilities are degraded while one provider group remains available.
+        </p>
+      <% elsif operational_status == "unavailable" %>
+        <p class="mt-3 text-sm text-red-700">
+          Knowledge capabilities are unavailable because both provider groups are down.
         </p>
       <% end %>
 

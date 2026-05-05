@@ -327,6 +327,24 @@ RSpec.describe Knowledge::Decisions::Draft do
 
       expect(result).to be_nil
     end
+
+    it "logs unavailable providers when only non-container providers are configured" do
+      allow(Rails.logger).to receive(:warn)
+      allow(Knowledge::AnalysisRunner).to receive(:supported_provider?).with("cursor").and_return(false)
+      allow(Knowledge::AnalysisRunner).to receive(:supported_provider?).with("codex").and_return(false)
+      project.created_by.settings.update!(kb_chat_provider: "cursor", kb_chat_fallback_providers: [ "codex" ])
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result).to be_nil
+      expect(Rails.logger).to have_received(:warn).with(hash_including(
+        message: "knowledge.providers_unavailable",
+        operation: "decision_drafting",
+        reason: "no_supported_container_providers",
+        providers: %w[cursor codex]
+      ))
+      expect(KnowledgeRun.last.status).to eq("failed")
+    end
   end
 
   describe "in-process fallback" do

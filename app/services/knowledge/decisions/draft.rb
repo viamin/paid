@@ -109,7 +109,17 @@ module Knowledge
       def send_to_llm_containerized(prompt)
         success = false
         knowledge_run = create_knowledge_run!
-        providers = supported_chat_providers
+        configured_providers = chat_providers
+        providers = configured_providers.select { |provider| Knowledge::AnalysisRunner.supported_provider?(provider) }
+
+        if providers.empty?
+          log_all_providers_unavailable(
+            knowledge_run,
+            reason: "no_supported_container_providers",
+            providers: configured_providers
+          )
+          return nil
+        end
 
         runner = Knowledge::AnalysisRunner.new(
           project: agent_run.project,
@@ -158,7 +168,7 @@ module Knowledge
           end
         end
 
-        log_all_providers_unavailable(knowledge_run, reason: "containerized_providers_failed") if providers.any?
+        log_all_providers_unavailable(knowledge_run, reason: "containerized_providers_failed")
         nil
       rescue Knowledge::AnalysisRunner::Error => e
         Rails.logger.warn(
@@ -283,10 +293,6 @@ module Knowledge
         providers.presence || [ DEFAULT_PROVIDER ]
       end
 
-      def supported_chat_providers
-        chat_providers.select { |provider| Knowledge::AnalysisRunner.supported_provider?(provider) }
-      end
-
       def model_for(provider)
         DEFAULT_MODEL if provider == DEFAULT_PROVIDER
       end
@@ -376,12 +382,12 @@ module Knowledge
         Rails.logger.warn(payload)
       end
 
-      def log_all_providers_unavailable(knowledge_run, reason:)
+      def log_all_providers_unavailable(knowledge_run, reason:, providers: nil)
         Rails.logger.warn(
           message: "knowledge.providers_unavailable",
           operation: "decision_drafting",
           reason: reason,
-          providers: knowledge_run.provider_attempts.map { |attempt| attempt["provider"] },
+          providers: providers || knowledge_run.provider_attempts.map { |attempt| attempt["provider"] },
           knowledge_run_id: knowledge_run.id,
           agent_run_id: agent_run.id
         )

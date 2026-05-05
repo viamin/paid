@@ -4,6 +4,7 @@ module Knowledge
   class DashboardStats
     CACHE_TTL = 60.seconds
     PIPELINE_LOOKBACK = 30.days
+    FINISHED_STATUSES_SQL = KnowledgeRun::FINISHED_STATUSES.map { |status| "'#{status}'" }.join(", ").freeze
 
     attr_reader :account
 
@@ -108,15 +109,8 @@ module Knowledge
     end
 
     def pipeline_metrics
-      @pipeline_metrics ||= begin
-        runs_by_operation = knowledge_runs.where(created_at: PIPELINE_LOOKBACK.ago..Time.current)
-          .order(created_at: :desc)
-          .to_a
-          .group_by(&:operation_type)
-
-        KnowledgeRun::OPERATION_TYPES.index_with do |operation_type|
-          summarize_pipeline_runs(runs_by_operation.fetch(operation_type, []))
-        end
+      @pipeline_metrics ||= Rails.cache.fetch(pipeline_metrics_cache_key, expires_in: CACHE_TTL) do
+        build_pipeline_metrics
       end
     end
 
@@ -156,11 +150,14 @@ module Knowledge
         .where(provider_name: (embedding_providers + chat_providers).uniq)
         .index_by(&:provider_name)
 
+      embedding = embedding_providers.map { |provider| provider_status(provider, provider_states) }
+      chat = chat_providers.map { |provider| provider_status(provider, provider_states) }
+
       {
-        embedding: embedding_providers.map { |provider| provider_status(provider, provider_states) },
-        chat: chat_providers.map { |provider| provider_status(provider, provider_states) },
-        embedding_available: embedding_providers.any? { |provider| provider_available?(provider, provider_states) },
-        chat_available: chat_providers.any? { |provider| provider_available?(provider, provider_states) }
+        embedding: embedding,
+        chat: chat,
+        embedding_available: embedding.any? { |provider| provider[:available] },
+        chat_available: chat.any? { |provider| provider[:available] }
       }
     end
 
@@ -216,48 +213,98 @@ module Knowledge
       }
     end
 
-    def provider_available?(provider, provider_states)
-      provider_status(provider, provider_states)[:available]
+    def pipeline_metrics_cache_key
+      relation = knowledge_runs.where(created_at: PIPELINE_LOOKBACK.ago..Time.current)
+      [
+        "knowledge/dashboard_stats/pipeline_metrics",
+        account.id,
+        relation.maximum(:updated_at)&.to_i || "none",
+        relation.count
+      ].join("/")
     end
 
-    def summarize_pipeline_runs(runs)
-      finished_runs = runs.select { |run| KnowledgeRun::FINISHED_STATUSES.include?(run.status) }
-      successful_runs = finished_runs.count { |run| run.status == "completed" }
-      failed_runs = finished_runs.count { |run| run.status == "failed" }
+    def build_pipeline_metrics
+      operation_summaries = pipeline_operation_summaries.index_by { |summary| summary[:operation_type] }
+      distributions = pipeline_provider_distribution.group_by { |summary| summary[:operation_type] }
 
-      {
-        lookback_days: PIPELINE_LOOKBACK / 1.day,
-        total_runs: runs.size,
-        finished_runs: finished_runs.size,
-        successful_runs: successful_runs,
-        failed_runs: failed_runs,
-        success_rate: percentage(successful_runs, finished_runs.size),
-        avg_duration_seconds: average_duration(finished_runs),
-        provider_distribution: summarize_provider_distribution(runs)
-      }
+      KnowledgeRun::OPERATION_TYPES.index_with do |operation_type|
+        summary = operation_summaries[operation_type]
+        provider_distribution = Array(distributions[operation_type]).sort_by { |provider| [ -provider[:run_count], provider[:provider] ] }
+
+        {
+          lookback_days: PIPELINE_LOOKBACK / 1.day,
+          total_runs: summary&.fetch(:total_runs, 0) || 0,
+          finished_runs: summary&.fetch(:finished_runs, 0) || 0,
+          successful_runs: summary&.fetch(:successful_runs, 0) || 0,
+          failed_runs: summary&.fetch(:failed_runs, 0) || 0,
+          success_rate: summary&.fetch(:success_rate, 0.0) || 0.0,
+          avg_duration_seconds: summary&.fetch(:avg_duration_seconds, 0.0) || 0.0,
+          provider_distribution: provider_distribution
+        }
+      end
     end
 
-    def summarize_provider_distribution(runs)
-      runs.group_by(&:effective_provider)
-        .sort_by { |provider, provider_runs| [ -provider_runs.size, provider ] }
-        .map do |provider, provider_runs|
-          finished_runs = provider_runs.select { |run| KnowledgeRun::FINISHED_STATUSES.include?(run.status) }
-          successful_runs = finished_runs.count { |run| run.status == "completed" }
-
+    def pipeline_operation_summaries
+      pipeline_runs
+        .group(:operation_type)
+        .pluck(
+          Arel.sql("knowledge_runs.operation_type"),
+          Arel.sql("COUNT(*)"),
+          Arel.sql("COUNT(*) FILTER (WHERE knowledge_runs.status IN (#{FINISHED_STATUSES_SQL}))"),
+          Arel.sql("COUNT(*) FILTER (WHERE knowledge_runs.status = 'completed')"),
+          Arel.sql("COUNT(*) FILTER (WHERE knowledge_runs.status = 'failed')"),
+          Arel.sql("AVG(EXTRACT(EPOCH FROM (knowledge_runs.updated_at - knowledge_runs.created_at))) FILTER (WHERE knowledge_runs.status IN (#{FINISHED_STATUSES_SQL}))")
+        )
+        .map do |operation_type, total_runs, finished_runs, successful_runs, failed_runs, avg_duration_seconds|
           {
-            provider: provider,
-            run_count: provider_runs.size,
-            success_rate: percentage(successful_runs, finished_runs.size),
-            avg_duration_seconds: average_duration(finished_runs)
+            operation_type: operation_type,
+            total_runs: total_runs,
+            finished_runs: finished_runs,
+            successful_runs: successful_runs,
+            failed_runs: failed_runs,
+            success_rate: percentage(successful_runs, finished_runs),
+            avg_duration_seconds: avg_duration_seconds.to_f.round(2)
           }
         end
     end
 
-    def average_duration(runs)
-      return 0.0 if runs.empty?
+    def pipeline_provider_distribution
+      pipeline_runs
+        .group(:operation_type, Arel.sql(effective_provider_sql))
+        .pluck(
+          Arel.sql("knowledge_runs.operation_type"),
+          Arel.sql("#{effective_provider_sql}"),
+          Arel.sql("COUNT(*)"),
+          Arel.sql("COUNT(*) FILTER (WHERE knowledge_runs.status IN (#{FINISHED_STATUSES_SQL}))"),
+          Arel.sql("COUNT(*) FILTER (WHERE knowledge_runs.status = 'completed')"),
+          Arel.sql("AVG(EXTRACT(EPOCH FROM (knowledge_runs.updated_at - knowledge_runs.created_at))) FILTER (WHERE knowledge_runs.status IN (#{FINISHED_STATUSES_SQL}))")
+        )
+        .map do |operation_type, provider, run_count, finished_runs, successful_runs, avg_duration_seconds|
+          {
+            operation_type: operation_type,
+            provider: provider,
+            run_count: run_count,
+            success_rate: percentage(successful_runs, finished_runs),
+            avg_duration_seconds: avg_duration_seconds.to_f.round(2)
+          }
+        end
+    end
 
-      total_duration = runs.sum { |run| run.updated_at - run.created_at }
-      (total_duration / runs.size).round(2)
+    def pipeline_runs
+      knowledge_runs.where(created_at: PIPELINE_LOOKBACK.ago..Time.current)
+    end
+
+    def effective_provider_sql
+      <<~SQL.squish
+        COALESCE(
+          NULLIF(final_provider, ''),
+          CASE
+            WHEN jsonb_array_length(COALESCE(provider_attempts, '[]'::jsonb)) > 0
+              THEN COALESCE(provider_attempts, '[]'::jsonb) -> (jsonb_array_length(COALESCE(provider_attempts, '[]'::jsonb)) - 1) ->> 'provider'
+          END,
+          'unknown'
+        )
+      SQL
     end
 
     def percentage(numerator, denominator)
