@@ -198,6 +198,8 @@ module Screenshots
         if agent_run.persisted?
           agent_run.agent_run_logs.destroy_all
           agent_run.agent_run_phases.destroy_all
+          agent_run.quality_metrics.destroy_all
+          agent_run.model_selection&.destroy
           agent_run.created_at = Time.current
         end
         agent_run.assign_attributes(

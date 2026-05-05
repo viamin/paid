@@ -85,6 +85,26 @@ RSpec.describe Screenshots::Capture do
       capture.call
     end
 
+    def attach_stale_associations(agent_run)
+      agent_run.quality_metrics.create!(
+        metric_type: "automated", scores: { coverage: 0.85 },
+        composite_score: 0.85, feedback_source: "system"
+      )
+      llm_model = LlmModel.find_or_create_by!(model_id: "gpt-4", provider: "openai") do |m|
+        m.display_name = "GPT-4"
+        m.family = "gpt-4"
+        m.category = "general"
+        m.tier = "high"
+        m.context_window = 128_000
+        m.max_output_tokens = 4096
+        m.input_cost_per_million = 30.0
+        m.output_cost_per_million = 60.0
+        m.capability_score = 9
+        m.active = true
+      end
+      agent_run.create_model_selection!(llm_model: llm_model, selector_type: "meta_agent", reasoning: "test")
+    end
+
     def seed_and_dirty_agent_run(dir)
       run_capture(dir)
       AgentRun.find_by!(custom_prompt: "Capture screenshot route coverage").tap do |run|
@@ -131,6 +151,17 @@ RSpec.describe Screenshots::Capture do
         started_at: nil,
         completed_at: nil
       )
+    end
+
+    it "clears stale quality_metrics and model_selection associations" do
+      original = seed_and_dirty_agent_run(output_dir)
+      attach_stale_associations(original)
+
+      run_capture(output_dir)
+      original.reload
+
+      expect(original.quality_metrics).to be_empty
+      expect(original.model_selection).to be_nil
     end
   end
 
