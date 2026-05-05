@@ -32,8 +32,11 @@ module Api
       api_key = fetch_api_key(:openai)
       return if performed?
 
+      target = resolve_openai_proxy_target
+
       proxy_request(
-        base_url: resolve_openai_base_url,
+        base_url: target.fetch(:base_url),
+        path: target.fetch(:path),
         auth_header: "Authorization",
         api_key: "Bearer #{api_key}"
       )
@@ -81,9 +84,8 @@ module Api
       end
     end
 
-    def proxy_request(base_url:, auth_header:, api_key:)
-      path = params[:path] || ""
-      target_url = "#{base_url}/#{path}"
+    def proxy_request(base_url:, auth_header:, api_key:, path: params[:path] || "")
+      target_url = join_target_url(base_url, path)
       target_url = "#{target_url}?#{request.query_string}" if request.query_string.present?
 
       response = build_connection.run_request(
@@ -200,7 +202,7 @@ module Api
     def knowledge_run_api_key(provider)
       return unless @knowledge_run
 
-      provider_key = knowledge_run_provider_key
+      provider_key = resolved_knowledge_run_provider_key
       return knowledge_run_provider_api_key(provider.to_s) unless provider_key
 
       config = Provider::DIRECT_OUTBOUND_API_PROVIDERS[provider_key]
@@ -226,22 +228,32 @@ module Api
       nil
     end
 
-    def resolve_openai_base_url
-      provider_key = knowledge_run_provider_key
-      return "https://api.openai.com" unless provider_key && @knowledge_run
+    def resolve_openai_proxy_target
+      provider_key = resolved_knowledge_run_provider_key
+      request_path = (params[:path] || "").sub(%r{\A/+}, "")
+      return { base_url: "https://api.openai.com", path: request_path } unless provider_key && @knowledge_run
 
       config = Provider::DIRECT_OUTBOUND_API_PROVIDERS[provider_key]
-      return "https://api.openai.com" unless config
+      return { base_url: "https://api.openai.com", path: request_path } unless config
 
-      # Strip the /v1 suffix from the provider's base URL since the request
-      # path already includes the versioned prefix (e.g. v1/chat/completions).
-      config[:base_url].sub(%r{/v\d+\z}, "")
+      uri = URI.parse(config.fetch(:base_url))
+      {
+        base_url: "#{uri.scheme}://#{uri.host}#{":#{uri.port}" if uri.port && uri.port != uri.default_port}",
+        path: openai_provider_path(uri.path, request_path)
+      }
     end
 
-    def knowledge_run_provider_key
+    def resolved_knowledge_run_provider_key
       return unless @knowledge_run
 
-      request.headers["X-Paid-Knowledge-Provider"].presence || @knowledge_run.final_provider.presence
+      requested_provider = request.headers["X-Paid-Knowledge-Provider"].presence
+      return @knowledge_run.final_provider.presence unless requested_provider
+
+      return requested_provider if allowed_knowledge_run_provider_keys.include?(requested_provider)
+
+      log_error("secrets_proxy.invalid_knowledge_provider_selection", "Provider #{requested_provider} is not allowed for knowledge run #{@knowledge_run.id}")
+      render json: { error: "Knowledge provider is not available for this run" }, status: :forbidden
+      nil
     end
 
     def compatible_proxy_route?(provider, provider_key)
@@ -265,6 +277,41 @@ module Api
 
     def available_provider_entries(provider_entries)
       provider_entries.for_agent_runs.or(provider_entries.for_fallback)
+    end
+
+    def allowed_knowledge_run_provider_keys
+      attempted = Array(@knowledge_run.provider_attempts).filter_map do |attempt|
+        attempt.is_a?(Hash) ? attempt["provider"].presence : attempt.presence
+      end
+
+      keys = attempted
+      keys << @knowledge_run.final_provider if @knowledge_run.final_provider.present?
+      keys = keys.compact.uniq
+      return keys if keys.any? || @knowledge_run.operation_type != "embedding"
+
+      Knowledge::ProviderConfiguration.for_embedding_candidate_providers(project: @knowledge_run.project).map(&:provider)
+    end
+
+    def openai_provider_path(base_path, request_path)
+      normalized_base_path = base_path.to_s.sub(%r{/\z}, "")
+      normalized_request_path = request_path.to_s.sub(%r{\A/+}, "")
+      return normalized_request_path if normalized_base_path.blank?
+      return normalized_base_path.delete_prefix("/") if normalized_request_path.blank?
+
+      if normalized_base_path.match?(%r{/v\d+\z}) && normalized_request_path.match?(/\Av\d+(\/.*)?\z/)
+        suffix = normalized_request_path.sub(/\Av\d+/, "")
+        return "#{normalized_base_path}#{suffix}".delete_prefix("/")
+      end
+
+      "#{normalized_base_path}/#{normalized_request_path}".gsub(%r{/+}, "/").delete_prefix("/")
+    end
+
+    def join_target_url(base_url, path)
+      normalized_base_url = base_url.sub(%r{/+\z}, "")
+      normalized_path = path.to_s.sub(%r{\A/+}, "")
+      return normalized_base_url if normalized_path.blank?
+
+      "#{normalized_base_url}/#{normalized_path}"
     end
 
     def resolve_max_tokens_per_run

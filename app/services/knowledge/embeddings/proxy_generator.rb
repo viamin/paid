@@ -12,7 +12,7 @@ module Knowledge
         @containerize = containerize
         @model = Generate::MODEL
         @dimensions = Generate::DIMENSIONS
-        @attempted_providers = []
+        @attempted_providers = existing_attempted_providers
         @failed = false
         @successful = false
       end
@@ -90,7 +90,7 @@ module Knowledge
         return if attempted_providers.include?(provider)
 
         attempted_providers << provider
-        knowledge_run.update!(provider_attempts: attempted_providers)
+        knowledge_run.record_provider_attempt(provider)
       end
 
       def mark_success!(provider)
@@ -131,6 +131,14 @@ module Knowledge
         return "completed" if @successful
 
         "failed"
+      end
+
+      def existing_attempted_providers
+        return [] unless @knowledge_run
+
+        Array(@knowledge_run.provider_attempts).filter_map do |attempt|
+          attempt.is_a?(Hash) ? attempt["provider"].presence : attempt.presence
+        end
       end
     end
   end

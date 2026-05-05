@@ -38,7 +38,9 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
         )
       )
       expect(knowledge_run.reload.final_provider).to eq("openrouter")
-      expect(knowledge_run.provider_attempts).to eq([ "openrouter" ])
+      expect(knowledge_run.provider_attempts.size).to eq(1)
+      expect(knowledge_run.provider_attempts.first).to include("provider" => "openrouter")
+      expect(knowledge_run.provider_attempts.first["attempted_at"]).to match(/\A.+\z/)
       expect(knowledge_run.status).to eq("completed")
     end
 
@@ -56,7 +58,10 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
 
       expect(results).to eq([ result ])
       expect(knowledge_run.reload.final_provider).to eq("openai")
-      expect(knowledge_run.provider_attempts).to eq(%w[openrouter openai])
+      expect(knowledge_run.provider_attempts).to contain_exactly(
+        hash_including("provider" => "openrouter", "attempted_at" => be_present),
+        hash_including("provider" => "openai", "attempted_at" => be_present)
+      )
     end
 
     it "avoids redundant final provider updates across successful batches" do
