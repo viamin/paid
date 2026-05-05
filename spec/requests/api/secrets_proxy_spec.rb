@@ -366,6 +366,23 @@ RSpec.describe "Api::SecretsProxy" do
       expect(WebMock).to have_requested(:post, openrouter_url)
         .with(headers: { "Authorization" => "Bearer #{api_key.api_key}" })
     end
+
+    it "uses the knowledge run final provider for the upstream base URL when the header is omitted" do
+      api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "openrouter", api_key: "sk-openrouter")
+      knowledge_run.update!(final_provider: "openrouter")
+
+      openrouter_url = "https://openrouter.ai/api/v1/chat/completions"
+      stub_request(:post, openrouter_url)
+        .to_return(status: 200, body: openai_response_body, headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/openai/v1/chat/completions",
+        params: {}.to_json,
+        headers: knowledge_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(WebMock).to have_requested(:post, openrouter_url)
+        .with(headers: { "Authorization" => "Bearer #{api_key.api_key}" })
+    end
   end
 
   describe "GET /api/proxy/openai/*path" do

@@ -70,5 +70,21 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
       generator.close
       expect(knowledge_run.reload.status).to eq("failed")
     end
+
+    it "uses the project token guardrail for embedding knowledge runs it creates" do
+      generated_run = nil
+      project.update!(max_tokens_per_run: 50_000)
+      allow(Knowledge::Embeddings::Generate).to receive(:call) do
+        generated_run = KnowledgeRun.order(:id).last
+        [ result ]
+      end
+
+      described_class.new(project: project, provider_configs: provider_configs, containerize: false).call(texts: [ "hello" ])
+
+      expect(generated_run).to have_attributes(
+        operation_type: "embedding",
+        max_tokens: 50_000
+      )
+    end
   end
 end

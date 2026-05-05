@@ -200,7 +200,7 @@ module Api
     def knowledge_run_api_key(provider)
       return unless @knowledge_run
 
-      provider_key = request.headers["X-Paid-Knowledge-Provider"].presence || @knowledge_run.final_provider.presence
+      provider_key = knowledge_run_provider_key
       return knowledge_run_provider_api_key(provider.to_s) unless provider_key
 
       config = Provider::DIRECT_OUTBOUND_API_PROVIDERS[provider_key]
@@ -227,7 +227,7 @@ module Api
     end
 
     def resolve_openai_base_url
-      provider_key = request.headers["X-Paid-Knowledge-Provider"].presence
+      provider_key = knowledge_run_provider_key
       return "https://api.openai.com" unless provider_key && @knowledge_run
 
       config = Provider::DIRECT_OUTBOUND_API_PROVIDERS[provider_key]
@@ -236,6 +236,12 @@ module Api
       # Strip the /v1 suffix from the provider's base URL since the request
       # path already includes the versioned prefix (e.g. v1/chat/completions).
       config[:base_url].sub(%r{/v\d+\z}, "")
+    end
+
+    def knowledge_run_provider_key
+      return unless @knowledge_run
+
+      request.headers["X-Paid-Knowledge-Provider"].presence || @knowledge_run.final_provider.presence
     end
 
     def compatible_proxy_route?(provider, provider_key)

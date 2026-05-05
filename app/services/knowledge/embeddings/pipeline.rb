@@ -7,18 +7,19 @@ module Knowledge
 
       attr_reader :batch_size, :generator
 
-      def initialize(batch_size: nil, generator: nil)
+      def initialize(batch_size: nil, generator: nil, api_key: nil, api_base_url: nil)
         raw = batch_size || ENV.fetch("EMBEDDING_BATCH_SIZE", DEFAULT_BATCH_SIZE)
         @batch_size = raw.to_i
         if @batch_size <= 0
           raise ArgumentError,
             "batch_size must be a positive integer; got #{raw.inspect}. Check EMBEDDING_BATCH_SIZE env var."
         end
-        @generator = generator
+        @generator = generator || build_generator(api_key: api_key, api_base_url: api_base_url)
       end
 
-      def self.call(project: nil, batch_size: nil, generator: nil)
-        new(batch_size: batch_size, generator: generator).call(project: project)
+      def self.call(project: nil, batch_size: nil, generator: nil, api_key: nil, api_base_url: nil)
+        new(batch_size: batch_size, generator: generator, api_key: api_key, api_base_url: api_base_url)
+          .call(project: project)
       end
 
       def call(project: nil)
@@ -62,7 +63,7 @@ module Knowledge
         return [ process_batch(chunks, generator) ] if generator
 
         chunks.group_by(&:project).each_with_object([]) do |(project, project_chunks), results|
-          configs = Knowledge::ProviderConfiguration.for_embedding_candidate_providers(project: project)
+          configs = provider_configs_for(project)
           next if configs.empty?
 
           results << process_batch(project_chunks, generator_for(project, configs))
@@ -77,7 +78,7 @@ module Knowledge
         return { embedded: 0, tokens: 0 } if embeddable.empty?
 
         texts = embeddable.map(&:content)
-        results = batch_generator.call(texts: texts)
+        results = generate_embeddings(batch_generator, texts)
 
         if results.size != embeddable.size
           raise EmbeddingError,
@@ -171,6 +172,16 @@ module Knowledge
         }
       end
 
+      def generate_embeddings(batch_generator, texts)
+        # Known limitation: ProviderExecutor fallback is not wired here.
+        # Generate#call targets a single pre-configured embedding endpoint and
+        # does not accept a provider parameter — wrapping it in a multi-provider
+        # loop would just retry the same backend. Embedding provider fallback
+        # requires upstream support in agent-harness for provider-aware
+        # embedding routing (Generate#call accepting a provider argument).
+        batch_generator.call(texts: texts)
+      end
+
       def log_completion(total_embedded, total_tokens, cost, duration)
         Rails.logger.info(
           message: "knowledge.embeddings.pipeline_completed",
@@ -189,8 +200,28 @@ module Knowledge
         )
       end
 
+      def provider_configs_for(project)
+        managed_provider_configs[project.id] ||= Knowledge::ProviderConfiguration.for_embedding_candidate_providers(project: project)
+      end
+
       def managed_generators
         @managed_generators ||= {}
+      end
+
+      def managed_provider_configs
+        @managed_provider_configs ||= {}
+      end
+
+      def build_generator(api_key:, api_base_url:)
+        return if api_key.blank? && api_base_url.blank?
+
+        headers = {}
+        headers["Authorization"] = "Bearer #{api_key}" if api_key.present?
+
+        Generate.new(
+          base_url: api_base_url || ENV.fetch("OPENAI_API_BASE_URL", "https://api.openai.com"),
+          headers: headers
+        )
       end
 
       def close_managed_generators

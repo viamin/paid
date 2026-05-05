@@ -102,8 +102,13 @@ module Knowledge
         @knowledge_run ||= KnowledgeRun.create!(
           project: project,
           operation_type: "embedding",
-          status: "running"
+          status: "running",
+          max_tokens: embedding_max_tokens
         )
+      end
+
+      def embedding_max_tokens
+        project.project_level_max_tokens_per_run || AgentRun::DEFAULT_MAX_TOKENS_PER_RUN
       end
 
       def finalize_knowledge_run!

@@ -99,6 +99,21 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
       expect(proxy_generator).to have_received(:close)
     end
 
+    it "memoizes provider configs across batches for the same project" do
+      allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
+      create(:knowledge_chunk, :redaction_scanned,
+        knowledge_artifact: artifact, project: project, status: "active", embedding_model: nil, content: "second")
+      proxy_generator = instance_double(Knowledge::Embeddings::ProxyGenerator, call: [ embed_result ], model: "text-embedding-3-large", close: true)
+      allow(Knowledge::ProviderConfiguration).to receive(:for_embedding_candidate_providers)
+        .with(project: project)
+        .and_return([ double(provider: "openai") ])
+      allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new).and_return(proxy_generator)
+
+      described_class.call(project: project, batch_size: 1)
+
+      expect(Knowledge::ProviderConfiguration).to have_received(:for_embedding_candidate_providers).with(project: project).once
+    end
+
     it "respects configurable batch size" do
       allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
 
