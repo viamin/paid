@@ -15,6 +15,7 @@ module Projects
       @q = base_scope.ransack(params[:q])
       @q.sorts = "created_at desc" if @q.sorts.empty?
       @pagy, @agent_runs = pagy(@q.result)
+      AgentRun.preload_final_provider_records(@agent_runs)
       AgentRun.preload_source_pull_requests(@agent_runs)
       cache_key = AgentRun.provider_options_cache_key_for(account_id: @project.account_id, project_id: @project.id)
       @provider_options = base_scope.distinct_effective_providers(cache_key: cache_key)

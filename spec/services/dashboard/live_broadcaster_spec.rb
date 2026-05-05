@@ -6,10 +6,14 @@ RSpec.describe Dashboard::LiveBroadcaster do
   describe ".call" do
     let(:account) { create(:account) }
     let(:project) { create(:project, account: account) }
+    let(:owner) { project.effective_owner }
     let(:agent_run) { create(:agent_run, project: project, status: "running", started_at: 2.minutes.ago) }
+    let(:broadcast_updates) { [] }
 
     before do
-      allow(Turbo::StreamsChannel).to receive(:broadcast_update_to)
+      allow(Turbo::StreamsChannel).to receive(:broadcast_update_to) do |*args|
+        broadcast_updates << args
+      end
       allow(Turbo::StreamsChannel).to receive(:broadcast_prepend_to)
     end
 
@@ -23,6 +27,27 @@ RSpec.describe Dashboard::LiveBroadcaster do
       expect(Turbo::StreamsChannel).to have_received(:broadcast_update_to).with(
         [ account, :live_dashboard ],
         hash_including(target: "active-runs", partial: "dashboard/active_runs")
+      )
+    end
+
+    it "preloads final provider records for active-run fallback rows" do
+      initial_provider = create(:provider, user: owner, provider_key: "codex")
+      fallback_provider = create(:provider, user: owner, provider_key: "cursor")
+      active_run = create(:agent_run,
+        project: project,
+        status: "running",
+        started_at: 1.minute.ago,
+        provider: initial_provider,
+        final_provider: fallback_provider.routing_key)
+
+      described_class.call(account: account, agent_run: active_run)
+
+      expect(broadcasted_active_runs).to include(
+        have_attributes(
+          id: active_run.id,
+          preloaded_final_provider_record: fallback_provider,
+          preloaded_final_provider_record_loaded: true
+        )
       )
     end
 
@@ -95,5 +120,10 @@ RSpec.describe Dashboard::LiveBroadcaster do
         )
       )
     end
+  end
+
+  def broadcasted_active_runs
+    _stream, options = broadcast_updates.find { |_target, locals| locals[:target] == "active-runs" }
+    options.dig(:locals, :active_runs)
   end
 end

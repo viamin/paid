@@ -17,6 +17,7 @@
     <% end %>
   </td>
   <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500"><%= run.goal.titleize %></td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500"><%= agent_run_provider_display(run) %></td>
   <td class="whitespace-nowrap px-4 py-3 text-sm">
     <% run_tier = run.model_selection&.tier %>
     <% if run_tier.present? %>

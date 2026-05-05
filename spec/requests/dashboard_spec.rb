@@ -14,7 +14,7 @@ RSpec.describe "Dashboard" do
     context "when authenticated" do
       let(:account) { create(:account, name: "Test Company") }
       let(:user) { create(:user, account: account, name: "John Doe") }
-      let(:project) { create(:project, account: account) }
+      let(:project) { create(:project, account: account, created_by: user) }
 
       before { sign_in user }
 
@@ -120,6 +120,46 @@ RSpec.describe "Dashboard" do
 
         expect(response.body).to include(project.full_name)
         expect(response.body).to include("42s")
+      end
+
+      it "shows the provider column in the active runs table" do
+        provider = create(:provider, user: user, provider_key: "codex")
+        run = create(:agent_run, :running, project: project, provider: provider, final_provider: provider.routing_key)
+
+        get dashboard_path
+
+        document = Nokogiri::HTML(response.body)
+        table = document.at_css("#active-runs table")
+
+        expect(table).to be_present
+        expect(table.css("thead th").map { |header| header.text.squish }).to include("Provider")
+
+        row = document.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
+
+        expect(row).to be_present
+        expect(row.text).to include(provider.display_name)
+      end
+
+      it "shows the final provider label for legacy fallback runs in the active runs table" do
+        initial_provider = create(:provider, user: user, provider_key: "codex")
+        run = create(:agent_run, :running, project: project, provider: initial_provider, final_provider: "cursor")
+
+        get dashboard_path
+
+        row = Nokogiri::HTML(response.body).at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
+        expect(row).to be_present
+        expect(row.text).to include(Provider.display_name_for("cursor"))
+      end
+
+      it "renders unsupported provider identifiers in the active runs table without error" do
+        run = create(:agent_run, :running, project: project, provider: nil, final_provider: "api", agent_type: "api")
+
+        get dashboard_path
+
+        expect(response).to have_http_status(:ok)
+        row = Nokogiri::HTML(response.body).at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
+        expect(row).to be_present
+        expect(row.text).to include("Api")
       end
 
       it "shows quality-paused projects on the dashboard" do
