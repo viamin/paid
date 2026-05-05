@@ -155,6 +155,8 @@ module Knowledge
         setting = effective_user_setting
 
         if setting
+          create_knowledge_run! unless current_knowledge_run
+
           executor = Knowledge::ProviderExecutor.new(
             user_setting: setting,
             operation: :chat,
@@ -181,6 +183,8 @@ module Knowledge
           error: e.message
         )
         nil
+      ensure
+        finalize_knowledge_run!(current_knowledge_run) unless Knowledge::AnalysisRunner.available?
       end
 
       def send_to_llm_in_process_without_executor(prompt)
@@ -219,9 +223,7 @@ module Knowledge
         agent_run.project&.effective_owner&.settings
       end
 
-      def current_knowledge_run
-        @current_knowledge_run
-      end
+      attr_reader :current_knowledge_run
 
       def chat_providers
         setting = effective_user_setting

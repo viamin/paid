@@ -155,13 +155,6 @@ module Knowledge
       def generate_query_embedding
         results = Knowledge::Embeddings::Generate.call(texts: [ query ], api_key: api_key, api_base_url: api_base_url)
         results.first&.vector
-      rescue Knowledge::ProviderExecutor::AllProvidersExhausted => e
-        Rails.logger.warn(
-          message: "knowledge.search.all_embedding_providers_exhausted",
-          project_id: project.id,
-          error: e.message
-        )
-        nil
       rescue StandardError => e
         Rails.logger.warn(
           message: "knowledge.search.embedding_generation_failed",

@@ -16,7 +16,7 @@ module Knowledge
       @knowledge_run = knowledge_run
     end
 
-    def execute(&block)
+    def execute
       providers = available_providers
       raise AllProvidersExhausted, "No available providers for #{@operation}" if providers.empty?
 
@@ -26,7 +26,7 @@ module Knowledge
         record_attempt(provider)
 
         begin
-          result = block.call(provider)
+          result = yield(provider)
           record_success(provider)
           return result
         rescue AgentHarness::RateLimitError => e
