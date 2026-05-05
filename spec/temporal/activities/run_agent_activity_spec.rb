@@ -1789,6 +1789,50 @@ expect(container_service).to receive(:execute).with(
           timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS
         )
       end
+
+      context "when codex subscription auth is active" do
+        let(:codex_provider) do
+          user.providers.find_or_create_by!(provider_key: "codex").tap do |p|
+            p.update!(auth_type: "subscription")
+          end
+        end
+        let(:agent_run) do
+          create(:agent_run, :with_git_context,
+            project: project,
+            issue: issue,
+            agent_type: "codex",
+            provider: codex_provider,
+            container_id: "abc123")
+        end
+
+        before do
+          user.providers.find_or_create_by!(provider_key: "cursor")
+          user.settings.update!(fallback_enabled: true, fallback_providers: [ "cursor" ])
+          allow(activity).to receive(:logger).and_return(instance_double(ActiveSupport::Logger, info: nil, warn: nil, error: nil))
+          allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+          allow(activity).to receive(:run_provider_preflight!).and_call_original
+          allow(activity).to receive(:run_harness_preflight!).and_call_original
+        end
+
+        it "skips harness preflight and uses smoke exec preflight instead" do
+          harness_provider = instance_double(AgentHarness::Providers::Codex)
+          allow(activity).to receive(:preflight_provider_instance).and_return(harness_provider)
+          # If harness preflight were called, it would raise — proving the skip works.
+          allow(harness_provider).to receive(:preflight_check).and_raise(
+            "harness preflight should not be called for subscription auth"
+          )
+          allow(container_service).to receive(:execute).and_return(exec_success)
+          allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
+          allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+
+          result = activity.execute(agent_run_id: agent_run.id)
+
+          agent_run.reload
+          expect(result).to include(success: true)
+          expect(agent_run.status).to eq("running")
+          expect(container_service).to have_received(:execute).at_least(:twice)
+        end
+      end
     end
 
     context "when agent times out (wall clock)" do
