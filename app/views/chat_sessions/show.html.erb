@@ -181,6 +181,15 @@
                       </div>
                     </div>
                   </form>
+                  <% if can_update_chat_session %>
+                    <div class="mt-2 flex items-center justify-end">
+                      <%= render "chat_sessions/chat_config_bar",
+                                 chat_session: @chat_session,
+                                 available_projects: @available_projects,
+                                 available_models: @available_models,
+                                 available_providers: @available_providers %>
+                    </div>
+                  <% end %>
                 <% else %>
                   <p class="text-sm text-slate-500">You have read-only access to this chat.</p>
                 <% end %>

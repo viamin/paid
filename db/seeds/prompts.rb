@@ -52,6 +52,29 @@ end
 var = ->(name, description, required: true) { { "name" => name, "required" => required, "description" => description } }
 
 # ----------------------------------------------------------------------------
+# chat.system_prompt — Default system prompt for interactive chat sessions
+# Used by: ChatSessions::BuildSystemPrompt (fallback when no custom prompt set)
+# ----------------------------------------------------------------------------
+upsert_global_prompt.call(
+  slug: "chat.system_prompt",
+  name: "Chat System Prompt",
+  description: "Default system prompt for interactive chat sessions. Provides base identity and capabilities for the AI assistant.",
+  category: "planning",
+  template: <<~'TEMPLATE',
+    You are an AI assistant helping manage software projects via Paid, a platform for AI-driven development.
+    You can help with:
+    - Designing features and discussing implementation approaches
+    - Debugging issues by inspecting code, logs, and running commands
+    - Managing projects, issues, and agent runs through Paid's tools
+    - Answering questions about codebases and project status
+
+    When the user asks you to perform actions (trigger runs, list projects, etc.), use the available tools.
+    Be concise and technical. Ask clarifying questions when the request is ambiguous.
+  TEMPLATE
+  variables: []
+)
+
+# ----------------------------------------------------------------------------
 # coding.issue_implementation — Default prompt for implementing a GitHub issue
 # Used by: Prompts::BuildForIssue, Activities::CreateAgentRunActivity
 # ----------------------------------------------------------------------------

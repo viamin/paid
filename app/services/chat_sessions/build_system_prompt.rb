@@ -67,7 +67,13 @@ module ChatSessions
       sorted.map { |s| s[:content] }.join("\n\n")
     end
 
+    CHAT_SYSTEM_PROMPT_SLUG = "chat.system_prompt"
+
     def base_identity
+      prompt = resolve_prompt
+      template = prompt&.current_version&.template
+      return template.strip if template.present?
+
       <<~PROMPT.strip
         You are an AI assistant helping manage software projects via Paid, a platform for AI-driven development.
         You can help with:
@@ -193,6 +199,18 @@ module ChatSessions
     end
 
     # --- Data accessors ---
+
+    def resolve_prompt
+      if primary_project
+        Prompt.resolve(CHAT_SYSTEM_PROMPT_SLUG, project: primary_project)
+      else
+        Prompt.active
+          .where(slug: CHAT_SYSTEM_PROMPT_SLUG, project_id: nil)
+          .where(account_id: [ chat_session.account_id, nil ])
+          .order(Arel.sql("CASE WHEN account_id IS NOT NULL THEN 0 ELSE 1 END"))
+          .first
+      end
+    end
 
     def primary_project
       @primary_project ||= chat_session.project
