@@ -8,7 +8,7 @@
         <%= link_to DashboardHelper::STATUS_FILTER_LABELS[s],
               dashboard_performance_path(status: s, goal: goal_filter, time_range: time_range),
               class: filter_button_classes(status_filter == s),
-              data: { turbo_frame: "dashboard-performance" } %>
+              data: { turbo_frame: "dashboard-performance", turbo_action: "advance" } %>
       <% end %>
     </div>
 
@@ -19,7 +19,7 @@
         <%= link_to DashboardHelper::GOAL_FILTER_LABELS[g],
               dashboard_performance_path(status: status_filter, goal: g, time_range: time_range),
               class: filter_button_classes(goal_filter == g),
-              data: { turbo_frame: "dashboard-performance" } %>
+              data: { turbo_frame: "dashboard-performance", turbo_action: "advance" } %>
       <% end %>
     </div>
   </div>

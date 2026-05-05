@@ -5,7 +5,7 @@
       <%= link_to time_range_label(range),
             dashboard_metrics_path(time_range: range),
             class: filter_button_classes(time_range == range),
-            data: { turbo_frame: "dashboard-metrics" } %>
+            data: { turbo_frame: "dashboard-metrics", turbo_action: "advance" } %>
     <% end %>
   </div>
 

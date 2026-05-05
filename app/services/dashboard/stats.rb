@@ -393,7 +393,7 @@ module Dashboard
           :agent_type,
           Arel.sql(effective_provider_sql),
           Arel.sql("COUNT(*)"),
-          Arel.sql("COUNT(*) FILTER (WHERE #{fallback_condition_sql})")
+          Arel.sql(fallback_count_sql)
         )
 
       total = 0
@@ -562,15 +562,14 @@ module Dashboard
       ])
     end
 
-    def fallback_condition_sql
-      <<~SQL.squish
-        agent_runs.provider_switches > 0
-        OR (
-          agent_runs.final_provider IS NOT NULL
-          AND agent_runs.final_provider <> ''
-          AND #{normalized_final_provider_sql} <> #{normalized_agent_type_sql}
-        )
-      SQL
+    def fallback_count_sql
+      [
+        "COUNT(*) FILTER (WHERE agent_runs.provider_switches > 0 OR (",
+        "agent_runs.final_provider IS NOT NULL",
+        "AND agent_runs.final_provider <> ''",
+        "AND", normalized_final_provider_sql, "<>", normalized_agent_type_sql,
+        "))"
+      ].join(" ")
     end
 
     def counts_by_provider_label(counts_by_identifier)

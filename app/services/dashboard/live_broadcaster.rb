@@ -23,6 +23,8 @@ module Dashboard
     attr_reader :account, :agent_run
 
     def broadcast_live_stats
+      Rails.cache.delete("dashboard/live_stats/#{account.id}")
+
       Turbo::StreamsChannel.broadcast_update_to(
         stream_name,
         target: "live-stats",
