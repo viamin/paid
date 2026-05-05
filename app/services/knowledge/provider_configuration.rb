@@ -37,7 +37,7 @@ module Knowledge
         next log_unsupported_provider(provider) unless UserSetting::KB_EMBEDDING_PROVIDERS.include?(provider)
         config = Provider::DIRECT_OUTBOUND_API_PROVIDERS[provider]
         next log_unsupported_provider(provider) unless config
-        next log_missing_credentials(provider) unless embedding_credentials_available?(provider, config)
+        next unless embedding_credentials_available?(provider, config)
 
         Result.new(provider: provider)
       end
@@ -126,16 +126,6 @@ module Knowledge
         message: "knowledge.provider_configuration.unsupported_embedding_provider",
         project_id: project&.id,
         provider: provider
-      )
-      nil
-    end
-
-    def log_missing_credentials(provider)
-      Rails.logger.info(
-        message: "knowledge.provider_configuration.embedding_provider_unavailable",
-        project_id: project&.id,
-        provider: provider,
-        reason: "missing_api_key"
       )
       nil
     end

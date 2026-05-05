@@ -50,6 +50,7 @@ module Knowledge
       # After a container failure or timeout the container may be stopped.
       # Reset so the next provider attempt reprovisions a fresh container.
       cleanup_container!
+      cleanup_input_dir!
       raise
     end
 
@@ -63,10 +64,16 @@ module Knowledge
     def ensure_container!
       return if @container
 
+      cleanup_input_dir!
+      NetworkPolicy.ensure_network!(network: NetworkPolicy::NETWORK_NAME)
       @input_dir = Dir.mktmpdir("paid-embedding-runner-")
       @container = Docker::Container.create(container_config)
       @container.start
+      apply_network_restrictions!
     rescue Docker::Error::DockerError => e
+      cleanup!
+      raise ContainerError, "Failed to provision embedding container: #{e.message}"
+    rescue NetworkPolicy::Error => e
       cleanup!
       raise ContainerError, "Failed to provision embedding container: #{e.message}"
     end
@@ -142,6 +149,10 @@ module Knowledge
       raise ContainerError, "Failed to parse embedding container output: #{e.message}"
     end
 
+    def apply_network_restrictions!
+      NetworkPolicy.apply_firewall_rules(@container)
+    end
+
     def script_env(provider:, model:, dimensions:, timeout:)
       {
         "PROXY_BASE_URL" => "http://paid-proxy:#{Rails.application.config.x.paid_proxy_port}",
@@ -203,6 +214,7 @@ module Knowledge
         "User" => "agent",
         "ReadonlyRootfs" => true,
         "CapDrop" => [ "ALL" ],
+        "CapAdd" => [ "NET_RAW" ],
         "SecurityOpt" => [ "no-new-privileges:true" ],
         "HostConfig" => {
           "Memory" => CONTAINER_DEFAULTS[:memory_bytes],

@@ -90,6 +90,8 @@ module Knowledge
         return if attempted_providers.include?(provider)
 
         attempted_providers << provider
+        # Keep the local cache as plain provider names for retry/error reporting
+        # while KnowledgeRun persists the full attempt hash with timestamps.
         knowledge_run.record_provider_attempt(provider)
       end
 

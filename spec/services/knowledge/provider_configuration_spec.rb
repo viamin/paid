@@ -112,18 +112,10 @@ RSpec.describe Knowledge::ProviderConfiguration do
       allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return(nil)
       allow(ENV).to receive(:[]).and_call_original
       allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
-      allow(Rails.logger).to receive(:info)
 
       candidates = described_class.for_embedding_candidate_providers(project: project)
 
       expect(candidates).to be_empty
-      expect(Rails.logger).to have_received(:info).with(
-        hash_including(
-          message: "knowledge.provider_configuration.embedding_provider_unavailable",
-          project_id: project.id,
-          reason: "missing_api_key"
-        )
-      ).at_least(:once)
     end
   end
 end

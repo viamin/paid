@@ -93,8 +93,8 @@ jobs:
       BUNDLE_FROZEN: "true"
       RAILS_ENV: test
       DB_HOST: localhost
-      DB_USERNAME: postgres
-      DB_PASSWORD: postgres
+      DB_USERNAME: paid
+      DB_PASSWORD: paid
       SCREENSHOT_OUTPUT_DIR: tmp/screenshots
 
     steps:
@@ -121,6 +121,22 @@ jobs:
 
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+
+      - name: Create application database role
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
+              CREATE ROLE paid LOGIN PASSWORD 'paid' CREATEDB NOSUPERUSER NOBYPASSRLS;
+            ELSE
+              ALTER ROLE paid WITH LOGIN PASSWORD 'paid' CREATEDB NOSUPERUSER NOBYPASSRLS;
+            END IF;
+          END
+          $$;
+          SQL
 
       - name: Verify Chrome binary
         run: |
