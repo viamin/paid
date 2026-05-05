@@ -138,7 +138,7 @@ RSpec.describe "Dashboard" do
         create(:knowledge_run, :completed, project: project, operation_type: "embedding", final_provider: "openai")
         create(:knowledge_run, :failed, :decision_drafting, project: project, provider_attempts: [ { "provider" => "claude" } ])
 
-        get dashboard_path
+        get dashboard_knowledge_stats_path
 
         expect(response.body).to include("Provider Health")
         expect(response.body).to include("Unavailable")
@@ -151,7 +151,7 @@ RSpec.describe "Dashboard" do
         create(:provider_state, :rate_limited, user: user, provider_name: user.settings.kb_embedding_provider)
         create(:provider_state, :circuit_open, user: user, provider_name: user.settings.kb_chat_provider)
 
-        get dashboard_path
+        get dashboard_knowledge_stats_path
 
         expect(response.body).to include("Knowledge capabilities are unavailable because both provider groups are down.")
         expect(response.body).not_to include("Knowledge capabilities are degraded while one provider group remains available.")
