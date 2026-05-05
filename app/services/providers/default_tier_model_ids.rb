@@ -1,11 +1,7 @@
 # frozen_string_literal: true
 
 module Providers
-  # Returns a sensible default {tier => model_id} mapping for a provider_key.
-  # Used to seed Provider#tier_model_ids on create and as a fallback when a
-  # provider has not been explicitly configured.
   class DefaultTierModelIds
-    # Maps a Paid provider_key to the LlmModel.provider value its API talks to.
     PROVIDER_KEY_TO_MODEL_PROVIDER = {
       "claude" => "anthropic",
       "cursor" => "anthropic",
@@ -13,6 +9,10 @@ module Providers
       "codex" => "openai",
       "gemini" => "google"
     }.freeze
+
+    # Aider is excluded until its execution path supports direct-outbound
+    # plumbing (see Provider#requires_direct_outbound? for details).
+    DIRECT_OUTBOUND_PROVIDER_KEYS = %w[kilocode opencode].freeze
 
     def self.call(provider_key:)
       new(provider_key: provider_key).call
@@ -24,8 +24,18 @@ module Providers
 
     def call
       model_provider = PROVIDER_KEY_TO_MODEL_PROVIDER[@provider_key]
-      return {} if model_provider.blank?
+      return {} if model_provider.blank? && !DIRECT_OUTBOUND_PROVIDER_KEYS.include?(@provider_key)
 
+      if model_provider
+        tier_defaults_for_standard_provider(model_provider)
+      else
+        {}
+      end
+    end
+
+    private
+
+    def tier_defaults_for_standard_provider(model_provider)
       LlmModel::TIERS.each_with_object({}) do |tier, mapping|
         model = LlmModel.active.by_provider(model_provider).by_tier(tier).by_capability.first
         mapping[tier] = model.model_id if model

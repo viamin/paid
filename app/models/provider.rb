@@ -49,6 +49,15 @@ class Provider < ApplicationRecord
   KILOCODE_API_PROVIDER_KEYS = DIRECT_OUTBOUND_API_PROVIDERS.keys.freeze
   KILOCODE_DEFAULT_API_PROVIDER = "anthropic"
 
+  AIDER_API_PROVIDER_KEYS = DIRECT_OUTBOUND_API_PROVIDERS.keys.freeze
+  AIDER_DEFAULT_API_PROVIDER = "openrouter"
+
+  DIRECT_OUTBOUND_MODEL_TIER_HINTS = {
+    "glm-5.1" => "high",
+    "glm-4.7" => "mid",
+    "glm-4.5-air" => "low"
+  }.freeze
+
   belongs_to :user
   belongs_to :provider_api_key, optional: true
 
@@ -62,6 +71,8 @@ class Provider < ApplicationRecord
   scope :rate_limit_fallback, -> { where(fallback_role: "rate_limit_fallback") }
 
   before_validation :normalize_agent_co_author_trailer
+  before_validation :clear_stale_direct_outbound_tier_models
+  before_save :sync_direct_outbound_tier_models
 
   validates :weight, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: MAX_WEIGHT }
   validates :provider_key, presence: true, length: { maximum: 50 }
@@ -84,6 +95,7 @@ class Provider < ApplicationRecord
   validate :api_key_entry_must_be_unique
   validate :opencode_api_key_config_must_be_valid
   validate :kilocode_api_key_config_must_be_valid
+  validate :aider_api_key_config_must_be_valid
   validate :tier_model_ids_must_be_valid
   validate :complexity_thresholds_must_be_valid
   validate :agent_co_author_trailer_is_single_line
@@ -110,6 +122,7 @@ class Provider < ApplicationRecord
     model_id = case provider_key
     when "opencode" then opencode_model_id
     when "kilocode" then kilocode_model_id
+    when "aider" then aider_model_id
     end
     label += " #{model_id}" if model_id.present?
     label += " (API Key)" if api_key?
@@ -184,11 +197,35 @@ class Provider < ApplicationRecord
     DIRECT_OUTBOUND_API_PROVIDERS.dig(kilocode_api_provider, :service_type)
   end
 
-  def requires_direct_outbound?
-    return true if opencode_direct_outbound?
-    return true if kilocode_direct_outbound?
+  def aider_config
+    config.is_a?(Hash) ? config.fetch("aider", {}) : {}
+  end
 
-    false
+  def aider_api_provider
+    return nil unless provider_key == "aider"
+
+    aider_config["api_provider"].presence || AIDER_DEFAULT_API_PROVIDER
+  end
+
+  def aider_model_id
+    return nil unless provider_key == "aider"
+
+    aider_config["model"].to_s.presence
+  end
+
+  def aider_required_api_service_type
+    return nil unless provider_key == "aider"
+
+    DIRECT_OUTBOUND_API_PROVIDERS.dig(aider_api_provider, :service_type)
+  end
+
+  # NOTE: Aider is excluded here because the execution path does not yet have
+  # direct-outbound plumbing (no agent_harness_provider_runtime, no
+  # direct_outbound_exec_env/exec_command support). The config infrastructure
+  # (aider_config, aider_api_provider, aider_model_id) exists as prep work;
+  # add aider_direct_outbound? here once the runtime path is implemented.
+  def requires_direct_outbound?
+    opencode_direct_outbound? || kilocode_direct_outbound?
   end
 
   def opencode_required_api_service_type
@@ -292,6 +329,45 @@ class Provider < ApplicationRecord
 
   def copilot_agent_harness_runtime?
     provider_key == "copilot"
+  end
+
+  def direct_outbound_model_id
+    case provider_key
+    when "kilocode" then kilocode_model_id
+    when "opencode" then opencode_model_id
+    when "aider" then aider_model_id
+    end
+  end
+
+  def direct_outbound_llm_model_provider
+    case provider_key
+    when "kilocode" then kilocode_required_api_service_type
+    when "opencode" then opencode_required_api_service_type
+    when "aider" then aider_required_api_service_type
+    end
+  end
+
+  def ensure_direct_outbound_llm_model!
+    model_id = direct_outbound_model_id
+    raise ArgumentError, "No direct-outbound model configured" if model_id.blank?
+
+    provider_slug = direct_outbound_llm_model_provider || "unknown"
+    tier = DIRECT_OUTBOUND_MODEL_TIER_HINTS[model_id] || "mid"
+
+    model = LlmModel.find_or_create_by!(model_id: model_id) do |m|
+      m.display_name = direct_outbound_display_name(model_id)
+      m.provider = provider_slug
+      m.category = "coding"
+      m.tier = tier
+      m.active = true
+    end
+    # Reactivate if an existing row was returned inactive — model selection
+    # resolves via LlmModel.active so an inactive record would silently
+    # fall back to the global pool.
+    model.update!(active: true, provider: provider_slug, tier: tier) unless model.active?
+    model
+  rescue ActiveRecord::RecordNotUnique
+    LlmModel.find_by!(model_id: model_id)
   end
 
   # Returns the provider key that must always exist and remain enabled for
@@ -411,6 +487,36 @@ class Provider < ApplicationRecord
   end
 
   private
+
+  def sync_direct_outbound_tier_models
+    return unless requires_direct_outbound?
+    return unless direct_outbound_model_id.present?
+    return unless will_save_change_to_config? || tier_model_ids.blank?
+
+    model = ensure_direct_outbound_llm_model!
+    self.tier_model_ids = LlmModel::TIERS.each_with_object({}) { |t, h| h[t] = model.model_id }
+  end
+
+  def clear_stale_direct_outbound_tier_models
+    return unless tier_model_ids.present?
+    return unless direct_outbound_capable_provider?
+    return if requires_direct_outbound? && direct_outbound_model_id.present?
+
+    self.tier_model_ids = {}
+  end
+
+  def direct_outbound_capable_provider?
+    # NOTE: Aider is intentionally excluded — it is still mapped as a standard
+    # Anthropic provider in DefaultTierModelIds::PROVIDER_KEY_TO_MODEL_PROVIDER,
+    # so including it here would cause clear_stale_direct_outbound_tier_models
+    # to erase its valid standard tier mappings on every save.
+    %w[kilocode opencode].include?(provider_key)
+  end
+
+  def direct_outbound_display_name(model_id)
+    base = model_id.include?("/") ? model_id.split("/").last : model_id
+    base.tr("_-", " ").split.map(&:capitalize).join(" ")
+  end
 
   def normalize_agent_co_author_trailer
     stripped = agent_co_author_trailer.to_s.strip
@@ -550,9 +656,20 @@ class Provider < ApplicationRecord
     end
 
     expected_provider = Providers::DefaultTierModelIds::PROVIDER_KEY_TO_MODEL_PROVIDER[provider_key.to_s]
-    if expected_provider.nil?
+    if expected_provider.nil? && !requires_direct_outbound?
       errors.add(:tier_model_ids, "is not configurable for provider #{provider_key}")
       return
+    end
+
+    # Direct-outbound providers must map ALL tiers to the configured model.
+    # Partial mappings would let unmapped tiers fall back to the global
+    # LlmModel pool, reintroducing the wrong-model selection this PR fixes.
+    if requires_direct_outbound? && !will_save_change_to_config?
+      missing_tiers = LlmModel::TIERS.select { |t| tier_model_ids[t].blank? }
+      if missing_tiers.any?
+        errors.add(:tier_model_ids, "must map all tiers for direct-outbound providers (missing: #{missing_tiers.join(', ')})")
+        return
+      end
     end
 
     tier_model_ids.each do |tier, model_id|
@@ -561,7 +678,18 @@ class Provider < ApplicationRecord
       model = LlmModel.find_by(model_id: model_id)
       if model.nil?
         errors.add(:tier_model_ids, "references unknown model #{model_id} for tier #{tier}")
-      elsif model.provider != expected_provider
+      elsif requires_direct_outbound?
+        # Direct-outbound providers must use their configured model — reject
+        # crafted updates that try to pin a different model_id. Skip when
+        # config is changing because sync_direct_outbound_tier_models will
+        # overwrite tier_model_ids during save.
+        next if will_save_change_to_config?
+        configured = direct_outbound_model_id
+        if configured.present? && model_id != configured
+          errors.add(:tier_model_ids, "must match the configured direct-outbound model #{configured}")
+          return
+        end
+      elsif expected_provider && model.provider != expected_provider
         errors.add(:tier_model_ids, "model #{model_id} does not belong to provider #{provider_key}")
       end
     end
@@ -618,9 +746,31 @@ class Provider < ApplicationRecord
     end
   end
 
+  # NOTE: The provider UI/controller does not yet permit nested aider config
+  # keys (api_provider, model). This validation is prep work for when the
+  # controller is updated to support Aider API-key providers.
+  #
+  # Guard: ProviderResolver#tenant_api_key_provider auto-materializes api_key
+  # providers without config. Those tenant-key entries must remain valid —
+  # only enforce config requirements when aider-specific config is present.
+  def aider_api_key_config_must_be_valid
+    return unless provider_key == "aider"
+    return unless api_key?
+    return unless config.is_a?(Hash) && config.key?("aider")
+
+    unless AIDER_API_PROVIDER_KEYS.include?(aider_api_provider)
+      errors.add(:config, "must include a supported Aider API provider")
+    end
+
+    if aider_model_id.blank?
+      errors.add(:config, "must include an Aider model id")
+    end
+  end
+
   def required_api_service_type
     return opencode_required_api_service_type if provider_key == "opencode"
     return kilocode_required_api_service_type if provider_key == "kilocode"
+    return aider_required_api_service_type if provider_key == "aider"
 
     self.class.api_service_type_for(provider_key)
   end
@@ -637,6 +787,13 @@ class Provider < ApplicationRecord
       api_key? &&
       KILOCODE_API_PROVIDER_KEYS.include?(kilocode_api_provider) &&
       kilocode_model_id.present?
+  end
+
+  def aider_direct_outbound?
+    provider_key == "aider" &&
+      api_key? &&
+      AIDER_API_PROVIDER_KEYS.include?(aider_api_provider) &&
+      aider_model_id.present?
   end
 
   def opencode_provider_runtime
