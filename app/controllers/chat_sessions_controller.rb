@@ -15,8 +15,23 @@ class ChatSessionsController < ApplicationController
   def index
     respond_to do |format|
       format.html do
-        load_sidebar_data
-        @chat_messages = []
+        existing = policy_scope(ChatSession).where(status: "active").order(updated_at: :desc).first
+        if existing
+          skip_policy_scope
+          redirect_to chat_session_path(existing)
+        elsif policy(ChatSession.new(account: current_account)).create?
+          return render_create_rate_limit_exceeded if create_rate_limited?
+
+          session = ChatSessions::Create.call(
+            account: current_account,
+            user: current_user
+          )
+          skip_policy_scope
+          redirect_to chat_session_path(session)
+        else
+          load_sidebar_data
+          @chat_messages = []
+        end
       end
 
       format.json do
@@ -95,7 +110,9 @@ class ChatSessionsController < ApplicationController
 
   def update
     authorize @chat_session
+    project_changed = update_params.key?(:project_id) && update_params[:project_id].to_s != @chat_session.project_id.to_s
     @chat_session.update!(update_params)
+    regenerate_system_message! if project_changed
 
     respond_to do |format|
       format.html { redirect_to chat_session_path(@chat_session), notice: "Chat session updated." }
@@ -108,7 +125,14 @@ class ChatSessionsController < ApplicationController
     ChatSessions::Close.call(chat_session: @chat_session)
 
     respond_to do |format|
-      format.html { redirect_to chat_sessions_path, notice: "Chat session closed." }
+      format.html do
+        next_session = policy_scope(ChatSession).where(status: "active").where.not(id: @chat_session.id).order(updated_at: :desc).first
+        if next_session
+          redirect_to chat_session_path(next_session), notice: "Chat session closed."
+        else
+          redirect_to chat_sessions_path, notice: "Chat session closed."
+        end
+      end
       format.json { head :no_content }
     end
   end
@@ -117,6 +141,12 @@ class ChatSessionsController < ApplicationController
 
   def set_chat_session
     @chat_session = session_scope.find(params[:id])
+  end
+
+  def regenerate_system_message!
+    new_prompt = ChatSessions::BuildSystemPrompt.call(chat_session: @chat_session.reload)
+    system_message = @chat_session.messages.where(role: "system").order(:created_at).first
+    system_message&.update!(content: new_prompt)
   end
 
   def create_params
@@ -210,16 +240,18 @@ class ChatSessionsController < ApplicationController
     scope.reorder(created_at: :desc, id: :desc).limit(limit).reverse
   end
 
-  def enforce_create_rate_limit
+  def create_rate_limited?
     key = "chat_sessions:create:#{current_account&.id}"
     count = increment_rate_limit_counter(
       cache: create_rate_limit_cache,
       key:,
       expires_in: CREATE_RATE_LIMIT_PERIOD
     )
-    return if count <= CREATE_RATE_LIMIT
+    count > CREATE_RATE_LIMIT
+  end
 
-    render_create_rate_limit_exceeded
+  def enforce_create_rate_limit
+    render_create_rate_limit_exceeded if create_rate_limited?
   end
 
   def default_request_format_to_json
