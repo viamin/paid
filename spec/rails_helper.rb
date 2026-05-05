@@ -81,17 +81,9 @@ RSpec.configure do |config|
     ProviderSupport.reset_supported_provider_keys!
   end
 
-  config.before(:each, :provider_smoke) do
-    next if ENV["RUN_PROVIDER_SMOKE"] == "true"
-
-    skip "Set RUN_PROVIDER_SMOKE=true to run local provider smoke specs"
-  end
+  config.filter_run_excluding :provider_smoke unless ENV["RUN_PROVIDER_SMOKE"] == "true"
 
   config.around(:each, :provider_smoke) do |example|
-    # Provider smoke specs intentionally exercise the real Docker/container and
-    # provider auth paths, which use Excon over the local Docker Unix socket and
-    # may also reach upstream provider APIs. Allow real connections only for
-    # these explicitly opt-in local specs, then restore the repo default.
     WebMock.allow_net_connect!
     example.run
   ensure

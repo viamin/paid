@@ -252,7 +252,7 @@ RSpec.describe QualityPause::Check do
         goal_type: "create_pr",
         min_value: 0.5)
       create_metric_scores(project, metric_type: "reaction_score", scores: [ 0.0, 0.1, 0.2 ], prompt_version: prompt_version)
-      create_quality_metrics(project, scores: Array.new(15, 0.8), prompt_version: prompt_version)
+      create_quality_metrics(project, scores: Array.new(5, 0.8), prompt_version: prompt_version)
 
       described_class.call(agent_run: agent_run)
 
@@ -455,7 +455,7 @@ RSpec.describe QualityPause::Check do
           scores: [ 0.1 ] * 5,
           completed_at: 2.hours.ago)
         create(:quality_pause_event, :resumed, project: project, created_at: 1.hour.ago)
-        create_quality_metrics(project, scores: [ 0.9 ] * QualityThreshold::DEFAULT_WINDOW_SIZE)
+        create_quality_metrics(project, scores: [ 0.9 ] * 5)
         create_metric_scores(project, metric_type: "reaction_score", scores: [ 0.1 ] * 2)
 
         described_class.call(agent_run: agent_run)

@@ -21,7 +21,7 @@ function create_app_role() {
         --set app_user="$POSTGRES_APP_USER" \
         --set app_password="$POSTGRES_APP_PASSWORD" <<-'EOSQL'
         SELECT format(
-            'CREATE ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS',
+            'CREATE ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB CREATEROLE NOBYPASSRLS',
             :'app_user',
             :'app_password'
         )
@@ -30,7 +30,7 @@ function create_app_role() {
         )\gexec
 
         ALTER ROLE :"app_user"
-          WITH LOGIN PASSWORD :'app_password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+          WITH LOGIN PASSWORD :'app_password' NOSUPERUSER NOCREATEDB CREATEROLE NOBYPASSRLS;
 EOSQL
 }
 

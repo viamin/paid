@@ -101,7 +101,7 @@ RSpec.describe TenantContext, :tenant_isolation do
   end
 
   it "rejects direct account rows with cross-tenant references at the database policy" do
-    account = account_a
+    account = described_class.with_system_access { account_a }
     project_b = described_class.with_system_access { create(:project, account: account_b) }
     user_b = described_class.with_system_access { create(:user, account: account_b) }
 
@@ -189,6 +189,7 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.execute("GRANT USAGE ON SCHEMA public TO paid_rls_spec")
     ActiveRecord::Base.connection.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO paid_rls_spec")
     ActiveRecord::Base.connection.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO paid_rls_spec")
+    ActiveRecord::Base.connection.execute("GRANT paid_rls_spec TO current_user")
   end
 
   def uninstall_tenant_policies
@@ -238,6 +239,7 @@ RSpec.describe TenantContext, :tenant_isolation do
   def cleanup_restricted_role
     return unless ActiveRecord::Base.connection.select_value("SELECT 1 FROM pg_roles WHERE rolname = 'paid_rls_spec'")
 
+    ActiveRecord::Base.connection.execute("GRANT paid_rls_spec TO current_user")
     ActiveRecord::Base.connection.execute("DROP OWNED BY paid_rls_spec")
     ActiveRecord::Base.connection.execute("DROP ROLE IF EXISTS paid_rls_spec")
   end

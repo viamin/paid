@@ -4,7 +4,7 @@ require "rails_helper"
 require "securerandom"
 require "warden/test/helpers"
 
-RSpec.describe "Provider smoke test UI", :local_only, :provider_smoke, type: :system do
+RSpec.describe "Provider smoke test UI", :provider_smoke, type: :system do
   include Warden::Test::Helpers
 
   let(:scenario) { ProviderSmokeHelpers.scenarios_from_env.first }
