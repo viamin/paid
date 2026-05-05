@@ -354,13 +354,18 @@ class Provider < ApplicationRecord
     provider_slug = direct_outbound_llm_model_provider || "unknown"
     tier = DIRECT_OUTBOUND_MODEL_TIER_HINTS[model_id] || "mid"
 
-    LlmModel.find_or_create_by!(model_id: model_id) do |m|
+    model = LlmModel.find_or_create_by!(model_id: model_id) do |m|
       m.display_name = direct_outbound_display_name(model_id)
       m.provider = provider_slug
       m.category = "coding"
       m.tier = tier
       m.active = true
     end
+    # Reactivate if an existing row was returned inactive — model selection
+    # resolves via LlmModel.active so an inactive record would silently
+    # fall back to the global pool.
+    model.update!(active: true, provider: provider_slug, tier: tier) unless model.active?
+    model
   rescue ActiveRecord::RecordNotUnique
     LlmModel.find_by!(model_id: model_id)
   end
@@ -501,7 +506,11 @@ class Provider < ApplicationRecord
   end
 
   def direct_outbound_capable_provider?
-    %w[kilocode opencode aider].include?(provider_key)
+    # NOTE: Aider is intentionally excluded — it is still mapped as a standard
+    # Anthropic provider in DefaultTierModelIds::PROVIDER_KEY_TO_MODEL_PROVIDER,
+    # so including it here would cause clear_stale_direct_outbound_tier_models
+    # to erase its valid standard tier mappings on every save.
+    %w[kilocode opencode].include?(provider_key)
   end
 
   def direct_outbound_display_name(model_id)
@@ -658,7 +667,18 @@ class Provider < ApplicationRecord
       model = LlmModel.find_by(model_id: model_id)
       if model.nil?
         errors.add(:tier_model_ids, "references unknown model #{model_id} for tier #{tier}")
-      elsif expected_provider && !requires_direct_outbound? && model.provider != expected_provider
+      elsif requires_direct_outbound?
+        # Direct-outbound providers must use their configured model — reject
+        # crafted updates that try to pin a different model_id. Skip when
+        # config is changing because sync_direct_outbound_tier_models will
+        # overwrite tier_model_ids during save.
+        next if will_save_change_to_config?
+        configured = direct_outbound_model_id
+        if configured.present? && model_id != configured
+          errors.add(:tier_model_ids, "must match the configured direct-outbound model #{configured}")
+          return
+        end
+      elsif expected_provider && model.provider != expected_provider
         errors.add(:tier_model_ids, "model #{model_id} does not belong to provider #{provider_key}")
       end
     end

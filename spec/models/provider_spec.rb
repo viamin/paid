@@ -158,6 +158,25 @@ RSpec.describe Provider do
 
         expect(provider).to be_valid
       end
+
+      it "rejects crafted tier_model_ids that pin a direct-outbound provider to a different model" do
+        user = create(:user)
+        api_key = create(:provider_api_key, user: user, api_service_type: "zai")
+        create(:llm_model, model_id: "glm-5.1", provider: "zai", tier: "high")
+        wrong_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "high")
+        provider = create(
+          :provider,
+          user: user,
+          provider_key: "kilocode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          config: { "kilocode" => { "api_provider" => "zai", "model" => "glm-5.1" } }
+        )
+
+        provider.tier_model_ids = { "high" => wrong_model.model_id }
+        expect(provider).not_to be_valid
+        expect(provider.errors[:tier_model_ids].join).to include("must match the configured direct-outbound model")
+      end
     end
 
     it "validates auth_type inclusion" do
@@ -735,6 +754,22 @@ RSpec.describe Provider do
       provider.update!(config: { "opencode" => { "api_provider" => "openrouter", "model" => "test-model-new" } })
 
       expect(provider.reload.tier_model_ids.values.uniq).to eq([ "test-model-new" ])
+    end
+
+    it "reactivates an inactive LlmModel when reused for a direct-outbound provider" do
+      inactive_model = create(:llm_model, model_id: "inactive-test-model", provider: "zai", tier: "mid", active: false)
+
+      provider = create(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "inactive-test-model" } }
+      )
+
+      expect(inactive_model.reload).to be_active
+      expect(provider.tier_model_ids.values.uniq).to eq([ "inactive-test-model" ])
     end
   end
 
