@@ -1,21 +1,21 @@
-<aside class="overflow-hidden rounded-[2rem] border border-white/70 bg-white/75 shadow-[0_20px_70px_-32px_rgba(15,23,42,0.45)] backdrop-blur">
+<aside class="overflow-hidden rounded-lg bg-white shadow">
   <% can_create_chat_session = policy(ChatSession.new(account: current_account)).create? %>
 
   <div data-controller="chat-session-list"
        data-chat-session-list-active-session-id-value="<%= active_session&.id %>">
-    <div class="border-b border-slate-200/80 p-5">
+    <div class="border-b border-gray-200 p-4">
       <div class="flex items-center gap-3">
         <label class="relative flex-1">
           <span class="sr-only">Search chat sessions</span>
           <input type="search"
                  placeholder="Search sessions"
-                 class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                 class="w-full rounded-md border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
                  data-chat-session-list-target="searchInput"
                  data-action="input->chat-session-list#filter" />
         </label>
         <% if can_create_chat_session %>
           <button type="button"
-                  class="inline-flex items-center rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
+                  class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
                   data-action="chat-session-list#openModal">
             New Chat
           </button>
@@ -24,14 +24,14 @@
     </div>
 
     <div id="chat_sessions_list"
-         class="max-h-[70vh] space-y-3 overflow-y-auto p-4"
+         class="max-h-[70vh] space-y-2 overflow-y-auto p-4"
          data-chat-session-list-target="list">
       <% sessions.each do |chat_session| %>
         <%= render "session_card", chat_session: chat_session %>
       <% end %>
       <% if local_assigns.fetch(:sidebar_has_more, false) && local_assigns[:sidebar_next_frame_id] && local_assigns[:sidebar_next_params] %>
         <%= turbo_frame_tag sidebar_next_frame_id, src: sidebar_page_chat_sessions_path(sidebar_next_params), loading: :lazy do %>
-          <p class="py-3 text-center text-xs text-slate-400">Loading more…</p>
+          <p class="py-3 text-center text-xs text-gray-400">Loading more...</p>
         <% end %>
       <% end %>
     </div>

@@ -2,38 +2,38 @@
 
 <%= turbo_stream_from current_account, :chat_sessions %>
 
-<div class="min-h-[calc(100vh-4rem)] bg-[radial-gradient(circle_at_top_left,_rgba(125,211,252,0.22),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(253,224,71,0.18),_transparent_28%),linear-gradient(180deg,_#f8fafc_0%,_#e2e8f0_100%)]">
-  <div class="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-    <div class="flex items-center justify-between">
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">Interactive Chat</p>
-        <h1 class="mt-1 text-3xl font-semibold tracking-tight text-slate-900">Conversations</h1>
-      </div>
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Chat</h1>
+      <p class="mt-1 text-sm text-gray-500">Interactive conversations with AI assistants.</p>
     </div>
+  </div>
 
-    <div class="grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
-      <%= render "sidebar",
-                 active_session: @chat_session,
-                 sessions: @sessions,
-                 sidebar_has_more: @sidebar_has_more,
-                 sidebar_next_frame_id: @sidebar_next_frame_id,
-                 sidebar_next_params: @sidebar_next_params,
-                 chat_session: @new_chat_session,
-                 available_providers: @available_providers,
-                 available_projects: @available_projects,
-                 available_models: @available_models %>
+  <div class="mt-6 grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
+    <%= render "sidebar",
+               active_session: @chat_session,
+               sessions: @sessions,
+               sidebar_has_more: @sidebar_has_more,
+               sidebar_next_frame_id: @sidebar_next_frame_id,
+               sidebar_next_params: @sidebar_next_params,
+               chat_session: @new_chat_session,
+               available_providers: @available_providers,
+               available_projects: @available_projects,
+               available_models: @available_models %>
 
-      <section class="overflow-hidden rounded-[2rem] border border-white/70 bg-white/60 shadow-[0_20px_70px_-32px_rgba(15,23,42,0.45)] backdrop-blur">
-        <div class="flex min-h-[70vh] flex-col items-center justify-center px-6 py-16 text-center">
-          <div class="max-w-xl">
-            <p class="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">Start Here</p>
-            <h2 class="mt-3 text-3xl font-semibold tracking-tight text-slate-900">Open a conversation or create a new one</h2>
-            <p class="mt-4 text-sm leading-6 text-slate-600">
-              Sessions stream responses in real time, render markdown, and keep workspace context attached to the thread.
-            </p>
-          </div>
+    <section class="overflow-hidden rounded-lg bg-white shadow">
+      <div class="flex min-h-[70vh] flex-col items-center justify-center px-6 py-16 text-center">
+        <div class="max-w-xl">
+          <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0 0 11.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
+          </svg>
+          <h3 class="mt-2 text-sm font-semibold text-gray-900">No conversation selected</h3>
+          <p class="mt-1 text-sm text-gray-500">
+            Open a conversation or create a new one. Sessions stream responses in real time, render markdown, and keep workspace context attached to the thread.
+          </p>
         </div>
-      </section>
-    </div>
+      </div>
+    </section>
   </div>
 </div>

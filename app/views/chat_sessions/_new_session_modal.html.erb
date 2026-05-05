@@ -1,13 +1,13 @@
-<dialog class="w-full max-w-2xl rounded-[2rem] border border-slate-200 p-0 shadow-2xl backdrop:bg-slate-900/50"
+<dialog class="w-full max-w-2xl rounded-lg border border-gray-200 p-0 shadow-2xl backdrop:bg-gray-900/50"
         data-chat-session-list-target="modal">
   <div class="bg-white p-6">
     <div class="flex items-start justify-between gap-4">
       <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">New Session</p>
-        <h2 class="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Start a chat</h2>
+        <h2 class="text-lg font-semibold text-gray-900">Start a new chat</h2>
+        <p class="mt-1 text-sm text-gray-500">Configure your chat session settings.</p>
       </div>
       <button type="button"
-              class="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              class="rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500"
               data-action="chat-session-list#closeModal">
         <span class="sr-only">Close</span>
         <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -19,58 +19,58 @@
     <%= form_with model: chat_session, url: chat_sessions_path, class: "mt-6 space-y-5" do |form| %>
       <div class="grid gap-5 md:grid-cols-2">
         <div>
-          <%= form.label :mode, class: "mb-2 block text-sm font-semibold text-slate-700" %>
+          <%= form.label :mode, class: "block text-sm font-medium text-gray-700" %>
           <%= form.select :mode,
                           options_for_select(ChatSession::MODES.map { |mode| [mode.titleize, mode] }, chat_session.mode),
                           {},
-                          class: "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200" %>
+                          class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
         </div>
         <div>
-          <%= form.label :provider_id, "Provider", class: "mb-2 block text-sm font-semibold text-slate-700" %>
+          <%= form.label :provider_id, "Provider", class: "block text-sm font-medium text-gray-700" %>
           <%= form.select :provider_id,
                           options_from_collection_for_select(available_providers, :id, :display_name),
                           { include_blank: "Default provider" },
-                          class: "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200" %>
+                          class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
         </div>
         <div>
-          <%= form.label :model, class: "mb-2 block text-sm font-semibold text-slate-700" %>
+          <%= form.label :model, class: "block text-sm font-medium text-gray-700" %>
           <%= form.select :model,
                           options_for_select(available_models.map { |model| ["#{model.display_name} (#{model.model_id})", model.model_id] }),
                           { include_blank: "Automatic" },
-                          class: "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200" %>
+                          class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
         </div>
         <div>
-          <%= form.label :project_id, "Project", class: "mb-2 block text-sm font-semibold text-slate-700" %>
+          <%= form.label :project_id, "Project", class: "block text-sm font-medium text-gray-700" %>
           <%= form.select :project_id,
                           options_from_collection_for_select(available_projects, :id, :name),
                           { include_blank: "No project" },
-                          class: "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200" %>
+                          class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
         </div>
       </div>
 
       <div>
-        <%= form.label :title, class: "mb-2 block text-sm font-semibold text-slate-700" %>
+        <%= form.label :title, class: "block text-sm font-medium text-gray-700" %>
         <%= form.text_field :title,
                             placeholder: "Planning assistant for onboarding flow",
-                            class: "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200" %>
+                            class: "mt-1 block w-full rounded-md border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
       </div>
 
       <div>
-        <%= form.label :system_prompt, "Custom system prompt", class: "mb-2 block text-sm font-semibold text-slate-700" %>
+        <%= form.label :system_prompt, "Custom system prompt", class: "block text-sm font-medium text-gray-700" %>
         <%= form.text_area :system_prompt,
                            rows: 4,
-                           placeholder: "Optional advanced instructions for the session…",
-                           class: "w-full rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-200" %>
+                           placeholder: "Optional advanced instructions for the session...",
+                           class: "mt-1 block w-full rounded-md border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
       </div>
 
       <div class="flex items-center justify-end gap-3">
         <button type="button"
-                class="rounded-full px-4 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                class="rounded-md px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
                 data-action="chat-session-list#closeModal">
           Cancel
         </button>
         <%= form.submit "Create session",
-                        class: "inline-flex items-center rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700" %>
+                        class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
       </div>
     <% end %>
   </div>
