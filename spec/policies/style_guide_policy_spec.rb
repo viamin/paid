@@ -81,6 +81,21 @@ RSpec.describe StyleGuidePolicy do
 
         expect(described_class.new(owner, guide)).not_to be_create
       end
+
+      it "permits class-level checks for owner users" do
+        account = create(:account)
+        owner = create(:user, account: account)
+
+        expect(described_class.new(owner, StyleGuide)).to be_create
+      end
+
+      it "does not permit class-level checks for members" do
+        account = create(:account)
+        create(:user, account: account)
+        member = create(:user, :member, account: account)
+
+        expect(described_class.new(member, StyleGuide)).not_to be_create
+      end
     end
 
     describe "#update?" do
