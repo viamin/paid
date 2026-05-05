@@ -214,7 +214,7 @@ module Knowledge
             "/tmp" => "size=#{64 * 1024 * 1024},mode=1777"
           },
           "NetworkMode" => NetworkPolicy::NETWORK_NAME,
-          "Binds" => [ "#{@input_dir}:/paid-input" ]
+          "Binds" => [ "#{@input_dir}:/paid-input:ro" ]
         },
         "Env" => [
           "HOME=/home/agent",
