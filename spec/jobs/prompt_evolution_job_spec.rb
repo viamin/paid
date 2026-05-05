@@ -424,6 +424,35 @@ RSpec.describe PromptEvolutionJob do
         expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).not_to include(old_prompt.id)
       end
 
+      it "uses the recovery minimum when selecting targeted prompts" do
+        recovery_prompt = create(:prompt, :global, :with_version)
+        create_completed_runs(
+          described_class::TARGETED_MIN_RUNS_FOR_EVOLUTION,
+          prompt_version: recovery_prompt.current_version,
+          project: project,
+          composite_score: 0.2
+        )
+
+        perform_targeted_quality_pause_job(project)
+
+        prompt_evolution_calls = workflow_calls.select { |call| call.first == Workflows::PromptEvolutionWorkflow }
+        expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).to include(recovery_prompt.id)
+        expect_targeted_workflow_for(recovery_prompt, project)
+      end
+    end
+
+    context "with targeted quality-pause evolution scoped by sample_days" do
+      let(:workflow_calls) { [] }
+
+      before do
+        allow(temporal_client).to receive(:start_workflow) do |*args|
+          workflow_calls << args
+        end
+
+        min_runs = described_class::TARGETED_MIN_RUNS_FOR_EVOLUTION
+        create_completed_runs(min_runs, prompt_version: prompt_version, project: project, composite_score: 0.2)
+      end
+
       it "honors sample_days when selecting prompts with targeted failures" do
         older_failed_prompt = create(:prompt, :global, :with_version)
         create_completed_runs(
@@ -445,22 +474,6 @@ RSpec.describe PromptEvolutionJob do
 
         prompt_evolution_calls = workflow_calls.select { |call| call.first == Workflows::PromptEvolutionWorkflow }
         expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).not_to include(older_failed_prompt.id)
-      end
-
-      it "uses the recovery minimum when selecting targeted prompts" do
-        recovery_prompt = create(:prompt, :global, :with_version)
-        create_completed_runs(
-          described_class::TARGETED_MIN_RUNS_FOR_EVOLUTION,
-          prompt_version: recovery_prompt.current_version,
-          project: project,
-          composite_score: 0.2
-        )
-
-        perform_targeted_quality_pause_job(project)
-
-        prompt_evolution_calls = workflow_calls.select { |call| call.first == Workflows::PromptEvolutionWorkflow }
-        expect(prompt_evolution_calls.map { |call| call.second[:prompt_id] }).to include(recovery_prompt.id)
-        expect_targeted_workflow_for(recovery_prompt, project)
       end
     end
   end

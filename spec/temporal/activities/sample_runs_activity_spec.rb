@@ -102,7 +102,9 @@ RSpec.describe Activities::SampleRunsActivity do
         expect(result[:quality_metrics]).to be_an(Array)
         expect(result[:quality_metrics]).to all(include(:composite_score))
       end
+    end
 
+    context "with targeted failure-only sampling" do
       it "passes prompt_id through to sampling so targeted failures stay eligible" do
         other_prompt = create(:prompt, :global, :with_version)
 
