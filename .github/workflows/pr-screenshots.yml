@@ -134,7 +134,7 @@ jobs:
             ELSE
               ALTER ROLE paid WITH LOGIN PASSWORD 'paid' CREATEDB NOSUPERUSER NOBYPASSRLS;
             END IF;
-          END
+          END;
           $$;
           SQL
 

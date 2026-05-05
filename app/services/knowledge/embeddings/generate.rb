@@ -35,6 +35,8 @@ module Knowledge
 
       def self.results_from_body(body)
         embeddings = body.fetch("data").sort_by { |d| d["index"] }
+        return [] if embeddings.empty?
+
         total_tokens = body.dig("usage", "total_tokens") || 0
 
         embeddings.map do |entry|

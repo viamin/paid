@@ -83,6 +83,7 @@ module Knowledge
 
       def proxy_base_url
         ENV["PAID_PROXY_URL"].presence ||
+          Rails.application.config.x.proxy_url.presence ||
           "http://web:#{Rails.application.config.x.paid_proxy_port}"
       end
 

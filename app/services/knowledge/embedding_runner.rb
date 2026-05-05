@@ -46,8 +46,8 @@ module Knowledge
       )
 
       parse_results(result)
-    rescue ContainerError
-      # After a container failure or timeout the container may be stopped.
+    rescue StandardError
+      # After any failure the container may be in a bad state.
       # Reset so the next provider attempt reprovisions a fresh container.
       cleanup_container!
       cleanup_input_dir!
