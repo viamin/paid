@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.40.0](https://github.com/viamin/paid/compare/v0.39.0...v0.40.0) (2026-05-05)
+
+
+### Features
+
+* **agent-runs:** add provider column to dashboard and agent run index tables ([#1693](https://github.com/viamin/paid/issues/1693)) ([381bbb2](https://github.com/viamin/paid/commit/381bbb2d8e4b417a485d25cb92823e4c4f54e702))
+* **auto-pick:** handle parent issues instead of silently skipping them ([#1691](https://github.com/viamin/paid/issues/1691)) ([6cfd378](https://github.com/viamin/paid/commit/6cfd3782ddfa96adcd33ba46197e2831691a32ca))
+* **knowledge:** implement provider fallback loop for knowledge base LLM calls ([#1684](https://github.com/viamin/paid/issues/1684)) ([04512b0](https://github.com/viamin/paid/commit/04512b02b2f5ed213cbeed9bce112f5b54fee84e))
+* **project-ui:** surface business context links ([#1704](https://github.com/viamin/paid/issues/1704)) ([6d8e469](https://github.com/viamin/paid/commit/6d8e469d2c47b7cbbd69a47dc0fa513954ad4b19))
+
+
+### Bug Fixes
+
+* 1538: Smoke test timeout (30s) too short for slow models like GLM 5.1 ([#1687](https://github.com/viamin/paid/issues/1687)) ([b5c93e4](https://github.com/viamin/paid/commit/b5c93e4041bb453a977440399f4e1040f6d6a615))
+* **agent-runs:** main index agent runs table has column header/value mismatch ([#1692](https://github.com/viamin/paid/issues/1692)) ([9202af5](https://github.com/viamin/paid/commit/9202af5288d45d4e79c59b06802d1b85fa26ee0a))
+* **test:** eliminate all rspec failures, pending specs, and speed up slow tests ([#1683](https://github.com/viamin/paid/issues/1683)) ([b3934aa](https://github.com/viamin/paid/commit/b3934aa768b028c7ff83b266e109f2dd9caa890c))
+* **test:** suppress third-party gem warnings in RSpec output ([#1694](https://github.com/viamin/paid/issues/1694)) ([30f1a03](https://github.com/viamin/paid/commit/30f1a03213a9726d53d51ffe282434435fa7ba93))
+
+
+### Performance Improvements
+
+* **test:** reduce DB inserts in 5 slowest spec examples ([#1706](https://github.com/viamin/paid/issues/1706)) ([a29203b](https://github.com/viamin/paid/commit/a29203b4c308b19043d2655bab024c29cc5fdb4f))
+
 ## [0.39.0](https://github.com/viamin/paid/compare/v0.38.0...v0.39.0) (2026-05-05)
 
 
