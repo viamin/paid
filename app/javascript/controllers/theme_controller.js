@@ -14,12 +14,14 @@ export default class extends Controller {
   }
 
   connect() {
-    const stored = this.storedPreference()
+    if (!this.signedInValue) {
+      const stored = this.storedPreference()
 
-    if (stored && stored !== this.preferenceValue) {
-      this.preferenceValue = stored // triggers preferenceValueChanged -> applyTheme
-      this.mediaQuery.addEventListener("change", this.handleSystemChange)
-      return
+      if (stored && stored !== this.preferenceValue) {
+        this.preferenceValue = stored // triggers preferenceValueChanged -> applyTheme
+        this.mediaQuery.addEventListener("change", this.handleSystemChange)
+        return
+      }
     }
 
     this.applyTheme()

@@ -21,8 +21,9 @@
       (function() {
         var root = document.documentElement;
         var serverPref = root.dataset.themePreferenceValue || "system";
+        var signedIn = root.dataset.themeSignedInValue === "true";
         var stored = localStorage.getItem("theme_preference");
-        var pref = stored;
+        var pref = signedIn ? serverPref : stored;
 
         if (pref !== "light" && pref !== "dark" && pref !== "system") {
           pref = serverPref;

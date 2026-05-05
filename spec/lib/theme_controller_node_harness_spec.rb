@@ -46,76 +46,103 @@ class ThemeControllerNodeHarness
       };
     }
 
-    const button = iconButton();
-    const localStorageState = {
-      theme_preference: "dark"
-    };
+    function buildController({ signedIn, storedPreference, initialPreference }) {
+      const button = iconButton();
+      const localStorageState = {
+        theme_preference: storedPreference
+      };
 
-    global.window = {
-      matchMedia: () => ({
-        matches: false,
-        addEventListener() {},
-        removeEventListener() {}
-      }),
-      localStorage: {
-        getItem(key) { return localStorageState[key] ?? null; },
-        setItem(key, value) { localStorageState[key] = value; }
-      }
-    };
+      global.window = {
+        matchMedia: () => ({
+          matches: false,
+          addEventListener() {},
+          removeEventListener() {}
+        }),
+        localStorage: {
+          getItem(key) { return localStorageState[key] ?? null; },
+          setItem(key, value) { localStorageState[key] = value; }
+        }
+      };
 
-    global.document = {
-      documentElement: {
-        classList: { toggle() {} },
-        dataset: {}
-      },
-      querySelector() { return null; }
-    };
+      global.document = {
+        documentElement: {
+          classList: { toggle() {} },
+          dataset: {}
+        },
+        querySelector() { return null; }
+      };
 
-    let persistedCalls = 0;
-    const controller = Object.create(ThemeController.prototype);
-    controller.signedInValue = true;
-    controller.hasIconTarget = true;
-    controller.iconTargets = [button];
-    controller.persistToServer = () => { persistedCalls += 1; };
-    controller._preferenceValue = "light";
-    Object.defineProperty(controller, "preferenceValue", {
-      get() {
-        return this._preferenceValue;
-      },
-      set(value) {
-        this._preferenceValue = value;
-        this.preferenceValueChanged();
-      }
+      let persistedCalls = 0;
+      const controller = Object.create(ThemeController.prototype);
+      controller.signedInValue = signedIn;
+      controller.hasIconTarget = true;
+      controller.iconTargets = [button];
+      controller.persistToServer = () => { persistedCalls += 1; };
+      controller._preferenceValue = initialPreference;
+      Object.defineProperty(controller, "preferenceValue", {
+        get() {
+          return this._preferenceValue;
+        },
+        set(value) {
+          this._preferenceValue = value;
+          this.preferenceValueChanged();
+        }
+      });
+
+      controller.initialize();
+      controller._lastPersisted = initialPreference;
+
+      return { button, controller, localStorageState, persistedCalls: () => persistedCalls };
+    }
+
+    const signedInCase = buildController({
+      signedIn: true,
+      storedPreference: "dark",
+      initialPreference: "light"
     });
+    signedInCase.controller.connect();
 
-    controller.initialize();
-    controller._preferenceValue = "dark";
-    controller._lastPersisted = "dark";
-    controller.preferenceValueChanged();
-
-    if (persistedCalls !== 0) {
-      throw new Error(`Expected no persistence on initial callback, saw ${persistedCalls}`);
+    if (signedInCase.controller.preferenceValue !== "light") {
+      throw new Error(`Expected signed-in connect() to keep server theme, saw ${signedInCase.controller.preferenceValue}`);
     }
 
-    controller._preferenceValue = "light";
-    controller._lastPersisted = "light";
-    persistedCalls = 0;
-    controller.connect();
-
-    if (controller.preferenceValue !== "dark") {
-      throw new Error(`Expected connect() to prefer stored theme, saw ${controller.preferenceValue}`);
+    if (signedInCase.persistedCalls() !== 0) {
+      throw new Error(`Expected no persistence when booting signed-in theme, saw ${signedInCase.persistedCalls()}`);
     }
 
-    if (persistedCalls !== 1) {
-      throw new Error(`Expected stored signed-in theme to be re-persisted once, saw ${persistedCalls}`);
+    if (signedInCase.localStorageState.theme_preference !== "light") {
+      throw new Error(`Expected signed-in boot to refresh local storage from server theme, saw ${signedInCase.localStorageState.theme_preference}`);
     }
 
-    if (button.attributes["aria-label"] !== "Cycle theme (current: Dark)") {
-      throw new Error(`Unexpected aria-label: ${button.attributes["aria-label"]}`);
+    if (signedInCase.button.attributes["aria-label"] !== "Cycle theme (current: Light)") {
+      throw new Error(`Unexpected signed-in aria-label: ${signedInCase.button.attributes["aria-label"]}`);
+    }
+
+    if (document.documentElement.dataset.themeEffectivePreference !== "light") {
+      throw new Error(`Expected signed-in effective preference dataset to be light, saw ${document.documentElement.dataset.themeEffectivePreference}`);
+    }
+
+    const guestCase = buildController({
+      signedIn: false,
+      storedPreference: "dark",
+      initialPreference: "light"
+    });
+    guestCase.controller.connect();
+
+    if (guestCase.controller.preferenceValue !== "dark") {
+      throw new Error(`Expected guest connect() to prefer stored theme, saw ${guestCase.controller.preferenceValue}`);
+    }
+
+    if (guestCase.persistedCalls() !== 0) {
+      throw new Error(`Expected no persistence for guest theme changes, saw ${guestCase.persistedCalls()}`);
+    }
+
+    if (guestCase.button.attributes["aria-label"] !== "Cycle theme (current: Dark)") {
+      throw new Error(`Unexpected guest aria-label: ${guestCase.button.attributes["aria-label"]}`);
     }
 
     if (document.documentElement.dataset.themeEffectivePreference !== "dark") {
-      throw new Error(`Expected effective preference dataset to be dark, saw ${document.documentElement.dataset.themeEffectivePreference}`);
+      throw new Error(`Expected guest effective preference dataset to be dark, saw ${document.documentElement.dataset.themeEffectivePreference}`);
     }
   JAVASCRIPT
 
@@ -125,7 +152,7 @@ class ThemeControllerNodeHarness
 end
 
 RSpec.describe ThemeControllerNodeHarness, :no_db do
-  it "keeps the signed-in theme optimistic and updates accessible labels" do
+  it "prefers the server theme for signed-in users and local storage for guests" do
     stdout, stderr, status = described_class.run
 
     expect(status.success?).to be(true), <<~MESSAGE
