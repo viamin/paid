@@ -9,19 +9,21 @@ class AddAgentRunsCountToProjects < ActiveRecord::Migration[8.1]
 
     reversible do |dir|
       dir.up do
-        execute <<~SQL
-          UPDATE projects
-          SET agent_runs_count = sub.total,
-              completed_agent_runs_count = sub.completed
-          FROM (
-            SELECT project_id,
-                   COUNT(*) AS total,
-                   COUNT(*) FILTER (WHERE status = 'completed') AS completed
-            FROM agent_runs
-            GROUP BY project_id
-          ) sub
-          WHERE projects.id = sub.project_id
-        SQL
+        TenantContext.with_system_access do
+          execute <<~SQL
+            UPDATE projects
+            SET agent_runs_count = sub.total,
+                completed_agent_runs_count = sub.completed
+            FROM (
+              SELECT project_id,
+                     COUNT(*) AS total,
+                     COUNT(*) FILTER (WHERE status = 'completed') AS completed
+              FROM agent_runs
+              GROUP BY project_id
+            ) sub
+            WHERE projects.id = sub.project_id
+          SQL
+        end
       end
     end
   end
