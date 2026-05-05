@@ -222,7 +222,8 @@ RSpec.describe Providers::TestAgent do
     end
 
     context "when codex has a Paid-managed OpenAI API key configured" do
-      let(:provider_record) { create(:provider, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      let(:api_key_record) { create(:provider_api_key, user: user, api_service_type: "openai") }
+      let(:provider_record) { create(:provider, :api_key, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: api_key_record) }
       let(:health_result) { { name: :codex, status: "ok", message: "All checks passed", latency_ms: 12 } }
 
       before do
@@ -241,7 +242,8 @@ RSpec.describe Providers::TestAgent do
     end
 
     context "when agent-harness returns a binary-encoded failure message" do
-      let(:provider_record) { create(:provider, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      let(:api_key_record) { create(:provider_api_key, user: user, api_service_type: "openai") }
+      let(:provider_record) { create(:provider, :api_key, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: api_key_record) }
       let(:health_result) { { name: :codex, status: "error", message: "bad \xFF auth\x00".b, latency_ms: 12 } }
 
       before do
@@ -261,7 +263,8 @@ RSpec.describe Providers::TestAgent do
     end
 
     context "when agent-harness returns valid UTF-8 bytes tagged as binary" do
-      let(:provider_record) { create(:provider, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      let(:api_key_record) { create(:provider_api_key, user: user, api_service_type: "openai") }
+      let(:provider_record) { create(:provider, :api_key, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: api_key_record) }
       let(:health_result) { { name: :codex, status: "error", message: "caf\xC3\xA9 auth".b, latency_ms: 12 } }
 
       before do
@@ -289,13 +292,13 @@ RSpec.describe Providers::TestAgent do
       end
 
       it "clears the stale provider state" do
-        codex_provider = create(:provider, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false)
+        codex_provider = create(:provider, :api_key, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"))
         provider_state = create(
           :provider_state,
           :rate_limited,
           :circuit_half_open,
           user: user,
-          provider_name: "codex"
+          provider_name: codex_provider.state_key
         )
 
         result = described_class.call(provider: codex_provider)
@@ -319,7 +322,7 @@ RSpec.describe Providers::TestAgent do
 
       it "persists the provider rate limit state using the absolute reset timestamp" do
         travel_to Time.utc(2026, 4, 5, 12, 0, 0) do
-          codex_provider = create(:provider, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false)
+          codex_provider = create(:provider, :api_key, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"))
           reset_at = Time.utc(2026, 4, 6, 10, 0, 0)
           allow(AgentHarness).to receive(:check_provider).and_return(
             name: :codex,
@@ -333,14 +336,14 @@ RSpec.describe Providers::TestAgent do
           expect(result).not_to be_success
           expect(result.error_type).to eq(:rate_limited)
 
-          provider_state = user.provider_states.find_by!(provider_name: "codex")
+          provider_state = user.provider_states.find_by!(provider_name: codex_provider.state_key)
           expect(provider_state.rate_limited_until).to eq(reset_at)
         end
       end
     end
 
     context "when gemini has a Paid-managed Google API key configured" do
-      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      let(:provider_record) { create(:provider, :api_key, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: create(:provider_api_key, user: user, api_service_type: "google")) }
       let(:health_result) { { name: :gemini, status: "ok", message: "All checks passed", latency_ms: 12 } }
 
       before do

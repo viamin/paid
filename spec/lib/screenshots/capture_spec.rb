@@ -76,6 +76,74 @@ RSpec.describe Screenshots::Capture do
     )
   end
 
+  describe "#ensure_seed_data! reuse path", :db do
+    let(:capture) { described_class.new(output_dir: output_dir, changed_files: []) }
+    let(:first_result) { capture.send(:ensure_seed_data!) }
+    let(:stale_agent_run) do
+      first_result[:agent_run].tap do |run|
+        run.update!(
+          status: "completed",
+          source_pull_request_number: 42,
+          review_url: "https://github.com/o/r/pull/42/reviews/1",
+          review_posted_at: 1.hour.ago,
+          created_issue_url: "https://github.com/o/r/issues/99",
+          created_issue_number: 99,
+          pull_request_url: "https://github.com/o/r/pull/50",
+          pull_request_number: 50,
+          started_at: 2.hours.ago,
+          completed_at: 1.hour.ago
+        )
+      end
+    end
+    let(:reused_run) do
+      stale_agent_run # force creation
+      capture.send(:ensure_seed_data!)[:agent_run]
+    end
+
+    it "reuses the same record" do
+      expect(reused_run.id).to eq(stale_agent_run.id)
+      expect(reused_run.status).to eq("queued")
+    end
+
+    it "clears issue and PR context fields" do
+      expect(reused_run).to have_attributes(
+        source_pull_request_number: nil,
+        pull_request_url: nil,
+        pull_request_number: nil,
+        created_issue_url: nil,
+        created_issue_number: nil
+      )
+    end
+
+    it "clears review and timing fields" do
+      expect(reused_run).to have_attributes(
+        review_url: nil,
+        review_posted_at: nil,
+        started_at: nil,
+        completed_at: nil
+      )
+    end
+
+    it "clears git metadata and provider fields" do
+      stale_agent_run.update!(
+        base_commit_sha: "a" * 40,
+        worktree_path: "/tmp/old-worktree",
+        branch_name: "old-branch",
+        providers_attempted: [ { "provider" => "openai" } ],
+        final_provider: "openai",
+        provider_switches: 2
+      )
+      expect(reused_run).to have_attributes(
+        base_commit_sha: nil,
+        worktree_path: nil,
+        branch_name: nil,
+        providers_attempted: [],
+        final_provider: nil,
+        provider_switches: 0
+      )
+    end
+  end
+
   describe "#register_driver" do
     it "passes base_url to Cuprite when app_host is set" do
       capture = described_class.new(output_dir: output_dir, changed_files: [])

@@ -17,8 +17,7 @@
                 <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Project</th>
                 <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Priority</th>
                 <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Goal</th>
-                <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Created</th>
-                <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Waiting</th>
+                <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Context</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 bg-white">
@@ -28,8 +27,7 @@
                   <td class="whitespace-nowrap px-3 py-3 text-sm text-gray-900"><%= entry.run.project.full_name %></td>
                   <td class="whitespace-nowrap px-3 py-3 text-sm text-gray-500"><%= agent_run_priority_badge(entry.run) %></td>
                   <td class="whitespace-nowrap px-3 py-3 text-sm text-gray-500"><%= goal_label(entry.run.goal) %></td>
-                  <td class="whitespace-nowrap px-3 py-3 text-sm text-gray-500"><%= local_time(entry.run.created_at, format: :short) %></td>
-                  <td class="px-3 py-3 text-sm text-gray-500"><%= entry.waiting_reason %></td>
+                  <td class="px-3 py-3 text-sm text-gray-500"><%= agent_run_context_display(entry.run) %></td>
                 </tr>
               <% end %>
             </tbody>

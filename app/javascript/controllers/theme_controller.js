@@ -13,6 +13,9 @@ export default class extends Controller {
     // localStorage is the source of truth for the toggle so the preference
     // survives page navigations without a round-trip to the server.
     const stored = window.localStorage.getItem("theme_preference")
+    // Seed _lastPersisted so applyTheme() won't fire a redundant PATCH when
+    // the preference hasn't actually changed since the last server sync.
+    this._lastPersisted = stored || this.preferenceValue
     if (stored && stored !== this.preferenceValue) {
       this.preferenceValue = stored // triggers preferenceValueChanged → applyTheme
     } else {

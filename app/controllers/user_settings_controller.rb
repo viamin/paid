@@ -15,11 +15,13 @@ class UserSettingsController < ApplicationController
     if @user_setting.update(user_setting_params)
       respond_to do |format|
         format.html { redirect_to edit_user_settings_path, notice: "Settings saved successfully." }
+        format.turbo_stream { redirect_to edit_user_settings_path, notice: "Settings saved successfully." }
         format.json { head :ok }
       end
     else
       respond_to do |format|
         format.html { render :edit, status: :unprocessable_content }
+        format.turbo_stream { render :edit, status: :unprocessable_content }
         format.json { render json: { errors: @user_setting.errors }, status: :unprocessable_content }
       end
     end

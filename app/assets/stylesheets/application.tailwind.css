@@ -375,26 +375,21 @@
   background-color: rgb(0 0 0 / 0.7);
 }
 
-.dark .bg-amber-50 {
+.dark .quality-pause-card.bg-amber-50 {
   background-color: rgba(120, 53, 15, 0.2);
 }
 
-.dark .bg-amber-100 {
+.dark .quality-pause-card .bg-amber-100 {
   background-color: rgb(120 53 15 / 0.45);
 }
 
-.dark .text-amber-900,
-.dark .text-amber-800,
-.dark .text-amber-700 {
-  color: #fcd34d; /* amber-300 */
-}
-
-.dark .text-amber-600 {
-  color: #fcd34d;
-}
-
-.dark .text-amber-400 {
-  color: #fcd34d;
+.dark .quality-pause-card .text-amber-950,
+.dark .quality-pause-card .text-amber-900,
+.dark .quality-pause-card .text-amber-800,
+.dark .quality-pause-card .text-amber-700,
+.dark .quality-pause-card .text-amber-600,
+.dark .quality-pause-card .text-amber-400 {
+  color: #fcd34d; /* amber-300 — high-contrast text for dark-mode pause card */
 }
 
 .dark .bg-sky-50 {
@@ -415,6 +410,11 @@
 .dark .border-sky-100,
 .dark .border-sky-200 {
   border-color: rgb(14 116 144 / 0.6);
+}
+
+/* Preserve sky-400 active-chat highlight over the global dark border-gray override */
+.dark .chat-session-card.border-sky-400 {
+  border-color: #38bdf8; /* sky-400 */
 }
 
 .dark .ring-sky-100 {
@@ -487,6 +487,10 @@
 
 .dark .border-amber-200,
 .dark .border-amber-300 {
+  border-color: rgba(120, 53, 15, 0.6);
+}
+
+.dark .quality-pause-card .divide-amber-200 > :not(:last-child) {
   border-color: rgba(120, 53, 15, 0.6);
 }
 

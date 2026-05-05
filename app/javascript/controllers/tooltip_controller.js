@@ -38,6 +38,16 @@ export default class extends Controller {
     }
   }
 
+  // Show tooltip on keyboard focus (works on all device types).
+  show(event) {
+    if (this.contentTarget.classList.contains("hidden")) {
+      this.contentTarget.classList.remove("hidden")
+      this.#positionTooltipNear(event.target)
+      this.#updateAria(true)
+      this.#addGlobalListeners()
+    }
+  }
+
   hide(event) {
     if (!this.element.contains(event.target)) {
       this.#close()
@@ -68,8 +78,11 @@ export default class extends Controller {
   #positionTooltip() {
     const button = this.element.querySelector("button[aria-controls]")
     if (!button) return
+    this.#positionTooltipNear(button)
+  }
 
-    const rect = button.getBoundingClientRect()
+  #positionTooltipNear(element) {
+    const rect = element.getBoundingClientRect()
     this.contentTarget.style.top = `${rect.bottom + 4}px`
     this.contentTarget.style.left = `${rect.left}px`
   }
