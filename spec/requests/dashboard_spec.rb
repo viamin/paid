@@ -44,19 +44,19 @@ RSpec.describe "Dashboard" do
         expect(mobile_settings_link.text.strip).to eq("Settings")
       end
 
-      it "shows the run phase breakdown section" do
-        get dashboard_path
+      it "shows the run phase breakdown section via metrics frame" do
+        get dashboard_metrics_path(time_range: "cumulative")
 
         expect(response.body).to include("Run Phase Breakdown")
         expect(response.body).to include("Average End-to-End Composition")
         expect(response.body).to include('aria-label="Average end-to-end composition by phase"')
       end
 
-      it "shows the stacked daily agent runs chart" do
+      it "shows the stacked daily agent runs chart via metrics frame" do
         create(:agent_run, :completed, project: project, created_at: 1.day.ago)
         create(:agent_run, :failed, project: project, created_at: 1.day.ago)
 
-        get dashboard_path
+        get dashboard_metrics_path(time_range: "cumulative")
 
         doc = Nokogiri::HTML(response.body)
         chart = doc.at_css("div#daily-runs-chart")
@@ -64,6 +64,16 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Agent Runs per Day")
         expect(response.body).to include("Completed runs are stacked above failed runs across the last 30 days.")
         expect(chart).to be_present
+      end
+
+      it "renders lazy turbo frames for metrics, performance, knowledge, and queue health" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        expect(doc.at_css("turbo-frame#dashboard-metrics[loading='lazy']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-performance[loading='lazy']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[loading='lazy']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-queue-health[loading='lazy']")).to be_present
       end
 
       it "shows live metrics section with active runs" do
@@ -339,6 +349,36 @@ RSpec.describe "Dashboard" do
       get dashboard_performance_path(status: "invalid", goal: "invalid")
 
       expect(response).to have_http_status(:ok)
+    end
+  end
+
+  describe "GET /dashboard/knowledge_stats" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+
+    before { sign_in user }
+
+    it "returns knowledge stats partial within a turbo frame" do
+      get dashboard_knowledge_stats_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("dashboard-knowledge-stats")
+      expect(response.body).to include("Knowledge Base")
+    end
+  end
+
+  describe "GET /dashboard/queue_health" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+
+    before { sign_in user }
+
+    it "returns queue health partial within a turbo frame" do
+      get dashboard_queue_health_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("dashboard-queue-health")
+      expect(response.body).to include("Queue Health")
     end
   end
 
