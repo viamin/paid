@@ -140,6 +140,17 @@ RSpec.describe "Dashboard" do
         expect(row.text).to include(provider.display_name)
       end
 
+      it "renders unsupported provider identifiers in the active runs table without error" do
+        run = create(:agent_run, :running, project: project, provider: nil, final_provider: "api", agent_type: "api")
+
+        get dashboard_path
+
+        expect(response).to have_http_status(:ok)
+        row = Nokogiri::HTML(response.body).at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
+        expect(row).to be_present
+        expect(row.text).to include("Api")
+      end
+
       it "shows quality-paused projects on the dashboard" do
         project.update!(
           name: "Paused Project",

@@ -565,6 +565,21 @@ RSpec.describe "Projects" do
         expect(row.text).to include(provider.display_name)
       end
 
+      it "renders unsupported provider identifiers in recent agent runs without error" do
+        project = create(:project, account: account, github_token: github_token, created_by: user)
+        run = create(:agent_run, project: project, provider: nil, final_provider: "api", agent_type: "api")
+
+        get project_path(project)
+
+        document = Nokogiri::HTML(response.body)
+        section = document.at_css(%(div[id="#{ActionView::RecordIdentifier.dom_id(project, :agent_runs)}"]))
+        row = section.at_css(%(a[href="#{project_agent_run_path(project, run)}"]))&.ancestors("tr")&.first
+
+        expect(response).to have_http_status(:ok)
+        expect(row).to be_present
+        expect(row.text).to include("Api")
+      end
+
       it "links to PR in context column for review goal runs on project page" do
         project = create(:project, account: account, github_token: github_token)
         run = create(:agent_run, :review_goal, :completed, project: project)

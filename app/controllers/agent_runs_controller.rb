@@ -5,7 +5,7 @@ class AgentRunsController < ApplicationController
   skip_after_action :verify_authorized, only: :index
 
   def index
-    base_scope = policy_scope(AgentRun).includes(:project, issue: :project)
+    base_scope = policy_scope(AgentRun).includes(:provider, issue: :project, project: [ :created_by, :account ])
     @q = base_scope.ransack(params[:q])
 
     if params[:sort] == "queue" && queue_sort_compatible?

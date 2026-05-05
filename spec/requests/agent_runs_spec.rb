@@ -147,6 +147,15 @@ RSpec.describe "AgentRuns" do
         expect(cell_for_run(parsed_html, run, "Provider").text.squish).to eq("Deleted provider entry")
       end
 
+      it "renders unsupported provider identifiers without error" do
+        run = create(:agent_run, project: project, provider: nil, final_provider: "api", agent_type: "api")
+
+        get agent_runs_path
+
+        expect(response).to have_http_status(:ok)
+        expect(cell_for_run(parsed_html, run, "Provider").text.squish).to eq("Api")
+      end
+
       it "shows empty state when no runs exist" do
         get agent_runs_path
         expect(response.body).to include("No agent runs yet")
@@ -509,6 +518,15 @@ RSpec.describe "AgentRuns" do
 
         expect(column_index(document, "Provider")).not_to be_nil
         expect(cell_for_run(document, run, "Provider").text.squish).to eq(provider.display_name)
+      end
+
+      it "renders unsupported provider identifiers without error" do
+        run = create(:agent_run, project: project, provider: nil, final_provider: "api", agent_type: "api")
+
+        get project_agent_runs_path(project)
+
+        expect(response).to have_http_status(:ok)
+        expect(cell_for_run(parsed_html, run, "Provider").text.squish).to eq("Api")
       end
 
       it "shows PR link in actions column for completed create_pr runs" do
