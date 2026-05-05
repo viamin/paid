@@ -37,8 +37,19 @@ module Workflows
       # Phase 1: Decompose the feature into sub-tasks
       planning_result = run_planning(project_id, issue_id)
 
-      tasks = planning_result[:tasks]
+      tasks = planning_result[:tasks] || []
       created_issues = planning_result[:created_issues]
+
+      # Update labels/state immediately after planning completes (mirrors PlanningWorkflow step 4)
+      run_activity(
+        Activities::UpdatePlanningLabelsActivity,
+        {
+          project_id: project_id,
+          issue_id: issue_id,
+          task_count: tasks.size
+        },
+        timeout: 30
+      )
 
       # If planning produced 0-1 tasks, no parallel execution needed
       unless tasks.size > 1
@@ -66,17 +77,6 @@ module Workflows
         sub_tasks: sub_tasks,
         timeout_seconds: timeout_seconds,
         aggregate_pr: input[:aggregate_pr]
-      )
-
-      # Phase 3: Update labels to reflect completion
-      run_activity(
-        Activities::UpdatePlanningLabelsActivity,
-        {
-          project_id: project_id,
-          issue_id: issue_id,
-          task_count: tasks.size
-        },
-        timeout: 30
       )
 
       Temporalio::Workflow.logger.info(
@@ -111,6 +111,10 @@ module Workflows
 
     private
 
+    # Inline planning steps (mirrors PlanningWorkflow) rather than invoking it as a child
+    # workflow because orchestration needs direct access to the decomposed tasks and created
+    # issues to build sub_tasks for parallel execution. A child workflow would only return a
+    # summary, requiring re-fetching. Shared activities keep the actual logic deduplicated.
     def run_planning(project_id, issue_id)
       # Step 1: Fetch knowledge base context
       context_result = run_activity(
@@ -156,9 +160,18 @@ module Workflows
       tasks.each_with_index.map do |task, index|
         sub_task = { custom_prompt: task[:description] }
 
-        # Link to created issue if available
+        # Link to created issue — require a valid issue_id since downstream
+        # workflows (AgentExecutionWorkflow) depend on it for state tracking.
         if created_issues[index]
-          sub_task[:issue_id] = created_issues[index][:issue_id]
+          issue_id = created_issues[index][:issue_id]
+          unless issue_id
+            raise Temporalio::Error::ApplicationError.new(
+              "CreateSubIssuesActivity returned nil issue_id for task #{index}: #{task[:title]}",
+              type: "InvalidSubIssue",
+              non_retryable: true
+            )
+          end
+          sub_task[:issue_id] = issue_id
         end
 
         sub_task

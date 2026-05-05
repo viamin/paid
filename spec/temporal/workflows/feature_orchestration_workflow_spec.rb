@@ -114,7 +114,7 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
           )
       end
 
-      it "updates labels after parallel execution" do
+      it "updates labels immediately after planning completes" do
         workflow.execute(input)
 
         expect(workflow).to have_received(:run_activity)
@@ -162,6 +162,13 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
         expect(result[:parallel_execution]).to be false
         expect(result[:task_count]).to eq(1)
         expect(Temporalio::Workflow).not_to have_received(:execute_child_workflow)
+      end
+
+      it "still updates planning labels" do
+        workflow.execute(input)
+
+        expect(workflow).to have_received(:run_activity)
+          .with(Activities::UpdatePlanningLabelsActivity, hash_including(task_count: 1), timeout: 30)
       end
     end
 
@@ -248,6 +255,41 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
 
         expect(result[:conflicts][:has_conflicts]).to be true
         expect(result[:conflicts][:conflicting_pairs]).not_to be_empty
+      end
+    end
+
+    context "when created issue has nil issue_id" do
+      let(:tasks) do
+        [
+          { index: 0, title: "Task A", description: "Do A", dependencies: [], parallel_group: 0 },
+          { index: 1, title: "Task B", description: "Do B", dependencies: [], parallel_group: 0 }
+        ]
+      end
+
+      before do
+        stub_planning_activities(tasks: tasks, created_issues: [ { issue_id: 10 }, { issue_id: nil } ])
+      end
+
+      it "raises a non-retryable error" do
+        expect { workflow.execute(input) }.to raise_error(
+          Temporalio::Error::ApplicationError,
+          /returned nil issue_id for task 1: Task B/
+        )
+      end
+    end
+
+    context "when decompose returns nil tasks" do
+      before do
+        stub_planning_activities(tasks: nil, created_issues: [])
+        allow(Temporalio::Workflow).to receive(:execute_child_workflow)
+      end
+
+      it "defaults to empty array and skips parallel execution" do
+        result = workflow.execute(input)
+
+        expect(result[:success]).to be true
+        expect(result[:parallel_execution]).to be false
+        expect(result[:task_count]).to eq(0)
       end
     end
 
