@@ -194,6 +194,49 @@ RSpec.describe Knowledge::DashboardStats do
           hash_including(provider: "unknown", run_count: 1, success_rate: 0.0)
         )
       end
+
+      context "when unfinished runs exist in the lookback window" do
+        before do
+          create(:knowledge_run, :running,
+            project: project,
+            operation_type: "embedding",
+            final_provider: "openai",
+            created_at: 5.minutes.ago,
+            updated_at: 1.minute.ago)
+          create(:knowledge_run,
+            project: project,
+            operation_type: "decision_drafting",
+            status: "pending",
+            final_provider: "claude",
+            created_at: 4.minutes.ago,
+            updated_at: 2.minutes.ago)
+        end
+
+        it "excludes unfinished runs from pipeline totals and rates" do
+          embedding = stats[:pipeline_metrics]["embedding"]
+          drafting = stats[:pipeline_metrics]["decision_drafting"]
+
+          expect(embedding[:total_runs]).to eq(2)
+          expect(embedding[:finished_runs]).to eq(2)
+          expect(embedding[:successful_runs]).to eq(1)
+          expect(embedding[:failed_runs]).to eq(1)
+          expect(embedding[:success_rate]).to eq(50.0)
+
+          expect(drafting[:total_runs]).to eq(1)
+          expect(drafting[:finished_runs]).to eq(1)
+          expect(drafting[:successful_runs]).to eq(1)
+          expect(drafting[:success_rate]).to eq(100.0)
+        end
+
+        it "excludes unfinished runs from provider distribution counts" do
+          distribution = stats[:pipeline_metrics]["embedding"][:provider_distribution]
+
+          expect(distribution).to contain_exactly(
+            hash_including(provider: "azure_openai", run_count: 1, success_rate: 0.0),
+            hash_including(provider: "openai", run_count: 1, success_rate: 100.0)
+          )
+        end
+      end
     end
 
     context "with no knowledge runs" do

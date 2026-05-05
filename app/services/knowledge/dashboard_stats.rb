@@ -4,8 +4,6 @@ module Knowledge
   class DashboardStats
     CACHE_TTL = 60.seconds
     PIPELINE_LOOKBACK = 30.days
-    FINISHED_STATUSES_SQL = KnowledgeRun::FINISHED_STATUSES.map { |status| "'#{status}'" }.join(", ").freeze
-
     attr_reader :account
 
     def initialize(account:)
@@ -250,10 +248,10 @@ module Knowledge
         .pluck(
           Arel.sql("knowledge_runs.operation_type"),
           Arel.sql("COUNT(*)"),
-          Arel.sql("COUNT(*) FILTER (WHERE knowledge_runs.status IN (#{FINISHED_STATUSES_SQL}))"),
+          Arel.sql("COUNT(*)"),
           Arel.sql("COUNT(*) FILTER (WHERE knowledge_runs.status = 'completed')"),
           Arel.sql("COUNT(*) FILTER (WHERE knowledge_runs.status = 'failed')"),
-          Arel.sql("AVG(EXTRACT(EPOCH FROM (knowledge_runs.updated_at - knowledge_runs.created_at))) FILTER (WHERE knowledge_runs.status IN (#{FINISHED_STATUSES_SQL}))")
+          Arel.sql("AVG(EXTRACT(EPOCH FROM (knowledge_runs.updated_at - knowledge_runs.created_at)))")
         )
         .map do |operation_type, total_runs, finished_runs, successful_runs, failed_runs, avg_duration_seconds|
           {
@@ -275,9 +273,9 @@ module Knowledge
           Arel.sql("knowledge_runs.operation_type"),
           Arel.sql("#{effective_provider_sql}"),
           Arel.sql("COUNT(*)"),
-          Arel.sql("COUNT(*) FILTER (WHERE knowledge_runs.status IN (#{FINISHED_STATUSES_SQL}))"),
+          Arel.sql("COUNT(*)"),
           Arel.sql("COUNT(*) FILTER (WHERE knowledge_runs.status = 'completed')"),
-          Arel.sql("AVG(EXTRACT(EPOCH FROM (knowledge_runs.updated_at - knowledge_runs.created_at))) FILTER (WHERE knowledge_runs.status IN (#{FINISHED_STATUSES_SQL}))")
+          Arel.sql("AVG(EXTRACT(EPOCH FROM (knowledge_runs.updated_at - knowledge_runs.created_at)))")
         )
         .map do |operation_type, provider, run_count, finished_runs, successful_runs, avg_duration_seconds|
           {
@@ -291,7 +289,7 @@ module Knowledge
     end
 
     def pipeline_runs
-      knowledge_runs.where(created_at: PIPELINE_LOOKBACK.ago..Time.current)
+      knowledge_runs.finished.where(created_at: PIPELINE_LOOKBACK.ago..Time.current)
     end
 
     def effective_provider_sql
