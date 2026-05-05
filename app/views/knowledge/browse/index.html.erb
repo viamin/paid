@@ -19,8 +19,10 @@
       </p>
     </div>
     <div class="mt-4 flex items-center gap-3 sm:mt-0">
-      <%= link_to "Business Context", project_context_intake_path(@project),
-            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+      <% if policy(@project).update? %>
+        <%= link_to "Business Context", project_context_intake_path(@project),
+              class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+      <% end %>
       <%= link_to "Search Knowledge", project_knowledge_search_path(@project),
             class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
     </div>
