@@ -93,7 +93,11 @@ module Workflows
           goal: "analyze_issue"
         }, timeout: 30)
       when "start_planning"
-        start_planning_workflow(project_id, decision[:issue_id])
+        if feature_flag_enabled?(:feature_orchestration, project_id:)
+          start_feature_orchestration_workflow(project_id, decision[:issue_id])
+        else
+          start_planning_workflow(project_id, decision[:issue_id])
+        end
       when "request_review"
         request_review(project_id, decision[:pr_number], decision[:reviewers],
           log_key: "pr_review.request_review_failed")
@@ -341,6 +345,31 @@ module Workflows
         source_pull_request_number: decision[:source_pull_request_number],
         goal: "review"
       }, timeout: 30)
+    end
+
+    # Starts the full feature orchestration workflow (plan → parallel execute → aggregate).
+    # Used when the feature_orchestration flag is enabled for the project.
+    def start_feature_orchestration_workflow(project_id, issue_id)
+      capacity = run_activity(Activities::CheckRunCapacityActivity, { project_id: project_id }, timeout: 10)
+
+      unless capacity[:has_capacity]
+        Temporalio::Workflow.logger.info(
+          message: "feature_orchestration.deferred_due_to_capacity",
+          project_id: project_id,
+          issue_id: issue_id
+        )
+        return
+      end
+
+      workflow_id = "orchestrate-#{project_id}-#{issue_id}-#{Temporalio::Workflow.now.to_i}"
+
+      Temporalio::Workflow.start_child_workflow(
+        Workflows::FeatureOrchestrationWorkflow,
+        { project_id: project_id, issue_id: issue_id },
+        id: workflow_id,
+        task_queue: Paid::AGENT_TASK_QUEUE,
+        parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
+      )
     end
 
     # Unlike agent workflows, planning workflows cannot be queued via QueueAgentRunActivity
