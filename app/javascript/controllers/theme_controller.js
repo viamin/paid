@@ -10,11 +10,11 @@ export default class extends Controller {
   initialize() {
     this.mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
     this.handleSystemChange = this.applyTheme.bind(this)
+    this._lastPersisted = this.preferenceValue
   }
 
   connect() {
     const stored = window.localStorage.getItem("theme_preference")
-    this._lastPersisted = this.preferenceValue
 
     if (this.signedInValue) {
       if (stored !== this.preferenceValue) {
