@@ -2,7 +2,7 @@
 
 This document outlines the phased implementation plan for Paid. Each phase builds on the previous, delivering usable functionality at each step while progressing toward the complete vision.
 
-**Current Status**: Phase 3 (Scale) in progress as of 2026-04-19. Sections 3.1–3.3 and 3.6 are complete; 3.4, 3.5, and 3.7 are partially done. Phase 3.5 (Completion & Hardening) is in progress with provider quota tracking (3.5.6) starting with quick-win internal usage display and agent-harness upstreaming.
+**Current Status**: Phase 3 (Scale) in progress as of 2026-05-05. Sections 3.1–3.3, 3.4, and 3.6 are complete; 3.5 and 3.7 are partially done. Phase 3.5 (Completion & Hardening) is substantially complete — sections 3.5.1–3.5.3, 3.5.5, 3.5.7–3.5.19 are done; 3.5.4 (Performance Fundamentals) has partial progress; 3.5.6 (Provider Quota Tracking) Steps 1–2 are done, Steps 3–6 remain. MCP server support, screenshot visual regression, agent run enhancements, self-healing exception handling, and knowledge provider resilience shipped in the latest cycle.
 
 ## Phase Overview
 
@@ -22,9 +22,12 @@ This document outlines the phased implementation plan for Paid. Each phase build
 │                                                                              │
 │  Phase 3.5: Completion & Hardening                                          │
 │  ─────────────────────────────────                                           │
-│  • Security & reliability P1s     • Performance fundamentals                │
+│  • Security & reliability P1s     • Performance fundamentals (partial)      │
 │  • Wire half-built Phase 2 feats  • Quality recovery workflows              │
 │  • Multi-provider & model select  • Fair queueing                           │
+│  • MCP server support             • Screenshot visual regression            │
+│  • Self-healing exception handling • Knowledge provider resilience          │
+│  • Agent run enhancements         • Notification subscriptions              │
 │                                                                              │
 │  Phase 4: AI-Native Evolution                                               │
 │  ────────────────────────────                                               │
@@ -37,8 +40,24 @@ This document outlines the phased implementation plan for Paid. Each phase build
 │  • Avo operator console              • User-facing account admin            │
 │  • Tenant lifecycle operations       • Team, roles, settings, billing       │
 │                                                                              │
+│  Phase 6: Enterprise Trust & Governance                                     │
+│  ─────────────────────────────────────                                      │
+│  • GitHub App & enterprise auth       • Audit logs and policy controls      │
+│  • Compliance and approval workflows  • Security governance                 │
+│                                                                              │
+│  Phase 7: Proof, Adoption & Interop                                         │
+│  ───────────────────────────────────                                         │
+│  • ROI/evals against alternatives     • Migration and coexistence paths     │
+│  • Benchmarking and executive proof   • Change management                   │
+│                                                                              │
+│  Phase 8: Managed Platform & Ecosystem                                      │
+│  ────────────────────────────────────                                       │
+│  • Managed cloud / private SaaS       • Enterprise operations               │
+│  • Marketplace and ecosystem          • Customer deployment models          │
+│                                                                              │
 │  ─────────────────────────────────────────────────────────────────────────► │
 │  MVP: "It works"   Growth: "It learns"   Scale: "It flies"   "It operates" │
+│  Trust: "It governs"   Proof: "It wins"   Platform: "It scales to market"  │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -579,7 +598,7 @@ Deliverables:
 
 **Why this phase exists**: Phase 3's core features are built (multi-agent orchestration, prompt evolution, guardrails, scaling infrastructure), but open issues reveal unfinished wiring in Phase 2's intelligence layer and several security/reliability gaps. Phase 4's learning systems require these foundations to be solid — A/B tests must produce real data, multi-provider must work end-to-end, and the system must handle concurrent load without credential leaks or data drift.
 
-**Status**: In progress. Sections 3.5.1 through 3.5.3 and 3.5.5 are complete. Section 3.5.6 (Provider Quota Tracking) Steps 1–2 are substantially done. Section 3.5.4 (Performance Fundamentals) and 3.5.6 Steps 3–6 remain.
+**Status**: Substantially complete. Sections 3.5.1–3.5.3, 3.5.5, 3.5.7–3.5.19 are done. Section 3.5.4 (Performance Fundamentals) has partial progress (benchmarking suite, targeted query optimizations). Section 3.5.6 (Provider Quota Tracking) Steps 1–2 are done; Steps 3–6 remain.
 
 ### 3.5.1 Security & Reliability
 
@@ -647,13 +666,15 @@ Deliverables:
 
 **Objective**: Complete the remaining Phase 3.5 performance items needed to handle 10+ concurrent projects.
 
+**Status**: Partially started — Performance benchmarking suite runs in CI with 5 benchmark types, targeted query optimizations done (distinct_effective_providers cache, deferred cost snapshots). Container pool warming, systematic database optimization, workflow batching, and worker pool tuning remain.
+
 Tasks:
 
 - [ ] Container pool warming (#718)
-- [ ] Database query optimization (#720)
+- [~] Database query optimization (#720) — targeted: distinct_effective_providers cache (#1586), deferred cost snapshots (#1580), fasterer performance lint (#1595)
 - [ ] Workflow batching optimizations (#719)
 - [ ] Worker pool tuning (#722)
-- [ ] Performance benchmarking suite (#723)
+- [~] Performance benchmarking suite (#723) — benchmark types, CI integration, baseline tracking, regression checking (#1559)
 - [ ] Reduce GitHub API calls per polling cycle (#879)
 
 Deliverables:
@@ -818,6 +839,10 @@ Deliverables:
 - [x] Provider quota tracking: per-provider usage visible on /providers page
 - [x] Provider-specific code upstreamed to agent-harness
 - [ ] Upstream quota polling wired for at least one provider
+- [x] MCP server support for agent tool use and project configuration
+- [x] Interactive chat with streaming UI, cost tracking, and container workspace
+- [x] Self-healing exception handling with auto-issue filing
+- [x] Screenshot visual regression for PRs with UI changes
 
 ### 3.5.7 Interactive Chat
 
@@ -832,6 +857,10 @@ Tasks:
 - [x] Add chat system prompt and context injection (#1521) — `ChatSessions::BuildSystemPrompt`
 - [x] Add chat API endpoints with SSE streaming (#1523) — `ChatController` with real-time streaming
 - [x] Add chat cost tracking and limits (#1522) — token usage and spending caps per session
+- [x] Add interactive chat UI with Stimulus controllers, sidebar, and streaming display (#1591)
+- [x] Add chat container manager for workspace sessions (#1520)
+- [x] Align chat interface design with Paid's existing design patterns (#1675)
+- [x] Simplify chat setup with sensible defaults (#1673)
 
 Deliverables:
 
@@ -853,6 +882,7 @@ Tasks:
 - [x] Create `KnowledgeEvolutionJob` (GoodJob cron), `KnowledgeEvolutionWorkflow` (Temporal), and activities (#1524) — `SampleEnhanceRuns`, `AnalyzeKnowledgeGaps`, `RecordKnowledgeRecommendations`
 - [x] Add `Knowledge::UsageStats` service and dashboard integration (#1504)
 - [x] Add `KnowledgeUsageStat` model for per-artifact-type usage tracking (#1448)
+- [x] Add KnowledgeRecommendation review UI for project owners (#1627) — accept/dismiss with Turbo Stream updates
 
 Deliverables:
 
@@ -885,6 +915,8 @@ Tasks:
 - [x] Extract auto-merge into `Automation::Strategies::AutoMerge` strategy module (#1120, #1510)
 - [x] Extract auto-continue into `Automation::Strategies::AutoContinue` strategy module (#1121, #1515)
 - [x] Integrate `analyze_issue` gate into auto-pick strategy (#1475)
+- [x] Add contract and parity tests for automation modules (#1631)
+- [x] Thin workflows and jobs to orchestration-only (#1608)
 
 Deliverables:
 
@@ -908,12 +940,118 @@ Tasks:
 - [x] Add provider-contract smoke test for paid-agent image (#1318, #1487)
 - [x] Surface in-progress phase in agent run timeline (#1509)
 - [x] Move active runs above queue health in live dashboard (#1499)
+- [x] Fix auto-merge CI verification to use Actions API for safe Dependabot merging (#1615)
+- [x] Add queue preview showing upcoming work order with fair queue visibility (#1610)
+- [x] Add stacked agent runs per day chart to dashboard (#1614)
+- [x] Expose generic integration credentials in the integrations hub (#1617)
 
 Deliverables:
 
 - Operators receive proactive alerts for operational issues
 - Progressive feature rollouts enable safe deployments
 - Model tier escalation improves quality without manual intervention
+
+### 3.5.12 MCP Server Support
+
+**Objective**: Enable agents to use external tools during execution via the Model Context Protocol (MCP), and expose Paid operations as tools for the chat interface.
+
+Tasks:
+
+- [x] Add Paid MCP server for agent tool use (#1532) — JSON-RPC over SSE, 9 tools, rate limiting, container auth
+- [x] Integrate MCP-enabled execution through agent-harness (#1660) — CLI flag translation per provider
+- [x] Provision npx and docker-image MCP servers for agent runs (#1657) — `Containers::McpProvisioner`, sidecar lifecycle
+- [x] Add Services-page and project configuration UI for MCP servers (#1664) — `McpServerDefinition`, `ProjectMcpServer` models
+
+Deliverables:
+
+- Agents access external tools during execution via MCP
+- Project owners configure MCP servers from the UI
+- Paid exposes its own operations as MCP tools for the chat interface
+- Both npx-based and docker-image MCP server types supported
+
+### 3.5.13 Screenshot & Visual Regression
+
+**Objective**: Automatically capture screenshots of UI changes in PRs for visual review.
+
+Tasks:
+
+- [x] Add CI workflow to detect UI changes and capture rendered screenshots (#1623) — Cuprite/Chrome rendering, change detection
+- [x] Inline image display in PR comments via orphan branch push (#1676) — raw.githubusercontent.com URLs, table layout, cleanup job
+- [x] Resolve Ferrum base_url error in CI screenshot capture (#1663)
+
+Deliverables:
+
+- PRs with UI changes automatically include rendered screenshots
+- Screenshots displayed inline in PR comments for easy review
+- Visual diff visible without leaving GitHub
+
+### 3.5.14 Agent Run Enhancements
+
+**Objective**: Improve agent run reliability, observability, and capability with structural enhancements.
+
+Tasks:
+
+- [x] Generate decomposition plans with dependency ordering and DAG validation (#1656) — `DecompositionPlan::Generate`, `DecompositionPlan::ValidateDag`
+- [x] Create multiple issues with dependency declarations in create-issue mode (#1658) — topological ordering, `Depends on #N` declarations
+- [x] Integrate streaming JSONL progress events into container watchdog (#1602) — `StreamingEventProcessor` with progress/token tracking
+- [x] Add pre-flight provider health check before agent execution (#1620) — auth, CLI availability, API reachability
+- [x] Adopt agent-harness heartbeat support for OpenCode/KiloCode fallbacks (#1641) — upstream capability detection
+- [x] Tie model selection to direct-outbound provider capabilities (#1670) — auto-populate tier_model_ids
+- [x] Skip harness preflight for subscription-auth providers (#1680)
+- [x] Implement provider fallback loop for knowledge base LLM calls (#1684) — `Knowledge::ProviderExecutor` with graceful degradation
+
+Deliverables:
+
+- Decomposition plans produce ordered, dependency-linked sub-issues
+- Watchdog has semantic awareness of agent state via structured JSONL events
+- Pre-flight checks prevent wasted container resources on misconfigured providers
+- Knowledge base LLM calls are resilient to provider rate limits and errors
+
+### 3.5.15 Self-Healing & Exception Handling
+
+**Objective**: Capture, classify, and take action on application exceptions automatically.
+
+Tasks:
+
+- [x] Add centralized exception handling service with auto-issue filing and self-healing (#1531) — `ExceptionHandler::Handle`, `Fingerprinter`, `Classifier`, `IssueFiler`, `ExceptionIncident` model
+
+Deliverables:
+
+- Exceptions are fingerprinted and deduplicated
+- P1/P2 errors auto-file GitHub issues with full context
+- Exception history visible for incident response
+
+### 3.5.16 Enhanced Notifications & Subscriptions
+
+**Objective**: Allow users to subscribe to specific events and receive targeted notifications.
+
+Tasks:
+
+- [x] Allow users to subscribe to issue/PR merge events (#1609) — `IssueMergeSubscription`, per-user notification stream with Turbo Stream delivery
+
+Deliverables:
+
+- Users subscribe to individual issues and PRs for merge notifications
+- Notification stream is per-user with real-time delivery
+
+### 3.5.17 Dashboard & Observability Enhancements
+
+**Objective**: Improve dashboard visibility with new visualizations and dark-mode support.
+
+Tasks:
+
+- [x] Add queue preview showing upcoming work order (#1610) — fair queue visibility with capacity display
+- [x] Add stacked agent runs per day chart (#1614) — Chart.js visualization
+- [x] Improve dark-mode contrast in dashboard quality pause info block (#1635)
+- [x] Dashboard upcoming queue table: replace Created with Context and remove Waiting (#1636)
+- [x] Move upcoming queue above queue health section (#1669)
+- [x] Show agent run goal on main agent runs index page table (#1630)
+
+Deliverables:
+
+- Dashboard shows upcoming work order with fair queue visibility
+- Historical agent run activity visible via stacked daily chart
+- Dark-mode rendering consistent across all dashboard components
 
 ---
 
@@ -1103,21 +1241,238 @@ Deliverables:
 
 ---
 
-## Future Considerations (Beyond Phase 5)
+## Phase 6: Enterprise Trust & Governance
+
+**Goal**: Remove the trust, governance, and procurement blockers that keep mature engineering organizations from adopting Paid for production software delivery.
+
+This phase turns Paid from a capable internal system into something a security team, platform team, and VP Engineering can approve with confidence.
+
+### 6.1 GitHub App & Enterprise Identity
+
+**Objective**: Replace PAT-heavy onboarding with enterprise-grade identity, repository authorization, and organization deployment flows.
+
+Tasks:
+
+- [ ] Implement GitHub App authentication for repo access, PR creation, and webhook setup
+- [ ] Add migration path from PAT-backed projects to GitHub App-backed projects
+- [ ] Support mixed-mode org rollout (some repos on PAT, some on GitHub App) during transition
+- [ ] Add SSO/SAML/OIDC support for user authentication
+- [ ] Add SCIM or equivalent user lifecycle sync for enterprise accounts
+- [ ] Add org-level installation, approval, and repository-scoping UX
+
+Deliverables:
+
+- Enterprise customers can onboard repositories without distributing personal PATs
+- Identity and repository access align with enterprise security expectations
+- Large org rollouts are operationally manageable
+
+### 6.2 Audit Logging & Forensics
+
+**Objective**: Provide a complete, queryable audit trail for security, compliance, and incident response.
+
+Tasks:
+
+- [ ] Create system-wide audit event model covering auth, project changes, provider changes, runs, approvals, and automation policy changes
+- [ ] Record actor, target, before/after state, request metadata, and tenant context for all sensitive operations
+- [ ] Add immutable audit-log export APIs and retention controls
+- [ ] Add audit-log search and filtering UI for operators and account admins
+- [ ] Add incident-ready run provenance linking prompts, models, tools, code changes, and approvals
+
+Deliverables:
+
+- Security teams can answer who changed what, when, and why
+- Regulated customers have exportable evidence for reviews and investigations
+- Agent behavior is forensically traceable end to end
+
+### 6.3 Policy, Risk & Approval Controls
+
+**Objective**: Give enterprises fine-grained control over what agents may do, when humans must approve, and how model/provider risk is bounded.
+
+Tasks:
+
+- [ ] Add policy engine for provider allowlists, model allowlists, max capability tiers, and network/service-container restrictions
+- [ ] Add configurable approval workflows by repo, branch, issue type, risk score, or change surface
+- [ ] Add environment-specific controls for production, staging, and regulated codebases
+- [ ] Add DLP-style redaction and prompt/context classification rules
+- [ ] Add policy simulation mode to preview what would have happened under a proposed ruleset
+
+Deliverables:
+
+- Enterprises can encode their SDLC and AI-risk policies directly in Paid
+- High-risk work is gated without blocking low-risk automation
+- Security reviews move from ad hoc trust to enforceable controls
+
+### 6.4 Compliance & Deployment Assurance
+
+**Objective**: Make Paid easier to buy by supplying compliance evidence and hardened deployment patterns.
+
+Tasks:
+
+- [ ] Publish hardened deployment reference architectures for self-hosted, private VPC, and air-gapped variants
+- [ ] Add compliance evidence pack generation (control mappings, configuration snapshots, audit exports)
+- [ ] Add customer-managed key support and secret-rotation workflows
+- [ ] Add disaster recovery, backup/restore, and upgrade runbooks with validation tooling
+- [ ] Add compliance dashboard showing gaps against required controls
+
+Deliverables:
+
+- Platform and security teams can assess deployment posture quickly
+- Compliance programs have concrete artifacts instead of bespoke questionnaires
+- Paid is viable in more security-sensitive environments
+
+### Phase 6 Completion Criteria
+
+- [ ] GitHub App onboarding is production-ready and preferred over PAT onboarding
+- [ ] System-wide audit logging covers all security- and operations-relevant mutations
+- [ ] Policy and approval controls can enforce enterprise rollout guardrails
+- [ ] Hardened deployment patterns and compliance evidence are documented and testable
+
+---
+
+## Phase 7: Proof, Adoption & Interoperability
+
+**Goal**: Make Paid easy to justify commercially by proving ROI, fitting into existing toolchains, and reducing switching risk from commercial alternatives.
+
+This phase is about winning deals. Mature buyers need more than features; they need proof, benchmarks, migration paths, and confidence that Paid can coexist with what they already use.
+
+### 7.1 ROI, Evals & Benchmarking
+
+**Objective**: Quantify Paid's value in language engineering leaders and procurement teams can use to make buying decisions.
+
+Tasks:
+
+- [ ] Create evaluation framework for merge rate, cycle time, rework rate, defect escape rate, and cost per accepted PR
+- [ ] Add side-by-side benchmark support versus baseline human-only flow and commercial agent tools
+- [ ] Add per-project and per-account ROI dashboards with trend analysis
+- [ ] Add experiment templates for pilot programs ("2-week bug-fix pilot", "backlog burn-down pilot")
+- [ ] Add executive summaries and exportable reports for stakeholder review
+
+Deliverables:
+
+- Paid can prove business value with customer-specific evidence
+- Sales and customer success teams have repeatable pilot and benchmark motions
+- Expansion decisions can be based on measured outcomes, not anecdotes
+
+### 7.2 Migration, Coexistence & Toolchain Interop
+
+**Objective**: Reduce adoption friction by letting Paid coexist with incumbent tools and workflows.
+
+Tasks:
+
+- [ ] Add integration patterns for GitHub Copilot, Cursor, Devin, Factory, and internal agent workflows where technically feasible
+- [ ] Add import/mapping flows for existing prompts, style guides, and workflow policies
+- [ ] Add connectors and event ingestion for Jira, Linear, GitLab, Bitbucket, Slack, Teams, and CI systems
+- [ ] Add external execution ingestion so Paid dashboards can compare third-party agent outcomes with Paid-native runs
+- [ ] Add gradual adoption modes: observe-only, advisory, review-only, and full execution
+
+Deliverables:
+
+- Customers can adopt Paid without ripping out existing developer tools on day one
+- Paid becomes the control plane and measurement layer before it becomes the full execution layer
+- Switching risk drops materially
+
+### 7.3 Change Management & Operational Readiness
+
+**Objective**: Help mature companies operationalize Paid across platform, engineering, and security teams.
+
+Tasks:
+
+- [ ] Add admin playbooks for pilot rollout, guardrail tuning, and operating-model design
+- [ ] Add training and onboarding flows for developers, reviewers, managers, and platform admins
+- [ ] Add adoption analytics (active teams, usage depth, automation acceptance rate, manual override rate)
+- [ ] Add in-product recommendations for underutilized features and rollout blockers
+- [ ] Add reference operating models for centralized platform ownership vs team-owned deployments
+
+Deliverables:
+
+- Customers can move from pilot to production rollout with less bespoke consulting
+- Adoption blockers are visible early
+- Paid usage expands through repeatable operational patterns
+
+### Phase 7 Completion Criteria
+
+- [ ] ROI and evaluation dashboards are available at project and account scope
+- [ ] Paid can benchmark itself against alternative workflows and tools
+- [ ] Customers can adopt Paid in observe-only or coexistence modes before full automation
+- [ ] Rollout and change-management guidance is productized
+
+---
+
+## Phase 8: Managed Platform & Ecosystem
+
+**Goal**: Make Paid purchasable by organizations that want the benefits of the platform without operating all of its infrastructure themselves.
+
+This phase broadens the market from companies willing to self-host orchestration infrastructure to companies that want a managed or semi-managed product with enterprise operations behind it.
+
+### 8.1 Managed Deployment Models
+
+**Objective**: Support customer-preferred operating models without fragmenting the product.
+
+Tasks:
+
+- [ ] Build fully managed cloud offering with tenant isolation, backups, monitoring, and upgrades
+- [ ] Build private SaaS / single-tenant hosted option for enterprise customers
+- [ ] Build bring-your-own-cloud deployment automation with validated reference stacks
+- [ ] Define upgrade channels, maintenance windows, and version-support policy
+
+Deliverables:
+
+- Customers can choose managed, private, or self-hosted deployment models
+- Operational burden drops significantly for non-platform-heavy buyers
+- Sales can match deployment model to customer security posture
+
+### 8.2 Enterprise Operations & Reliability
+
+**Objective**: Deliver the reliability, supportability, and lifecycle management expected of an enterprise product.
+
+Tasks:
+
+- [ ] Add SLA/SLO framework with customer-visible uptime and queue-health reporting
+- [ ] Add automated backups, restore drills, and customer-facing disaster recovery commitments
+- [ ] Add fleet-wide upgrade orchestration and compatibility checks
+- [ ] Add support tooling for tenant diagnostics, safe remediation, and health reporting
+- [ ] Add cost controls and capacity-management tooling for managed environments
+
+Deliverables:
+
+- Paid can be sold with clear operational expectations
+- Support teams can diagnose and remediate tenant issues safely
+- Reliability posture is legible to enterprise buyers
+
+### 8.3 Marketplace & Ecosystem Expansion
+
+**Objective**: Increase Paid's strategic value by making it extensible and ecosystem-friendly.
+
+Tasks:
+
+- [ ] Create plugin/extension model for custom collectors, policies, tools, and workflow strategies
+- [ ] Add marketplace or curated catalog for integrations, prompts, and policy packs
+- [ ] Add partner-friendly APIs for system integrators and internal platform teams
+- [ ] Publish ecosystem certification guidance for supported extensions
+
+Deliverables:
+
+- Paid can grow through customer and partner extensions
+- Specialized domains can be supported without product-core bloat
+- The platform becomes stickier over time
+
+### Phase 8 Completion Criteria
+
+- [ ] Managed and private deployment models are generally available
+- [ ] Enterprise operations meet documented SLO/SLA expectations
+- [ ] Ecosystem extension points are stable enough for customers and partners to build on
+
+---
+
+## Future Considerations (Beyond Phase 8)
 
 These are not committed but worth keeping in mind:
 
-### GitHub App Migration
-
-- Move from PAT to GitHub App for better security and org support
-- App marketplace listing
-
 ### Additional Integrations
 
-- GitLab support
-- Bitbucket support
-- Jira integration
-- Linear integration
+- Deeper ERP/procurement integrations for large enterprise buying motions
+- ServiceNow integration
+- Internal developer portal integrations (Backstage, etc.)
 
 ### Advanced Agent Capabilities
 
@@ -1127,10 +1482,9 @@ These are not committed but worth keeping in mind:
 
 ### Enterprise Features
 
-- SSO/SAML authentication
-- Audit logging
-- Compliance reports
-- On-premise deployment guide
+- Industry-specific policy packs and control mappings
+- Regional/data-sovereignty deployment options
+- Advanced reviewer workload balancing and approval routing
 
 ### AI Capabilities
 
@@ -1193,7 +1547,13 @@ Phase 4 (AI-Native Evolution) ────────────────�
           │
           └── 5.1 (Avo Operator Console) ───────────────────────►
                     │
-                    └── 5.2 (User-Facing Account Admin)
+                    └── 5.2 (User-Facing Account Admin) ───────►
+                              │
+                              └── Phase 6 (Enterprise Trust & Governance) ──►
+                                           │
+                                           └── Phase 7 (Proof, Adoption & Interop) ──►
+                                                        │
+                                                        └── Phase 8 (Managed Platform & Ecosystem)
 ```
 
 ---
@@ -1209,6 +1569,8 @@ Phase 4 (AI-Native Evolution) ────────────────�
 | Quality degradation | A/B testing before full prompt evolution |
 | Scope creep | Strict phase gates, MVP mindset |
 | Phase 4 premature | Phase 3.5 completion gate ensures foundations are solid |
+| Enterprise sales drag | Phase 6 and 7 convert trust gaps into roadmap commitments |
+| Operational burden blocks adoption | Phase 8 adds managed deployment and enterprise operations |
 
 ---
 
@@ -1243,6 +1605,10 @@ Phase 4 (AI-Native Evolution) ────────────────�
 - Multi-provider automatic selection working with fallback
 - Fair queueing: no user starvation under load
 - Performance: 10 concurrent projects with P95 container startup < 30s
+- MCP servers: agents successfully use external tools during execution
+- Chat: streaming responses with cost tracking and container workspace
+- Self-healing: P1/P2 exceptions auto-file issues with fingerprint deduplication
+- Screenshots: visual diff captured automatically for PRs with UI changes
 
 ### Phase 4
 
@@ -1260,13 +1626,34 @@ Phase 4 (AI-Native Evolution) ────────────────�
 - Account lifecycle and ownership changes are auditable
 - Sensitive credential/token material is not exposed in account/admin screens
 
+### Phase 6
+
+- 90%+ of new enterprise projects onboard through GitHub App rather than PAT
+- 100% of security-relevant mutations appear in audit logs with actor and tenant context
+- Policy engine can enforce repo/model/provider restrictions with no manual console intervention
+- Compliance evidence can be exported for a customer security review in < 1 hour
+
+### Phase 7
+
+- Paid can show customer-specific ROI within the first 30 days of a pilot
+- Side-by-side evaluations demonstrate clear advantage or clear fit boundaries versus alternatives
+- At least one coexistence deployment path is available for each major incumbent workflow
+- Pilot-to-production conversion rate improves through packaged rollout motions
+
+### Phase 8
+
+- Managed offering meets published uptime and support commitments
+- Median customer onboarding time drops materially versus self-host-only deployments
+- Private deployment upgrades complete with validated rollback paths
+- Ecosystem extensions account for a meaningful share of advanced customer deployments
+
 ---
 
 ## Getting Started
 
 1. Clone this repository
 2. Review [ARCHITECTURE.md](./ARCHITECTURE.md) for system design
-3. Review [DATA_MODEL.md](./DATA_MODEL.md) for schema design
+3. Review [db/structure.sql](../../db/structure.sql) for the canonical database schema
 4. Start with Phase 1.1: Rails Application Skeleton
 5. Use the task lists above as implementation checklists
 
