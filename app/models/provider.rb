@@ -661,6 +661,17 @@ class Provider < ApplicationRecord
       return
     end
 
+    # Direct-outbound providers must map ALL tiers to the configured model.
+    # Partial mappings would let unmapped tiers fall back to the global
+    # LlmModel pool, reintroducing the wrong-model selection this PR fixes.
+    if requires_direct_outbound? && !will_save_change_to_config?
+      missing_tiers = LlmModel::TIERS.select { |t| tier_model_ids[t].blank? }
+      if missing_tiers.any?
+        errors.add(:tier_model_ids, "must map all tiers for direct-outbound providers (missing: #{missing_tiers.join(', ')})")
+        return
+      end
+    end
+
     tier_model_ids.each do |tier, model_id|
       next if model_id.blank?
 
@@ -738,9 +749,14 @@ class Provider < ApplicationRecord
   # NOTE: The provider UI/controller does not yet permit nested aider config
   # keys (api_provider, model). This validation is prep work for when the
   # controller is updated to support Aider API-key providers.
+  #
+  # Guard: ProviderResolver#tenant_api_key_provider auto-materializes api_key
+  # providers without config. Those tenant-key entries must remain valid —
+  # only enforce config requirements when aider-specific config is present.
   def aider_api_key_config_must_be_valid
     return unless provider_key == "aider"
     return unless api_key?
+    return unless config.is_a?(Hash) && config.key?("aider")
 
     unless AIDER_API_PROVIDER_KEYS.include?(aider_api_provider)
       errors.add(:config, "must include a supported Aider API provider")

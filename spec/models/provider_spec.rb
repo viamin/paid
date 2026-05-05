@@ -153,10 +153,28 @@ RSpec.describe Provider do
           auth_type: "api_key",
           provider_api_key: api_key,
           config: { "kilocode" => { "api_provider" => "zai", "model" => "glm-5.1" } },
-          tier_model_ids: { "high" => "glm-5.1" }
+          tier_model_ids: { "high" => "glm-5.1", "mid" => "glm-5.1", "low" => "glm-5.1" }
         )
 
         expect(provider).to be_valid
+      end
+
+      it "rejects partial tier_model_ids for direct-outbound providers" do
+        user = create(:user)
+        api_key = create(:provider_api_key, user: user, api_service_type: "zai")
+        create(:llm_model, model_id: "glm-5.1", provider: "zai", tier: "high")
+        provider = create(
+          :provider,
+          user: user,
+          provider_key: "kilocode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          config: { "kilocode" => { "api_provider" => "zai", "model" => "glm-5.1" } }
+        )
+
+        provider.tier_model_ids = { "high" => "glm-5.1" }
+        expect(provider).not_to be_valid
+        expect(provider.errors[:tier_model_ids].join).to include("must map all tiers")
       end
 
       it "rejects crafted tier_model_ids that pin a direct-outbound provider to a different model" do
@@ -173,7 +191,7 @@ RSpec.describe Provider do
           config: { "kilocode" => { "api_provider" => "zai", "model" => "glm-5.1" } }
         )
 
-        provider.tier_model_ids = { "high" => wrong_model.model_id }
+        provider.tier_model_ids = { "high" => wrong_model.model_id, "mid" => wrong_model.model_id, "low" => wrong_model.model_id }
         expect(provider).not_to be_valid
         expect(provider.errors[:tier_model_ids].join).to include("must match the configured direct-outbound model")
       end
@@ -678,6 +696,22 @@ RSpec.describe Provider do
 
     it "skips aider config validation for subscription providers" do
       provider = build(:provider, provider_key: "aider", auth_type: "subscription")
+
+      provider.valid?
+      expect(provider.errors[:config]).to be_empty
+    end
+
+    it "skips aider config validation for tenant-key providers with no config" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "aider",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: nil
+      )
 
       provider.valid?
       expect(provider.errors[:config]).to be_empty
