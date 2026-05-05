@@ -46,6 +46,16 @@ class ChatSession < ApplicationRecord
     status == "active"
   end
 
+  def generate_title_from_content!
+    return if title.present?
+
+    first_user_message = messages.where(role: "user").order(:created_at).first
+    return unless first_user_message&.content.present?
+
+    generated = first_user_message.content.to_s.tr("\n", " ").truncate(80)
+    update_columns(title: generated)
+  end
+
   def ensure_proxy_token!
     return proxy_token if proxy_token.present?
 
