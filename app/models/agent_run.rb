@@ -88,7 +88,7 @@ class AgentRun < ApplicationRecord
 
   STALE_DETECTOR_ERROR_PREFIX = "Stale run detected"
 
-  belongs_to :project
+  belongs_to :project, counter_cache: true
   belongs_to :issue, optional: true
   belongs_to :prompt_version, optional: true
   belongs_to :provider, optional: true
@@ -122,6 +122,7 @@ class AgentRun < ApplicationRecord
   before_create :generate_proxy_token
   before_create :snapshot_mcp_servers
 
+  after_commit :update_completed_agent_runs_count, on: [ :create, :update, :destroy ]
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
   after_commit :invalidate_provider_options_cache_on_change, on: [ :create, :update ]
@@ -1846,6 +1847,14 @@ class AgentRun < ApplicationRecord
     return max_tokens_per_run if user_setting.updated_at > user_setting.created_at
 
     nil
+  end
+
+  def update_completed_agent_runs_count
+    return unless destroyed? || previous_changes.key?("status")
+
+    Project.where(id: project_id).update_all(
+      completed_agent_runs_count: AgentRun.where(project_id: project_id, status: "completed").count
+    )
   end
 
   def just_finished?
