@@ -19,10 +19,6 @@ class EmbedChunksJob < ApplicationJob
       return
     end
 
-    Knowledge::Embeddings::Pipeline.call(
-      project: project,
-      api_key: provider_config&.api_key,
-      api_base_url: provider_config&.api_base_url
-    )
+    Knowledge::Embeddings::Pipeline.call(project: project)
   end
 end

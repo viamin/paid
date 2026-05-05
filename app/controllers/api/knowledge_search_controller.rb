@@ -29,11 +29,6 @@ module Api
       if provider_config.nil?
         # When no API key is configured, only exact search is available.
         mode = "exact"
-        api_key = nil
-        api_base_url = nil
-      else
-        api_key = provider_config.api_key
-        api_base_url = provider_config.api_base_url
       end
 
       result = Knowledge::Search.call(
@@ -42,9 +37,7 @@ module Api
         mode: mode,
         artifact_type: params[:type],
         version: params[:version],
-        limit: params[:limit],
-        api_key: api_key,
-        api_base_url: api_base_url
+        limit: params[:limit]
       )
 
       render json: result

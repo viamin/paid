@@ -79,11 +79,6 @@ module Knowledge
 
       if provider_config.nil?
         @search_mode = mode = "exact"
-        api_key = nil
-        api_base_url = nil
-      else
-        api_key = provider_config.api_key
-        api_base_url = provider_config.api_base_url
       end
 
       result = ::Knowledge::Search.call(
@@ -91,9 +86,7 @@ module Knowledge
         query: @query,
         mode: mode,
         artifact_type: @artifact_type_filter,
-        limit: 20,
-        api_key: api_key,
-        api_base_url: api_base_url
+        limit: 20
       )
 
       @results = result[:results]

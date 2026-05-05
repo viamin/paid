@@ -8,17 +8,22 @@ module Knowledge
       new(project:).for_embedding
     end
 
+    def self.for_embedding_candidates(project:)
+      new(project:).for_embedding_candidates
+    end
+
     def initialize(project:)
       @project = project
     end
 
     def for_embedding
-      configured_embedding_providers.each do |provider|
-        config = build_embedding_config(provider)
-        return config if config
-      end
+      for_embedding_candidates.first
+    end
 
-      nil
+    def for_embedding_candidates
+      configured_embedding_providers.filter_map do |provider|
+        build_embedding_config(provider)
+      end
     end
 
     private

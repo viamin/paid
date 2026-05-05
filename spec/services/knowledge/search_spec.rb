@@ -219,23 +219,21 @@ RSpec.describe Knowledge::Search do
       expect(result[:results].map { |r| r[:identifier] }).not_to include("POST /api/users")
     end
 
-    it "passes api_key and api_base_url to semantic search" do
+    it "passes project search arguments to semantic search" do
       allow(Knowledge::Search::Semantic).to receive(:call).and_return([])
 
       described_class.call(
         project: project,
         query: "test",
-        mode: "semantic",
-        api_key: "sk-user",
-        api_base_url: "https://openrouter.ai/api/v1"
+        mode: "semantic"
       )
 
       expect(Knowledge::Search::Semantic).to have_received(:call).with(
-        hash_including(api_key: "sk-user", api_base_url: "https://openrouter.ai/api/v1")
+        hash_including(project: project, query: "test", limit: described_class::DEFAULT_LIMIT)
       )
     end
 
-    it "passes api_key and api_base_url to hybrid search" do
+    it "passes project search arguments to hybrid search" do
       allow(Knowledge::Search::Hybrid).to receive(:call).and_return(
         { results: [], exact_count: 0, semantic_count: 0 }
       )
@@ -243,13 +241,11 @@ RSpec.describe Knowledge::Search do
       described_class.call(
         project: project,
         query: "test",
-        mode: "hybrid",
-        api_key: "sk-user",
-        api_base_url: "https://openrouter.ai/api/v1"
+        mode: "hybrid"
       )
 
       expect(Knowledge::Search::Hybrid).to have_received(:call).with(
-        hash_including(api_key: "sk-user", api_base_url: "https://openrouter.ai/api/v1")
+        hash_including(project: project, query: "test", limit: described_class::DEFAULT_LIMIT)
       )
     end
 

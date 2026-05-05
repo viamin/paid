@@ -12,15 +12,15 @@ module Knowledge
 
       attr_reader :model, :dimensions
 
-      def initialize(model: MODEL, dimensions: DIMENSIONS, api_key: nil, api_base_url: nil)
+      def initialize(model: MODEL, dimensions: DIMENSIONS, base_url:, headers: {})
         @model = model
         @dimensions = dimensions
-        @explicit_api_key = api_key
-        @explicit_api_base_url = api_base_url
+        @base_url = base_url
+        @headers = headers
       end
 
-      def self.call(texts:, model: MODEL, dimensions: DIMENSIONS, api_key: nil, api_base_url: nil)
-        new(model: model, dimensions: dimensions, api_key: api_key, api_base_url: api_base_url).call(texts: texts)
+      def self.call(texts:, model: MODEL, dimensions: DIMENSIONS, base_url:, headers: {})
+        new(model: model, dimensions: dimensions, base_url: base_url, headers: headers).call(texts: texts)
       end
 
       # Returns an array of Result structs with :vector and :token_count
@@ -28,8 +28,12 @@ module Knowledge
         return [] if texts.empty?
 
         response = request_embeddings(texts)
-        body = parse_response(response)
+        self.class.results_from_body(parse_response(response))
+      end
 
+      Result = Struct.new(:vector, :token_count, keyword_init: true)
+
+      def self.results_from_body(body)
         embeddings = body.fetch("data").sort_by { |d| d["index"] }
         total_tokens = body.dig("usage", "total_tokens") || 0
 
@@ -40,8 +44,6 @@ module Knowledge
           )
         end
       end
-
-      Result = Struct.new(:vector, :token_count, keyword_init: true)
 
       private
 
@@ -104,36 +106,30 @@ module Knowledge
       end
 
       # TODO(#257): Replace with AgentHarness.embed once embedding support is added
-      # to the agent-harness gem. This direct OpenAI call is a temporary bridge.
+      # to the agent-harness gem. This proxy-backed HTTP call is a temporary bridge.
       def connection
-        @connection ||= Faraday.new(url: api_base_url) do |f|
+        @connection ||= Faraday.new(url: base_url) do |f|
           f.request :retry, max: 0
-          f.headers["Authorization"] = "Bearer #{api_key}"
+          f.headers.update(headers)
           f.headers["Content-Type"] = "application/json"
           f.adapter Faraday.default_adapter
         end
       end
 
-      def api_base_url
-        return @explicit_api_base_url if @explicit_api_base_url.present?
-
-        ENV.fetch("OPENAI_API_BASE_URL", "https://api.openai.com")
+      def base_url
+        @base_url
       end
 
       def embeddings_path
-        path = URI.parse(api_base_url).path.to_s.sub(%r{/\z}, "")
+        path = URI.parse(base_url).path.to_s.sub(%r{/\z}, "")
         path = "/v1" if path.blank?
         "#{path}/embeddings"
       rescue URI::InvalidURIError
         "/v1/embeddings"
       end
 
-      def api_key
-        @explicit_api_key || ENV.fetch("OPENAI_API_KEY") do
-          raise EmbeddingError,
-            "No OpenAI API key available. Configure a ProviderApiKey with OpenAI " \
-            "compatibility or set the OPENAI_API_KEY environment variable."
-        end
+      def headers
+        @headers
       end
 
       def self.estimate_cost(token_count)

@@ -3,15 +3,13 @@
 module Knowledge
   class Search
     class Semantic
-      attr_reader :project, :query, :artifact_type, :limit, :api_key, :api_base_url
+      attr_reader :project, :query, :artifact_type, :limit
 
-      def initialize(project:, query:, artifact_type: nil, limit: 20, api_key: nil, api_base_url: nil)
+      def initialize(project:, query:, artifact_type: nil, limit: 20)
         @project = project
         @query = query
         @artifact_type = artifact_type
         @limit = limit
-        @api_key = api_key
-        @api_base_url = api_base_url
       end
 
       def self.call(...)
@@ -153,7 +151,8 @@ module Knowledge
       end
 
       def generate_query_embedding
-        results = Knowledge::Embeddings::Generate.call(texts: [ query ], api_key: api_key, api_base_url: api_base_url)
+        generator = Knowledge::Embeddings::ProxyGenerator.new(project: project, containerize: false)
+        results = generator.call(texts: [ query ])
         results.first&.vector
       rescue StandardError => e
         Rails.logger.warn(
@@ -161,6 +160,8 @@ module Knowledge
           error: e.message
         )
         nil
+      ensure
+        generator&.close
       end
 
       def qdrant_available?

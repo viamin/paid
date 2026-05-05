@@ -349,6 +349,19 @@ RSpec.describe "Api::SecretsProxy" do
       expect(knowledge_run.reload.total_tokens).to eq(150)
       expect(TokenUsage.last.knowledge_run).to eq(knowledge_run)
     end
+
+    it "uses the knowledge run owner's configured provider key when a knowledge provider header is present" do
+      api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "openrouter", api_key: "sk-openrouter")
+      knowledge_run.update!(final_provider: "openrouter")
+
+      post "/api/proxy/openai/v1/chat/completions",
+        params: {}.to_json,
+        headers: knowledge_headers.merge("X-Paid-Knowledge-Provider" => "openrouter")
+
+      expect(response).to have_http_status(:ok)
+      expect(WebMock).to have_requested(:post, target_url)
+        .with(headers: { "Authorization" => "Bearer #{api_key.api_key}" })
+    end
   end
 
   describe "GET /api/proxy/openai/*path" do

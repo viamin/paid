@@ -89,13 +89,13 @@ RSpec.describe Knowledge::Search::Hybrid do
       expect(output[:results].length).to be <= 1
     end
 
-    it "passes api_key through to Semantic" do
+    it "passes search arguments through to Semantic" do
       allow(Knowledge::Search::Semantic).to receive(:call).and_return([])
 
-      described_class.call(project: project, query: "test", api_key: "sk-user-key")
+      described_class.call(project: project, query: "test")
 
       expect(Knowledge::Search::Semantic).to have_received(:call).with(
-        hash_including(api_key: "sk-user-key")
+        hash_including(project: project, query: "test")
       )
     end
   end

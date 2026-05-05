@@ -7,18 +7,18 @@ module Knowledge
 
       attr_reader :batch_size, :generator
 
-      def initialize(batch_size: nil, generator: nil, api_key: nil, api_base_url: nil)
+      def initialize(batch_size: nil, generator: nil)
         raw = batch_size || ENV.fetch("EMBEDDING_BATCH_SIZE", DEFAULT_BATCH_SIZE)
         @batch_size = raw.to_i
         if @batch_size <= 0
           raise ArgumentError,
             "batch_size must be a positive integer; got #{raw.inspect}. Check EMBEDDING_BATCH_SIZE env var."
         end
-        @generator = generator || Generate.new(api_key: api_key, api_base_url: api_base_url)
+        @generator = generator
       end
 
-      def self.call(project: nil, batch_size: nil, generator: nil, api_key: nil, api_base_url: nil)
-        new(batch_size: batch_size, generator: generator, api_key: api_key, api_base_url: api_base_url).call(project: project)
+      def self.call(project: nil, batch_size: nil, generator: nil)
+        new(batch_size: batch_size, generator: generator).call(project: project)
       end
 
       def call(project: nil)
@@ -29,9 +29,10 @@ module Knowledge
         chunks_scope = eligible_chunks(project)
 
         chunks_scope.find_in_batches(batch_size: batch_size) do |batch|
-          result = process_batch(batch)
-          total_embedded += result[:embedded]
-          total_tokens += result[:tokens]
+          process_batch_grouped(batch).each do |result|
+            total_embedded += result[:embedded]
+            total_tokens += result[:tokens]
+          end
         end
 
         duration = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time
@@ -45,6 +46,8 @@ module Knowledge
           estimated_cost: cost,
           duration_seconds: duration.round(2)
         }
+      ensure
+        close_managed_generators
       end
 
       private
@@ -55,7 +58,18 @@ module Knowledge
         scope
       end
 
-      def process_batch(chunks)
+      def process_batch_grouped(chunks)
+        return [ process_batch(chunks, generator) ] if generator
+
+        chunks.group_by(&:project).each_with_object([]) do |(project, project_chunks), results|
+          configs = Knowledge::ProviderConfiguration.for_embedding_candidates(project: project)
+          next if configs.empty?
+
+          results << process_batch(project_chunks, generator_for(project, configs))
+        end
+      end
+
+      def process_batch(chunks, batch_generator)
         embeddable, redaction_audit = redact_chunks(chunks)
 
         Knowledge::Provenance::AuditLog.record_batch(redaction_audit) if redaction_audit.any?
@@ -63,7 +77,7 @@ module Knowledge
         return { embedded: 0, tokens: 0 } if embeddable.empty?
 
         texts = embeddable.map(&:content)
-        results = generator.call(texts: texts)
+        results = batch_generator.call(texts: texts)
 
         if results.size != embeddable.size
           raise EmbeddingError,
@@ -75,7 +89,7 @@ module Knowledge
 
         embeddable.zip(results).each do |chunk, result|
           Knowledge::Qdrant::PointSync.upsert_chunk!(chunk, vector: result.vector)
-          attrs = { embedding_model: generator.model }
+          attrs = { embedding_model: batch_generator.model }
           attrs[:redaction_scanned_at] = chunk.redaction_scanned_at if chunk.redaction_scanned_at_changed?
           chunk.update!(attrs)
           tokens += result.token_count
@@ -85,7 +99,7 @@ module Knowledge
             project: chunk.project,
             actor: { type: "embedding_pipeline" },
             target: { type: "KnowledgeChunk", id: chunk.id },
-            details: { model: generator.model }
+            details: { model: batch_generator.model }
           }
         end
 
@@ -165,6 +179,22 @@ module Knowledge
           estimated_cost_usd: cost,
           duration_ms: (duration * 1000).round
         )
+      end
+
+      def generator_for(project, provider_configs)
+        managed_generators[project.id] ||= ProxyGenerator.new(
+          project: project,
+          provider_configs: provider_configs,
+          containerize: true
+        )
+      end
+
+      def managed_generators
+        @managed_generators ||= {}
+      end
+
+      def close_managed_generators
+        managed_generators.each_value(&:close)
       end
     end
   end

@@ -209,16 +209,16 @@ RSpec.describe "Knowledge::Search" do
         expect(response.body).to include("route")
       end
 
-      it "passes the project's OpenAI API key to Knowledge::Search" do
+      it "routes project search through Knowledge::Search without passing raw API keys" do
         owner = project.effective_owner
-        api_key = create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-search")
+        create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-search")
 
         allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "hybrid", total: 0, took_ms: 0, exact_count: 0, semantic_count: 0 } })
 
         get project_knowledge_search_results_path(project), params: { q: "test" }
 
         expect(Knowledge::Search).to have_received(:call).with(
-          hash_including(api_key: api_key.api_key)
+          hash_including(project: project, query: "test", mode: "hybrid", limit: 20)
         )
       end
     end

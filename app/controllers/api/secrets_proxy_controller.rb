@@ -155,6 +155,8 @@ module Api
       return if performed?
 
       key ||= knowledge_run_api_key(provider)
+      return if performed?
+
       key ||= Rails.application.credentials.dig(:llm, :"#{provider}_api_key")
       key ||= ENV["#{provider.to_s.upcase}_API_KEY"]
 
@@ -193,6 +195,54 @@ module Api
 
       available_provider_entries(provider_entries)
         .find_by(id: provider_id, provider_api_keys: { api_service_type: provider.to_s })
+    end
+
+    def knowledge_run_api_key(provider)
+      return unless @knowledge_run
+
+      provider_key = request.headers["X-Paid-Knowledge-Provider"].presence || @knowledge_run.final_provider.presence
+      return knowledge_run_provider_api_key(provider.to_s) unless provider_key
+
+      config = Provider::DIRECT_OUTBOUND_API_PROVIDERS[provider_key]
+      unless config
+        log_error("secrets_proxy.invalid_knowledge_provider", "Unknown knowledge provider #{provider_key}")
+        render json: { error: "Knowledge provider is not available for this run" }, status: :forbidden
+        return nil
+      end
+
+      unless compatible_proxy_route?(provider, provider_key)
+        log_error("secrets_proxy.invalid_knowledge_provider_route", "Provider #{provider_key} is incompatible with #{provider}")
+        render json: { error: "Knowledge provider is not compatible with this proxy route" }, status: :forbidden
+        return nil
+      end
+
+      key = knowledge_run_provider_api_key(config.fetch(:service_type))
+      return key if key.present?
+
+      return nil if provider_key == "openai"
+
+      log_error("secrets_proxy.missing_knowledge_provider_key", "No API key configured for knowledge provider #{provider_key}")
+      render json: { error: "API key not configured for knowledge provider #{provider_key}" }, status: :service_unavailable
+      nil
+    end
+
+    def compatible_proxy_route?(provider, provider_key)
+      case provider.to_sym
+      when :openai
+        Provider::OPENAI_COMPATIBLE_DIRECT_OUTBOUND_API_PROVIDER_KEYS.include?(provider_key)
+      when :anthropic
+        provider_key == "anthropic"
+      else
+        false
+      end
+    end
+
+    def knowledge_run_provider_api_key(service_type)
+      @knowledge_run.project.effective_owner
+        &.provider_api_keys
+        &.for_api_service_type(service_type)
+        &.order(created_at: :desc, id: :desc)
+        &.pick(:api_key)
     end
 
     def available_provider_entries(provider_entries)
@@ -260,18 +310,6 @@ module Api
 
     def logging_component
       @chat_session ? "chat_execution" : (@knowledge_run ? "knowledge_execution" : "agent_execution")
-    end
-
-    def knowledge_run_api_key(provider)
-      return unless @knowledge_run
-
-      @knowledge_run.project
-        .effective_owner
-        &.provider_api_keys
-        &.for_api_service_type(provider.to_s)
-        &.order(created_at: :desc, id: :desc)
-        &.first
-        &.api_key
     end
 
     def harness_provider
