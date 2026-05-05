@@ -58,7 +58,7 @@ RSpec.describe "ChatSessions" do
 
         get chat_sessions_path
         expect(response).to have_http_status(:ok)
-        expect(response.body).to include("Chat")
+        expect(response.body).to include("Interactive conversations with AI assistants.")
         expect(response.body).to include("Planning Thread")
       end
 
