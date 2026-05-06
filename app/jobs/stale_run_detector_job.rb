@@ -166,7 +166,7 @@ class StaleRunDetectorJob < ApplicationJob
     count
   end
 
-  # Uses the default timeout rather than per-project maximums. Individual run
+  # Uses the default timeout rather than per-user maximums. Individual run
   # timeouts are enforced by the Temporal workflow; this job is a safety net
   # for orphaned runs where the workflow died. Using UserSetting.maximum
   # would let a single user's large timeout delay stale-run detection for
