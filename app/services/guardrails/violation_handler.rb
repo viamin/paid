@@ -37,8 +37,19 @@ module Guardrails
       return already_handled_result(context) unless paused
 
       log_violation(context)
-      publish_notification(context)
       context = persist_execution_cleanup(context, stop_in_flight_execution)
+
+      begin
+        publish_notification(context)
+      rescue => e
+        Rails.logger.error(
+          message: "guardrails.notification_failed",
+          agent_run_id: agent_run.id,
+          violation_type: violation_type,
+          error_class: e.class.name,
+          error_message: e.message
+        )
+      end
 
       # Dashboard alert is handled by LiveDashboardBroadcastJob (triggered by
       # the status change callback) to avoid duplicate notifications.

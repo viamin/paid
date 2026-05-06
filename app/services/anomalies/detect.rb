@@ -202,11 +202,21 @@ module Anomalies
       anomalies.any? { |anomaly| anomaly.severity == "critical" } ? :error : :warning
     end
 
+    def resolve_prior_anomaly_notification
+      Notifications::Resolve.call(
+        account: project.account,
+        source: "agent_run_anomaly",
+        subject: agent_run
+      )
+    end
+
     def enforce_guardrail(anomalies)
       return unless agent_run.running?
 
       critical_anomalies = anomalies.select { |anomaly| anomaly.severity == "critical" }
       return if critical_anomalies.empty?
+
+      resolve_prior_anomaly_notification
 
       Guardrails::ViolationHandler.call(
         agent_run: agent_run,

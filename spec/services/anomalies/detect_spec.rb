@@ -421,6 +421,27 @@ RSpec.describe Anomalies::Detect do
         )
       end
 
+      it "resolves any prior warning-level anomaly notification when escalating to guardrail" do
+        running_run = create(:agent_run, :running,
+          project: project,
+          tokens_input: 5_000_000,
+          tokens_output: 2_500_000,
+          duration_seconds: 600,
+          iterations: 5,
+          cost_cents: 150)
+
+        allow(Guardrails::ViolationHandler).to receive(:call)
+        allow(Notifications::Resolve).to receive(:call)
+
+        described_class.call(running_run)
+
+        expect(Notifications::Resolve).to have_received(:call).with(
+          account: project.account,
+          source: "agent_run_anomaly",
+          subject: running_run
+        )
+      end
+
       it "does not publish a separate anomaly notification when the guardrail will fire" do
         running_run = create(:agent_run, :running,
           project: project,

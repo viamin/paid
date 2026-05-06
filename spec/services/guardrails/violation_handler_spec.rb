@@ -169,6 +169,21 @@ RSpec.describe Guardrails::ViolationHandler do
       )
     end
 
+    it "completes enforcement even when notification delivery fails" do
+      allow(Notifications::Publish).to receive(:call).and_raise(StandardError, "broadcast error")
+
+      result = described_class.call(
+        agent_run: agent_run,
+        violation_type: "token_limit",
+        details: "Token limit exceeded"
+      )
+
+      expect(result.paused?).to be true
+      expect(agent_run.reload.status).to eq("paused")
+      expect(agent_run.guardrail_context["execution_cleanup"]).to be_present
+      expect(AgentRuns::Cancel).to have_received(:call)
+    end
+
     it "does not pause a non-running agent run" do
       agent_run.update!(status: "completed", completed_at: Time.current)
 
