@@ -607,10 +607,13 @@ upsert_global_prompt.call(
     - POST $GITHUB_API_URL/repos/{{repo}}/issues/{number}/labels — add labels
 
     Do NOT push code or create a pull request. Only create the GitHub issue.
+
+    {{decomposition_instructions}}
   TEMPLATE
   variables: [
     var.call("base_prompt", "The base prompt this augmentation extends"),
-    var.call("repo", "Repository full_name (owner/repo)")
+    var.call("repo", "Repository full_name (owner/repo)"),
+    var.call("decomposition_instructions", "Feature decomposition instructions (injected when scope analysis triggers decomposition)")
   ]
 )
 

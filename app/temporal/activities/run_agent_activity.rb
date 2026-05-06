@@ -1938,7 +1938,56 @@ module Activities
       - POST $GITHUB_API_URL/repos/{{repo}}/issues/{number}/labels — add labels
 
       Do NOT push code or create a pull request. Only create the GitHub issue.
+
+      {{decomposition_instructions}}
     AUGMENTED
+
+    NO_DECOMPOSE_LABEL = "no-decompose"
+
+    DECOMPOSITION_INSTRUCTIONS = <<~'INSTRUCTIONS'
+      ## Feature Decomposition
+
+      The feature request you are analyzing is large enough to benefit from decomposition
+      into multiple smaller, focused issues. Instead of creating a single large issue
+      through the GitHub proxy, output a structured decomposition plan as a JSON array
+      wrapped in HTML comment markers.
+
+      The decomposition plan should break the feature into small, focused sub-issues that
+      each produce a single PR. Order them so foundational work (data model, migrations)
+      comes before dependent work (services, controllers, views).
+
+      Each sub-issue must declare its dependencies using zero-based indices into the plan array.
+
+      Output format:
+
+      <!-- multi-issue-plan-start -->
+      [
+        {"title": "Add data model for feature X", "body": "Create migrations and models...", "dependencies": []},
+        {"title": "Implement service layer for X", "body": "Build service objects...", "dependencies": [0]},
+        {"title": "Add API endpoints for X", "body": "Create controller actions...", "dependencies": [1]},
+        {"title": "Build UI views for X", "body": "Add view components...", "dependencies": [2]}
+      ]
+      <!-- multi-issue-plan-end -->
+
+      If you are decomposing the work, do NOT create any GitHub issue directly.
+      The platform will create the issues from the plan and automatically update the
+      current source issue as the parent tracking issue with a task list of all
+      created sub-issues.
+
+      If a different existing issue should be the parent tracker instead, include:
+
+      <!-- parent-issue: EXISTING_ISSUE_NUMBER -->
+
+      before the plan. Otherwise the source issue is used. Each task's `dependencies`
+      array contains indices of tasks that must be completed first.
+
+      Rules:
+      - Each sub-issue should be scoped to a single focused PR
+      - Dependencies must form a valid DAG (no cycles)
+      - Include clear acceptance criteria in each sub-issue body
+      - Maximum 20 sub-issues
+      - Use only the `dependencies` array for dependency wiring; do not add `Depends on #N` lines inside task bodies
+    INSTRUCTIONS
 
     REVIEW_GOAL_PROMPT_SLUG = "goal.review_pull_request"
 
@@ -2181,7 +2230,13 @@ module Activities
         prompt = inject_knowledge_into_prompt(prompt, agent_run.issue, agent_run.project, agent_run)
       end
 
-      vars = { base_prompt: prompt, repo: validated_repo_name(agent_run) }
+      decomposition = decomposition_instructions_for(agent_run)
+
+      vars = {
+        base_prompt: prompt,
+        repo: validated_repo_name(agent_run),
+        decomposition_instructions: decomposition
+      }
 
       rendered = resolve_and_persist_goal_prompt(
         agent_run: agent_run,
@@ -2191,6 +2246,24 @@ module Activities
       )
 
       maybe_assign_ab_test_variant(agent_run, ISSUE_GOAL_PROMPT_SLUG, rendered, vars)
+    end
+
+    def decomposition_instructions_for(agent_run)
+      issue = agent_run.issue
+      return "" unless issue&.body.present?
+      return "" if issue.has_label?(NO_DECOMPOSE_LABEL)
+
+      scope_result = ScopeAnalysis::Analyze.call(text: issue.body)
+      return "" unless scope_result.should_decompose?
+
+      logger.info(
+        message: "agent_execution.decomposition_instructions_injected",
+        agent_run_id: agent_run.id,
+        confidence: scope_result.confidence,
+        sub_components: scope_result.sub_components
+      )
+
+      DECOMPOSITION_INSTRUCTIONS
     end
 
     def augment_prompt_for_review_goal(agent_run, prompt)
@@ -2268,7 +2341,26 @@ module Activities
       variant_version = assignment.ab_test_variant.prompt_version
       agent_run.update!(prompt_version: variant_version)
 
-      variant_version.render(vars)
+      rendered_variant = variant_version.render(vars)
+      append_missing_issue_goal_runtime_instructions(rendered_variant, slug, vars)
+    end
+
+    # Older running A/B variants may predate runtime-only additions such as
+    # decomposition instructions. Keep those runs aligned with the current
+    # issue-goal contract by appending required guidance when the stored
+    # variant template cannot render it itself.
+    def append_missing_issue_goal_runtime_instructions(rendered, slug, vars)
+      return rendered unless slug == ISSUE_GOAL_PROMPT_SLUG
+
+      append_prompt_section(rendered, vars[:decomposition_instructions])
+    end
+
+    def append_prompt_section(rendered, addition)
+      normalized_addition = addition.to_s.strip
+      return rendered if normalized_addition.blank?
+      return rendered if rendered.include?(normalized_addition)
+
+      "#{rendered.rstrip}\n\n#{normalized_addition}"
     end
 
     def existing_ab_test_assignment(agent_run, slug)
