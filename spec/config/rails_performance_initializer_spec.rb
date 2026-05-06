@@ -5,7 +5,7 @@ require "rails_helper"
 RailsPerformanceInitializer = Class.new unless defined?(RailsPerformanceInitializer)
 unless defined?(RailsPerformanceInitializerConfig)
   RailsPerformanceInitializerConfig = Class.new do
-    attr_writer :redis, :duration, :enabled
+    attr_writer :redis, :duration, :ignored_paths, :enabled
   end
 end
 
@@ -32,6 +32,7 @@ RSpec.describe RailsPerformanceInitializer, :no_db do
     allow(RailsPerformance).to receive(:setup).and_yield(config)
     allow(config).to receive(:redis=)
     allow(config).to receive(:duration=)
+    allow(config).to receive(:ignored_paths=)
     allow(config).to receive(:enabled=)
     allow(Redis).to receive(:new).and_return(redis_client)
     allow(ENV).to receive(:fetch).and_call_original
@@ -44,6 +45,7 @@ RSpec.describe RailsPerformanceInitializer, :no_db do
 
     expect(Redis).to have_received(:new).with(url: "redis://127.0.0.1:6379/0")
     expect(config).to have_received(:duration=).with(4.hours)
+    expect(config).to have_received(:ignored_paths=).with([ "/rails/performance" ])
     expect(config).to have_received(:enabled=).with(true)
   end
 
