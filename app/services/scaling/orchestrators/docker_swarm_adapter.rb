@@ -18,7 +18,7 @@ module Scaling
       def current_status(service:)
         payload = inspect_service(service)
         desired = payload.dig(:Spec, :Mode, :Replicated, :Replicas) || 0
-        running = payload.dig(:ServiceStatus, :RunningTasks) || 0
+        running = running_task_count(service)
 
         Data::ServiceStatus.new(
           service: service,
@@ -76,6 +76,28 @@ module Scaling
         JSON.parse(output, symbolize_names: true)
       rescue JSON::ParserError => e
         raise CommandError, "Invalid docker service inspect output: #{e.message}"
+      end
+
+      def running_task_count(service)
+        output = run_command(
+          "docker", "service", "ps", service,
+          "--filter", "desired-state=running",
+          "--format", "{{json .}}"
+        )
+
+        parse_service_tasks(output).count { |task| task[:CurrentState].to_s.start_with?("Running") }
+      end
+
+      def parse_service_tasks(output)
+        return [] if output.blank?
+
+        output.lines.filter_map do |line|
+          next if line.blank?
+
+          JSON.parse(line, symbolize_names: true)
+        rescue JSON::ParserError => e
+          raise CommandError, "Invalid docker service ps output: #{e.message}"
+        end
       end
 
       def run_command(*cmd)

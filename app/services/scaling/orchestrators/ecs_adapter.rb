@@ -69,6 +69,8 @@ module Scaling
         service_data = describe_service(service)
         task_definition = describe_task_definition(service_data.fetch(:taskDefinition))
         container_definitions = updated_container_definitions(service, task_definition[:containerDefinitions], cpu_limit, memory_limit)
+        return no_op_resource_update(service, cpu_limit, memory_limit) if container_definitions == task_definition[:containerDefinitions]
+
         registration = register_task_definition(task_definition, container_definitions)
 
         run_aws("ecs", "update-service",
@@ -154,6 +156,16 @@ module Scaling
         parse_json(
           run_aws("ecs", "register-task-definition",
             "--cli-input-json", JSON.generate(payload))
+        )
+      end
+
+      def no_op_resource_update(service, cpu_limit, memory_limit)
+        Data::ResourceUpdateResult.new(
+          service: service,
+          cpu_limit: cpu_limit,
+          memory_limit: memory_limit,
+          accepted: true,
+          message: "Resource limits already match the requested ECS service configuration"
         )
       end
 

@@ -6,13 +6,22 @@ RSpec.describe Scaling::Orchestrators::DockerSwarmAdapter do
   let(:adapter) { described_class.new }
 
   describe "#current_status" do
-    it "returns a ServiceStatus from docker service inspect output" do
+    it "returns a ServiceStatus from docker service inspect and task output" do
       inspect_output = {
-        Spec: { Mode: { Replicated: { Replicas: 3 } } },
-        ServiceStatus: { RunningTasks: 2 }
+        Spec: { Mode: { Replicated: { Replicas: 3 } } }
       }.to_json
+      tasks_output = <<~JSONL
+        {"ID":"1","CurrentState":"Running 2 minutes ago"}
+        {"ID":"2","CurrentState":"Running 30 seconds ago"}
+        {"ID":"3","CurrentState":"Pending 5 seconds ago"}
+      JSONL
 
-      allow(adapter).to receive(:run_command).and_return(inspect_output)
+      expect(adapter).to receive(:run_command)
+        .with("docker", "service", "inspect", "agent-worker", "--format", "{{json .}}")
+        .and_return(inspect_output)
+      expect(adapter).to receive(:run_command)
+        .with("docker", "service", "ps", "agent-worker", "--filter", "desired-state=running", "--format", "{{json .}}")
+        .and_return(tasks_output)
 
       status = adapter.current_status(service: "agent-worker")
 
@@ -20,6 +29,29 @@ RSpec.describe Scaling::Orchestrators::DockerSwarmAdapter do
       expect(status.current_replicas).to eq(2)
       expect(status.desired_replicas).to eq(3)
       expect(status.ready).to be false
+    end
+
+    it "does not rely on ServiceStatus being present in inspect output" do
+      inspect_output = {
+        Spec: { Mode: { Replicated: { Replicas: 2 } } }
+      }.to_json
+      tasks_output = <<~JSONL
+        {"ID":"1","CurrentState":"Running 2 minutes ago"}
+        {"ID":"2","CurrentState":"Running 30 seconds ago"}
+      JSONL
+
+      expect(adapter).to receive(:run_command)
+        .with("docker", "service", "inspect", "agent-worker", "--format", "{{json .}}")
+        .and_return(inspect_output)
+      expect(adapter).to receive(:run_command)
+        .with("docker", "service", "ps", "agent-worker", "--filter", "desired-state=running", "--format", "{{json .}}")
+        .and_return(tasks_output)
+
+      status = adapter.current_status(service: "agent-worker")
+
+      expect(status.current_replicas).to eq(2)
+      expect(status.desired_replicas).to eq(2)
+      expect(status.ready).to be true
     end
   end
 

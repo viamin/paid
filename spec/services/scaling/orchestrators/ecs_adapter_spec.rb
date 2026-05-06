@@ -160,6 +160,23 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
       expect(result.accepted).to be true
     end
 
+    it "short-circuits when the requested limits already match the target container" do
+      allow(adapter).to receive(:describe_service)
+        .with(service_name)
+        .and_return({ taskDefinition: task_definition[:taskDefinitionArn] })
+      allow(adapter).to receive(:describe_task_definition)
+        .with(task_definition[:taskDefinitionArn])
+        .and_return(task_definition)
+      expect(adapter).not_to receive(:register_task_definition)
+      expect(adapter).not_to receive(:run_aws)
+
+      result = adapter.set_resource_limits(service: service_name, cpu_limit: "250m", memory_limit: "512Mi")
+
+      expect(result).to be_a(Scaling::Orchestrators::Data::ResourceUpdateResult)
+      expect(result.accepted).to be true
+      expect(result.message).to match(/already match/)
+    end
+
     it "raises when the ECS service name does not match a container definition" do
       mismatched_task_definition = task_definition.merge(
         containerDefinitions: [
