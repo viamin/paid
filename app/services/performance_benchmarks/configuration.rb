@@ -26,6 +26,18 @@ module PerformanceBenchmarks
         "description" => "Knowledge search service latency using exact search by default.",
         "budget_ms" => 2_000,
         "regression_threshold" => 1.5
+      },
+      "pool_utilization" => {
+        "name" => "Pool utilization",
+        "description" => "Container pool hit rate as a percentage of total provisions.",
+        "budget_ms" => 100,
+        "regression_threshold" => 0.8
+      },
+      "query_performance" => {
+        "name" => "Query performance",
+        "description" => "Agent run phase duration measuring overall system throughput.",
+        "budget_ms" => 60_000,
+        "regression_threshold" => 1.3
       }
     }.freeze
 
