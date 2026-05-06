@@ -52,6 +52,17 @@ RSpec.describe QueueMonitorJob do
       expect(Scaling::QueueMonitor).to have_received(:call).with(account: account, only: :agent_run_queue, precomputed_depth: 1)
     end
 
+    it "writes combined result to the dashboard cache for each account" do
+      allow(Scaling::QueueMonitor).to receive(:write_cache).and_call_original
+
+      described_class.perform_now
+
+      expect(Scaling::QueueMonitor).to have_received(:write_cache).with(
+        account,
+        an_object_having_attributes(healthy?: true, queue_depths: be_an(Array))
+      )
+    end
+
     it "broadcasts queue health to each account dashboard" do
       described_class.perform_now
 
