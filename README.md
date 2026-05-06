@@ -282,7 +282,7 @@ temporal operator namespace list
 bin/setup                    # Install deps, prepare DB, start server
 bin/setup --skip-server      # Setup without starting server
 bin/setup --reset            # Setup with database reset
-bin/update                   # Update Ruby, Yarn, and supported Dockerfile-pinned deps
+bin/update                   # Update supported pinned tool binaries (`--lockfiles` to also update Ruby/Yarn deps)
 
 # Development
 bin/dev                      # Start dev server with Overmind (Rails + JS + CSS + split Temporal poll/agent workers)

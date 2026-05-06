@@ -17,6 +17,7 @@
 # Ignore all logfiles and tempfiles.
 /log/*
 /tmp/*
+/.overmind.sock
 !/log/.keep
 !/tmp/.keep
 
