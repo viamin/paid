@@ -40,11 +40,13 @@ module Accounts
     def call
       account = nil
 
-      ActiveRecord::Base.transaction do
-        account = create_account
-        create_tenant_setting(account)
-        create_billing_plan(account)
-        start_onboarding(account)
+      TenantContext.with_system_access do
+        ActiveRecord::Base.transaction do
+          account = create_account
+          create_tenant_setting(account)
+          create_billing_plan(account)
+          start_onboarding(account)
+        end
       end
 
       Result.new(account: account)

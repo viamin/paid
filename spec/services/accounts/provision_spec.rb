@@ -87,5 +87,24 @@ RSpec.describe Accounts::Provision do
         expect(result.account.trial_ends_at).to be_within(1.minute).of(14.days.from_now)
       end
     end
+
+    context "when called from inside an existing tenant context", :tenant_isolation do
+      it "succeeds even when RLS is scoped to another account" do
+        existing_account = TenantContext.with_system_access { create(:account) }
+
+        result = TenantContext.with(existing_account) do
+          described_class.call(name: "New Tenant From Existing")
+        end
+
+        expect(result).to be_success
+        expect(result.account.name).to eq("New Tenant From Existing")
+
+        TenantContext.with_system_access do
+          expect(result.account.tenant_setting).to be_present
+          expect(result.account.billing_plans.count).to eq(1)
+          expect(result.account.onboarding_steps.count).to eq(OnboardingStep::STEPS.size)
+        end
+      end
+    end
   end
 end
