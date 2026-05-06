@@ -12,7 +12,9 @@ RSpec.describe PerformanceBenchmarks::CiSeedData do
       [ "container_startup_time", "pass" ],
       [ "workflow_latency", "pass" ],
       [ "dashboard_load_time", "pass" ],
-      [ "search_latency", "pass" ]
+      [ "search_latency", "pass" ],
+      [ "pool_utilization", "pass" ],
+      [ "query_performance", "pass" ]
     )
   end
 end
