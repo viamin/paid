@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.41.0](https://github.com/viamin/paid/compare/v0.40.0...v0.41.0) (2026-05-06)
+
+
+### Features
+
+* **agent-runs:** decompose large features into dependency trees in create-issue mode ([#1714](https://github.com/viamin/paid/issues/1714)) ([0e7ac8b](https://github.com/viamin/paid/commit/0e7ac8b16c2ee03230ab7cca6d81313ca01d17d9))
+* **agent-runs:** replace wall-clock timeouts with heartbeat-based liveness detection ([#1728](https://github.com/viamin/paid/issues/1728)) ([580c8bc](https://github.com/viamin/paid/commit/580c8bc379df486ee1b45ba3d9f967c468346f7e))
+* **evolution:** Phase 3.3 — Prompt Evolution ([#1718](https://github.com/viamin/paid/issues/1718)) ([22bec17](https://github.com/viamin/paid/commit/22bec173e09b5dbd3315871aa9b5fc7a36e463e8))
+* **guardrails:** Phase 3.2 — Agent Monitoring & Guardrails ([#1717](https://github.com/viamin/paid/issues/1717)) ([b7855f8](https://github.com/viamin/paid/commit/b7855f8eda4330b01baa005705e6612816070630))
+* **knowledge:** add health monitoring and alerting for knowledge base LLM operations ([#1702](https://github.com/viamin/paid/issues/1702)) ([c26a5b6](https://github.com/viamin/paid/commit/c26a5b6af84d4f448053b1cfa4505951defd9153))
+* **knowledge:** containerize embedding generation to use secrets proxy ([#1685](https://github.com/viamin/paid/issues/1685)) ([40e7b8a](https://github.com/viamin/paid/commit/40e7b8acc37257aff5e2192ce884c52ded91e538))
+* **multi-tenancy:** Phase 3.7 — Multi-Tenancy Preparation ([#1721](https://github.com/viamin/paid/issues/1721)) ([9a82cd7](https://github.com/viamin/paid/commit/9a82cd76e42ac6416bc41f9bf922cd8363fd9923))
+* **orchestration:** Phase 3.1 — Multi-Agent Orchestration ([#1715](https://github.com/viamin/paid/issues/1715)) ([96b898e](https://github.com/viamin/paid/commit/96b898ef1e571025af1bd7bcc60b89da22c153b7))
+* **performance:** Phase 3.5 — Performance Optimization ([#1720](https://github.com/viamin/paid/issues/1720)) ([4d05725](https://github.com/viamin/paid/commit/4d05725cd9d7113c34d63406b84c7a0578d1a3fc))
+* **projects:** expose max_execution_seconds in project settings UI ([#1719](https://github.com/viamin/paid/issues/1719)) ([045cc3a](https://github.com/viamin/paid/commit/045cc3aae61f0ee9e884c685e91727662cf66029)), closes [#855](https://github.com/viamin/paid/issues/855)
+* **quality:** Phase 3.4 — Quality Gates ([#1716](https://github.com/viamin/paid/issues/1716)) ([4ba26f9](https://github.com/viamin/paid/commit/4ba26f9c8d1e9e4cc24d44a1e52d41345d999de6))
+
+
+### Bug Fixes
+
+* 1666: Add dark mode support to chat interface ([#1672](https://github.com/viamin/paid/issues/1672)) ([cef6771](https://github.com/viamin/paid/commit/cef67716d51f27e7911a3da93b53229681792211))
+* **test:** remove flaky status_code assertion in cross-tenant isolation spec ([#1705](https://github.com/viamin/paid/issues/1705)) ([d14002c](https://github.com/viamin/paid/commit/d14002c4c7874b205a42ca3143897ec0610bfcad))
+
+
+### Performance Improvements
+
+* **containers:** PoolManager.metrics fires 5 separate COUNT queries ([#1709](https://github.com/viamin/paid/issues/1709)) ([07220aa](https://github.com/viamin/paid/commit/07220aa7784186b3d367c63eb6b506536b3a8ae9))
+* **dashboard:** move heavy sections into lazy Turbo frames ([#1712](https://github.com/viamin/paid/issues/1712)) ([0eea012](https://github.com/viamin/paid/commit/0eea012083477fb5aed6fefedeccb71167eba401))
+* **dashboard:** reduce synchronous DB queries with caching and lazy frames ([#1707](https://github.com/viamin/paid/issues/1707)) ([ded3112](https://github.com/viamin/paid/commit/ded3112f4190ba32144a6d6529ad389c816ecb19)), closes [#1695](https://github.com/viamin/paid/issues/1695)
+* **dev:** add rails_performance gem for development metrics ([#1723](https://github.com/viamin/paid/issues/1723)) ([a9ff4aa](https://github.com/viamin/paid/commit/a9ff4aa0ada8916261805b21105f9ffb5aa4c1d7))
+* **projects:** missing agent_runs_count counter cache causes N+1 and full table loads ([#1710](https://github.com/viamin/paid/issues/1710)) ([f68e9c2](https://github.com/viamin/paid/commit/f68e9c28aaac8d2f32bce8123af01257bad8d6df))
+* **providers:** index page fires ~8 queries + unnecessary work in Ruby ([#1711](https://github.com/viamin/paid/issues/1711)) ([aa58867](https://github.com/viamin/paid/commit/aa58867f8c8dfbb7b707a6110aab752553c6cce1))
+* **scaling:** synchronous Temporal RPC blocks Puma threads on dashboard load ([#1708](https://github.com/viamin/paid/issues/1708)) ([3e99185](https://github.com/viamin/paid/commit/3e991859fb787bc9cca167cb0e3e29261764545b))
+
 ## [0.40.0](https://github.com/viamin/paid/compare/v0.39.0...v0.40.0) (2026-05-05)
 
 
