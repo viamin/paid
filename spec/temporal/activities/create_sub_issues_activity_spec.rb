@@ -24,6 +24,23 @@ RSpec.describe Activities::CreateSubIssuesActivity do
     )
   end
 
+  def expect_orchestration_dependency_bodies!
+    call_count = 0
+    allow(github_client).to receive(:create_issue) do |_full_name, payload|
+      call_count += 1
+
+      if call_count == 1
+        expect(payload[:body]).not_to include("Depends on #")
+        gh_issue_response(number: 101, id: 200_001, title: payload[:title], body: payload[:body])
+      elsif call_count == 2
+        expect(payload[:body]).to include("Depends on #101")
+        gh_issue_response(number: 102, id: 200_002, title: payload[:title], body: payload[:body])
+      else
+        raise "Unexpected create_issue call ##{call_count}"
+      end
+    end
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive(:create_issue).and_return(
@@ -97,6 +114,20 @@ RSpec.describe Activities::CreateSubIssuesActivity do
 
         activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
       end
+
+      it "suppresses the automation label for orchestration-owned sub-issues" do
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(labels: satisfy { |labels| !labels.include?(project.automation_label_name) })
+        ).twice
+
+        activity.execute(
+          project_id: project.id,
+          parent_issue_id: parent_issue.id,
+          creation_mode: described_class::ORCHESTRATION_MODE,
+          sub_tasks: sub_tasks
+        )
+      end
     end
 
     context "when automation_on_label_enabled is false" do
@@ -152,6 +183,35 @@ RSpec.describe Activities::CreateSubIssuesActivity do
 
       result = activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: tasks)
       expect(result[:created_issues].first[:title].length).to be <= max_length
+    end
+
+    it "syncs orchestration-owned sub-issues in planning state" do
+      activity.execute(
+        project_id: project.id,
+        parent_issue_id: parent_issue.id,
+        creation_mode: described_class::ORCHESTRATION_MODE,
+        sub_tasks: sub_tasks
+      )
+
+      expect(parent_issue.sub_issues.reload.pluck(:paid_state)).to all(eq("planning"))
+    end
+
+    it "writes dependency lines for orchestration-owned sub-issues" do
+      orchestration_tasks = [
+        { title: "Task A", body: "First task", dependencies: [] },
+        { title: "Task B", body: "Second task", dependencies: [ 0 ] }
+      ]
+
+      expect_orchestration_dependency_bodies!
+
+      result = activity.execute(
+        project_id: project.id,
+        parent_issue_id: parent_issue.id,
+        creation_mode: described_class::ORCHESTRATION_MODE,
+        sub_tasks: orchestration_tasks
+      )
+
+      expect(result[:created_issues].map { |issue| issue[:index] }).to eq([ 0, 1 ])
     end
 
     context "with empty sub_tasks" do
@@ -264,6 +324,33 @@ RSpec.describe Activities::CreateSubIssuesActivity do
 
         expect(result[:created_issues].size).to eq(2)
         expect(result[:created_issues].map { |i| i[:issue_id] }).to all(be_nil)
+      end
+
+      it "fails fast for orchestration-owned sub-issues" do
+        parent_issue # ensure created before stubbing
+
+        allow(Project).to receive(:find).with(project.id).and_return(project)
+        issues_relation = project.issues
+        allow(project).to receive(:issues).and_return(issues_relation)
+
+        bad_issue = Issue.new
+        allow(bad_issue).to receive(:update!).and_raise(StandardError, "DB error")
+        allow(issues_relation).to receive(:find_or_initialize_by).and_return(bad_issue)
+
+        expect(github_client).to receive(:create_issue).once.and_return(
+          gh_issue_response(number: 101, id: 200_001, title: "Implement authentication", body: "body1")
+        )
+
+        expect {
+          activity.execute(
+            project_id: project.id,
+            parent_issue_id: parent_issue.id,
+            creation_mode: described_class::ORCHESTRATION_MODE,
+            sub_tasks: sub_tasks
+          )
+        }.to raise_error(Temporalio::Error::ApplicationError, /Failed to sync orchestration sub-issue #101 locally: DB error/) { |e|
+          expect(e.non_retryable).to be true
+        }
       end
     end
   end
