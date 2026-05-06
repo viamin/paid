@@ -75,15 +75,9 @@ module Knowledge
 
     def perform_search
       mode = @search_mode
-      provider_config = mode == "exact" ? nil : @project.knowledge_embedding_provider_configuration
 
-      if provider_config.nil?
+      if mode != "exact" && !@project.semantic_search_available?
         @search_mode = mode = "exact"
-        api_key = nil
-        api_base_url = nil
-      else
-        api_key = provider_config.api_key
-        api_base_url = provider_config.api_base_url
       end
 
       result = ::Knowledge::Search.call(
@@ -91,9 +85,7 @@ module Knowledge
         query: @query,
         mode: mode,
         artifact_type: @artifact_type_filter,
-        limit: 20,
-        api_key: api_key,
-        api_base_url: api_base_url
+        limit: 20
       )
 
       @results = result[:results]
@@ -119,6 +111,8 @@ module Knowledge
         @semantic_search_source = :user_key
       elsif config&.source == :platform_env
         @semantic_search_source = :platform_env
+      elsif @project.semantic_search_available?
+        @semantic_search_source = :available
       else
         @semantic_search_source = :none
       end

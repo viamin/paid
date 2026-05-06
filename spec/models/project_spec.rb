@@ -1494,6 +1494,13 @@ RSpec.describe Project do
       expect(project.semantic_search_available?).to be true
     end
 
+    it "returns true when a platform OpenAI key is available from Rails credentials" do
+      project = create(:project)
+      allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return("sk-platform")
+
+      expect(project.semantic_search_available?).to be true
+    end
+
     it "returns true when the configured knowledge embedding provider has a compatible key" do
       project = create(:project)
       owner = project.effective_owner

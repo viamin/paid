@@ -8,17 +8,39 @@ module Knowledge
       new(project:).for_embedding
     end
 
+    def self.for_embedding_candidates(project:)
+      new(project:).for_embedding_candidates
+    end
+
+    # Returns provider identifiers only, without loading API keys.
+    # Used by the proxy-based embedding path where the proxy resolves credentials.
+    def self.for_embedding_candidate_providers(project:)
+      new(project:).for_embedding_candidate_providers
+    end
+
     def initialize(project:)
       @project = project
     end
 
     def for_embedding
-      configured_embedding_providers.each do |provider|
-        config = build_embedding_config(provider)
-        return config if config
-      end
+      for_embedding_candidates.first
+    end
 
-      nil
+    def for_embedding_candidates
+      configured_embedding_providers.filter_map do |provider|
+        build_embedding_config(provider)
+      end
+    end
+
+    def for_embedding_candidate_providers
+      configured_embedding_providers.filter_map do |provider|
+        next log_unsupported_provider(provider) unless UserSetting::KB_EMBEDDING_PROVIDERS.include?(provider)
+        config = Provider::DIRECT_OUTBOUND_API_PROVIDERS[provider]
+        next log_unsupported_provider(provider) unless config
+        next unless embedding_credentials_available?(provider, config)
+
+        Result.new(provider: provider)
+      end
     end
 
     private
@@ -56,11 +78,11 @@ module Knowledge
           api_key_record: api_key_record,
           source: :user_key
         )
-      elsif provider == "openai" && ENV["OPENAI_API_KEY"].present?
+      elsif provider == "openai" && platform_openai_api_key.present?
         Result.new(
           provider: provider,
           provider_label: config.fetch(:label, provider.to_s.titleize),
-          api_key: ENV["OPENAI_API_KEY"],
+          api_key: platform_openai_api_key,
           api_base_url: api_base_url_for(provider, config),
           api_key_record: nil,
           source: :platform_env
@@ -80,6 +102,23 @@ module Knowledge
         &.for_api_service_type(service_type)
         &.order(created_at: :desc, id: :desc)
         &.first
+    end
+
+    def embedding_credentials_available?(provider, config)
+      return true if provider == "openai" && platform_openai_api_key_available?
+
+      owner
+        &.provider_api_keys
+        &.for_api_service_type(config.fetch(:service_type))
+        &.exists? || false
+    end
+
+    def platform_openai_api_key_available?
+      platform_openai_api_key.present?
+    end
+
+    def platform_openai_api_key
+      Rails.application.credentials.dig(:llm, :openai_api_key).presence || ENV["OPENAI_API_KEY"].presence
     end
 
     def log_unsupported_provider(provider)

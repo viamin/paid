@@ -136,18 +136,14 @@ module Activities
 
     def knowledge_search(agent_run, project, issue)
       query = "#{issue.title}\n\n#{issue.body.to_s.truncate(2_000)}"
-      config = project.knowledge_embedding_provider_configuration
-      options = {
+
+      Knowledge::Search.call(
         project: project,
         query: query,
         mode: "hybrid",
         limit: MAX_SEARCH_RESULTS,
         agent_run_id: agent_run.id
-      }
-      options[:api_key] = config.api_key if config&.api_key.present?
-      options[:api_base_url] = config.api_base_url if config&.api_base_url.present?
-
-      Knowledge::Search.call(**options)
+      )
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e

@@ -83,17 +83,52 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
       expect(result[:chunks_embedded]).to eq(1)
     end
 
-    it "passes api_key to the default Generate instance when no generator is injected" do
+    it "uses a managed proxy generator when no generator is injected" do
       allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
-      allow(Knowledge::Embeddings::Generate).to receive(:new)
-        .and_return(generator)
+      proxy_generator = instance_double(Knowledge::Embeddings::ProxyGenerator, call: [ embed_result ], model: "text-embedding-3-large", close: true)
+      allow(Knowledge::ProviderConfiguration).to receive(:for_embedding_candidate_providers).with(project: project).and_return([ double(provider: "openai") ])
+      allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new).and_return(proxy_generator)
 
-      described_class.call(api_key: "sk-user-key")
+      described_class.call(project: project)
 
-      expect(Knowledge::Embeddings::Generate).to have_received(:new).with(
-        api_key: "sk-user-key",
-        api_base_url: nil
+      expect(Knowledge::Embeddings::ProxyGenerator).to have_received(:new).with(
+        project: project,
+        provider_configs: [ an_object_having_attributes(provider: "openai") ],
+        containerize: true
       )
+      expect(proxy_generator).to have_received(:close)
+    end
+
+    it "memoizes provider configs across batches for the same project" do
+      allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
+      create(:knowledge_chunk, :redaction_scanned,
+        knowledge_artifact: artifact, project: project, status: "active", embedding_model: nil, content: "second")
+      proxy_generator = instance_double(Knowledge::Embeddings::ProxyGenerator, call: [ embed_result ], model: "text-embedding-3-large", close: true)
+      allow(Knowledge::ProviderConfiguration).to receive(:for_embedding_candidate_providers)
+        .with(project: project)
+        .and_return([ double(provider: "openai") ])
+      allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new).and_return(proxy_generator)
+
+      described_class.call(project: project, batch_size: 1)
+
+      expect(Knowledge::ProviderConfiguration).to have_received(:for_embedding_candidate_providers).with(project: project).once
+    end
+
+    it "logs and skips projects without embedding providers" do
+      allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
+      allow(Knowledge::ProviderConfiguration).to receive(:for_embedding_candidate_providers)
+        .with(project: project)
+        .and_return([])
+      allow(Rails.logger).to receive(:info)
+
+      result = described_class.call(project: project)
+
+      expect(result[:chunks_embedded]).to eq(0)
+      expect(Rails.logger).to have_received(:info).with(hash_including(
+        message: "knowledge.embeddings.project_skipped",
+        project_id: project.id,
+        reason: "no_embedding_provider"
+      ))
     end
 
     it "respects configurable batch size" do

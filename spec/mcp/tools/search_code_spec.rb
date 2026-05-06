@@ -35,9 +35,7 @@ RSpec.describe Tools::SearchCode do
         project: project,
         query: "user model",
         mode: "hybrid",
-        limit: 50,
-        api_key: nil,
-        api_base_url: nil
+        limit: 50
       )
       expect(result).to eq([
         {
