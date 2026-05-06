@@ -1818,28 +1818,91 @@ RSpec.describe "Projects" do
   end
 
   describe "POST /projects/:id/commit_screenshot_config" do
+    let(:pull_request_url) { "https://github.com/acme/widgets/pull/42" }
+    let(:submitted_screenshot_settings) do
+      {
+        enabled: "1",
+        driver: "cuprite",
+        config_path: ".paid/custom-screenshots.yml",
+        auto_capture: "0",
+        service_dependencies: [ "postgres", "redis" ],
+        setup_commands_text: "bin/setup --skip-server\nbin/rails db:prepare\n"
+      }
+    end
+    let(:generated_yaml) do
+      <<~YAML
+        ---
+        driver: cuprite
+        auto_capture: false
+        services:
+        - postgres
+        - redis
+        setup:
+        - bin/setup --skip-server
+        - bin/rails db:prepare
+      YAML
+    end
     let(:project) do
       create(:project, account: account, github_token: github_token, screenshot_settings: {
         "config_path" => ".paid/screenshots.yml",
+        "auto_capture" => true,
         "detection" => { "suggested_yaml" => "driver: playwright\n" }
       })
+    end
+    let(:repo_config_result) do
+      Projects::Screenshots::RepoConfig::Result.new(config: {}, content: nil, error: nil)
+    end
+    let(:commit_result) do
+      Projects::Screenshots::CommitConfig::Result.new(pull_request_url: pull_request_url)
     end
 
     before { sign_in user }
 
+    def stub_commit_config(commit_result, captured_args = nil)
+      allow(Projects::Screenshots::CommitConfig).to receive(:call) do |**kwargs|
+        captured_args&.replace(kwargs)
+        commit_result
+      end
+    end
+
+    def expect_committed_screenshot_settings(project, generated_yaml)
+      expect(project.reload.screenshot_settings).to include(
+        "config_path" => ".paid/custom-screenshots.yml",
+        "driver" => "cuprite",
+        "auto_capture" => false,
+        "service_dependencies" => %w[postgres redis],
+        "setup_commands" => [ "bin/setup --skip-server", "bin/rails db:prepare" ]
+      )
+      expect(project.screenshot_settings.dig("detection", "suggested_yaml")).to eq(generated_yaml)
+    end
+
     it "stores the created pull request url" do
-      allow(Projects::Screenshots::CommitConfig).to receive(:call)
-        .and_return(Projects::Screenshots::CommitConfig::Result.new(
-          pull_request_url: "https://github.com/acme/widgets/pull/42"
-        ))
-      allow(Projects::Screenshots::RepoConfig).to receive(:call)
-        .and_return(Projects::Screenshots::RepoConfig::Result.new(config: {}, content: nil, error: nil))
+      stub_commit_config(commit_result)
+      allow(Projects::Screenshots::RepoConfig).to receive(:call).and_return(repo_config_result)
 
       post commit_screenshot_config_project_path(project)
 
       expect(response).to redirect_to(edit_project_path(project, anchor: "screenshots"))
       expect(project.reload.screenshot_settings.dig("detection", "commit_pull_request_url"))
-        .to eq("https://github.com/acme/widgets/pull/42")
+        .to eq(pull_request_url)
+    end
+
+    it "commits config generated from current submitted settings" do
+      allow(Projects::Screenshots::RepoConfig).to receive(:call).and_return(repo_config_result)
+
+      captured_args = {}
+      stub_commit_config(commit_result, captured_args)
+
+      post commit_screenshot_config_project_path(project), params: {
+        project: { screenshot_settings: submitted_screenshot_settings }
+      }
+
+      expect(response).to redirect_to(edit_project_path(project, anchor: "screenshots"))
+      expect(captured_args).to include(
+        config_path: ".paid/custom-screenshots.yml",
+        content: generated_yaml
+      )
+      expect_committed_screenshot_settings(project, captured_args[:content])
     end
   end
 

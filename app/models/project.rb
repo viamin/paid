@@ -379,15 +379,7 @@ class Project < ApplicationRecord
 
   def effective_screenshot_settings
     stored = screenshot_settings.is_a?(Hash) ? screenshot_settings.deep_stringify_keys : {}
-    settings = DEFAULT_SCREENSHOT_SETTINGS.deep_merge(stored)
-    settings["enabled"] = ActiveModel::Type::Boolean.new.cast(settings["enabled"])
-    settings["auto_capture"] = ActiveModel::Type::Boolean.new.cast(settings["auto_capture"])
-    settings["driver"] = normalized_screenshot_driver(settings["driver"])
-    settings["config_path"] = settings["config_path"].presence || DEFAULT_SCREENSHOT_SETTINGS["config_path"]
-    settings["service_dependencies"] = normalize_string_array(settings["service_dependencies"])
-    settings["setup_commands"] = normalize_string_array(settings["setup_commands"])
-    settings["detection"] = settings["detection"].is_a?(Hash) ? settings["detection"].deep_stringify_keys : {}
-    settings
+    normalize_screenshot_settings(DEFAULT_SCREENSHOT_SETTINGS.deep_merge(stored))
   end
 
   def effective_screenshot_status
@@ -397,9 +389,9 @@ class Project < ApplicationRecord
     status
   end
 
-  def screenshot_preview_config(repo_config: {})
+  def screenshot_preview_config(repo_config: {}, settings: nil)
     repo = repo_config.deep_stringify_keys
-    settings = effective_screenshot_settings
+    settings = normalize_screenshot_settings(settings || effective_screenshot_settings)
 
     compact_screenshot_hash(
       "driver" => settings["driver"] || repo["driver"],
@@ -784,6 +776,20 @@ class Project < ApplicationRecord
   end
 
   private
+
+  def normalize_screenshot_settings(settings)
+    settings = settings.to_unsafe_h if settings.respond_to?(:to_unsafe_h)
+    settings = settings.to_h if settings.respond_to?(:to_h)
+    settings = settings.deep_stringify_keys
+    settings["enabled"] = ActiveModel::Type::Boolean.new.cast(settings["enabled"])
+    settings["auto_capture"] = ActiveModel::Type::Boolean.new.cast(settings["auto_capture"])
+    settings["driver"] = normalized_screenshot_driver(settings["driver"])
+    settings["config_path"] = settings["config_path"].presence || DEFAULT_SCREENSHOT_SETTINGS["config_path"]
+    settings["service_dependencies"] = normalize_string_array(settings["service_dependencies"])
+    settings["setup_commands"] = normalize_string_array(settings["setup_commands"])
+    settings["detection"] = settings["detection"].is_a?(Hash) ? settings["detection"].deep_stringify_keys : {}
+    settings
+  end
 
   def normalized_screenshot_driver(value)
     value = value.to_s

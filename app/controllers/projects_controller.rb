@@ -127,6 +127,10 @@ class ProjectsController < ApplicationController
     update_params = update_params.merge(allowed_github_usernames: parse_usernames_csv) if params.dig(:project, :allowed_github_usernames_csv)
     update_params = update_params.merge(review_settings: build_review_settings) if params.dig(:project, :review_settings)
     update_params = update_params.merge(screenshot_settings: build_screenshot_settings) if params.dig(:project, :screenshot_settings)
+    if screenshot_action_requested?
+      return handle_screenshot_action(update_params[:screenshot_settings] || @project.effective_screenshot_settings)
+    end
+
     assign_selected_github_token(@project, update_params)
 
     if @project.update(update_params)
@@ -205,23 +209,7 @@ class ProjectsController < ApplicationController
   def detect_screenshot_settings
     authorize @project, :update?
 
-    detection = Projects::Screenshots::DetectFramework.call(project: @project)
-    settings = @project.effective_screenshot_settings.merge(
-      "driver" => detection.driver,
-      "service_dependencies" => detection.service_dependencies,
-      "setup_commands" => detection.setup_commands,
-      "detection" => {
-        "framework" => detection.framework,
-        "confidence" => detection.confidence,
-        "suggested_config" => detection.suggested_config,
-        "suggested_yaml" => detection.suggested_yaml,
-        "detected_at" => detection.detected_at
-      }
-    )
-    @project.update!(screenshot_settings: settings)
-
-    redirect_to edit_project_path(@project, anchor: "screenshots"),
-      notice: "Detected #{detection.framework} with #{detection.confidence} confidence."
+    perform_screenshot_detection(screenshot_settings_for_action)
   rescue GithubClient::Error => e
     redirect_to edit_project_path(@project, anchor: "screenshots"),
       alert: "Could not detect screenshot settings: #{e.message}"
@@ -230,28 +218,7 @@ class ProjectsController < ApplicationController
   def commit_screenshot_config
     authorize @project, :update?
 
-    settings = @project.effective_screenshot_settings
-    repo_config = Projects::Screenshots::RepoConfig.call(
-      project: @project,
-      path: settings["config_path"]
-    ).config
-    suggested_yaml = settings.dig("detection", "suggested_yaml").presence ||
-      YAML.dump(@project.screenshot_preview_config(repo_config: repo_config))
-
-    result = Projects::Screenshots::CommitConfig.call(
-      project: @project,
-      config_path: settings["config_path"],
-      content: suggested_yaml
-    )
-
-    @project.update!(
-      screenshot_settings: settings.deep_merge(
-        "detection" => { "commit_pull_request_url" => result.pull_request_url }
-      )
-    )
-
-    redirect_to edit_project_path(@project, anchor: "screenshots"),
-      notice: "Created screenshot config PR: #{result.pull_request_url}"
+    perform_screenshot_commit(screenshot_settings_for_action)
   rescue GithubClient::Error, Octokit::Error => e
     redirect_to edit_project_path(@project, anchor: "screenshots"),
       alert: "Could not commit screenshot config: #{e.message}"
@@ -421,6 +388,81 @@ class ProjectsController < ApplicationController
       "service_dependencies" => Array(raw[:service_dependencies]).map(&:to_s).map(&:strip).reject(&:blank?).uniq,
       "setup_commands" => raw[:setup_commands_text].to_s.lines.map(&:strip).reject(&:blank?).uniq
     )
+  end
+
+  def screenshot_settings_for_action
+    return @project.effective_screenshot_settings unless params.dig(:project, :screenshot_settings)
+
+    build_screenshot_settings
+  end
+
+  def screenshot_action_requested?
+    params[:screenshot_action].present?
+  end
+
+  def handle_screenshot_action(settings)
+    case params[:screenshot_action]
+    when "detect"
+      perform_screenshot_detection(settings)
+    when "commit"
+      perform_screenshot_commit(settings)
+    else
+      redirect_to edit_project_path(@project, anchor: "screenshots"),
+        alert: "Unknown screenshot action."
+    end
+  rescue GithubClient::Error, Octokit::Error => e
+    message = params[:screenshot_action] == "commit" ? "Could not commit screenshot config" : "Could not detect screenshot settings"
+    redirect_to edit_project_path(@project, anchor: "screenshots"),
+      alert: "#{message}: #{e.message}"
+  end
+
+  def perform_screenshot_detection(settings)
+    detection = Projects::Screenshots::DetectFramework.call(project: @project)
+    settings = settings.merge(
+      "driver" => detection.driver,
+      "service_dependencies" => detection.service_dependencies,
+      "setup_commands" => detection.setup_commands,
+      "detection" => {
+        "framework" => detection.framework,
+        "confidence" => detection.confidence,
+        "suggested_config" => detection.suggested_config,
+        "suggested_yaml" => detection.suggested_yaml,
+        "detected_at" => detection.detected_at
+      }
+    )
+    @project.update!(screenshot_settings: settings)
+
+    redirect_to edit_project_path(@project, anchor: "screenshots"),
+      notice: "Detected #{detection.framework} with #{detection.confidence} confidence."
+  end
+
+  def perform_screenshot_commit(settings)
+    repo_config = Projects::Screenshots::RepoConfig.call(
+      project: @project,
+      path: settings["config_path"]
+    ).config
+    generated_yaml = YAML.dump(@project.screenshot_preview_config(
+      repo_config: repo_config,
+      settings: settings
+    ))
+
+    result = Projects::Screenshots::CommitConfig.call(
+      project: @project,
+      config_path: settings["config_path"],
+      content: generated_yaml
+    )
+
+    @project.update!(
+      screenshot_settings: settings.deep_merge(
+        "detection" => settings.fetch("detection", {}).merge(
+          "suggested_yaml" => generated_yaml,
+          "commit_pull_request_url" => result.pull_request_url
+        )
+      )
+    )
+
+    redirect_to edit_project_path(@project, anchor: "screenshots"),
+      notice: "Created screenshot config PR: #{result.pull_request_url}"
   end
 
   def ensure_labels_best_effort(project)
