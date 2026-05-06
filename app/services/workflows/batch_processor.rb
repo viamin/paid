@@ -73,35 +73,54 @@ module Workflows
     end
 
     def batch_timeout(ids)
-      AgentRun.where(id: ids).find_each.count do |agent_run|
-        agent_run.timeout!(error: TIMEOUT_ERROR_MESSAGE)
-      end
+      transition_batch(ids) { |agent_run| agent_run.timeout!(error: TIMEOUT_ERROR_MESSAGE) }
     end
 
     def batch_complete(ids)
-      AgentRun.where(id: ids).update_all(
-        status: "completed",
-        completed_at: Time.current,
-        updated_at: Time.current
-      )
+      transition_batch(ids, &:complete!)
     end
 
     def batch_fail(ids)
-      AgentRun.where(id: ids).update_all(
-        status: "failed",
-        completed_at: Time.current,
-        updated_at: Time.current
-      )
+      transition_batch(ids, &:fail!)
     end
 
     def batch_requeue(ids)
-      AgentRun.where(id: ids).update_all(
+      AgentRun.where(id: ids).find_each.count do |agent_run|
+        requeue_agent_run(agent_run)
+      end
+    end
+
+    def transition_batch(ids, &block)
+      AgentRun.where(id: ids).find_each.count(&block)
+    end
+
+    def requeue_agent_run(agent_run)
+      agent_run.with_lock do
+        agent_run.reload
+        next false if agent_run.finished?
+
+        agent_run.update!(requeue_attributes(agent_run))
+      end
+    end
+
+    def requeue_attributes(agent_run)
+      {
         status: "queued",
         started_at: nil,
+        completed_at: nil,
+        duration_seconds: nil,
+        paused_at: nil,
+        guardrail_violation_type: nil,
+        guardrail_context: nil,
         error_message: nil,
-        stale_requeue_count: Arel.sql("stale_requeue_count + 1"),
-        updated_at: Time.current
-      )
+        stale_requeue_count: agent_run.stale_requeue_count + 1,
+        stale_skip_count: 0,
+        temporal_workflow_id: nil,
+        temporal_run_id: nil,
+        service_environment: nil,
+        container_id: nil,
+        service_container_ids: []
+      }
     end
 
     def log_summary(processed, errors)

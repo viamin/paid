@@ -63,12 +63,11 @@ module Containers
     end
 
     def queued_count
-      @queued_count ||= project.agent_runs.where(status: "queued").count
+      @queued_count ||= project.agent_runs.waiting.count
     end
 
     def demand_velocity
-      @demand_velocity ||= project.agent_runs
-        .where(status: "queued")
+      @demand_velocity ||= project.agent_runs.waiting
         .where(created_at: VELOCITY_WINDOW.ago..)
         .count
     end

@@ -65,8 +65,11 @@ module Github
 
       def increment_counter(stat)
         key = counter_key(stat)
-        current = Rails.cache.read(key).to_i
-        Rails.cache.write(key, current + 1, expires_in: COUNTER_TTL)
+        count = Rails.cache.increment(key, 1, expires_in: COUNTER_TTL)
+        return count unless count.nil?
+
+        Rails.cache.write(key, 0, expires_in: COUNTER_TTL, unless_exist: true)
+        Rails.cache.increment(key, 1, expires_in: COUNTER_TTL) || 1
       end
 
       def read_counter(stat)

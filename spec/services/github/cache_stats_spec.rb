@@ -67,4 +67,13 @@ RSpec.describe Github::CacheStats do
       expect(stats[:misses]).to eq(0)
     end
   end
+
+  describe ".record_hit" do
+    it "initializes a missing counter and increments atomically" do
+      described_class.record_hit
+      described_class.record_hit
+
+      expect(described_class.snapshot[:hits]).to eq(2)
+    end
+  end
 end

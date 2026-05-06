@@ -58,5 +58,15 @@ RSpec.describe Containers::PoolWarmer do
 
       expect(result[:action]).to eq(:hold)
     end
+
+    it "ignores claimed queued runs when measuring demand" do
+      create(:agent_run, project: project, status: "queued")
+      create_list(:agent_run, 2, project: project, status: "queued", temporal_workflow_id: "workflow-claimed")
+
+      result = described_class.call(project: project)
+
+      expect(result[:action]).to eq(:hold)
+      expect(result[:queued_count]).to eq(1)
+    end
   end
 end
