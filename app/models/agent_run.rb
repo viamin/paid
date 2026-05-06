@@ -88,7 +88,7 @@ class AgentRun < ApplicationRecord
 
   STALE_DETECTOR_ERROR_PREFIX = "Stale run detected"
 
-  belongs_to :project
+  belongs_to :project, counter_cache: true
   belongs_to :issue, optional: true
   belongs_to :prompt_version, optional: true
   belongs_to :provider, optional: true
@@ -122,6 +122,11 @@ class AgentRun < ApplicationRecord
   before_create :generate_proxy_token
   before_create :snapshot_mcp_servers
 
+  before_update :store_project_counter_cache_state, if: :project_counter_cache_state_changed?
+  before_destroy :store_destroyed_project_counter_cache_state
+
+  after_commit :update_completed_agent_runs_counter_cache, on: [ :create, :update, :destroy ]
+  after_commit :reload_project_counter_cache_association, on: [ :create, :update, :destroy ]
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
   after_commit :invalidate_provider_options_cache_on_change, on: [ :create, :update ]
@@ -1848,6 +1853,27 @@ class AgentRun < ApplicationRecord
     nil
   end
 
+  def update_completed_agent_runs_counter_cache
+    completed_agent_runs_counter_deltas.each do |project_id, delta|
+      Project.update_counters(project_id, completed_agent_runs_count: delta)
+    end
+  end
+
+  def reload_project_counter_cache_association
+    return unless association(:project).loaded?
+
+    if previous_changes.key?("project_id") && previous_changes["project_id"].first.present?
+      association(:project).reset
+    elsif project.present? && !project.destroyed?
+      fresh_counts = Project.where(id: project.id)
+        .pick(:agent_runs_count, :completed_agent_runs_count)
+      return unless fresh_counts
+
+      project.agent_runs_count, project.completed_agent_runs_count = fresh_counts
+      project.clear_attribute_changes([ "agent_runs_count", "completed_agent_runs_count" ])
+    end
+  end
+
   def just_finished?
     previous_changes.key?("status") && finished?
   end
@@ -1866,6 +1892,58 @@ class AgentRun < ApplicationRecord
   end
 
   private :explicit_user_max_tokens_per_run
+
+  def project_counter_cache_state_changed?
+    will_save_change_to_project_id? || will_save_change_to_status?
+  end
+
+  def store_project_counter_cache_state
+    @project_counter_cache_state_before_last_commit = {
+      project_id: project_id_in_database,
+      status: status_in_database
+    }
+  end
+
+  def store_destroyed_project_counter_cache_state
+    @project_counter_cache_state_before_last_commit = {
+      project_id: project_id,
+      status: status
+    }
+  end
+
+  def completed_agent_runs_counter_deltas
+    previous_state = @project_counter_cache_state_before_last_commit || {}
+    previous_project_id = previous_state[:project_id]
+    previous_status = previous_state[:status]
+
+    if destroyed?
+      counter_cache_deltas_for_completed_transition(
+        previous_project_id: previous_project_id,
+        previous_status: previous_status,
+        current_project_id: nil,
+        current_status: nil
+      )
+    else
+      previous_project_id ||= previous_changes.fetch("project_id", [ project_id, project_id ]).first
+      previous_status ||= previous_changes.fetch("status", [ status, status ]).first
+
+      counter_cache_deltas_for_completed_transition(
+        previous_project_id: previous_project_id,
+        previous_status: previous_status,
+        current_project_id: project_id,
+        current_status: status
+      )
+    end
+  ensure
+    @project_counter_cache_state_before_last_commit = nil
+  end
+
+  def counter_cache_deltas_for_completed_transition(previous_project_id:, previous_status:, current_project_id:, current_status:)
+    deltas = Hash.new(0)
+    deltas[previous_project_id] -= 1 if previous_project_id.present? && previous_status == "completed"
+    deltas[current_project_id] += 1 if current_project_id.present? && current_status == "completed"
+    deltas.reject { |_project_id, delta| delta.zero? }
+  end
 
   def just_timed_out_issue_goal?
     previous_changes.key?("status") && status == "timeout" && create_issue_goal?

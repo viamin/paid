@@ -1200,4 +1200,18 @@ RSpec.describe Providers::TestAgent do
       end
     end
   end
+
+  describe "#build_test_run" do
+    let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude") }
+
+    it "increments agent_runs_count for the lifetime of the callback-bypassed row" do
+      service = described_class.new(provider: provider)
+
+      test_run = service.send(:build_test_run)
+      expect(project.reload.agent_runs_count).to eq(1)
+    ensure
+      test_run&.destroy!
+      expect(project.reload.agent_runs_count).to eq(0)
+    end
+  end
 end

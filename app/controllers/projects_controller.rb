@@ -13,7 +13,7 @@ class ProjectsController < ApplicationController
   }.freeze
 
   def index
-    base_scope = policy_scope(Project).includes(:github_token, :agent_runs)
+    base_scope = policy_scope(Project).includes(:github_token)
     @q = base_scope.ransack(params[:q])
     @q.sorts = "last_agent_run_at desc" if @q.sorts.empty?
     @projects = apply_nulls_last_ordering(@q.result)
