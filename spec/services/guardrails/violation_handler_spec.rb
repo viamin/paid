@@ -8,6 +8,7 @@ RSpec.describe Guardrails::ViolationHandler do
 
     before do
       allow(AgentRuns::Cancel).to receive(:call)
+      allow(Notifications::Publish).to receive(:call)
     end
 
     it "pauses the agent run on loop detection" do
@@ -23,6 +24,15 @@ RSpec.describe Guardrails::ViolationHandler do
       expect(agent_run.guardrail_violation_type).to eq("loop_detected")
       expect(agent_run.paused_at).to be_present
       expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
+      expect(Notifications::Publish).to have_received(:call).with(
+        hash_including(
+          account: agent_run.project.account,
+          source: "guardrail_loop_detected",
+          subject: agent_run,
+          severity: :error,
+          nav_section: "agent_runs"
+        )
+      )
     end
 
     it "pauses the agent run on token limit violation" do
@@ -69,6 +79,15 @@ RSpec.describe Guardrails::ViolationHandler do
 
       expect(result.paused?).to be true
       expect(agent_run.reload.guardrail_violation_type).to eq("anomaly")
+      expect(Notifications::Publish).to have_received(:call).with(
+        hash_including(
+          account: agent_run.project.account,
+          source: "guardrail_anomaly",
+          subject: agent_run,
+          severity: :error,
+          nav_section: "agent_runs"
+        )
+      )
     end
 
     it "stores violation context as structured data" do
@@ -150,6 +169,21 @@ RSpec.describe Guardrails::ViolationHandler do
       )
     end
 
+    it "completes enforcement even when notification delivery fails" do
+      allow(Notifications::Publish).to receive(:call).and_raise(StandardError, "broadcast error")
+
+      result = described_class.call(
+        agent_run: agent_run,
+        violation_type: "token_limit",
+        details: "Token limit exceeded"
+      )
+
+      expect(result.paused?).to be true
+      expect(agent_run.reload.status).to eq("paused")
+      expect(agent_run.guardrail_context["execution_cleanup"]).to be_present
+      expect(AgentRuns::Cancel).to have_received(:call)
+    end
+
     it "does not pause a non-running agent run" do
       agent_run.update!(status: "completed", completed_at: Time.current)
 
@@ -175,6 +209,7 @@ RSpec.describe Guardrails::ViolationHandler do
       expect(result.paused?).to be true
       expect(result.violation_type).to eq("loop_detected")
       expect(agent_run.reload.guardrail_violation_type).to eq("loop_detected")
+      expect(Notifications::Publish).not_to have_received(:call)
     end
 
     it "raises on unknown violation type" do
