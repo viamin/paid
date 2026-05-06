@@ -34,6 +34,12 @@ module Screenshots
       def from_blob(blob, project: nil)
         call(project:, blob:)
       end
+
+      # Validates a partial settings hash (e.g. DB-stored project settings where
+      # routes are not required). Raises ConfigError on invalid nested values.
+      def validate_partial!(settings)
+        new.send(:validate_partial!, settings)
+      end
     end
 
     def initialize(project: nil, repo_path: nil, blob: nil, content: nil)
@@ -116,13 +122,18 @@ module Screenshots
     end
 
     def validate_root!(settings)
+      validate_partial!(settings)
+      validate_routes!(settings["routes"])
+    end
+
+    def validate_partial!(settings)
       validate_unknown_keys!("top-level", settings, VALID_TOP_LEVEL_KEYS)
 
       validate_driver!(settings["driver"]) if settings.key?("driver")
       validate_enabled!(settings["enabled"]) if settings.key?("enabled")
       validate_base_url!(settings["base_url"]) if settings.key?("base_url")
       validate_viewport!(settings["viewport"]) if settings.key?("viewport")
-      validate_routes!(settings["routes"])
+      validate_routes_shape!(settings["routes"]) if settings.key?("routes")
       validate_auth!(settings["auth"]) if settings.key?("auth")
       validate_seed!(settings["seed"]) if settings.key?("seed")
       validate_string_array!("setup", settings["setup"]) if settings.key?("setup")
@@ -175,6 +186,12 @@ module Screenshots
       unless value.is_a?(Array) && value.any?
         raise ConfigError, "routes must be a non-empty array"
       end
+
+      validate_routes_shape!(value)
+    end
+
+    def validate_routes_shape!(value)
+      return unless value.is_a?(Array)
 
       value.each_with_index do |route, index|
         unless route.is_a?(Hash)

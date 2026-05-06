@@ -992,7 +992,7 @@ RSpec.describe Project do
         project = build(:project, screenshot_settings: { "viewport" => "bad" })
 
         expect(project).not_to be_valid
-        expect(project.errors[:screenshot_settings].join).to include("viewport must be a JSON object")
+        expect(project.errors[:screenshot_settings].join).to include("viewport must be a mapping")
       end
 
       it "rejects invalid base_url in screenshot_settings" do
@@ -1000,6 +1000,41 @@ RSpec.describe Project do
 
         expect(project).not_to be_valid
         expect(project.errors[:screenshot_settings].join).to include("base_url must be a non-blank string")
+      end
+
+      it "rejects non-positive viewport dimensions" do
+        project = build(:project, screenshot_settings: { "viewport" => { "width" => -1, "height" => 900 } })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("viewport.width must be a positive integer")
+      end
+
+      it "rejects non-string items in ui_patterns" do
+        project = build(:project, screenshot_settings: { "ui_patterns" => [ 123 ] })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("ui_patterns[0] must be a non-blank string")
+      end
+
+      it "rejects invalid auth strategy" do
+        project = build(:project, screenshot_settings: { "auth" => { "strategy" => "bogus" } })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("auth.strategy must be one of")
+      end
+
+      it "rejects non-hash seed items" do
+        project = build(:project, screenshot_settings: { "seed" => [ 123 ] })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("seed[0] must be a mapping")
+      end
+
+      it "rejects non-string setup items" do
+        project = build(:project, screenshot_settings: { "setup" => [ 456 ] })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("setup[0] must be a non-blank string")
       end
 
       it "rejects unknown review methods" do
