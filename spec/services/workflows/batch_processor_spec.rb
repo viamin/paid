@@ -38,6 +38,15 @@ RSpec.describe Workflows::BatchProcessor do
       end
     end
 
+    it "does not re-query loaded runs when transitioning a batch" do
+      runs = create_list(:agent_run, 2, project: project, status: "running", started_at: 5.minutes.ago)
+      scope = AgentRun.where(id: runs.map(&:id))
+
+      expect(AgentRun).not_to receive(:where).with(hash_including(id: anything))
+
+      described_class.call(scope: scope, operation: :complete)
+    end
+
     it "batch-fails runs" do
       runs = create_list(:agent_run, 2, project: project, status: "running", started_at: 5.minutes.ago)
       scope = AgentRun.where(id: runs.map(&:id))
@@ -61,6 +70,15 @@ RSpec.describe Workflows::BatchProcessor do
 
       expect(result[:processed]).to eq(2)
       runs.each { |run| expect_requeued_run(run) }
+    end
+
+    it "does not re-query loaded runs when requeuing a batch" do
+      runs = create_list(:agent_run, 2, **stale_paused_attributes)
+      scope = AgentRun.where(id: runs.map(&:id))
+
+      expect(AgentRun).not_to receive(:where).with(hash_including(id: anything))
+
+      described_class.call(scope: scope, operation: :requeue)
     end
 
     it "rejects unknown operations" do

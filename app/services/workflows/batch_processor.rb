@@ -52,46 +52,45 @@ module Workflows
     end
 
     def process_batch(batch)
-      ids = batch.map(&:id)
       updated = 0
       errors = []
 
       case operation
       when :timeout
-        updated = batch_timeout(ids)
+        updated = batch_timeout(batch)
       when :complete
-        updated = batch_complete(ids)
+        updated = batch_complete(batch)
       when :fail
-        updated = batch_fail(ids)
+        updated = batch_fail(batch)
       when :requeue
-        updated = batch_requeue(ids)
+        updated = batch_requeue(batch)
       end
 
       { updated: updated, errors: errors }
     rescue StandardError => e
-      { updated: 0, errors: [ { batch_ids: ids, error: e.message } ] }
+      { updated: 0, errors: [ { batch_ids: batch.map(&:id), error: e.message } ] }
     end
 
-    def batch_timeout(ids)
-      transition_batch(ids) { |agent_run| agent_run.timeout!(error: TIMEOUT_ERROR_MESSAGE) }
+    def batch_timeout(records)
+      transition_batch(records) { |agent_run| agent_run.timeout!(error: TIMEOUT_ERROR_MESSAGE) }
     end
 
-    def batch_complete(ids)
-      transition_batch(ids, &:complete!)
+    def batch_complete(records)
+      transition_batch(records, &:complete!)
     end
 
-    def batch_fail(ids)
-      transition_batch(ids, &:fail!)
+    def batch_fail(records)
+      transition_batch(records, &:fail!)
     end
 
-    def batch_requeue(ids)
-      AgentRun.where(id: ids).find_each.count do |agent_run|
+    def batch_requeue(records)
+      records.count do |agent_run|
         requeue_agent_run(agent_run)
       end
     end
 
-    def transition_batch(ids, &block)
-      AgentRun.where(id: ids).find_each.count(&block)
+    def transition_batch(records, &block)
+      records.count(&block)
     end
 
     def requeue_agent_run(agent_run)
