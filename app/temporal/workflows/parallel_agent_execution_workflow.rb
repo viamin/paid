@@ -225,9 +225,15 @@ module Workflows
         ready_tasks, blocked_tasks = partition_ready_tasks(remaining_tasks, all_results)
 
         if ready_tasks.empty?
-          unresolved_tasks = remaining_tasks - blocked_tasks
-          all_results.concat(build_blocked_results(blocked_tasks))
-          all_results.concat(build_unresolvable_results(unresolved_tasks))
+          all_results.concat(
+            build_terminal_results_for_remaining(
+              all_results: all_results,
+              remaining_tasks: remaining_tasks,
+              ready_tasks: ready_tasks,
+              blocked_tasks: blocked_tasks,
+              ready_error: "unresolvable_dependencies"
+            )
+          )
           break
         end
 

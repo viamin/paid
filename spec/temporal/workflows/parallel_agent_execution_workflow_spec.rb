@@ -269,6 +269,21 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       )
     end
 
+    it "propagates dependency failures through transitive dependents" do
+      stub_full_capacity
+      stub_no_conflicts
+      stub_dependency_failure_sequence
+
+      result = workflow.execute(project_id: 1, sub_tasks: linear_dependency_sub_tasks)
+
+      expect(result[:success]).to be false
+      expect(result[:failed]).to eq(3)
+      expect(result[:results]).to include(
+        include(issue_id: 20, task_index: 1, success: false, error: "dependencies_failed", blocked_by: [ 0 ]),
+        include(issue_id: 30, task_index: 2, success: false, error: "dependencies_failed", blocked_by: [ 1 ])
+      )
+    end
+
     it "marks remaining tasks as deadline_exceeded when overall timeout expires" do
       # Capacity returns 1 slot so tasks are batched one at a time
       stub_incremental_capacity
