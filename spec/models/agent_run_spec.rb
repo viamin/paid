@@ -3248,4 +3248,126 @@ RSpec.describe AgentRun do
       end
     end
   end
+
+  describe "counter caches" do
+    let(:project) { create(:project) }
+    let(:inserted_agent_run_timestamp) { Time.current }
+
+    def insert_agent_run_without_callbacks(project:, status:, now:)
+      attributes = {
+        project_id: project.id,
+        issue_id: create(:issue, project: project).id,
+        agent_type: "claude_code",
+        status: status,
+        goal: "create_pr",
+        trigger_type: "manual",
+        proxy_token: SecureRandom.hex(32),
+        created_at: now,
+        updated_at: now
+      }
+
+      if status == "completed"
+        attributes.merge!(
+          started_at: now - 10.minutes,
+          completed_at: now,
+          duration_seconds: 600,
+          result_commit_sha: "abc123def456789012345678901234567890abcd",
+          pull_request_url: "https://github.com/example/repo/pull/1",
+          pull_request_number: 1
+        )
+      end
+
+      result = described_class.insert_all!([ attributes ], returning: %w[id])
+      described_class.find(result.rows.first.first)
+    end
+
+    describe "agent_runs_count" do
+      it "increments on create" do
+        expect { create(:agent_run, project: project) }
+          .to change { project.reload.agent_runs_count }.by(1)
+      end
+
+      it "decrements on destroy" do
+        agent_run = create(:agent_run, project: project)
+        expect { agent_run.destroy! }
+          .to change { project.reload.agent_runs_count }.by(-1)
+      end
+
+      it "stays accurate when a run inserted with insert_all! (with manual increment) is later destroyed" do
+        agent_run = insert_agent_run_without_callbacks(
+          project: project,
+          status: "queued",
+          now: inserted_agent_run_timestamp
+        )
+        # Real callers (e.g. Providers::TestAgent) manually increment after insert_all!
+        Project.update_counters(project.id, agent_runs_count: 1)
+
+        expect { agent_run.destroy! }
+          .to change { project.reload.agent_runs_count }.from(1).to(0)
+      end
+    end
+
+    describe "completed_agent_runs_count" do
+      it "does not change when a non-completed run is created" do
+        expect { create(:agent_run, project: project, status: "queued") }
+          .not_to change { project.reload.completed_agent_runs_count }
+      end
+
+      it "increments when a run is created already completed" do
+        expect { create(:agent_run, :completed, project: project) }
+          .to change { project.reload.completed_agent_runs_count }.by(1)
+      end
+
+      it "increments when a run transitions to completed" do
+        agent_run = create(:agent_run, :running, project: project)
+        expect { agent_run.update!(status: "completed", completed_at: Time.current) }
+          .to change { project.reload.completed_agent_runs_count }.by(1)
+      end
+
+      it "decrements when a run transitions from completed to another status" do
+        agent_run = create(:agent_run, :running, project: project)
+        agent_run.update!(status: "completed", completed_at: Time.current)
+        project.reload
+        expect { agent_run.update!(status: "failed") }
+          .to change { project.reload.completed_agent_runs_count }.by(-1)
+      end
+
+      it "does not change on status transitions not involving completed" do
+        agent_run = create(:agent_run, project: project, status: "queued")
+        expect { agent_run.update!(status: "running", started_at: Time.current) }
+          .not_to change { project.reload.completed_agent_runs_count }
+      end
+
+      it "decrements when a completed run is destroyed" do
+        agent_run = create(:agent_run, :running, project: project)
+        agent_run.update!(status: "completed", completed_at: Time.current)
+        project.reload
+        expect { agent_run.destroy! }
+          .to change { project.reload.completed_agent_runs_count }.by(-1)
+      end
+
+      it "stays accurate when a completed run inserted with insert_all! (with manual increment) is later destroyed" do
+        agent_run = insert_agent_run_without_callbacks(
+          project: project,
+          status: "completed",
+          now: inserted_agent_run_timestamp
+        )
+        # Real callers manually increment after insert_all!
+        Project.update_counters(project.id, agent_runs_count: 1, completed_agent_runs_count: 1)
+
+        expect { agent_run.destroy! }
+          .to change { project.reload.completed_agent_runs_count }.from(1).to(0)
+      end
+
+      it "refreshes a previously loaded project association before broadcasting stats" do
+        agent_run = create(:agent_run, :running, project: project)
+        loaded_project = agent_run.project
+
+        agent_run.update!(status: "completed", completed_at: Time.current)
+
+        expect(agent_run.project).to equal(loaded_project)
+        expect(agent_run.project.completed_agent_runs_count).to eq(1)
+      end
+    end
+  end
 end

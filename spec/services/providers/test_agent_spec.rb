@@ -1122,14 +1122,17 @@ RSpec.describe Providers::TestAgent do
       expect(provider_instance.received_provider_runtime).to eq(runtime)
     end
 
-    it "preserves the smoke-test contract timeout when it exceeds the caller timeout" do
+    it "passes nil timeout when the contract timeout exceeds the caller timeout (adapter uses contract default)" do
       provider_instance = provider_class.new(
         executor: instance_double(AgentHarness::CommandExecutor, which: "/usr/bin/kilo")
       )
 
       runtime = run_health_check(provider_instance: provider_instance, contract_timeout: 90, caller_timeout: 60)
 
-      expect(provider_instance.received_smoke_test_timeout).to eq(90)
+      # agent-harness ≥0.17.1 passes nil so the adapter falls through to
+      # contract[:timeout]; the outer Timeout.timeout already uses
+      # max(caller, contract) to prevent premature kills.
+      expect(provider_instance.received_smoke_test_timeout).to be_nil
       expect(provider_instance.received_provider_runtime).to eq(runtime)
     end
 
@@ -1198,6 +1201,20 @@ RSpec.describe Providers::TestAgent do
 
         expect(reset_at).to eq(1.hour.from_now)
       end
+    end
+  end
+
+  describe "#build_test_run" do
+    let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude") }
+
+    it "increments agent_runs_count for the lifetime of the callback-bypassed row" do
+      service = described_class.new(provider: provider)
+
+      test_run = service.send(:build_test_run)
+      expect(project.reload.agent_runs_count).to eq(1)
+    ensure
+      test_run&.destroy!
+      expect(project.reload.agent_runs_count).to eq(0)
     end
   end
 end

@@ -51,7 +51,7 @@ gem "docker-api", require: false
 gem "qdrant-ruby", require: false
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
-gem "agent-harness", "~> 0.17.0"
+gem "agent-harness", "~> 0.17.2"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
 # Defer loading — invoked as CLI binary, not via Ruby API.

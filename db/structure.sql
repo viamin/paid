@@ -3315,10 +3315,26 @@ CREATE TABLE public.projects (
     auto_enhance_enabled boolean DEFAULT false NOT NULL,
     scheduler_paused_at timestamp(6) without time zone,
     scheduler_pause_reason character varying,
-    knowledge_evolution_enabled boolean DEFAULT false NOT NULL
+    knowledge_evolution_enabled boolean DEFAULT false NOT NULL,
+    agent_runs_count integer DEFAULT 0 NOT NULL,
+    completed_agent_runs_count integer DEFAULT 0 NOT NULL
 );
 
 ALTER TABLE ONLY public.projects FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: COLUMN projects.agent_runs_count; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.projects.agent_runs_count IS 'Counter cache for total agent runs';
+
+
+--
+-- Name: COLUMN projects.completed_agent_runs_count; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.projects.completed_agent_runs_count IS 'Counter cache for completed agent runs';
 
 
 --
@@ -11182,6 +11198,7 @@ SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
 ('20260506074459'),
+('20260505220424'),
 ('20260504222628'),
 ('20260504105047'),
 ('20260504100425'),
@@ -11427,4 +11444,3 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260128004342'),
 ('20260128004305'),
 ('20260127154444');
-

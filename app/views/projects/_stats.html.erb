@@ -2,11 +2,11 @@
   <div class="flex flex-wrap items-center divide-x divide-gray-200 text-sm">
     <div class="flex items-center gap-1.5 px-4 py-3">
       <span class="font-medium text-gray-500">Runs:</span>
-      <span class="font-semibold text-gray-900"><%= project.agent_runs.count %></span>
+      <span class="font-semibold text-gray-900"><%= project.agent_runs_count %></span>
     </div>
     <div class="flex items-center gap-1.5 px-4 py-3">
       <span class="font-medium text-gray-500">Completed:</span>
-      <span class="font-semibold text-green-600"><%= project.agent_runs.completed.count %></span>
+      <span class="font-semibold text-green-600"><%= project.completed_agent_runs_count %></span>
     </div>
     <% if project.total_cost_cents > 0 %>
       <div class="flex items-center gap-1.5 px-4 py-3">
