@@ -15,6 +15,8 @@ module Guardrails
   #   result.paused?       # => true
   #   result.violation_type # => "loop_detected"
   class ViolationHandler
+    include Rails.application.routes.url_helpers
+
     def self.call(...)
       new(...).call
     end
@@ -35,6 +37,7 @@ module Guardrails
       return already_handled_result(context) unless paused
 
       log_violation(context)
+      publish_notification(context)
       context = persist_execution_cleanup(context, stop_in_flight_execution)
 
       # Dashboard alert is handled by LiveDashboardBroadcastJob (triggered by
@@ -126,6 +129,36 @@ module Guardrails
       updated_context = context.merge(execution_cleanup: cleanup_result)
       agent_run.update!(guardrail_context: updated_context)
       updated_context
+    end
+
+    def publish_notification(context)
+      Notifications::Publish.call(
+        account: agent_run.project.account,
+        source: "guardrail_#{violation_type}",
+        subject: agent_run,
+        severity: notification_severity,
+        title: notification_title,
+        description: details,
+        metadata: {
+          violation_type: violation_type,
+          project_id: agent_run.project_id,
+          agent_type: agent_run.agent_type,
+          trigger_type: agent_run.trigger_type,
+          metrics: context[:metrics],
+          recommended_action: context[:recommended_action],
+          triggered_at: context[:triggered_at]
+        },
+        action_url: project_agent_run_path(agent_run.project, agent_run),
+        nav_section: "agent_runs"
+      )
+    end
+
+    def notification_severity
+      violation_type == "anomaly" ? :warning : :error
+    end
+
+    def notification_title
+      "Agent run ##{agent_run.id} paused by #{violation_type.tr("_", " ")} guardrail"
     end
 
     class Result

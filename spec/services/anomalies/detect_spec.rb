@@ -6,6 +6,10 @@ RSpec.describe Anomalies::Detect do
   let(:project) { create(:project) }
 
   describe ".call" do
+    before do
+      allow(Notifications::Publish).to receive(:call)
+    end
+
     context "without enough historical data for baselines" do
       let(:agent_run) { create(:agent_run, :completed, :with_metrics, project: project) }
 
@@ -75,6 +79,19 @@ RSpec.describe Anomalies::Detect do
             hash_including(
               message: "anomaly_detection.anomaly_detected",
               metric_name: "tokens_total"
+            )
+          )
+        end
+
+        it "publishes an agent run notification" do
+          described_class.call(anomalous_run)
+
+          expect(Notifications::Publish).to have_received(:call).with(
+            hash_including(
+              account: project.account,
+              source: "agent_run_anomaly",
+              subject: anomalous_run,
+              nav_section: "agent_runs"
             )
           )
         end
@@ -367,6 +384,41 @@ RSpec.describe Anomalies::Detect do
           tokens_output: 5_000)
 
         expect(described_class.call(agent_run)).to be_empty
+      end
+    end
+
+    context "when a running run shows critical anomalies" do
+      before do
+        [ 10_000, 12_000, 14_000, 16_000, 18_000, 20_000 ].each do |tokens|
+          create(:agent_run, :completed,
+            project: project,
+            tokens_input: tokens,
+            tokens_output: tokens / 2,
+            duration_seconds: 600,
+            iterations: 5,
+            cost_cents: 150)
+        end
+      end
+
+      it "routes the anomaly through the guardrail handler" do
+        running_run = create(:agent_run, :running,
+          project: project,
+          tokens_input: 5_000_000,
+          tokens_output: 2_500_000,
+          duration_seconds: 600,
+          iterations: 5,
+          cost_cents: 150)
+
+        allow(Guardrails::ViolationHandler).to receive(:call)
+
+        described_class.call(running_run)
+
+        expect(Guardrails::ViolationHandler).to have_received(:call).with(
+          hash_including(
+            agent_run: running_run,
+            violation_type: "anomaly"
+          )
+        )
       end
     end
   end

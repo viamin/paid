@@ -8,6 +8,7 @@ RSpec.describe Guardrails::ViolationHandler do
 
     before do
       allow(AgentRuns::Cancel).to receive(:call)
+      allow(Notifications::Publish).to receive(:call)
     end
 
     it "pauses the agent run on loop detection" do
@@ -23,6 +24,15 @@ RSpec.describe Guardrails::ViolationHandler do
       expect(agent_run.guardrail_violation_type).to eq("loop_detected")
       expect(agent_run.paused_at).to be_present
       expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
+      expect(Notifications::Publish).to have_received(:call).with(
+        hash_including(
+          account: agent_run.project.account,
+          source: "guardrail_loop_detected",
+          subject: agent_run,
+          severity: :error,
+          nav_section: "agent_runs"
+        )
+      )
     end
 
     it "pauses the agent run on token limit violation" do
@@ -175,6 +185,7 @@ RSpec.describe Guardrails::ViolationHandler do
       expect(result.paused?).to be true
       expect(result.violation_type).to eq("loop_detected")
       expect(agent_run.reload.guardrail_violation_type).to eq("loop_detected")
+      expect(Notifications::Publish).not_to have_received(:call)
     end
 
     it "raises on unknown violation type" do
