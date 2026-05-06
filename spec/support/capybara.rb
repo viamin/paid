@@ -38,8 +38,8 @@ Capybara.server_host = "127.0.0.1"
 Capybara.default_max_wait_time = 5
 
 RSpec.configure do |config|
-  config.before(:each, type: :system) do
-    driven_by SYSTEM_DRIVER
+  config.before(:each, type: :system) do |example|
+    driven_by example.metadata.fetch(:system_driver, SYSTEM_DRIVER)
   end
 
   # System specs drive a real browser, so CSRF must actually be enforced.
