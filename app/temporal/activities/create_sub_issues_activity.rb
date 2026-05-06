@@ -183,6 +183,12 @@ module Activities
         issue_number: gh_issue.number,
         error: e.message
       )
+      raise Temporalio::Error::ApplicationError.new(
+        "Failed to sync orchestration sub-issue ##{gh_issue.number} locally: #{e.message}",
+        type: "SubIssueSyncFailed",
+        non_retryable: true
+      ) if creation_mode == ORCHESTRATION_MODE
+
       nil
     end
 

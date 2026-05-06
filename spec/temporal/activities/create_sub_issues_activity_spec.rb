@@ -325,6 +325,33 @@ RSpec.describe Activities::CreateSubIssuesActivity do
         expect(result[:created_issues].size).to eq(2)
         expect(result[:created_issues].map { |i| i[:issue_id] }).to all(be_nil)
       end
+
+      it "fails fast for orchestration-owned sub-issues" do
+        parent_issue # ensure created before stubbing
+
+        allow(Project).to receive(:find).with(project.id).and_return(project)
+        issues_relation = project.issues
+        allow(project).to receive(:issues).and_return(issues_relation)
+
+        bad_issue = Issue.new
+        allow(bad_issue).to receive(:update!).and_raise(StandardError, "DB error")
+        allow(issues_relation).to receive(:find_or_initialize_by).and_return(bad_issue)
+
+        expect(github_client).to receive(:create_issue).once.and_return(
+          gh_issue_response(number: 101, id: 200_001, title: "Implement authentication", body: "body1")
+        )
+
+        expect {
+          activity.execute(
+            project_id: project.id,
+            parent_issue_id: parent_issue.id,
+            creation_mode: described_class::ORCHESTRATION_MODE,
+            sub_tasks: sub_tasks
+          )
+        }.to raise_error(Temporalio::Error::ApplicationError, /Failed to sync orchestration sub-issue #101 locally: DB error/) { |e|
+          expect(e.non_retryable).to be true
+        }
+      end
     end
   end
 end
