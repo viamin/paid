@@ -35,6 +35,26 @@ RSpec.describe "TenantEnforcement" do
       post projects_path, params: { project: { name: "test" } }
       expect(flash[:alert]).to match(/suspended/i)
     end
+
+    it "returns forbidden json for JSON mutations" do
+      post chat_sessions_path(format: :json), params: { mode: "api", title: "Blocked chat" }
+
+      expect(response).to have_http_status(:forbidden)
+      expect(response.parsed_body).to eq("error" => "This account is suspended. Write operations are disabled.")
+    end
+
+    it "returns forbidden SSE for streaming mutations" do
+      chat_session = create(:chat_session, account: account, created_by: user)
+
+      post chat_session_chat_messages_path(chat_session),
+        params: { content: "Hello" },
+        headers: { "Accept" => "text/event-stream" }
+
+      expect(response).to have_http_status(:forbidden)
+      expect(response.media_type).to eq("text/event-stream")
+      expect(response.body).to include("event: error")
+      expect(response.body).to include("suspended")
+    end
   end
 
   describe "deactivated account" do
@@ -56,6 +76,13 @@ RSpec.describe "TenantEnforcement" do
     it "sets a deactivation alert" do
       get root_path
       expect(flash[:alert]).to match(/deactivated/i)
+    end
+
+    it "returns forbidden json for JSON requests" do
+      get chat_sessions_path(format: :json)
+
+      expect(response).to have_http_status(:forbidden)
+      expect(response.parsed_body).to eq("error" => "This account has been deactivated. Please contact support.")
     end
   end
 end

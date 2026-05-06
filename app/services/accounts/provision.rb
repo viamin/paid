@@ -18,33 +18,6 @@ module Accounts
       end
     end
 
-    PLAN_DEFAULTS = {
-      "trial" => {
-        max_concurrent_runs: 2,
-        max_projects: 3,
-        max_users: 5,
-        max_tokens_per_run: 5_000_000
-      },
-      "free" => {
-        max_concurrent_runs: 3,
-        max_projects: 5,
-        max_users: 10,
-        max_tokens_per_run: 5_000_000
-      },
-      "professional" => {
-        max_concurrent_runs: 10,
-        max_projects: 50,
-        max_users: 25,
-        max_tokens_per_run: 10_000_000
-      },
-      "enterprise" => {
-        max_concurrent_runs: 100,
-        max_projects: 1000,
-        max_users: 500,
-        max_tokens_per_run: 2_147_483_647
-      }
-    }.freeze
-
     BILLING_PLAN_TEMPLATES = {
       "trial" => { name: "Trial", billing_model: "flat_rate", base_rate_cents: 0, period_type: "monthly" },
       "free" => { name: "Free", billing_model: "flat_rate", base_rate_cents: 0, period_type: "monthly" },
@@ -86,8 +59,7 @@ module Accounts
     end
 
     def create_tenant_setting(account)
-      defaults = PLAN_DEFAULTS.fetch(plan, PLAN_DEFAULTS["trial"])
-      account.create_tenant_setting!(defaults)
+      account.create_tenant_setting!(TenantSetting.defaults_for_plan(plan))
     end
 
     def create_billing_plan(account)
