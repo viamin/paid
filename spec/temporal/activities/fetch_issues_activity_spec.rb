@@ -11,7 +11,7 @@ RSpec.describe Activities::FetchIssuesActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive_messages(issue_comments: [], "rate_limit_remaining!": 100)
+    allow(github_client).to receive_messages(issue_comments: [], recent_issue_comments: [], "rate_limit_remaining!": 100)
     allow(github_client).to receive(:pull_requests).and_return([])
     allow(github_client).to receive(:add_comment)
   end
@@ -36,6 +36,20 @@ RSpec.describe Activities::FetchIssuesActivity do
       user: OpenStruct.new(login: "viamin"),
       created_at: 2.days.ago,
       updated_at: 5.minutes.ago
+    )
+  end
+
+  def create_parsed_issue_with_external_dependency(project, issue_number:, depends_on_number:)
+    issue = create(:issue,
+      project: project,
+      github_number: issue_number,
+      github_updated_at: 1.hour.ago,
+      relationships_parsed_at: Time.current)
+
+    issue.issue_dependencies.create!(
+      depends_on_owner: project.owner.downcase,
+      depends_on_repo: project.repo.downcase,
+      depends_on_number: depends_on_number
     )
   end
 
@@ -826,7 +840,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         dep_200 = create(:issue, project: project, github_number: 200, github_state: "open")
         dep_999 = create(:issue, project: project, github_number: 999, github_state: "open")
 
-        allow(github_client).to receive(:issue_comments).and_return([
+        allow(github_client).to receive(:recent_issue_comments).and_return([
           OpenStruct.new(user: OpenStruct.new(login: "viamin"), body: "Depends on #100", created_at: 2.hours.ago),
           OpenStruct.new(user: OpenStruct.new(login: "attacker"), body: "Depends on #999", created_at: 1.hour.ago),
           OpenStruct.new(user: OpenStruct.new(login: "trusted-dev"), body: "Depends on #200", created_at: 30.minutes.ago)
@@ -844,7 +858,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         create(:issue, project: project, github_number: 50, github_state: "open")
         github_issue.body = "Depends on #50"
 
-        allow(github_client).to receive(:issue_comments)
+        allow(github_client).to receive(:recent_issue_comments)
           .and_raise(GithubClient::Error.new("API error"))
 
         activity.execute(project_id: project.id)
@@ -857,7 +871,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         create(:issue, project: project, github_number: 50, github_state: "open")
         github_issue.body = "Depends on #50"
 
-        allow(github_client).to receive(:issue_comments)
+        allow(github_client).to receive(:recent_issue_comments)
           .and_raise(GithubClient::RateLimitError.new(Time.current + 3600))
 
         expect {
@@ -918,12 +932,12 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       it "fetches comments only for issues with changed github_updated_at" do
-        allow(github_client).to receive(:issue_comments).and_return([])
+        allow(github_client).to receive(:recent_issue_comments).and_return([])
 
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:issue_comments).with(project.full_name, 80).once
-        expect(github_client).not_to have_received(:issue_comments).with(project.full_name, 81)
+        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 80, pages: 2).once
+        expect(github_client).not_to have_received(:recent_issue_comments).with(project.full_name, 81, pages: 2)
       end
 
       it "fetches comments for new issues that have no previous github_updated_at" do
@@ -940,23 +954,23 @@ RSpec.describe Activities::FetchIssuesActivity do
           updated_at: Time.current
         )
         stub_issues_by_label(nil => [ changed_issue, unchanged_issue, new_issue ])
-        allow(github_client).to receive(:issue_comments).and_return([])
+        allow(github_client).to receive(:recent_issue_comments).and_return([])
 
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:issue_comments).with(project.full_name, 80).once
-        expect(github_client).to have_received(:issue_comments).with(project.full_name, 82).once
-        expect(github_client).not_to have_received(:issue_comments).with(project.full_name, 81)
+        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 80, pages: 2).once
+        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 82, pages: 2).once
+        expect(github_client).not_to have_received(:recent_issue_comments).with(project.full_name, 81, pages: 2)
       end
 
       it "fetches comments for all issues on first sync when no previous data exists" do
         Issue.where(project: project).destroy_all
-        allow(github_client).to receive(:issue_comments).and_return([])
+        allow(github_client).to receive(:recent_issue_comments).and_return([])
 
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:issue_comments).with(project.full_name, 80).once
-        expect(github_client).to have_received(:issue_comments).with(project.full_name, 81).once
+        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 80, pages: 2).once
+        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 81, pages: 2).once
       end
     end
 
@@ -976,7 +990,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       it "retries parsing on the next sync even though github_updated_at is unchanged" do
-        allow(github_client).to receive(:issue_comments).with(project.full_name, 85)
+        allow(github_client).to receive(:recent_issue_comments).with(project.full_name, 85, pages: 2)
           .and_raise(GithubClient::Error.new("API error"))
 
         activity.execute(project_id: project.id)
@@ -985,10 +999,10 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(issue.relationships_parsed_at).to be_nil
 
         # Second sync — github_updated_at has NOT changed, but the fetch now succeeds
-        allow(github_client).to receive(:issue_comments).with(project.full_name, 85).and_return([])
+        allow(github_client).to receive(:recent_issue_comments).with(project.full_name, 85, pages: 2).and_return([])
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:issue_comments).with(project.full_name, 85).twice
+        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 85, pages: 2).twice
         expect(issue.reload.relationships_parsed_at).to be_present
       end
     end
@@ -1006,18 +1020,77 @@ RSpec.describe Activities::FetchIssuesActivity do
 
       before do
         stub_issues_by_label(nil => [ parsed_issue ])
-        allow(github_client).to receive(:issue_comments).and_return([])
+        allow(github_client).to receive(:recent_issue_comments).and_return([])
       end
 
       it "re-parses issue relationships after allowed_github_usernames changes" do
         activity.execute(project_id: project.id)
-        expect(github_client).to have_received(:issue_comments).with(project.full_name, 86).once
+        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 86, pages: 2).once
 
         project.update!(allowed_github_usernames: %w[viamin another-trusted])
 
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:issue_comments).with(project.full_name, 86).twice
+        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 86, pages: 2).twice
+      end
+    end
+
+    context "when the relationship parse backlog exceeds the per-cycle cap" do
+      let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, allowed_github_usernames: [ "viamin" ]) }
+      let(:github_issue) do
+        OpenStruct.new(
+          id: 8701,
+          number: 87,
+          title: "Fresh issue",
+          body: "Body",
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago,
+          updated_at: 1.hour.ago
+        )
+      end
+
+      before do
+        create(:issue,
+          project: project, github_issue_id: 8702, github_number: 88,
+          github_state: "open", github_updated_at: 3.hours.ago, relationships_parsed_at: nil)
+        create(:issue,
+          project: project, github_issue_id: 8703, github_number: 89,
+          github_state: "open", github_updated_at: 2.hours.ago, relationships_parsed_at: nil)
+
+        stub_issues_by_label(nil => [ github_issue ])
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:fetch)
+          .with("FETCH_ISSUES_RELATIONSHIP_PARSE_ISSUE_LIMIT", anything)
+          .and_return("2")
+        allow(Rails.logger).to receive(:info)
+      end
+
+      it "logs deferred work and picks it up on a later cycle" do
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 88, pages: 2).once
+        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 89, pages: 2).once
+        expect(github_client).not_to have_received(:recent_issue_comments).with(project.full_name, 87, pages: 2)
+        expect(project.issues.find_by!(github_number: 87).relationships_parsed_at).to be_nil
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(
+            message: "github_sync.parse_issue_relationships",
+            candidate_issues: 3,
+            selected_issues: 2,
+            deferred_issues: 1,
+            issue_limit: 2
+          )
+        )
+
+        stub_issues_by_label(nil => [])
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 87, pages: 2).once
+        expect(project.issues.find_by!(github_number: 87).reload.relationships_parsed_at).to be_present
       end
     end
 
@@ -1082,7 +1155,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         parent_issue.body = "Just a regular body"
         child_issue.body = "Just a regular body"
 
-        allow(github_client).to receive(:issue_comments).with(project.full_name, 61).and_return([
+        allow(github_client).to receive(:recent_issue_comments).with(project.full_name, 61, pages: 2).and_return([
           OpenStruct.new(user: OpenStruct.new(login: "viamin"), body: "Part of #60", created_at: 1.hour.ago)
         ])
 
@@ -1206,10 +1279,9 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       it "promotes external dependencies after backfilling open pull requests" do
-        issue = create(:issue, project: project, github_number: 53)
-        dependency = issue.issue_dependencies.create!(
-          depends_on_owner: project.owner.downcase,
-          depends_on_repo: project.repo.downcase,
+        dependency = create_parsed_issue_with_external_dependency(
+          project,
+          issue_number: 53,
           depends_on_number: 52
         )
 
