@@ -231,6 +231,22 @@ RSpec.describe Screenshots::ConfigParser do
       }.to raise_error(Screenshots::ConfigError, /viewport\.width must be a positive integer/)
     end
 
+    it "wraps Psych::DisallowedClass in ConfigError for YAML symbols" do
+      write_config(repo_dir, <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+        seed:
+          - model: User
+            factory: :admin
+            key: user
+      YAML
+
+      expect {
+        described_class.from_repo_path(repo_dir, project: project)
+      }.to raise_error(Screenshots::ConfigError, /unsupported YAML types/)
+    end
+
     it "rejects malformed glob patterns" do
       write_config(repo_dir, <<~YAML)
         routes:

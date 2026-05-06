@@ -88,6 +88,8 @@ module Screenshots
       end
 
       parsed.deep_stringify_keys
+    rescue Psych::DisallowedClass => e
+      raise ConfigError, "#{CONFIG_PATH} contains unsupported YAML types (e.g. symbols): #{e.message}"
     rescue Psych::SyntaxError => e
       raise ConfigError, "Invalid YAML in #{CONFIG_PATH}: #{e.message}"
     end

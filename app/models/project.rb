@@ -877,6 +877,40 @@ class Project < ApplicationRecord
     if normalized.key?("driver") && !Screenshots::Configuration::VALID_DRIVERS.include?(normalized["driver"])
       errors.add(:screenshot_settings, "driver must be one of: #{Screenshots::Configuration::VALID_DRIVERS.join(', ')}")
     end
+
+    validate_screenshot_settings_shape(normalized)
+  end
+
+  def validate_screenshot_settings_shape(normalized)
+    allowed_keys = Screenshots::ConfigParser::VALID_TOP_LEVEL_KEYS
+    extra_keys = normalized.keys - allowed_keys
+    if extra_keys.any?
+      errors.add(:screenshot_settings, "contains unknown keys: #{extra_keys.join(', ')}")
+    end
+
+    if normalized.key?("base_url") && !(normalized["base_url"].is_a?(String) && normalized["base_url"].present?)
+      errors.add(:screenshot_settings, "base_url must be a non-blank string")
+    end
+
+    if normalized.key?("viewport") && !normalized["viewport"].is_a?(Hash)
+      errors.add(:screenshot_settings, "viewport must be a JSON object with width and height")
+    end
+
+    if normalized.key?("auth") && !normalized["auth"].is_a?(Hash)
+      errors.add(:screenshot_settings, "auth must be a JSON object")
+    end
+
+    if normalized.key?("seed") && !normalized["seed"].is_a?(Array)
+      errors.add(:screenshot_settings, "seed must be an array")
+    end
+
+    if normalized.key?("setup") && !normalized["setup"].is_a?(Array)
+      errors.add(:screenshot_settings, "setup must be an array")
+    end
+
+    if normalized.key?("services") && !normalized["services"].is_a?(Array)
+      errors.add(:screenshot_settings, "services must be an array")
+    end
   end
 
   def validate_review_methods_config(normalized)

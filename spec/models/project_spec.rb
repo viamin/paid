@@ -981,6 +981,27 @@ RSpec.describe Project do
         expect(project.errors[:screenshot_settings].join).to include("driver must be one of: playwright, cuprite")
       end
 
+      it "rejects unknown screenshot_settings keys" do
+        project = build(:project, screenshot_settings: { "enabled" => true, "bogus" => 1 })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("unknown keys: bogus")
+      end
+
+      it "rejects invalid viewport in screenshot_settings" do
+        project = build(:project, screenshot_settings: { "viewport" => "bad" })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("viewport must be a JSON object")
+      end
+
+      it "rejects invalid base_url in screenshot_settings" do
+        project = build(:project, screenshot_settings: { "base_url" => 123 })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("base_url must be a non-blank string")
+      end
+
       it "rejects unknown review methods" do
         project = build(:project, review_settings: {
           "methods" => { "unknown_method" => { "enabled" => true } }
