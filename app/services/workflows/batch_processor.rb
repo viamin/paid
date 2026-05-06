@@ -80,7 +80,7 @@ module Workflows
       succeeded = 0
       errors = []
       records.each do |agent_run|
-        requeue_agent_run(agent_run)
+        next unless requeue_agent_run(agent_run)
         succeeded += 1
       rescue StandardError => e
         errors << { id: agent_run.id, error: e.message }
@@ -88,11 +88,11 @@ module Workflows
       { updated: succeeded, errors: errors }
     end
 
-    def transition_batch(records, &block)
+    def transition_batch(records)
       succeeded = 0
       errors = []
       records.each do |record|
-        block.call(record)
+        yield record
         succeeded += 1
       rescue StandardError => e
         errors << { id: record.id, error: e.message }

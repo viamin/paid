@@ -72,6 +72,19 @@ RSpec.describe Workflows::BatchProcessor do
       runs.each { |run| expect_requeued_run(run) }
     end
 
+    it "does not count finished runs as successfully requeued" do
+      finished_run = create(:agent_run, project: project, status: "completed",
+        started_at: 5.minutes.ago, completed_at: 1.minute.ago, duration_seconds: 240)
+      requeued_run = create(:agent_run, **stale_paused_attributes)
+      scope = AgentRun.where(id: [ finished_run.id, requeued_run.id ])
+
+      result = described_class.call(scope: scope, operation: :requeue)
+
+      expect(result[:processed]).to eq(1)
+      expect(finished_run.reload.status).to eq("completed")
+      expect_requeued_run(requeued_run)
+    end
+
     it "does not re-query loaded runs when requeuing a batch" do
       runs = create_list(:agent_run, 2, **stale_paused_attributes)
       scope = AgentRun.where(id: runs.map(&:id))
