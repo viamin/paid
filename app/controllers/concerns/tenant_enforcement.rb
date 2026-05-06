@@ -27,8 +27,9 @@ module TenantEnforcement
   def handle_deactivated_account
     message = "This account has been deactivated. Please contact support."
     terminate_deactivated_session
-    return render_json_tenant_block(message) if request.format.json?
-    return render_sse_tenant_block(message) if sse_request?
+    # Use 401 (not 403) — the account's credentials are revoked, not merely insufficient
+    return render json: { error: message }, status: :unauthorized if request.format.json?
+    return render_sse_tenant_block(message, status: :unauthorized) if sse_request?
 
     redirect_to new_user_session_path, alert: message
   end
@@ -60,9 +61,9 @@ module TenantEnforcement
     render json: { error: message }, status: :forbidden
   end
 
-  def render_sse_tenant_block(message)
+  def render_sse_tenant_block(message, status: :forbidden)
     response.headers["Content-Type"] = "text/event-stream"
-    render plain: %(event: error\ndata: #{ { error: message }.to_json }\n\n), status: :forbidden
+    render plain: %(event: error\ndata: #{ { error: message }.to_json }\n\n), status: status
   end
 
   def sse_request?
