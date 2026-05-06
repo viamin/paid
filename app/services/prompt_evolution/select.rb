@@ -111,7 +111,7 @@ module PromptEvolution
     # PromptVersions that are active and have enough samples to score.
     def eligible_candidates
       @eligible_candidates ||= begin
-        candidates = prompt.prompt_versions.active.includes(:quality_metrics).to_a
+        candidates = prompt.prompt_versions.active.includes(agent_runs: :quality_metrics).to_a
         candidates.select { |v| sample_count(v) >= @min_samples }
       end
     end
@@ -121,10 +121,7 @@ module PromptEvolution
     end
 
     def fitness_samples(version)
-      version.agent_runs.filter_map do |run|
-        sample = fitness_sample_for(run)
-        sample if sample
-      end
+      version.agent_runs.filter_map { |run| fitness_sample_for(run) }
     end
 
     def fitness_sample_for(run)
