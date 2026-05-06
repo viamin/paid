@@ -78,10 +78,10 @@ RSpec.describe "TenantEnforcement" do
       expect(flash[:alert]).to match(/deactivated/i)
     end
 
-    it "returns forbidden json for JSON requests" do
-      get chat_sessions_path(format: :json)
+    it "returns a deactivation error for JSON requests" do
+      get chat_sessions_path(format: :json), headers: { "Accept" => "application/json" }
 
-      expect(response).to have_http_status(:forbidden)
+      expect(response).to have_http_status(:unauthorized)
       expect(response.parsed_body).to eq("error" => "This account has been deactivated. Please contact support.")
     end
   end

@@ -25,8 +25,8 @@ module TenantEnforcement
   end
 
   def handle_deactivated_account
-    sign_out(current_user) if respond_to?(:sign_out)
     message = "This account has been deactivated. Please contact support."
+    terminate_deactivated_session
     return render_json_tenant_block(message) if request.format.json?
     return render_sse_tenant_block(message) if sse_request?
 
@@ -67,6 +67,16 @@ module TenantEnforcement
 
   def sse_request?
     request.format == Mime[:event_stream] || request.headers["Accept"]&.include?("text/event-stream")
+  end
+
+  def terminate_deactivated_session
+    return unless current_user
+
+    if request.format.json? || sse_request?
+      reset_session
+    elsif respond_to?(:sign_out)
+      sign_out(current_user)
+    end
   end
 
   def skip_tenant_enforcement?
