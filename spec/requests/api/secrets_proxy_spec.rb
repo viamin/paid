@@ -354,7 +354,8 @@ RSpec.describe "Api::SecretsProxy" do
     end
 
     it "uses the knowledge run owner's configured provider key when a knowledge provider header is present" do
-      api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "openrouter", api_key: "sk-openrouter")
+      create(:provider_api_key, user: project.effective_owner, api_service_type: "openrouter", api_key: "sk-openrouter-old")
+      latest_api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "openrouter", api_key: "sk-openrouter-new")
       knowledge_run.update!(provider_attempts: [ { "provider" => "openrouter", "attempted_at" => Time.current.iso8601 } ])
 
       openrouter_url = "https://openrouter.ai/api/v1/chat/completions"
@@ -367,7 +368,7 @@ RSpec.describe "Api::SecretsProxy" do
 
       expect(response).to have_http_status(:ok)
       expect(WebMock).to have_requested(:post, openrouter_url)
-        .with(headers: { "Authorization" => "Bearer #{api_key.api_key}" })
+        .with(headers: { "Authorization" => "Bearer #{latest_api_key.api_key}" })
     end
 
     it "preserves provider-specific versioned paths for OpenAI-compatible providers" do

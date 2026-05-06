@@ -272,7 +272,8 @@ module Api
         &.provider_api_keys
         &.for_api_service_type(service_type)
         &.order(created_at: :desc, id: :desc)
-        &.pick(:api_key)
+        &.first
+        &.api_key
     end
 
     def available_provider_entries(provider_entries)
