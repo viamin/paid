@@ -101,12 +101,24 @@ module Workflows
     end
 
     def requeue_agent_run(agent_run)
-      agent_run.with_lock do
-        agent_run.reload
+      old_resources = {}
+
+      requeued = agent_run.with_lock do
         next false if agent_run.finished?
 
+        old_resources = captured_resources(agent_run)
+        unless cancel_temporal_workflow(agent_run, agent_run.temporal_workflow_id)
+          raise "Failed to cancel Temporal workflow before requeue"
+        end
+
         agent_run.update!(requeue_attributes(agent_run))
+        true
       end
+
+      return false unless requeued
+
+      cleanup_resources(agent_run, old_resources)
+      true
     end
 
     def requeue_attributes(agent_run)
@@ -127,6 +139,71 @@ module Workflows
         container_id: nil,
         service_container_ids: []
       }
+    end
+
+    def captured_resources(agent_run)
+      {
+        container_id: agent_run.container_id,
+        service_container_ids: agent_run.service_container_ids.dup,
+        service_environment: agent_run.service_environment&.dup,
+        stale_requeue_count: agent_run.stale_requeue_count
+      }
+    end
+
+    def cancel_temporal_workflow(agent_run, workflow_id)
+      return true if workflow_id.blank?
+      return true if workflow_id == AgentRun::CLAIMED_SENTINEL
+
+      handle = Paid.temporal_client.workflow_handle(workflow_id)
+      handle.cancel
+      true
+    rescue Temporalio::Error::RPCError => e
+      raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
+
+      Rails.logger.info(
+        message: "workflows.batch_processor.cancel_workflow_not_found",
+        agent_run_id: agent_run.id,
+        temporal_workflow_id: workflow_id
+      )
+      true
+    rescue => e
+      Rails.logger.warn(
+        message: "workflows.batch_processor.cancel_workflow_failed",
+        agent_run_id: agent_run.id,
+        temporal_workflow_id: workflow_id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      false
+    end
+
+    def cleanup_resources(agent_run, old_resources)
+      cleanup_container(agent_run, old_resources[:container_id])
+      cleanup_service_containers(agent_run, old_resources)
+    end
+
+    def cleanup_container(agent_run, old_container_id)
+      return if old_container_id.blank?
+
+      AgentRun.where(id: agent_run.id, container_id: old_container_id).update_all(container_id: nil)
+
+      service = Containers::Provision.reconnect(
+        agent_run: agent_run,
+        container_id: old_container_id,
+        worktree_path: agent_run.worktree_path
+      )
+      service.cleanup(force: true)
+    end
+
+    def cleanup_service_containers(agent_run, old_resources)
+      service_container_ids = old_resources[:service_container_ids]
+      service_environment = old_resources[:service_environment]
+      return if service_container_ids.blank?
+
+      agent_run.service_container_ids = service_container_ids
+      agent_run.service_environment = service_environment if service_environment.present?
+      Containers::ServiceProvisioner.new.cleanup(agent_run,
+        stale_requeue_count: old_resources[:stale_requeue_count])
     end
 
     def log_summary(processed, errors)

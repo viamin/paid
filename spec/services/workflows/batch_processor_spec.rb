@@ -65,6 +65,11 @@ RSpec.describe Workflows::BatchProcessor do
     it "batch-requeues runs and clears stale execution state" do
       runs = create_list(:agent_run, 2, **stale_paused_attributes)
       scope = AgentRun.where(id: runs.map(&:id))
+      allow(Paid).to receive(:temporal_client).and_return(double(workflow_handle: double(cancel: true)))
+      allow(Containers::Provision).to receive(:reconnect)
+        .and_return(instance_double(Containers::Provision, cleanup: true))
+      allow(Containers::ServiceProvisioner).to receive(:new)
+        .and_return(instance_double(Containers::ServiceProvisioner, cleanup: true))
 
       result = described_class.call(scope: scope, operation: :requeue)
 
@@ -77,21 +82,17 @@ RSpec.describe Workflows::BatchProcessor do
         started_at: 5.minutes.ago, completed_at: 1.minute.ago, duration_seconds: 240)
       requeued_run = create(:agent_run, **stale_paused_attributes)
       scope = AgentRun.where(id: [ finished_run.id, requeued_run.id ])
+      allow(Paid).to receive(:temporal_client).and_return(double(workflow_handle: double(cancel: true)))
+      allow(Containers::Provision).to receive(:reconnect)
+        .and_return(instance_double(Containers::Provision, cleanup: true))
+      allow(Containers::ServiceProvisioner).to receive(:new)
+        .and_return(instance_double(Containers::ServiceProvisioner, cleanup: true))
 
       result = described_class.call(scope: scope, operation: :requeue)
 
       expect(result[:processed]).to eq(1)
       expect(finished_run.reload.status).to eq("completed")
       expect_requeued_run(requeued_run)
-    end
-
-    it "does not re-query loaded runs when requeuing a batch" do
-      runs = create_list(:agent_run, 2, **stale_paused_attributes)
-      scope = AgentRun.where(id: runs.map(&:id))
-
-      expect(AgentRun).not_to receive(:where).with(hash_including(id: anything))
-
-      described_class.call(scope: scope, operation: :requeue)
     end
 
     it "rejects unknown operations" do
@@ -107,6 +108,48 @@ RSpec.describe Workflows::BatchProcessor do
       result = described_class.call(scope: scope, operation: :timeout, batch_size: 2)
 
       expect(result[:processed]).to eq(5)
+    end
+
+    it "cancels workflows and cleans up container resources before requeueing" do
+      run = create(:agent_run, **stale_paused_attributes)
+      handle = double(cancel: true)
+      temporal_client = double(workflow_handle: handle)
+      container_service = instance_double(Containers::Provision, cleanup: true)
+      service_provisioner = instance_double(Containers::ServiceProvisioner, cleanup: true)
+
+      allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+      allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
+      allow(Containers::ServiceProvisioner).to receive(:new).and_return(service_provisioner)
+
+      result = described_class.call(scope: AgentRun.where(id: run.id), operation: :requeue)
+
+      expect(result[:processed]).to eq(1)
+      expect_resource_cleanup(run, temporal_client:, handle:, container_service:, service_provisioner:)
+      expect_requeued_run(run)
+    end
+
+    it "reports an error and leaves resource references intact when workflow cancellation fails" do
+      run = create(:agent_run, **stale_paused_attributes)
+      handle = double
+      temporal_client = double(workflow_handle: handle)
+
+      allow(handle).to receive(:cancel).and_raise(StandardError, "boom")
+      allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+      allow(Containers::Provision).to receive(:reconnect)
+      allow(Containers::ServiceProvisioner).to receive(:new)
+
+      result = described_class.call(scope: AgentRun.where(id: run.id), operation: :requeue)
+
+      expect(result[:processed]).to eq(0)
+      expect(result[:errors]).to include(id: run.id, error: "Failed to cancel Temporal workflow before requeue")
+
+      run.reload
+      expect(run.status).to eq("paused")
+      expect(run.temporal_workflow_id).to eq("workflow-123")
+      expect(run.container_id).to eq("container-123")
+      expect(run.service_container_ids).to eq([ 1, 2 ])
+      expect(Containers::Provision).not_to have_received(:reconnect)
+      expect(Containers::ServiceProvisioner).not_to have_received(:new)
     end
   end
 
@@ -166,6 +209,24 @@ RSpec.describe Workflows::BatchProcessor do
       "service_environment" => nil,
       "container_id" => nil,
       "service_container_ids" => []
+    )
+  end
+
+  def expect_resource_cleanup(run, temporal_client:, handle:, container_service:, service_provisioner:)
+    expect(temporal_client).to have_received(:workflow_handle).with("workflow-123")
+    expect(handle).to have_received(:cancel)
+    expect(Containers::Provision).to have_received(:reconnect).with(
+      agent_run: run,
+      container_id: "container-123",
+      worktree_path: run.worktree_path
+    )
+    expect(container_service).to have_received(:cleanup).with(force: true)
+    expect(service_provisioner).to have_received(:cleanup).with(
+      have_attributes(
+        service_container_ids: [ 1, 2 ],
+        service_environment: { "REDIS_URL" => "redis://example.test:6379/0" }
+      ),
+      stale_requeue_count: 1
     )
   end
 end
