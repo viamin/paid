@@ -2,6 +2,7 @@
 
 module Dashboard
   class Stats
+    CACHE_TTL = 45.seconds
     DAILY_RUN_CHART_WINDOW_DAYS = 30
     DAILY_RUN_CHART_STATUSES = %w[failed completed].freeze
     PHASE_BREAKDOWN_WINDOW = 30.days
@@ -41,13 +42,17 @@ module Dashboard
     end
 
     def call
-      sections = only_sections || SECTIONS
+      Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { build_stats }
+    end
+
+    private
+
+    def build_stats
+      sections = requested_sections
       sections.each_with_object({}) do |section, result|
         result[section] = send(section)
       end
     end
-
-    private
 
     def effective_provider_sql
       AgentRun.effective_provider_sql
@@ -59,6 +64,21 @@ module Dashboard
 
     def normalized_final_provider_sql
       AgentRun.normalize_provider_sql("final_provider")
+    end
+
+    def cache_key
+      [
+        "dashboard/stats",
+        account.id,
+        time_range,
+        status_filter,
+        goal_filter,
+        requested_sections.join("-")
+      ].join("/")
+    end
+
+    def requested_sections
+      @requested_sections ||= Array(only_sections).presence || SECTIONS
     end
 
     def agent_runs
@@ -180,29 +200,11 @@ module Dashboard
     end
 
     def phase_breakdown
-      completed_runs = recent_completed_runs_for_phase_breakdown
-      return empty_phase_breakdown if completed_runs.empty?
+      rows = ActiveRecord::Base.connection.select_all(phase_breakdown_sql).to_a
+      return empty_phase_breakdown if rows.empty?
 
-      values_by_group = Hash.new { |hash, key| hash[key] = [] }
-
-      completed_runs.each do |run|
-        phases = run.agent_run_phases.to_a
-        next if phases.empty?
-
-        summary = run.phase_summary(phases: phases)
-        values_by_group["queue"] << summary[:queue_seconds]
-
-        phase_durations_by_group(phases).each do |phase_group, duration_seconds|
-          values_by_group[phase_group] << duration_seconds
-        end
-      end
-
-      return empty_phase_breakdown if values_by_group.empty?
-
-      phase_breakdown_groups.index_with do |phase_group|
-        values = values_by_group.fetch(phase_group, [])
-        summarize_phase_values(values)
-      end
+      rows_by_group = rows.index_by { |row| row.fetch("phase_group") }
+      phase_breakdown_groups.index_with { |phase_group| phase_breakdown_summary(rows_by_group[phase_group]) }
     end
 
     def recent_completed_runs_for_phase_breakdown
@@ -211,8 +213,40 @@ module Dashboard
       time_filtered_runs.where(status: "completed", created_at: (now - PHASE_BREAKDOWN_WINDOW)..now)
         .order(created_at: :desc)
         .limit(PHASE_BREAKDOWN_RUN_LIMIT)
-        .includes(:agent_run_phases)
-        .to_a
+    end
+
+    def phase_breakdown_sql
+      selected_runs_sql = recent_completed_runs_for_phase_breakdown.select(:id, :created_at).to_sql
+
+      <<~SQL.squish
+        WITH selected_runs AS (
+          #{selected_runs_sql}
+        ),
+        runs_with_phases AS (
+          SELECT selected_runs.id,
+                 GREATEST(EXTRACT(EPOCH FROM (MIN(agent_run_phases.started_at) - selected_runs.created_at)), 0) AS queue_seconds
+          FROM selected_runs
+          INNER JOIN agent_run_phases ON agent_run_phases.agent_run_id = selected_runs.id
+          GROUP BY selected_runs.id, selected_runs.created_at
+        ),
+        phase_samples AS (
+          SELECT 'queue' AS phase_group, queue_seconds::numeric AS duration_seconds
+          FROM runs_with_phases
+          UNION ALL
+          SELECT agent_run_phases.phase_group, SUM(agent_run_phases.duration_seconds)::numeric AS duration_seconds
+          FROM selected_runs
+          INNER JOIN agent_run_phases ON agent_run_phases.agent_run_id = selected_runs.id
+          GROUP BY selected_runs.id, agent_run_phases.phase_group
+        )
+        SELECT phase_group,
+               ROUND(AVG(duration_seconds))::integer AS avg_seconds,
+               ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_seconds))::integer AS p50_seconds,
+               ROUND(percentile_cont(0.75) WITHIN GROUP (ORDER BY duration_seconds))::integer AS p75_seconds,
+               ROUND(percentile_cont(0.9) WITHIN GROUP (ORDER BY duration_seconds))::integer AS p90_seconds,
+               COUNT(*)::integer AS sample_size
+        FROM phase_samples
+        GROUP BY phase_group
+      SQL
     end
 
     def performance_by_outcome
@@ -353,25 +387,37 @@ module Dashboard
     end
 
     def provider_fallback_stats
-      total = time_filtered_runs.count
-      table = AgentRun.arel_table
-      switches = table[:provider_switches].gt(0)
-      provider_changed = table[:final_provider].not_eq(nil)
-        .and(table[:final_provider].not_eq(""))
-        .and(Arel.sql(normalized_final_provider_sql).not_eq(Arel.sql(normalized_agent_type_sql)))
-      fallback_runs = time_filtered_runs.where(switches.or(provider_changed))
-      fallback_count = fallback_runs.count
+      rows = time_filtered_runs
+        .group(:agent_type, Arel.sql(effective_provider_sql))
+        .pluck(
+          :agent_type,
+          Arel.sql(effective_provider_sql),
+          Arel.sql("COUNT(*)"),
+          Arel.sql(fallback_count_sql)
+        )
+
+      total = 0
+      fallback_count = 0
+      fallback_by_requested = Hash.new(0)
+      fallback_by_effective = Hash.new(0)
+
+      rows.each do |requested_provider, effective_provider, run_count, fallback_run_count|
+        run_count = run_count.to_i
+        fallback_run_count = fallback_run_count.to_i
+        total += run_count
+        fallback_count += fallback_run_count
+        next if fallback_run_count.zero?
+
+        fallback_by_requested[requested_provider] += fallback_run_count
+        fallback_by_effective[effective_provider] += fallback_run_count
+      end
 
       {
         total_runs: total,
         fallback_count: fallback_count,
         fallback_rate: total.zero? ? 0.0 : (fallback_count.to_f / total * 100).round(1),
-        by_requested_provider: fallback_runs.group(:agent_type).count.sort_by { |_, v| -v },
-        by_effective_provider: counts_by_provider_label(
-          fallback_runs
-            .group(Arel.sql(effective_provider_sql))
-            .count
-        )
+        by_requested_provider: fallback_by_requested.sort_by { |_, v| -v },
+        by_effective_provider: counts_by_provider_label(fallback_by_effective)
       }
     end
 
@@ -426,19 +472,11 @@ module Dashboard
     end
 
     def empty_phase_breakdown
-      phase_breakdown_groups.index_with do
-        summarize_phase_values([])
-      end
+      phase_breakdown_groups.index_with { summarize_phase_values([]) }
     end
 
     def phase_breakdown_groups
       %w[queue setup prompt agent post cleanup]
-    end
-
-    def phase_durations_by_group(phases)
-      phases.group_by(&:phase_group).transform_values do |entries|
-        entries.sum(&:duration_seconds)
-      end
     end
 
     def summarize_phase_values(values)
@@ -462,6 +500,18 @@ module Dashboard
       upper = sorted_values[rank.ceil]
       interpolated = lower + ((upper - lower) * (rank - rank.floor))
       interpolated.round
+    end
+
+    def phase_breakdown_summary(row)
+      return summarize_phase_values([]) if row.nil?
+
+      {
+        avg_seconds: row.fetch("avg_seconds", 0).to_i,
+        p50_seconds: row.fetch("p50_seconds", 0).to_i,
+        p75_seconds: row.fetch("p75_seconds", 0).to_i,
+        p90_seconds: row.fetch("p90_seconds", 0).to_i,
+        sample_size: row.fetch("sample_size", 0).to_i
+      }
     end
 
     def merged_pr_aggregate
@@ -510,6 +560,16 @@ module Dashboard
         start_time,
         end_time
       ])
+    end
+
+    def fallback_count_sql
+      [
+        "COUNT(*) FILTER (WHERE agent_runs.provider_switches > 0 OR (",
+        "agent_runs.final_provider IS NOT NULL",
+        "AND agent_runs.final_provider <> ''",
+        "AND", normalized_final_provider_sql, "<>", normalized_agent_type_sql,
+        "))"
+      ].join(" ")
     end
 
     def counts_by_provider_label(counts_by_identifier)

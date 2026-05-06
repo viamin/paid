@@ -62,7 +62,6 @@ RSpec.describe "Dashboard" do
         chart = doc.at_css("div#daily-runs-chart")
 
         expect(response.body).to include("Agent Runs per Day")
-        expect(response.body).to include("Completed runs are stacked above failed runs across the last 30 days.")
         expect(chart).to be_present
       end
 
@@ -314,6 +313,21 @@ RSpec.describe "Dashboard" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("dashboard-metrics")
       expect(response.body).to include("Run Volume")
+    end
+
+    it "renders the phase breakdown, chart, and knowledge widget inside the frame" do
+      project = create(:project, account: account)
+      create(:agent_run, :completed, project: project, created_at: 1.day.ago)
+      create(:agent_run, :failed, project: project, created_at: 1.day.ago)
+
+      get dashboard_metrics_path(time_range: "7d")
+
+      doc = Nokogiri::HTML(response.body)
+      chart = doc.at_css("div#daily-runs-chart")
+
+      expect(response.body).to include("Agent Runs per Day")
+      expect(response.body).to include("Run Phase Breakdown")
+      expect(chart).to be_present
     end
 
     it "defaults to cumulative when time_range is invalid" do

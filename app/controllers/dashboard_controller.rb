@@ -30,7 +30,8 @@ class DashboardController < ApplicationController
       time_range: @time_range,
       only: Dashboard::Stats::METRICS_SECTIONS
     )
-    render partial: "dashboard/metrics", locals: { stats: @stats, account: current_account, time_range: @time_range }
+    render partial: "dashboard/metrics",
+      locals: { stats: @stats, account: current_account, time_range: @time_range }
   end
 
   def performance
