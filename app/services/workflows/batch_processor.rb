@@ -52,23 +52,16 @@ module Workflows
     end
 
     def process_batch(batch)
-      updated = 0
-      errors = []
-
       case operation
       when :timeout
-        updated = batch_timeout(batch)
+        batch_timeout(batch)
       when :complete
-        updated = batch_complete(batch)
+        batch_complete(batch)
       when :fail
-        updated = batch_fail(batch)
+        batch_fail(batch)
       when :requeue
-        updated = batch_requeue(batch)
+        batch_requeue(batch)
       end
-
-      { updated: updated, errors: errors }
-    rescue StandardError => e
-      { updated: 0, errors: [ { batch_ids: batch.map(&:id), error: e.message } ] }
     end
 
     def batch_timeout(records)
@@ -84,13 +77,27 @@ module Workflows
     end
 
     def batch_requeue(records)
-      records.count do |agent_run|
+      succeeded = 0
+      errors = []
+      records.each do |agent_run|
         requeue_agent_run(agent_run)
+        succeeded += 1
+      rescue StandardError => e
+        errors << { id: agent_run.id, error: e.message }
       end
+      { updated: succeeded, errors: errors }
     end
 
     def transition_batch(records, &block)
-      records.count(&block)
+      succeeded = 0
+      errors = []
+      records.each do |record|
+        block.call(record)
+        succeeded += 1
+      rescue StandardError => e
+        errors << { id: record.id, error: e.message }
+      end
+      { updated: succeeded, errors: errors }
     end
 
     def requeue_agent_run(agent_run)

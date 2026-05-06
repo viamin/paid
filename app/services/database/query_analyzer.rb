@@ -77,14 +77,16 @@ module Database
 
     def build_analysis
       queries = collector.queries
+      slow = slow_queries(queries)
+      n_plus_one = detect_n_plus_one(queries)
       {
         label: label,
         total_queries: queries.size,
         total_duration_ms: queries.sum { |q| q[:duration_ms] }.round(1),
-        slow_queries: slow_queries(queries),
-        n_plus_one_candidates: detect_n_plus_one(queries),
+        slow_queries: slow,
+        n_plus_one_candidates: n_plus_one,
         query_distribution: query_distribution(queries),
-        recommendations: build_recommendations(queries)
+        recommendations: build_recommendations(queries, slow_queries: slow, n_plus_one: n_plus_one)
       }
     end
 
@@ -113,13 +115,11 @@ module Database
              .transform_values(&:size)
     end
 
-    def build_recommendations(queries)
+    def build_recommendations(queries, slow_queries:, n_plus_one:)
       recs = []
 
-      slow = slow_queries(queries)
-      recs << "#{slow.size} slow queries detected (>#{SLOW_QUERY_MS}ms). Consider adding indexes." if slow.any?
+      recs << "#{slow_queries.size} slow queries detected (>#{SLOW_QUERY_MS}ms). Consider adding indexes." if slow_queries.any?
 
-      n_plus_one = detect_n_plus_one(queries)
       if n_plus_one.any?
         recs << "#{n_plus_one.size} potential N+1 query patterns detected. Consider using includes/preload."
       end
