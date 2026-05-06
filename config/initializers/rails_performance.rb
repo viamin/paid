@@ -9,9 +9,11 @@ if defined?(RailsPerformance)
     redis_client.ping
   rescue Redis::CannotConnectError, RedisClient::CannotConnectError, SocketError => error
     performance_enabled = false
+    parsed = URI.parse(redis_url)
     Rails.logger.warn(
       message: "rails_performance.disabled",
-      redis_url: redis_url,
+      redis_host: parsed.host,
+      redis_db: parsed.path,
       error_class: error.class.name,
       error_message: error.message
     )
