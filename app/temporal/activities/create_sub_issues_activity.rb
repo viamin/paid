@@ -22,18 +22,25 @@ module Activities
   #   Hash with :parent_issue_id, :created_issues (array of hashes with
   #   :github_number, :github_issue_id, :issue_id, :title)
   class CreateSubIssuesActivity < BaseActivity
+    STANDARD_MODE = "standard"
+    ORCHESTRATION_MODE = "orchestration"
+
     activity_name "CreateSubIssues"
 
     def execute(input)
       project = Project.find(input[:project_id])
       parent_issue = project.issues.find(input[:parent_issue_id])
       sub_tasks = validate_sub_tasks!(input[:sub_tasks])
+      creation_mode = validate_creation_mode!(input[:creation_mode])
 
       client = project.github_token.client
       created_issues = []
+      creation_order = topological_sort!(sub_tasks)
+      index_to_github_number = {}
 
       create_issues_with_partial_failure_guard(
-        sub_tasks, created_issues, client, project, parent_issue
+        sub_tasks, created_issues, client, project, parent_issue, creation_mode,
+        creation_order, index_to_github_number
       )
 
       {
@@ -44,13 +51,17 @@ module Activities
 
     private
 
-    def create_issues_with_partial_failure_guard(sub_tasks, created_issues, client, project, parent_issue)
-      sub_tasks.each_with_index do |task, index|
-        heartbeat("creating_sub_issue_#{index + 1}_of_#{sub_tasks.size}")
+    def create_issues_with_partial_failure_guard(
+      sub_tasks, created_issues, client, project, parent_issue, creation_mode,
+      creation_order, index_to_github_number
+    )
+      creation_order.each_with_index do |task_index, step|
+        task = sub_tasks[task_index]
+        heartbeat("creating_sub_issue_#{step + 1}_of_#{creation_order.size}")
 
         title = task[:title].to_s.truncate(Llm::GenerateIssueTitle::MAX_TITLE_LENGTH)
-        body = build_body(task[:body], parent_issue)
-        labels = build_labels(project)
+        body = build_body(task, parent_issue, creation_mode, index_to_github_number)
+        labels = build_labels(project, creation_mode)
 
         gh_issue = client.create_issue(
           project.full_name,
@@ -59,9 +70,11 @@ module Activities
           labels: labels
         )
 
-        issue = sync_issue_record(project, gh_issue, parent_issue)
+        index_to_github_number[task_index] = gh_issue.number
+        issue = sync_issue_record(project, gh_issue, parent_issue, creation_mode)
 
         created_issues << {
+          index: task_index,
           github_number: gh_issue.number,
           github_issue_id: gh_issue.id,
           issue_id: issue&.id,
@@ -105,22 +118,49 @@ module Activities
       sub_tasks
     end
 
-    def build_body(task_body, parent_issue)
+    def validate_creation_mode!(creation_mode)
+      mode = creation_mode.presence || STANDARD_MODE
+      return mode if [ STANDARD_MODE, ORCHESTRATION_MODE ].include?(mode)
+
+      raise Temporalio::Error::ApplicationError.new(
+        "creation_mode must be #{STANDARD_MODE.inspect} or #{ORCHESTRATION_MODE.inspect}",
+        type: "InvalidInput",
+        non_retryable: true
+      )
+    end
+
+    def build_body(task, parent_issue, creation_mode, index_to_github_number)
       parts = []
+      task_body = task[:body].presence || task[:description]
       parts << task_body.to_s.truncate(50_000) if task_body.present?
       parts << "---"
       parts << "Sub-issue of ##{parent_issue.github_number}"
+
+      if creation_mode == ORCHESTRATION_MODE
+        dependency_lines = Array(task[:dependencies]).filter_map do |dependency_index|
+          dependency_number = index_to_github_number[dependency_index]
+          "Depends on ##{dependency_number}" if dependency_number
+        end
+
+        if dependency_lines.any?
+          parts << "## Dependencies"
+          parts << dependency_lines.join("\n")
+        end
+      end
+
       parts.join("\n\n")
     end
 
-    def build_labels(project)
+    def build_labels(project, creation_mode)
       labels = []
-      labels << project.automation_label_name if project.automation_on_label_enabled?
+      if creation_mode != ORCHESTRATION_MODE && project.automation_on_label_enabled?
+        labels << project.automation_label_name
+      end
       labels << project.generated_label_name if project.auto_add_labels_enabled?
       labels
     end
 
-    def sync_issue_record(project, gh_issue, parent_issue)
+    def sync_issue_record(project, gh_issue, parent_issue, creation_mode)
       issue = project.issues.find_or_initialize_by(github_issue_id: gh_issue.id)
       issue.update!(
         github_number: gh_issue.number,
@@ -132,6 +172,7 @@ module Activities
         is_pull_request: false,
         github_created_at: gh_issue.created_at,
         github_updated_at: gh_issue.updated_at,
+        paid_state: paid_state_for(creation_mode),
         parent_issue: parent_issue
       )
       issue
@@ -142,7 +183,52 @@ module Activities
         issue_number: gh_issue.number,
         error: e.message
       )
+      raise Temporalio::Error::ApplicationError.new(
+        "Failed to sync orchestration sub-issue ##{gh_issue.number} locally: #{e.message}",
+        type: "SubIssueSyncFailed",
+        non_retryable: true
+      ) if creation_mode == ORCHESTRATION_MODE
+
       nil
+    end
+
+    def paid_state_for(creation_mode)
+      creation_mode == ORCHESTRATION_MODE ? "planning" : "new"
+    end
+
+    def topological_sort!(tasks)
+      task_count = tasks.size
+      in_degree = Array.new(task_count, 0)
+      adjacency = Array.new(task_count) { [] }
+
+      tasks.each_with_index do |task, task_index|
+        Array(task[:dependencies]).each do |dependency_index|
+          next unless dependency_index >= 0 && dependency_index < task_count
+
+          adjacency[dependency_index] << task_index
+          in_degree[task_index] += 1
+        end
+      end
+
+      queue = (0...task_count).select { |task_index| in_degree[task_index].zero? }
+      sorted = []
+
+      until queue.empty?
+        node = queue.shift
+        sorted << node
+        adjacency[node].each do |neighbor|
+          in_degree[neighbor] -= 1
+          queue << neighbor if in_degree[neighbor].zero?
+        end
+      end
+
+      return sorted if sorted.size == task_count
+
+      raise Temporalio::Error::ApplicationError.new(
+        "Dependency cycle detected in sub_tasks — cannot determine creation order",
+        type: "InvalidInput",
+        non_retryable: true
+      )
     end
   end
 end

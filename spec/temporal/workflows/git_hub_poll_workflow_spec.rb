@@ -380,6 +380,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:patched)
         .with("queue-agent-run-goal-v1")
         .and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("feature-orchestration-start-v1")
+        .and_return(false)
     end
 
     it "queues explicit create_pr decisions instead of starting runs directly" do
@@ -416,6 +419,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       evaluation = { decisions: [ { type: "start_planning", issue_id: 20 } ] }
 
       allow(workflow).to receive(:run_activity)
+        .with(Activities::LoadFeatureFlagsActivity, anything, timeout: anything)
+        .and_return({ flags: {} })
+      allow(workflow).to receive(:run_activity)
         .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
         .and_return({ has_capacity: true })
       allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
@@ -432,10 +438,38 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       )
     end
 
+    it "starts FeatureOrchestrationWorkflow when feature_orchestration flag is enabled" do
+      evaluation = { decisions: [ { type: "start_planning", issue_id: 20 } ] }
+
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("feature-orchestration-start-v1").and_return(true)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::LoadFeatureFlagsActivity, anything, timeout: anything)
+        .and_return({ flags: { feature_orchestration: true } })
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
+        .and_return({ has_capacity: true })
+      allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
+
+      workflow.send(:handle_automation_result, evaluation, project_id)
+
+      expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
+        Workflows::FeatureOrchestrationWorkflow,
+        { project_id: project_id, issue_id: 20 },
+        hash_including(
+          id: /\Aorchestrate-#{project_id}-20-/,
+          parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
+        )
+      )
+    end
+
     it "defers planning to future poll cycle when at capacity" do
       logger = instance_double(Logger, info: nil)
       allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
 
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::LoadFeatureFlagsActivity, anything, timeout: anything)
+        .and_return({ flags: {} })
       allow(workflow).to receive(:run_activity)
         .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
         .and_return({ has_capacity: false })

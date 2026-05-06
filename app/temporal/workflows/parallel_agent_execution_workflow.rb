@@ -27,7 +27,7 @@ module Workflows
 
     def execute(input)
       project_id = input[:project_id]
-      sub_tasks = input.fetch(:sub_tasks, [])
+      sub_tasks = normalize_sub_tasks(input.fetch(:sub_tasks, []))
       parent_wf_id = input[:parent_workflow_id] || Temporalio::Workflow.info.workflow_id
       timeout_seconds = input.fetch(:timeout_seconds, DEFAULT_TIMEOUT_SECONDS)
 
@@ -168,6 +168,45 @@ module Workflows
             non_retryable: true
           )
         end
+
+        unless sub_task[:dependencies].is_a?(Array) && sub_task[:dependencies].all? { |dependency| dependency.is_a?(Integer) }
+          raise Temporalio::Error::ApplicationError.new(
+            "sub_tasks[#{index}] dependencies must be an array of task indexes",
+            type: "InvalidInput",
+            non_retryable: true
+          )
+        end
+      end
+
+      task_indexes = sub_tasks.map { |sub_task| sub_task[:task_index] }
+      if task_indexes.uniq.size != task_indexes.size
+        raise Temporalio::Error::ApplicationError.new(
+          "sub_tasks task_index values must be unique",
+          type: "InvalidInput",
+          non_retryable: true
+        )
+      end
+
+      sub_tasks.each do |sub_task|
+        missing_dependencies = sub_task[:dependencies] - task_indexes
+        next if missing_dependencies.empty?
+
+        raise Temporalio::Error::ApplicationError.new(
+          "sub_task #{sub_task[:task_index]} has unknown dependencies: #{missing_dependencies.join(', ')}",
+          type: "InvalidInput",
+          non_retryable: true
+        )
+      end
+    end
+
+    def normalize_sub_tasks(sub_tasks)
+      sub_tasks.each_with_index.map do |sub_task, index|
+        next sub_task unless sub_task.is_a?(Hash)
+
+        sub_task.merge(
+          task_index: sub_task.fetch(:task_index, index),
+          dependencies: Array(sub_task[:dependencies])
+        )
       end
     end
 
@@ -183,16 +222,32 @@ module Workflows
       current_slots = max_concurrent
 
       while remaining_tasks.any?
+        ready_tasks, blocked_tasks = partition_ready_tasks(remaining_tasks, all_results)
+
+        if ready_tasks.empty?
+          all_results.concat(
+            build_terminal_results_for_remaining(
+              all_results: all_results,
+              remaining_tasks: remaining_tasks,
+              ready_tasks: ready_tasks,
+              blocked_tasks: blocked_tasks,
+              ready_error: "unresolvable_dependencies"
+            )
+          )
+          break
+        end
+
         remaining_seconds = deadline - Temporalio::Workflow.now
         if remaining_seconds <= 0
-          remaining_tasks.each do |task|
-            all_results << {
-              issue_id: task[:issue_id],
-              success: false,
-              error: "deadline_exceeded",
-              queued: true
-            }
-          end
+          all_results.concat(
+            build_terminal_results_for_remaining(
+              all_results: all_results,
+              remaining_tasks: remaining_tasks,
+              ready_tasks: ready_tasks,
+              blocked_tasks: blocked_tasks,
+              ready_error: "deadline_exceeded"
+            )
+          )
           break
         end
 
@@ -205,22 +260,37 @@ module Workflows
           )
 
           unless capacity[:has_capacity]
-            remaining_tasks.each do |task|
-              all_results << {
-                issue_id: task[:issue_id],
-                success: false,
-                error: "no_capacity",
-                queued: true
-              }
-            end
+            all_results.concat(
+              build_terminal_results_for_remaining(
+                all_results: all_results,
+                remaining_tasks: remaining_tasks,
+                ready_tasks: ready_tasks,
+                blocked_tasks: blocked_tasks,
+                ready_error: "no_capacity"
+              )
+            )
             break
           end
 
           current_slots = capacity[:available_slots]
         end
 
-        batch_size = [ current_slots, remaining_tasks.size ].min
-        batch = remaining_tasks.shift(batch_size)
+        if current_slots.to_i <= 0
+          all_results.concat(
+            build_terminal_results_for_remaining(
+              all_results: all_results,
+              remaining_tasks: remaining_tasks,
+              ready_tasks: ready_tasks,
+              blocked_tasks: blocked_tasks,
+              ready_error: "no_capacity"
+            )
+          )
+          break
+        end
+
+        batch_size = [ current_slots, ready_tasks.size ].min
+        batch = ready_tasks.first(batch_size)
+        remaining_tasks -= batch
 
         batch_results = execute_batch(
           project_id: project_id,
@@ -235,6 +305,81 @@ module Workflows
       end
 
       all_results
+    end
+
+    def partition_ready_tasks(remaining_tasks, all_results)
+      completed_results = all_results.index_by { |result| result[:task_index] }
+      ready_tasks = []
+      blocked_tasks = []
+
+      remaining_tasks.each do |task|
+        dependency_results = task[:dependencies].map { |dependency| completed_results[dependency] }
+
+        if dependency_results.any?(&:nil?)
+          next
+        elsif dependency_results.all? { |result| result[:success] }
+          ready_tasks << task
+        else
+          blocked_tasks << task
+        end
+      end
+
+      [ ready_tasks, blocked_tasks ]
+    end
+
+    def build_blocked_results(blocked_tasks)
+      blocked_tasks.map do |task|
+        {
+          issue_id: task[:issue_id],
+          task_index: task[:task_index],
+          success: false,
+          error: "dependencies_failed",
+          blocked_by: task[:dependencies]
+        }
+      end
+    end
+
+    def build_terminal_results_for_remaining(all_results:, remaining_tasks:, ready_tasks:, blocked_tasks:, ready_error:)
+      terminal_results = build_ready_failure_results(ready_tasks, ready_error) + build_blocked_results(blocked_tasks)
+      completed_results = (all_results + terminal_results).index_by { |result| result[:task_index] }
+      unresolved_tasks = remaining_tasks - ready_tasks - blocked_tasks
+
+      while unresolved_tasks.any?
+        newly_ready, newly_blocked = partition_ready_tasks(unresolved_tasks, completed_results.values)
+        break if newly_ready.empty? && newly_blocked.empty?
+
+        new_results = build_ready_failure_results(newly_ready, ready_error) + build_blocked_results(newly_blocked)
+        terminal_results.concat(new_results)
+        completed_results.merge!(new_results.index_by { |result| result[:task_index] })
+        unresolved_tasks -= newly_ready
+        unresolved_tasks -= newly_blocked
+      end
+
+      terminal_results + build_unresolvable_results(unresolved_tasks)
+    end
+
+    def build_ready_failure_results(ready_tasks, error)
+      ready_tasks.map do |task|
+        {
+          issue_id: task[:issue_id],
+          task_index: task[:task_index],
+          success: false,
+          error: error,
+          queued: true
+        }
+      end
+    end
+
+    def build_unresolvable_results(tasks)
+      tasks.map do |task|
+        {
+          issue_id: task[:issue_id],
+          task_index: task[:task_index],
+          success: false,
+          error: "unresolvable_dependencies",
+          blocked_by: task[:dependencies]
+        }
+      end
     end
 
     # Aggregates branches from completed sub-tasks into a single feature branch
@@ -405,7 +550,7 @@ module Workflows
           )
         end
 
-        { future: future, issue_id: issue_id, workflow_id: workflow_id }
+        { future: future, issue_id: issue_id, workflow_id: workflow_id, task_index: task[:task_index] }
       end
 
       # Wait for all futures to complete (success or failure)
@@ -425,6 +570,7 @@ module Workflows
           )
           {
             issue_id: child[:issue_id],
+            task_index: child[:task_index],
             workflow_id: child[:workflow_id],
             success: false,
             error: error.message
@@ -433,6 +579,7 @@ module Workflows
           result = child[:future].result || {}
           {
             issue_id: child[:issue_id],
+            task_index: child[:task_index],
             workflow_id: child[:workflow_id],
             success: result[:success] || false,
             paused: result[:paused] || false,
