@@ -2,6 +2,8 @@
 
 module Anomalies
   class Detect
+    include Rails.application.routes.url_helpers
+
     # Default z-score thresholds for anomaly severity.
     WARNING_THRESHOLD = 2.0
     CRITICAL_THRESHOLD = 3.0
@@ -52,6 +54,8 @@ module Anomalies
       end
 
       log_anomalies(anomalies) if anomalies.any?
+      publish_notification(anomalies) if should_publish_notification?(anomalies)
+      enforce_guardrail(anomalies)
 
       anomalies
     end
@@ -158,6 +162,71 @@ module Anomalies
           deviation_factor: anomaly.deviation_factor
         )
       end
+    end
+
+    def publish_notification(anomalies)
+      Notifications::Publish.call(
+        account: project.account,
+        source: "agent_run_anomaly",
+        subject: agent_run,
+        severity: notification_severity(anomalies),
+        title: "Anomalous agent behavior detected for run ##{agent_run.id}",
+        description: anomalies.map(&:message).join("; "),
+        metadata: {
+          project_id: project.id,
+          anomaly_count: anomalies.size,
+          anomalies: anomalies.map { |anomaly|
+            {
+              metric_name: anomaly.metric_name,
+              severity: anomaly.severity,
+              anomaly_type: anomaly.anomaly_type,
+              metric_value: anomaly.metric_value,
+              deviation_factor: anomaly.deviation_factor
+            }
+          }
+        },
+        action_url: project_agent_run_path(project, agent_run),
+        nav_section: "agent_runs"
+      )
+    end
+
+    def should_publish_notification?(anomalies)
+      anomalies.any? && !guardrail_will_fire?(anomalies)
+    end
+
+    def guardrail_will_fire?(anomalies)
+      agent_run.running? && anomalies.any? { |anomaly| anomaly.severity == "critical" }
+    end
+
+    def notification_severity(anomalies)
+      anomalies.any? { |anomaly| anomaly.severity == "critical" } ? :error : :warning
+    end
+
+    def resolve_prior_anomaly_notification
+      Notifications::Resolve.call(
+        account: project.account,
+        source: "agent_run_anomaly",
+        subject: agent_run
+      )
+    end
+
+    def enforce_guardrail(anomalies)
+      return unless agent_run.running?
+
+      critical_anomalies = anomalies.select { |anomaly| anomaly.severity == "critical" }
+      return if critical_anomalies.empty?
+
+      resolve_prior_anomaly_notification
+
+      Guardrails::ViolationHandler.call(
+        agent_run: agent_run,
+        violation_type: "anomaly",
+        details: critical_anomalies.map(&:message).join("; "),
+        metrics: {
+          anomaly_count: anomalies.size,
+          critical_metrics: critical_anomalies.map(&:metric_name)
+        }
+      )
     end
   end
 end

@@ -239,6 +239,8 @@ RSpec.describe TokenUsageTracker do
   describe "token limit checking" do
     before do
       project.update!(max_tokens_per_run: 10_000, token_limit_warning_threshold: 80)
+      allow(AgentRuns::Cancel).to receive(:call)
+      allow(Notifications::Publish).to receive(:call)
     end
 
     it "persists the agent run once when token_limit_status changes" do
@@ -264,6 +266,15 @@ RSpec.describe TokenUsageTracker do
       expect(agent_run.reload.token_limit_status).to eq("exceeded")
     end
 
+    it "pauses a running agent when the hard token limit is exceeded" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 7000, tokens_output: 4000 })
+
+      agent_run.reload
+      expect(agent_run.status).to eq("paused")
+      expect(agent_run.guardrail_violation_type).to eq("token_limit")
+      expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
+    end
+
     it "logs a warning when crossing the soft threshold" do
       described_class.track(tracked_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
       log = agent_run.agent_run_logs.find_by(log_type: "system")
@@ -273,7 +284,7 @@ RSpec.describe TokenUsageTracker do
 
     it "logs an exceeded message when crossing the hard limit" do
       described_class.track(tracked_run: agent_run, usage: { tokens_input: 7000, tokens_output: 4000 })
-      log = agent_run.agent_run_logs.where(log_type: "system").last
+      log = agent_run.agent_run_logs.find_by(log_type: "system", metadata: { type: "token_limit_exceeded" })
       expect(log.content).to include("Token limit exceeded")
       expect(log.metadata).to eq({ "type" => "token_limit_exceeded" })
     end
@@ -294,6 +305,7 @@ RSpec.describe TokenUsageTracker do
         enforce_guardrails: false
       )
       expect(agent_run.reload.token_limit_status).to eq("exceeded")
+      expect(agent_run.reload.status).to eq("running")
     end
 
     it "transitions from warning to exceeded as usage grows" do

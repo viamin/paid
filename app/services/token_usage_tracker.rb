@@ -64,7 +64,10 @@ class TokenUsageTracker
     # 1. Row locks from the usage write are already released
     # 2. External side-effects (Temporal cancel, container cleanup) don't
     #    run inside a transaction — a failure won't roll back recorded usage
-    enforce_hard_stop_budgets(tracked_run) if enforce_guardrails && update_aggregates && cost_cents.positive? && tracked_run.is_a?(AgentRun)
+    if enforce_guardrails && update_aggregates && tracked_run.is_a?(AgentRun)
+      enforce_token_limit(tracked_run, hard_limit: resolved_hard_limit)
+      enforce_hard_stop_budgets(tracked_run) if cost_cents.positive?
+    end
 
     Projects::StatsSummary.bust_cache!(tracked_run.project.id) if update_aggregates && tracked_run.project
   end
@@ -251,6 +254,33 @@ class TokenUsageTracker
     end
   end
   private_class_method :update_cost_budgets
+
+  def self.enforce_token_limit(agent_run, hard_limit:)
+    return unless hard_limit.to_i.positive?
+    return unless AgentRun.where(id: agent_run.id, status: "running").exists?
+
+    current_tokens = agent_run.total_tokens
+    return if current_tokens < hard_limit
+
+    Rails.logger.warn(
+      message: "agent_execution.token_limit_hard_stop_enforced",
+      agent_run_id: agent_run.id,
+      current_tokens: current_tokens,
+      hard_limit: hard_limit
+    )
+
+    Guardrails::ViolationHandler.call(
+      agent_run: agent_run,
+      violation_type: "token_limit",
+      details: "Token usage exceeded #{hard_limit} limit (#{current_tokens} used)",
+      metrics: {
+        current_tokens: current_tokens,
+        hard_limit: hard_limit,
+        usage_percent: (current_tokens * 100.0 / hard_limit).round(1)
+      }
+    )
+  end
+  private_class_method :enforce_token_limit
 
   # Checks hard_stop budgets after recording usage. If any budget is
   # exceeded, cancels the running agent to enforce the cost limit.
