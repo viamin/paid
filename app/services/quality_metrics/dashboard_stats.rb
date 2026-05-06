@@ -337,51 +337,72 @@ module QualityMetrics
     end
 
     def gate_status
-      thresholds = project.quality_gate_thresholds.enabled
+      thresholds = QualityThreshold.effective_for(project: project)
       return { thresholds: [], recent_events: [], active_breaches: 0 } if thresholds.empty?
 
-      recent_events = project.quality_gate_events
-        .includes(:quality_gate_threshold)
+      recent_events = project.quality_pause_events
         .order(created_at: :desc)
         .limit(20)
         .map do |e|
           {
-            event_type: e.event_type,
-            metric_key: e.quality_gate_threshold.metric_key,
-            severity: e.quality_gate_threshold.severity,
-            score_value: e.score_value.to_f,
-            threshold_value: e.threshold_value.to_f,
+            event_type: e.event_type == "paused" ? "trigger" : "recovery",
+            metric_key: e.metadata["metric_type"].presence || "composite_score",
+            goal_type: e.metadata["goal_type"],
+            severity: "critical",
+            score_value: e.composite_score&.to_f,
+            threshold_value: e.threshold&.to_f,
             created_at: e.created_at.iso8601
           }
         end
 
-      # Count active breaches: thresholds whose most recent event is a trigger.
-      # Uses DISTINCT ON to fetch the latest event per threshold in a single query.
-      threshold_ids = thresholds.pluck(:id)
-      active_breaches = QualityGateEvent
-        .where(quality_gate_threshold_id: threshold_ids)
-        .where(
-          "id IN (SELECT DISTINCT ON (quality_gate_threshold_id) id " \
-          "FROM quality_gate_events " \
-          "WHERE quality_gate_threshold_id IN (?) " \
-          "ORDER BY quality_gate_threshold_id, created_at DESC)",
-          threshold_ids
-        )
-        .where(event_type: "trigger")
-        .count
-
       {
         thresholds: thresholds.map do |t|
           {
-            metric_key: t.metric_key,
-            min_threshold: t.min_threshold&.to_f,
-            max_threshold: t.max_threshold&.to_f,
-            severity: t.severity
+            metric_key: t.metric_type,
+            goal_type: t.goal_type,
+            min_threshold: t.min_value&.to_f,
+            max_threshold: nil,
+            severity: t.enabled? ? "critical" : "info",
+            source_scope: t.source_scope
           }
         end,
         recent_events: recent_events,
-        active_breaches: active_breaches
+        active_breaches: active_threshold_breaches(thresholds)
       }
+    end
+
+    def active_threshold_breaches(thresholds)
+      thresholds.count do |threshold|
+        scores = recent_scores_for(threshold)
+        next false if scores.size < QualityThreshold::DEFAULT_MIN_SAMPLE_SIZE
+
+        average = scores.sum / scores.size
+        threshold.breached?(average)
+      end
+    end
+
+    def recent_scores_for(threshold)
+      metrics_for_threshold(threshold).limit(QualityThreshold::DEFAULT_WINDOW_SIZE).filter_map do |metric|
+        if threshold.metric_type == "composite_score"
+          metric.composite_score&.to_f
+        else
+          metric.scores&.dig(threshold.metric_type)&.to_f
+        end
+      end
+    end
+
+    def metrics_for_threshold(threshold)
+      scope = QualityMetric.by_project(project.id)
+        .joins(:agent_run)
+        .where(agent_runs: { goal: threshold.goal_type })
+        .where(AgentRun.quality_scoreable_sql)
+        .order(created_at: :desc)
+
+      if threshold.metric_type == "composite_score"
+        scope.where.not(composite_score: nil)
+      else
+        scope.where("jsonb_exists(quality_metrics.scores, ?)", threshold.metric_type)
+      end
     end
 
     def empty_human_feedback

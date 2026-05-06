@@ -64,12 +64,14 @@ module QualityMetrics
     def thresholds
       return [] unless @project_id
 
-      enabled_threshold_rows.map do |metric_key, min_threshold, max_threshold, severity|
+      enabled_thresholds.map do |threshold|
         {
-          metric_key: metric_key,
-          min_threshold: min_threshold&.to_f,
-          max_threshold: max_threshold&.to_f,
-          severity: severity
+          metric_key: threshold.metric_type,
+          goal_type: threshold.goal_type,
+          min_threshold: threshold.min_value&.to_f,
+          max_threshold: nil,
+          severity: threshold.enabled? ? "critical" : "info",
+          source_scope: threshold.source_scope
         }
       end
     end
@@ -77,16 +79,16 @@ module QualityMetrics
     def gate_events
       return [] unless @project_id
 
-      QualityGateEvent.for_project(@project_id)
+      QualityPauseEvent.where(project_id: @project_id)
         .recent.limit(window_size)
-        .includes(:quality_gate_threshold)
         .map do |e|
           {
-            event_type: e.event_type,
-            score_value: e.score_value.to_f,
-            threshold_value: e.threshold_value.to_f,
-            metric_key: e.quality_gate_threshold.metric_key,
-            severity: e.quality_gate_threshold.severity,
+            event_type: e.event_type == "paused" ? "trigger" : "recovery",
+            score_value: e.composite_score&.to_f,
+            threshold_value: e.threshold&.to_f,
+            metric_key: e.metadata["metric_type"].presence || "composite_score",
+            goal_type: e.metadata["goal_type"],
+            severity: "critical",
             created_at: e.created_at.iso8601
           }
         end
@@ -134,9 +136,9 @@ module QualityMetrics
       return nil unless @project_id
       return nil if slope >= 0 # Score is stable or improving
 
-      min_thresholds = enabled_threshold_rows.filter_map do |metric_key, min_threshold, _max_threshold, _severity|
-        min_threshold if metric_key == "composite_score"
-      end
+      min_thresholds = enabled_thresholds
+        .select { |threshold| threshold.metric_type == "composite_score" }
+        .filter_map(&:min_value)
 
       return nil if min_thresholds.empty?
 
@@ -149,11 +151,8 @@ module QualityMetrics
       steps.positive? ? steps : nil
     end
 
-    def enabled_threshold_rows
-      @enabled_threshold_rows ||= QualityGateThreshold
-        .where(project_id: @project_id)
-        .enabled
-        .pluck(:metric_key, :min_threshold, :max_threshold, :severity)
+    def enabled_thresholds
+      @enabled_thresholds ||= QualityThreshold.effective_for(project: Project.find(@project_id))
     end
   end
 end

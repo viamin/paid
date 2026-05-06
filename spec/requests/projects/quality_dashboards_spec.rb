@@ -53,13 +53,16 @@ RSpec.describe "Projects::QualityDashboards" do
       end
 
       it "shows gate status alert when thresholds are breached" do
-        threshold = create(:quality_gate_threshold, project: project, min_threshold: 0.6)
         run = create(:agent_run, project: project)
-        metric = create(:quality_metric, agent_run: run, composite_score: 0.4)
-        create(:quality_gate_event,
-          project: project, quality_gate_threshold: threshold,
-          quality_metric: metric, event_type: "trigger",
-          score_value: 0.4, threshold_value: 0.6)
+        create(:quality_threshold, :project_override,
+          project: project,
+          metric_type: "composite_score",
+          goal_type: "create_pr",
+          min_value: 0.6,
+          enabled: true)
+        create(:quality_metric, agent_run: run, composite_score: 0.4)
+        create(:quality_metric, agent_run: create(:agent_run, project: project), composite_score: 0.5)
+        create(:quality_metric, agent_run: create(:agent_run, project: project), composite_score: 0.4)
 
         get project_quality_dashboard_path(project)
 

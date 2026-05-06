@@ -23,6 +23,7 @@ module QualityMetrics
         record_quality_metric
         update_experiment_variant_stats(automated_metric)
         update_prompt_version_stats if agent_run.prompt_version.present?
+        check_quality_pause
       end
 
       enqueue_quality_gate_check
@@ -66,6 +67,10 @@ module QualityMetrics
       return unless agent_run.project.quality_gates_enabled?
 
       QualityAlerts::CheckGateJob.perform_later(project_id: agent_run.project_id)
+    end
+
+    def check_quality_pause
+      QualityPause::Check.call(agent_run: agent_run)
     end
 
     # Builds scores for metrics relevant to the agent run's goal type.
