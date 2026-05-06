@@ -317,6 +317,21 @@ RSpec.describe Knowledge::DashboardStats do
       end
     end
 
+    context "with caching" do
+      let(:version) { create(:project_version, project: project) }
+      let(:run) { create(:collector_run, :completed, project_version: version) }
+
+      it "returns fresh artifact counts on each call (no outer cache)" do
+        first = described_class.call(account: account)
+        create(:knowledge_artifact, collector_run: run, project: project, artifact_type: "route")
+
+        refreshed = described_class.call(account: account)
+
+        expect(first[:total_artifacts]).to eq(0)
+        expect(refreshed[:total_artifacts]).to eq(1)
+      end
+    end
+
     context "with multiple projects" do
       let(:project2) { create(:project, account: account) }
       let(:other_account) { create(:account) }

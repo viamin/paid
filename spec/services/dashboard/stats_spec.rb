@@ -6,6 +6,14 @@ RSpec.describe Dashboard::Stats do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
 
+  around do |example|
+    original_store = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    example.run
+  ensure
+    Rails.cache = original_store
+  end
+
   def create_timed_completed_run(project:, created_at:)
     create(:agent_run, :completed, project: project,
       created_at: created_at, started_at: created_at + 1.minute,
@@ -291,6 +299,19 @@ RSpec.describe Dashboard::Stats do
         # Only 1 run in 7d window (cost 100), but trailing 30d should include 2 runs (cost 300)
         expect(result[:cost_and_tokens][:total_cost_cents]).to eq(100)
         expect(result[:cost_and_tokens][:trailing_30d_cost_cents]).to eq(300)
+      end
+
+      it "caches results per filter set" do
+        first = described_class.call(account: account, time_range: "24h", only: %i[run_volume])
+
+        create(:agent_run, :completed, project: project, created_at: 1.hour.ago, cost_cents: 400)
+
+        cached = described_class.call(account: account, time_range: "24h", only: %i[run_volume])
+        uncached = described_class.call(account: account, time_range: "30d", only: %i[run_volume])
+
+        expect(first[:run_volume][:total]).to eq(0)
+        expect(cached[:run_volume][:total]).to eq(0)
+        expect(uncached[:run_volume][:total]).to eq(3)
       end
     end
 

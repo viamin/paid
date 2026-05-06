@@ -3,6 +3,14 @@
 require "rails_helper"
 
 RSpec.describe Dashboard::LiveStats do
+  around do |example|
+    original_store = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    example.run
+  ensure
+    Rails.cache = original_store
+  end
+
   describe ".call" do
     let(:account) { create(:account) }
     let(:project) { create(:project, account: account, active: true) }
@@ -33,6 +41,21 @@ RSpec.describe Dashboard::LiveStats do
         total_projects: 1,
         active_projects: 1
       )
+    end
+
+    it "caches the aggregated payload" do
+      create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
+
+      first = described_class.call(account: account)
+      create(:agent_run, project: project, status: "running", started_at: 1.minute.ago)
+
+      cached = described_class.call(account: account)
+      Rails.cache.clear
+      refreshed = described_class.call(account: account)
+
+      expect(first[:active_runs]).to eq(1)
+      expect(cached[:active_runs]).to eq(1)
+      expect(refreshed[:active_runs]).to eq(2)
     end
   end
 end

@@ -10,19 +10,33 @@ module Dashboard
       @account = account
     end
 
+    # Called by DashboardBroadcastJob when an agent run finishes.
+    # Invalidates aggregate caches so the next lazy-frame load picks up fresh
+    # data, and pushes an immediate live-stats update over Turbo Streams.
+    # Metrics and performance frames are intentionally NOT pushed in real time
+    # because they run expensive aggregate queries; they refresh on the next
+    # user-initiated navigation or page reload.
     def call
-      stats = Dashboard::Stats.call(account: account)
-
-      Turbo::StreamsChannel.broadcast_replace_to(
-        account, :dashboard_updates,
-        target: "dashboard",
-        partial: "dashboard/content",
-        locals: { stats: stats, account: account }
-      )
+      invalidate_caches
+      broadcast_live_stats
     end
 
     private
 
     attr_reader :account
+
+    def invalidate_caches
+      Rails.cache.delete("dashboard/live_stats/#{account.id}")
+      Rails.cache.delete_matched("dashboard/stats/#{account.id}/*")
+    end
+
+    def broadcast_live_stats
+      Turbo::StreamsChannel.broadcast_update_to(
+        [ account, :live_dashboard ],
+        target: "live-stats",
+        partial: "dashboard/live_stats",
+        locals: { stats: Dashboard::LiveStats.call(account: account) }
+      )
+    end
   end
 end

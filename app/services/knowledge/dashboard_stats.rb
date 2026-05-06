@@ -2,8 +2,9 @@
 
 module Knowledge
   class DashboardStats
-    CACHE_TTL = 60.seconds
+    CACHE_TTL = 5.minutes
     PIPELINE_LOOKBACK = 30.days
+
     attr_reader :account
 
     def initialize(account:)
@@ -15,6 +16,12 @@ module Knowledge
     end
 
     def call
+      build_stats
+    end
+
+    private
+
+    def build_stats
       {
         projects_indexed: projects_indexed,
         projects_total: projects_total,
@@ -31,8 +38,6 @@ module Knowledge
         usage_by_goal: usage_by_goal
       }
     end
-
-    private
 
     def artifacts
       @artifacts ||= KnowledgeArtifact
