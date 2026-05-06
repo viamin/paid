@@ -14,10 +14,18 @@ FROM docker.io/library/ruby:$RUBY_VERSION-slim AS base
 # Rails app lives here
 WORKDIR /rails
 
+ARG PGDG_POSTGRESQL_CLIENT_16_VERSION=16.13-1.pgdg13+1
+
 # Install base packages
-# Keep client tools on the same Postgres major as the pinned server image.
+# Keep client tools on the exact Postgres version shipped by the pinned server image.
 RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y curl libjemalloc2 postgresql-client-16 && \
+    apt-get install --no-install-recommends -y ca-certificates curl gnupg libjemalloc2 && \
+    install -d /usr/share/postgresql-common/pgdg && \
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc && \
+    . /etc/os-release && \
+    printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" > /etc/apt/sources.list.d/pgdg.sources && \
+    apt-get update -qq && \
+    apt-get install --no-install-recommends -y "postgresql-client-16=${PGDG_POSTGRESQL_CLIENT_16_VERSION}" && \
     ln -s /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
