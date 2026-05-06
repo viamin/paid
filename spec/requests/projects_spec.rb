@@ -1136,6 +1136,29 @@ RSpec.describe "Projects" do
         expect(panel.has_attribute?("inert")).to be false
         expect(panel["class"]).to include("max-h-[2000px]")
       end
+
+      it "shows screenshot settings preview and repo conflicts" do
+        project = create(:project, account: account, github_token: github_token, screenshot_settings: {
+          "enabled" => true,
+          "driver" => "cuprite",
+          "service_dependencies" => [ "postgres" ],
+          "setup_commands" => [ "bin/setup --skip-server" ],
+          "config_path" => ".paid/screenshots.yml"
+        })
+
+        allow(project.github_token.client).to receive(:file_content).and_return(<<~YAML)
+          driver: playwright
+          services:
+            - redis
+        YAML
+
+        get edit_project_path(project)
+
+        expect(response.body).to include("Screenshots")
+        expect(response.body).to include("Merged Config Preview")
+        expect(response.body).to include("Config Conflicts")
+        expect(response.body).to include("driver: cuprite")
+      end
     end
   end
 
@@ -1150,6 +1173,21 @@ RSpec.describe "Projects" do
 
     context "when authenticated" do
       before { sign_in user }
+
+      let(:screenshot_update_params) do
+        {
+          project: {
+            screenshot_settings: {
+              enabled: "1",
+              driver: "cuprite",
+              config_path: ".paid/screenshots.yml",
+              auto_capture: "1",
+              service_dependencies: [ "postgres", "redis" ],
+              setup_commands_text: "bin/setup --skip-server\nbin/rails db:prepare\n"
+            }
+          }
+        }
+      end
 
       it "updates the project" do
         project = create(:project, account: account, github_token: github_token, name: "Old Name")
@@ -1180,6 +1218,21 @@ RSpec.describe "Projects" do
         project = create(:project, account: account, github_token: github_token, auto_fix_merge_conflicts: false)
         patch project_path(project), params: { project: { auto_fix_merge_conflicts: true } }
         expect(project.reload.auto_fix_merge_conflicts).to be true
+      end
+
+      it "persists screenshot settings" do
+        project = create(:project, account: account, github_token: github_token)
+        patch project_path(project), params: screenshot_update_params
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.screenshot_settings).to include(
+          "enabled" => true,
+          "driver" => "cuprite",
+          "config_path" => ".paid/screenshots.yml",
+          "auto_capture" => true,
+          "service_dependencies" => %w[postgres redis],
+          "setup_commands" => [ "bin/setup --skip-server", "bin/rails db:prepare" ]
+        )
       end
 
       it "allows updating priority label names" do
@@ -1731,6 +1784,62 @@ RSpec.describe "Projects" do
         expect(response).to redirect_to(root_path)
         expect(flash[:alert]).to include("not authorized")
       end
+    end
+  end
+
+  describe "POST /projects/:id/detect_screenshot_settings" do
+    let(:project) { create(:project, account: account, github_token: github_token) }
+
+    before { sign_in user }
+
+    it "stores detected screenshot suggestions and redirects to the screenshots section" do
+      result = Projects::Screenshots::DetectFramework::Result.new(
+        framework: "Rails",
+        confidence: "high",
+        driver: "cuprite",
+        service_dependencies: [ "postgres" ],
+        setup_commands: [ "bin/setup --skip-server" ],
+        suggested_config: { "driver" => "cuprite" },
+        suggested_yaml: "driver: cuprite\n",
+        detected_at: Time.current.iso8601
+      )
+      allow(Projects::Screenshots::DetectFramework).to receive(:call).and_return(result)
+
+      post detect_screenshot_settings_project_path(project)
+
+      expect(response).to redirect_to(edit_project_path(project, anchor: "screenshots"))
+      expect(project.reload.screenshot_settings).to include(
+        "driver" => "cuprite",
+        "service_dependencies" => [ "postgres" ],
+        "setup_commands" => [ "bin/setup --skip-server" ]
+      )
+      expect(project.reload.screenshot_settings.dig("detection", "framework")).to eq("Rails")
+    end
+  end
+
+  describe "POST /projects/:id/commit_screenshot_config" do
+    let(:project) do
+      create(:project, account: account, github_token: github_token, screenshot_settings: {
+        "config_path" => ".paid/screenshots.yml",
+        "detection" => { "suggested_yaml" => "driver: playwright\n" }
+      })
+    end
+
+    before { sign_in user }
+
+    it "stores the created pull request url" do
+      allow(Projects::Screenshots::CommitConfig).to receive(:call)
+        .and_return(Projects::Screenshots::CommitConfig::Result.new(
+          pull_request_url: "https://github.com/acme/widgets/pull/42"
+        ))
+      allow(Projects::Screenshots::RepoConfig).to receive(:call)
+        .and_return(Projects::Screenshots::RepoConfig::Result.new(config: {}, content: nil, error: nil))
+
+      post commit_screenshot_config_project_path(project)
+
+      expect(response).to redirect_to(edit_project_path(project, anchor: "screenshots"))
+      expect(project.reload.screenshot_settings.dig("detection", "commit_pull_request_url"))
+        .to eq("https://github.com/acme/widgets/pull/42")
     end
   end
 

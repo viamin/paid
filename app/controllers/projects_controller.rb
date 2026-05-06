@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ProjectsController < ApplicationController
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :quality_resume, :detect_services, :ensure_labels, :cleanup_stale_runs ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -116,6 +116,7 @@ class ProjectsController < ApplicationController
     @available_service_containers = policy_scope(ServiceContainer).where.not(id: @project.service_container_ids).order(:name)
     @available_mcp_server_definitions = policy_scope(McpServerDefinition).where.not(id: @project.mcp_server_definition_ids).order(:name)
     @project_mcp_servers = @project.project_mcp_servers.includes(:mcp_server_definition).to_a
+    load_screenshot_settings_context
   end
 
   def update
@@ -125,6 +126,7 @@ class ProjectsController < ApplicationController
     update_params = project_params
     update_params = update_params.merge(allowed_github_usernames: parse_usernames_csv) if params.dig(:project, :allowed_github_usernames_csv)
     update_params = update_params.merge(review_settings: build_review_settings) if params.dig(:project, :review_settings)
+    update_params = update_params.merge(screenshot_settings: build_screenshot_settings) if params.dig(:project, :screenshot_settings)
     assign_selected_github_token(@project, update_params)
 
     if @project.update(update_params)
@@ -133,6 +135,7 @@ class ProjectsController < ApplicationController
       @available_service_containers = policy_scope(ServiceContainer).where.not(id: @project.service_container_ids).order(:name)
       @available_mcp_server_definitions = policy_scope(McpServerDefinition).where.not(id: @project.mcp_server_definition_ids).order(:name)
       @project_mcp_servers = @project.project_mcp_servers.includes(:mcp_server_definition).to_a
+      load_screenshot_settings_context
       render :edit, status: :unprocessable_content
     end
   end
@@ -197,6 +200,61 @@ class ProjectsController < ApplicationController
     end
   rescue GithubClient::Error => e
     redirect_to edit_project_path(@project), alert: "Could not detect services: #{e.message}"
+  end
+
+  def detect_screenshot_settings
+    authorize @project, :update?
+
+    detection = Projects::Screenshots::DetectFramework.call(project: @project)
+    settings = @project.effective_screenshot_settings.merge(
+      "driver" => detection.driver,
+      "service_dependencies" => detection.service_dependencies,
+      "setup_commands" => detection.setup_commands,
+      "detection" => {
+        "framework" => detection.framework,
+        "confidence" => detection.confidence,
+        "suggested_config" => detection.suggested_config,
+        "suggested_yaml" => detection.suggested_yaml,
+        "detected_at" => detection.detected_at
+      }
+    )
+    @project.update!(screenshot_settings: settings)
+
+    redirect_to edit_project_path(@project, anchor: "screenshots"),
+      notice: "Detected #{detection.framework} with #{detection.confidence} confidence."
+  rescue GithubClient::Error => e
+    redirect_to edit_project_path(@project, anchor: "screenshots"),
+      alert: "Could not detect screenshot settings: #{e.message}"
+  end
+
+  def commit_screenshot_config
+    authorize @project, :update?
+
+    settings = @project.effective_screenshot_settings
+    repo_config = Projects::Screenshots::RepoConfig.call(
+      project: @project,
+      path: settings["config_path"]
+    ).config
+    suggested_yaml = settings.dig("detection", "suggested_yaml").presence ||
+      YAML.dump(@project.screenshot_preview_config(repo_config: repo_config))
+
+    result = Projects::Screenshots::CommitConfig.call(
+      project: @project,
+      config_path: settings["config_path"],
+      content: suggested_yaml
+    )
+
+    @project.update!(
+      screenshot_settings: settings.deep_merge(
+        "detection" => { "commit_pull_request_url" => result.pull_request_url }
+      )
+    )
+
+    redirect_to edit_project_path(@project, anchor: "screenshots"),
+      notice: "Created screenshot config PR: #{result.pull_request_url}"
+  rescue GithubClient::Error, Octokit::Error => e
+    redirect_to edit_project_path(@project, anchor: "screenshots"),
+      alert: "Could not commit screenshot config: #{e.message}"
   end
 
   def ensure_labels
@@ -349,6 +407,22 @@ class ProjectsController < ApplicationController
     settings
   end
 
+  def build_screenshot_settings
+    raw = params.require(:project).permit(
+      screenshot_settings: [ :enabled, :driver, :config_path, :auto_capture, :setup_commands_text, { service_dependencies: [] } ]
+    ).fetch(:screenshot_settings, {})
+
+    existing = @project.effective_screenshot_settings
+    existing.merge(
+      "enabled" => ActiveModel::Type::Boolean.new.cast(raw[:enabled]),
+      "driver" => raw[:driver].presence || existing["driver"],
+      "config_path" => raw[:config_path].presence || Project::DEFAULT_SCREENSHOT_SETTINGS["config_path"],
+      "auto_capture" => ActiveModel::Type::Boolean.new.cast(raw[:auto_capture]),
+      "service_dependencies" => Array(raw[:service_dependencies]).map(&:to_s).map(&:strip).reject(&:blank?).uniq,
+      "setup_commands" => raw[:setup_commands_text].to_s.lines.map(&:strip).reject(&:blank?).uniq
+    )
+  end
+
   def ensure_labels_best_effort(project)
     Projects::EnsureStandardLabels.call(project: project)
   rescue => e
@@ -357,6 +431,22 @@ class ProjectsController < ApplicationController
 
   def parse_usernames_csv
     params.dig(:project, :allowed_github_usernames_csv).to_s.split(",").map(&:strip).reject(&:blank?).uniq
+  end
+
+  def load_screenshot_settings_context
+    @screenshot_settings = @project.effective_screenshot_settings
+    @screenshot_status = @project.effective_screenshot_status
+    @screenshot_service_options = policy_scope(ServiceContainer).order(:name)
+    @screenshot_repo_config_result = Projects::Screenshots::RepoConfig.call(
+      project: @project,
+      path: @screenshot_settings["config_path"]
+    )
+    @screenshot_preview_config = @project.screenshot_preview_config(
+      repo_config: @screenshot_repo_config_result.config
+    )
+    @screenshot_conflicts = @project.screenshot_config_conflicts(
+      repo_config: @screenshot_repo_config_result.config
+    )
   end
 
   def save_project_with_cached_data

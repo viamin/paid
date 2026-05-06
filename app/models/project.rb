@@ -6,9 +6,28 @@ class Project < ApplicationRecord
   KNOWLEDGE_STATUSES = %w[pending collecting ready failed stale].freeze
   # "none" is not a method — it is represented by enabled: false at the top level
   REVIEW_METHODS = %w[copilot paid_agent codex ci_action manual].freeze
+  SCREENSHOT_DRIVERS = {
+    "playwright" => "Best for modern browser flows and JavaScript-heavy apps.",
+    "cuprite" => "Best for Rails and other server-rendered apps using Capybara."
+  }.freeze
 
   PRIORITY_TIERS = %w[P1 P2 P3].freeze
   DEFAULT_PRIORITY_LABELS = { "P1" => "P1", "P2" => "P2", "P3" => "P3" }.freeze
+  DEFAULT_SCREENSHOT_SETTINGS = {
+    "enabled" => false,
+    "driver" => "playwright",
+    "config_path" => ".paid/screenshots.yml",
+    "auto_capture" => true,
+    "service_dependencies" => [],
+    "setup_commands" => [],
+    "detection" => {}
+  }.freeze
+  DEFAULT_SCREENSHOT_STATUS = {
+    "last_capture_at" => nil,
+    "last_capture_status" => nil,
+    "screenshot_count" => 0,
+    "screenshots_url" => nil
+  }.freeze
 
   DEFAULT_REVIEW_SETTINGS = {
     "enabled" => false,
@@ -356,6 +375,55 @@ class Project < ApplicationRecord
 
   def touch_last_issue_sync_at(timestamp = Time.current)
     update_column(:last_issue_sync_at, timestamp)
+  end
+
+  def effective_screenshot_settings
+    stored = screenshot_settings.is_a?(Hash) ? screenshot_settings.deep_stringify_keys : {}
+    settings = DEFAULT_SCREENSHOT_SETTINGS.deep_merge(stored)
+    settings["enabled"] = ActiveModel::Type::Boolean.new.cast(settings["enabled"])
+    settings["auto_capture"] = ActiveModel::Type::Boolean.new.cast(settings["auto_capture"])
+    settings["driver"] = normalized_screenshot_driver(settings["driver"])
+    settings["config_path"] = settings["config_path"].presence || DEFAULT_SCREENSHOT_SETTINGS["config_path"]
+    settings["service_dependencies"] = normalize_string_array(settings["service_dependencies"])
+    settings["setup_commands"] = normalize_string_array(settings["setup_commands"])
+    settings["detection"] = settings["detection"].is_a?(Hash) ? settings["detection"].deep_stringify_keys : {}
+    settings
+  end
+
+  def effective_screenshot_status
+    stored = screenshot_status.is_a?(Hash) ? screenshot_status.deep_stringify_keys : {}
+    status = DEFAULT_SCREENSHOT_STATUS.merge(stored)
+    status["screenshot_count"] = status["screenshot_count"].to_i
+    status
+  end
+
+  def screenshot_preview_config(repo_config: {})
+    repo = repo_config.deep_stringify_keys
+    settings = effective_screenshot_settings
+
+    compact_screenshot_hash(
+      "driver" => settings["driver"] || repo["driver"],
+      "auto_capture" => settings["auto_capture"],
+      "services" => settings["service_dependencies"].presence || repo["services"],
+      "setup" => settings["setup_commands"].presence || repo["setup"]
+    )
+  end
+
+  def screenshot_config_conflicts(repo_config:)
+    repo = repo_config.deep_stringify_keys
+    settings = effective_screenshot_settings
+    conflicts = []
+
+    compare_screenshot_setting(conflicts, "driver", settings["driver"], repo["driver"])
+    compare_screenshot_setting(conflicts, "auto_capture", settings["auto_capture"], repo["auto_capture"])
+    compare_screenshot_setting(conflicts, "services", settings["service_dependencies"], repo["services"])
+    compare_screenshot_setting(conflicts, "setup", settings["setup_commands"], repo["setup"])
+
+    conflicts
+  end
+
+  def screenshot_enabled?
+    effective_screenshot_settings["enabled"]
   end
 
   # Shared staleness window used by both the health-check job and the
@@ -716,6 +784,29 @@ class Project < ApplicationRecord
   end
 
   private
+
+  def normalized_screenshot_driver(value)
+    value = value.to_s
+    SCREENSHOT_DRIVERS.key?(value) ? value : DEFAULT_SCREENSHOT_SETTINGS["driver"]
+  end
+
+  def normalize_string_array(value)
+    Array(value).map(&:to_s).map(&:strip).reject(&:blank?).uniq
+  end
+
+  def compact_screenshot_hash(hash)
+    hash.compact
+  end
+
+  def compare_screenshot_setting(conflicts, key, project_value, repo_value)
+    return if repo_value.nil? || repo_value == project_value
+
+    conflicts << {
+      "key" => key,
+      "project_value" => project_value,
+      "repo_value" => repo_value
+    }
+  end
 
   def clear_scheduler_pause_on_token_change
     return unless scheduler_paused?
