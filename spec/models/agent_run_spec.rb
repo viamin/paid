@@ -3263,12 +3263,39 @@ RSpec.describe AgentRun do
         expect { agent_run.destroy! }
           .to change { project.reload.agent_runs_count }.by(-1)
       end
+
+      it "stays accurate when a run inserted with insert_all! is later destroyed" do
+        now = Time.current
+        result = described_class.insert_all!(
+          [ {
+            project_id: project.id,
+            issue_id: create(:issue, project: project).id,
+            agent_type: "claude_code",
+            status: "queued",
+            goal: "create_pr",
+            trigger_type: "manual",
+            proxy_token: SecureRandom.hex(32),
+            created_at: now,
+            updated_at: now
+          } ],
+          returning: %w[id]
+        )
+        agent_run = described_class.find(result.rows.first.first)
+
+        expect { agent_run.destroy! }
+          .not_to change { project.reload.agent_runs_count }
+      end
     end
 
     describe "completed_agent_runs_count" do
       it "does not recount when a non-completed run is created" do
         expect { create(:agent_run, project: project, status: "queued") }
           .not_to change { project.reload.completed_agent_runs_count }
+      end
+
+      it "recounts when a run is created already completed" do
+        expect { create(:agent_run, :completed, project: project) }
+          .to change { project.reload.completed_agent_runs_count }.by(1)
       end
 
       it "recounts when a run transitions to completed" do
@@ -3297,6 +3324,16 @@ RSpec.describe AgentRun do
         project.reload
         expect { agent_run.destroy! }
           .to change { project.reload.completed_agent_runs_count }.by(-1)
+      end
+
+      it "refreshes a previously loaded project association before broadcasting stats" do
+        agent_run = create(:agent_run, :running, project: project)
+        loaded_project = agent_run.project
+
+        agent_run.update!(status: "completed", completed_at: Time.current)
+
+        expect(agent_run.project).to equal(loaded_project)
+        expect(agent_run.project.completed_agent_runs_count).to eq(1)
       end
     end
   end

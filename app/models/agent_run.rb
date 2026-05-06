@@ -88,7 +88,7 @@ class AgentRun < ApplicationRecord
 
   STALE_DETECTOR_ERROR_PREFIX = "Stale run detected"
 
-  belongs_to :project, counter_cache: true
+  belongs_to :project
   belongs_to :issue, optional: true
   belongs_to :prompt_version, optional: true
   belongs_to :provider, optional: true
@@ -122,7 +122,7 @@ class AgentRun < ApplicationRecord
   before_create :generate_proxy_token
   before_create :snapshot_mcp_servers
 
-  after_commit :update_completed_agent_runs_count, on: [ :update, :destroy ]
+  after_commit :sync_project_agent_run_counters, on: [ :create, :update, :destroy ]
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
   after_commit :invalidate_provider_options_cache_on_change, on: [ :create, :update ]
@@ -1849,15 +1849,16 @@ class AgentRun < ApplicationRecord
     nil
   end
 
-  def update_completed_agent_runs_count
-    return unless destroyed? ||
-      (previous_changes.key?("status") &&
-        [ status, previous_changes["status"]&.first ].include?("completed"))
+  def sync_project_agent_run_counters
     return if destroyed? && project&.destroyed?
 
-    Project.where(id: project_id).update_all(
-      completed_agent_runs_count: AgentRun.where(project_id: project_id, status: "completed").count
-    )
+    updates = {}
+    updates[:agent_runs_count] = AgentRun.where(project_id: project_id).count if recount_total_agent_runs?
+    updates[:completed_agent_runs_count] = AgentRun.where(project_id: project_id, status: "completed").count if recount_completed_agent_runs?
+    return if updates.empty?
+
+    Project.where(id: project_id).update_all(updates)
+    project.reload if association(:project).loaded?
   end
 
   def just_finished?
@@ -1878,6 +1879,16 @@ class AgentRun < ApplicationRecord
   end
 
   private :explicit_user_max_tokens_per_run
+
+  def recount_total_agent_runs?
+    previous_changes.key?("id") || destroyed?
+  end
+
+  def recount_completed_agent_runs?
+    destroyed? ||
+      (previous_changes.key?("status") &&
+        [ status, previous_changes["status"]&.first ].include?("completed"))
+  end
 
   def just_timed_out_issue_goal?
     previous_changes.key?("status") && status == "timeout" && create_issue_goal?
