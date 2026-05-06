@@ -37,6 +37,74 @@ RSpec.describe PromptEvolution::Select do
     ])
   end
 
+  def add_runs_with_metrics(version, runs:)
+    now = Time.current
+
+    Array(runs).each do |attrs|
+      run_id = insert_metric_runs(version, 1, now: now).first
+      AgentRun.find(run_id).update_columns(
+        cost_cents: attrs[:cost_cents],
+        duration_seconds: attrs[:duration_seconds]
+      )
+      QualityMetric.insert_all!([
+        metric_row(
+          run_id: run_id,
+          version: version,
+          score: attrs.fetch(:score),
+          metric_type: "automated",
+          now: now
+        )
+      ])
+    end
+  end
+
+  def fitness_samples_for(version)
+    version.agent_runs.includes(:quality_metrics).filter_map do |run|
+      metric = run.quality_metrics.find do |quality_metric|
+        quality_metric.metric_type == "automated" && quality_metric.composite_score.present?
+      end
+      next unless metric
+
+      {
+        composite_score: metric.composite_score,
+        cost_cents: run.cost_cents,
+        duration_seconds: run.duration_seconds
+      }
+    end
+  end
+
+  def repeated_runs(score:, cost_cents:, duration_seconds:)
+    Array.new(3) do
+      { score: score, cost_cents: cost_cents, duration_seconds: duration_seconds }
+    end
+  end
+
+  def build_project_scoped_prompt(project)
+    scoped_prompt = create(:prompt, :with_version, project: project, account: project.account)
+    control = scoped_prompt.current_version
+    variant = create(:prompt_version,
+      prompt: scoped_prompt,
+      version: control.version + 1,
+      parent_version: control,
+      template: "Variant #{control.version + 1} for {{title}} {{body}}"
+    )
+
+    [ scoped_prompt, control, variant ]
+  end
+
+  def stub_fitness_function_for_project(project, threshold:, control_score:, variant_score:)
+    control_result = instance_double(PromptEvolution::FitnessFunction::Result, composite_fitness: control_score)
+    variant_result = instance_double(PromptEvolution::FitnessFunction::Result, composite_fitness: variant_score)
+
+    allow(PromptEvolution::FitnessFunction).to receive(:call) do |samples:, **kwargs|
+      actual_project = kwargs.fetch(:project)
+      expect(actual_project).to eq(project)
+
+      average_quality = samples.sum { |sample| sample[:composite_score].to_f } / samples.size
+      average_quality >= threshold ? variant_result : control_result
+    end
+  end
+
   def insert_metric_runs(version, count, now:)
     return [] if count.zero?
 
@@ -138,7 +206,50 @@ RSpec.describe PromptEvolution::Select do
         random: Random.new(3)
       )
 
-      expect(result.fitness[v2.id]).to be_within(0.01).of(0.81)
+      expected = PromptEvolution::FitnessFunction.call(
+        samples: fitness_samples_for(v2),
+        project: prompt.project
+      ).composite_fitness
+
+      expect(result.fitness[v2.id]).to be_within(0.01).of(expected)
+    end
+
+    it "uses the composite fitness function so lower cost and faster runs can win ties" do
+      v2 = add_version(parent: v1)
+
+      add_runs_with_metrics(v1, runs: repeated_runs(score: 0.8, cost_cents: 400, duration_seconds: 1_200))
+      add_runs_with_metrics(v2, runs: repeated_runs(score: 0.8, cost_cents: 50, duration_seconds: 300))
+
+      result = described_class.call(
+        prompt: prompt,
+        tournament_size: 2,
+        rounds: 5,
+        retirement_threshold: 0.0,
+        random: Random.new(13)
+      )
+
+      expect(result.fitness[v2.id]).to be > result.fitness[v1.id]
+      expect(result.winner).to eq(v2)
+      expect(prompt.reload.current_version).to eq(v2)
+    end
+
+    it "passes the prompt project into the composite fitness function" do
+      scoped_prompt, control, variant = build_project_scoped_prompt(metric_project)
+      add_runs_with_metrics(control, runs: repeated_runs(score: 0.7, cost_cents: 20, duration_seconds: 60))
+      add_runs_with_metrics(variant, runs: repeated_runs(score: 0.9, cost_cents: 500, duration_seconds: 1_800))
+      stub_fitness_function_for_project(metric_project, threshold: 0.8, control_score: 0.4, variant_score: 0.9)
+
+      result = described_class.call(
+        prompt: scoped_prompt,
+        tournament_size: 2,
+        rounds: 5,
+        retirement_threshold: 0.0,
+        random: Random.new(17)
+      )
+
+      expect(result.fitness[variant.id]).to be > result.fitness[control.id]
+      expect(result.winner).to eq(variant)
+      expect(scoped_prompt.reload.current_version).to eq(variant)
     end
 
     it "retires underperformers below the retirement threshold" do

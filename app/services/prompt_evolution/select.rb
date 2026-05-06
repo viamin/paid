@@ -6,10 +6,10 @@ module PromptEvolution
   # rolls back to a previous generation if the current version's fitness has
   # regressed.
   #
-  # Fitness is the mean composite_score across the version's automated
-  # QualityMetrics that have a composite_score recorded. Tournament
-  # selection randomly samples k candidates per round and picks the
-  # fittest; the overall winner is the fittest version across all rounds.
+  # Fitness is the composite score returned by PromptEvolution::FitnessFunction
+  # using automated samples for each version. Tournament selection randomly
+  # samples k candidates per round and picks the fittest; the overall winner
+  # is the fittest version across all rounds.
   #
   # Generation depth is derived from the parent_version_id chain on
   # PromptVersion, which is already tracked when mutations are created.
@@ -117,21 +117,39 @@ module PromptEvolution
     end
 
     def sample_count(version)
-      scored_metrics(version).size
+      fitness_samples(version).size
     end
 
-    def scored_metrics(version)
-      version.quality_metrics.select do |metric|
+    def fitness_samples(version)
+      version.agent_runs.filter_map do |run|
+        sample = fitness_sample_for(run)
+        sample if sample
+      end
+    end
+
+    def fitness_sample_for(run)
+      metric = automated_metric_for(run)
+      return unless metric&.composite_score.present?
+
+      {
+        composite_score: metric.composite_score,
+        cost_cents: run.cost_cents,
+        duration_seconds: run.duration_seconds
+      }
+    end
+
+    def automated_metric_for(run)
+      run.quality_metrics.find do |metric|
         metric.metric_type == "automated" && metric.composite_score.present?
       end
     end
 
-    # Mean composite_score across automated metrics referencing this version.
+    # Composite fitness across automated samples for this version.
     def fitness_for(version)
-      scores = scored_metrics(version).map { |m| m.composite_score.to_f }
-      return nil if scores.empty?
+      samples = fitness_samples(version)
+      return nil if samples.empty?
 
-      (scores.sum / scores.size).round(6)
+      FitnessFunction.call(samples: samples, project: prompt.project).composite_fitness.round(6)
     end
 
     def build_fitness_map(candidates)
