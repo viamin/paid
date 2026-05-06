@@ -2438,8 +2438,9 @@ expect(container_service).to receive(:execute).with(
 
         expect(agent_run.status).to eq("timeout")
         expect(agent_run.error_message).to include("wall_clock_timeout")
-        # With fallback-on-timeout, all providers are attempted
-        expect(agent_run.providers_attempted.length).to be >= 1
+        expect(agent_run.providers_attempted.map { |attempt| attempt["provider"] }).to eq(
+          %w[claude_code cursor aider]
+        )
         expect(agent_run.final_provider).to be_nil
       end
 
