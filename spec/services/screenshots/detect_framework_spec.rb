@@ -29,6 +29,18 @@ RSpec.describe Screenshots::DetectFramework do
         expect(described_class.call(file_list: file_list)).to eq(:nextjs)
       end
 
+      it "detects Next.js from next.config.js and src/app" do
+        file_list = [ "next.config.js", "src/app/page.tsx", "package.json" ]
+
+        expect(described_class.call(file_list: file_list)).to eq(:nextjs)
+      end
+
+      it "detects Next.js from next.config.ts and src/pages" do
+        file_list = [ "next.config.ts", "src/pages/index.tsx", "package.json" ]
+
+        expect(described_class.call(file_list: file_list)).to eq(:nextjs)
+      end
+
       it "detects Django from manage.py and templates" do
         file_list = [ "manage.py", "myapp/templates/home.html", "requirements.txt" ]
 
@@ -87,6 +99,14 @@ RSpec.describe Screenshots::DetectFramework do
         File.write(File.join(repo_path, "README.md"), "# Hello")
 
         expect(described_class.call(repo_path: repo_path)).to eq(:generic)
+      end
+
+      it "detects Next.js src/app layout from filesystem" do
+        FileUtils.mkdir_p(File.join(repo_path, "src/app"))
+        File.write(File.join(repo_path, "next.config.js"), "export default {}")
+        File.write(File.join(repo_path, "src/app/page.tsx"), "export default function Page() {}")
+
+        expect(described_class.call(repo_path: repo_path)).to eq(:nextjs)
       end
     end
 

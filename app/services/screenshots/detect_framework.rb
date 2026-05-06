@@ -37,7 +37,7 @@ module Screenshots
     end
 
     def nextjs?
-      next_config? && (file_exists?("app") || file_exists?("pages"))
+      next_config? && nextjs_ui_root?
     end
 
     def django?
@@ -46,6 +46,10 @@ module Screenshots
 
     def next_config?
       any_match?(%r{\Anext\.config\.[jt]s\z}) || any_match?(%r{\Anext\.config\.mjs\z})
+    end
+
+    def nextjs_ui_root?
+      %w[app pages src/app src/pages].any? { |path| file_exists?(path) }
     end
 
     def file_exists?(path)

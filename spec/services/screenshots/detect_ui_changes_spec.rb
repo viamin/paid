@@ -258,6 +258,27 @@ RSpec.describe Screenshots::DetectUiChanges do
   end
 
   describe "custom patterns" do
+    it "accepts glob string patterns from screenshots config" do
+      result = described_class.call(
+        changed_files: [ "app/views/projects/index.html.erb", "app/models/project.rb" ],
+        patterns: [ "app/views/**/*" ]
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "app/views/projects/index.html.erb" ])
+    end
+
+    it "applies glob string exclusions from screenshots config" do
+      result = described_class.call(
+        changed_files: [ "app/views/projects/index.html.erb", "app/views/layouts/mailer/reset.html.erb" ],
+        patterns: [ "app/views/**/*" ],
+        exclusions: [ "app/views/layouts/mailer/**/*" ]
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "app/views/projects/index.html.erb" ])
+    end
+
     it "uses provided patterns instead of framework defaults" do
       result = described_class.call(
         changed_files: [ "my_custom/views/home.html" ],

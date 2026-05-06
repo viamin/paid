@@ -31,10 +31,12 @@ module Screenshots
   #     exclusions: []
   #   )
   class DetectUiChanges
+    GLOB_FLAGS = File::FNM_PATHNAME | File::FNM_EXTGLOB
+
     # @param changed_files [Array<String>] list of file paths changed in the PR
     # @param framework [Symbol, nil] framework identifier (e.g. :rails, :nextjs)
-    # @param patterns [Array<Regexp>, nil] custom inclusion patterns (overrides framework)
-    # @param exclusions [Array<Regexp>, nil] custom exclusion patterns (overrides framework)
+    # @param patterns [Array<Regexp, String>, nil] custom inclusion patterns or globs (overrides framework)
+    # @param exclusions [Array<Regexp, String>, nil] custom exclusion patterns or globs (overrides framework)
     # @param repo_path [String, nil] repo root for framework auto-detection
     # @return [Hash] with :ui_changes? boolean and :ui_files array
     def self.call(changed_files:, framework: nil, patterns: nil, exclusions: nil, repo_path: nil)
@@ -91,9 +93,18 @@ module Screenshots
     end
 
     def ui_file?(path)
-      return false if resolved_exclusions.any? { |pattern| pattern.match?(path) }
+      return false if resolved_exclusions.any? { |pattern| matches_pattern?(pattern, path) }
 
-      resolved_patterns.any? { |pattern| pattern.match?(path) }
+      resolved_patterns.any? { |pattern| matches_pattern?(pattern, path) }
+    end
+
+    def matches_pattern?(pattern, path)
+      case pattern
+      when Regexp
+        pattern.match?(path)
+      else
+        File.fnmatch?(pattern.to_s, path, GLOB_FLAGS)
+      end
     end
   end
 end
