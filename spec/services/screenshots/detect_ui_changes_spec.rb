@@ -202,7 +202,8 @@ RSpec.describe Screenshots::DetectUiChanges do
   end
 
   describe "framework-aware detection" do
-    it "uses Rails patterns by default (backward compatible)" do
+    it "auto-detects framework from working directory when no framework specified" do
+      # This repo is a Rails app, so auto-detection from Dir.pwd should find Rails patterns
       result = described_class.call(changed_files: [ "app/views/projects/index.html.erb" ])
 
       expect(result[:ui_changes?]).to be true

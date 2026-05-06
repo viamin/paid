@@ -61,8 +61,16 @@ RSpec.describe Screenshots::FrameworkPatterns do
       expect(patterns[:patterns].any? { |p| p.match?("app/dashboard/page.tsx") }).to be true
     end
 
+    it "matches root-level page component" do
+      expect(patterns[:patterns].any? { |p| p.match?("app/page.tsx") }).to be true
+    end
+
     it "matches layout components" do
       expect(patterns[:patterns].any? { |p| p.match?("app/dashboard/layout.tsx") }).to be true
+    end
+
+    it "matches root-level layout component" do
+      expect(patterns[:patterns].any? { |p| p.match?("app/layout.tsx") }).to be true
     end
 
     it "matches component files" do

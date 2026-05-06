@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require_relative "framework_patterns"
+require_relative "detect_framework"
+
 module Screenshots
   # Determines whether a set of changed file paths includes UI-facing changes.
   #
@@ -81,9 +84,10 @@ module Screenshots
     end
 
     def detect_or_default_framework
-      return DetectFramework.call(repo_path: @repo_path) if @repo_path
-
-      :rails
+      # Use repo_path if given, otherwise probe the working directory so
+      # callers that only supply changed_files still get auto-detection.
+      path = @repo_path || Dir.pwd
+      DetectFramework.call(repo_path: path)
     end
 
     def ui_file?(path)

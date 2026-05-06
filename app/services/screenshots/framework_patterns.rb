@@ -31,10 +31,10 @@ module Screenshots
 
     NEXTJS = {
       patterns: [
-        %r{\Aapp/.+/page\.[jt]sx?\z},
-        %r{\Aapp/.+/layout\.[jt]sx?\z},
-        %r{\Aapp/.+/loading\.[jt]sx?\z},
-        %r{\Aapp/.+/error\.[jt]sx?\z},
+        %r{\Aapp/(?:.+/)?page\.[jt]sx?\z},
+        %r{\Aapp/(?:.+/)?layout\.[jt]sx?\z},
+        %r{\Aapp/(?:.+/)?loading\.[jt]sx?\z},
+        %r{\Aapp/(?:.+/)?error\.[jt]sx?\z},
         %r{\Apages/},
         %r{\Acomponents/},
         %r{\Astyles/},
