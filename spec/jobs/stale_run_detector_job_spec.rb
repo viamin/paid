@@ -562,6 +562,15 @@ RSpec.describe StaleRunDetectorJob do
         expect(issue.reload.paid_state).to eq("in_progress")
       end
 
+      it "does not reset an in_progress pull request with no active run" do
+        pull_request = create(:issue, :pull_request, project: project, paid_state: "in_progress",
+          updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+
+        described_class.perform_now
+
+        expect(pull_request.reload.paid_state).to eq("in_progress")
+      end
+
       it "enqueues ProcessRunQueueJob after recovering orphans" do
         create(:issue, project: project, paid_state: "in_progress",
           updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)

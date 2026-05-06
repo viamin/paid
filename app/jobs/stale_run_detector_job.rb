@@ -136,7 +136,7 @@ class StaleRunDetectorJob < ApplicationJob
       .where.not(issue_id: nil)
       .select(:issue_id)
 
-    orphans = Issue.where(paid_state: "in_progress")
+    orphans = Issue.where(paid_state: "in_progress", is_pull_request: false)
       .where.not(id: active_issue_ids)
       .where("updated_at < ?", ORPHANED_IN_PROGRESS_AGE.ago)
 
