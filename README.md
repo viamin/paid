@@ -114,7 +114,7 @@ docker compose up --build
 # before using the app. `bin/setup` already runs `bin/rails db:prepare`.
 ```
 
-> **Note**: By default, the checked-in `docker-compose.yml` starts `postgres`, `temporal`, `temporal-admin-tools`, `temporal-ui`, `qdrant`, `web`, and `worker` when you run `docker compose up --build`. The `agent-image` and `agent-test` services are profile-gated, so they only start when their profiles are explicitly enabled. The compose file already wires `DATABASE_URL`, Temporal, and Qdrant for the app. `ANTHROPIC_API_KEY` is passed through today; if you want proxy-based OpenAI or Google auth in Compose, add `OPENAI_API_KEY` and/or `GOOGLE_API_KEY` to the `web` service, and to `worker` as well if you want worker-side flows to see them.
+> **Note**: By default, the checked-in `docker-compose.yml` starts `postgres`, `redis`, `temporal`, `temporal-admin-tools`, `temporal-ui`, `qdrant`, `web`, and `worker` when you run `docker compose up --build`. The compose file wires `DATABASE_URL`, `REDIS_URL`, Temporal, and Qdrant for the app so development-only dashboards such as `rails_performance` work out of the box. The `agent-image` and `agent-test` services are profile-gated, so they only start when their profiles are explicitly enabled. `ANTHROPIC_API_KEY` is passed through today; if you want proxy-based OpenAI or Google auth in Compose, add `OPENAI_API_KEY` and/or `GOOGLE_API_KEY` to the `web` service, and to `worker` as well if you want worker-side flows to see them.
 
 **Database role note**: Compose creates the Rails `paid` role separately from the PostgreSQL admin role so tenant row-level security cannot be bypassed by a superuser connection. If you have an older `postgres-data` volume where `paid` was the bootstrap superuser, recreate that volume before running this branch.
 
@@ -150,8 +150,8 @@ bash .devcontainer/setup-signing-key.sh
 ### Option 3: Local Development
 
 ```bash
-# Prerequisites: Ruby 3.4+, Bundler 2.7.2, PostgreSQL 16+, Node.js 22.x (see .tool-versions for the exact pinned version), Yarn 1.22.22, Docker Engine
-# Also start PostgreSQL, Temporal, and Qdrant locally before running setup.
+# Prerequisites: Ruby 3.4+, Bundler 2.7.2, PostgreSQL 16+, Redis 7+, Node.js 22.x (see .tool-versions for the exact pinned version), Yarn 1.22.22, Docker Engine
+# Also start PostgreSQL, Redis, Temporal, and Qdrant locally before running setup.
 bin/setup               # Install deps, prepare DB
 bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split Temporal poll/agent workers
 ```
@@ -196,6 +196,7 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split T
 | `TEMPORAL_POLL_TASK_QUEUE` | Temporal poll workflow task queue | `paid-poll-tasks` |
 | `TEMPORAL_AGENT_TASK_QUEUE` | Temporal agent execution task queue | `paid-agent-tasks` |
 | `TEMPORAL_UI_URL` | Temporal UI base URL for monitoring links | `http://localhost:8080` |
+| `REDIS_URL` | Redis endpoint used by development features such as `rails_performance` | `redis://localhost:6379/0` |
 | `OPENAI_API_KEY` | OpenAI API key (for agents that use OpenAI) | _(none)_ |
 | `GOOGLE_API_KEY` | Google API key for Gemini proxy requests | _(none)_ |
 | `QDRANT_URL` | Qdrant REST endpoint for knowledge search | `http://localhost:6333` |
@@ -253,6 +254,7 @@ OpenCode and KiloCode direct-outbound API-key entries are the exception: Paid wr
 | ------- | ---- | ----------- |
 | `web` | 3000 | Rails application server |
 | `postgres` | 5432 | PostgreSQL database |
+| `redis` | 6379 | Redis for development-only metrics and dashboards |
 | `temporal` | 7233 | Temporal server (gRPC) |
 | `temporal-ui` | 8080 | Temporal web interface |
 | `qdrant` | 6333 | Vector database for semantic knowledge search |
