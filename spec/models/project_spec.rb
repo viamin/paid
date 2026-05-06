@@ -927,6 +927,65 @@ RSpec.describe Project do
       end
     end
 
+    describe "#effective_screenshot_settings" do
+      it "returns defaults when screenshot_settings is empty" do
+        project = build(:project, screenshot_settings: {})
+
+        expect(project.effective_screenshot_settings).to eq(
+          "enabled" => false,
+          "driver" => "playwright"
+        )
+      end
+
+      it "merges screenshot defaults with stored settings" do
+        project = build(:project, screenshot_settings: { "enabled" => true })
+
+        expect(project.effective_screenshot_settings).to eq(
+          "enabled" => true,
+          "driver" => "playwright"
+        )
+      end
+    end
+
+    describe "screenshot accessors" do
+      it "reads and writes individual settings" do
+        project = build(:project, screenshot_settings: {})
+
+        project.screenshot_enabled = true
+        project.screenshot_driver = "cuprite"
+
+        expect(project.screenshot_settings).to eq(
+          "enabled" => true,
+          "driver" => "cuprite"
+        )
+        expect(project.screenshot_enabled?).to be true
+        expect(project.screenshot_driver).to eq("cuprite")
+      end
+
+      it "supports incremental updates without pre-populated defaults" do
+        project = build(:project, screenshot_settings: {})
+
+        project.screenshot_enabled = true
+
+        expect(project).to be_valid
+        expect(project.screenshot_settings).to eq("enabled" => true)
+        expect(project.effective_screenshot_settings).to eq(
+          "enabled" => true,
+          "driver" => "playwright"
+        )
+      end
+    end
+
+    describe "#screenshots_enabled?" do
+      it "returns false by default" do
+        expect(build(:project).screenshots_enabled?).to be false
+      end
+
+      it "reflects the enabled flag" do
+        expect(build(:project, screenshot_settings: { "enabled" => true }).screenshots_enabled?).to be true
+      end
+    end
+
     describe "validation" do
       it "accepts empty review_settings" do
         project = build(:project, review_settings: {})
@@ -945,6 +1004,104 @@ RSpec.describe Project do
           }
         })
         expect(project).to be_valid
+      end
+
+      it "accepts valid screenshot_settings" do
+        project = build(:project, screenshot_settings: {
+          "enabled" => true,
+          "driver" => "cuprite",
+          "viewport" => { "width" => 1440 }
+        })
+
+        expect(project).to be_valid
+      end
+
+      it "rejects non-hash screenshot_settings" do
+        project = build(:project, screenshot_settings: "bad")
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("must be a JSON object")
+      end
+
+      it "rejects unknown screenshot drivers" do
+        project = build(:project, screenshot_settings: { "driver" => "selenium" })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("driver must be one of: playwright, cuprite")
+      end
+
+      it "rejects unknown screenshot_settings keys" do
+        project = build(:project, screenshot_settings: { "enabled" => true, "bogus" => 1 })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("unknown keys: bogus")
+      end
+
+      it "rejects invalid viewport in screenshot_settings" do
+        project = build(:project, screenshot_settings: { "viewport" => "bad" })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("viewport must be a mapping")
+      end
+
+      it "rejects invalid base_url in screenshot_settings" do
+        project = build(:project, screenshot_settings: { "base_url" => 123 })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("base_url must be a non-blank string")
+      end
+
+      it "rejects non-positive viewport dimensions" do
+        project = build(:project, screenshot_settings: { "viewport" => { "width" => -1, "height" => 900 } })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("viewport.width must be a positive integer")
+      end
+
+      it "rejects non-string items in ui_patterns" do
+        project = build(:project, screenshot_settings: { "ui_patterns" => [ 123 ] })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("ui_patterns[0] must be a non-blank string")
+      end
+
+      it "rejects invalid auth strategy" do
+        project = build(:project, screenshot_settings: { "auth" => { "strategy" => "bogus" } })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("auth.strategy must be one of")
+      end
+
+      it "rejects non-hash seed items" do
+        project = build(:project, screenshot_settings: { "seed" => [ 123 ] })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("seed[0] must be a mapping")
+      end
+
+      it "rejects non-string setup items" do
+        project = build(:project, screenshot_settings: { "setup" => [ 456 ] })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("setup[0] must be a non-blank string")
+      end
+
+      it "stores and retrieves screenshot_settings via JSONB" do
+        settings = {
+          "enabled" => true,
+          "driver" => "cuprite",
+          "viewport" => { "width" => 1440, "height" => 900 }
+        }
+        project = create(:project, screenshot_settings: settings)
+
+        reloaded = described_class.find(project.id)
+
+        expect(reloaded.screenshot_settings).to eq(settings)
+        expect(reloaded.effective_screenshot_settings).to eq(
+          "enabled" => true,
+          "driver" => "cuprite",
+          "viewport" => { "width" => 1440, "height" => 900 }
+        )
       end
 
       it "rejects unknown review methods" do
@@ -1270,214 +1427,6 @@ RSpec.describe Project do
         reloaded = described_class.find(project.id)
 
         expect(reloaded.review_settings).to eq(settings)
-      end
-    end
-  end
-
-  describe "screenshot_settings" do
-    it "uses the schema defaults for new records" do
-      project = build(:project)
-
-      expect(project.screenshot_settings).to eq(Project::DEFAULT_SCREENSHOT_SETTINGS)
-    end
-
-    describe "#effective_screenshot_settings" do
-      it "returns defaults when screenshot_settings is empty" do
-        project = build(:project, screenshot_settings: {})
-        settings = project.effective_screenshot_settings
-
-        expect(settings).to eq(Project::DEFAULT_SCREENSHOT_SETTINGS)
-        expect(project.screenshot_enabled).to be false
-        expect(project.screenshot_driver).to eq("playwright")
-        expect(project.screenshot_capture_on_pr?).to be true
-        expect(project.screenshot_config_path).to eq(".paid/screenshots.yml")
-        expect(project.screenshot_service_dependencies).to eq([])
-        expect(project.screenshot_setup_commands).to eq([])
-        expect(project.screenshot_auth_strategy).to eq("none")
-      end
-
-      it "merges custom settings over defaults" do
-        project = build(:project, screenshot_settings: {
-          "enabled" => true,
-          "driver" => "cuprite",
-          "service_dependencies" => [ "postgres" ]
-        })
-        settings = project.effective_screenshot_settings
-
-        expect(settings["enabled"]).to be true
-        expect(settings["driver"]).to eq("cuprite")
-        expect(settings["capture_on_pr"]).to be true
-        expect(settings["service_dependencies"]).to eq([ "postgres" ])
-      end
-    end
-
-    describe "typed accessors" do
-      it "reads and writes individual settings" do
-        project = build(:project)
-
-        project.screenshot_enabled = true
-        project.screenshot_driver = "cuprite"
-        project.screenshot_capture_on_pr = false
-        project.screenshot_config_path = "config/screenshots.yml"
-        project.screenshot_service_dependencies = %w[postgres redis]
-        project.screenshot_setup_commands = [ "bin/rails db:prepare", "yarn build" ]
-        project.screenshot_auth_strategy = "token"
-
-        expect(project.screenshot_settings).to include(
-          "enabled" => true,
-          "driver" => "cuprite",
-          "capture_on_pr" => false,
-          "config_path" => "config/screenshots.yml",
-          "service_dependencies" => %w[postgres redis],
-          "setup_commands" => [ "bin/rails db:prepare", "yarn build" ],
-          "auth_strategy" => "token"
-        )
-        expect(project.screenshot_enabled).to be true
-        expect(project.screenshot_capture_on_pr?).to be false
-      end
-
-      it "supports incremental updates without requiring array keys" do
-        project = build(:project, screenshot_settings: {})
-
-        project.screenshot_enabled = true
-
-        expect(project).to be_valid
-        expect(project.screenshot_settings).to eq("enabled" => true)
-        expect(project.effective_screenshot_settings["service_dependencies"]).to eq([])
-        expect(project.effective_screenshot_settings["setup_commands"]).to eq([])
-      end
-    end
-
-    describe "#screenshots_enabled?" do
-      it "returns false by default" do
-        project = build(:project)
-        expect(project.screenshots_enabled?).to be false
-      end
-
-      it "reflects the enabled flag" do
-        project = build(:project, screenshot_settings: { "enabled" => true })
-        expect(project.screenshots_enabled?).to be true
-      end
-    end
-
-    describe "validation" do
-      it "accepts empty screenshot_settings" do
-        project = build(:project, screenshot_settings: {})
-        expect(project).to be_valid
-      end
-
-      it "accepts valid screenshot_settings" do
-        project = build(:project, screenshot_settings: {
-          "enabled" => true,
-          "driver" => "playwright",
-          "capture_on_pr" => true,
-          "config_path" => ".paid/custom-screenshots.yml",
-          "service_dependencies" => [ "postgres" ],
-          "setup_commands" => [ "bin/rails db:prepare" ],
-          "auth_strategy" => "form"
-        })
-
-        expect(project).to be_valid
-      end
-
-      it "accepts partial screenshot_settings overrides" do
-        project = build(:project, screenshot_settings: { "enabled" => true })
-
-        expect(project).to be_valid
-      end
-
-      it "rejects blank string values for driver, auth_strategy, and config_path" do
-        %w[driver auth_strategy config_path].each do |key|
-          project = build(:project, screenshot_settings: { key => "" })
-
-          expect(project).not_to be_valid
-          expect(project.errors[:screenshot_settings].join).to include("#{key} must not be blank")
-        end
-      end
-
-      it "rejects invalid driver values" do
-        project = build(:project, screenshot_settings: { "driver" => "selenium" })
-
-        expect(project).not_to be_valid
-        expect(project.errors[:screenshot_settings].join).to include("driver must be one of")
-      end
-
-      it "rejects invalid auth_strategy values" do
-        project = build(:project, screenshot_settings: { "auth_strategy" => "oauth" })
-
-        expect(project).not_to be_valid
-        expect(project.errors[:screenshot_settings].join).to include("auth_strategy must be one of")
-      end
-
-      it "rejects absolute config_path values" do
-        project = build(:project, screenshot_settings: { "config_path" => "/tmp/screenshots.yml" })
-
-        expect(project).not_to be_valid
-        expect(project.errors[:screenshot_settings].join).to include("config_path must be a valid relative path")
-      end
-
-      it "rejects config_path traversal" do
-        project = build(:project, screenshot_settings: { "config_path" => "../screenshots.yml" })
-
-        expect(project).not_to be_valid
-        expect(project.errors[:screenshot_settings].join).to include("config_path must be a valid relative path")
-      end
-
-      it "rejects blank setup_commands items" do
-        project = build(:project, screenshot_settings: { "setup_commands" => [ "bin/rails db:prepare", "" ] })
-
-        expect(project).not_to be_valid
-        expect(project.errors[:screenshot_settings].join).to include("setup_commands must be an array of non-blank strings")
-      end
-
-      it "rejects non-array setup_commands values" do
-        project = build(:project, screenshot_settings: { "setup_commands" => "bin/rails db:prepare" })
-
-        expect(project).not_to be_valid
-        expect(project.errors[:screenshot_settings].join).to include("setup_commands must be an array of non-blank strings")
-      end
-
-      it "rejects nil setup_commands values" do
-        project = build(:project, screenshot_settings: { "setup_commands" => nil })
-
-        expect(project).not_to be_valid
-        expect(project.errors[:screenshot_settings].join).to include("setup_commands must be an array of non-blank strings")
-      end
-
-      it "rejects blank service_dependencies items" do
-        project = build(:project, screenshot_settings: { "service_dependencies" => [ "postgres", " " ] })
-
-        expect(project).not_to be_valid
-        expect(project.errors[:screenshot_settings].join).to include("service_dependencies must be an array of non-blank strings")
-      end
-
-      it "rejects nil service_dependencies values" do
-        project = build(:project, screenshot_settings: { "service_dependencies" => nil })
-
-        expect(project).not_to be_valid
-        expect(project.errors[:screenshot_settings].join).to include("service_dependencies must be an array of non-blank strings")
-      end
-
-      it "rejects screenshot_settings set to a string" do
-        project = build(:project, screenshot_settings: "invalid")
-
-        expect(project).not_to be_valid
-        expect(project.errors[:screenshot_settings].join).to include("must be a JSON object")
-      end
-
-      it "stores and retrieves screenshot_settings via JSONB" do
-        settings = {
-          "enabled" => true,
-          "driver" => "cuprite",
-          "service_dependencies" => [ "postgres" ],
-          "setup_commands" => [ "bin/rails db:prepare" ],
-          "auth_strategy" => "custom"
-        }
-        project = create(:project, screenshot_settings: settings)
-        reloaded = described_class.find(project.id)
-
-        expect(reloaded.screenshot_settings).to eq(settings)
-        expect(reloaded.effective_screenshot_settings).to eq(Project::DEFAULT_SCREENSHOT_SETTINGS.merge(settings))
       end
     end
   end

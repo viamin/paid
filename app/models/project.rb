@@ -74,16 +74,9 @@ class Project < ApplicationRecord
     "metric_thresholds" => {}
   }.freeze
 
-  SCREENSHOT_DRIVERS = %w[playwright cuprite].freeze
-  SCREENSHOT_AUTH_STRATEGIES = %w[none form token custom].freeze
   DEFAULT_SCREENSHOT_SETTINGS = {
     "enabled" => false,
-    "driver" => "playwright",
-    "capture_on_pr" => true,
-    "config_path" => ".paid/screenshots.yml",
-    "service_dependencies" => [],
-    "setup_commands" => [],
-    "auth_strategy" => "none"
+    "driver" => "playwright"
   }.freeze
 
   AUTOMATION_SETTINGS = [
@@ -564,56 +557,16 @@ class Project < ApplicationRecord
     screenshot_enabled
   end
 
+  def screenshot_enabled?
+    screenshot_enabled
+  end
+
   def screenshot_driver
     effective_screenshot_settings["driver"]
   end
 
   def screenshot_driver=(value)
     write_screenshot_setting("driver", value)
-  end
-
-  def screenshot_capture_on_pr
-    effective_screenshot_settings["capture_on_pr"] == true
-  end
-
-  def screenshot_capture_on_pr=(value)
-    write_screenshot_setting("capture_on_pr", ActiveModel::Type::Boolean.new.cast(value))
-  end
-
-  def screenshot_capture_on_pr?
-    screenshot_capture_on_pr
-  end
-
-  def screenshot_config_path
-    effective_screenshot_settings["config_path"]
-  end
-
-  def screenshot_config_path=(value)
-    write_screenshot_setting("config_path", value)
-  end
-
-  def screenshot_service_dependencies
-    effective_screenshot_settings["service_dependencies"].dup
-  end
-
-  def screenshot_service_dependencies=(value)
-    write_screenshot_setting("service_dependencies", value)
-  end
-
-  def screenshot_setup_commands
-    effective_screenshot_settings["setup_commands"].dup
-  end
-
-  def screenshot_setup_commands=(value)
-    write_screenshot_setting("setup_commands", value)
-  end
-
-  def screenshot_auth_strategy
-    effective_screenshot_settings["auth_strategy"]
-  end
-
-  def screenshot_auth_strategy=(value)
-    write_screenshot_setting("auth_strategy", value)
   end
 
   def review_settings=(value)
@@ -949,37 +902,9 @@ class Project < ApplicationRecord
 
     normalized = screenshot_settings.deep_stringify_keys
 
-    if normalized.key?("driver")
-      if normalized["driver"].blank?
-        errors.add(:screenshot_settings, "driver must not be blank")
-      elsif !SCREENSHOT_DRIVERS.include?(normalized["driver"])
-        errors.add(:screenshot_settings, "driver must be one of: #{SCREENSHOT_DRIVERS.join(', ')}")
-      end
-    end
-
-    if normalized.key?("auth_strategy")
-      if normalized["auth_strategy"].blank?
-        errors.add(:screenshot_settings, "auth_strategy must not be blank")
-      elsif !SCREENSHOT_AUTH_STRATEGIES.include?(normalized["auth_strategy"])
-        errors.add(:screenshot_settings, "auth_strategy must be one of: #{SCREENSHOT_AUTH_STRATEGIES.join(', ')}")
-      end
-    end
-
-    if normalized.key?("config_path")
-      if normalized["config_path"].blank?
-        errors.add(:screenshot_settings, "config_path must not be blank")
-      elsif !valid_relative_screenshot_path?(normalized["config_path"])
-        errors.add(:screenshot_settings, "config_path must be a valid relative path")
-      end
-    end
-
-    if normalized.key?("service_dependencies")
-      validate_screenshot_string_array(normalized["service_dependencies"], "service_dependencies")
-    end
-
-    if normalized.key?("setup_commands")
-      validate_screenshot_string_array(normalized["setup_commands"], "setup_commands")
-    end
+    Screenshots::ConfigParser.validate_partial!(normalized)
+  rescue Screenshots::ConfigError => e
+    errors.add(:screenshot_settings, e.message)
   end
 
   def validate_review_methods_config(normalized)
@@ -1072,26 +997,6 @@ class Project < ApplicationRecord
   def write_screenshot_setting(key, value)
     settings = screenshot_settings.is_a?(Hash) ? screenshot_settings.deep_stringify_keys : {}
     self.screenshot_settings = settings.merge(key => value)
-  end
-
-  def valid_relative_screenshot_path?(path)
-    return false unless path.is_a?(String) && path.strip.present?
-    return false if path != path.strip
-    return false if path.start_with?("/", "~")
-
-    parts = path.split("/")
-    parts.none?(&:blank?) && !parts.include?("..")
-  end
-
-  def validate_screenshot_string_array(value, key)
-    unless value.is_a?(Array)
-      errors.add(:screenshot_settings, "#{key} must be an array of non-blank strings")
-      return
-    end
-
-    return if value.all? { |item| item.is_a?(String) && item.strip.present? }
-
-    errors.add(:screenshot_settings, "#{key} must be an array of non-blank strings")
   end
 
   def allowed_github_usernames_not_empty

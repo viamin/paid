@@ -3318,7 +3318,7 @@ CREATE TABLE public.projects (
     knowledge_evolution_enabled boolean DEFAULT false NOT NULL,
     agent_runs_count integer DEFAULT 0 NOT NULL,
     completed_agent_runs_count integer DEFAULT 0 NOT NULL,
-    screenshot_settings jsonb DEFAULT '{"driver": "playwright", "enabled": false, "config_path": ".paid/screenshots.yml", "auth_strategy": "none", "capture_on_pr": true, "setup_commands": [], "service_dependencies": []}'::jsonb NOT NULL
+    screenshot_settings jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 ALTER TABLE ONLY public.projects FORCE ROW LEVEL SECURITY;
@@ -3342,7 +3342,7 @@ COMMENT ON COLUMN public.projects.completed_agent_runs_count IS 'Counter cache f
 -- Name: COLUMN projects.screenshot_settings; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.projects.screenshot_settings IS 'Per-project screenshot capture settings for automated and manual runs';
+COMMENT ON COLUMN public.projects.screenshot_settings IS 'Project-level defaults and overrides for repository screenshot capture config';
 
 
 --
@@ -11205,7 +11205,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
-('20260506174840'),
+('20260506174922'),
 ('20260506074459'),
 ('20260505220424'),
 ('20260504222628'),
@@ -11453,4 +11453,3 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260128004342'),
 ('20260128004305'),
 ('20260127154444');
-
