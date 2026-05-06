@@ -1275,7 +1275,7 @@ RSpec.describe Project do
   end
 
   describe "screenshot_settings" do
-    it "initializes screenshot_settings with defaults for new records" do
+    it "uses the schema defaults for new records" do
       project = build(:project)
 
       expect(project.screenshot_settings).to eq(Project::DEFAULT_SCREENSHOT_SETTINGS)

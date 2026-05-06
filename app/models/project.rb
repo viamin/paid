@@ -164,7 +164,6 @@ class Project < ApplicationRecord
 
   encrypts :webhook_secret
 
-  after_initialize :initialize_screenshot_settings
   before_validation :normalize_priority_labels
   after_update_commit :invalidate_relationship_parsing_on_trust_change
 
@@ -818,10 +817,6 @@ class Project < ApplicationRecord
       project_id: id,
       new_github_token_id: github_token_id
     )
-  end
-
-  def initialize_screenshot_settings
-    self.screenshot_settings = DEFAULT_SCREENSHOT_SETTINGS.deep_dup if screenshot_settings.nil?
   end
 
   def auto_pick_just_enabled?
