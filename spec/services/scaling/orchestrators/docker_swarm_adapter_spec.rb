@@ -55,12 +55,20 @@ RSpec.describe Scaling::Orchestrators::DockerSwarmAdapter do
   end
 
   describe "#healthy?" do
-    it "returns true when the node is an active swarm manager/worker" do
+    it "returns true when the node is an active swarm manager" do
       allow(adapter).to receive(:run_command)
-        .with("docker", "info", "--format", "{{json .Swarm.LocalNodeState}}")
-        .and_return('"active"' "\n")
+        .with("docker", "info", "--format", "{{json .Swarm}}")
+        .and_return({ LocalNodeState: "active", ControlAvailable: true }.to_json)
 
       expect(adapter.healthy?).to be true
+    end
+
+    it "returns false when the node is a swarm worker" do
+      allow(adapter).to receive(:run_command)
+        .with("docker", "info", "--format", "{{json .Swarm}}")
+        .and_return({ LocalNodeState: "active", ControlAvailable: false }.to_json)
+
+      expect(adapter.healthy?).to be false
     end
 
     it "returns false when docker info fails" do

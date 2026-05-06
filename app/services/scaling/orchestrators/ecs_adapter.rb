@@ -14,10 +14,21 @@ module Scaling
 
       class ApiError < OrchestratorError; end
 
-      attr_reader :cluster, :region, :profile
+      FARGATE_TASK_SIZES = {
+        256 => { memory_range: 512..2048, step: 512 },
+        512 => { memory_range: 1024..4096, step: 1024 },
+        1024 => { memory_range: 2048..8192, step: 1024 },
+        2048 => { memory_range: 4096..16384, step: 1024 },
+        4096 => { memory_range: 8192..30720, step: 1024 },
+        8192 => { memory_range: 16384..61440, step: 4096 },
+        16384 => { memory_range: 32768..122880, step: 8192 }
+      }.freeze
 
-      def initialize(cluster: "default", region: nil, profile: nil, **)
+      attr_reader :cluster, :container_name, :region, :profile
+
+      def initialize(cluster: "default", container_name: nil, region: nil, profile: nil, **)
         @cluster = cluster
+        @container_name = container_name
         @region = region
         @profile = profile
       end
@@ -107,8 +118,7 @@ module Scaling
       end
 
       def updated_container_definitions(service, definitions, cpu_limit, memory_limit)
-        target_name = definitions.any? { |definition| definition[:name] == service } ? service : definitions.first&.fetch(:name)
-        raise ApiError, "task definition has no container definitions" unless target_name
+        target_name = resolve_target_container_name(service, definitions)
 
         definitions.map do |definition|
           next definition unless definition[:name] == target_name
@@ -121,6 +131,7 @@ module Scaling
       end
 
       def register_task_definition(task_definition, container_definitions)
+        task_resources = updated_task_resources(task_definition, container_definitions)
         payload = {
           family: task_definition[:family],
           taskRoleArn: task_definition[:taskRoleArn],
@@ -130,8 +141,8 @@ module Scaling
           volumes: task_definition[:volumes],
           placementConstraints: task_definition[:placementConstraints],
           requiresCompatibilities: task_definition[:requiresCompatibilities],
-          cpu: task_definition[:cpu],
-          memory: task_definition[:memory],
+          cpu: task_resources[:cpu],
+          memory: task_resources[:memory],
           runtimePlatform: task_definition[:runtimePlatform],
           pidMode: task_definition[:pidMode],
           ipcMode: task_definition[:ipcMode],
@@ -144,6 +155,61 @@ module Scaling
           run_aws("ecs", "register-task-definition",
             "--cli-input-json", JSON.generate(payload))
         )
+      end
+
+      def resolve_target_container_name(service, definitions)
+        raise ApiError, "task definition has no container definitions" if definitions.blank?
+
+        target_name = container_name || service
+        return target_name if definitions.any? { |definition| definition[:name] == target_name }
+
+        raise ApiError,
+          "task definition does not contain container #{target_name.inspect}; configure container_name when the ECS service name differs"
+      end
+
+      def updated_task_resources(task_definition, container_definitions)
+        required_cpu = container_definitions.sum { |definition| definition[:cpu].to_i if definition[:cpu] }.to_i
+        required_memory = container_definitions.sum { |definition| definition[:memory].to_i if definition[:memory] }.to_i
+        current_cpu = task_definition[:cpu].to_i
+        current_memory = task_definition[:memory].to_i
+
+        required_cpu = [ required_cpu, current_cpu ].max
+        required_memory = [ required_memory, current_memory ].max
+
+        if Array(task_definition[:requiresCompatibilities]).include?("FARGATE")
+          fargate_task_resources(required_cpu, required_memory)
+        else
+          {
+            cpu: task_definition[:cpu].present? ? required_cpu.to_s : nil,
+            memory: task_definition[:memory].present? ? required_memory.to_s : nil
+          }
+        end
+      end
+
+      def fargate_task_resources(required_cpu, required_memory)
+        cpu, config = FARGATE_TASK_SIZES.find do |candidate_cpu, candidate_config|
+          next false if candidate_cpu < required_cpu
+
+          memory_range = candidate_config.fetch(:memory_range)
+          next false if required_memory > memory_range.end
+
+          aligned_fargate_memory(required_memory, candidate_config).between?(memory_range.begin, memory_range.end)
+        end
+
+        raise ApiError, "requested CPU/memory exceeds supported ECS Fargate task sizes" unless cpu && config
+
+        {
+          cpu: cpu.to_s,
+          memory: aligned_fargate_memory(required_memory, config).to_s
+        }
+      end
+
+      def aligned_fargate_memory(required_memory, config)
+        memory_range = config.fetch(:memory_range)
+        step = config.fetch(:step)
+        minimum = [ required_memory, memory_range.begin ].max
+
+        memory_range.begin + (((minimum - memory_range.begin).to_f / step).ceil * step)
       end
 
       def service_ready?(service)

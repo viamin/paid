@@ -84,7 +84,7 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
     end
     let(:next_task_definition_arn) { "arn:aws:ecs:task-definition/agent-worker:8" }
 
-    def expect_task_definition_registration
+    def expect_task_definition_registration(expected_cpu: "512", expected_memory: "2048")
       expect(adapter).to receive(:run_aws).with(
         "ecs", "register-task-definition",
         "--cli-input-json", kind_of(String)
@@ -93,9 +93,48 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
         container = payload.fetch(:containerDefinitions).first
         expect(container[:cpu]).to eq(512)
         expect(container[:memory]).to eq(2048)
+        expect(payload[:cpu]).to eq(expected_cpu)
+        expect(payload[:memory]).to eq(expected_memory)
 
         { taskDefinition: { taskDefinitionArn: next_task_definition_arn } }.to_json
       end
+    end
+
+    def expect_named_task_definition_registration(named_adapter)
+      expect(named_adapter).to receive(:run_aws).with(
+        "ecs", "register-task-definition",
+        "--cli-input-json", kind_of(String)
+      ) do |*args|
+        payload = JSON.parse(args.last, symbolize_names: true)
+
+        expect(payload[:containerDefinitions]).to contain_exactly(
+          include(name: "web", cpu: 512, memory: 2048),
+          include(name: "sidecar", cpu: 128, memory: 256)
+        )
+        expect(payload[:cpu]).to eq("1024")
+        expect(payload[:memory]).to eq("3072")
+
+        { taskDefinition: { taskDefinitionArn: next_task_definition_arn } }.to_json
+      end
+    end
+
+    def stub_named_adapter_task_definition(named_adapter, task_definition_arn, task_definition)
+      allow(named_adapter).to receive(:describe_service)
+        .with(service_name)
+        .and_return({ taskDefinition: task_definition_arn })
+      allow(named_adapter).to receive(:describe_task_definition)
+        .with(task_definition_arn)
+        .and_return(task_definition)
+    end
+
+    def expect_named_adapter_service_update(named_adapter)
+      expect(named_adapter).to receive(:run_aws).with(
+        "ecs", "update-service",
+        "--cluster", "paid-prod",
+        "--service", service_name,
+        "--task-definition", next_task_definition_arn,
+        "--force-new-deployment"
+      ).and_return({ service: { taskDefinition: next_task_definition_arn } }.to_json)
     end
 
     it "registers a new task definition revision and forces a deployment" do
@@ -116,6 +155,45 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
       ).and_return({ service: { taskDefinition: next_task_definition_arn } }.to_json)
 
       result = adapter.set_resource_limits(service: service_name, cpu_limit: "500m", memory_limit: "2Gi")
+
+      expect(result).to be_a(Scaling::Orchestrators::Data::ResourceUpdateResult)
+      expect(result.accepted).to be true
+    end
+
+    it "raises when the ECS service name does not match a container definition" do
+      mismatched_task_definition = task_definition.merge(
+        containerDefinitions: [
+          { name: "web", cpu: 256, memory: 512, essential: true },
+          { name: "sidekiq", cpu: 256, memory: 512, essential: true }
+        ]
+      )
+
+      allow(adapter).to receive(:describe_service)
+        .with(service_name)
+        .and_return({ taskDefinition: task_definition[:taskDefinitionArn] })
+      allow(adapter).to receive(:describe_task_definition)
+        .with(task_definition[:taskDefinitionArn])
+        .and_return(mismatched_task_definition)
+
+      expect do
+        adapter.set_resource_limits(service: service_name, cpu_limit: "500m", memory_limit: "2Gi")
+      end.to raise_error(described_class::ApiError, /configure container_name/)
+    end
+
+    it "updates the configured target container when service and container names differ" do
+      named_adapter = described_class.new(cluster: "paid-prod", region: "us-east-1", container_name: "web")
+      mismatched_task_definition = task_definition.merge(
+        containerDefinitions: [
+          { name: "web", cpu: 256, memory: 512, essential: true },
+          { name: "sidecar", cpu: 128, memory: 256, essential: false }
+        ]
+      )
+
+      stub_named_adapter_task_definition(named_adapter, task_definition[:taskDefinitionArn], mismatched_task_definition)
+      expect_named_task_definition_registration(named_adapter)
+      expect_named_adapter_service_update(named_adapter)
+
+      result = named_adapter.set_resource_limits(service: service_name, cpu_limit: "500m", memory_limit: "2Gi")
 
       expect(result).to be_a(Scaling::Orchestrators::Data::ResourceUpdateResult)
       expect(result.accepted).to be true

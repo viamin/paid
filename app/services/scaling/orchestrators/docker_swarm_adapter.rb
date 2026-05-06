@@ -61,8 +61,10 @@ module Scaling
       end
 
       def healthy?
-        output = run_command("docker", "info", "--format", "{{json .Swarm.LocalNodeState}}")
-        JSON.parse(output) == "active"
+        output = run_command("docker", "info", "--format", "{{json .Swarm}}")
+        swarm = JSON.parse(output, symbolize_names: true)
+
+        swarm[:LocalNodeState] == "active" && swarm[:ControlAvailable] == true
       rescue StandardError
         false
       end
