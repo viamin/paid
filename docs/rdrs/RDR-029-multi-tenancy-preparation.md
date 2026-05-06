@@ -138,7 +138,7 @@ Every request follows this path:
 | trial | 3 | 5 | 2 | 5,000,000 |
 | free | 5 | 10 | 3 | 5,000,000 |
 | professional | 50 | 25 | 10 | 10,000,000 |
-| enterprise | unlimited | unlimited | 100 | unlimited |
+| enterprise | 1000 | 500 | 100 | unlimited |
 
 These are encoded as defaults in `TenantSetting::PLAN_DEFAULTS` and applied at provisioning time.
 

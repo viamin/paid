@@ -8,8 +8,6 @@ module Users
       build_resource(sign_up_params)
 
       account_name = params.dig(:user, :account_name)
-      account = Account.new(name: account_name)
-      resource.account = account
 
       ActiveRecord::Base.transaction do
         account = provision_account(account_name)
@@ -31,7 +29,7 @@ module Users
         end
       end
     rescue ActiveRecord::RecordInvalid => e
-      resource.errors.merge!((e.record || account).errors)
+      resource.errors.merge!(e.record.errors)
       clean_up_passwords resource
       set_minimum_password_length
       respond_with resource
