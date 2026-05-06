@@ -38,8 +38,15 @@ RUN NODE_VERSION=22.13.0 \
     && tar -xzf "${TARBALL}" -C /usr/local --strip-components=1 \
     && rm "${TARBALL}"
 
+# Install the PGDG apt repository so Ubuntu Noble can install the same pg_dump
+# minor version as the pinned Postgres server image.
+RUN install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && . /etc/os-release \
+    && printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" > /etc/apt/sources.list.d/pgdg.sources
+
 # Install Ruby build dependencies, runtime deps, Python, PostgreSQL client libs, and ShellCheck
-# Keep client tools on the same Postgres major as the pinned server image.
+# Keep client tools on the exact Postgres version shipped by the pinned server image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     autoconf \
     bison \
@@ -50,7 +57,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     libgdbm-dev \
     libpq-dev \
-    postgresql-client-16 \
+    postgresql-client-16=16.13-1.pgdg24.04+1 \
     rustc \
     shellcheck \
     python3 \
