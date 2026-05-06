@@ -6,7 +6,9 @@ module PerformanceBenchmarks
       Benchmarks::ContainerStartupTime,
       Benchmarks::WorkflowLatency,
       Benchmarks::DashboardLoadTime,
-      Benchmarks::SearchLatency
+      Benchmarks::SearchLatency,
+      Benchmarks::PoolUtilization,
+      Benchmarks::QueryPerformance
     ].freeze
 
     def self.call(...)

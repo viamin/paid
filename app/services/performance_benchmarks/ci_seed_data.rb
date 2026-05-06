@@ -70,6 +70,20 @@ module PerformanceBenchmarks
           )
           phase.save!
         end
+
+        ContainerPoolEntry.find_or_initialize_by(project: project, workspace_volume: "paid-pool-workspace-fixture-#{fixture.fetch(:pr_number)}").tap do |entry|
+          entry.assign_attributes(
+            agent_run: run,
+            status: "claimed",
+            container_id: "pool-container-fixture-#{fixture.fetch(:pr_number)}",
+            image: Containers::Provision::DEFAULTS[:image],
+            network: "paid_agent",
+            warmed_at: provision_start - 30.seconds,
+            claimed_at: provision_start,
+            last_error: nil
+          )
+          entry.save!
+        end
       end
     end
 
