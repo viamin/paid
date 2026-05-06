@@ -420,6 +420,63 @@ RSpec.describe Anomalies::Detect do
           )
         )
       end
+
+      it "does not publish a separate anomaly notification when the guardrail will fire" do
+        running_run = create(:agent_run, :running,
+          project: project,
+          tokens_input: 5_000_000,
+          tokens_output: 2_500_000,
+          duration_seconds: 600,
+          iterations: 5,
+          cost_cents: 150)
+
+        allow(Guardrails::ViolationHandler).to receive(:call)
+
+        described_class.call(running_run)
+
+        expect(Notifications::Publish).not_to have_received(:call).with(
+          hash_including(
+            source: "agent_run_anomaly",
+            subject: running_run
+          )
+        )
+      end
+    end
+
+    context "when a running run shows only warning anomalies" do
+      before do
+        [ 10_000, 12_000, 14_000, 16_000, 18_000, 20_000 ].each do |tokens|
+          create(:agent_run, :completed,
+            project: project,
+            tokens_input: tokens,
+            tokens_output: tokens / 2,
+            duration_seconds: 600,
+            iterations: 5,
+            cost_cents: 150)
+        end
+      end
+
+      it "publishes the anomaly notification without invoking the guardrail handler" do
+        running_run = create(:agent_run, :running,
+          project: project,
+          tokens_input: 24_000,
+          tokens_output: 12_000,
+          duration_seconds: 600,
+          iterations: 5,
+          cost_cents: 150)
+
+        allow(Guardrails::ViolationHandler).to receive(:call)
+
+        described_class.call(running_run)
+
+        expect(Notifications::Publish).to have_received(:call).with(
+          hash_including(
+            source: "agent_run_anomaly",
+            subject: running_run
+          )
+        )
+        expect(Guardrails::ViolationHandler).not_to have_received(:call)
+      end
     end
   end
 end

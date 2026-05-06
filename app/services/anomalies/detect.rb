@@ -54,7 +54,7 @@ module Anomalies
       end
 
       log_anomalies(anomalies) if anomalies.any?
-      publish_notification(anomalies) if anomalies.any?
+      publish_notification(anomalies) if should_publish_notification?(anomalies)
       enforce_guardrail(anomalies)
 
       anomalies
@@ -188,6 +188,14 @@ module Anomalies
         action_url: project_agent_run_path(project, agent_run),
         nav_section: "agent_runs"
       )
+    end
+
+    def should_publish_notification?(anomalies)
+      anomalies.any? && !guardrail_will_fire?(anomalies)
+    end
+
+    def guardrail_will_fire?(anomalies)
+      agent_run.running? && anomalies.any? { |anomaly| anomaly.severity == "critical" }
     end
 
     def notification_severity(anomalies)
