@@ -7,6 +7,13 @@ RSpec.describe "Projects" do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:github_token) { create(:github_token, account: account) }
+  let(:empty_screenshot_repo_config_result) do
+    Projects::Screenshots::RepoConfig::Result.new(config: {}, content: nil, error: nil)
+  end
+
+  def screenshot_repo_config_result(config: {}, content: nil, error: nil)
+    Projects::Screenshots::RepoConfig::Result.new(config: config, content: content, error: error)
+  end
 
   describe "GET /projects" do
     context "when not authenticated" do
@@ -1026,7 +1033,10 @@ RSpec.describe "Projects" do
     end
 
     context "when authenticated" do
-      before { sign_in user }
+      before do
+        sign_in user
+        allow(Projects::Screenshots::RepoConfig).to receive(:call).and_return(empty_screenshot_repo_config_result)
+      end
 
       it "shows the edit form" do
         project = create(:project, account: account, github_token: github_token, name: "My Project")
@@ -1146,11 +1156,14 @@ RSpec.describe "Projects" do
           "config_path" => ".paid/screenshots.yml"
         })
 
-        allow(project.github_token.client).to receive(:file_content).and_return(<<~YAML)
-          driver: playwright
-          services:
-            - redis
-        YAML
+        allow(Projects::Screenshots::RepoConfig).to receive(:call).and_return(screenshot_repo_config_result(
+          config: { "driver" => "playwright", "services" => [ "redis" ] },
+          content: <<~YAML
+            driver: playwright
+            services:
+              - redis
+          YAML
+        ))
 
         get edit_project_path(project)
 
@@ -1172,7 +1185,10 @@ RSpec.describe "Projects" do
     end
 
     context "when authenticated" do
-      before { sign_in user }
+      before do
+        sign_in user
+        allow(Projects::Screenshots::RepoConfig).to receive(:call).and_return(empty_screenshot_repo_config_result)
+      end
 
       let(:screenshot_update_params) do
         {
@@ -1233,6 +1249,16 @@ RSpec.describe "Projects" do
           "service_dependencies" => %w[postgres redis],
           "setup_commands" => [ "bin/setup --skip-server", "bin/rails db:prepare" ]
         )
+      end
+
+      it "re-renders validation errors when screenshot repo config loading fails" do
+        project = create(:project, account: account, github_token: github_token)
+        allow(Projects::Screenshots::RepoConfig).to receive(:call).and_raise(StandardError, "GitHub is down")
+
+        patch project_path(project), params: { project: { name: "" } }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("Could not load repository screenshot config: GitHub is down")
       end
 
       it "allows updating priority label names" do

@@ -14,20 +14,13 @@ RSpec.describe Projects::Screenshots::RepoConfig do
       )
     end
 
-    it "treats blocked test network requests as missing repo config" do
-      blocked_request = WebMock::RequestSignature.new(
-        :get,
-        "https://api.github.com/repos/acme/widgets/contents/.paid/screenshots.yml"
-      )
+    it "returns empty config when the repository config does not exist" do
       allow(github_client).to receive(:file_content)
-        .and_raise(WebMock::NetConnectNotAllowedError.new(blocked_request))
+        .and_raise(GithubClient::NotFoundError.new("Not Found"))
 
       result = described_class.call(project: project, path: ".paid/screenshots.yml")
 
-      expect(result.config).to eq({
-        "services" => [],
-        "setup" => []
-      })
+      expect(result.config).to eq({})
       expect(result.content).to be_nil
       expect(result.error).to be_nil
     end

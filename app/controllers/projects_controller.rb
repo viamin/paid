@@ -479,15 +479,30 @@ class ProjectsController < ApplicationController
     @screenshot_settings = @project.effective_screenshot_settings
     @screenshot_status = @project.effective_screenshot_status
     @screenshot_service_options = policy_scope(ServiceContainer).order(:name)
-    @screenshot_repo_config_result = Projects::Screenshots::RepoConfig.call(
-      project: @project,
-      path: @screenshot_settings["config_path"]
-    )
+    @screenshot_repo_config_result ||= load_screenshot_repo_config_result
     @screenshot_preview_config = @project.screenshot_preview_config(
       repo_config: @screenshot_repo_config_result.config
     )
     @screenshot_conflicts = @project.screenshot_config_conflicts(
       repo_config: @screenshot_repo_config_result.config
+    )
+  end
+
+  def load_screenshot_repo_config_result
+    Projects::Screenshots::RepoConfig.call(
+      project: @project,
+      path: @project.effective_screenshot_settings["config_path"]
+    )
+  rescue StandardError => e
+    Rails.logger.warn(
+      message: "projects.screenshots.repo_config_load_failed",
+      project_id: @project.id,
+      error: e.message
+    )
+    Projects::Screenshots::RepoConfig::Result.new(
+      config: {},
+      content: nil,
+      error: "Could not load repository screenshot config: #{e.message}"
     )
   end
 
