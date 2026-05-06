@@ -712,6 +712,8 @@ RSpec.describe Activities::RunAgentActivity do
 
       expect(result).to include("Feature Decomposition")
       expect(result).to include("multi-issue-plan-start")
+      expect(result).to include("do NOT create any GitHub issue directly")
+      expect(result).to include("do not add `Depends on #N`")
     end
 
     it "returns empty string when scope analysis does not trigger decomposition" do
@@ -781,6 +783,35 @@ RSpec.describe Activities::RunAgentActivity do
 
       expect(prompt).to eq("variant Create a roadmap issue #{project.full_name}")
       expect(run.reload.prompt_version).to eq(variant_version)
+    end
+
+    it "appends decomposition instructions for assigned issue-goal variants that predate the placeholder" do
+      large_body = <<~TEXT
+        ## Feature: User Notification System
+
+        Redesign the notification system to support multiple channels.
+
+        ### Requirements
+        1. Create database migrations for notification preferences
+        2. Build service layer for dispatching notifications
+        3. Add API endpoints for managing preferences
+        4. Build dashboard UI for notification history
+        5. Add background jobs for async delivery
+        6. Implement caching for notification templates
+      TEXT
+      decompose_issue = create(:issue, project: project, body: large_body)
+      run = create(:agent_run, :create_issue_goal, project: project, issue: decompose_issue)
+      create_ab_test_assignment(
+        slug: described_class::ISSUE_GOAL_PROMPT_SLUG,
+        agent_run: run,
+        variant_template: "variant {{base_prompt}} {{repo}}"
+      )
+
+      prompt = activity.send(:augment_prompt_for_issue_goal, run, "Create a roadmap issue")
+
+      expect(prompt).to include("variant Create a roadmap issue #{project.full_name}")
+      expect(prompt).to include("Feature Decomposition")
+      expect(prompt).to include("do NOT create any GitHub issue directly")
     end
 
     it "uses an assigned review-goal variant prompt version" do

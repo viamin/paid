@@ -48,7 +48,7 @@ RSpec.describe Activities::CreateMultipleIssuesActivity do
       activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: nil)
     end
 
-    it "creates issues in dependency order (leaves first)" do
+    it "creates issues in dependency order (foundational tasks first)" do
       call_order = []
       allow(github_client).to receive(:create_issue) do |_repo, title:, **_opts|
         call_order << title

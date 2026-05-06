@@ -1948,11 +1948,9 @@ module Activities
       ## Feature Decomposition
 
       The feature request you are analyzing is large enough to benefit from decomposition
-      into multiple smaller, focused issues. Instead of creating a single large issue,
-      you should:
-
-      1. Create a main tracking issue describing the overall feature
-      2. Output a structured decomposition plan as a JSON array wrapped in HTML comment markers
+      into multiple smaller, focused issues. Instead of creating a single large issue
+      through the GitHub proxy, output a structured decomposition plan as a JSON array
+      wrapped in HTML comment markers.
 
       The decomposition plan should break the feature into small, focused sub-issues that
       each produce a single PR. Order them so foundational work (data model, migrations)
@@ -1960,9 +1958,8 @@ module Activities
 
       Each sub-issue must declare its dependencies using zero-based indices into the plan array.
 
-      Output format — place this AFTER your main issue creation:
+      Output format:
 
-      <!-- parent-issue: PARENT_ISSUE_NUMBER -->
       <!-- multi-issue-plan-start -->
       [
         {"title": "Add data model for feature X", "body": "Create migrations and models...", "dependencies": []},
@@ -1972,16 +1969,24 @@ module Activities
       ]
       <!-- multi-issue-plan-end -->
 
-      Replace PARENT_ISSUE_NUMBER with the GitHub issue number of the main tracking issue
-      you created. Each task's `dependencies` array contains indices of tasks that must be
-      completed first.
+      If you are decomposing the work, do NOT create any GitHub issue directly.
+      The platform will create the issues from the plan.
+
+      If the user explicitly references an existing GitHub issue that should remain the
+      parent tracker, you may optionally include:
+
+      <!-- parent-issue: EXISTING_ISSUE_NUMBER -->
+
+      before the plan so the platform can update that already-existing issue after the
+      sub-issues are created. Each task's `dependencies` array contains indices of tasks
+      that must be completed first.
 
       Rules:
       - Each sub-issue should be scoped to a single focused PR
       - Dependencies must form a valid DAG (no cycles)
       - Include clear acceptance criteria in each sub-issue body
       - Maximum 20 sub-issues
-      - Use `Depends on #N` syntax in sub-issue bodies for human readability
+      - Use only the `dependencies` array for dependency wiring; do not add `Depends on #N` lines inside task bodies
     INSTRUCTIONS
 
     REVIEW_GOAL_PROMPT_SLUG = "goal.review_pull_request"
@@ -2336,7 +2341,26 @@ module Activities
       variant_version = assignment.ab_test_variant.prompt_version
       agent_run.update!(prompt_version: variant_version)
 
-      variant_version.render(vars)
+      rendered_variant = variant_version.render(vars)
+      append_missing_issue_goal_runtime_instructions(rendered_variant, slug, vars)
+    end
+
+    # Older running A/B variants may predate runtime-only additions such as
+    # decomposition instructions. Keep those runs aligned with the current
+    # issue-goal contract by appending required guidance when the stored
+    # variant template cannot render it itself.
+    def append_missing_issue_goal_runtime_instructions(rendered, slug, vars)
+      return rendered unless slug == ISSUE_GOAL_PROMPT_SLUG
+
+      append_prompt_section(rendered, vars[:decomposition_instructions])
+    end
+
+    def append_prompt_section(rendered, addition)
+      normalized_addition = addition.to_s.strip
+      return rendered if normalized_addition.blank?
+      return rendered if rendered.include?(normalized_addition)
+
+      "#{rendered.rstrip}\n\n#{normalized_addition}"
     end
 
     def existing_ab_test_assignment(agent_run, slug)

@@ -25,22 +25,32 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(described_class.next_candidate(project)).to eq(p1)
     end
 
-    it "prefers leaf issues over issues that block other open issues" do
-      blocker = create(:issue, project: project, github_number: 1, github_state: "open")
-      leaf = create(:issue, project: project, github_number: 2, github_state: "open")
+    it "prefers runnable dependency-tree roots over standalone issues" do
+      _standalone = create(:issue, project: project, github_number: 1, github_state: "open")
+      blocker = create(:issue, project: project, github_number: 2, github_state: "open")
       dependent = create(:issue, project: project, github_number: 3, github_state: "open")
       create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
 
-      expect(described_class.next_candidate(project)).to eq(leaf)
+      expect(described_class.next_candidate(project)).to eq(blocker)
+    end
+
+    it "counts open dependents from other projects in the same account" do
+      other_project = create(:project, account: project.account)
+      _standalone = create(:issue, project: project, github_number: 1, github_state: "open")
+      blocker = create(:issue, project: project, github_number: 2, github_state: "open")
+      dependent = create(:issue, project: other_project, github_number: 3, github_state: "open")
+      create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+
+      expect(described_class.next_candidate(project)).to eq(blocker)
     end
 
     it "does not penalize issues whose dependents are all closed" do
       former_blocker = create(:issue, project: project, github_number: 1, github_state: "open")
-      _leaf = create(:issue, project: project, github_number: 2, github_state: "open")
+      _standalone = create(:issue, project: project, github_number: 2, github_state: "open")
       closed_dependent = create(:issue, project: project, github_number: 3, github_state: "closed")
       create(:issue_dependency, issue: closed_dependent, depends_on_issue: former_blocker)
 
-      # former_blocker is no longer blocking any open issue, so it sorts like a leaf
+      # former_blocker gets no dependency-tree boost once all dependents are closed.
       expect(described_class.next_candidate(project)).to eq(former_blocker)
     end
   end
