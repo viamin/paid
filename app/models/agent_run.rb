@@ -88,7 +88,7 @@ class AgentRun < ApplicationRecord
 
   STALE_DETECTOR_ERROR_PREFIX = "Stale run detected"
 
-  belongs_to :project
+  belongs_to :project, counter_cache: true
   belongs_to :issue, optional: true
   belongs_to :prompt_version, optional: true
   belongs_to :provider, optional: true
@@ -122,7 +122,12 @@ class AgentRun < ApplicationRecord
   before_create :generate_proxy_token
   before_create :snapshot_mcp_servers
 
-  after_commit :sync_project_agent_run_counters, on: [ :create, :update, :destroy ]
+  before_update :store_project_counter_cache_state, if: :project_counter_cache_state_changed?
+  before_destroy :store_destroyed_project_counter_cache_state
+  before_destroy :repair_project_counter_caches_before_destroy
+
+  after_commit :update_completed_agent_runs_counter_cache, on: [ :create, :update, :destroy ]
+  after_commit :reload_project_counter_cache_association, on: [ :create, :update, :destroy ]
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
   after_commit :invalidate_provider_options_cache_on_change, on: [ :create, :update ]
@@ -1849,16 +1854,20 @@ class AgentRun < ApplicationRecord
     nil
   end
 
-  def sync_project_agent_run_counters
-    return if destroyed? && project&.destroyed?
+  def update_completed_agent_runs_counter_cache
+    completed_agent_runs_counter_deltas.each do |project_id, delta|
+      Project.update_counters(project_id, completed_agent_runs_count: delta)
+    end
+  end
 
-    updates = {}
-    updates[:agent_runs_count] = AgentRun.where(project_id: project_id).count if recount_total_agent_runs?
-    updates[:completed_agent_runs_count] = AgentRun.where(project_id: project_id, status: "completed").count if recount_completed_agent_runs?
-    return if updates.empty?
+  def reload_project_counter_cache_association
+    return unless association(:project).loaded?
 
-    Project.where(id: project_id).update_all(updates)
-    project.reload if association(:project).loaded?
+    if previous_changes.key?("project_id")
+      association(:project).reset
+    elsif project.present? && !project.destroyed?
+      project.reload
+    end
   end
 
   def just_finished?
@@ -1880,14 +1889,78 @@ class AgentRun < ApplicationRecord
 
   private :explicit_user_max_tokens_per_run
 
-  def recount_total_agent_runs?
-    previous_changes.key?("id") || destroyed?
+  def project_counter_cache_state_changed?
+    will_save_change_to_project_id? || will_save_change_to_status?
   end
 
-  def recount_completed_agent_runs?
-    destroyed? ||
-      (previous_changes.key?("status") &&
-        [ status, previous_changes["status"]&.first ].include?("completed"))
+  def store_project_counter_cache_state
+    @project_counter_cache_state_before_last_commit = {
+      project_id: project_id_in_database,
+      status: status_in_database
+    }
+  end
+
+  def store_destroyed_project_counter_cache_state
+    @project_counter_cache_state_before_last_commit = {
+      project_id: project_id,
+      status: status
+    }
+  end
+
+  # Rows created outside callbacks (for example via insert_all!) bypass both
+  # counter caches. Repair stale low values before the normal destroy-time
+  # decrements run so the counters stay accurate after deletion.
+  def repair_project_counter_caches_before_destroy
+    return if project_id.blank?
+
+    locked_project = Project.lock.find_by(id: project_id)
+    return unless locked_project
+
+    deltas = {}
+
+    total_gap = AgentRun.where(project_id: project_id).count - locked_project.agent_runs_count
+    deltas[:agent_runs_count] = total_gap if total_gap.positive?
+
+    if status == "completed"
+      completed_gap = AgentRun.completed.where(project_id: project_id).count - locked_project.completed_agent_runs_count
+      deltas[:completed_agent_runs_count] = completed_gap if completed_gap.positive?
+    end
+
+    Project.update_counters(project_id, deltas) if deltas.any?
+  end
+
+  def completed_agent_runs_counter_deltas
+    previous_state = @project_counter_cache_state_before_last_commit || {}
+    previous_project_id = previous_state[:project_id]
+    previous_status = previous_state[:status]
+
+    if destroyed?
+      counter_cache_deltas_for_completed_transition(
+        previous_project_id: previous_project_id,
+        previous_status: previous_status,
+        current_project_id: nil,
+        current_status: nil
+      )
+    else
+      previous_project_id ||= previous_changes.fetch("project_id", [ project_id, project_id ]).first
+      previous_status ||= previous_changes.fetch("status", [ status, status ]).first
+
+      counter_cache_deltas_for_completed_transition(
+        previous_project_id: previous_project_id,
+        previous_status: previous_status,
+        current_project_id: project_id,
+        current_status: status
+      )
+    end
+  ensure
+    @project_counter_cache_state_before_last_commit = nil
+  end
+
+  def counter_cache_deltas_for_completed_transition(previous_project_id:, previous_status:, current_project_id:, current_status:)
+    deltas = Hash.new(0)
+    deltas[previous_project_id] -= 1 if previous_project_id.present? && previous_status == "completed"
+    deltas[current_project_id] += 1 if current_project_id.present? && current_status == "completed"
+    deltas.reject { |_project_id, delta| delta.zero? }
   end
 
   def just_timed_out_issue_goal?
