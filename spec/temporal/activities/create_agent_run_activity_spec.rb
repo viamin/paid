@@ -41,6 +41,15 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(result[:max_execution_seconds]).to eq(3600)
     end
 
+    it "returns the user override for max_execution_seconds when set" do
+      project.update!(max_execution_seconds: 900)
+      project.created_by.settings.update!(max_execution_seconds: 1800)
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      expect(result[:max_execution_seconds]).to eq(1800)
+    end
+
     it "accepts a custom agent_type" do
       result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "aider")
 

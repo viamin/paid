@@ -583,6 +583,22 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
       workflow.execute(input)
     end
+
+    it "uses a larger user override returned by CreateAgentRunActivity" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity"
+          { agent_run_id: 42, provider_attempt_count: 1, agent_timeout_seconds: 3600, max_execution_seconds: 7200 }
+        when "Activities::RunAgentActivity"
+          expect(opts[:start_to_close_timeout]).to eq(3900)
+          { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+    end
   end
 
   describe "existing PR follow-up reviews" do

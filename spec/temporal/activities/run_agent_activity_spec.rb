@@ -266,6 +266,43 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
+  describe "timeout fallback to next provider" do
+    before do
+      allow(activity).to receive(:track_phase).and_yield
+      allow(activity).to receive_messages(
+        resolve_user_settings: user.settings,
+        build_provider_order: %w[claude_code codex],
+        load_provider_state_cache: {},
+        provider_command_key: "claude",
+        provider_attempt_label: "claude",
+        state_key_for: "claude",
+        provider_unavailable?: false,
+        cancelled_by_cleanup?: false
+      )
+      allow(activity).to receive(:heartbeat)
+      allow(activity).to receive(:record_provider_failure)
+      allow(ProcessRunQueueJob).to receive(:perform_later)
+    end
+
+    it "falls through to next provider after timeout instead of breaking" do
+      agent_run.project.update!(max_execution_seconds: 10_000)
+      agent_run.update!(status: "running", started_at: 1.minute.ago, iterations: 0, tokens_input: 0)
+
+      call_count = 0
+      allow(activity).to receive(:run_agent_with_provider) do
+        call_count += 1
+        raise Activities::RunAgentActivity::ProviderTimeoutError, "idle timeout"
+      end
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "All providers exhausted")
+
+      # Both providers should have been attempted
+      expect(call_count).to eq(2)
+    end
+  end
+
   describe "harness-generated commands" do
     it "generates codex command with sandbox bypass through agent-harness" do
       plan = Providers::HarnessExecutionPlan.for_provider_key(
@@ -2388,7 +2425,7 @@ expect(container_service).to receive(:execute).with(
         expect(git_ops).not_to have_received(:write_co_author_trailer)
       end
 
-      it "does not continue to the next provider when the first provider times out" do
+      it "continues to the next provider when the first provider times out" do
         allow(container_service).to receive(:execute)
           .and_raise(Containers::Provision::TimeoutError, "took too long")
 
@@ -2401,7 +2438,9 @@ expect(container_service).to receive(:execute).with(
 
         expect(agent_run.status).to eq("timeout")
         expect(agent_run.error_message).to include("wall_clock_timeout")
-        expect(agent_run.providers_attempted.map { |attempt| attempt["provider"] }).to eq([ "claude_code" ])
+        expect(agent_run.providers_attempted.map { |attempt| attempt["provider"] }).to eq(
+          %w[claude_code cursor aider]
+        )
         expect(agent_run.final_provider).to be_nil
       end
 
@@ -2840,6 +2879,39 @@ expect(container_service).to receive(:execute).with(
       expect(result).to include(success: false, paused: true, agent_run_id: agent_run.id)
       expect(agent_run.status).to eq("paused")
       expect(agent_run.guardrail_violation_type).to eq("cost_limit")
+    end
+  end
+
+  describe "user-configurable max_execution_seconds" do
+    before do
+      allow(container_service).to receive(:execute).and_return(exec_success)
+      allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+    end
+
+    it "uses user setting max_execution_seconds when set" do
+      project.update!(max_execution_seconds: 3600)
+      user.settings.update!(max_execution_seconds: 600)
+      agent_run.update!(started_at: 5.minutes.ago, status: "running")
+
+      expect(container_service).to receive(:execute).with(
+        anything,
+        hash_including(timeout: a_value <= 300)
+      ).and_return(exec_success)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "falls back to project setting when user setting is nil" do
+      project.update!(max_execution_seconds: 600)
+      user.settings.update!(max_execution_seconds: nil)
+      agent_run.update!(started_at: 5.minutes.ago, status: "running")
+
+      expect(container_service).to receive(:execute).with(
+        anything,
+        hash_including(timeout: a_value <= 300)
+      ).and_return(exec_success)
+
+      activity.execute(agent_run_id: agent_run.id)
     end
   end
 

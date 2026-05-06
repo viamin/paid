@@ -1044,6 +1044,13 @@ class AgentRun < ApplicationRecord
       )
   end
 
+  def effective_max_execution_seconds
+    return @effective_max_execution_seconds if defined?(@effective_max_execution_seconds)
+
+    @effective_max_execution_seconds =
+      explicit_user_max_execution_seconds || project.max_execution_seconds
+  end
+
   # Returns the fraction of the token limit consumed (0.0–1.0+).
   def token_limit_usage_ratio
     total_tokens.to_f / effective_max_tokens_per_run
@@ -1853,6 +1860,11 @@ class AgentRun < ApplicationRecord
     nil
   end
 
+  def explicit_user_max_execution_seconds
+    user_setting = AgentRuns::UserSettingsResolver.call(project: project, strict: false, create: false)
+    user_setting&.max_execution_seconds
+  end
+
   def update_completed_agent_runs_counter_cache
     completed_agent_runs_counter_deltas.each do |project_id, delta|
       Project.update_counters(project_id, completed_agent_runs_count: delta)
@@ -1891,7 +1903,7 @@ class AgentRun < ApplicationRecord
     previous_changes.key?("status") && status == "running"
   end
 
-  private :explicit_user_max_tokens_per_run
+  private :explicit_user_max_tokens_per_run, :explicit_user_max_execution_seconds
 
   def project_counter_cache_state_changed?
     will_save_change_to_project_id? || will_save_change_to_status?
