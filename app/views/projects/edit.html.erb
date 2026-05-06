@@ -171,6 +171,14 @@
           </div>
 
           <div>
+            <%= form.label :max_execution_seconds, "Max Execution Time (seconds)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :max_execution_seconds, min: 60, max: 86_400, step: 1, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Maximum wall-clock time for agent runs (60 to 86,400 seconds). Default: 3,600 seconds (1 hour).</p>
+          </div>
+
+          <div>
             <%= form.label :allowed_github_usernames, "Trusted GitHub Usernames", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
               <input type="text" name="project[allowed_github_usernames_csv]" id="project_allowed_github_usernames_csv"
