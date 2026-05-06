@@ -16,6 +16,60 @@ RSpec.describe Containers::PoolManager do
     end
   end
 
+  describe ".metrics" do
+    it "returns counts for each status and zero-defaults missing statuses" do
+      other_project = create(:project)
+      create(:container_pool_entry, project: project)
+      create(:container_pool_entry, project: project)
+      create(:container_pool_entry, :warming, project: project)
+      create(:container_pool_entry, :claimed, project: project)
+      create(:container_pool_entry, :errored, project: project)
+      # Entry for another project should not be counted
+      create(:container_pool_entry, project: other_project)
+
+      result = described_class.metrics(projects: Project.where(id: project.id))
+
+      expect(result).to eq(
+        warm: 2,
+        warming: 1,
+        claimed: 1,
+        error: 1,
+        target: described_class.target_size * 1
+      )
+    end
+
+    it "uses two queries to load grouped counts and active project total" do
+      create(:container_pool_entry, project: project)
+      create(:container_pool_entry, :warming, project: project)
+
+      query_count = count_queries do
+        result = described_class.metrics(projects: Project.where(id: project.id))
+
+        expect(result).to eq(
+          warm: 1,
+          warming: 1,
+          claimed: 0,
+          error: 0,
+          target: described_class.target_size * 1
+        )
+      end
+
+      expect(query_count).to eq(2)
+    end
+
+    it "returns zeros when no entries exist" do
+      result = described_class.metrics(projects: Project.where(id: project.id))
+
+      expect(result).to eq(
+        warm: 0,
+        warming: 0,
+        claimed: 0,
+        error: 0,
+        target: described_class.target_size * 1
+      )
+    end
+  end
+
   describe "#acquire" do
     let(:agent_run) { create(:agent_run, project: project) }
     let(:service) { instance_double(Containers::Provision) }
