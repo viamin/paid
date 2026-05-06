@@ -200,4 +200,92 @@ RSpec.describe Screenshots::DetectUiChanges do
       expect(result[:ui_files]).to contain_exactly("public/404.html", "public/500.html")
     end
   end
+
+  describe "framework-aware detection" do
+    it "uses Rails patterns by default (backward compatible)" do
+      result = described_class.call(changed_files: [ "app/views/projects/index.html.erb" ])
+
+      expect(result[:ui_changes?]).to be true
+    end
+
+    it "detects Next.js page changes with framework: :nextjs" do
+      result = described_class.call(
+        changed_files: [ "app/dashboard/page.tsx" ],
+        framework: :nextjs
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "app/dashboard/page.tsx" ])
+    end
+
+    it "detects Next.js component changes" do
+      result = described_class.call(
+        changed_files: [ "components/Button.tsx" ],
+        framework: :nextjs
+      )
+
+      expect(result[:ui_changes?]).to be true
+    end
+
+    it "ignores Rails-specific files with Next.js framework" do
+      result = described_class.call(
+        changed_files: [ "app/helpers/application_helper.rb" ],
+        framework: :nextjs
+      )
+
+      expect(result[:ui_changes?]).to be false
+    end
+
+    it "detects Django template changes" do
+      result = described_class.call(
+        changed_files: [ "templates/home.html" ],
+        framework: :django
+      )
+
+      expect(result[:ui_changes?]).to be true
+    end
+
+    it "detects generic web file changes" do
+      result = described_class.call(
+        changed_files: [ "src/App.vue", "styles/main.scss" ],
+        framework: :generic
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to contain_exactly("src/App.vue", "styles/main.scss")
+    end
+  end
+
+  describe "custom patterns" do
+    it "uses provided patterns instead of framework defaults" do
+      result = described_class.call(
+        changed_files: [ "my_custom/views/home.html" ],
+        patterns: [ %r{\Amy_custom/views/} ]
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "my_custom/views/home.html" ])
+    end
+
+    it "applies custom exclusions" do
+      result = described_class.call(
+        changed_files: [ "my_custom/views/home.html", "my_custom/views/admin/secret.html" ],
+        patterns: [ %r{\Amy_custom/views/} ],
+        exclusions: [ %r{\Amy_custom/views/admin/} ]
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "my_custom/views/home.html" ])
+    end
+
+    it "custom patterns override framework when both provided" do
+      result = described_class.call(
+        changed_files: [ "app/views/projects/index.html.erb" ],
+        framework: :rails,
+        patterns: [ %r{\Acustom_only/} ]
+      )
+
+      expect(result[:ui_changes?]).to be false
+    end
+  end
 end
