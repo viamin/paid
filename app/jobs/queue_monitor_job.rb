@@ -58,7 +58,7 @@ class QueueMonitorJob < ApplicationJob
   def broadcast_queue_health(account, queue_depths, healthy)
     Turbo::StreamsChannel.broadcast_update_to(
       [ account, :live_dashboard ],
-      target: "queue-health",
+      target: "dashboard-queue-health",
       partial: "dashboard/queue_health",
       locals: { queue_depths: queue_depths, healthy: healthy }
     )
