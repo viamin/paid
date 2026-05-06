@@ -760,6 +760,24 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#effective_max_execution_seconds" do
+      it "returns the user override when set" do
+        project = create(:project, max_execution_seconds: 900)
+        project.created_by.settings.update!(max_execution_seconds: 1800)
+        agent_run = build(:agent_run, project: project)
+
+        expect(agent_run.effective_max_execution_seconds).to eq(1800)
+      end
+
+      it "falls back to the project setting when the user override is nil" do
+        project = create(:project, max_execution_seconds: 900)
+        project.created_by.settings.update!(max_execution_seconds: nil)
+        agent_run = build(:agent_run, project: project)
+
+        expect(agent_run.effective_max_execution_seconds).to eq(900)
+      end
+    end
+
     describe "#token_limit_usage_ratio" do
       it "returns the ratio of tokens used to limit" do
         project = build(:project, max_tokens_per_run: 1_000_000)

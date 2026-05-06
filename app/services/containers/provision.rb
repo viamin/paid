@@ -2346,7 +2346,9 @@ module Containers
       # Fold in heartbeat activity using the same rules as the watchdog:
       # a file touched during the current exec counts as output, and the
       # startup/idle elapsed window shrinks to the heartbeat's age.
-      if heartbeat_age && heartbeat_age <= elapsed_since_start
+      # A fresh heartbeat also suppresses wall-clock timeout.
+      heartbeat_fresh = heartbeat_age && heartbeat_age <= elapsed_since_start
+      if heartbeat_fresh
         output_received = true
         elapsed_since_activity = heartbeat_age if heartbeat_age < elapsed_since_activity
       end
@@ -2357,7 +2359,7 @@ module Containers
         raise StartupTimeoutError, "No output received within #{tc.startup_timeout} seconds"
       elsif output_received && tc.idle_timeout && elapsed_since_activity >= tc.idle_timeout
         raise IdleTimeoutError, "No output received for #{tc.idle_timeout} seconds"
-      elsif tc.timeout && elapsed_since_start >= tc.timeout
+      elsif tc.timeout && elapsed_since_start >= tc.timeout && !heartbeat_fresh
         log_system("container.execute.timeout",
           timeout_type: "wall_clock",
           timeout: tc.timeout,
@@ -2402,9 +2404,12 @@ module Containers
 
                 # A heartbeat file touched during the current exec counts as
                 # activity equivalent to stdout output, so a working-but-silent
-                # agent does not trip startup/idle timeouts. Wall-clock is still
-                # enforced regardless of heartbeats.
-                if heartbeat_age && heartbeat_age <= total_elapsed
+                # agent does not trip startup/idle timeouts. A fresh heartbeat
+                # also suppresses wall-clock timeout — actively working agents
+                # (making tool calls) should never be killed by time limits alone.
+                # Cost and token limits serve as the primary execution ceiling.
+                heartbeat_fresh = heartbeat_age && heartbeat_age <= total_elapsed
+                if heartbeat_fresh
                   output_received = true
                   elapsed = heartbeat_age if heartbeat_age < elapsed
                 end
@@ -2413,7 +2418,7 @@ module Containers
                   :startup
                 elsif output_received && ctx.idle_timeout && elapsed >= ctx.idle_timeout
                   :idle
-                elsif ctx.wall_clock_timeout && total_elapsed >= ctx.wall_clock_timeout
+                elsif ctx.wall_clock_timeout && total_elapsed >= ctx.wall_clock_timeout && !heartbeat_fresh
                   :wall_clock
                 end
 

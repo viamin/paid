@@ -66,6 +66,11 @@ class UserSetting < ApplicationRecord
   validates :create_pr_idle_timeout_seconds,
     numericality: { only_integer: true, greater_than_or_equal_to: 30, less_than_or_equal_to: PG_INT_MAX }
 
+  # Max execution time override (nil defers to project setting)
+  validates :max_execution_seconds,
+    numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: 86_400 },
+    allow_nil: true
+
   # Git operation timeouts
   validates :git_clone_timeout_seconds,
     numericality: { only_integer: true, greater_than_or_equal_to: 30, less_than_or_equal_to: PG_INT_MAX }

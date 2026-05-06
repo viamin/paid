@@ -131,7 +131,7 @@ module Activities
         rate_limit_reset_at = nil
         skipped_rate_limited_count = 0
 
-        max_execution_seconds = agent_run.project.max_execution_seconds
+        max_execution_seconds = resolve_max_execution_seconds(agent_run, user_settings)
 
         index = 0
         while index < providers.length
@@ -313,7 +313,10 @@ module Activities
               duration_seconds: attempt_duration
             )
             logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
-            break
+            # Fall through to next provider instead of breaking — per-provider
+            # timeout should not fail the entire run when fallback providers
+            # are available. Only break when max_execution_seconds is exceeded
+            # (checked at the top of the loop).
           rescue ProviderAuthExpiredError => e
             last_error = "auth_expired"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
@@ -450,6 +453,13 @@ module Activities
         type: "MissingUser",
         non_retryable: true
       )
+    end
+
+    # Resolves max_execution_seconds with user setting taking precedence
+    # over the project-level value. This allows users to override the
+    # project default (eventually deprecating the project-level setting).
+    def resolve_max_execution_seconds(agent_run, user_settings)
+      user_settings&.max_execution_seconds || agent_run.project.max_execution_seconds
     end
 
     # Builds the ordered list of providers to attempt.
@@ -685,10 +695,10 @@ module Activities
         user_settings&.agent_timeout_seconds || agent_timeout
       end
 
-      # Cap timeout by the project's max execution time limit.
-      # Uses started_at to compute remaining budget so the limit covers
-      # the full run, not just a single provider attempt.
-      max_exec = agent_run.project.max_execution_seconds
+      # Cap timeout by the resolved max execution time limit (user setting
+      # overrides project default). Uses started_at to compute remaining
+      # budget so the limit covers the full run, not just a single provider attempt.
+      max_exec = resolve_max_execution_seconds(agent_run, user_settings)
       if max_exec && agent_run.started_at
         remaining = (max_exec - (Time.current - agent_run.started_at).to_i).clamp(1, max_exec)
         effective_timeout = [ effective_timeout, remaining ].min

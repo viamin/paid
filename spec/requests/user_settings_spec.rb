@@ -47,6 +47,7 @@ RSpec.describe "UserSettings" do
         get edit_user_settings_path
         expect(response.body).to include("Polling & Timing")
         expect(response.body).to include("Agent Execution")
+        expect(response.body).to include("Max Execution Time Override")
         expect(response.body).to include("Container Resources")
         expect(response.body).to include("Fair Queue Across Projects")
         expect(response.body).to include("Project Defaults")
@@ -79,13 +80,28 @@ RSpec.describe "UserSettings" do
         patch user_settings_path, params: {
           user_setting: {
             agent_timeout_seconds: 7200,
+            max_execution_seconds: 5400,
             default_agent_provider: "cursor"
           }
         }
         expect(response).to redirect_to(edit_user_settings_path)
         settings = user.reload.settings
         expect(settings.agent_timeout_seconds).to eq(7200)
+        expect(settings.max_execution_seconds).to eq(5400)
         expect(settings.default_agent_provider).to eq(cursor.routing_key)
+      end
+
+      it "allows clearing the max execution time override" do
+        user.settings.update!(max_execution_seconds: 5400)
+
+        patch user_settings_path, params: {
+          user_setting: {
+            max_execution_seconds: ""
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+        expect(user.reload.settings.max_execution_seconds).to be_nil
       end
 
       it "updates container resource settings" do

@@ -357,7 +357,7 @@
   <div class="mt-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4 dark:border-yellow-800 dark:bg-yellow-900/30">
     <h2 class="text-sm font-semibold text-yellow-800 dark:text-yellow-200">Execution Timed Out</h2>
     <p class="mt-1 text-sm text-yellow-700 dark:text-yellow-300">
-      This run exceeded the maximum execution time of <strong><%= agent_run.project.max_execution_seconds %>s</strong>.
+      This run exceeded the maximum execution time of <strong><%= agent_run.effective_max_execution_seconds %>s</strong>.
       <% if agent_run.error_message.present? %>
         <br><span class="text-yellow-600 dark:text-yellow-400"><%= agent_run.error_message %></span>
       <% end %>

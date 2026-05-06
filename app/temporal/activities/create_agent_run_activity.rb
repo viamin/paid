@@ -128,7 +128,7 @@ module Activities
           provider_attempt_count: provider_attempt_count_for(agent_run, user_settings),
           agent_timeout_seconds: user_settings&.agent_timeout_seconds || AGENT_TIMEOUT_DEFAULT,
           issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT,
-          max_execution_seconds: project.max_execution_seconds,
+          max_execution_seconds: effective_max_execution_seconds(project, user_settings),
           scope_analysis: scope_result ? {
             should_decompose: scope_result.should_decompose?,
             confidence: scope_result.confidence,
@@ -193,7 +193,7 @@ module Activities
         provider_attempt_count: provider_attempt_count_for(agent_run, user_settings),
         agent_timeout_seconds: user_settings&.agent_timeout_seconds || AGENT_TIMEOUT_DEFAULT,
         issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT,
-        max_execution_seconds: agent_run.project.max_execution_seconds
+        max_execution_seconds: effective_max_execution_seconds(agent_run.project, user_settings)
       }
     end
 
@@ -236,6 +236,10 @@ module Activities
         agent_run: agent_run,
         user_settings: user_settings
       )
+    end
+
+    def effective_max_execution_seconds(project, user_settings)
+      user_settings&.max_execution_seconds || project.max_execution_seconds
     end
 
     def test_command_for(project)
