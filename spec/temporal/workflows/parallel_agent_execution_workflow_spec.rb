@@ -204,6 +204,19 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       expect(queued).to eq(1)
     end
 
+    it "accounts for dependents when capacity runs out before they can launch" do
+      stub_capacity_then_exhausted
+      stub_successful_futures(count: 1)
+      stub_no_conflicts
+
+      result = workflow.execute(project_id: 1, sub_tasks: linear_dependency_sub_tasks)
+
+      expect(result[:results]).to include(
+        include(issue_id: 20, task_index: 1, success: false, error: "no_capacity", queued: true),
+        include(issue_id: 30, task_index: 2, success: false, error: "dependencies_failed", blocked_by: [ 1 ])
+      )
+    end
+
     it "respects shrinking available_slots between batches" do
       # First capacity check returns 2 slots, subsequent checks return 1.
       # With 3 tasks: batch 0 gets 2 tasks, batch 1 re-checks and gets 1 slot,
@@ -279,6 +292,21 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
 
       deadline_exceeded = result[:results].select { |r| r[:error] == "deadline_exceeded" }
       expect(deadline_exceeded).not_to be_empty
+    end
+
+    it "accounts for dependents when the deadline expires before they can launch" do
+      stub_incremental_capacity
+      stub_successful_futures(count: 3)
+      stub_no_conflicts
+
+      stub_deadline_expiring_after(call_threshold: 3)
+
+      result = workflow.execute(project_id: 1, sub_tasks: linear_dependency_sub_tasks, timeout_seconds: 50)
+
+      expect(result[:results]).to include(
+        include(issue_id: 20, task_index: 1, success: false, error: "deadline_exceeded", queued: true),
+        include(issue_id: 30, task_index: 2, success: false, error: "dependencies_failed", blocked_by: [ 1 ])
+      )
     end
 
     it "includes conflict detection results with consistent schema" do
@@ -632,6 +660,24 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       end
 
     -> { call_count }
+  end
+
+  def stub_deadline_expiring_after(call_threshold:)
+    now = Time.now
+    call_count = 0
+
+    allow(Temporalio::Workflow).to receive(:now) do
+      call_count += 1
+      call_count > call_threshold ? now + 100 : now
+    end
+  end
+
+  def linear_dependency_sub_tasks
+    [
+      { issue_id: 10, task_index: 0, dependencies: [] },
+      { issue_id: 20, task_index: 1, dependencies: [ 0 ] },
+      { issue_id: 30, task_index: 2, dependencies: [ 1 ] }
+    ]
   end
 
   def stub_shrinking_capacity

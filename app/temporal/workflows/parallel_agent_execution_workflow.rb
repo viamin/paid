@@ -233,16 +233,15 @@ module Workflows
 
         remaining_seconds = deadline - Temporalio::Workflow.now
         if remaining_seconds <= 0
-          ready_tasks.each do |task|
-            all_results << {
-              issue_id: task[:issue_id],
-              task_index: task[:task_index],
-              success: false,
-              error: "deadline_exceeded",
-              queued: true
-            }
-          end
-          all_results.concat(build_blocked_results(blocked_tasks))
+          all_results.concat(
+            build_terminal_results_for_remaining(
+              all_results: all_results,
+              remaining_tasks: remaining_tasks,
+              ready_tasks: ready_tasks,
+              blocked_tasks: blocked_tasks,
+              ready_error: "deadline_exceeded"
+            )
+          )
           break
         end
 
@@ -255,16 +254,15 @@ module Workflows
           )
 
           unless capacity[:has_capacity]
-            ready_tasks.each do |task|
-              all_results << {
-                issue_id: task[:issue_id],
-                task_index: task[:task_index],
-                success: false,
-                error: "no_capacity",
-                queued: true
-              }
-            end
-            all_results.concat(build_blocked_results(blocked_tasks))
+            all_results.concat(
+              build_terminal_results_for_remaining(
+                all_results: all_results,
+                remaining_tasks: remaining_tasks,
+                ready_tasks: ready_tasks,
+                blocked_tasks: blocked_tasks,
+                ready_error: "no_capacity"
+              )
+            )
             break
           end
 
@@ -272,16 +270,15 @@ module Workflows
         end
 
         if current_slots.to_i <= 0
-          ready_tasks.each do |task|
-            all_results << {
-              issue_id: task[:issue_id],
-              task_index: task[:task_index],
-              success: false,
-              error: "no_capacity",
-              queued: true
-            }
-          end
-          all_results.concat(build_blocked_results(blocked_tasks))
+          all_results.concat(
+            build_terminal_results_for_remaining(
+              all_results: all_results,
+              remaining_tasks: remaining_tasks,
+              ready_tasks: ready_tasks,
+              blocked_tasks: blocked_tasks,
+              ready_error: "no_capacity"
+            )
+          )
           break
         end
 
@@ -332,6 +329,37 @@ module Workflows
           success: false,
           error: "dependencies_failed",
           blocked_by: task[:dependencies]
+        }
+      end
+    end
+
+    def build_terminal_results_for_remaining(all_results:, remaining_tasks:, ready_tasks:, blocked_tasks:, ready_error:)
+      terminal_results = build_ready_failure_results(ready_tasks, ready_error) + build_blocked_results(blocked_tasks)
+      completed_results = (all_results + terminal_results).index_by { |result| result[:task_index] }
+      unresolved_tasks = remaining_tasks - ready_tasks - blocked_tasks
+
+      while unresolved_tasks.any?
+        newly_ready, newly_blocked = partition_ready_tasks(unresolved_tasks, completed_results.values)
+        break if newly_ready.empty? && newly_blocked.empty?
+
+        new_results = build_ready_failure_results(newly_ready, ready_error) + build_blocked_results(newly_blocked)
+        terminal_results.concat(new_results)
+        completed_results.merge!(new_results.index_by { |result| result[:task_index] })
+        unresolved_tasks -= newly_ready
+        unresolved_tasks -= newly_blocked
+      end
+
+      terminal_results + build_unresolvable_results(unresolved_tasks)
+    end
+
+    def build_ready_failure_results(ready_tasks, error)
+      ready_tasks.map do |task|
+        {
+          issue_id: task[:issue_id],
+          task_index: task[:task_index],
+          success: false,
+          error: error,
+          queued: true
         }
       end
     end
