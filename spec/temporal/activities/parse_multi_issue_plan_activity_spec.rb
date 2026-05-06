@@ -81,6 +81,40 @@ RSpec.describe Activities::ParseMultiIssuePlanActivity do
       expect(plan[:tasks].size).to eq(2)
     end
 
+    it "defaults parent_issue_number to source issue when no marker present" do
+      issue = create(:issue, project: project, github_number: 99)
+      agent_run.update!(issue: issue)
+
+      agent_run.log!("stdout", <<~OUTPUT)
+        <!-- multi-issue-plan-start -->
+        [
+          {"title": "Task A", "body": "Do A", "dependencies": []},
+          {"title": "Task B", "body": "Do B", "dependencies": [0]}
+        ]
+        <!-- multi-issue-plan-end -->
+      OUTPUT
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:plan][:parent_issue_number]).to eq(99)
+    end
+
+    it "does not override explicit parent-issue marker with source issue" do
+      issue = create(:issue, project: project, github_number: 99)
+      agent_run.update!(issue: issue)
+
+      agent_run.log!("stdout", <<~OUTPUT)
+        <!-- parent-issue: 451 -->
+        <!-- multi-issue-plan-start -->
+        [{"title": "Task A", "body": "Do A", "dependencies": []}]
+        <!-- multi-issue-plan-end -->
+      OUTPUT
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:plan][:parent_issue_number]).to eq(451)
+    end
+
     it "truncates titles longer than 255 characters" do
       long_title = "A" * 500
       agent_run.log!("stdout", <<~OUTPUT)

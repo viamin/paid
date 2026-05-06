@@ -23,6 +23,8 @@ module Automation
       # can plan efficiently):
       # - Priority label tier first (P1 > P2 > P3 > unlabeled), using each
       #   project's configured priority label names
+      # - Then prefer runnable dependency-tree roots that already unblock
+      #   other open work over standalone terminal issues
       # - Then by +github_number+ ascending (FIFO — older issues within
       #   the same priority tier are always picked first so they don't
       #   get starved by newer issues)
@@ -100,6 +102,7 @@ module Automation
             eligible_scope(project)
               .order(
                 Arel.sql("#{priority_label_order_sql(project)} ASC"),
+                Arel.sql("#{dependency_tree_order_sql} ASC"),
                 Arel.sql("issues.github_number ASC")
               )
               .first
@@ -256,6 +259,22 @@ module Automation
             return (Project::PRIORITY_TIERS.size + 1).to_s if cases.empty?
 
             "CASE #{cases.join(' ')} ELSE #{Project::PRIORITY_TIERS.size + 1} END"
+          end
+
+          # Among already-eligible issues, prefer runnable roots of a
+          # dependency tree over standalone work. Count dependents across the
+          # same-account local graph, not just the current project, because
+          # IssueDependency supports cross-project links within an account.
+          def dependency_tree_order_sql
+            <<~SQL.squish
+              CASE WHEN EXISTS (
+                SELECT 1 FROM issue_dependencies id_dep
+                JOIN issues dep_issue ON dep_issue.id = id_dep.issue_id
+                WHERE id_dep.depends_on_issue_id = issues.id
+                  AND dep_issue.github_state = 'open'
+                  AND dep_issue.is_pull_request = FALSE
+              ) THEN 1 ELSE 2 END
+            SQL
           end
         end
       end
