@@ -29,13 +29,14 @@ module Containers
 
     def self.metrics(projects:)
       scope = ContainerPoolEntry.where(project_id: projects.select(:id))
+      counts = scope.group(:status).count
       active_projects = projects.active.count
 
       {
-        warm: scope.warm.count,
-        warming: scope.warming.count,
-        claimed: scope.claimed.count,
-        error: scope.errored.count,
+        warm: counts["warm"].to_i,
+        warming: counts["warming"].to_i,
+        claimed: counts["claimed"].to_i,
+        error: counts["error"].to_i,
         target: target_size * active_projects
       }
     end
