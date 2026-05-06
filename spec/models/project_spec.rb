@@ -1369,6 +1369,15 @@ RSpec.describe Project do
         expect(project).to be_valid
       end
 
+      it "rejects blank string values for driver, auth_strategy, and config_path" do
+        %w[driver auth_strategy config_path].each do |key|
+          project = build(:project, screenshot_settings: { key => "" })
+
+          expect(project).not_to be_valid
+          expect(project.errors[:screenshot_settings].join).to include("#{key} must not be blank")
+        end
+      end
+
       it "rejects invalid driver values" do
         project = build(:project, screenshot_settings: { "driver" => "selenium" })
 

@@ -954,16 +954,28 @@ class Project < ApplicationRecord
 
     normalized = screenshot_settings.deep_stringify_keys
 
-    if normalized["driver"].present? && !SCREENSHOT_DRIVERS.include?(normalized["driver"])
-      errors.add(:screenshot_settings, "driver must be one of: #{SCREENSHOT_DRIVERS.join(', ')}")
+    if normalized.key?("driver")
+      if normalized["driver"].blank?
+        errors.add(:screenshot_settings, "driver must not be blank")
+      elsif !SCREENSHOT_DRIVERS.include?(normalized["driver"])
+        errors.add(:screenshot_settings, "driver must be one of: #{SCREENSHOT_DRIVERS.join(', ')}")
+      end
     end
 
-    if normalized["auth_strategy"].present? && !SCREENSHOT_AUTH_STRATEGIES.include?(normalized["auth_strategy"])
-      errors.add(:screenshot_settings, "auth_strategy must be one of: #{SCREENSHOT_AUTH_STRATEGIES.join(', ')}")
+    if normalized.key?("auth_strategy")
+      if normalized["auth_strategy"].blank?
+        errors.add(:screenshot_settings, "auth_strategy must not be blank")
+      elsif !SCREENSHOT_AUTH_STRATEGIES.include?(normalized["auth_strategy"])
+        errors.add(:screenshot_settings, "auth_strategy must be one of: #{SCREENSHOT_AUTH_STRATEGIES.join(', ')}")
+      end
     end
 
-    if normalized["config_path"].present? && !valid_relative_screenshot_path?(normalized["config_path"])
-      errors.add(:screenshot_settings, "config_path must be a valid relative path")
+    if normalized.key?("config_path")
+      if normalized["config_path"].blank?
+        errors.add(:screenshot_settings, "config_path must not be blank")
+      elsif !valid_relative_screenshot_path?(normalized["config_path"])
+        errors.add(:screenshot_settings, "config_path must be a valid relative path")
+      end
     end
 
     validate_screenshot_string_array(normalized["service_dependencies"], "service_dependencies")
