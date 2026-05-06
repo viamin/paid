@@ -8,11 +8,10 @@ module Users
       build_resource(sign_up_params)
 
       account_name = params.dig(:user, :account_name)
-      account = Account.new(name: account_name)
-      resource.account = account
 
       ActiveRecord::Base.transaction do
-        account.save!
+        account = provision_account(account_name)
+        resource.account = account
 
         TenantContext.with(account) do
           resource.save!
@@ -29,8 +28,8 @@ module Users
           respond_with resource, location: after_inactive_sign_up_path_for(resource)
         end
       end
-    rescue ActiveRecord::RecordInvalid
-      resource.errors.merge!(account.errors)
+    rescue ActiveRecord::RecordInvalid => e
+      resource.errors.merge!(e.record.errors)
       clean_up_passwords resource
       set_minimum_password_length
       respond_with resource
@@ -43,8 +42,16 @@ module Users
     end
 
     def after_sign_up_path_for(resource)
-      Onboarding::StartOnboarding.call(account: resource.account)
       onboarding_path
+    end
+
+    def provision_account(account_name)
+      result = Accounts::Provision.call(name: account_name)
+      return result.account if result.success?
+
+      account = Account.new(name: account_name)
+      result.errors.each { |error| account.errors.add(:base, error) }
+      raise ActiveRecord::RecordInvalid, account
     end
   end
 end

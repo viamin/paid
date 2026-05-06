@@ -42,6 +42,12 @@ class TenantSetting < ApplicationRecord
     temporal_poll_workflow_slots temporal_poll_activity_slots
     good_job_max_threads
   ].freeze
+  PLAN_DEFAULTS = {
+    "trial" => { max_concurrent_runs: 2, max_projects: 3, max_users: 5, max_tokens_per_run: 5_000_000 },
+    "free" => { max_concurrent_runs: 3, max_projects: 5, max_users: 10, max_tokens_per_run: 5_000_000 },
+    "professional" => { max_concurrent_runs: 10, max_projects: 50, max_users: 25, max_tokens_per_run: 10_000_000 },
+    "enterprise" => { max_concurrent_runs: 100, max_projects: 1000, max_users: 500, max_tokens_per_run: PG_INT_MAX }
+  }.freeze
   REPO_NAME_FORMAT = /\A[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\z/
 
   belongs_to :account
@@ -167,6 +173,10 @@ class TenantSetting < ApplicationRecord
 
   def worker_setting(key)
     effective_worker_settings[key.to_s]
+  end
+
+  def self.defaults_for_plan(plan)
+    PLAN_DEFAULTS.fetch(plan.to_s, PLAN_DEFAULTS["trial"])
   end
 
   def self.resolve_worker_setting(key, env_key:, env:, default:)
