@@ -191,8 +191,8 @@ class Project < ApplicationRecord
   validate :github_token_is_active, if: -> { github_token.present? && github_token_id_changed? }
   validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
   validate :review_settings_valid
-  validate :priority_labels_valid
   validate :screenshot_settings_valid
+  validate :priority_labels_valid
 
   scope :active, -> { where(active: true) }
   scope :inactive, -> { where(active: false) }
@@ -531,10 +531,42 @@ class Project < ApplicationRecord
     effective_quality_gate_settings["enabled"] == true
   end
 
+  def screenshot_settings=(value)
+    @effective_screenshot_settings = nil
+    super
+  end
+
   def effective_screenshot_settings
+    return @effective_screenshot_settings if defined?(@effective_screenshot_settings) && @effective_screenshot_settings
+
     saved = screenshot_settings
     saved = saved.is_a?(Hash) ? saved.deep_stringify_keys : {}
-    DEFAULT_SCREENSHOT_SETTINGS.deep_merge(saved)
+
+    @effective_screenshot_settings = DEFAULT_SCREENSHOT_SETTINGS.deep_merge(saved)
+  end
+
+  def screenshot_enabled
+    effective_screenshot_settings["enabled"] == true
+  end
+
+  def screenshot_enabled=(value)
+    write_screenshot_setting("enabled", ActiveModel::Type::Boolean.new.cast(value))
+  end
+
+  def screenshots_enabled?
+    screenshot_enabled
+  end
+
+  def screenshot_enabled?
+    screenshot_enabled
+  end
+
+  def screenshot_driver
+    effective_screenshot_settings["driver"]
+  end
+
+  def screenshot_driver=(value)
+    write_screenshot_setting("driver", value)
   end
 
   def review_settings=(value)
@@ -960,6 +992,11 @@ class Project < ApplicationRecord
     return if has_any_condition
 
     errors.add(:review_settings, "#{method_name} must have at least one termination condition configured")
+  end
+
+  def write_screenshot_setting(key, value)
+    settings = screenshot_settings.is_a?(Hash) ? screenshot_settings.deep_stringify_keys : {}
+    self.screenshot_settings = settings.merge(key => value)
   end
 
   def allowed_github_usernames_not_empty
