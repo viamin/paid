@@ -3293,15 +3293,17 @@ RSpec.describe AgentRun do
           .to change { project.reload.agent_runs_count }.by(-1)
       end
 
-      it "stays accurate when a run inserted with insert_all! is later destroyed" do
+      it "stays accurate when a run inserted with insert_all! (with manual increment) is later destroyed" do
         agent_run = insert_agent_run_without_callbacks(
           project: project,
           status: "queued",
           now: inserted_agent_run_timestamp
         )
+        # Real callers (e.g. Providers::TestAgent) manually increment after insert_all!
+        Project.update_counters(project.id, agent_runs_count: 1)
 
         expect { agent_run.destroy! }
-          .not_to change { project.reload.agent_runs_count }
+          .to change { project.reload.agent_runs_count }.from(1).to(0)
       end
     end
 
@@ -3344,15 +3346,17 @@ RSpec.describe AgentRun do
           .to change { project.reload.completed_agent_runs_count }.by(-1)
       end
 
-      it "stays accurate when a completed run inserted with insert_all! is later destroyed" do
+      it "stays accurate when a completed run inserted with insert_all! (with manual increment) is later destroyed" do
         agent_run = insert_agent_run_without_callbacks(
           project: project,
           status: "completed",
           now: inserted_agent_run_timestamp
         )
+        # Real callers manually increment after insert_all!
+        Project.update_counters(project.id, agent_runs_count: 1, completed_agent_runs_count: 1)
 
         expect { agent_run.destroy! }
-          .not_to change { project.reload.completed_agent_runs_count }
+          .to change { project.reload.completed_agent_runs_count }.from(1).to(0)
       end
 
       it "refreshes a previously loaded project association before broadcasting stats" do

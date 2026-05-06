@@ -124,7 +124,6 @@ class AgentRun < ApplicationRecord
 
   before_update :store_project_counter_cache_state, if: :project_counter_cache_state_changed?
   before_destroy :store_destroyed_project_counter_cache_state
-  before_destroy :repair_project_counter_caches_before_destroy
 
   after_commit :update_completed_agent_runs_counter_cache, on: [ :create, :update, :destroy ]
   after_commit :broadcast_project_updates, on: [ :create, :update ]
@@ -1905,28 +1904,6 @@ class AgentRun < ApplicationRecord
       project_id: project_id,
       status: status
     }
-  end
-
-  # Rows created outside callbacks (for example via insert_all!) bypass both
-  # counter caches. Repair stale low values before the normal destroy-time
-  # decrements run so the counters stay accurate after deletion.
-  def repair_project_counter_caches_before_destroy
-    return if project_id.blank?
-
-    locked_project = Project.lock.find_by(id: project_id)
-    return unless locked_project
-
-    deltas = {}
-
-    total_gap = AgentRun.where(project_id: project_id).count - locked_project.agent_runs_count
-    deltas[:agent_runs_count] = total_gap if total_gap.positive?
-
-    if status == "completed"
-      completed_gap = AgentRun.completed.where(project_id: project_id).count - locked_project.completed_agent_runs_count
-      deltas[:completed_agent_runs_count] = completed_gap if completed_gap.positive?
-    end
-
-    Project.update_counters(project_id, deltas) if deltas.any?
   end
 
   def completed_agent_runs_counter_deltas
