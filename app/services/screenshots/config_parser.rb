@@ -22,8 +22,6 @@ module Screenshots
     VALID_ROUTE_KEYS = %w[path name requires_auth seed_key].freeze
     VALID_AUTH_KEYS = %w[strategy login_path fields credentials].freeze
     VALID_VIEWPORT_KEYS = %w[width height].freeze
-    VALID_SEED_KEYS = %w[model factory key].freeze
-
     class << self
       def call(project: nil, repo_path: nil, blob: nil, content: nil)
         new(project:, repo_path:, blob:, content:).call
