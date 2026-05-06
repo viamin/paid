@@ -10,6 +10,7 @@ module PerformanceBenchmarks
       KEY = "query_performance"
       WINDOW = 7.days
       LIMIT = 100
+      PHASE_KEYS = %w[provision_container run_agent create_pull_request].freeze
 
       def self.call(...)
         new(...).call
@@ -32,7 +33,7 @@ module PerformanceBenchmarks
 
       def collect_samples
         AgentRunPhase
-          .where(phase_key: %w[provision_container execute_agent commit_changes])
+          .where(phase_key: PHASE_KEYS)
           .where(status: "completed")
           .where(started_at: (now - WINDOW)..now)
           .order(started_at: :desc)
