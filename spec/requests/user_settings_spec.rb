@@ -25,6 +25,15 @@ RSpec.describe "UserSettings" do
         expect(response.body).not_to include("Default Agent Provider")
       end
 
+      it "renders the signed-in theme preference as authoritative" do
+        user.settings.update!(theme_preference: "dark")
+
+        get edit_user_settings_path
+
+        expect(response.body).to include('data-theme-preference-value="dark"')
+        expect(response.body).to include('data-theme-signed-in-value="true"')
+      end
+
       it "creates a user_setting record if none exists" do
         expect { get edit_user_settings_path }.to change(UserSetting, :count).by(1)
       end
@@ -142,10 +151,37 @@ RSpec.describe "UserSettings" do
         expect(flash[:notice]).to eq("Settings saved successfully.")
       end
 
+      it "redirects turbo-stream PATCH requests with see other" do
+        patch user_settings_path,
+          params: { user_setting: { default_poll_interval_seconds: 120 } },
+          headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to have_http_status(:see_other)
+        expect(response).to redirect_to(edit_user_settings_path)
+      end
+
+      it "updates theme settings over json" do
+        patch user_settings_path,
+          params: { user_setting: { theme_preference: "dark" } },
+          as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect(user.reload.settings.theme_preference).to eq("dark")
+      end
+
       it "renders errors for invalid settings" do
         patch user_settings_path, params: { user_setting: { default_poll_interval_seconds: 0 } }
         expect(response).to have_http_status(:unprocessable_content)
         expect(response.body).to include("error")
+      end
+
+      it "renders the edit template for invalid turbo-stream requests" do
+        patch user_settings_path,
+          params: { user_setting: { default_poll_interval_seconds: 0 } },
+          headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("Default Poll Interval")
       end
 
       it "renders errors for invalid agent provider" do

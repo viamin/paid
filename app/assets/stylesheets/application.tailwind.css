@@ -262,14 +262,6 @@
 }
 
 /* Chat markdown rendering */
-.chat-session-card.border-sky-400 {
-  border-color: rgb(56 189 248);
-}
-
-.chat-session-card.bg-sky-50 {
-  background-color: rgb(240 249 255);
-}
-
 [data-controller~="chat-message"] [data-chat-message-target="content"] {
   color: #0f172a;
 }
@@ -346,6 +338,43 @@
   color: #94a3b8;
 }
 
+/* Dark mode: chat markdown content */
+.dark [data-controller~="chat-message"] [data-chat-message-target="content"] {
+  color: #e2e8f0; /* slate-200 */
+}
+
+.dark [data-controller~="chat-message"] [data-chat-message-target="content"] a {
+  color: #7dd3fc; /* sky-300 */
+}
+
+.dark [data-controller~="chat-message"] [data-chat-message-target="content"] table {
+  border-color: #475569; /* slate-600 */
+}
+
+.dark [data-controller~="chat-message"] [data-chat-message-target="content"] th,
+.dark [data-controller~="chat-message"] [data-chat-message-target="content"] td {
+  border-bottom-color: #475569; /* slate-600 */
+}
+
+.dark [data-controller~="chat-message"] [data-chat-message-target="content"] th {
+  background: #334155; /* slate-700 */
+}
+
+.dark [data-controller~="chat-message"] [data-chat-message-target="content"] :not(pre) > code {
+  background: #334155; /* slate-700 */
+  color: #e2e8f0; /* slate-200 */
+}
+
+/* Dark mode: dialog/modal */
+.dark dialog {
+  background-color: #1e293b; /* slate-800 */
+  border-color: #475569; /* slate-600 */
+}
+
+.dark dialog::backdrop {
+  background-color: rgb(0 0 0 / 0.7);
+}
+
 .dark .quality-pause-card.bg-amber-50 {
   background-color: rgba(120, 53, 15, 0.2);
 }
@@ -381,6 +410,11 @@
 .dark .border-sky-100,
 .dark .border-sky-200 {
   border-color: rgb(14 116 144 / 0.6);
+}
+
+/* Preserve sky-400 active-chat highlight over the global dark border-gray override */
+.dark .chat-session-card.border-sky-400 {
+  border-color: #38bdf8; /* sky-400 */
 }
 
 .dark .ring-sky-100 {
