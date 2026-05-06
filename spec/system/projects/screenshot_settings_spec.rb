@@ -3,7 +3,7 @@
 require "rails_helper"
 require "warden/test/helpers"
 
-RSpec.describe "Project screenshot settings", type: :system do
+RSpec.describe "Project screenshot settings", system_driver: :rack_test, type: :system do
   include Warden::Test::Helpers
 
   let(:account) { create(:account) }

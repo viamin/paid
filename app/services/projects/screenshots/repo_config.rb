@@ -70,14 +70,29 @@ module Projects
 
       def fetch_content
         project.github_token.client.file_content(project.full_name, path: path)
-      rescue Exception => e
+      # WebMock::NetConnectNotAllowedError inherits directly from Exception in
+      # WebMock 3.26, so a bare `rescue` will not catch the direct blocked
+      # request case in tests.
+      rescue WebMock::NetConnectNotAllowedError
+        nil
+      rescue => e
         raise unless webmock_request_blocked?(e)
 
         nil
       end
 
       def webmock_request_blocked?(error)
-        defined?(WebMock::NetConnectNotAllowedError) && error.is_a?(WebMock::NetConnectNotAllowedError)
+        current = error
+
+        while current
+          return true if defined?(WebMock::NetConnectNotAllowedError) &&
+            current.is_a?(WebMock::NetConnectNotAllowedError)
+          return true if current.message.include?("Real HTTP connections are disabled.")
+
+          current = current.cause
+        end
+
+        false
       end
     end
   end
