@@ -22,6 +22,25 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
       stub_temporal_workflow
     end
 
+    def expect_orchestration_sub_issue_creation!
+      expect(workflow).to have_received(:run_activity)
+        .with(
+          Activities::CreateSubIssuesActivity,
+          hash_including(
+            project_id: 1,
+            parent_issue_id: 2,
+            creation_mode: Activities::CreateSubIssuesActivity::ORCHESTRATION_MODE,
+            sub_tasks: [
+              hash_including(title: "Add migration", body: "Create users table", dependencies: []),
+              hash_including(title: "Add model", body: "Create User model", dependencies: [ 0 ]),
+              hash_including(title: "Add controller", body: "Create UsersController", dependencies: [ 1 ])
+            ]
+          ),
+          timeout: 120,
+          retry_policy: anything
+        )
+    end
+
     it "accepts a single input parameter" do
       params = workflow.method(:execute).parameters
       expect(params).to eq([ [ :req, :input ] ])
@@ -78,8 +97,7 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
           .with(Activities::FetchPlanningContextActivity, hash_including(project_id: 1, issue_id: 2), timeout: 60)
         expect(workflow).to have_received(:run_activity)
           .with(Activities::DecomposeFeatureActivity, hash_including(project_id: 1, issue_id: 2), timeout: 120)
-        expect(workflow).to have_received(:run_activity)
-          .with(Activities::CreateSubIssuesActivity, hash_including(project_id: 1, parent_issue_id: 2), timeout: 120, retry_policy: anything)
+        expect_orchestration_sub_issue_creation!
       end
 
       it "launches ParallelAgentExecutionWorkflow as child workflow" do
@@ -334,6 +352,53 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
         result = workflow.execute(input)
 
         expect(result[:aggregated_pr]).to eq({ pull_request_url: "https://github.com/org/repo/pull/42" })
+      end
+    end
+
+    context "when created issues are returned in dependency order" do
+      let(:tasks) do
+        [
+          { index: 0, title: "Task A", description: "Do A", dependencies: [], parallel_group: 0 },
+          { index: 1, title: "Task B", description: "Do B", dependencies: [ 0 ], parallel_group: 1 },
+          { index: 2, title: "Task C", description: "Do C", dependencies: [], parallel_group: 0 }
+        ]
+      end
+
+      let(:parallel_result) do
+        {
+          success: true,
+          total: 3,
+          completed: 3,
+          failed: 0,
+          results: [],
+          conflicts: { has_conflicts: false, conflicting_pairs: [] }
+        }
+      end
+
+      before do
+        stub_planning_activities(
+          tasks: tasks,
+          created_issues: [ { index: 0, issue_id: 10 }, { index: 2, issue_id: 12 }, { index: 1, issue_id: 11 } ]
+        )
+        stub_parallel_execution(parallel_result)
+        stub_update_labels
+      end
+
+      it "maps created issues back to the original task index" do
+        workflow.execute(input)
+
+        expect(Temporalio::Workflow).to have_received(:execute_child_workflow)
+          .with(
+            Workflows::ParallelAgentExecutionWorkflow,
+            hash_including(
+              sub_tasks: [
+                hash_including(issue_id: 10, task_index: 0),
+                hash_including(issue_id: 11, task_index: 1),
+                hash_including(issue_id: 12, task_index: 2)
+              ]
+            ),
+            anything
+          )
       end
     end
   end

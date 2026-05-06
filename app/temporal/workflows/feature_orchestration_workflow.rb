@@ -144,7 +144,14 @@ module Workflows
           {
             project_id: project_id,
             parent_issue_id: issue_id,
-            sub_tasks: tasks.map { |t| { title: t[:title], body: t[:description] } }
+            creation_mode: Activities::CreateSubIssuesActivity::ORCHESTRATION_MODE,
+            sub_tasks: tasks.map do |task|
+              {
+                title: task[:title],
+                body: task[:description],
+                dependencies: Array(task[:dependencies])
+              }
+            end
           },
           timeout: 120,
           retry_policy: Temporalio::RetryPolicy.new(max_attempts: 1)
@@ -157,6 +164,10 @@ module Workflows
     end
 
     def build_sub_tasks(tasks, created_issues)
+      created_issues_by_index = created_issues.each_with_index.each_with_object({}) do |(issue, fallback_index), memo|
+        memo[issue.fetch(:index, fallback_index)] = issue
+      end
+
       tasks.each_with_index.map do |task, index|
         sub_task = {
           custom_prompt: task[:description],
@@ -167,8 +178,8 @@ module Workflows
 
         # Link to created issue — require a valid issue_id since downstream
         # workflows (AgentExecutionWorkflow) depend on it for state tracking.
-        if created_issues[index]
-          issue_id = created_issues[index][:issue_id]
+        if created_issues_by_index[index]
+          issue_id = created_issues_by_index[index][:issue_id]
           unless issue_id
             raise Temporalio::Error::ApplicationError.new(
               "CreateSubIssuesActivity returned nil issue_id for task #{index}: #{task[:title]}",
