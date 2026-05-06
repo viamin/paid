@@ -79,6 +79,15 @@ RSpec.describe Guardrails::ViolationHandler do
 
       expect(result.paused?).to be true
       expect(agent_run.reload.guardrail_violation_type).to eq("anomaly")
+      expect(Notifications::Publish).to have_received(:call).with(
+        hash_including(
+          account: agent_run.project.account,
+          source: "guardrail_anomaly",
+          subject: agent_run,
+          severity: :error,
+          nav_section: "agent_runs"
+        )
+      )
     end
 
     it "stores violation context as structured data" do

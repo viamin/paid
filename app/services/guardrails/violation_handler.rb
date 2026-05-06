@@ -154,7 +154,7 @@ module Guardrails
     end
 
     def notification_severity
-      violation_type == "anomaly" ? :warning : :error
+      :error
     end
 
     def notification_title
