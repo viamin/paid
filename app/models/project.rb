@@ -1079,8 +1079,6 @@ class Project < ApplicationRecord
   end
 
   def validate_screenshot_string_array(value, key)
-    return if value.nil?
-
     unless value.is_a?(Array)
       errors.add(:screenshot_settings, "#{key} must be an array of non-blank strings")
       return

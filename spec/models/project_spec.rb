@@ -1420,8 +1420,22 @@ RSpec.describe Project do
         expect(project.errors[:screenshot_settings].join).to include("setup_commands must be an array of non-blank strings")
       end
 
+      it "rejects nil setup_commands values" do
+        project = build(:project, screenshot_settings: { "setup_commands" => nil })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("setup_commands must be an array of non-blank strings")
+      end
+
       it "rejects blank service_dependencies items" do
         project = build(:project, screenshot_settings: { "service_dependencies" => [ "postgres", " " ] })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("service_dependencies must be an array of non-blank strings")
+      end
+
+      it "rejects nil service_dependencies values" do
+        project = build(:project, screenshot_settings: { "service_dependencies" => nil })
 
         expect(project).not_to be_valid
         expect(project.errors[:screenshot_settings].join).to include("service_dependencies must be an array of non-blank strings")
