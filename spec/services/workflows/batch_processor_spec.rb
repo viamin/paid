@@ -7,7 +7,7 @@ RSpec.describe Workflows::BatchProcessor do
 
   describe ".call" do
     it "batch-updates timed out runs" do
-      runs = create_list(:agent_run, 3, project: project, status: "running")
+      runs = create_list(:agent_run, 3, project: project, status: "running", started_at: 5.minutes.ago)
       scope = AgentRun.where(id: runs.map(&:id))
 
       result = described_class.call(scope: scope, operation: :timeout)
@@ -16,14 +16,15 @@ RSpec.describe Workflows::BatchProcessor do
       expect(result[:errors]).to be_empty
       runs.each do |run|
         run.reload
-        expect(run.status).to eq("failed")
-        expect(run.error_message).to eq("Timed out during execution")
+        expect(run.status).to eq("timeout")
+        expect(run.error_message).to eq(described_class::TIMEOUT_ERROR_MESSAGE)
         expect(run.completed_at).to be_present
+        expect(run.duration_seconds).to be_present
       end
     end
 
     it "batch-completes runs" do
-      runs = create_list(:agent_run, 2, project: project, status: "running")
+      runs = create_list(:agent_run, 2, project: project, status: "running", started_at: 5.minutes.ago)
       scope = AgentRun.where(id: runs.map(&:id))
 
       result = described_class.call(scope: scope, operation: :complete)
@@ -33,7 +34,7 @@ RSpec.describe Workflows::BatchProcessor do
     end
 
     it "batch-fails runs" do
-      runs = create_list(:agent_run, 2, project: project, status: "running")
+      runs = create_list(:agent_run, 2, project: project, status: "running", started_at: 5.minutes.ago)
       scope = AgentRun.where(id: runs.map(&:id))
 
       result = described_class.call(scope: scope, operation: :fail)
@@ -43,7 +44,7 @@ RSpec.describe Workflows::BatchProcessor do
     end
 
     it "batch-requeues runs and increments stale_requeue_count" do
-      runs = create_list(:agent_run, 2, project: project, status: "running", stale_requeue_count: 1)
+      runs = create_list(:agent_run, 2, project: project, status: "running", started_at: 5.minutes.ago, stale_requeue_count: 1)
       scope = AgentRun.where(id: runs.map(&:id))
 
       result = described_class.call(scope: scope, operation: :requeue)
@@ -63,7 +64,7 @@ RSpec.describe Workflows::BatchProcessor do
     end
 
     it "respects batch_size parameter" do
-      runs = create_list(:agent_run, 5, project: project, status: "running")
+      runs = create_list(:agent_run, 5, project: project, status: "running", started_at: 5.minutes.ago)
       scope = AgentRun.where(id: runs.map(&:id))
 
       result = described_class.call(scope: scope, operation: :timeout, batch_size: 2)

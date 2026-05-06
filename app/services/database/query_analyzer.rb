@@ -53,11 +53,12 @@ module Database
     def analyze
       subscribe_to_queries
       result = yield
-      unsubscribe
 
       analysis = build_analysis
       log_analysis(analysis)
       { result: result, analysis: analysis }
+    ensure
+      unsubscribe
     end
 
     private

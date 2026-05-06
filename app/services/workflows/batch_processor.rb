@@ -15,6 +15,7 @@ module Workflows
   class BatchProcessor
     BATCH_SIZE = 50
     OPERATIONS = %i[timeout complete fail requeue].freeze
+    TIMEOUT_ERROR_MESSAGE = "Timed out during execution"
 
     attr_reader :scope, :operation, :batch_size
 
@@ -72,12 +73,9 @@ module Workflows
     end
 
     def batch_timeout(ids)
-      AgentRun.where(id: ids).update_all(
-        status: "failed",
-        error_message: "Timed out during execution",
-        completed_at: Time.current,
-        updated_at: Time.current
-      )
+      AgentRun.where(id: ids).find_each.count do |agent_run|
+        agent_run.timeout!(error: TIMEOUT_ERROR_MESSAGE)
+      end
     end
 
     def batch_complete(ids)

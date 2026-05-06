@@ -28,10 +28,10 @@ module PerformanceBenchmarks
         "regression_threshold" => 1.5
       },
       "pool_utilization" => {
-        "name" => "Pool utilization",
-        "description" => "Container pool hit rate as a percentage of total provisions.",
-        "budget_ms" => 100,
-        "regression_threshold" => 0.8
+        "name" => "Pool claim latency",
+        "description" => "Time between a container becoming warm and an agent run claiming it.",
+        "budget_ms" => 300_000,
+        "regression_threshold" => 1.5
       },
       "query_performance" => {
         "name" => "Query performance",

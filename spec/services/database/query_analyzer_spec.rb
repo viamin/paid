@@ -24,7 +24,7 @@ RSpec.describe Database::QueryAnalyzer do
       create_list(:agent_run, 4, project: project)
 
       output = described_class.analyze("n_plus_one_test") do
-        project.agent_runs.each { |r| r.project }
+        project.agent_runs.each(&:project)
       end
 
       analysis = output[:analysis]
@@ -37,6 +37,17 @@ RSpec.describe Database::QueryAnalyzer do
       end
 
       expect(output[:result]).to eq(42)
+    end
+
+    it "unsubscribes when the analyzed block raises" do
+      analyzer = described_class.new(label: "exception_test")
+
+      expect {
+        analyzer.analyze { raise "boom" }
+      }.to raise_error("boom")
+
+      expect(analyzer.send(:subscriber)).to be_present
+      expect(ActiveSupport::Notifications.notifier.listeners_for("sql.active_record")).not_to include(analyzer.send(:subscriber))
     end
 
     it "logs analysis results" do
