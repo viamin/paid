@@ -39,6 +39,9 @@ module Activities
       plan = parse_plan(summary)
 
       if plan
+        # Default parent to the source issue so it becomes the tracking issue
+        plan[:parent_issue_number] ||= agent_run.issue&.github_number
+
         agent_run.log!("system", "Detected multi-issue plan with #{plan[:tasks].size} issues")
 
         logger.info(

@@ -1970,16 +1970,16 @@ module Activities
       <!-- multi-issue-plan-end -->
 
       If you are decomposing the work, do NOT create any GitHub issue directly.
-      The platform will create the issues from the plan.
+      The platform will create the issues from the plan and automatically update the
+      current source issue as the parent tracking issue with a task list of all
+      created sub-issues.
 
-      If the user explicitly references an existing GitHub issue that should remain the
-      parent tracker, you may optionally include:
+      If a different existing issue should be the parent tracker instead, include:
 
       <!-- parent-issue: EXISTING_ISSUE_NUMBER -->
 
-      before the plan so the platform can update that already-existing issue after the
-      sub-issues are created. Each task's `dependencies` array contains indices of tasks
-      that must be completed first.
+      before the plan. Otherwise the source issue is used. Each task's `dependencies`
+      array contains indices of tasks that must be completed first.
 
       Rules:
       - Each sub-issue should be scoped to a single focused PR
