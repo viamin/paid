@@ -55,4 +55,37 @@ RSpec.describe Screenshots::DetectFramework do
       expect(result.confidence).to be < 0.5
     end
   end
+
+  describe "parse_rails_routes_output" do
+    it "extracts the URI path (after the verb) from rails routes output" do
+      output = <<~ROUTES
+                         Prefix Verb   URI Pattern                 Controller#Action
+                           root GET    /                           home#index
+                      dashboard GET    /dashboard(.:format)        dashboard#show
+                        reports GET    /reports(.:format)          reports#index
+                   edit_profile GET    /profile/edit(.:format)     profiles#edit
+      ROUTES
+
+      service = described_class.new(repo_path: fixture_path("rails_repo"))
+      routes = service.send(:parse_rails_routes_output, output)
+      paths = routes.map { |r| r["path"] }
+
+      expect(paths).to include("/", "/dashboard", "/reports", "/profile/edit")
+      expect(paths).not_to include("root", "dashboard", "reports", "edit_profile")
+    end
+
+    it "handles lines where the prefix column is blank" do
+      output = <<~ROUTES
+                         Prefix Verb   URI Pattern                 Controller#Action
+                                POST   /sessions(.:format)         sessions#create
+                        sign_in GET    /sign_in(.:format)          sessions#new
+      ROUTES
+
+      service = described_class.new(repo_path: fixture_path("rails_repo"))
+      routes = service.send(:parse_rails_routes_output, output)
+      paths = routes.map { |r| r["path"] }
+
+      expect(paths).to include("/sessions", "/sign_in")
+    end
+  end
 end

@@ -372,13 +372,15 @@ module Screenshots
     def parse_rails_routes_output(output)
       output.each_line.filter_map do |line|
         tokens = line.strip.split(/\s+/)
-        next if tokens.length < 2
+        next if tokens.length < 3
 
         verb_index = tokens.index { |token| token.match?(/\A(?:GET|POST|PATCH|PUT|DELETE)\z/) }
         next unless verb_index
-        next if verb_index.zero?
+        next unless tokens[verb_index + 1]
 
-        route_hash(tokens[verb_index - 1], tokens[verb_index - 1], requires_auth: false)
+        path = tokens[verb_index + 1].sub(/\(.:format\)\z/, "")
+        name = verb_index > 0 ? tokens[verb_index - 1] : path
+        route_hash(path, name, requires_auth: false)
       end.then { |routes| unique_routes(routes) }
     end
 
