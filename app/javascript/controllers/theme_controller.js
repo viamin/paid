@@ -56,6 +56,8 @@ export default class extends Controller {
     document.documentElement.classList.toggle("dark", dark)
     window.localStorage.setItem("theme_preference", preference)
 
+    this.syncSettingsFormSelect(preference)
+
     if (this.signedInValue && this._lastPersisted !== preference) {
       this.persistToServer(preference)
     }
@@ -119,6 +121,13 @@ export default class extends Controller {
       if (moon) moon.classList.toggle("hidden", preference !== "dark")
       if (system) system.classList.toggle("hidden", preference !== "system")
     })
+  }
+
+  syncSettingsFormSelect(preference) {
+    const select = document.getElementById("user_setting_theme_preference")
+    if (select && select.value !== preference) {
+      select.value = preference
+    }
   }
 
   storedPreference() {

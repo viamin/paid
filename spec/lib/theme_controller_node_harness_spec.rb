@@ -69,7 +69,8 @@ class ThemeControllerNodeHarness
           classList: { toggle() {} },
           dataset: {}
         },
-        querySelector() { return null; }
+        querySelector() { return null; },
+        getElementById() { return null; }
       };
 
       let persistedCalls = 0;
