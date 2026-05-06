@@ -55,7 +55,7 @@ class DashboardController < ApplicationController
   end
 
   def queue_health
-    @queue_health = Scaling::QueueMonitor.call(account: current_account)
+    @queue_health = Scaling::QueueMonitor.cached_for_account(current_account)
     render partial: "dashboard/queue_health", locals: { queue_depths: @queue_health.queue_depths, healthy: @queue_health.healthy? }
   end
 

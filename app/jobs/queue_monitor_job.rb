@@ -32,8 +32,16 @@ class QueueMonitorJob < ApplicationJob
       combined_depths = global_depths + account_agent_result.queue_depths
       combined_alerts = global_result.alerts.select { |a| a.queue_type != :agent_run_queue } + account_agent_result.alerts
 
+      combined_healthy = global_result.healthy? && account_agent_result.healthy?
+      combined_result = Scaling::QueueMonitor::Result.new(
+        queue_depths: combined_depths,
+        alerts: combined_alerts,
+        healthy?: combined_healthy
+      )
+      Scaling::QueueMonitor.write_cache(account, combined_result)
+
       Scaling::QueueAlert.call(account: account, alerts: combined_alerts)
-      broadcast_queue_health(account, combined_depths, global_result.healthy? && account_agent_result.healthy?) if combined_depths.any?
+      broadcast_queue_health(account, combined_depths, combined_healthy) if combined_depths.any?
     end
 
     duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round

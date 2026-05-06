@@ -394,6 +394,19 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("dashboard-queue-health")
       expect(response.body).to include("Queue Health")
     end
+
+    it "uses the cached queue health snapshot for the current account" do
+      queue_health = instance_double(
+        Scaling::QueueMonitor::Result,
+        queue_depths: [],
+        healthy?: true
+      )
+      allow(Scaling::QueueMonitor).to receive(:cached_for_account).with(account).and_return(queue_health)
+
+      get dashboard_queue_health_path
+
+      expect(Scaling::QueueMonitor).to have_received(:cached_for_account).with(account)
+    end
   end
 
   describe "GET /dashboard/live" do
