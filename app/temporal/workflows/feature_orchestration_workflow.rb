@@ -158,7 +158,12 @@ module Workflows
 
     def build_sub_tasks(tasks, created_issues)
       tasks.each_with_index.map do |task, index|
-        sub_task = { custom_prompt: task[:description] }
+        sub_task = {
+          custom_prompt: task[:description],
+          task_index: task.fetch(:index, index),
+          dependencies: Array(task[:dependencies]),
+          parallel_group: task[:parallel_group]
+        }
 
         # Link to created issue — require a valid issue_id since downstream
         # workflows (AgentExecutionWorkflow) depend on it for state tracking.

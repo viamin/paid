@@ -105,9 +105,9 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
             Workflows::ParallelAgentExecutionWorkflow,
             hash_including(
               sub_tasks: [
-                { custom_prompt: "Create users table", issue_id: 10 },
-                { custom_prompt: "Create User model", issue_id: 11 },
-                { custom_prompt: "Create UsersController", issue_id: 12 }
+                { custom_prompt: "Create users table", issue_id: 10, task_index: 0, dependencies: [], parallel_group: 0 },
+                { custom_prompt: "Create User model", issue_id: 11, task_index: 1, dependencies: [ 0 ], parallel_group: 1 },
+                { custom_prompt: "Create UsersController", issue_id: 12, task_index: 2, dependencies: [ 1 ], parallel_group: 2 }
               ]
             ),
             anything

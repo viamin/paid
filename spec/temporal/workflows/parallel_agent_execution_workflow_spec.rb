@@ -83,6 +83,22 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       end
     end
 
+    it "raises InvalidInput when dependencies are not integer task indexes" do
+      expect {
+        workflow.execute({ project_id: 1, sub_tasks: [ { issue_id: 1, dependencies: [ "0" ] } ] })
+      }.to raise_error(Temporalio::Error::ApplicationError, /dependencies must be an array of task indexes/) do |error|
+        expect(error.type).to eq("InvalidInput")
+      end
+    end
+
+    it "raises InvalidInput when dependencies reference unknown tasks" do
+      expect {
+        workflow.execute({ project_id: 1, sub_tasks: [ { issue_id: 1, task_index: 0, dependencies: [ 2 ] } ] })
+      }.to raise_error(Temporalio::Error::ApplicationError, /unknown dependencies: 2/) do |error|
+        expect(error.type).to eq("InvalidInput")
+      end
+    end
+
     it "accepts sub_task with only custom_prompt" do
       stub_full_capacity
       stub_successful_futures(count: 1)
@@ -201,6 +217,43 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       expect(result[:success]).to be true
       expect(result[:total]).to eq(3)
       expect(result[:completed]).to eq(3)
+    end
+
+    it "waits to launch dependent tasks until prerequisites complete" do
+      stub_full_capacity
+      stub_successful_futures(count: 3)
+      stub_no_conflicts
+
+      workflow.execute(
+        project_id: 1,
+        sub_tasks: [
+          { issue_id: 10, task_index: 0, dependencies: [], parallel_group: 0 },
+          { issue_id: 20, task_index: 1, dependencies: [ 0 ], parallel_group: 1 },
+          { issue_id: 30, task_index: 2, dependencies: [], parallel_group: 0 }
+        ]
+      )
+
+      expect(Temporalio::Workflow::Future).to have_received(:try_all_of).twice
+    end
+
+    it "marks dependent tasks as blocked when a prerequisite fails" do
+      stub_full_capacity
+      stub_no_conflicts
+      stub_dependency_failure_sequence
+
+      result = workflow.execute(
+        project_id: 1,
+        sub_tasks: [
+          { issue_id: 10, task_index: 0, dependencies: [] },
+          { issue_id: 20, task_index: 1, dependencies: [ 0 ] }
+        ]
+      )
+
+      expect(result[:success]).to be false
+      expect(result[:failed]).to eq(2)
+      expect(result[:results]).to include(
+        include(issue_id: 20, task_index: 1, success: false, error: "dependencies_failed", blocked_by: [ 0 ])
+      )
     end
 
     it "marks remaining tasks as deadline_exceeded when overall timeout expires" do
@@ -547,6 +600,22 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
     end
 
     all_done = Struct.new(:wait).new(nil)
+    allow(Temporalio::Workflow::Future).to receive(:try_all_of).and_return(all_done)
+  end
+
+  def stub_dependency_failure_sequence
+    error = StandardError.new("Agent execution failed")
+    failure = Struct.new(:done?, :failure?, :failure, :result, keyword_init: true)
+      .new("done?": true, "failure?": true, failure: error, result: nil)
+    success = Struct.new(:done?, :failure?, :failure, :result, keyword_init: true)
+      .new("done?": true, "failure?": false, failure: nil, result: { success: true, agent_run_id: 43 })
+    all_done = Struct.new(:wait).new(nil)
+
+    index = 0
+    allow(Temporalio::Workflow::Future).to receive(:new) do
+      index += 1
+      index == 1 ? failure : success
+    end
     allow(Temporalio::Workflow::Future).to receive(:try_all_of).and_return(all_done)
   end
 
