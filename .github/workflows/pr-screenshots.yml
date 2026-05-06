@@ -70,7 +70,7 @@ jobs:
   capture:
     needs: detect
     if: needs.detect.outputs.has_ui_changes == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read

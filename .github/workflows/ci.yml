@@ -104,7 +104,7 @@ jobs:
           check_contains .github/workflows/pr-screenshots.yml "$noble_client" ".github/workflows/pr-screenshots.yml is not pinned to $noble_client"
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
@@ -202,7 +202,7 @@ jobs:
         run: bundle exec fasterer
 
   performance:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
