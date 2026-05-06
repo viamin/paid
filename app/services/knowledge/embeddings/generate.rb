@@ -107,8 +107,8 @@ module Knowledge
           "Failed to parse embedding API response as JSON: #{e.message} (status #{response.status}, body: #{response.body})"
       end
 
-      # TODO(#257): Replace with AgentHarness.embed once embedding support is added
-      # to the agent-harness gem. This proxy-backed HTTP call is a temporary bridge.
+      # HTTP client for the secrets-proxy-backed embedding endpoint.
+      # TODO(#1039): Replace with AgentHarness.embed once agent-harness ships embedding support.
       def connection
         @connection ||= Faraday.new(url: base_url) do |f|
           f.request :retry, max: 0
