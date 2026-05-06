@@ -4350,12 +4350,20 @@ CREATE TABLE public.user_settings (
     provider_selection_mode character varying(20) DEFAULT 'single'::character varying NOT NULL,
     provider_round_robin_state jsonb DEFAULT '{}'::jsonb NOT NULL,
     fair_queue_across_projects boolean DEFAULT true NOT NULL,
+    max_execution_seconds integer,
     CONSTRAINT chk_max_issues_per_page_bounds CHECK (((max_issues_per_page >= 5) AND (max_issues_per_page <= 200))),
     CONSTRAINT chk_max_prs_per_page_bounds CHECK (((max_prs_per_page >= 5) AND (max_prs_per_page <= 200))),
     CONSTRAINT chk_provider_selection_mode CHECK (((provider_selection_mode)::text = ANY (ARRAY[('single'::character varying)::text, ('round_robin'::character varying)::text, ('random'::character varying)::text])))
 );
 
 ALTER TABLE ONLY public.user_settings FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: COLUMN user_settings.max_execution_seconds; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.user_settings.max_execution_seconds IS 'User-level override for project max_execution_seconds; nil defers to project setting';
 
 
 --
@@ -11173,6 +11181,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260506074459'),
 ('20260504222628'),
 ('20260504105047'),
 ('20260504100425'),

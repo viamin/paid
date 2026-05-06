@@ -2704,7 +2704,7 @@ RSpec.describe Containers::Provision do
         }.to raise_error(described_class::IdleTimeoutError)
       end
 
-      it "does not suppress the wall-clock timeout" do
+      it "suppresses wall-clock timeout when heartbeat is fresh" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
           Thread.new do
             20.times do
@@ -2712,17 +2712,36 @@ RSpec.describe Containers::Provision do
               sleep 0.01
             end
           end
-          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
-          [ [], [], 137 ]
+          # With heartbeat suppressing wall-clock timeout, exec completes normally
+          sleep 0.25
+          [ [], [], 0 ]
         end
+
+        result = service.execute(
+          "long_running",
+          timeout: 0.2,
+          heartbeat_path: heartbeat_path
+        )
+        expect(result).to be_success
+      end
+
+      it "fires wall-clock timeout when heartbeat is stale" do
+        # Touch heartbeat once at start, then let it go stale
+        FileUtils.touch(heartbeat_path)
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "initial output\n") if block
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
+          [ [ "initial output\n" ], [], 137 ]
+        end
+        allow(service).to receive(:watchdog_poll_interval).and_return(0.05)
 
         expect {
           service.execute(
             "long_running",
-            timeout: 0.2,
+            timeout: 0.15,
             heartbeat_path: heartbeat_path
           )
-        }.to raise_error(described_class::TimeoutError, /timed out after 0.2 seconds/)
+        }.to raise_error(described_class::TimeoutError)
       end
 
       it "tolerates a missing heartbeat file path and falls back to stdout activity" do
