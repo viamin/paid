@@ -93,7 +93,8 @@ module Workflows
           goal: "analyze_issue"
         }, timeout: 30)
       when "start_planning"
-        if feature_flag_enabled?(:feature_orchestration, project_id:)
+        if Temporalio::Workflow.patched("feature-orchestration-start-v1") &&
+            feature_flag_enabled?(:feature_orchestration, project_id:)
           start_feature_orchestration_workflow(project_id, decision[:issue_id])
         else
           start_planning_workflow(project_id, decision[:issue_id])

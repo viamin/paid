@@ -380,6 +380,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:patched)
         .with("queue-agent-run-goal-v1")
         .and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("feature-orchestration-start-v1")
+        .and_return(false)
     end
 
     it "queues explicit create_pr decisions instead of starting runs directly" do
@@ -438,6 +441,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     it "starts FeatureOrchestrationWorkflow when feature_orchestration flag is enabled" do
       evaluation = { decisions: [ { type: "start_planning", issue_id: 20 } ] }
 
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("feature-orchestration-start-v1").and_return(true)
       allow(workflow).to receive(:run_activity)
         .with(Activities::LoadFeatureFlagsActivity, anything, timeout: anything)
         .and_return({ flags: { feature_orchestration: true } })
