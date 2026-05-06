@@ -973,8 +973,13 @@ class Project < ApplicationRecord
       end
     end
 
-    validate_screenshot_string_array(normalized["service_dependencies"], "service_dependencies")
-    validate_screenshot_string_array(normalized["setup_commands"], "setup_commands")
+    if normalized.key?("service_dependencies")
+      validate_screenshot_string_array(normalized["service_dependencies"], "service_dependencies")
+    end
+
+    if normalized.key?("setup_commands")
+      validate_screenshot_string_array(normalized["setup_commands"], "setup_commands")
+    end
   end
 
   def validate_review_methods_config(normalized)

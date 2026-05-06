@@ -1335,6 +1335,17 @@ RSpec.describe Project do
         expect(project.screenshot_enabled).to be true
         expect(project.screenshot_capture_on_pr?).to be false
       end
+
+      it "supports incremental updates without requiring array keys" do
+        project = build(:project, screenshot_settings: {})
+
+        project.screenshot_enabled = true
+
+        expect(project).to be_valid
+        expect(project.screenshot_settings).to eq("enabled" => true)
+        expect(project.effective_screenshot_settings["service_dependencies"]).to eq([])
+        expect(project.effective_screenshot_settings["setup_commands"]).to eq([])
+      end
     end
 
     describe "#screenshots_enabled?" do
@@ -1365,6 +1376,12 @@ RSpec.describe Project do
           "setup_commands" => [ "bin/rails db:prepare" ],
           "auth_strategy" => "form"
         })
+
+        expect(project).to be_valid
+      end
+
+      it "accepts partial screenshot_settings overrides" do
+        project = build(:project, screenshot_settings: { "enabled" => true })
 
         expect(project).to be_valid
       end
