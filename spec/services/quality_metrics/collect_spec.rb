@@ -6,8 +6,18 @@ RSpec.describe QualityMetrics::Collect do
   describe ".call" do
     let(:agent_run) { create(:agent_run, :completed, iterations: 3) }
 
+    before do
+      allow(QualityPause::Check).to receive(:call)
+    end
+
     it "creates a quality metric for the agent run" do
       expect { described_class.call(agent_run: agent_run) }.to change(QualityMetric, :count).by(1)
+    end
+
+    it "checks for quality pauses after recording an eligible metric" do
+      described_class.call(agent_run: agent_run)
+
+      expect(QualityPause::Check).to have_received(:call).with(agent_run: agent_run)
     end
 
     it "sets iteration score in scores hash" do
@@ -164,6 +174,7 @@ RSpec.describe QualityMetrics::Collect do
           expect(metric.composite_score).to be_nil
           expect(metric.scores).to eq({ "excluded_status" => excluded_status })
           expect(metric.metadata["exclusion_reason"]).to eq("operational_failure")
+          expect(QualityPause::Check).not_to have_received(:call).with(agent_run: run)
         end
       end
 

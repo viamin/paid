@@ -75,8 +75,8 @@ RSpec.describe QualityMetrics::TrendAnalysis do
     end
 
     it "includes thresholds when requested" do
-      create(:quality_gate_threshold, project: project,
-        metric_key: "composite_score", min_threshold: 0.5, severity: "warning")
+      create(:quality_threshold, :project_override, project: project,
+        metric_type: "composite_score", goal_type: "create_pr", min_value: 0.5, enabled: true)
 
       result = described_class.call(
         project_id: project.id,
@@ -99,13 +99,11 @@ RSpec.describe QualityMetrics::TrendAnalysis do
     let(:project) { create(:project) }
 
     it "includes gate events when requested" do
-      threshold = create(:quality_gate_threshold, project: project)
       run = create(:agent_run, project: project)
-      metric = create(:quality_metric, agent_run: run, composite_score: 0.4)
-      create(:quality_gate_event,
-        project: project, quality_gate_threshold: threshold,
-        quality_metric: metric, event_type: "trigger",
-        score_value: 0.4, threshold_value: 0.5)
+      create(:quality_pause_event, :paused,
+        project: project, agent_run: run,
+        composite_score: 0.4, threshold: 0.5,
+        metadata: { "metric_type" => "composite_score", "goal_type" => "create_pr" })
 
       result = described_class.call(
         project_id: project.id,
@@ -164,8 +162,8 @@ RSpec.describe QualityMetrics::TrendAnalysis do
     end
 
     it "estimates breach when scores are declining" do
-      create(:quality_gate_threshold, project: project,
-        metric_key: "composite_score", min_threshold: 0.5)
+      create(:quality_threshold, :project_override, project: project,
+        metric_type: "composite_score", goal_type: "create_pr", min_value: 0.5, enabled: true)
 
       scores = [ 0.9, 0.85, 0.8, 0.75, 0.7 ]
       scores.each_with_index do |score, i|
