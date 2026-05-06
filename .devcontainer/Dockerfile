@@ -32,7 +32,7 @@ RUN set -e; \
   && . /etc/os-release \
   && printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" > /etc/apt/sources.list.d/pgdg.sources \
   && apt-get update -qq \
-  && apt-get install -y build-essential cmake shellcheck tmux libpq-dev postgresql-client-16 \
+  && apt-get install -y build-essential cmake shellcheck tmux libpq-dev postgresql-client-16=16.13-1.pgdg12+1 \
   && rm -rf /var/lib/apt/lists/*
 
 # Install chromium separately for better layer caching (updates more frequently)
