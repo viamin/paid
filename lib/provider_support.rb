@@ -292,6 +292,26 @@ module ProviderSupport
     AgentHarness.provider(harness_key)
   end
 
+  # Normalizes common rate-limit reset text patterns before parsing.
+  # Shared by RunAgentActivity and TestAgent so normalization stays in sync.
+  def normalized_rate_limit_reset_text(text)
+    text.to_s
+      .gsub(/retry.?after:?\s*(\d+)(?!\s*s)/i, 'retry after \1s')
+      .gsub(/reset.?at:?\s*(\d+)/i, 'reset at \1')
+  end
+
+  # Parses a rate-limit reset time from provider output using the given
+  # harness provider. Falls back to normalized text parsing and a 1-hour
+  # default. Shared by RunAgentActivity and TestAgent.
+  def rate_limit_reset_at(harness_provider, text)
+    parsed_reset = harness_provider.parse_rate_limit_reset(text.to_s) ||
+      harness_provider.parse_rate_limit_reset(normalized_rate_limit_reset_text(text)) ||
+      1.hour.from_now
+    parsed_reset > Time.current ? parsed_reset : 1.hour.from_now
+  rescue AgentHarness::ConfigurationError, KeyError
+    1.hour.from_now
+  end
+
   # Returns error_classification_patterns[category] for a single provider.
   def error_classification_patterns_for(provider_key, category)
     harness_provider_for(provider_key).error_classification_patterns.fetch(category, [])
