@@ -239,6 +239,8 @@ RSpec.describe TokenUsageTracker do
   describe "token limit checking" do
     before do
       project.update!(max_tokens_per_run: 10_000, token_limit_warning_threshold: 80)
+      allow(AgentRuns::Cancel).to receive(:call)
+      allow(Notifications::Publish).to receive(:call)
     end
 
     it "persists the agent run once when token_limit_status changes" do
@@ -265,8 +267,6 @@ RSpec.describe TokenUsageTracker do
     end
 
     it "pauses a running agent when the hard token limit is exceeded" do
-      allow(AgentRuns::Cancel).to receive(:call)
-
       described_class.track(tracked_run: agent_run, usage: { tokens_input: 7000, tokens_output: 4000 })
 
       agent_run.reload
