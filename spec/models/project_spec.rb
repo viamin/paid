@@ -928,6 +928,15 @@ RSpec.describe Project do
     end
 
     describe "#effective_screenshot_settings" do
+      it "returns defaults when screenshot_settings is empty" do
+        project = build(:project, screenshot_settings: {})
+
+        expect(project.effective_screenshot_settings).to eq(
+          "enabled" => false,
+          "driver" => "playwright"
+        )
+      end
+
       it "merges screenshot defaults with stored settings" do
         project = build(:project, screenshot_settings: { "enabled" => true })
 
@@ -935,6 +944,45 @@ RSpec.describe Project do
           "enabled" => true,
           "driver" => "playwright"
         )
+      end
+    end
+
+    describe "screenshot accessors" do
+      it "reads and writes individual settings" do
+        project = build(:project, screenshot_settings: {})
+
+        project.screenshot_enabled = true
+        project.screenshot_driver = "cuprite"
+
+        expect(project.screenshot_settings).to eq(
+          "enabled" => true,
+          "driver" => "cuprite"
+        )
+        expect(project.screenshot_enabled?).to be true
+        expect(project.screenshot_driver).to eq("cuprite")
+      end
+
+      it "supports incremental updates without pre-populated defaults" do
+        project = build(:project, screenshot_settings: {})
+
+        project.screenshot_enabled = true
+
+        expect(project).to be_valid
+        expect(project.screenshot_settings).to eq("enabled" => true)
+        expect(project.effective_screenshot_settings).to eq(
+          "enabled" => true,
+          "driver" => "playwright"
+        )
+      end
+    end
+
+    describe "#screenshots_enabled?" do
+      it "returns false by default" do
+        expect(build(:project).screenshots_enabled?).to be false
+      end
+
+      it "reflects the enabled flag" do
+        expect(build(:project, screenshot_settings: { "enabled" => true }).screenshots_enabled?).to be true
       end
     end
 
@@ -961,7 +1009,8 @@ RSpec.describe Project do
       it "accepts valid screenshot_settings" do
         project = build(:project, screenshot_settings: {
           "enabled" => true,
-          "driver" => "cuprite"
+          "driver" => "cuprite",
+          "viewport" => { "width" => 1440 }
         })
 
         expect(project).to be_valid
@@ -1035,6 +1084,24 @@ RSpec.describe Project do
 
         expect(project).not_to be_valid
         expect(project.errors[:screenshot_settings].join).to include("setup[0] must be a non-blank string")
+      end
+
+      it "stores and retrieves screenshot_settings via JSONB" do
+        settings = {
+          "enabled" => true,
+          "driver" => "cuprite",
+          "viewport" => { "width" => 1440, "height" => 900 }
+        }
+        project = create(:project, screenshot_settings: settings)
+
+        reloaded = described_class.find(project.id)
+
+        expect(reloaded.screenshot_settings).to eq(settings)
+        expect(reloaded.effective_screenshot_settings).to eq(
+          "enabled" => true,
+          "driver" => "cuprite",
+          "viewport" => { "width" => 1440, "height" => 900 }
+        )
       end
 
       it "rejects unknown review methods" do
