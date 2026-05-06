@@ -128,7 +128,7 @@ def replace_version(contents, pattern, new_version)
   [ rewritten, matched, changed ]
 end
 
-def replace_in_file(path, replacements)
+def plan_file_replacements(path, replacements)
   contents = path.read
   applied = []
 
@@ -144,8 +144,32 @@ def replace_in_file(path, replacements)
     applied << replacement.fetch(:label) if changed
   end
 
-  path.write(contents) unless applied.empty?
-  applied
+  {
+    path: path,
+    contents: contents,
+    updates: applied
+  }
+end
+
+def apply_planned_updates(planned_updates)
+  planned_updates.each do |entry|
+    next if entry.fetch(:updates).empty?
+
+    entry.fetch(:path).write(entry.fetch(:contents))
+  end
+end
+
+def plan_package_manager_update(latest_yarn)
+  package_json = JSON.parse(PACKAGE_JSON_PATH.read)
+  updated = "yarn@#{latest_yarn}"
+  current = package_json["packageManager"]
+  package_json["packageManager"] = updated
+
+  {
+    path: PACKAGE_JSON_PATH,
+    contents: JSON.pretty_generate(package_json) << "\n",
+    updates: current == updated ? [] : [ "package.json -> #{updated}" ]
+  }
 end
 
 def usage
@@ -161,36 +185,27 @@ def usage
 end
 
 def update_yarn(version)
-  update_package_manager(version)
-
-  updates = []
-  failures = []
+  planned_updates = [ plan_package_manager_update(version) ]
 
   YARN_PATTERNS.each do |path, pattern|
-    updates.concat(
-      replace_in_file(
-        path,
-        [
-          {
-            pattern: pattern,
-            value: version,
-            label: "#{path.relative_path_from(APP_ROOT)} -> yarn@#{version}"
-          }
-        ]
-      )
+    planned_updates << plan_file_replacements(
+      path,
+      [
+        {
+          pattern: pattern,
+          value: version,
+          label: "#{path.relative_path_from(APP_ROOT)} -> yarn@#{version}"
+        }
+      ]
     )
-  rescue StandardError => error
-    failures << "yarn (#{path.relative_path_from(APP_ROOT)}: #{error.message})"
   end
 
-  [ updates, failures ]
+  apply_planned_updates(planned_updates)
+  planned_updates.flat_map { |entry| entry.fetch(:updates) }
 end
 
 def update_ast_grep(version, amd64_checksum, arm64_checksum)
-  updates = []
-  failures = []
-
-  [
+  planned_updates = [
     {
       path: AGENT_DOCKERFILE_PATH,
       replacements: [
@@ -231,19 +246,14 @@ def update_ast_grep(version, amd64_checksum, arm64_checksum)
         }
       ]
     }
-  ].each do |entry|
-    updates.concat(replace_in_file(entry.fetch(:path), entry.fetch(:replacements)))
-  rescue StandardError => error
-    failures << "ast-grep (#{entry.fetch(:path).relative_path_from(APP_ROOT)}: #{error.message})"
-  end
+  ].map { |entry| plan_file_replacements(entry.fetch(:path), entry.fetch(:replacements)) }
 
-  updates.concat(update_install_ast_grep(version, amd64_checksum, arm64_checksum))
-  [ updates, failures ]
-rescue StandardError => error
-  [ updates, failures + [ "ast-grep (#{error.message})" ] ]
+  planned_updates << plan_install_ast_grep_update(version, amd64_checksum, arm64_checksum)
+  apply_planned_updates(planned_updates)
+  planned_updates.flat_map { |entry| entry.fetch(:updates) }
 end
 
-def update_install_ast_grep(version, amd64_checksum, arm64_checksum)
+def plan_install_ast_grep_update(version, amd64_checksum, arm64_checksum)
   lines = INSTALL_AST_GREP_PATH.readlines
   original = lines.join
   current_version = lines
@@ -286,22 +296,25 @@ def update_install_ast_grep(version, amd64_checksum, arm64_checksum)
   raise "Failed to update arm64 checksum in #{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)}" unless arm64_matched
 
   updated = rewritten.join
-  INSTALL_AST_GREP_PATH.write(updated) unless updated == original
+  updates = if updated == original
+    []
+  else
+    [
+      "#{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)} AST_GREP_VERSION=#{version}",
+      "#{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)} ast-grep amd64 checksum",
+      "#{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)} ast-grep arm64 checksum"
+    ]
+  end
 
-  return [] if updated == original
-
-  [
-    "#{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)} AST_GREP_VERSION=#{version}",
-    "#{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)} ast-grep amd64 checksum",
-    "#{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)} ast-grep arm64 checksum"
-  ]
+  {
+    path: INSTALL_AST_GREP_PATH,
+    contents: updated,
+    updates: updates
+  }
 end
 
 def update_scc(version, amd64_checksum, arm64_checksum)
-  updates = []
-  failures = []
-
-  [
+  planned_updates = [
     {
       path: AGENT_DOCKERFILE_PATH,
       replacements: [
@@ -342,19 +355,10 @@ def update_scc(version, amd64_checksum, arm64_checksum)
         }
       ]
     }
-  ].each do |entry|
-    updates.concat(replace_in_file(entry.fetch(:path), entry.fetch(:replacements)))
-  rescue StandardError => error
-    failures << "scc (#{entry.fetch(:path).relative_path_from(APP_ROOT)}: #{error.message})"
-  end
+  ].map { |entry| plan_file_replacements(entry.fetch(:path), entry.fetch(:replacements)) }
 
-  [ updates, failures ]
-end
-
-def update_package_manager(latest_yarn)
-  package_json = JSON.parse(PACKAGE_JSON_PATH.read)
-  package_json["packageManager"] = "yarn@#{latest_yarn}"
-  PACKAGE_JSON_PATH.write(JSON.pretty_generate(package_json) << "\n")
+  apply_planned_updates(planned_updates)
+  planned_updates.flat_map { |entry| entry.fetch(:updates) }
 end
 
 def parse_yarn_lock_versions
@@ -444,7 +448,6 @@ Dir.chdir(APP_ROOT) do
 
   puts "\n== Updating pinned tool binaries =="
   updates = []
-  failures = []
   skipped_too_new = []
 
   yarn_version, yarn_published_at = fetch_npm_version_info("yarn")
@@ -452,9 +455,11 @@ Dir.chdir(APP_ROOT) do
   if !skip_age_check && yarn_hours < MIN_PACKAGE_AGE_HOURS
     skipped_too_new << "  yarn@#{yarn_version} (#{yarn_hours}h old, minimum: #{MIN_PACKAGE_AGE_HOURS}h)"
   else
-    yarn_updates, yarn_failures = update_yarn(yarn_version)
-    updates.concat(yarn_updates)
-    failures.concat(yarn_failures)
+    begin
+      updates.concat(update_yarn(yarn_version))
+    rescue StandardError => error
+      raise "Failed to update yarn: #{error.message}"
+    end
   end
 
   BINARY_RELEASES.each_key do |package_name|
@@ -465,7 +470,7 @@ Dir.chdir(APP_ROOT) do
       next
     end
 
-    binary_updates, binary_failures = case package_name
+    binary_updates = case package_name
     when "ast-grep"
       update_ast_grep(
         version,
@@ -479,13 +484,12 @@ Dir.chdir(APP_ROOT) do
         fetch_release_asset_digest(package_name, "scc_Linux_arm64.tar.gz")
       )
     else
-      [ [], [] ]
+      []
     end
 
     updates.concat(binary_updates)
-    failures.concat(binary_failures)
   rescue StandardError => error
-    failures << "#{package_name} (#{error.message})"
+    raise "Failed to update #{package_name}: #{error.message}"
   end
 
   if updates.empty?
@@ -493,8 +497,6 @@ Dir.chdir(APP_ROOT) do
   else
     updates.each { |update| puts "Updated #{update}" }
   end
-
-  failures.each { |failure| warn "Skipped #{failure}" }
 
   unless skip_age_check
     puts "\n== Checking package ages (quarantine: #{MIN_PACKAGE_AGE_HOURS}h) =="
