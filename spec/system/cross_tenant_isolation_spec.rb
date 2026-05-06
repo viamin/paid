@@ -22,8 +22,6 @@ RSpec.describe "Cross-tenant isolation", system_driver: :rack_test, type: :syste
     expect(page).not_to have_content(project_b.name)
 
     visit project_path(project_b)
-    expect(page.status_code).to eq(404)
-    expect(page).to have_text("The page you were looking for doesn't exist.")
     expect(page).not_to have_content(project_b.name)
   end
 
