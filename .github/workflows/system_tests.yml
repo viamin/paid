@@ -67,19 +67,18 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
 
       - name: Locate Chromium-family browser
-        # ubuntu-latest ships google-chrome pre-installed at /usr/bin/google-chrome.
-        # Avoid `apt-get install chromium-browser` — on Ubuntu 22.04 that's a snap
-        # transitional package that doesn't work in CI; on 24.04 the package was
-        # renamed to `chromium`. Pre-installed Chrome is the most stable option.
-        # Cuprite/Ferrum work fine against Chrome too.
+        # Prefer a preinstalled browser when one exists, but don't fail the
+        # workflow if the runner image changes. The system suite falls back to
+        # rack_test automatically when CHROMIUM_PATH is absent, and browser-only
+        # coverage lives in explicitly opted-in specs.
         run: |
           path="$(command -v google-chrome || command -v chromium-browser || command -v chromium)"
-          if [ -z "$path" ]; then
-            echo "::error::No Chromium-family browser found on the runner."
-            exit 1
+          if [ -n "$path" ]; then
+            echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"
+            "$path" --version
+          else
+            echo "No Chromium-family browser found; falling back to rack_test."
           fi
-          echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"
-          "$path" --version
 
       - name: Build assets
         run: yarn build && yarn build:css
