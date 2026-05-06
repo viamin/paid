@@ -98,6 +98,14 @@
           </div>
 
           <div>
+            <%= form.label :max_execution_seconds, "Max Execution Time Override (seconds)", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
+            <div class="mt-2">
+              <%= form.number_field :max_execution_seconds, min: 60, max: 86_400, step: 1, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:text-gray-100 dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Optional override for project max execution time. Leave blank to use the project setting. Allowed range: 60 to 86,400 seconds.</p>
+          </div>
+
+          <div>
             <%= form.label :max_tokens_per_run, "Max Tokens Per Run", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
             <div class="mt-2">
               <%= form.number_field :max_tokens_per_run, min: 1, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:text-gray-100 dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>

@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 # Settings infrastructure and UI for user-configurable defaults.
-# Integration with project creation and agent runs is planned for a follow-up PR.
 class UserSettingsController < ApplicationController
   before_action :set_user_setting
 
@@ -41,6 +40,7 @@ class UserSettingsController < ApplicationController
       :github_token_cache_ttl_minutes,
       :token_validation_stale_minutes,
       :agent_timeout_seconds,
+      :max_execution_seconds,
       :default_agent_provider,
       :container_memory_gb,
       :max_concurrent_runs,
