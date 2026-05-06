@@ -312,25 +312,29 @@ module Providers
     def build_test_run
       # Use insert_all! to bypass after_commit callbacks (broadcasts, project
       # timestamp updates, capacity accounting) for this ephemeral test record.
-      # The row is destroyed as soon as the container test completes.
+      # The row is destroyed as soon as the container test completes, but the
+      # project counter cache still needs to stay accurate while it exists.
       now = Time.current
-      result = AgentRun.insert_all!(
-        [ {
-          project_id: test_project.id,
-          provider_id: provider.id,
-          agent_type: Provider.agent_type_for(provider.provider_key),
-          status: "queued",
-          temporal_workflow_id: AgentRun::CLAIMED_SENTINEL,
-          goal: "create_pr",
-          trigger_type: "manual",
-          custom_prompt: AgentRun::SMOKE_TEST_CUSTOM_PROMPT,
-          proxy_token: SecureRandom.hex(32),
-          created_at: now,
-          updated_at: now
-        } ],
-        returning: [ :id ]
-      )
-      AgentRun.find(result.first["id"])
+      AgentRun.transaction do
+        result = AgentRun.insert_all!(
+          [ {
+            project_id: test_project.id,
+            provider_id: provider.id,
+            agent_type: Provider.agent_type_for(provider.provider_key),
+            status: "queued",
+            temporal_workflow_id: AgentRun::CLAIMED_SENTINEL,
+            goal: "create_pr",
+            trigger_type: "manual",
+            custom_prompt: AgentRun::SMOKE_TEST_CUSTOM_PROMPT,
+            proxy_token: SecureRandom.hex(32),
+            created_at: now,
+            updated_at: now
+          } ],
+          returning: [ :id ]
+        )
+        Project.update_counters(test_project.id, agent_runs_count: 1)
+        AgentRun.find(result.first["id"])
+      end
     end
 
     def test_project

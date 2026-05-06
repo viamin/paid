@@ -127,10 +127,10 @@ class AgentRun < ApplicationRecord
   before_destroy :repair_project_counter_caches_before_destroy
 
   after_commit :update_completed_agent_runs_counter_cache, on: [ :create, :update, :destroy ]
-  after_commit :reload_project_counter_cache_association, on: [ :create, :update, :destroy ]
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
   after_commit :invalidate_provider_options_cache_on_change, on: [ :create, :update ]
+  after_commit :reload_project_counter_cache_association, on: [ :create, :update, :destroy ]
   after_commit :enqueue_quality_metrics_collection, on: :update, if: :just_finished?
   after_commit :enqueue_anomaly_detection, on: :update, if: :just_finished?
   after_commit :enqueue_container_metrics_collection, on: :update, if: :just_started_running?
@@ -1863,7 +1863,7 @@ class AgentRun < ApplicationRecord
   def reload_project_counter_cache_association
     return unless association(:project).loaded?
 
-    if previous_changes.key?("project_id")
+    if previous_changes.key?("project_id") && previous_changes["project_id"].first.present?
       association(:project).reset
     elsif project.present? && !project.destroyed?
       project.reload
