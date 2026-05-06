@@ -927,6 +927,17 @@ RSpec.describe Project do
       end
     end
 
+    describe "#effective_screenshot_settings" do
+      it "merges screenshot defaults with stored settings" do
+        project = build(:project, screenshot_settings: { "enabled" => true })
+
+        expect(project.effective_screenshot_settings).to eq(
+          "enabled" => true,
+          "driver" => "playwright"
+        )
+      end
+    end
+
     describe "validation" do
       it "accepts empty review_settings" do
         project = build(:project, review_settings: {})
@@ -945,6 +956,29 @@ RSpec.describe Project do
           }
         })
         expect(project).to be_valid
+      end
+
+      it "accepts valid screenshot_settings" do
+        project = build(:project, screenshot_settings: {
+          "enabled" => true,
+          "driver" => "cuprite"
+        })
+
+        expect(project).to be_valid
+      end
+
+      it "rejects non-hash screenshot_settings" do
+        project = build(:project, screenshot_settings: "bad")
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("must be a JSON object")
+      end
+
+      it "rejects unknown screenshot drivers" do
+        project = build(:project, screenshot_settings: { "driver" => "selenium" })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("driver must be one of: playwright, cuprite")
       end
 
       it "rejects unknown review methods" do

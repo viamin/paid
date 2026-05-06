@@ -1,0 +1,297 @@
+# frozen_string_literal: true
+
+require "base64"
+require "psych"
+
+module Screenshots
+  class ConfigParser
+    CONFIG_PATH = ".paid/screenshots.yml"
+    VALID_TOP_LEVEL_KEYS = %w[
+      driver
+      enabled
+      base_url
+      viewport
+      routes
+      auth
+      seed
+      setup
+      services
+      ui_patterns
+      ui_exclusions
+    ].freeze
+    VALID_ROUTE_KEYS = %w[path name requires_auth seed_key].freeze
+    VALID_AUTH_KEYS = %w[strategy login_path fields credentials].freeze
+    VALID_VIEWPORT_KEYS = %w[width height].freeze
+    VALID_SEED_KEYS = %w[model factory key].freeze
+
+    class << self
+      def call(project: nil, repo_path: nil, blob: nil, content: nil)
+        new(project:, repo_path:, blob:, content:).call
+      end
+
+      def from_repo_path(repo_path, project: nil)
+        call(project:, repo_path:)
+      end
+
+      def from_blob(blob, project: nil)
+        call(project:, blob:)
+      end
+    end
+
+    def initialize(project: nil, repo_path: nil, blob: nil, content: nil)
+      @project = project
+      @repo_path = repo_path
+      @blob = blob
+      @content = content
+    end
+
+    def call
+      file_settings = parse_content(raw_content)
+      validate_root!(file_settings)
+
+      Screenshots::Configuration.from_hash(merged_settings(file_settings)).freeze
+    end
+
+    private
+
+    attr_reader :project, :repo_path, :blob, :content
+
+    def raw_content
+      return content if content.present?
+      return decode_blob(blob) if blob.present?
+
+      path = config_path
+      raise ConfigError, "Missing #{CONFIG_PATH} in #{repo_path}" unless File.exist?(path)
+
+      File.read(path)
+    rescue Errno::ENOENT => e
+      raise ConfigError, "Unable to read #{CONFIG_PATH}: #{e.message}"
+    end
+
+    def config_path
+      Pathname(repo_path).join(CONFIG_PATH)
+    end
+
+    def decode_blob(value)
+      return value if value.is_a?(String)
+      return Base64.decode64(value.content.to_s) if value.respond_to?(:content)
+
+      raise ConfigError, "GitHub blob must be a YAML string or a blob object with content"
+    end
+
+    def parse_content(value)
+      parsed = Psych.safe_load(value, aliases: false)
+      return {} if parsed.nil?
+
+      unless parsed.is_a?(Hash)
+        raise ConfigError, "#{CONFIG_PATH} must contain a YAML mapping at the top level"
+      end
+
+      parsed.deep_stringify_keys
+    rescue Psych::SyntaxError => e
+      raise ConfigError, "Invalid YAML in #{CONFIG_PATH}: #{e.message}"
+    end
+
+    def merged_settings(file_settings)
+      db_settings = project&.effective_screenshot_settings || {}
+      explicit_db_settings = explicit_project_settings
+      merged = db_settings.deep_merge(file_settings)
+
+      %w[routes auth seed setup].each do |key|
+        merged[key] = file_settings[key] if file_settings.key?(key)
+      end
+
+      %w[enabled driver].each do |key|
+        merged[key] = explicit_db_settings[key] if explicit_db_settings.key?(key)
+      end
+
+      merged
+    end
+
+    def explicit_project_settings
+      settings = project&.screenshot_settings
+      return {} unless settings.is_a?(Hash)
+
+      settings.deep_stringify_keys
+    end
+
+    def validate_root!(settings)
+      validate_unknown_keys!("top-level", settings, VALID_TOP_LEVEL_KEYS)
+
+      validate_driver!(settings["driver"]) if settings.key?("driver")
+      validate_enabled!(settings["enabled"]) if settings.key?("enabled")
+      validate_base_url!(settings["base_url"]) if settings.key?("base_url")
+      validate_viewport!(settings["viewport"]) if settings.key?("viewport")
+      validate_routes!(settings["routes"])
+      validate_auth!(settings["auth"]) if settings.key?("auth")
+      validate_seed!(settings["seed"]) if settings.key?("seed")
+      validate_string_array!("setup", settings["setup"]) if settings.key?("setup")
+      validate_string_array!("services", settings["services"]) if settings.key?("services")
+      validate_globs!("ui_patterns", settings["ui_patterns"]) if settings.key?("ui_patterns")
+      validate_globs!("ui_exclusions", settings["ui_exclusions"]) if settings.key?("ui_exclusions")
+    end
+
+    def validate_unknown_keys!(context, hash, allowed_keys)
+      extras = hash.keys - allowed_keys
+      return if extras.empty?
+
+      raise ConfigError, "#{context} contains unknown keys: #{extras.join(', ')}"
+    end
+
+    def validate_driver!(value)
+      return if value.in?(Configuration::VALID_DRIVERS)
+
+      raise ConfigError, "driver must be one of: #{Configuration::VALID_DRIVERS.join(', ')}"
+    end
+
+    def validate_enabled!(value)
+      return if value == true || value == false
+
+      raise ConfigError, "enabled must be true or false"
+    end
+
+    def validate_base_url!(value)
+      return if value.is_a?(String) && value.present?
+
+      raise ConfigError, "base_url must be a non-blank string"
+    end
+
+    def validate_viewport!(value)
+      unless value.is_a?(Hash)
+        raise ConfigError, "viewport must be a mapping with width and height"
+      end
+
+      validate_unknown_keys!("viewport", value, VALID_VIEWPORT_KEYS)
+
+      %w[width height].each do |key|
+        viewport_value = value[key]
+        next if viewport_value.is_a?(Integer) && viewport_value.positive?
+
+        raise ConfigError, "viewport.#{key} must be a positive integer"
+      end
+    end
+
+    def validate_routes!(value)
+      unless value.is_a?(Array) && value.any?
+        raise ConfigError, "routes must be a non-empty array"
+      end
+
+      value.each_with_index do |route, index|
+        unless route.is_a?(Hash)
+          raise ConfigError, "routes[#{index}] must be a mapping"
+        end
+
+        validate_unknown_keys!("routes[#{index}]", route, VALID_ROUTE_KEYS)
+
+        %w[path name].each do |key|
+          next if route[key].is_a?(String) && route[key].present?
+
+          raise ConfigError, "routes[#{index}].#{key} is required"
+        end
+
+        if route.key?("requires_auth") && ![ true, false ].include?(route["requires_auth"])
+          raise ConfigError, "routes[#{index}].requires_auth must be true or false"
+        end
+
+        if route.key?("seed_key") && !(route["seed_key"].is_a?(String) && route["seed_key"].present?)
+          raise ConfigError, "routes[#{index}].seed_key must be a non-blank string"
+        end
+      end
+    end
+
+    def validate_auth!(value)
+      unless value.is_a?(Hash)
+        raise ConfigError, "auth must be a mapping"
+      end
+
+      validate_unknown_keys!("auth", value, VALID_AUTH_KEYS)
+
+      strategy = value.fetch("strategy", "none")
+      unless strategy.in?(Configuration::VALID_AUTH_STRATEGIES)
+        raise ConfigError, "auth.strategy must be one of: #{Configuration::VALID_AUTH_STRATEGIES.join(', ')}"
+      end
+
+      if value.key?("login_path") && !(value["login_path"].is_a?(String) && value["login_path"].present?)
+        raise ConfigError, "auth.login_path must be a non-blank string"
+      end
+
+      %w[fields credentials].each do |key|
+        next unless value.key?(key)
+        next if value[key].is_a?(Hash)
+
+        raise ConfigError, "auth.#{key} must be a mapping"
+      end
+
+      return unless strategy == "form"
+
+      fields = value["fields"]
+      unless fields.is_a?(Hash)
+        raise ConfigError, "auth.fields is required when auth.strategy is form"
+      end
+
+      %w[email password submit].each do |key|
+        next if fields[key].is_a?(String) && fields[key].present?
+
+        raise ConfigError, "auth.fields.#{key} is required when auth.strategy is form"
+      end
+    end
+
+    def validate_seed!(value)
+      unless value.is_a?(Array)
+        raise ConfigError, "seed must be an array"
+      end
+
+      value.each_with_index do |record, index|
+        unless record.is_a?(Hash)
+          raise ConfigError, "seed[#{index}] must be a mapping"
+        end
+
+        %w[model factory key].each do |key|
+          next if record[key].is_a?(String) && record[key].present?
+
+          raise ConfigError, "seed[#{index}].#{key} is required"
+        end
+      end
+    end
+
+    def validate_string_array!(name, value)
+      unless value.is_a?(Array)
+        raise ConfigError, "#{name} must be an array"
+      end
+
+      value.each_with_index do |item, index|
+        next if item.is_a?(String) && item.present?
+
+        raise ConfigError, "#{name}[#{index}] must be a non-blank string"
+      end
+    end
+
+    def validate_globs!(name, value)
+      validate_string_array!(name, value)
+
+      value.each_with_index do |pattern, index|
+        next if valid_glob_pattern?(pattern)
+
+        raise ConfigError, "#{name}[#{index}] must be a valid glob pattern"
+      end
+    end
+
+    def valid_glob_pattern?(pattern)
+      return false if pattern.include?("\0")
+
+      balanced_glob?(pattern, "{", "}") && balanced_glob?(pattern, "[", "]")
+    end
+
+    def balanced_glob?(pattern, open_char, close_char)
+      balance = 0
+
+      pattern.each_char do |char|
+        balance += 1 if char == open_char
+        balance -= 1 if char == close_char
+        return false if balance.negative?
+      end
+
+      balance.zero?
+    end
+  end
+end

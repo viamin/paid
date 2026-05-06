@@ -74,6 +74,11 @@ class Project < ApplicationRecord
     "metric_thresholds" => {}
   }.freeze
 
+  DEFAULT_SCREENSHOT_SETTINGS = {
+    "enabled" => false,
+    "driver" => "playwright"
+  }.freeze
+
   AUTOMATION_SETTINGS = [
     { label: "Auto-Add Labels", attribute: :auto_add_labels_enabled,
      description: "Automatically add the generated label to PRs and issues created by Paid." }.freeze,
@@ -187,6 +192,7 @@ class Project < ApplicationRecord
   validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
   validate :review_settings_valid
   validate :priority_labels_valid
+  validate :screenshot_settings_valid
 
   scope :active, -> { where(active: true) }
   scope :inactive, -> { where(active: false) }
@@ -525,6 +531,12 @@ class Project < ApplicationRecord
     effective_quality_gate_settings["enabled"] == true
   end
 
+  def effective_screenshot_settings
+    saved = screenshot_settings
+    saved = saved.is_a?(Hash) ? saved.deep_stringify_keys : {}
+    DEFAULT_SCREENSHOT_SETTINGS.deep_merge(saved)
+  end
+
   def review_settings=(value)
     @effective_review_settings = nil
     @automation_configuration = nil
@@ -846,6 +858,25 @@ class Project < ApplicationRecord
     end
 
     validate_review_methods_config(normalized)
+  end
+
+  def screenshot_settings_valid
+    return if screenshot_settings.nil? || screenshot_settings == {}
+
+    unless screenshot_settings.is_a?(Hash)
+      errors.add(:screenshot_settings, "must be a JSON object")
+      return
+    end
+
+    normalized = screenshot_settings.deep_stringify_keys
+
+    if normalized.key?("enabled") && ![ true, false ].include?(normalized["enabled"])
+      errors.add(:screenshot_settings, "enabled must be true or false")
+    end
+
+    if normalized.key?("driver") && !Screenshots::Configuration::VALID_DRIVERS.include?(normalized["driver"])
+      errors.add(:screenshot_settings, "driver must be one of: #{Screenshots::Configuration::VALID_DRIVERS.join(', ')}")
+    end
   end
 
   def validate_review_methods_config(normalized)
