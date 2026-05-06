@@ -30,6 +30,7 @@ RSpec.describe ApplicationJob do
         PromptEvolutionJob
         QueueMonitorJob
         RecoverMissingPullRequestLabelsJob
+        ScreenshotCleanupJob
         ServiceContainerReconciliationJob
         StaleRunDetectorJob
         WorktreeOrphanCleanupJob
