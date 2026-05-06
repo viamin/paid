@@ -389,23 +389,11 @@ module Providers
     end
 
     def rate_limit_reset_at(message)
-      agent_harness_provider = harness_provider
-      parsed_reset = agent_harness_provider.parse_rate_limit_reset(message.to_s) ||
-        agent_harness_provider.parse_rate_limit_reset(normalized_rate_limit_reset_text(message)) ||
-        1.hour.from_now
-      parsed_reset > Time.current ? parsed_reset : 1.hour.from_now
-    rescue AgentHarness::ConfigurationError, KeyError
-      1.hour.from_now
+      ProviderSupport.rate_limit_reset_at(harness_provider, message)
     end
 
     def harness_provider
       AgentHarness.provider(harness_provider_name)
-    end
-
-    def normalized_rate_limit_reset_text(message)
-      message.to_s
-        .gsub(/retry.?after:?\s*(\d+)(?!\s*s)/i, 'retry after \1s')
-        .gsub(/reset.?at:?\s*(\d+)/i, 'reset at \1')
     end
 
     def classify_failed_response(error_message)

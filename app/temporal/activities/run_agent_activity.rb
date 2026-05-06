@@ -1026,13 +1026,7 @@ module Activities
     end
 
     def rate_limit_reset_at(provider_key, output)
-      harness_provider = harness_provider_for(provider_key)
-      parsed_reset = harness_provider.parse_rate_limit_reset(output.to_s) ||
-        harness_provider.parse_rate_limit_reset(normalized_rate_limit_reset_text(output)) ||
-        1.hour.from_now
-      parsed_reset > Time.current ? parsed_reset : 1.hour.from_now
-    rescue AgentHarness::ConfigurationError, KeyError
-      1.hour.from_now
+      ProviderSupport.rate_limit_reset_at(harness_provider_for(provider_key), output)
     end
 
     def harness_provider_for(provider_key)
@@ -1041,15 +1035,8 @@ module Activities
       AgentHarness.provider(harness_key)
     end
 
-    CODEX_SANDBOX_ABORT_PATTERNS = [
-      /bwrap.*no permissions/i,
-      /no permissions to create a new namespace/i,
-      /unprivileged.*namespace/i
-    ].freeze
-
     def aggregated_abort_patterns
-      base = ProviderSupport.aggregated_error_classification_patterns(:abort)
-      (base + CODEX_SANDBOX_ABORT_PATTERNS).uniq
+      ProviderSupport.aggregated_error_classification_patterns(:abort)
     end
 
     def track_harness_tokens(agent_run, provider_candidate, provider_key, user, result, execution_started_at)
@@ -1176,12 +1163,6 @@ module Activities
       return 0.0 unless execution_started_at
 
       Time.current - execution_started_at
-    end
-
-    def normalized_rate_limit_reset_text(output)
-      output.to_s
-        .gsub(/retry.?after:?\s*(\d+)(?!\s*s)/i, 'retry after \1s')
-        .gsub(/reset.?at:?\s*(\d+)/i, 'reset at \1')
     end
 
     def review_threads_already_addressed?(stdout:, stderr:, prompt:)
