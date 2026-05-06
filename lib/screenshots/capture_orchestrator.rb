@@ -52,7 +52,7 @@ module Screenshots
 
       RunResult.new(
         captures: capture_results.freeze,
-        failures: capture_results.reject(&:success).map { |result| result.error }.freeze
+        failures: capture_results.reject(&:success).map(&:error).freeze
       )
     ensure
       driver.quit if defined?(@driver) && @driver
@@ -117,8 +117,8 @@ module Screenshots
         driver.visit(route.path)
         driver.wait_for_load
 
-        if route.requires_auth && driver.current_path&.include?("sign_in")
-          raise "redirected to sign-in page — authentication may have failed"
+        if route.requires_auth && auth_redirect?(driver.current_path)
+          raise "redirected to login page (#{config.auth.login_path}) — authentication may have failed"
         end
 
         driver.screenshot(name: route.name, path: file_path)
@@ -126,6 +126,15 @@ module Screenshots
       rescue StandardError => e
         capture_results << CaptureResult.new(route.name, file_path, false, "#{route.name} (#{route.path}): #{e.message}")
       end
+    end
+
+    def auth_redirect?(current_path)
+      return false if current_path.blank?
+
+      login_path = config.auth.login_path
+      return false if login_path.blank?
+
+      current_path.include?(login_path.split("?").first)
     end
 
     def resolved_auth_config(seed_data)

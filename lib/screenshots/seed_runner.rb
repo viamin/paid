@@ -43,9 +43,13 @@ module Screenshots
           if entry["runner"].present?
             result = eval(entry.fetch("runner"), TOPLEVEL_BINDING, "screenshots_seed_runner", 1)
             if key == "__all__" && result.is_a?(Hash)
-              results.merge!(result)
+              result.each do |rk, rv|
+                seed_records[rk.to_s] = rv
+                results[rk] = rv.respond_to?(:attributes) ? capture_seed_result(rv) : rv
+              end
             else
-              results[key] = result
+              seed_records[key] = result
+              results[key] = result.respond_to?(:attributes) ? capture_seed_result(result) : result
             end
             next
           end
