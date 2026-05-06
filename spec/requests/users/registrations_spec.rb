@@ -48,6 +48,20 @@ RSpec.describe "User Registrations" do
         expect(User.last.account).to eq(Account.last)
       end
 
+      it "creates tenant settings and a billing plan during sign up" do
+        post user_registration_path, params: valid_params
+
+        account = Account.last
+        expect(account.tenant_setting).to be_present
+        expect(account.billing_plans.count).to eq(1)
+      end
+
+      it "creates onboarding once through provisioning" do
+        post user_registration_path, params: valid_params
+
+        expect(Account.last.onboarding_steps.count).to eq(OnboardingStep::STEPS.size)
+      end
+
       it "redirects to the onboarding path" do
         post user_registration_path, params: valid_params
         expect(response).to redirect_to(onboarding_path)

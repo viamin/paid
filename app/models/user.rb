@@ -148,6 +148,16 @@ class User < ApplicationRecord
     project_memberships.find_by(project: project)
   end
 
+  def active_for_authentication?
+    super && !account&.deactivated?
+  end
+
+  def inactive_message
+    return :deactivated_account if account&.deactivated?
+
+    super
+  end
+
   private
 
   def assign_owner_role_if_first_user

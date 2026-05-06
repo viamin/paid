@@ -52,6 +52,24 @@ RSpec.describe "User Sessions" do
         expect(doc.at_css("div.mx-auto.max-w-7xl > div.bg-red-50")).not_to be_present
       end
     end
+
+    context "when the account is deactivated" do
+      let(:account) { create(:account, status: :deactivated, deactivated_at: Time.current) }
+
+      it "does not sign in the user" do
+        post user_session_path, params: {
+          user: { email: user.email, password: "password123" }
+        }
+
+        expect(response).to redirect_to(new_user_session_path)
+
+        follow_redirect!
+        expect(response.body).to include("This account has been deactivated. Please contact support.")
+
+        get root_path
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
   end
 
   describe "DELETE /users/sign_out" do
