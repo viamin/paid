@@ -3,9 +3,15 @@
 require "rails_helper"
 
 RSpec.describe Knowledge::Embeddings::Generate do
-  let(:api_key) { "sk-test-key" }
   let(:texts) { [ "Hello world", "Goodbye world" ] }
   let(:vector) { Array.new(3072, 0.1) }
+  let(:base_url) { "https://proxy.openai.test/api/proxy/openai/v1" }
+  let(:headers) do
+    {
+      "Authorization" => "Bearer paid-knowledge-run:99:token",
+      "X-Paid-Knowledge-Provider" => "openrouter"
+    }
+  end
 
   let(:success_response_body) do
     {
@@ -17,24 +23,18 @@ RSpec.describe Knowledge::Embeddings::Generate do
     }.to_json
   end
 
-  before do
-    allow(ENV).to receive(:fetch).and_call_original
-    allow(ENV).to receive(:fetch).with("OPENAI_API_KEY").and_return(api_key)
-    allow(ENV).to receive(:fetch).with("OPENAI_API_BASE_URL", anything).and_return("https://api.openai.com")
-  end
-
   describe ".call" do
     before do
-      stub_request(:post, "https://api.openai.com/v1/embeddings")
+      stub_request(:post, "https://proxy.openai.test/api/proxy/openai/v1/embeddings")
         .with(
           body: { input: texts, model: "text-embedding-3-large", dimensions: 3072 }.to_json,
-          headers: { "Authorization" => "Bearer #{api_key}", "Content-Type" => "application/json" }
+          headers: headers.merge("Content-Type" => "application/json")
         )
         .to_return(status: 200, body: success_response_body, headers: { "Content-Type" => "application/json" })
     end
 
     it "returns embedding results for each text" do
-      results = described_class.call(texts: texts)
+      results = described_class.call(texts: texts, base_url: base_url, headers: headers)
 
       expect(results.size).to eq(2)
       expect(results.first.vector).to eq(vector)
@@ -42,9 +42,7 @@ RSpec.describe Knowledge::Embeddings::Generate do
     end
 
     it "returns an empty array for empty input" do
-      results = described_class.call(texts: [])
-
-      expect(results).to eq([])
+      expect(described_class.call(texts: [], base_url: base_url, headers: headers)).to eq([])
     end
 
     it "sorts results by index" do
@@ -56,10 +54,10 @@ RSpec.describe Knowledge::Embeddings::Generate do
         usage: { total_tokens: 10 }
       }.to_json
 
-      stub_request(:post, "https://api.openai.com/v1/embeddings")
+      stub_request(:post, "https://proxy.openai.test/api/proxy/openai/v1/embeddings")
         .to_return(status: 200, body: reversed_body, headers: { "Content-Type" => "application/json" })
 
-      results = described_class.call(texts: texts)
+      results = described_class.call(texts: texts, base_url: base_url, headers: headers)
 
       expect(results.first.vector.first).to eq(0.1)
       expect(results.last.vector.first).to eq(0.2)
@@ -68,10 +66,10 @@ RSpec.describe Knowledge::Embeddings::Generate do
 
   describe "error handling" do
     it "retries on retryable HTTP statuses and raises after max retries" do
-      stub_request(:post, "https://api.openai.com/v1/embeddings")
+      stub_request(:post, "https://proxy.openai.test/api/proxy/openai/v1/embeddings")
         .to_return(status: 500, body: "Internal Server Error")
 
-      generator = described_class.new
+      generator = described_class.new(base_url: base_url, headers: headers)
       allow(generator).to receive(:sleep)
 
       expect { generator.call(texts: texts) }
@@ -79,11 +77,11 @@ RSpec.describe Knowledge::Embeddings::Generate do
     end
 
     it "respects Retry-After header on 429 responses" do
-      stub_request(:post, "https://api.openai.com/v1/embeddings")
+      stub_request(:post, "https://proxy.openai.test/api/proxy/openai/v1/embeddings")
         .to_return(status: 429, body: "Rate limited", headers: { "Retry-After" => "2.5" })
         .then.to_return(status: 200, body: success_response_body, headers: { "Content-Type" => "application/json" })
 
-      generator = described_class.new
+      generator = described_class.new(base_url: base_url, headers: headers)
       allow(generator).to receive(:sleep)
 
       generator.call(texts: texts)
@@ -92,18 +90,18 @@ RSpec.describe Knowledge::Embeddings::Generate do
     end
 
     it "raises EmbeddingError on non-retryable HTTP failures" do
-      stub_request(:post, "https://api.openai.com/v1/embeddings")
+      stub_request(:post, "https://proxy.openai.test/api/proxy/openai/v1/embeddings")
         .to_return(status: 400, body: "Bad Request")
 
-      expect { described_class.call(texts: texts) }
+      expect { described_class.call(texts: texts, base_url: base_url, headers: headers) }
         .to raise_error(Knowledge::Embeddings::EmbeddingError, /400/)
     end
 
     it "retries on Faraday errors and raises after max retries" do
-      stub_request(:post, "https://api.openai.com/v1/embeddings")
+      stub_request(:post, "https://proxy.openai.test/api/proxy/openai/v1/embeddings")
         .to_raise(Faraday::ConnectionFailed.new("connection failed"))
 
-      generator = described_class.new
+      generator = described_class.new(base_url: base_url, headers: headers)
       allow(generator).to receive(:sleep)
 
       expect { generator.call(texts: texts) }
@@ -111,67 +109,48 @@ RSpec.describe Knowledge::Embeddings::Generate do
     end
 
     it "raises EmbeddingError on non-JSON response body" do
-      stub_request(:post, "https://api.openai.com/v1/embeddings")
+      stub_request(:post, "https://proxy.openai.test/api/proxy/openai/v1/embeddings")
         .to_return(status: 200, body: "<html>Error</html>", headers: { "Content-Type" => "text/html" })
 
-      expect { described_class.call(texts: texts) }
+      expect { described_class.call(texts: texts, base_url: base_url, headers: headers) }
         .to raise_error(Knowledge::Embeddings::EmbeddingError, /Failed to parse embedding API response/)
     end
 
-    it "uses an injected api_key instead of ENV['OPENAI_API_KEY']" do
-      injected_key = "sk-injected-user-key"
-      allow(ENV).to receive(:fetch).with("OPENAI_API_KEY").and_call_original
-      original = ENV["OPENAI_API_KEY"]
-      ENV.delete("OPENAI_API_KEY")
-
-      stub_request(:post, "https://api.openai.com/v1/embeddings")
-        .with(headers: { "Authorization" => "Bearer #{injected_key}" })
+    it "supports arbitrary OpenAI-compatible proxy base URLs" do
+      stub_request(:post, "https://proxy.openai.test/custom/v1/embeddings")
+        .with(headers: headers)
         .to_return(status: 200, body: success_response_body, headers: { "Content-Type" => "application/json" })
 
-      results = described_class.call(texts: texts, api_key: injected_key)
-
-      expect(results.size).to eq(2)
-      expect(results.first.vector).to eq(vector)
-    ensure
-      if original.nil?
-        ENV.delete("OPENAI_API_KEY")
-      else
-        ENV["OPENAI_API_KEY"] = original
-      end
-    end
-
-    it "uses an injected api_base_url for OpenAI-compatible providers" do
-      stub_request(:post, "https://openrouter.ai/api/v1/embeddings")
-        .with(headers: { "Authorization" => "Bearer #{api_key}" })
-        .to_return(status: 200, body: success_response_body, headers: { "Content-Type" => "application/json" })
-
-      results = described_class.call(texts: texts, api_base_url: "https://openrouter.ai/api/v1")
+      results = described_class.call(
+        texts: texts,
+        base_url: "https://proxy.openai.test/custom/v1",
+        headers: headers
+      )
 
       expect(results.size).to eq(2)
       expect(results.first.vector).to eq(vector)
     end
+  end
 
-    it "raises EmbeddingError when OPENAI_API_KEY is not set" do
-      allow(ENV).to receive(:fetch).with("OPENAI_API_KEY").and_call_original
-      original = ENV["OPENAI_API_KEY"]
-      ENV.delete("OPENAI_API_KEY")
+  describe ".results_from_body" do
+    it "distributes total tokens evenly across embeddings" do
+      body = {
+        "data" => [
+          { "index" => 0, "embedding" => [ 0.1 ] },
+          { "index" => 1, "embedding" => [ 0.2 ] }
+        ],
+        "usage" => { "total_tokens" => 8 }
+      }
 
-      expect { described_class.call(texts: texts) }
-        .to raise_error(Knowledge::Embeddings::EmbeddingError, /OPENAI_API_KEY/)
-    ensure
-      if original.nil?
-        ENV.delete("OPENAI_API_KEY")
-      else
-        ENV["OPENAI_API_KEY"] = original
-      end
+      results = described_class.results_from_body(body)
+
+      expect(results.map(&:token_count)).to eq([ 4, 4 ])
     end
   end
 
   describe ".estimate_cost" do
     it "calculates cost based on token count" do
-      cost = described_class.estimate_cost(1_000_000)
-
-      expect(cost).to eq(0.13)
+      expect(described_class.estimate_cost(1_000_000)).to eq(0.13)
     end
 
     it "returns zero for zero tokens" do

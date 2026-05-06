@@ -52,6 +52,17 @@ RSpec.describe Knowledge::ProviderConfiguration do
       expect(config.source).to eq(:platform_env)
     end
 
+    it "uses the platform OpenAI key from Rails credentials when no user key exists" do
+      owner.settings.update!(kb_embedding_provider: "openai", kb_embedding_fallback_providers: [])
+      allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return("sk-platform")
+
+      config = described_class.for_embedding(project: project)
+
+      expect(config.provider).to eq("openai")
+      expect(config.api_key).to eq("sk-platform")
+      expect(config.source).to eq(:platform_env)
+    end
+
     it "ignores legacy embedding providers that are not OpenAI-compatible" do
       owner.settings.update_columns(
         kb_embedding_provider: "anthropic",
@@ -72,6 +83,39 @@ RSpec.describe Knowledge::ProviderConfiguration do
           providers: [ "anthropic" ]
         )
       )
+    end
+  end
+
+  describe ".for_embedding_candidate_providers" do
+    let(:project) { create(:project) }
+    let(:owner) { project.effective_owner }
+
+    it "returns provider identifiers without loading API keys" do
+      owner.settings.update!(
+        kb_embedding_provider: "openrouter",
+        kb_embedding_fallback_providers: [ "openai" ]
+      )
+      create(:provider_api_key, user: owner, api_service_type: "openrouter", api_key: "sk-openrouter")
+      create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-openai")
+
+      candidates = described_class.for_embedding_candidate_providers(project: project)
+
+      expect(candidates.map(&:provider)).to eq(%w[openrouter openai])
+      expect(candidates).to all(satisfy { |c| c.api_key.nil? })
+    end
+
+    it "filters out providers without configured credentials" do
+      owner.settings.update!(
+        kb_embedding_provider: "openrouter",
+        kb_embedding_fallback_providers: [ "deepseek", "openai" ]
+      )
+      allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return(nil)
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
+
+      candidates = described_class.for_embedding_candidate_providers(project: project)
+
+      expect(candidates).to be_empty
     end
   end
 end

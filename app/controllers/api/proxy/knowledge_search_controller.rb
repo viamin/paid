@@ -21,16 +21,12 @@ module Api
           return
         end
 
-        provider_config = project.knowledge_embedding_provider_configuration
-
         result = Knowledge::Search.call(
           project: project,
           query: params[:q].to_s,
           mode: "semantic",
           artifact_type: params[:type],
-          limit: limit,
-          api_key: provider_config&.api_key,
-          api_base_url: provider_config&.api_base_url
+          limit: limit
         )
 
         render json: { results: serialize_results(result[:results]) }

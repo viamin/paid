@@ -288,6 +288,7 @@ RSpec.describe "Api::SecretsProxy" do
 
       before do
         create(:provider_api_key, user: owner, api_service_type: "anthropic", api_key: "sk-owner-key")
+        knowledge_run.update!(final_provider: "anthropic")
         allow(Rails.application.credentials).to receive(:dig)
           .with(:llm, :anthropic_api_key).and_return("sk-ant-test-key")
       end
@@ -341,6 +342,8 @@ RSpec.describe "Api::SecretsProxy" do
     end
 
     it "accepts knowledge-run authentication" do
+      knowledge_run.update!(final_provider: "openai")
+
       post "/api/proxy/openai/v1/chat/completions",
         params: {}.to_json,
         headers: knowledge_headers
@@ -348,6 +351,70 @@ RSpec.describe "Api::SecretsProxy" do
       expect(response).to have_http_status(:ok)
       expect(knowledge_run.reload.total_tokens).to eq(150)
       expect(TokenUsage.last.knowledge_run).to eq(knowledge_run)
+    end
+
+    it "uses the knowledge run owner's configured provider key when a knowledge provider header is present" do
+      create(:provider_api_key, user: project.effective_owner, api_service_type: "openrouter", api_key: "sk-openrouter-old")
+      latest_api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "openrouter", api_key: "sk-openrouter-new")
+      knowledge_run.update!(provider_attempts: [ { "provider" => "openrouter", "attempted_at" => Time.current.iso8601 } ])
+
+      openrouter_url = "https://openrouter.ai/api/v1/chat/completions"
+      stub_request(:post, openrouter_url)
+        .to_return(status: 200, body: openai_response_body, headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/openai/v1/chat/completions",
+        params: {}.to_json,
+        headers: knowledge_headers.merge("X-Paid-Knowledge-Provider" => "openrouter")
+
+      expect(response).to have_http_status(:ok)
+      expect(WebMock).to have_requested(:post, openrouter_url)
+        .with(headers: { "Authorization" => "Bearer #{latest_api_key.api_key}" })
+    end
+
+    it "preserves provider-specific versioned paths for OpenAI-compatible providers" do
+      api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "zai", api_key: "sk-zai")
+      knowledge_run.update!(provider_attempts: [ { "provider" => "zai", "attempted_at" => Time.current.iso8601 } ])
+
+      zai_url = "https://api.z.ai/api/paas/v4/embeddings"
+      stub_request(:post, zai_url)
+        .to_return(status: 200, body: { data: [ { embedding: [ 0.1 ], index: 0 } ] }.to_json, headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/openai/v1/embeddings",
+        params: { input: [ "hello" ], model: "text-embedding-3-large", dimensions: 3072 }.to_json,
+        headers: knowledge_headers.merge("X-Paid-Knowledge-Provider" => "zai")
+
+      expect(response).to have_http_status(:ok)
+      expect(WebMock).to have_requested(:post, zai_url)
+        .with(headers: { "Authorization" => "Bearer #{api_key.api_key}" })
+    end
+
+    it "rejects knowledge provider headers outside the run's allowed providers" do
+      create(:provider_api_key, user: project.effective_owner, api_service_type: "zai", api_key: "sk-zai")
+      knowledge_run.update!(provider_attempts: [ { "provider" => "openrouter", "attempted_at" => Time.current.iso8601 } ])
+
+      post "/api/proxy/openai/v1/chat/completions",
+        params: {}.to_json,
+        headers: knowledge_headers.merge("X-Paid-Knowledge-Provider" => "zai")
+
+      expect(response).to have_http_status(:forbidden)
+      expect(WebMock).not_to have_requested(:post, "https://api.z.ai/api/paas/v4/chat/completions")
+    end
+
+    it "uses the knowledge run final provider for the upstream base URL when the header is omitted" do
+      api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "openrouter", api_key: "sk-openrouter")
+      knowledge_run.update!(final_provider: "openrouter")
+
+      openrouter_url = "https://openrouter.ai/api/v1/chat/completions"
+      stub_request(:post, openrouter_url)
+        .to_return(status: 200, body: openai_response_body, headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/openai/v1/chat/completions",
+        params: {}.to_json,
+        headers: knowledge_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(WebMock).to have_requested(:post, openrouter_url)
+        .with(headers: { "Authorization" => "Bearer #{api_key.api_key}" })
     end
   end
 

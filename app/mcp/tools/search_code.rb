@@ -25,15 +25,12 @@ module Tools
       authorize project, :show?
 
       search_limit = limit.to_i.clamp(1, 50)
-      provider_config = project.knowledge_embedding_provider_configuration
 
       result = Knowledge::Search.call(
         project: project,
         query: query,
         mode: "hybrid",
-        limit: search_limit,
-        api_key: provider_config&.api_key,
-        api_base_url: provider_config&.api_base_url
+        limit: search_limit
       )
 
       result[:results].map do |r|

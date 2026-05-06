@@ -95,21 +95,34 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
       expect(response.parsed_body["error"]).to eq("Forbidden")
     end
 
-    it "passes the configured knowledge provider credentials to Knowledge::Search for non-exact modes" do
+    it "routes non-exact modes through Knowledge::Search without passing raw provider credentials" do
       owner = project.effective_owner
       owner.settings.update!(kb_embedding_provider: "openrouter", kb_embedding_fallback_providers: [ "openai" ])
-      api_key = create(:provider_api_key, user: owner, api_service_type: "openrouter", api_key: "sk-test-api")
+      create(:provider_api_key, user: owner, api_service_type: "openrouter", api_key: "sk-test-api")
 
       allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "hybrid", total: 0, took_ms: 0, exact_count: 0, semantic_count: 0 } })
 
       get "/api/knowledge/search", params: { project_id: project.id, q: "test", mode: "hybrid" }
 
       expect(Knowledge::Search).to have_received(:call).with(
-        hash_including(api_key: api_key.api_key, api_base_url: "https://openrouter.ai/api/v1")
+        hash_including(project: project, query: "test", mode: "hybrid")
       )
     end
 
-    it "skips OpenAI API key resolution for exact mode" do
+    it "preserves semantic mode when only a platform OpenAI credential is available" do
+      owner = project.effective_owner
+      owner.settings.update!(kb_embedding_provider: "openai", kb_embedding_fallback_providers: [])
+      allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return("sk-platform")
+      allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "semantic", total: 0, took_ms: 0, exact_count: 0, semantic_count: 0 } })
+
+      get "/api/knowledge/search", params: { project_id: project.id, q: "test", mode: "semantic" }
+
+      expect(Knowledge::Search).to have_received(:call).with(
+        hash_including(project: project, query: "test", mode: "semantic")
+      )
+    end
+
+    it "skips semantic provider resolution for exact mode" do
       owner = project.effective_owner
       create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-api")
 
@@ -118,7 +131,7 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
       get "/api/knowledge/search", params: { project_id: project.id, q: "test", mode: "exact" }
 
       expect(Knowledge::Search).to have_received(:call).with(
-        hash_including(api_key: nil, api_base_url: nil)
+        hash_including(project: project, query: "test", mode: "exact")
       )
     end
 

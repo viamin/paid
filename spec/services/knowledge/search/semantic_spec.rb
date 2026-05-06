@@ -83,27 +83,16 @@ RSpec.describe Knowledge::Search::Semantic do
       end
     end
 
-    context "with api_key parameter" do
-      it "passes api_key and api_base_url to Generate.call for query embedding" do
+    context "with query embeddings" do
+      it "routes query embedding generation through the proxy-backed generator" do
         allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: double(healthy?: true))
-        allow(Knowledge::Embeddings::Generate).to receive(:call).and_return([])
-
-        described_class.call(project: project, query: "test", api_key: "sk-user-key", api_base_url: "https://openrouter.ai/api/v1")
-
-        expect(Knowledge::Embeddings::Generate).to have_received(:call).with(
-          texts: [ "test" ], api_key: "sk-user-key", api_base_url: "https://openrouter.ai/api/v1"
-        )
-      end
-
-      it "passes nil api_key and api_base_url when none provided" do
-        allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: double(healthy?: true))
-        allow(Knowledge::Embeddings::Generate).to receive(:call).and_return([])
+        proxy_generator = instance_double(Knowledge::Embeddings::ProxyGenerator, call: [], close: true)
+        allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new).with(project: project, containerize: false).and_return(proxy_generator)
 
         described_class.call(project: project, query: "test")
 
-        expect(Knowledge::Embeddings::Generate).to have_received(:call).with(
-          texts: [ "test" ], api_key: nil, api_base_url: nil
-        )
+        expect(proxy_generator).to have_received(:call).with(texts: [ "test" ])
+        expect(proxy_generator).to have_received(:close)
       end
     end
   end

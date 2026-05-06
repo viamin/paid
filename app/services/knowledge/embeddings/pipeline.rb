@@ -14,7 +14,7 @@ module Knowledge
           raise ArgumentError,
             "batch_size must be a positive integer; got #{raw.inspect}. Check EMBEDDING_BATCH_SIZE env var."
         end
-        @generator = generator || Generate.new(api_key: api_key, api_base_url: api_base_url)
+        @generator = generator || build_generator(api_key: api_key, api_base_url: api_base_url)
       end
 
       def self.call(project: nil, batch_size: nil, generator: nil, api_key: nil, api_base_url: nil)
@@ -30,9 +30,10 @@ module Knowledge
         chunks_scope = eligible_chunks(project)
 
         chunks_scope.find_in_batches(batch_size: batch_size) do |batch|
-          result = process_batch(batch)
-          total_embedded += result[:embedded]
-          total_tokens += result[:tokens]
+          process_batch_grouped(batch).each do |result|
+            total_embedded += result[:embedded]
+            total_tokens += result[:tokens]
+          end
         end
 
         duration = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time
@@ -46,6 +47,8 @@ module Knowledge
           estimated_cost: cost,
           duration_seconds: duration.round(2)
         }
+      ensure
+        close_managed_generators
       end
 
       private
@@ -56,7 +59,21 @@ module Knowledge
         scope
       end
 
-      def process_batch(chunks)
+      def process_batch_grouped(chunks)
+        return [ process_batch(chunks, generator) ] if generator
+
+        chunks.group_by(&:project).each_with_object([]) do |(project, project_chunks), results|
+          configs = provider_configs_for(project)
+          if configs.empty?
+            log_missing_provider_for_project(project, chunk_count: project_chunks.size)
+            next
+          end
+
+          results << process_batch(project_chunks, generator_for(project, configs))
+        end
+      end
+
+      def process_batch(chunks, batch_generator)
         embeddable, redaction_audit = redact_chunks(chunks)
 
         Knowledge::Provenance::AuditLog.record_batch(redaction_audit) if redaction_audit.any?
@@ -64,7 +81,7 @@ module Knowledge
         return { embedded: 0, tokens: 0 } if embeddable.empty?
 
         texts = embeddable.map(&:content)
-        results = generate_embeddings(texts)
+        results = generate_embeddings(batch_generator, texts)
 
         if results.size != embeddable.size
           raise EmbeddingError,
@@ -76,7 +93,7 @@ module Knowledge
 
         embeddable.zip(results).each do |chunk, result|
           Knowledge::Qdrant::PointSync.upsert_chunk!(chunk, vector: result.vector)
-          attrs = { embedding_model: generator.model }
+          attrs = { embedding_model: batch_generator.model }
           attrs[:redaction_scanned_at] = chunk.redaction_scanned_at if chunk.redaction_scanned_at_changed?
           chunk.update!(attrs)
           tokens += result.token_count
@@ -86,7 +103,7 @@ module Knowledge
             project: chunk.project,
             actor: { type: "embedding_pipeline" },
             target: { type: "KnowledgeChunk", id: chunk.id },
-            details: { model: generator.model }
+            details: { model: batch_generator.model }
           }
         end
 
@@ -158,14 +175,14 @@ module Knowledge
         }
       end
 
-      def generate_embeddings(texts)
+      def generate_embeddings(batch_generator, texts)
         # Known limitation: ProviderExecutor fallback is not wired here.
         # Generate#call targets a single pre-configured embedding endpoint and
         # does not accept a provider parameter — wrapping it in a multi-provider
         # loop would just retry the same backend. Embedding provider fallback
         # requires upstream support in agent-harness for provider-aware
         # embedding routing (Generate#call accepting a provider argument).
-        generator.call(texts: texts)
+        batch_generator.call(texts: texts)
       end
 
       def log_completion(total_embedded, total_tokens, cost, duration)
@@ -176,6 +193,58 @@ module Knowledge
           estimated_cost_usd: cost,
           duration_ms: (duration * 1000).round
         )
+      end
+
+      def generator_for(project, provider_configs)
+        managed_generators[project.id] ||= ProxyGenerator.new(
+          project: project,
+          provider_configs: provider_configs,
+          containerize: true
+        )
+      end
+
+      def provider_configs_for(project)
+        managed_provider_configs[project.id] ||= Knowledge::ProviderConfiguration.for_embedding_candidate_providers(project: project)
+      end
+
+      def managed_generators
+        @managed_generators ||= {}
+      end
+
+      def managed_provider_configs
+        @managed_provider_configs ||= {}
+      end
+
+      def skipped_projects
+        @skipped_projects ||= {}
+      end
+
+      def build_generator(api_key:, api_base_url:)
+        return if api_key.blank? && api_base_url.blank?
+
+        headers = {}
+        headers["Authorization"] = "Bearer #{api_key}" if api_key.present?
+
+        Generate.new(
+          base_url: api_base_url || ENV.fetch("OPENAI_API_BASE_URL", "https://api.openai.com"),
+          headers: headers
+        )
+      end
+
+      def close_managed_generators
+        managed_generators.each_value(&:close)
+      end
+
+      def log_missing_provider_for_project(project, chunk_count:)
+        return if skipped_projects[project.id]
+
+        Rails.logger.info(
+          message: "knowledge.embeddings.project_skipped",
+          project_id: project.id,
+          chunk_count: chunk_count,
+          reason: "no_embedding_provider"
+        )
+        skipped_projects[project.id] = true
       end
     end
   end
