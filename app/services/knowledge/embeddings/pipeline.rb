@@ -7,19 +7,18 @@ module Knowledge
 
       attr_reader :batch_size, :generator
 
-      def initialize(batch_size: nil, generator: nil, api_key: nil, api_base_url: nil)
+      def initialize(batch_size: nil, generator: nil)
         raw = batch_size || ENV.fetch("EMBEDDING_BATCH_SIZE", DEFAULT_BATCH_SIZE)
         @batch_size = raw.to_i
         if @batch_size <= 0
           raise ArgumentError,
             "batch_size must be a positive integer; got #{raw.inspect}. Check EMBEDDING_BATCH_SIZE env var."
         end
-        @generator = generator || build_generator(api_key: api_key, api_base_url: api_base_url)
+        @generator = generator
       end
 
-      def self.call(project: nil, batch_size: nil, generator: nil, api_key: nil, api_base_url: nil)
-        new(batch_size: batch_size, generator: generator, api_key: api_key, api_base_url: api_base_url)
-          .call(project: project)
+      def self.call(project: nil, batch_size: nil, generator: nil)
+        new(batch_size: batch_size, generator: generator).call(project: project)
       end
 
       def call(project: nil)
@@ -217,18 +216,6 @@ module Knowledge
 
       def skipped_projects
         @skipped_projects ||= {}
-      end
-
-      def build_generator(api_key:, api_base_url:)
-        return if api_key.blank? && api_base_url.blank?
-
-        headers = {}
-        headers["Authorization"] = "Bearer #{api_key}" if api_key.present?
-
-        Generate.new(
-          base_url: api_base_url || ENV.fetch("OPENAI_API_BASE_URL", "https://api.openai.com"),
-          headers: headers
-        )
       end
 
       def close_managed_generators
