@@ -38,6 +38,20 @@ services:
       retries: 5
       start_period: 10s
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - paid_internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   web:
     build:
       context: .
@@ -62,6 +76,7 @@ services:
       DB_USERNAME: paid
       DB_PASSWORD: paid
       RAILS_ENV: development
+      REDIS_URL: redis://redis:6379/0
       TEMPORAL_HOST: temporal:7233
       PAID_PROXY_PORT: "3000"
       # Set CLAUDE_CONFIG_DIR to the Docker-host path to ~/.claude/ for subscription auth.
@@ -73,6 +88,8 @@ services:
       QDRANT_API_KEY: ${QDRANT_API_KEY:-}
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       temporal:
         condition: service_started
@@ -159,6 +176,8 @@ services:
                bin/temporal_worker"
     working_dir: /workspaces/paid
     depends_on:
+      redis:
+        condition: service_healthy
       temporal:
         condition: service_healthy
       web:
@@ -168,6 +187,7 @@ services:
       - DB_HOST=postgres
       - DB_USERNAME=paid
       - DB_PASSWORD=paid
+      - REDIS_URL=redis://redis:6379/0
       - TEMPORAL_ADDRESS=temporal:7233
       - TEMPORAL_NAMESPACE=default
       - TEMPORAL_POLL_TASK_QUEUE=paid-poll-tasks

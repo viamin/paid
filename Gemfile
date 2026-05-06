@@ -116,6 +116,9 @@ end
 group :development do
   # Use console on exceptions pages [https://github.com/rails/web-console]
   gem "web-console"
+
+  # Request-level performance metrics dashboard [https://github.com/igorkasyanchuk/rails_performance]
+  gem "rails_performance"
 end
 
 gem "good_job", "~> 4.18"
