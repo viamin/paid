@@ -1865,7 +1865,12 @@ class AgentRun < ApplicationRecord
     if previous_changes.key?("project_id") && previous_changes["project_id"].first.present?
       association(:project).reset
     elsif project.present? && !project.destroyed?
-      project.reload
+      fresh_counts = Project.where(id: project.id)
+        .pick(:agent_runs_count, :completed_agent_runs_count)
+      return unless fresh_counts
+
+      project.agent_runs_count, project.completed_agent_runs_count = fresh_counts
+      project.clear_attribute_changes([ "agent_runs_count", "completed_agent_runs_count" ])
     end
   end
 
