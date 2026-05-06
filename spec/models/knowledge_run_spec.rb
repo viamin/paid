@@ -38,6 +38,20 @@ RSpec.describe KnowledgeRun do
     end
   end
 
+  describe "#effective_provider" do
+    it "prefers final_provider when present" do
+      knowledge_run = build(:knowledge_run, final_provider: "openai", provider_attempts: [ { "provider" => "claude" } ])
+
+      expect(knowledge_run.effective_provider).to eq("openai")
+    end
+
+    it "falls back to the last attempted provider" do
+      knowledge_run = build(:knowledge_run, final_provider: nil, provider_attempts: [ { "provider" => "claude" }, { "provider" => "openai" } ])
+
+      expect(knowledge_run.effective_provider).to eq("openai")
+    end
+  end
+
   describe "#ensure_proxy_token!" do
     it "returns the existing token when present" do
       knowledge_run = create(:knowledge_run)
@@ -53,6 +67,24 @@ RSpec.describe KnowledgeRun do
 
       expect(token).to be_present
       expect(knowledge_run.reload.proxy_token).to eq(token)
+    end
+  end
+
+  describe "completion helpers" do
+    it "marks active runs as completed" do
+      knowledge_run = create(:knowledge_run, :running)
+
+      knowledge_run.complete!
+
+      expect(knowledge_run.reload.status).to eq("completed")
+    end
+
+    it "marks active runs as failed" do
+      knowledge_run = create(:knowledge_run, :running)
+
+      knowledge_run.fail!
+
+      expect(knowledge_run.reload.status).to eq("failed")
     end
   end
 end

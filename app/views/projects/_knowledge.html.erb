@@ -24,6 +24,7 @@
     </div>
     <div class="flex items-center space-x-3">
       <% if policy(project).update? %>
+        <%= link_to "Business Context", project_context_intake_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
         <%= link_to "Recommendations", project_knowledge_recommendations_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
       <% end %>
       <%= link_to "Browse", project_knowledge_browse_index_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>

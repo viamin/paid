@@ -41,8 +41,6 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     ServiceContainer.reset_column_information
   end
 
-  include MigrationSpecHelpers
-
   after do
     truncate_migration_test_data
 

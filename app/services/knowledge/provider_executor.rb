@@ -18,11 +18,14 @@ module Knowledge
 
     def execute
       providers = available_providers
-      raise AllProvidersExhausted, "No available providers for #{@operation}" if providers.empty?
+      if providers.empty?
+        log_providers_unavailable("no_available_providers")
+        raise AllProvidersExhausted, "No available providers for #{@operation}"
+      end
 
       last_error = nil
 
-      providers.each do |provider|
+      providers.each_with_index do |provider, index|
         record_attempt(provider)
 
         begin
@@ -31,15 +34,20 @@ module Knowledge
           return result
         rescue AgentHarness::RateLimitError => e
           record_rate_limit(provider, e)
+          log_provider_failure(provider, "rate_limited", e)
+          log_provider_switch(provider, providers[index + 1], "rate_limited", e)
           last_error = e
           next
         rescue AgentHarness::Error => e
           record_failure(provider, e)
+          log_provider_failure(provider, "provider_error", e)
+          log_provider_switch(provider, providers[index + 1], "provider_error", e)
           last_error = e
           next
         end
       end
 
+      log_providers_unavailable("all_providers_exhausted", error: last_error)
       raise AllProvidersExhausted, "All providers exhausted for #{@operation}: #{last_error&.message}"
     end
 
@@ -84,6 +92,67 @@ module Knowledge
           s.circuit_state = "closed"
           s.failure_count = 0
         }
+    end
+
+    def log_provider_failure(provider, reason, error)
+      Rails.logger.warn(
+        message: "knowledge.provider_failure",
+        operation: @operation.to_s,
+        provider: provider,
+        reason: reason,
+        error_class: error.class.name,
+        error: error.message,
+        knowledge_run_id: @knowledge_run&.id,
+        user_setting_id: @user_setting.id
+      )
+    end
+
+    def log_provider_switch(from_provider, to_provider, reason, error)
+      return if to_provider.blank?
+
+      Rails.logger.warn(
+        message: "knowledge.provider_switch",
+        operation: @operation.to_s,
+        from_provider: from_provider,
+        to_provider: to_provider,
+        reason: reason,
+        error_class: error.class.name,
+        error: error.message,
+        knowledge_run_id: @knowledge_run&.id,
+        user_setting_id: @user_setting.id
+      )
+    end
+
+    def log_providers_unavailable(reason, error: nil)
+      payload = {
+        message: "knowledge.providers_unavailable",
+        operation: @operation.to_s,
+        reason: reason,
+        providers: available_providers_for_logging,
+        knowledge_run_id: @knowledge_run&.id,
+        user_setting_id: @user_setting.id
+      }
+      payload[:error_class] = error.class.name if error
+      payload[:error] = error.message if error
+
+      Rails.logger.warn(payload)
+    end
+
+    def available_providers_for_logging
+      case @operation.to_sym
+      when :embedding
+        configured_providers(:kb_embedding_provider, :kb_embedding_fallback_providers)
+      when :chat
+        configured_providers(:kb_chat_provider, :kb_chat_fallback_providers)
+      else
+        []
+      end
+    end
+
+    def configured_providers(primary_key, fallback_key)
+      [ @user_setting.public_send(primary_key), *Array(@user_setting.public_send(fallback_key)) ]
+        .filter_map { |provider| provider.to_s.strip.downcase.presence }
+        .uniq
     end
   end
 end
