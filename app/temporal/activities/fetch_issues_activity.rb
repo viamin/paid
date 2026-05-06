@@ -7,6 +7,9 @@ module Activities
   # Handles rate limiting by re-raising as a retryable Temporal error.
   class FetchIssuesActivity < BaseActivity
     DEFAULT_PER_PAGE = 100
+    DEFAULT_RELATIONSHIP_PARSE_ISSUE_LIMIT = 100
+    DEFAULT_RELATIONSHIP_PARSE_BUDGET_SECONDS = 30
+    DEFAULT_RELATIONSHIP_COMMENT_PAGES = 2
 
     def execute(input)
       project_id = input[:project_id]
@@ -29,7 +32,7 @@ module Activities
       github_issues, truncated = fetch_all_issues(client, project.full_name, since: project.last_issue_sync_at)
 
       synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
-      parse_issue_relationships(project, synced_issues) if synced_issues.any?
+      parse_issue_relationships(project, synced_issues)
       enhance_issue_rechecks = detect_enhance_issue_rechecks(project, synced_issues)
       closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
       stale_pr_count = reconcile_open_pull_requests(project, client) if incremental && !truncated
@@ -335,25 +338,29 @@ module Activities
     # relationships_parsed_at on the project's issues to force reparse (see
     # Project#invalidate_relationship_parsing_on_trust_change).
     def parse_issue_relationships(project, synced_issues)
-      synced_issue_ids = synced_issues.filter_map { |si| si[:id] }
-
-      issues_relation = project.issues
-        .where(id: synced_issue_ids, github_state: "open", is_pull_request: false)
-        .where("relationships_parsed_at IS NULL OR relationships_parsed_at < github_updated_at")
+      issues_relation = relationship_parse_candidates(project)
 
       candidate_count = issues_relation.count
+      issue_limit = relationship_parse_issue_limit
+      parse_budget_seconds = relationship_parse_budget_seconds
+      issues = issues_relation.limit(issue_limit).to_a
+      deferred_count = candidate_count - issues.size
 
       if candidate_count > 0
         logger.info(
           message: "github_sync.parse_issue_relationships",
           project_id: project.id,
-          total_issues: synced_issue_ids.size,
-          updated_issues: candidate_count,
-          skipped_issues: synced_issue_ids.size - candidate_count
+          total_issues: project.issues.where(github_state: "open", is_pull_request: false).count,
+          candidate_issues: candidate_count,
+          selected_issues: issues.size,
+          deferred_issues: deferred_count,
+          issue_limit: issue_limit,
+          budget_seconds: parse_budget_seconds
         )
       end
 
       client = project.github_token.client
+      deadline = monotonic_now + parse_budget_seconds
 
       # Compute adjacency once before the loop for cycle detection. Within this
       # sync batch, deps created by earlier iterations won't be visible for cycle
@@ -361,7 +368,21 @@ module Activities
       adjacency = IssueDependency.account_adjacency(project.account)
       parent_child_changed = false
 
-      issues_relation.find_each do |issue|
+      issues.each_with_index do |issue, index|
+        if index.positive? && monotonic_now >= deadline
+          deferred_count += issues.size - index
+          logger.warn(
+            message: "github_sync.parse_issue_relationships_budget_exhausted",
+            project_id: project.id,
+            candidate_issues: candidate_count,
+            processed_issues: index,
+            deferred_issues: deferred_count,
+            issue_limit: issue_limit,
+            budget_seconds: parse_budget_seconds
+          )
+          break
+        end
+
         parsed_before = issue.relationships_parsed_at
         check_rate_budget!(client)
         comment_bodies = fetch_trusted_comment_bodies(client, project, issue)
@@ -399,6 +420,14 @@ module Activities
 
       synced_numbers = synced_issues.filter_map { |si| si[:github_number] }
       resolve_external_dependencies(project, synced_numbers)
+    end
+
+    def relationship_parse_candidates(project)
+      project.issues
+        .where(github_state: "open", is_pull_request: false)
+        .where.not(github_updated_at: nil)
+        .where("relationships_parsed_at IS NULL OR relationships_parsed_at < github_updated_at")
+        .order(:relationships_parsed_at, :github_updated_at, :id)
     end
 
     def resolve_external_dependencies(project, synced_numbers)
@@ -461,7 +490,11 @@ module Activities
     # Returning nil (vs empty array) lets callers distinguish "no comments" from
     # "fetch failed", avoiding accidental deletion of comment-derived dependencies.
     def fetch_trusted_comment_bodies(client, project, issue)
-      github_comments = client.issue_comments(project.full_name, issue.github_number)
+      github_comments = client.recent_issue_comments(
+        project.full_name,
+        issue.github_number,
+        pages: relationship_comment_pages
+      )
       # Sort by created_at to guarantee chronological processing regardless
       # of API response ordering. ParseDependencies relies on comment order
       # to resolve "latest directive wins" semantics.
@@ -481,6 +514,22 @@ module Activities
         error: e.message
       )
       nil
+    end
+
+    def relationship_parse_issue_limit
+      Integer(ENV.fetch("FETCH_ISSUES_RELATIONSHIP_PARSE_ISSUE_LIMIT", DEFAULT_RELATIONSHIP_PARSE_ISSUE_LIMIT))
+    end
+
+    def relationship_parse_budget_seconds
+      Integer(ENV.fetch("FETCH_ISSUES_RELATIONSHIP_PARSE_BUDGET_SECONDS", DEFAULT_RELATIONSHIP_PARSE_BUDGET_SECONDS))
+    end
+
+    def relationship_comment_pages
+      Integer(ENV.fetch("FETCH_ISSUES_RELATIONSHIP_COMMENT_PAGES", DEFAULT_RELATIONSHIP_COMMENT_PAGES))
+    end
+
+    def monotonic_now
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
     def close_stale_issues(project, github_issues, truncated: false, incremental: false)
