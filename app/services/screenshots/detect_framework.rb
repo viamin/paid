@@ -1,0 +1,577 @@
+# frozen_string_literal: true
+
+require "find"
+require "json"
+require "open3"
+require "psych"
+require "set"
+require "yaml"
+
+module Screenshots
+  class DetectFramework
+    Result = ::Data.define(
+      :framework,
+      :confidence,
+      :suggested_config,
+      :detected_services,
+      :detected_routes
+    ) do
+      def to_h
+        {
+          framework: framework,
+          confidence: confidence,
+          suggested_config: suggested_config,
+          detected_services: detected_services,
+          detected_routes: detected_routes
+        }
+      end
+
+      def suggested_yaml
+        Psych.dump(suggested_config.deep_stringify_keys)
+      end
+    end
+
+    ROUTE_EXTENSIONS = %w[.js .jsx .ts .tsx .rb .py].freeze
+    NEXT_PAGE_EXTENSIONS = %w[.js .jsx .ts .tsx].freeze
+    JS_DEPENDENCY_KEYS = %w[dependencies devDependencies].freeze
+    DATABASE_ADAPTER_MAP = {
+      "postgresql" => "postgres",
+      "postgis" => "postgres",
+      "mysql2" => "mysql",
+      "trilogy" => "mysql",
+      "sqlite3" => "sqlite",
+      "redis" => "redis"
+    }.freeze
+    SERVICE_DEPENDENCY_MAP = {
+      "pg" => "postgres",
+      "postgres" => "postgres",
+      "postgresql" => "postgres",
+      "redis" => "redis",
+      "redis-rb" => "redis",
+      "ioredis" => "redis",
+      "sidekiq" => "redis",
+      "mysql2" => "mysql",
+      "mysql" => "mysql"
+    }.freeze
+
+    attr_reader :project, :repo_path
+
+    def self.call(...)
+      new(...).call
+    end
+
+    def initialize(project: nil, repo_path: nil)
+      @project = project
+      @repo_path = repo_path
+    end
+
+    def call
+      detection = detect_rails || detect_nextjs || detect_django || detect_generic
+      suggested_routes = detection.fetch(:routes).presence || default_routes_for(detection.fetch(:framework))
+      services = detect_services
+
+      Result.new(
+        framework: detection.fetch(:framework),
+        confidence: detection.fetch(:confidence),
+        suggested_config: build_suggested_config(
+          framework: detection.fetch(:framework),
+          driver: detection.fetch(:driver),
+          routes: suggested_routes,
+          services: services,
+          auth: detection[:auth]
+        ),
+        detected_services: services,
+        detected_routes: suggested_routes
+      )
+    end
+
+    private
+
+    def repo
+      @repo ||= begin
+        return LocalRepository.new(repo_path) if repo_path.present?
+        return GithubRepository.new(project) if project.present?
+
+        raise ArgumentError, "project or repo_path is required"
+      end
+    end
+
+    def detect_rails
+      score = 0.0
+      score += 0.55 if repo.file?("config/routes.rb")
+      score += 0.3 if gemfile_dependency?("rails")
+      score += 0.15 if repo.directory?("app/controllers")
+      return unless score >= 0.5
+
+      {
+        framework: :rails,
+        confidence: score.round(2),
+        driver: "cuprite",
+        auth: detect_rails_auth,
+        routes: discover_rails_routes
+      }
+    end
+
+    def detect_nextjs
+      score = 0.0
+      score += 0.55 if %w[next.config.js next.config.mjs next.config.ts].any? { |path| repo.file?(path) }
+      score += 0.3 if package_dependency?("next")
+      score += 0.15 if repo.directory?("app") || repo.directory?("pages")
+      return unless score >= 0.5
+
+      {
+        framework: :nextjs,
+        confidence: score.round(2),
+        driver: "playwright",
+        auth: detect_nextjs_auth,
+        routes: discover_nextjs_routes
+      }
+    end
+
+    def detect_django
+      score = 0.0
+      score += 0.55 if repo.file?("manage.py")
+      score += 0.25 if repo.glob("**/settings.py").any?
+      score += 0.2 if repo.glob("**/urls.py").any?
+      return unless score >= 0.5
+
+      {
+        framework: :django,
+        confidence: score.round(2),
+        driver: "playwright",
+        auth: detect_django_auth,
+        routes: discover_django_routes
+      }
+    end
+
+    def detect_generic
+      files = repo.paths
+      html = files.any? { |path| path.end_with?(".html", ".erb", ".haml", ".slim") }
+      css = files.any? { |path| path.end_with?(".css", ".scss", ".sass") }
+      js = files.any? { |path| path.end_with?(".js", ".jsx", ".ts", ".tsx") }
+
+      confidence = if html && (css || js)
+        0.45
+      elsif html || css || js
+        0.3
+      else
+        0.2
+      end
+
+      {
+        framework: :generic,
+        confidence: confidence,
+        driver: "playwright",
+        auth: { "strategy" => "none" },
+        routes: []
+      }
+    end
+
+    def build_suggested_config(framework:, driver:, routes:, services:, auth:)
+      config = {
+        "enabled" => true,
+        "driver" => driver,
+        "base_url" => base_url_for(framework),
+        "routes" => routes.map(&:deep_stringify_keys)
+      }
+      config["services"] = services if services.any?
+      config["auth"] = auth if auth.present?
+      config
+    end
+
+    def base_url_for(framework)
+      framework == :django ? "http://localhost:8000" : Screenshots::Configuration::DEFAULT_BASE_URL
+    end
+
+    def default_routes_for(framework)
+      return [] if framework == :generic
+
+      [ route_hash("/", "home") ]
+    end
+
+    def detect_services
+      services = Set.new
+
+      extract_database_adapters.each do |adapter|
+        mapped = DATABASE_ADAPTER_MAP[adapter]
+        services << mapped if mapped.present?
+      end
+
+      dependency_names.each do |dependency|
+        mapped = SERVICE_DEPENDENCY_MAP[dependency]
+        services << mapped if mapped.present?
+      end
+
+      services.to_a.sort
+    end
+
+    def dependency_names
+      @dependency_names ||= begin
+        names = Set.new
+        gemfile_dependencies.each { |name| names << name }
+        package_dependencies.each { |name| names << name }
+        names
+      end
+    end
+
+    def gemfile_dependencies
+      content = repo.read("Gemfile")
+      return [] if content.blank?
+
+      content.scan(/^\s*gem\s+["']([^"']+)["']/).flatten
+    end
+
+    def gemfile_dependency?(name)
+      gemfile_dependencies.include?(name)
+    end
+
+    def package_dependencies
+      content = repo.read("package.json")
+      return [] if content.blank?
+
+      data = JSON.parse(content)
+      JS_DEPENDENCY_KEYS.flat_map do |key|
+        deps = data[key]
+        deps.is_a?(Hash) ? deps.keys : []
+      end
+    rescue JSON::ParserError
+      []
+    end
+
+    def package_dependency?(name)
+      package_dependencies.include?(name)
+    end
+
+    def extract_database_adapters
+      content = repo.read("config/database.yml")
+      return [] if content.blank?
+
+      sanitized = content.gsub(/<%.*?%>/m, '""')
+      data = YAML.safe_load(sanitized, aliases: true)
+      adapters = []
+      collect_adapters(data, adapters)
+      adapters
+    rescue Psych::Exception
+      []
+    end
+
+    def collect_adapters(value, adapters)
+      return unless value.is_a?(Hash)
+
+      value.each_value do |child|
+        next unless child.is_a?(Hash)
+
+        if child["adapter"].present?
+          adapters << child["adapter"]
+        else
+          collect_adapters(child, adapters)
+        end
+      end
+    end
+
+    def detect_rails_auth
+      return devise_auth_config if gemfile_dependency?("devise")
+
+      routes = repo.read("config/routes.rb").to_s
+      return devise_auth_config if routes.include?("devise_for")
+
+      { "strategy" => "none" }
+    end
+
+    def devise_auth_config
+      {
+        "strategy" => "form",
+        "login_path" => "/users/sign_in",
+        "fields" => {
+          "email" => "user[email]",
+          "password" => "user[password]",
+          "submit" => "Log in"
+        }
+      }
+    end
+
+    def detect_nextjs_auth
+      auth_paths = repo.paths.select do |path|
+        path.match?(%r{(?:app|pages)/api/auth/.+nextauth}) || path.include?("next-auth") || path.include?("nextauth")
+      end
+
+      middleware = repo.read("middleware.ts").to_s + repo.read("middleware.js").to_s
+      nextauth_detected = package_dependency?("next-auth") || package_dependency?("@auth/core") || auth_paths.any? ||
+        middleware.match?(/nextauth|withAuth|auth\(/i)
+
+      return { "strategy" => "none" } unless nextauth_detected
+
+      {
+        "strategy" => "custom",
+        "login_path" => "/api/auth/signin"
+      }
+    end
+
+    def detect_django_auth
+      auth_file = repo.glob("**/urls.py").find do |path|
+        repo.read(path).to_s.match?(/django\.contrib\.auth|accounts\/login/)
+      end
+      return { "strategy" => "none" } unless auth_file
+
+      {
+        "strategy" => "form",
+        "login_path" => "/accounts/login/",
+        "fields" => {
+          "email" => "username",
+          "password" => "password",
+          "submit" => "Log in"
+        }
+      }
+    end
+
+    def discover_rails_routes
+      routes_from_command = discover_rails_routes_from_command
+      return routes_from_command if routes_from_command.any?
+
+      content = repo.read("config/routes.rb").to_s
+      return [] if content.blank?
+
+      prefixes = []
+      routes = []
+
+      content.each_line do |line|
+        stripped = line.strip
+        next if stripped.start_with?("#")
+
+        if (match = stripped.match(/^namespace\s+:([a-zA-Z_][\w]*)\s+do/))
+          prefixes << match[1]
+          next
+        end
+
+        if stripped == "end"
+          prefixes.pop if prefixes.any?
+          next
+        end
+
+        route = parse_rails_route_line(stripped, prefixes)
+        routes << route if route
+      end
+
+      unique_routes(routes)
+    end
+
+    def discover_rails_routes_from_command
+      return [] unless repo.respond_to?(:root_path)
+
+      root = repo.root_path
+      return [] unless File.exist?(File.join(root, "bin/rails"))
+
+      stdout, status = Open3.capture2e("bin/rails", "routes", chdir: root)
+      return [] unless status.success?
+
+      parse_rails_routes_output(stdout)
+    rescue StandardError
+      []
+    end
+
+    def parse_rails_routes_output(output)
+      output.each_line.filter_map do |line|
+        tokens = line.strip.split(/\s+/)
+        next if tokens.length < 2
+
+        verb_index = tokens.index { |token| token.match?(/\A(?:GET|POST|PATCH|PUT|DELETE)\z/) }
+        next unless verb_index
+        next if verb_index.zero?
+
+        route_hash(tokens[verb_index - 1], tokens[verb_index - 1], requires_auth: false)
+      end.then { |routes| unique_routes(routes) }
+    end
+
+    def parse_rails_route_line(line, prefixes)
+      return route_hash("/", "root") if line.match?(/^root\s+/)
+
+      if (match = line.match(/^(?:get|post|patch|put|delete)\s+["']([^"']+)["']/))
+        path = normalize_route_path(prefixes, match[1])
+        return route_hash(path, route_name_from_path(path))
+      end
+
+      if (match = line.match(/^resources\s+:([a-zA-Z_][\w]*)/))
+        path = normalize_route_path(prefixes, match[1])
+        return route_hash(path, match[1])
+      end
+
+      if (match = line.match(/^resource\s+:([a-zA-Z_][\w]*)/))
+        path = normalize_route_path(prefixes, match[1])
+        return route_hash(path, match[1])
+      end
+
+      nil
+    end
+
+    def discover_nextjs_routes
+      routes = []
+
+      repo.glob("app/**/page{#{NEXT_PAGE_EXTENSIONS.join(',')}}").each do |path|
+        route = next_app_route_for(path)
+        routes << route if route
+      end
+
+      repo.glob("pages/**/*{#{NEXT_PAGE_EXTENSIONS.join(',')}}").each do |path|
+        route = next_pages_route_for(path)
+        routes << route if route
+      end
+
+      unique_routes(routes)
+    end
+
+    def next_app_route_for(path)
+      relative = path.delete_prefix("app/").sub(%r{(?:^|/)page\.[^.]+$}, "")
+      return if relative.start_with?("api/")
+
+      segments = relative.split("/").reject { |segment| segment.blank? || segment.start_with?("(") }
+      route_path = "/" + segments.map { |segment| segment.gsub(/\[(.+?)\]/, ':\1') }.join("/")
+      route_path = "/" if route_path == "/"
+
+      route_hash(route_path, route_name_from_path(route_path))
+    end
+
+    def next_pages_route_for(path)
+      relative = path.delete_prefix("pages/")
+      return if relative.start_with?("api/")
+      return if relative.match?(%r{\A_(app|document|error)\.})
+
+      route_path = relative.sub(/\.[^.]+\z/, "")
+      route_path = route_path.delete_suffix("/index")
+      route_path = "/" if route_path.blank? || route_path == "index"
+      route_path = "/#{route_path}" unless route_path.start_with?("/")
+      route_path = route_path.gsub(/\[(.+?)\]/, ':\1')
+
+      route_hash(route_path, route_name_from_path(route_path))
+    end
+
+    def discover_django_routes
+      routes = repo.glob("**/urls.py").flat_map do |path|
+        parse_django_urls(repo.read(path).to_s)
+      end
+
+      unique_routes(routes)
+    end
+
+    def parse_django_urls(content)
+      content.each_line.filter_map do |line|
+        next unless (match = line.match(/(?:path|re_path)\(\s*["']([^"']*)["']/))
+
+        raw = match[1]
+        route_path = raw.start_with?("/") ? raw : "/#{raw}"
+        route_path = "/" if route_path == "/"
+        route_hash(route_path, route_name_from_path(route_path))
+      end
+    end
+
+    def normalize_route_path(prefixes, path)
+      full_path = ([ "", *prefixes, path ]).join("/")
+      "/" + full_path.gsub(%r{/+}, "/").delete_prefix("/")
+    end
+
+    def unique_routes(routes)
+      routes.compact.uniq { |route| route["path"] }.first(10)
+    end
+
+    def route_hash(path, name, requires_auth: false)
+      {
+        "path" => path,
+        "name" => name,
+        "requires_auth" => requires_auth
+      }
+    end
+
+    def route_name_from_path(path)
+      return "home" if path == "/"
+
+      path.delete_prefix("/").tr("/", "_").gsub(":", "").presence || "home"
+    end
+
+    class LocalRepository
+      attr_reader :root_path
+
+      def initialize(root_path)
+        @root_path = root_path
+      end
+
+      def file?(path)
+        File.file?(absolute(path))
+      end
+
+      def directory?(path)
+        Dir.exist?(absolute(path))
+      end
+
+      def read(path)
+        return unless file?(path)
+
+        File.read(absolute(path))
+      end
+
+      def glob(pattern)
+        Dir.glob(pattern, base: root_path).select { |path| file?(path) }.sort
+      end
+
+      def paths
+        @paths ||= begin
+          files = []
+          Find.find(root_path) do |path|
+            next unless File.file?(path)
+
+            files << path.delete_prefix("#{root_path}/")
+          end
+          files.sort
+        end
+      end
+
+      private
+
+      def absolute(path)
+        File.join(root_path, path)
+      end
+    end
+
+    class GithubRepository
+      attr_reader :project
+
+      def initialize(project)
+        @project = project
+      end
+
+      def file?(path)
+        path_set.include?(path)
+      end
+
+      def directory?(path)
+        prefix = "#{path}/"
+        path_set.any? { |entry| entry.start_with?(prefix) }
+      end
+
+      def read(path)
+        return unless file?(path)
+
+        project.github_token.client.file_content(project.full_name, path: path)&.force_encoding("UTF-8")&.scrub("")
+      rescue GithubClient::NotFoundError
+        nil
+      end
+
+      def glob(pattern)
+        matcher = File::FNM_PATHNAME | File::FNM_EXTGLOB
+        paths.select { |path| File.fnmatch?(pattern, path, matcher) }
+      end
+
+      def paths
+        @paths ||= Array(tree.tree).select { |item| item.type == "blob" }.map(&:path).sort
+      end
+
+      private
+
+      def path_set
+        @path_set ||= paths.to_set
+      end
+
+      def tree
+        @tree ||= project.github_token.client.tree(project.full_name, project.default_branch || "main", recursive: true)
+      end
+    end
+  end
+end
