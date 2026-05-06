@@ -175,6 +175,8 @@ module Screenshots
       validate_unknown_keys!("viewport", value, VALID_VIEWPORT_KEYS)
 
       %w[width height].each do |key|
+        next unless value.key?(key)
+
         viewport_value = value[key]
         next if viewport_value.is_a?(Integer) && viewport_value.positive?
 

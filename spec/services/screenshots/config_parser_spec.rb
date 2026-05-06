@@ -216,6 +216,34 @@ RSpec.describe Screenshots::ConfigParser do
       }.to raise_error(Screenshots::ConfigError, /auth\.fields is required/)
     end
 
+    it "accepts a partial viewport with only width" do
+      write_config(repo_dir, <<~YAML)
+        viewport:
+          width: 1440
+        routes:
+          - path: /
+            name: homepage
+      YAML
+
+      config = described_class.from_repo_path(repo_dir, project: project)
+
+      expect(config.viewport).to have_attributes(width: 1440, height: 900)
+    end
+
+    it "accepts a partial viewport with only height" do
+      write_config(repo_dir, <<~YAML)
+        viewport:
+          height: 1080
+        routes:
+          - path: /
+            name: homepage
+      YAML
+
+      config = described_class.from_repo_path(repo_dir, project: project)
+
+      expect(config.viewport).to have_attributes(width: 1280, height: 1080)
+    end
+
     it "rejects non-positive viewport values" do
       write_config(repo_dir, <<~YAML)
         viewport:
