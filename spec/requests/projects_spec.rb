@@ -1932,6 +1932,101 @@ RSpec.describe "Projects" do
     end
   end
 
+  describe "POST /projects/:project_id/screenshot_config/detect" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        project = create(:project, account: account, github_token: github_token)
+
+        post detect_project_screenshot_config_path(project)
+
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated as owner" do
+      let(:project) { create(:project, account: account, github_token: github_token) }
+      let(:result) do
+        Screenshots::DetectFramework::Result.new(
+          framework: :rails,
+          confidence: 0.95,
+          suggested_config: { "enabled" => true, "driver" => "cuprite", "routes" => [ { "path" => "/", "name" => "home" } ] },
+          detected_services: [ "postgres" ],
+          detected_routes: [ { "path" => "/", "name" => "home" } ]
+        )
+      end
+      let(:memory_cache) { ActiveSupport::Cache::MemoryStore.new }
+
+      around do |example|
+        original_cache = Rails.cache
+        Rails.cache = memory_cache
+        example.run
+      ensure
+        Rails.cache = original_cache
+      end
+
+      before do
+        sign_in user
+        allow(Screenshots::DetectFramework).to receive(:call).and_return(result)
+      end
+
+      it "redirects to the edit page and stores the suggested YAML in cache" do
+        post detect_project_screenshot_config_path(project)
+
+        expect(response).to redirect_to(edit_project_path(project))
+        expect(flash[:notice]).to include("Suggested screenshot config generated")
+        expect(flash[:screenshot_config_suggestion_cache_key]).to be_present
+        expect(Rails.cache.read(flash[:screenshot_config_suggestion_cache_key])).to include("driver: cuprite")
+      end
+
+      it "returns JSON when requested" do
+        post detect_project_screenshot_config_path(project), headers: { "ACCEPT" => "application/json" }
+
+        expect(response).to have_http_status(:ok)
+        body = JSON.parse(response.body)
+        expect(body["framework"]).to eq("rails")
+        expect(body["confidence"]).to eq(0.95)
+        expect(body["suggested_yaml"]).to include("driver: cuprite")
+        expect(body["detected_services"]).to eq([ "postgres" ])
+      end
+
+      context "when detection fails" do
+        before do
+          allow(Screenshots::DetectFramework).to receive(:call)
+            .and_raise(GithubClient::ApiError.new("boom"))
+        end
+
+        it "redirects with an alert for HTML requests" do
+          post detect_project_screenshot_config_path(project)
+
+          expect(response).to redirect_to(edit_project_path(project))
+          expect(flash[:alert]).to include("Could not detect screenshot config")
+        end
+
+        it "returns a JSON error for API requests" do
+          post detect_project_screenshot_config_path(project), headers: { "ACCEPT" => "application/json" }
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(JSON.parse(response.body)["error"]).to include("Could not detect screenshot config")
+        end
+      end
+    end
+
+    context "when authenticated as viewer" do
+      let(:viewer_user) { create(:user, :viewer, account: account) }
+
+      before { sign_in viewer_user }
+
+      it "rejects the request" do
+        project = create(:project, account: account, github_token: github_token)
+
+        post detect_project_screenshot_config_path(project)
+
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
+  end
+
   describe "DELETE /projects/:id" do
     context "when not authenticated" do
       it "redirects to the sign in page" do

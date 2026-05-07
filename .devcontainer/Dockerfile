@@ -32,7 +32,7 @@ RUN set -e; \
   && . /etc/os-release \
   && printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" > /etc/apt/sources.list.d/pgdg.sources \
   && apt-get update -qq \
-  && apt-get install -y build-essential cmake shellcheck tmux libpq-dev postgresql-client-16 \
+  && apt-get install -y build-essential cmake shellcheck tmux libpq-dev postgresql-client-16=16.13-1.pgdg12+1 \
   && rm -rf /var/lib/apt/lists/*
 
 # Install chromium separately for better layer caching (updates more frequently)
@@ -44,8 +44,44 @@ RUN apt-get update -qq \
 RUN corepack enable && corepack prepare yarn@1.22.22 --activate
 
 # Install ast-grep for collector integration specs and local code analysis.
-COPY bin/install-ast-grep /tmp/install-ast-grep
-RUN chmod +x /tmp/install-ast-grep && /tmp/install-ast-grep && rm /tmp/install-ast-grep
+# Keep this inline instead of COPYing a repo script: the devcontainer image is
+# often rebuilt from a minimal or noisy workspace context, and BuildKit has
+# intermittently failed to resolve bin/install-ast-grep from that context.
+ARG AST_GREP_VERSION=0.42.1
+RUN set -eu; \
+  arch="$(dpkg --print-architecture)"; \
+  case "$arch" in \
+    amd64) rust_triple="x86_64-unknown-linux-gnu"; checksum="5de8b87cba67fc8dc3e239d54b6484802ad745a7ae3de76be4fe89661dc52657" ;; \
+    arm64) rust_triple="aarch64-unknown-linux-gnu"; checksum="3ba383839044cf9817929435f5ce0027f91d06931e8efb32d942e58d73d92be5" ;; \
+    *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+  esac; \
+  zipfile="app-${rust_triple}.zip"; \
+  url="https://github.com/ast-grep/ast-grep/releases/download/${AST_GREP_VERSION}/${zipfile}"; \
+  tmpdir="$(mktemp -d)"; \
+  trap 'rm -rf "$tmpdir"' EXIT; \
+  curl -fsSL -o "$tmpdir/$zipfile" "$url"; \
+  echo "$checksum  $tmpdir/$zipfile" | sha256sum -c -; \
+  unzip -j -o "$tmpdir/$zipfile" ast-grep -d "$tmpdir"; \
+  install -m 0755 "$tmpdir/ast-grep" /usr/local/bin/ast-grep; \
+  ln -sf /usr/local/bin/ast-grep /usr/local/bin/sg
+
+# Install scc for collector integration specs and local code analysis.
+ARG SCC_VERSION=3.7.0
+RUN set -eu; \
+  arch="$(dpkg --print-architecture)"; \
+  case "$arch" in \
+    amd64) scc_arch="x86_64"; checksum="3d9d65b00ca874c2b29151abe7e1480736f5229edc3ce8e4b2791460cdfabf5a" ;; \
+    arm64) scc_arch="arm64"; checksum="dcb05c6e993bb2d8d2da4765ff018f2e752325dd205a41698929c55e4123575d" ;; \
+    *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+  esac; \
+  tarball="scc_Linux_${scc_arch}.tar.gz"; \
+  url="https://github.com/boyter/scc/releases/download/v${SCC_VERSION}/${tarball}"; \
+  tmpdir="$(mktemp -d)"; \
+  trap 'rm -rf "$tmpdir"' EXIT; \
+  curl -fsSL -o "$tmpdir/$tarball" "$url"; \
+  echo "$checksum  $tmpdir/$tarball" | sha256sum -c -; \
+  tar -xzf "$tmpdir/$tarball" -C /usr/local/bin scc; \
+  chmod +x /usr/local/bin/scc
 
 # Install overmind process manager (requires tmux, installed above)
 RUN gem install overmind

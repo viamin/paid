@@ -51,50 +51,60 @@ jobs:
 
       - name: Verify Postgres image pins are in sync
         # Keep the Postgres server image pin aligned across compose, devcontainer,
-        # and CI, and ensure installed client tools use the same major version.
+        # and CI, and ensure installed client tools use the exact matching pg_dump version.
         run: |
+          check_contains() {
+            local file="$1"
+            local expected="$2"
+            local message="$3"
+
+            if ! grep -Fq "$expected" "$file"; then
+              echo "::error file=$file::$message"
+              exit 1
+            fi
+          }
+
           dev=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .devcontainer/compose.yaml | head -1 | awk '{print $NF}')
           compose=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' docker-compose.yml | head -1 | awk '{print $NF}')
           ci=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/ci.yml | head -1 | awk '{print $NF}')
           systest=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/system_tests.yml | head -1 | awk '{print $NF}')
-          major=${compose#postgres:}
-          major=${major%%.*}
+          test_prof=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/test_prof.yml | head -1 | awk '{print $NF}')
+          screenshots=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/pr-screenshots.yml | head -1 | awk '{print $NF}')
+          version=${compose#postgres:}
+          major=${version%%.*}
+          bookworm_client="postgresql-client-${major}=${version}-1.pgdg12+1"
+          trixie_client="postgresql-client-${major}=${version}-1.pgdg13+1"
+          noble_client="postgresql-client-${major}=${version}-1.pgdg24.04+1"
+
           echo "devcontainer/compose.yaml:       ${dev:-<none>}"
           echo "docker-compose.yml:              ${compose:-<none>}"
           echo ".github/workflows/ci.yml:        ${ci:-<none>}"
           echo ".github/workflows/system_tests:  ${systest:-<none>}"
-          echo "expected client major:           ${major:-<none>}"
-          if [ -z "$dev" ] || [ -z "$compose" ] || [ -z "$ci" ] || [ -z "$systest" ]; then
+          echo ".github/workflows/test_prof.yml: ${test_prof:-<none>}"
+          echo ".github/workflows/pr-screenshots:${screenshots:-<none>}"
+          echo "expected Bookworm client:        ${bookworm_client}"
+          echo "expected Trixie client:          ${trixie_client}"
+          echo "expected Noble client:           ${noble_client}"
+          if [ -z "$dev" ] || [ -z "$compose" ] || [ -z "$ci" ] || [ -z "$systest" ] || [ -z "$test_prof" ] || [ -z "$screenshots" ]; then
             echo "::error::Postgres image pin missing in one or more files"
             exit 1
           fi
-          if [ "$dev" != "$compose" ] || [ "$compose" != "$ci" ] || [ "$ci" != "$systest" ]; then
-            echo "::error::Postgres image pins are out of sync. Update all four together."
+          if [ "$dev" != "$compose" ] || [ "$compose" != "$ci" ] || [ "$ci" != "$systest" ] || [ "$systest" != "$test_prof" ] || [ "$test_prof" != "$screenshots" ]; then
+            echo "::error::Postgres image pins are out of sync. Update all workflow and compose references together."
             exit 1
           fi
-          if ! grep -q "postgresql-client-${major}" .devcontainer/Dockerfile; then
-            echo "::error::.devcontainer/Dockerfile is not pinned to postgresql-client-${major}"
-            exit 1
-          fi
-          if ! grep -q "postgresql-client-${major}" Dockerfile; then
-            echo "::error::Dockerfile is not pinned to postgresql-client-${major}"
-            exit 1
-          fi
-          if ! grep -q "postgresql-client-${major}" docker/agent/Dockerfile; then
-            echo "::error::docker/agent/Dockerfile is not pinned to postgresql-client-${major}"
-            exit 1
-          fi
-          if ! grep -q "postgresql-client-${major}" .github/workflows/ci.yml; then
-            echo "::error::.github/workflows/ci.yml is not pinned to postgresql-client-${major}"
-            exit 1
-          fi
-          if ! grep -q "postgresql-client-${major}" .github/workflows/system_tests.yml; then
-            echo "::error::.github/workflows/system_tests.yml is not pinned to postgresql-client-${major}"
-            exit 1
-          fi
+          check_contains .devcontainer/Dockerfile "$bookworm_client" ".devcontainer/Dockerfile is not pinned to $bookworm_client"
+          check_contains Dockerfile "$trixie_client" "Dockerfile is not pinned to $trixie_client"
+          check_contains docker/agent/Dockerfile "$noble_client" "docker/agent/Dockerfile is not pinned to $noble_client"
+          check_contains docker/agent/Dockerfile "apt.postgresql.org/pub/repos/apt" "docker/agent/Dockerfile must install from PGDG"
+          check_contains Dockerfile "apt.postgresql.org/pub/repos/apt" "Dockerfile must install from PGDG"
+          check_contains .github/workflows/ci.yml "$noble_client" ".github/workflows/ci.yml is not pinned to $noble_client"
+          check_contains .github/workflows/system_tests.yml "$noble_client" ".github/workflows/system_tests.yml is not pinned to $noble_client"
+          check_contains .github/workflows/test_prof.yml "$noble_client" ".github/workflows/test_prof.yml is not pinned to $noble_client"
+          check_contains .github/workflows/pr-screenshots.yml "$noble_client" ".github/workflows/pr-screenshots.yml is not pinned to $noble_client"
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
@@ -148,7 +158,13 @@ jobs:
         run: bin/install-ast-grep
 
       - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc >/dev/null
+          . /etc/os-release
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" | sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16=16.13-1.pgdg24.04+1
 
       - name: Build assets
         run: yarn build && yarn build:css
@@ -186,7 +202,7 @@ jobs:
         run: bundle exec fasterer
 
   performance:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
@@ -237,7 +253,13 @@ jobs:
         run: yarn install --frozen-lockfile && bin/yarn-postinstall
 
       - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc >/dev/null
+          . /etc/os-release
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" | sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16=16.13-1.pgdg24.04+1
 
       - name: Set up database
         run: bin/rails db:prepare

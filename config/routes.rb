@@ -142,6 +142,9 @@ Rails.application.routes.draw do
     resource :quality_thresholds, only: [ :update ], controller: "projects/quality_thresholds"
     resource :cost_snapshot, only: [ :show ], controller: "projects/cost_snapshots"
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
+    resource :screenshot_config, only: [], controller: "projects/screenshot_configs" do
+      post :detect
+    end
     resources :cost_budgets, only: [ :create, :update, :destroy ], controller: "projects/cost_budgets"
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
       post :cancel, on: :member

@@ -38,8 +38,15 @@ RUN NODE_VERSION=22.13.0 \
     && tar -xzf "${TARBALL}" -C /usr/local --strip-components=1 \
     && rm "${TARBALL}"
 
+# Install the PGDG apt repository so Ubuntu Noble can install the same pg_dump
+# minor version as the pinned Postgres server image.
+RUN install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && . /etc/os-release \
+    && printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" > /etc/apt/sources.list.d/pgdg.sources
+
 # Install Ruby build dependencies, runtime deps, Python, PostgreSQL client libs, and ShellCheck
-# Keep client tools on the same Postgres major as the pinned server image.
+# Keep client tools on the exact Postgres version shipped by the pinned server image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     autoconf \
     bison \
@@ -50,7 +57,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     libgdbm-dev \
     libpq-dev \
-    postgresql-client-16 \
+    postgresql-client-16=16.13-1.pgdg24.04+1 \
     rustc \
     shellcheck \
     python3 \
@@ -111,11 +118,11 @@ RUN mkdir -p "$COREPACK_HOME" \
 
 # Install ast-grep (AST-based code search/lint)
 # https://github.com/ast-grep/ast-grep/releases
-RUN AST_GREP_VERSION=0.41.0 \
+RUN AST_GREP_VERSION=0.42.1 \
     && DEB_ARCH="$(dpkg --print-architecture)" \
     && case "$DEB_ARCH" in \
-        amd64) RUST_TRIPLE="x86_64-unknown-linux-gnu"; EXPECTED_CHECKSUM="e71afdcbb2e79f7710a56d2f89662bdd0a6e9d639c4abecd5d5f129d80a38bac" ;; \
-        arm64) RUST_TRIPLE="aarch64-unknown-linux-gnu"; EXPECTED_CHECKSUM="6f089d014d5fda8fed2e63e5095acf8ebec4c4cd2e721bd663f2284ace42b623" ;; \
+        amd64) RUST_TRIPLE="x86_64-unknown-linux-gnu"; EXPECTED_CHECKSUM="5de8b87cba67fc8dc3e239d54b6484802ad745a7ae3de76be4fe89661dc52657" ;; \
+        arm64) RUST_TRIPLE="aarch64-unknown-linux-gnu"; EXPECTED_CHECKSUM="3ba383839044cf9817929435f5ce0027f91d06931e8efb32d942e58d73d92be5" ;; \
         *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
     esac \
     && ZIPFILE="app-${RUST_TRIPLE}.zip" \
@@ -127,11 +134,11 @@ RUN AST_GREP_VERSION=0.41.0 \
 
 # Install scc (code line counter)
 # https://github.com/boyter/scc/releases
-RUN SCC_VERSION=3.6.0 \
+RUN SCC_VERSION=3.7.0 \
     && DEB_ARCH="$(dpkg --print-architecture)" \
     && case "$DEB_ARCH" in \
-        amd64) SCC_ARCH="x86_64"; EXPECTED_CHECKSUM="da923e0b94c5ce818088ba2e3d1667cdb064b3c684592e3c774c7f97b63194f6" ;; \
-        arm64) SCC_ARCH="arm64"; EXPECTED_CHECKSUM="87fd3f5d4c393c6b665d23bf9b601753b2f6f8a953e6f265d5ea1498195d082f" ;; \
+        amd64) SCC_ARCH="x86_64"; EXPECTED_CHECKSUM="3d9d65b00ca874c2b29151abe7e1480736f5229edc3ce8e4b2791460cdfabf5a" ;; \
+        arm64) SCC_ARCH="arm64"; EXPECTED_CHECKSUM="dcb05c6e993bb2d8d2da4765ff018f2e752325dd205a41698929c55e4123575d" ;; \
         *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
     esac \
     && TARBALL="scc_Linux_${SCC_ARCH}.tar.gz" \
