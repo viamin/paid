@@ -92,6 +92,16 @@ RSpec.describe Screenshots::FrameworkPatterns do
     it "matches src/pages routes" do
       expect(patterns[:patterns].any? { |p| p.match?("src/pages/index.tsx") }).to be true
     end
+
+    it "excludes pages router API routes" do
+      expect(patterns[:exclusions].any? { |p| p.match?("pages/api/users.ts") }).to be true
+      expect(patterns[:exclusions].any? { |p| p.match?("src/pages/api/auth/[...nextauth].ts") }).to be true
+    end
+
+    it "excludes app router API routes" do
+      expect(patterns[:exclusions].any? { |p| p.match?("app/api/auth/[...nextauth]/route.ts") }).to be true
+      expect(patterns[:exclusions].any? { |p| p.match?("src/app/api/users/route.ts") }).to be true
+    end
   end
 
   describe "generic patterns" do

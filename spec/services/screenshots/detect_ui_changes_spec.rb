@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "open3"
 
 RSpec.describe Screenshots::DetectUiChanges do
   describe ".call" do
@@ -238,6 +239,26 @@ RSpec.describe Screenshots::DetectUiChanges do
       expect(result[:ui_files]).to eq([ "src/pages/index.tsx" ])
     end
 
+    it "ignores Next.js pages router API routes" do
+      result = described_class.call(
+        changed_files: [ "pages/api/users.ts", "src/pages/api/auth/[...nextauth].ts" ],
+        framework: :nextjs
+      )
+
+      expect(result[:ui_changes?]).to be false
+      expect(result[:ui_files]).to be_empty
+    end
+
+    it "ignores Next.js app router API routes" do
+      result = described_class.call(
+        changed_files: [ "app/api/users/route.ts", "src/app/api/auth/[...nextauth]/route.ts" ],
+        framework: :nextjs
+      )
+
+      expect(result[:ui_changes?]).to be false
+      expect(result[:ui_files]).to be_empty
+    end
+
     it "detects Next.js app router stylesheet changes" do
       result = described_class.call(
         changed_files: [ "app/dashboard/page.module.css", "app/globals.css" ],
@@ -353,6 +374,26 @@ RSpec.describe Screenshots::DetectUiChanges do
       )
 
       expect(result[:ui_changes?]).to be false
+    end
+  end
+
+  describe "standalone Ruby execution" do
+    it "works without Rails loading Active Support extensions" do
+      command = <<~SH
+        ruby -rjson -e '
+          require_relative "app/services/screenshots/detect_ui_changes"
+          result = Screenshots::DetectUiChanges.call(changed_files: ["app/views/projects/index.html.erb"])
+          print JSON.dump(result)
+        '
+      SH
+
+      output, status = Open3.capture2e(command, chdir: Rails.root.to_s)
+
+      expect(status.success?).to be(true), output
+      expect(JSON.parse(output)).to include(
+        "ui_changes?" => true,
+        "ui_files" => [ "app/views/projects/index.html.erb" ]
+      )
     end
   end
 end

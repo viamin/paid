@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "configuration"
+
 require "find"
 require "json"
 require "open3"
@@ -27,7 +29,7 @@ module Screenshots
       end
 
       def suggested_yaml
-        Psych.dump(suggested_config.deep_stringify_keys)
+        Psych.dump(DetectFramework.deep_stringify(suggested_config))
       end
     end
 
@@ -70,7 +72,7 @@ module Screenshots
     def call
       detection = detect_rails || detect_nextjs || detect_django || detect_generic
       detected_routes = detection.fetch(:routes)
-      suggested_routes = detected_routes.presence || default_routes_for
+      suggested_routes = present_value?(detected_routes) ? detected_routes : default_routes_for
       services = detect_services
 
       Result.new(
@@ -90,11 +92,24 @@ module Screenshots
 
     private
 
+    def self.deep_stringify(value)
+      case value
+      when Hash
+        value.each_with_object({}) do |(key, nested_value), result|
+          result[key.to_s] = deep_stringify(nested_value)
+        end
+      when Array
+        value.map { |item| deep_stringify(item) }
+      else
+        value
+      end
+    end
+
     def repo
       @repo ||= begin
-        return LocalRepository.new(repo_path) if repo_path.present?
+        return LocalRepository.new(repo_path) if present_value?(repo_path)
         return FileListRepository.new(file_list) unless file_list.nil?
-        return GithubRepository.new(project) if project.present?
+        return GithubRepository.new(project) if present_value?(project)
 
         raise ArgumentError, "project, repo_path, or file_list is required"
       end
@@ -176,10 +191,10 @@ module Screenshots
         "enabled" => true,
         "driver" => driver,
         "base_url" => base_url_for(framework),
-        "routes" => routes.map(&:deep_stringify_keys)
+        "routes" => self.class.deep_stringify(routes)
       }
       config["services"] = services if services.any?
-      config["auth"] = auth if auth.present?
+      config["auth"] = auth if present_value?(auth)
       config
     end
 
@@ -196,12 +211,12 @@ module Screenshots
 
       extract_database_adapters.each do |adapter|
         mapped = DATABASE_ADAPTER_MAP[adapter]
-        services << mapped if mapped.present?
+        services << mapped if present_value?(mapped)
       end
 
       dependency_names.each do |dependency|
         mapped = SERVICE_DEPENDENCY_MAP[dependency]
-        services << mapped if mapped.present?
+        services << mapped if present_value?(mapped)
       end
 
       services.to_a.sort
@@ -219,7 +234,7 @@ module Screenshots
     def gemfile_dependencies
       @gemfile_dependencies ||= begin
         content = repo.read("Gemfile")
-        if content.blank?
+        if blank_value?(content)
           []
         else
           content.scan(/^\s*gem\s+["']([^"']+)["']/).flatten
@@ -234,7 +249,7 @@ module Screenshots
     def package_dependencies
       @package_dependencies ||= begin
         content = repo.read("package.json")
-        if content.blank?
+        if blank_value?(content)
           []
         else
           data = JSON.parse(content)
@@ -254,7 +269,7 @@ module Screenshots
 
     def extract_database_adapters
       content = repo.read("config/database.yml")
-      return [] if content.blank?
+      return [] if blank_value?(content)
 
       sanitized = content.gsub(/<%.*?%>/m, '""')
       data = YAML.safe_load(sanitized, aliases: true)
@@ -271,7 +286,7 @@ module Screenshots
       value.each_value do |child|
         next unless child.is_a?(Hash)
 
-        if child["adapter"].present?
+        if present_value?(child["adapter"])
           adapters << child["adapter"]
         else
           collect_adapters(child, adapters)
@@ -341,7 +356,7 @@ module Screenshots
       return routes_from_command if routes_from_command.any?
 
       content = rails_routes_content
-      return [] if content.blank?
+      return [] if blank_value?(content)
 
       block_stack = []
       routes = []
@@ -461,7 +476,7 @@ module Screenshots
       relative = path.delete_prefix(root).sub(%r{(?:^|/)page\.[^.]+$}, "")
       return if relative.start_with?("api/")
 
-      segments = relative.split("/").reject { |segment| segment.blank? || segment.start_with?("(") }
+      segments = relative.split("/").reject { |segment| blank_value?(segment) || segment.start_with?("(") }
       route_path = "/" + segments.map { |segment| segment.gsub(/\[(.+?)\]/, ':\1') }.join("/")
       route_path = "/" if route_path == "/"
 
@@ -475,7 +490,7 @@ module Screenshots
 
       route_path = relative.sub(/\.[^.]+\z/, "")
       route_path = route_path.delete_suffix("/index")
-      route_path = "/" if route_path.blank? || route_path == "index"
+      route_path = "/" if blank_value?(route_path) || route_path == "index"
       route_path = "/#{route_path}" unless route_path.start_with?("/")
       route_path = route_path.gsub(/\[(.+?)\]/, ':\1')
 
@@ -523,9 +538,9 @@ module Screenshots
         if (include_match = line.match(/(?:path|re_path)\(\s*["']([^"']*)["']\s*,\s*include\((.+?)\)\s*[,\)]/))
           include_prefix = join_django_route_segments(prefix, include_match[1])
           include_module = django_include_module_name(include_match[2])
-          include_path = include_module.present? ? django_module_path(include_module) : nil
+          include_path = present_value?(include_module) ? django_module_path(include_module) : nil
 
-          next parse_django_urlconf(include_path, prefix: include_prefix, visited:) if include_path.present?
+          next parse_django_urlconf(include_path, prefix: include_prefix, visited:) if present_value?(include_path)
           next route_hash(include_prefix, route_name_from_path(include_prefix))
         end
 
@@ -542,7 +557,7 @@ module Screenshots
         next unless include_match
 
         include_module = django_include_module_name(include_match[1])
-        next unless include_module.present?
+        next unless present_value?(include_module)
 
         django_module_path(include_module)
       end
@@ -558,9 +573,9 @@ module Screenshots
     end
 
     def join_django_route_segments(prefix, path)
-      joined = [ prefix, path ].compact.reject(&:blank?).join("/")
+      joined = [ prefix, path ].compact.reject { |segment| blank_value?(segment) }.join("/")
       normalized = joined.gsub(%r{/+}, "/").delete_prefix("/")
-      normalized.present? ? "/#{normalized}" : "/"
+      present_value?(normalized) ? "/#{normalized}" : "/"
     end
 
     def normalize_route_path(prefixes, path)
@@ -583,7 +598,25 @@ module Screenshots
     def route_name_from_path(path)
       return "home" if path == "/"
 
-      path.delete_prefix("/").tr("/", "_").gsub(":", "").presence || "home"
+      name = path.delete_prefix("/").tr("/", "_").gsub(":", "")
+      present_value?(name) ? name : "home"
+    end
+
+    def blank_value?(value)
+      case value
+      when nil
+        true
+      when String
+        value.strip.empty?
+      when Array, Hash
+        value.empty?
+      else
+        false
+      end
+    end
+
+    def present_value?(value)
+      !blank_value?(value)
     end
 
     class LocalRepository
@@ -639,6 +672,7 @@ module Screenshots
 
     class FileListRepository
       GLOB_FLAGS = File::FNM_PATHNAME | File::FNM_EXTGLOB
+      attr_reader :paths
 
       def initialize(file_list)
         @paths = Array(file_list).map(&:to_s).uniq.sort
@@ -659,10 +693,6 @@ module Screenshots
 
       def glob(pattern)
         @paths.select { |path| File.fnmatch?(pattern, path, GLOB_FLAGS) }
-      end
-
-      def paths
-        @paths
       end
 
       private

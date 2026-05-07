@@ -37,16 +37,25 @@ module Screenshots
         %r{\Aapp/(?:.+/)?error\.[jt]sx?\z},
         %r{\Aapp/(?:.+/)?globals\.(?:css|scss|sass|less)\z},
         %r{\Aapp/(?:.+/)?[^/]+\.module\.(?:css|scss|sass|less)\z},
-        %r{\Apages/},
-        %r{\Asrc/pages/},
+        %r{\Asrc/app/(?:.+/)?page\.[jt]sx?\z},
+        %r{\Asrc/app/(?:.+/)?layout\.[jt]sx?\z},
+        %r{\Asrc/app/(?:.+/)?loading\.[jt]sx?\z},
+        %r{\Asrc/app/(?:.+/)?error\.[jt]sx?\z},
+        %r{\Asrc/app/(?:.+/)?globals\.(?:css|scss|sass|less)\z},
+        %r{\Asrc/app/(?:.+/)?[^/]+\.module\.(?:css|scss|sass|less)\z},
+        %r{\Apages/.*\.[jt]sx?\z},
+        %r{\Asrc/pages/.*\.[jt]sx?\z},
         %r{\Acomponents/},
         %r{\Astyles/},
         %r{\Apublic/.*\.(?:html|png|svg|ico|webmanifest)\z},
-        %r{\Asrc/app/},
         %r{\Asrc/components/},
         %r{\Asrc/styles/}
       ].freeze,
       exclusions: [
+        %r{\Aapp/api/},
+        %r{\Asrc/app/api/},
+        %r{\Apages/api/},
+        %r{\Asrc/pages/api/},
         %r{\Apublic/robots\.txt\z}
       ].freeze
     }.freeze
