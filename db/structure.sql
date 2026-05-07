@@ -3318,7 +3318,8 @@ CREATE TABLE public.projects (
     knowledge_evolution_enabled boolean DEFAULT false NOT NULL,
     agent_runs_count integer DEFAULT 0 NOT NULL,
     completed_agent_runs_count integer DEFAULT 0 NOT NULL,
-    screenshot_settings jsonb DEFAULT '{}'::jsonb NOT NULL
+    screenshot_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
+    last_issue_reconciliation_at timestamp(6) without time zone
 );
 
 ALTER TABLE ONLY public.projects FORCE ROW LEVEL SECURITY;
@@ -3343,6 +3344,13 @@ COMMENT ON COLUMN public.projects.completed_agent_runs_count IS 'Counter cache f
 --
 
 COMMENT ON COLUMN public.projects.screenshot_settings IS 'Project-level defaults and overrides for repository screenshot capture config';
+
+
+--
+-- Name: COLUMN projects.last_issue_reconciliation_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.projects.last_issue_reconciliation_at IS 'Timestamp of the last issue state reconciliation against GitHub';
 
 
 --
@@ -11205,6 +11213,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260507011753'),
 ('20260506174922'),
 ('20260506074459'),
 ('20260505220424'),
@@ -11453,3 +11462,4 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260128004342'),
 ('20260128004305'),
 ('20260127154444');
+
