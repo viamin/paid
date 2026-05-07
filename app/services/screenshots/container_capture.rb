@@ -95,11 +95,13 @@ module Screenshots
     rescue Containers::Provision::TimeoutError => e
       screenshot_paths = collected_screenshots
       log_skip("capture_timeout", e.message, screenshot_count: screenshot_paths.size)
+      refresh_pr_comment("capture_failed")
       update_status("capture_timeout", screenshot_count: screenshot_paths.size)
       Result.new(status: "capture_timeout", changed_files: [], ui_files: [], screenshot_paths: screenshot_paths, published: false, screenshots_url: nil, error: e.message)
     rescue StandardError => e
       screenshot_paths = collected_screenshots
       log_skip("capture_failed", e.message, error_class: e.class.name, screenshot_count: screenshot_paths.size)
+      refresh_pr_comment("capture_failed")
       update_status("capture_failed", screenshot_count: screenshot_paths.size)
       Result.new(status: "capture_failed", changed_files: [], ui_files: [], screenshot_paths: screenshot_paths, published: false, screenshots_url: nil, error: e.message)
     ensure
@@ -180,6 +182,7 @@ module Screenshots
 
     def finalize_skip(status, changed_files:, ui_files:)
       log_skip(status, "no UI-facing changes detected")
+      refresh_pr_comment(status)
       update_status(status)
       Result.new(
         status: status,
@@ -202,9 +205,10 @@ module Screenshots
       original_ids = agent_run.service_container_ids.dup
 
       service_provisioner.provision(agent_run, network: @network, service_names: service_names)
-
-      @screenshot_service_container_ids = agent_run.service_container_ids - original_ids
-      agent_run.update!(service_container_ids: original_ids)
+    ensure
+      current_ids = agent_run.service_container_ids
+      @screenshot_service_container_ids |= current_ids - original_ids
+      agent_run.update!(service_container_ids: original_ids) unless current_ids == original_ids
     end
 
     def configured_service_dependencies
@@ -491,6 +495,25 @@ module Screenshots
         message: "screenshots.capture_status_update_failed",
         project_id: project.id,
         agent_run_id: agent_run.id,
+        error: e.message
+      )
+    end
+
+    def refresh_pr_comment(status)
+      Screenshots::PrComment.call(
+        github_client: project.github_token.client,
+        repo: project.full_name,
+        pr_number: agent_run.pull_request_number,
+        commit_sha: agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name,
+        screenshots: [],
+        status: status
+      )
+    rescue StandardError => e
+      logger.warn(
+        message: "screenshots.pr_comment_refresh_failed",
+        project_id: project.id,
+        agent_run_id: agent_run.id,
+        status: status,
         error: e.message
       )
     end

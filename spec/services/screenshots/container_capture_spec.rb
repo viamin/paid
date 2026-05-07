@@ -30,6 +30,7 @@ RSpec.describe Screenshots::ContainerCapture do
     allow(service).to receive(:with_workspace).and_yield(Dir.mktmpdir("screenshots-spec"))
     allow(service).to receive(:provision_capture_container) { service.instance_variable_set(:@network, "paid-test") }
     allow(service).to receive(:checkout_branch!)
+    allow(Screenshots::PrComment).to receive(:call)
     allow(Screenshots::ConfigParser).to receive_messages(from_repo_path: config, ui_detection_overrides: {})
     allow(service).to receive_messages(
       fetch_changed_files: [ "app/views/home/index.html.erb" ],
@@ -63,5 +64,51 @@ RSpec.describe Screenshots::ContainerCapture do
 
     expect(result.status).to eq("no_ui_changes")
     expect(project.reload.effective_screenshot_status["last_capture_status"]).to eq("no_ui_changes")
+    expect(Screenshots::PrComment).to have_received(:call) do |**args|
+      expect(args).to include(
+        repo: project.full_name,
+        pr_number: agent_run.pull_request_number,
+        commit_sha: agent_run.result_commit_sha,
+        screenshots: [],
+        status: "no_ui_changes"
+      )
+      expect(args[:github_client]).to be_a(GithubClient)
+    end
+  end
+
+  it "refreshes the PR comment when capture fails" do
+    provisioner = instance_double(Containers::ServiceProvisioner, cleanup: true)
+    allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+    allow(provisioner).to receive(:provision)
+    allow(service).to receive(:start_application!).and_raise("boom")
+
+    result = service.call
+
+    expect(result.status).to eq("capture_failed")
+    expect(Screenshots::PrComment).to have_received(:call) do |**args|
+      expect(args).to include(
+        repo: project.full_name,
+        pr_number: agent_run.pull_request_number,
+        commit_sha: agent_run.result_commit_sha,
+        screenshots: [],
+        status: "capture_failed"
+      )
+      expect(args[:github_client]).to be_a(GithubClient)
+    end
+  end
+
+  it "restores the original service container ids when dependency provisioning fails" do
+    provisioner = instance_double(Containers::ServiceProvisioner, cleanup: true)
+    allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+    allow(provisioner).to receive(:provision) do
+      agent_run.update!(service_container_ids: [ 101, 202 ])
+      raise Containers::Provision::TimeoutError, "timed out"
+    end
+
+    result = service.call
+
+    expect(result.status).to eq("capture_timeout")
+    expect(agent_run.reload.service_container_ids).to eq([])
+    expect(service.instance_variable_get(:@screenshot_service_container_ids)).to contain_exactly(101, 202)
   end
 end
