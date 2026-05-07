@@ -8,7 +8,7 @@ module Screenshots
       new(...).call
     end
 
-    def initialize(github_client:, repo:, pr_number:, commit_sha:, screenshot_paths:, storage: Screenshots::Storage.new)
+    def initialize(github_client:, repo:, pr_number:, commit_sha:, screenshot_paths:, storage: nil)
       @github_client = github_client
       @repo = repo
       @pr_number = pr_number
@@ -45,7 +45,7 @@ module Screenshots
 
     private
 
-    attr_reader :screenshot_paths, :storage
+    attr_reader :screenshot_paths
 
     def owner
       repo_parts.fetch(0)
@@ -62,6 +62,10 @@ module Screenshots
 
         parts
       end
+    end
+
+    def storage
+      @storage ||= Screenshots::Storage.new
     end
   end
 end

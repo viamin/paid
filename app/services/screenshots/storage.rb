@@ -1,10 +1,11 @@
 # frozen_string_literal: true
 
 require "aws-sdk-s3"
+require "cgi"
 
 module Screenshots
-  # Uploads screenshot PNG files to S3-compatible object storage and generates
-  # signed URLs for inline viewing in PR comments.
+  # Uploads screenshot PNG files to S3-compatible object storage and returns
+  # stable object URLs for inline viewing in PR comments.
   #
   # Files are organized by: screenshots/{org}/{repo}/pr-{number}/{commit_sha}/{route_name}.png
   #
@@ -31,10 +32,10 @@ module Screenshots
     def initialize(bucket: nil, region: nil, url_ttl: nil)
       @bucket = bucket || configured_bucket
       @region = region || configured_region
-      @url_ttl = url_ttl || configured_url_ttl
+      @url_ttl = url_ttl
     end
 
-    # Uploads a PNG file to S3 and returns a signed URL.
+    # Uploads a PNG file to S3 and returns a stable object URL.
     #
     # @param file_path [String] Path to the local PNG file
     # @param org [String] GitHub org/owner
@@ -42,7 +43,7 @@ module Screenshots
     # @param pr_number [Integer] Pull request number
     # @param commit_sha [String] Commit SHA
     # @param route_name [String] Route slug for the screenshot
-    # @return [String] Signed URL for the uploaded file
+    # @return [String] Stable object URL for the uploaded file
     def upload(file_path:, org:, repo:, pr_number:, commit_sha:, route_name:)
       key = object_key(org:, repo:, pr_number:, commit_sha:, route_name:)
 
@@ -55,7 +56,7 @@ module Screenshots
         )
       end
 
-      signed_url(key)
+      public_url(key)
     rescue Aws::S3::Errors::ServiceError => e
       raise StorageError, "S3 upload failed: #{e.message}"
     end
@@ -69,7 +70,7 @@ module Screenshots
         :get_object,
         bucket: @bucket,
         key: key,
-        expires_in: @url_ttl.to_i
+        expires_in: url_ttl.to_i
       )
     end
 
@@ -109,7 +110,7 @@ module Screenshots
     #
     # @return [Boolean]
     def self.configured?
-      new.configured?
+      configured_access_key_id.present? && configured_secret_access_key.present?
     end
 
     def configured?
@@ -144,6 +145,14 @@ module Screenshots
       @presigner ||= Aws::S3::Presigner.new(client: s3_client)
     end
 
+    def public_url(key)
+      "#{public_base_url}/#{escaped_key(key)}"
+    end
+
+    def url_ttl
+      @url_ttl ||= configured_url_ttl
+    end
+
     def client_options
       opts = { region: @region }
       opts[:access_key_id] = access_key_id if access_key_id.present?
@@ -173,19 +182,57 @@ module Screenshots
     end
 
     def access_key_id
-      ENV["SCREENSHOTS_S3_ACCESS_KEY_ID"] || credentials_dig(:access_key_id)
+      self.class.send(:configured_access_key_id)
     end
 
     def secret_access_key
-      ENV["SCREENSHOTS_S3_SECRET_ACCESS_KEY"] || credentials_dig(:secret_access_key)
+      self.class.send(:configured_secret_access_key)
     end
 
     def endpoint
-      ENV["SCREENSHOTS_S3_ENDPOINT"] || credentials_dig(:endpoint)
+      self.class.send(:configured_endpoint)
+    end
+
+    def public_base_url
+      configured_public_base_url ||
+        if endpoint.present?
+          "#{endpoint.delete_suffix("/")}/#{@bucket}"
+        else
+          "https://#{@bucket}.s3.#{@region}.amazonaws.com"
+        end
+    end
+
+    def configured_public_base_url
+      value = ENV["SCREENSHOTS_S3_PUBLIC_BASE_URL"] || credentials_dig(:public_base_url)
+      value&.delete_suffix("/")
+    end
+
+    def escaped_key(key)
+      key.split("/").map { |segment| CGI.escape(segment).gsub("+", "%20") }.join("/")
     end
 
     def credentials_dig(key)
       Rails.application.credentials.dig(:screenshots, :s3, key)
+    end
+
+    class << self
+      private
+
+      def configured_access_key_id
+        ENV["SCREENSHOTS_S3_ACCESS_KEY_ID"] || credentials_dig(:access_key_id)
+      end
+
+      def configured_secret_access_key
+        ENV["SCREENSHOTS_S3_SECRET_ACCESS_KEY"] || credentials_dig(:secret_access_key)
+      end
+
+      def configured_endpoint
+        ENV["SCREENSHOTS_S3_ENDPOINT"] || credentials_dig(:endpoint)
+      end
+
+      def credentials_dig(key)
+        Rails.application.credentials.dig(:screenshots, :s3, key)
+      end
     end
   end
 end

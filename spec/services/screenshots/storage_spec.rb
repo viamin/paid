@@ -29,12 +29,13 @@ RSpec.describe Screenshots::Storage do
   end
 
   describe "#upload" do
-    it "uploads a file to S3 and returns a signed URL" do
+    it "uploads a file to S3 and returns a stable object URL" do
       file = Tempfile.new([ "screenshot", ".png" ])
       file.write("fake png data")
       file.rewind
 
       s3_client.stub_responses(:put_object, {})
+      allow(storage).to receive(:public_url).and_return("https://cdn.example.test/screenshots/acme/web/pr-42/abc1234/dashboard.png")
 
       url = storage.upload(
         file_path: file.path,
@@ -45,7 +46,7 @@ RSpec.describe Screenshots::Storage do
         route_name: "dashboard"
       )
 
-      expect(url).to include("test-bucket")
+      expect(url).to eq("https://cdn.example.test/screenshots/acme/web/pr-42/abc1234/dashboard.png")
       expect(url).to include("dashboard.png")
     ensure
       file.close
@@ -73,6 +74,30 @@ RSpec.describe Screenshots::Storage do
       file.close
       file.unlink
     end
+
+    it "does not evaluate URL TTL configuration when returning stable URLs" do
+      file = Tempfile.new([ "screenshot", ".png" ])
+      file.write("fake png data")
+      file.rewind
+
+      s3_client.stub_responses(:put_object, {})
+      allow(storage).to receive(:configured_url_ttl).and_raise(ArgumentError, "ttl should stay lazy")
+      allow(storage).to receive(:public_url).and_return("https://cdn.example.test/screenshots/acme/web/pr-42/abc1234/dashboard.png")
+
+      expect {
+        storage.upload(
+          file_path: file.path,
+          org: "acme",
+          repo: "web",
+          pr_number: 42,
+          commit_sha: "abc1234",
+          route_name: "dashboard"
+        )
+      }.not_to raise_error
+    ensure
+      file.close
+      file.unlink
+    end
   end
 
   describe "#signed_url" do
@@ -91,6 +116,28 @@ RSpec.describe Screenshots::Storage do
         key: "screenshots/acme/web/pr-42/abc1234/dashboard.png",
         expires_in: 1234
       )
+    end
+  end
+
+  describe "#public_url" do
+    it "builds a stable S3 URL when no custom endpoint is configured" do
+      url = storage.send(:public_url, "screenshots/acme/web/pr-42/abc1234/dashboard.png")
+
+      expect(url).to eq("https://test-bucket.s3.us-east-1.amazonaws.com/screenshots/acme/web/pr-42/abc1234/dashboard.png")
+    end
+
+    it "builds a stable endpoint URL when a custom endpoint is configured" do
+      allow(storage).to receive(:endpoint).and_return("https://s3.example.test")
+
+      url = storage.send(:public_url, "screenshots/acme/web/pr-42/abc1234/dashboard.png")
+
+      expect(url).to eq("https://s3.example.test/test-bucket/screenshots/acme/web/pr-42/abc1234/dashboard.png")
+    end
+
+    it "URL-encodes path segments" do
+      url = storage.send(:public_url, "screenshots/acme/web/pr-42/abc1234/project show.png")
+
+      expect(url).to end_with("/screenshots/acme/web/pr-42/abc1234/project%20show.png")
     end
   end
 
@@ -154,6 +201,29 @@ RSpec.describe Screenshots::Storage do
     end
   end
 
+  describe ".configured?" do
+    around do |example|
+      original_env = ENV.to_h.slice(
+        "SCREENSHOTS_S3_ACCESS_KEY_ID",
+        "SCREENSHOTS_S3_SECRET_ACCESS_KEY",
+        "SCREENSHOTS_S3_URL_TTL"
+      )
+      example.run
+    ensure
+      %w[SCREENSHOTS_S3_ACCESS_KEY_ID SCREENSHOTS_S3_SECRET_ACCESS_KEY SCREENSHOTS_S3_URL_TTL].each do |key|
+        original_env.key?(key) ? ENV[key] = original_env[key] : ENV.delete(key)
+      end
+    end
+
+    it "checks only credentials and ignores unrelated URL TTL settings" do
+      ENV["SCREENSHOTS_S3_ACCESS_KEY_ID"] = "AKIA..."
+      ENV["SCREENSHOTS_S3_SECRET_ACCESS_KEY"] = "secret"
+      ENV["SCREENSHOTS_S3_URL_TTL"] = (described_class::MAX_URL_TTL + 1).to_s
+
+      expect(described_class.configured?).to be(true)
+    end
+  end
+
   describe "default URL TTL configuration" do
     around do |example|
       original_env = ENV.to_h.slice("SCREENSHOTS_S3_URL_TTL")
@@ -184,17 +254,19 @@ RSpec.describe Screenshots::Storage do
     it "rejects non-positive TTL overrides" do
       ENV["SCREENSHOTS_S3_URL_TTL"] = "0"
 
-      expect {
-        described_class.new(bucket: "test-bucket", region: "us-east-1")
-      }.to raise_error(ArgumentError, /SCREENSHOTS_S3_URL_TTL must be positive/)
+      storage = described_class.new(bucket: "test-bucket", region: "us-east-1")
+
+      expect { storage.send(:configured_url_ttl) }
+        .to raise_error(ArgumentError, /SCREENSHOTS_S3_URL_TTL must be positive/)
     end
 
     it "rejects TTL overrides above the S3 presigner maximum" do
       ENV["SCREENSHOTS_S3_URL_TTL"] = (described_class::MAX_URL_TTL + 1).to_s
 
-      expect {
-        described_class.new(bucket: "test-bucket", region: "us-east-1")
-      }.to raise_error(ArgumentError, /cannot exceed #{described_class::MAX_URL_TTL} seconds/)
+      storage = described_class.new(bucket: "test-bucket", region: "us-east-1")
+
+      expect { storage.send(:configured_url_ttl) }
+        .to raise_error(ArgumentError, /cannot exceed #{described_class::MAX_URL_TTL} seconds/)
     end
   end
 end

@@ -97,6 +97,28 @@ RSpec.describe Screenshots::Publish do
       end
     end
 
+    context "without screenshots and without an injected storage client" do
+      subject(:service) do
+        described_class.new(
+          github_client: github_client,
+          repo: repo,
+          pr_number: pr_number,
+          commit_sha: commit_sha,
+          screenshot_paths: []
+        )
+      end
+
+      before do
+        allow(Screenshots::Storage).to receive(:new).and_raise(ArgumentError, "unexpected storage init")
+        allow(Screenshots::PrComment).to receive(:call).and_return(comment)
+      end
+
+      it "does not initialize storage for comment-only updates" do
+        expect { service.call }.not_to raise_error
+        expect(Screenshots::Storage).not_to have_received(:new)
+      end
+    end
+
     context "when the repo is invalid" do
       let(:repo) { "acme" }
       let(:screenshot_paths) { [ "/tmp/screenshots/homepage.png" ] }
