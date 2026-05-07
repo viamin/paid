@@ -69,17 +69,14 @@ RSpec.describe Models::MetaAgentSelector do
       it "restricts candidates to the complexity-derived tier" do
         result = described_class.call(agent_run: agent_run)
 
-        expect(result[:candidates].map { |c| c[:model_id] }).to contain_exactly("tier-low-agent")
+        expect(result[:candidates].map(&:model_id)).to contain_exactly("tier-low-agent")
       end
     end
 
     it "includes all candidates in the result" do
       result = described_class.call(agent_run: agent_run)
 
-      expect(result[:candidates]).to contain_exactly(
-        { model_id: "claude-sonnet-4-6", score: 9.0 },
-        { model_id: "claude-haiku-4-5-20251001", score: 5.0 }
-      )
+      expect(result[:candidates]).to contain_exactly(capable_model, cheap_model)
     end
 
     it "sends a prompt to AgentHarness with the correct parameters" do
@@ -187,7 +184,7 @@ RSpec.describe Models::MetaAgentSelector do
       it "excludes those models from candidates" do
         result = described_class.call(agent_run: agent_run)
 
-        expect(result[:candidates]).to eq([ { model_id: "claude-sonnet-4-6", score: 9.0 } ])
+        expect(result[:candidates]).to eq([ capable_model ])
       end
     end
 

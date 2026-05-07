@@ -344,6 +344,20 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(issue.reload.paid_state).to eq("in_progress")
     end
 
+    it "does not fail when model selection raises" do
+      allow(Models::Select).to receive(:call).and_raise(StandardError, "selection blew up")
+      result = nil
+
+      expect {
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+      }.not_to raise_error
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.status).to eq("queued")
+      expect(agent_run.model_selection).to be_nil
+      expect(issue.reload.paid_state).to eq("in_progress")
+    end
+
     it "records a failed phase when later side effects raise" do
       allow(Issue).to receive(:find).with(issue.id).and_return(issue)
       allow(issue).to receive(:update!).and_raise(StandardError, "issue update failed")

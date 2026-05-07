@@ -14,6 +14,7 @@ RSpec.describe Models::Select do
 
     context "with project model override (required_model_id)" do
       let!(:llm_model) { create(:llm_model, model_id: "claude-sonnet-4-6", tier: "high") }
+      let(:decision_log) { agent_run.agent_run_logs.where(log_type: "system").order(:id).last }
 
       before do
         project.update!(model_preferences: { "required_model_id" => "claude-sonnet-4-6" })
@@ -36,6 +37,70 @@ RSpec.describe Models::Select do
       it "persists a ModelSelection record" do
         expect { described_class.call(agent_run: agent_run) }
           .to change(ModelSelection, :count).by(1)
+      end
+
+      it "logs the persisted selection outcome" do
+        create(:cost_budget, :hard_stop, :per_run, project: project, limit_cents: 1_200, current_usage_cents: 300)
+
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(decision_log).to be_present
+        expect(decision_log.content).to include("Agent selection succeeded")
+        expect(decision_log.metadata).to include("type" => "model_selection_decision", "outcome" => "selected")
+        expect(decision_log.metadata.dig("selection", "model_selection_id")).to eq(selection.id)
+        expect(decision_log.metadata.dig("selection", "agent_type")).to eq(agent_run.agent_type)
+        expect(decision_log.metadata.dig("selection", "provider_key")).to eq("claude")
+        expect(decision_log.metadata.dig("selection", "model_id")).to eq("claude-sonnet-4-6")
+        expect(decision_log.metadata.dig("selection", "model_provider")).to eq(llm_model.provider)
+      end
+
+      it "logs ranked candidates for the selection" do
+        described_class.call(agent_run: agent_run)
+
+        expect(decision_log.metadata.dig("selection", "candidates")).to contain_exactly(
+          include(
+            "rank" => 1,
+            "selected" => true,
+            "model_id" => "claude-sonnet-4-6",
+            "provider" => llm_model.provider,
+            "tier" => "high"
+          )
+        )
+      end
+
+      it "logs task and repository selection inputs" do
+        create(:cost_budget, :hard_stop, :per_run, project: project, limit_cents: 1_200, current_usage_cents: 300)
+
+        described_class.call(agent_run: agent_run)
+
+        expect(decision_log.metadata.dig("inputs", "task")).to include(
+          "goal" => agent_run.goal,
+          "trigger_type" => agent_run.trigger_type,
+          "issue_id" => agent_run.issue_id
+        )
+        expect(decision_log.metadata.dig("inputs", "repository")).to include(
+          "project_id" => project.id,
+          "full_name" => project.full_name
+        )
+      end
+
+      it "logs policy constraints and budget signals" do
+        create(:cost_budget, :hard_stop, :per_run, project: project, limit_cents: 1_200, current_usage_cents: 300)
+
+        described_class.call(agent_run: agent_run)
+
+        expect(decision_log.metadata.dig("inputs", "policy_constraints")).to include(
+          "required_model_id" => "claude-sonnet-4-6"
+        )
+        expect(decision_log.metadata.dig("inputs", "budget_signals", "active_budgets")).to contain_exactly(
+          include(
+            "budget_type" => "per_run",
+            "enforcement_mode" => "hard_stop",
+            "limit_cents" => 1200,
+            "remaining_cents" => 900,
+            "hard_stop" => true
+          )
+        )
       end
 
       it "does not call meta-agent or rules-based selector" do
@@ -228,6 +293,18 @@ RSpec.describe Models::Select do
       it "returns nil" do
         expect(described_class.call(agent_run: agent_run)).to be_nil
       end
+
+      it "logs the no-selection outcome with inputs" do
+        described_class.call(agent_run: agent_run)
+
+        log = agent_run.agent_run_logs.where(log_type: "system").order(:id).last
+
+        expect(log).to be_present
+        expect(log.content).to include("no eligible models")
+        expect(log.metadata).to include("type" => "model_selection_decision", "outcome" => "no_selection")
+        expect(log.metadata["selection"]).to be_nil
+        expect(log.metadata.dig("inputs", "repository", "full_name")).to eq(project.full_name)
+      end
     end
 
     context "when override model does not exist" do
@@ -357,6 +434,26 @@ RSpec.describe Models::Select do
 
         expect(selection).to be_a(ModelSelection)
         expect(selection.tier).to be_in(%w[low mid])
+      end
+    end
+
+    context "when selection raises" do
+      before do
+        allow(Models::MetaAgentSelector).to receive(:call).and_raise(StandardError, "selector blew up")
+      end
+
+      it "logs the failure before re-raising" do
+        expect {
+          described_class.call(agent_run: agent_run)
+        }.to raise_error(StandardError, "selector blew up")
+
+        log = agent_run.agent_run_logs.where(log_type: "system").order(:id).last
+
+        expect(log).to be_present
+        expect(log.content).to include("Agent selection failed")
+        expect(log.metadata).to include("type" => "model_selection_decision", "outcome" => "failed")
+        expect(log.metadata.dig("error", "class")).to eq("StandardError")
+        expect(log.metadata.dig("error", "message")).to eq("selector blew up")
       end
     end
   end
