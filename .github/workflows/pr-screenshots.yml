@@ -8,8 +8,9 @@ on:
     types: [ closed ]
 
 # Permissions are set per-job to minimize blast radius.
-# The capture job only needs read; publish/cleanup only need the scoped access
-# required to comment on the PR and access object storage credentials.
+# This workflow never receives comment/storage secrets on `pull_request`;
+# trusted publish/comment work runs from `pr-screenshots-publish.yml` on
+# `pull_request_target` using base-branch code.
 
 # Cancel in-progress screenshot runs on the same PR when a new commit is pushed.
 # Uses PR number instead of github.ref so pull_request_target events (which resolve
@@ -189,94 +190,6 @@ jobs:
           path: tmp/screenshots/*.png
           if-no-files-found: error
           retention-days: 30
-
-  # Separate job for publishing screenshots after capture.
-  publish:
-    needs: [detect, capture]
-    if: >-
-      always()
-      && needs.detect.outputs.has_ui_changes == 'true'
-      && needs.capture.result != 'cancelled'
-      && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: write
-    env:
-      BUNDLE_FROZEN: "true"
-      RAILS_ENV: test
-      # Storage credentials — Screenshots::Storage.configured? requires both
-      # access-key and secret-key to be present. Without these the publish task
-      # raises for any captured PNGs and cleanup_pr silently no-ops.
-      SCREENSHOTS_S3_ACCESS_KEY_ID: ${{ secrets.SCREENSHOTS_S3_ACCESS_KEY_ID }}
-      SCREENSHOTS_S3_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOTS_S3_SECRET_ACCESS_KEY }}
-      SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}
-      SCREENSHOTS_S3_REGION: ${{ secrets.SCREENSHOTS_S3_REGION }}
-      SCREENSHOTS_S3_ENDPOINT: ${{ secrets.SCREENSHOTS_S3_ENDPOINT }}
-      SCREENSHOTS_S3_URL_TTL: ${{ vars.SCREENSHOTS_S3_URL_TTL }}
-      # Same-repo PR comment token override. Use SCREENSHOTS_GITHUB_TOKEN only
-      # when the default workflow token lacks permission to comment.
-      GITHUB_TOKEN: ${{ secrets.SCREENSHOTS_GITHUB_TOKEN || github.token }}
-      GITHUB_REPOSITORY: ${{ github.repository }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
-      SCREENSHOT_COMMENT_STATUS: ${{ needs.capture.result == 'success' && 'success' || 'capture_failed' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@c4e5b1316158f92e3d49443a9d58b31d25ac0f8f
-        with:
-          ruby-version: .tool-versions
-          bundler-cache: true
-
-      - name: Download screenshot artifacts
-        id: download_screenshots
-        if: needs.capture.result == 'success'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4
-        with:
-          name: pr-screenshots
-          path: screenshots-download
-
-      - name: Publish screenshots and refresh PR comment
-        run: |
-          bin/rails screenshots:publish SCREENSHOT_OUTPUT_DIR=screenshots-download
-
-  # When a synchronize event removes all UI changes, update the stale comment
-  # so reviewers aren't misled by outdated screenshots.
-  cleanup:
-    needs: detect
-    if: >-
-      needs.detect.outputs.has_ui_changes == 'false'
-      && github.event.action == 'synchronize'
-      && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: write
-    env:
-      BUNDLE_FROZEN: "true"
-      RAILS_ENV: test
-      GITHUB_TOKEN: ${{ secrets.SCREENSHOTS_GITHUB_TOKEN || github.token }}
-      GITHUB_REPOSITORY: ${{ github.repository }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
-      SCREENSHOT_COMMENT_STATUS: no_ui_changes
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@c4e5b1316158f92e3d49443a9d58b31d25ac0f8f
-        with:
-          ruby-version: .tool-versions
-          bundler-cache: true
-
-      - name: Update stale screenshot comment
-        run: bin/rails screenshots:publish
 
   # Clean up uploaded screenshots when a PR is closed or merged.
   cleanup-storage:

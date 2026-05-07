@@ -1,0 +1,142 @@
+name: PR Screenshots Publish
+
+on:
+  pull_request_target:
+    types: [ opened, synchronize, reopened, ready_for_review ]
+
+concurrency:
+  group: pr-screenshots-publish-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout trusted base-branch code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@c4e5b1316158f92e3d49443a9d58b31d25ac0f8f
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Resolve PR capture run
+        id: resolve
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_ACTION: ${{ github.event.action }}
+        run: |
+          ruby <<'RUBY'
+          require "json"
+          require "net/http"
+          require "uri"
+
+          repo = ENV.fetch("GITHUB_REPOSITORY")
+          pr_number = Integer(ENV.fetch("PR_NUMBER"))
+          head_sha = ENV.fetch("HEAD_SHA")
+          pr_action = ENV.fetch("PR_ACTION")
+          token = ENV.fetch("GITHUB_TOKEN")
+          output_path = ENV.fetch("GITHUB_OUTPUT")
+          headers = {
+            "Authorization" => "Bearer #{token}",
+            "Accept" => "application/vnd.github+json",
+            "X-GitHub-Api-Version" => "2022-11-28",
+            "User-Agent" => "paid-pr-screenshots-publish"
+          }
+
+          def get_json(url, headers)
+            uri = URI(url)
+            request = Net::HTTP::Get.new(uri, headers)
+            response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(request) }
+            unless response.is_a?(Net::HTTPSuccess)
+              raise "GitHub API request failed (#{response.code}): #{response.body}"
+            end
+
+            JSON.parse(response.body)
+          end
+
+          run = nil
+          120.times do
+            runs = get_json(
+              "https://api.github.com/repos/#{repo}/actions/workflows/pr-screenshots.yml/runs?event=pull_request&per_page=20",
+              headers
+            ).fetch("workflow_runs")
+
+            run = runs.find do |candidate|
+              candidate["head_sha"] == head_sha &&
+                candidate.fetch("pull_requests", []).any? { |pr| pr["number"] == pr_number }
+            end
+
+            break if run && run["status"] == "completed"
+
+            run = nil if run && run["status"] != "completed"
+            sleep 10
+          end
+
+          raise "Timed out waiting for PR Screenshots capture workflow for #{head_sha}" unless run
+
+          jobs = get_json(run.fetch("jobs_url"), headers).fetch("jobs")
+          capture_job = jobs.find { |job| job["name"] == "Capture" || job["name"] == "capture" }
+          raise "Could not find capture job for workflow run #{run.fetch("id")}" unless capture_job
+
+          artifacts = get_json(
+            "https://api.github.com/repos/#{repo}/actions/runs/#{run.fetch("id")}/artifacts?per_page=100",
+            headers
+          ).fetch("artifacts")
+          artifact_present = artifacts.any? { |artifact| artifact["name"] == "pr-screenshots" && !artifact["expired"] }
+
+          comment_status =
+            case capture_job["conclusion"]
+            when "success"
+              "success"
+            when "skipped"
+              pr_action == "synchronize" ? "no_ui_changes" : "skip"
+            when "cancelled"
+              "skip"
+            else
+              "capture_failed"
+            end
+
+          File.open(output_path, "a") do |file|
+            file.puts("run_id=#{run.fetch("id")}")
+            file.puts("artifact_present=#{artifact_present}")
+            file.puts("comment_status=#{comment_status}")
+          end
+          RUBY
+
+      - name: Download screenshot artifacts
+        if: steps.resolve.outputs.comment_status == 'success' && steps.resolve.outputs.artifact_present == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.resolve.outputs.run_id }}
+          name: pr-screenshots
+          path: screenshots-download
+
+      - name: Publish screenshots and refresh PR comment
+        if: steps.resolve.outputs.comment_status != 'skip'
+        env:
+          BUNDLE_FROZEN: "true"
+          RAILS_ENV: test
+          SCREENSHOTS_S3_ACCESS_KEY_ID: ${{ secrets.SCREENSHOTS_S3_ACCESS_KEY_ID }}
+          SCREENSHOTS_S3_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOTS_S3_SECRET_ACCESS_KEY }}
+          SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}
+          SCREENSHOTS_S3_REGION: ${{ secrets.SCREENSHOTS_S3_REGION }}
+          SCREENSHOTS_S3_ENDPOINT: ${{ secrets.SCREENSHOTS_S3_ENDPOINT }}
+          SCREENSHOTS_S3_URL_TTL: ${{ vars.SCREENSHOTS_S3_URL_TTL }}
+          GITHUB_TOKEN: ${{ secrets.SCREENSHOTS_GITHUB_TOKEN || github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+          SCREENSHOT_COMMENT_STATUS: ${{ steps.resolve.outputs.comment_status }}
+        run: bin/rails screenshots:publish SCREENSHOT_OUTPUT_DIR=screenshots-download

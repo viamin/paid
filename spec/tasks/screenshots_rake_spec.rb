@@ -208,6 +208,26 @@ RSpec.describe "screenshots:capture" do
         status: "no_ui_changes"
       )
     end
+
+    it "refreshes the PR comment with a failure notice when publish raises" do
+      File.write(File.join(output_dir, "dashboard.png"), "png")
+      error = Screenshots::Publish::PublishError.new("upload failed")
+
+      allow(GithubClient).to receive(:new).with(token: "ghp_test").and_return(github_client)
+      allow(Screenshots::Storage).to receive(:configured?).and_return(true)
+      allow(Screenshots::Publish).to receive(:call).and_raise(error)
+      allow(Screenshots::PrComment).to receive(:call)
+
+      expect { task.invoke }.to raise_error(Screenshots::Publish::PublishError, "upload failed")
+      expect(Screenshots::PrComment).to have_received(:call).with(
+        github_client: github_client,
+        repo: "acme/web",
+        pr_number: 42,
+        commit_sha: "abc1234def5678",
+        screenshots: [],
+        status: "capture_failed"
+      )
+    end
   end
 
   describe "screenshots:cleanup_pr" do

@@ -37,32 +37,26 @@ namespace :screenshots do
     comment_status = ENV.fetch("SCREENSHOT_COMMENT_STATUS", "success")
     screenshot_paths = Dir.glob(File.join(screenshot_dir, "*.png")).sort
     github_client = GithubClient.new(token: github_token)
-
-    if comment_status == "capture_failed"
+    post_status_comment = lambda do |status, message|
       Screenshots::PrComment.call(
         github_client: github_client,
         repo: repo,
         pr_number: pr_number,
         commit_sha: commit_sha,
         screenshots: [],
-        status: comment_status
+        status: status
       )
 
-      puts "Updated screenshot comment with capture failure for PR ##{pr_number}."
+      puts message
+    end
+
+    if comment_status == "capture_failed"
+      post_status_comment.call("capture_failed", "Updated screenshot comment with capture failure for PR ##{pr_number}.")
       next
     end
 
     if comment_status == "no_ui_changes"
-      Screenshots::PrComment.call(
-        github_client: github_client,
-        repo: repo,
-        pr_number: pr_number,
-        commit_sha: commit_sha,
-        screenshots: [],
-        status: comment_status
-      )
-
-      puts "Updated screenshot comment to mark screenshots stale for PR ##{pr_number}."
+      post_status_comment.call("no_ui_changes", "Updated screenshot comment to mark screenshots stale for PR ##{pr_number}.")
       next
     end
 
@@ -80,13 +74,18 @@ namespace :screenshots do
       next
     end
 
-    Screenshots::Publish.call(
-      github_client: github_client,
-      repo: repo,
-      pr_number: pr_number,
-      commit_sha: commit_sha,
-      screenshot_paths: screenshot_paths
-    )
+    begin
+      Screenshots::Publish.call(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshot_paths: screenshot_paths
+      )
+    rescue StandardError
+      post_status_comment.call("capture_failed", "Updated screenshot comment with capture failure for PR ##{pr_number}.")
+      raise
+    end
 
     puts "Published #{screenshot_paths.size} screenshot(s) for PR ##{pr_number}."
   end
