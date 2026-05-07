@@ -16,6 +16,56 @@ RSpec.describe Screenshots::ConfigParser do
     FileUtils.rm_rf(repo_dir)
   end
 
+  describe ".ui_detection_overrides" do
+    it "returns explicit UI pattern overrides from the repo config" do
+      write_config(repo_dir, <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+        ui_patterns:
+          - frontend/**/*
+        ui_exclusions:
+          - frontend/vendor/**/*
+      YAML
+
+      expect(described_class.ui_detection_overrides(repo_path: repo_dir)).to eq(
+        patterns: [ "frontend/**/*" ],
+        exclusions: [ "frontend/vendor/**/*" ]
+      )
+    end
+
+    it "returns an explicit framework override from project screenshot settings" do
+      project.screenshot_settings = { "framework" => "nextjs" }
+      write_config(repo_dir, <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+      YAML
+
+      expect(described_class.ui_detection_overrides(project:, repo_path: repo_dir)).to eq(
+        framework: :nextjs
+      )
+    end
+
+    it "returns project screenshot setting overrides without a repo config file" do
+      project.screenshot_settings = { "framework" => "nextjs" }
+
+      expect(described_class.ui_detection_overrides(project:, repo_path: repo_dir)).to eq(
+        framework: :nextjs
+      )
+    end
+
+    it "does not return default Rails UI patterns when the repo config omits them" do
+      write_config(repo_dir, <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+      YAML
+
+      expect(described_class.ui_detection_overrides(repo_path: repo_dir)).to eq({})
+    end
+  end
+
   describe ".from_repo_path" do
     context "with a minimal config" do
       subject(:config) { described_class.from_repo_path(repo_dir, project: project) }
@@ -222,6 +272,19 @@ RSpec.describe Screenshots::ConfigParser do
       expect {
         described_class.from_repo_path(repo_dir, project: project)
       }.to raise_error(Screenshots::ConfigError, /driver must be one of: playwright, cuprite/)
+    end
+
+    it "rejects an unknown framework" do
+      write_config(repo_dir, <<~YAML)
+        framework: phoenix
+        routes:
+          - path: /
+            name: homepage
+      YAML
+
+      expect {
+        described_class.from_repo_path(repo_dir, project: project)
+      }.to raise_error(Screenshots::ConfigError, /framework must be one of: rails, nextjs, django, generic/)
     end
 
     it "rejects empty routes" do
