@@ -6,10 +6,12 @@ class CreateOrchestrationDecisions < ActiveRecord::Migration[8.1]
       comment: "Structured log of orchestration decisions for later workflow analysis and learning." do |t|
       t.references :project,
         null: false,
+        index: false,
         foreign_key: { on_delete: :cascade },
         comment: "Owning project for tenant isolation and project-level analysis."
       t.references :agent_run,
         null: true,
+        index: false,
         foreign_key: { on_delete: :nullify },
         comment: "Agent run whose workflow emitted the decision when a specific run exists."
       t.string :decision_type,

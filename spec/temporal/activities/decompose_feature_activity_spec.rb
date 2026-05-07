@@ -33,6 +33,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
     before do
       allow(AgentHarness).to receive(:send_message).and_return(llm_response)
+      allow(Prompt).to receive(:resolve).and_return(nil)
       # Default: preserve CLI transport so existing exact-match expectations
       # pass. Individual specs flip this on to prove text-mode routing.
       allow(Llm::TextMode).to receive(:options).and_return({})
@@ -52,6 +53,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       expect(tasks[0][:parallel_group]).to eq(0)
       expect(tasks[1][:dependencies]).to eq([ 0 ])
       expect(tasks[2][:dependencies]).to eq([ 1 ])
+      expect(result[:prompt_source]).to eq("fallback_prompt")
     end
 
     it "calls AgentHarness with the correct provider and model" do
@@ -101,6 +103,20 @@ RSpec.describe Activities::DecomposeFeatureActivity do
         timeout: described_class::TIMEOUT,
         tools: :none
       )
+    end
+
+    it "returns active_prompt when a seeded prompt version is available" do
+      prompt_version = instance_double(PromptVersion, render: "[]")
+      prompt = instance_double(Prompt, current_version: prompt_version)
+      allow(Prompt).to receive(:resolve).and_return(prompt)
+
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        knowledge_context: knowledge_context
+      )
+
+      expect(result[:prompt_source]).to eq("active_prompt")
     end
 
     context "when LLM returns a single task" do
