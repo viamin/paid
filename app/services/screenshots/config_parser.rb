@@ -70,7 +70,7 @@ module Screenshots
     end
 
     def ui_detection_overrides
-      file_settings = if content.present? || blob.present? || (repo_path.present? && File.exist?(config_path))
+      file_settings = if content.present? || blob.present? || repo_config_file_present?
         parse_content(raw_content)
       else
         {}
@@ -118,7 +118,7 @@ module Screenshots
       return decode_blob(blob) if blob.present?
 
       path = config_path
-      raise ConfigError, "Missing #{config_path_label} in #{repo_path}" unless File.exist?(path)
+      ensure_config_file!(path)
 
       File.read(path)
     rescue Errno::ENOENT => e
@@ -135,6 +135,23 @@ module Screenshots
 
     def config_path_label
       explicit_project_settings["config_path"].presence || CONFIG_PATH
+    end
+
+    def repo_config_file_present?
+      return false unless repo_path.present?
+
+      path = config_path
+      return false unless File.exist?(path)
+
+      ensure_config_file!(path)
+      true
+    end
+
+    def ensure_config_file!(path)
+      return if File.file?(path)
+      raise ConfigError, "Missing #{config_path_label} in #{repo_path}" unless File.exist?(path)
+
+      raise ConfigError, "#{config_path_label} must be a file"
     end
 
     def decode_blob(value)

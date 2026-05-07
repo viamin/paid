@@ -83,6 +83,14 @@ RSpec.describe Screenshots::ConfigParser do
       }.to raise_error(Screenshots::ConfigError, "config_path escapes the repo directory")
     end
 
+    it "rejects UI override config paths that point to a directory" do
+      project.screenshot_settings = { "config_path" => "." }
+
+      expect {
+        described_class.ui_detection_overrides(project:, repo_path: repo_dir)
+      }.to raise_error(Screenshots::ConfigError, ". must be a file")
+    end
+
     it "does not return default Rails UI patterns when the repo config omits them" do
       write_config(repo_dir, <<~YAML)
         routes:
@@ -157,6 +165,15 @@ RSpec.describe Screenshots::ConfigParser do
         expect { config }.to raise_error(
           Screenshots::ConfigError,
           "config_path escapes the repo directory"
+        )
+      end
+
+      it "rejects configured paths that point to a directory" do
+        project.screenshot_settings = { "config_path" => "." }
+
+        expect { config }.to raise_error(
+          Screenshots::ConfigError,
+          ". must be a file"
         )
       end
     end
