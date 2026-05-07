@@ -11,6 +11,7 @@ RSpec.describe Project do
     it { is_expected.to have_many(:members).through(:project_memberships).source(:user) }
     it { is_expected.to have_many(:issues).dependent(:destroy) }
     it { is_expected.to have_many(:agent_runs).dependent(:destroy) }
+    it { is_expected.to have_many(:orchestration_decisions).dependent(:destroy) }
     it { is_expected.to have_many(:workflow_states).dependent(:destroy) }
   end
 
@@ -933,7 +934,12 @@ RSpec.describe Project do
 
         expect(project.effective_screenshot_settings).to eq(
           "enabled" => false,
-          "driver" => "playwright"
+          "driver" => "playwright",
+          "config_path" => ".paid/screenshots.yml",
+          "auto_capture" => true,
+          "service_dependencies" => [],
+          "setup_commands" => [],
+          "detection" => {}
         )
       end
 
@@ -942,7 +948,12 @@ RSpec.describe Project do
 
         expect(project.effective_screenshot_settings).to eq(
           "enabled" => true,
-          "driver" => "playwright"
+          "driver" => "playwright",
+          "config_path" => ".paid/screenshots.yml",
+          "auto_capture" => true,
+          "service_dependencies" => [],
+          "setup_commands" => [],
+          "detection" => {}
         )
       end
     end
@@ -971,7 +982,12 @@ RSpec.describe Project do
         expect(project.screenshot_settings).to eq("enabled" => true)
         expect(project.effective_screenshot_settings).to eq(
           "enabled" => true,
-          "driver" => "playwright"
+          "driver" => "playwright",
+          "config_path" => ".paid/screenshots.yml",
+          "auto_capture" => true,
+          "service_dependencies" => [],
+          "setup_commands" => [],
+          "detection" => {}
         )
       end
     end
@@ -1010,6 +1026,7 @@ RSpec.describe Project do
         project = build(:project, screenshot_settings: {
           "enabled" => true,
           "driver" => "cuprite",
+          "framework" => "nextjs",
           "viewport" => { "width" => 1440 }
         })
 
@@ -1028,6 +1045,13 @@ RSpec.describe Project do
 
         expect(project).not_to be_valid
         expect(project.errors[:screenshot_settings].join).to include("driver must be one of: playwright, cuprite")
+      end
+
+      it "rejects unknown screenshot frameworks" do
+        project = build(:project, screenshot_settings: { "framework" => "phoenix" })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("framework must be one of: rails, nextjs, django, generic")
       end
 
       it "rejects unknown screenshot_settings keys" do
@@ -1100,6 +1124,11 @@ RSpec.describe Project do
         expect(reloaded.effective_screenshot_settings).to eq(
           "enabled" => true,
           "driver" => "cuprite",
+          "config_path" => ".paid/screenshots.yml",
+          "auto_capture" => true,
+          "service_dependencies" => [],
+          "setup_commands" => [],
+          "detection" => {},
           "viewport" => { "width" => 1440, "height" => 900 }
         )
       end

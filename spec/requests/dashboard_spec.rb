@@ -71,6 +71,7 @@ RSpec.describe "Dashboard" do
         doc = Nokogiri::HTML(response.body)
         expect(doc.at_css("turbo-frame#dashboard-metrics[loading='lazy']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-performance[loading='lazy']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-decision-metrics[loading='lazy']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[loading='lazy']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-queue-health[loading='lazy']")).to be_present
       end
@@ -378,6 +379,69 @@ RSpec.describe "Dashboard" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("dashboard-knowledge-stats")
       expect(response.body).to include("Knowledge Base")
+    end
+  end
+
+  describe "GET /dashboard/decision_metrics" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+    let(:project) { create(:project, account: account, name: "Alpha", owner: "acme", repo: "alpha") }
+
+    before { sign_in user }
+
+    def create_decision_metric(project:, created_at:, status: "active", tags: %w[routing], agent_run_traits: [ :completed ])
+      create(:decision_record,
+        project: project,
+        agent_run: create(:agent_run, *agent_run_traits, project: project),
+        status: status,
+        tags: tags,
+        created_at: created_at)
+    end
+
+    it "returns the orchestration decision metrics partial within a turbo frame" do
+      create_decision_metric(project: project, created_at: Time.current)
+
+      get dashboard_decision_metrics_path(time_range: "cumulative")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("dashboard-decision-metrics")
+      expect(response.body).to include("Orchestration Decision Metrics")
+      expect(response.body).to include("Decision Types by Context")
+    end
+
+    it "shows an empty state when no decision records exist" do
+      get dashboard_decision_metrics_path(time_range: "cumulative")
+
+      expect(response.body).to include("No orchestration decisions yet")
+      expect(response.body).to include("Decision metrics will appear after agent runs publish decision records.")
+    end
+
+    it "shows a low-data message when the sample is too small for stable comparisons" do
+      create_decision_metric(project: project, created_at: 1.day.ago)
+
+      get dashboard_decision_metrics_path(time_range: "7d")
+
+      expect(response.body).to include("Treat trend and context comparisons as directional until more data arrives.")
+      expect(response.body).to include("Only 1 decision record across 1 project match this window.")
+      expect(response.body).to include("Not enough daily history yet for a useful trend view.")
+    end
+
+    it "scopes decision metrics to the current account and time window" do
+      create_decision_metric(project: project, created_at: 2.days.ago)
+      create_decision_metric(project: project, created_at: 1.day.ago, status: "superseded", agent_run_traits: [ :failed ])
+      create(:decision_record,
+        project: create(:project, name: "Ignored", owner: "ignored", repo: "ignored"),
+        tags: %w[routing],
+        created_at: 1.day.ago)
+      create_decision_metric(project: project, created_at: 45.days.ago, tags: %w[planning])
+
+      get dashboard_decision_metrics_path(time_range: "7d")
+
+      expect(response.body).to include("Total Decisions")
+      expect(response.body).to include("Routing")
+      expect(response.body).to include("Alpha")
+      expect(response.body).not_to include("Ignored")
+      expect(response.body).not_to include("Planning")
     end
   end
 

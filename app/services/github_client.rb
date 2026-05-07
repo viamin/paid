@@ -323,6 +323,16 @@ class GithubClient
     handle_errors { client.add_comment(repo, number, body) }
   end
 
+  # Updates an existing comment on an issue or pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param comment_id [Integer] The ID of the comment to update
+  # @param body [String] New comment body (Markdown supported)
+  # @return [Sawyer::Resource] The updated comment
+  def update_comment(repo, comment_id, body)
+    handle_errors { client.update_comment(repo, comment_id, body) }
+  end
+
   # Removes a label from an issue or pull request.
   #
   # @param repo [String] Repository in "owner/name" format

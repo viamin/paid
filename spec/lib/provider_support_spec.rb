@@ -33,8 +33,8 @@ RSpec.describe ProviderSupport do
       expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("opencode")
     end
 
-    it "excludes copilot because the CLI is not an agent runner" do
-      expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).not_to include("copilot")
+    it "includes copilot with autopilot mode support" do
+      expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("copilot")
     end
 
     it "includes aider" do
@@ -64,9 +64,9 @@ RSpec.describe ProviderSupport do
       expect(keys).to include("opencode")
     end
 
-    it "excludes copilot even when backed by the agent harness registry" do
+    it "includes copilot when backed by the agent harness registry" do
       keys = described_class.container_executable_provider_keys
-      expect(keys).not_to include("copilot")
+      expect(keys).to include("copilot")
     end
 
     it "includes aider when backed by the agent harness registry" do
@@ -96,8 +96,8 @@ RSpec.describe ProviderSupport do
       expect(described_class.container_executable_provider_key?("opencode")).to be true
     end
 
-    it "returns false for copilot" do
-      expect(described_class.container_executable_provider_key?("copilot")).to be false
+    it "returns true for copilot" do
+      expect(described_class.container_executable_provider_key?("copilot")).to be true
     end
 
     it "returns true for aider" do
@@ -326,6 +326,7 @@ RSpec.describe ProviderSupport do
           "aider" => "aider",
           "claude" => "claude",
           "codex" => "codex",
+          "copilot" => "copilot",
           "cursor" => "cursor-agent",
           "gemini" => "gemini",
           "kilocode" => "kilo",
@@ -393,13 +394,13 @@ RSpec.describe ProviderSupport do
       end
     end
 
-    describe "copilot exclusion" do
+    describe "copilot inclusion" do
       it "is listed in APP_PROVIDER_KEYS as a known provider" do
         expect(described_class::APP_PROVIDER_KEYS).to include("copilot")
       end
 
-      it "is not addable as a provider" do
-        expect(described_class.addable_provider_key?("copilot")).to be false
+      it "is addable as a container-executable provider" do
+        expect(described_class.addable_provider_key?("copilot")).to be true
       end
     end
   end

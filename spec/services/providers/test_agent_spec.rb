@@ -535,7 +535,7 @@ RSpec.describe Providers::TestAgent do
           container_executable_provider_key?: true, harness_provider_key_for: "github_copilot")
         stub_container_smoke_test(
           name: :github_copilot, status: "error",
-          message: 'OCI runtime exec failed: exec failed: unable to start container process: exec: "github-copilot-cli": executable file not found in $PATH',
+          message: 'OCI runtime exec failed: exec failed: unable to start container process: exec: "copilot": executable file not found in $PATH',
           latency_ms: 10, error_category: :installation, check: :smoke_test
         )
       end

@@ -50,8 +50,12 @@ gem "docker-api", require: false
 # Defer loading — only used by knowledge/vector search services.
 gem "qdrant-ruby", require: false
 
+# AWS S3 client [https://github.com/aws/aws-sdk-ruby]
+# Defer loading — only used by screenshot storage services.
+gem "aws-sdk-s3", require: false
+
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
-gem "agent-harness", "~> 0.17.2"
+gem "agent-harness", "~> 0.18.0"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
 # Defer loading — invoked as CLI binary, not via Ruby API.

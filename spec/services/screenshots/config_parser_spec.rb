@@ -5,8 +5,13 @@ require "rails_helper"
 
 RSpec.describe Screenshots::ConfigParser do
   def write_config(dir, content)
-    FileUtils.mkdir_p(File.join(dir, ".paid"))
-    File.write(File.join(dir, ".paid", "screenshots.yml"), content)
+    write_config_at(dir, ".paid/screenshots.yml", content)
+  end
+
+  def write_config_at(dir, path, content)
+    full_path = File.join(dir, path)
+    FileUtils.mkdir_p(File.dirname(full_path))
+    File.write(full_path, content)
   end
 
   let(:repo_dir) { Dir.mktmpdir }
@@ -14,6 +19,87 @@ RSpec.describe Screenshots::ConfigParser do
 
   after do
     FileUtils.rm_rf(repo_dir)
+  end
+
+  describe ".ui_detection_overrides" do
+    it "returns explicit UI pattern overrides from the repo config" do
+      write_config(repo_dir, <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+        ui_patterns:
+          - frontend/**/*
+        ui_exclusions:
+          - frontend/vendor/**/*
+      YAML
+
+      expect(described_class.ui_detection_overrides(repo_path: repo_dir)).to eq(
+        patterns: [ "frontend/**/*" ],
+        exclusions: [ "frontend/vendor/**/*" ]
+      )
+    end
+
+    it "returns an explicit framework override from project screenshot settings" do
+      project.screenshot_settings = { "framework" => "nextjs" }
+      write_config(repo_dir, <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+      YAML
+
+      expect(described_class.ui_detection_overrides(project:, repo_path: repo_dir)).to eq(
+        framework: :nextjs
+      )
+    end
+
+    it "returns project screenshot setting overrides without a repo config file" do
+      project.screenshot_settings = { "framework" => "nextjs" }
+
+      expect(described_class.ui_detection_overrides(project:, repo_path: repo_dir)).to eq(
+        framework: :nextjs
+      )
+    end
+
+    it "reads UI overrides from the project-configured config path" do
+      project.screenshot_settings = { "config_path" => ".paid/custom-screenshots.yml" }
+      write_config_at(repo_dir, ".paid/custom-screenshots.yml", <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+        ui_patterns:
+          - frontend/**/*
+      YAML
+
+      expect(described_class.ui_detection_overrides(project:, repo_path: repo_dir)).to eq(
+        patterns: [ "frontend/**/*" ]
+      )
+    end
+
+    it "rejects UI override config paths that escape the repo" do
+      project.screenshot_settings = { "config_path" => "../custom-screenshots.yml" }
+
+      expect {
+        described_class.ui_detection_overrides(project:, repo_path: repo_dir)
+      }.to raise_error(Screenshots::ConfigError, "config_path escapes the repo directory")
+    end
+
+    it "rejects UI override config paths that point to a directory" do
+      project.screenshot_settings = { "config_path" => "." }
+
+      expect {
+        described_class.ui_detection_overrides(project:, repo_path: repo_dir)
+      }.to raise_error(Screenshots::ConfigError, ". must be a file")
+    end
+
+    it "does not return default Rails UI patterns when the repo config omits them" do
+      write_config(repo_dir, <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+      YAML
+
+      expect(described_class.ui_detection_overrides(repo_path: repo_dir)).to eq({})
+    end
   end
 
   describe ".from_repo_path" do
@@ -54,6 +140,44 @@ RSpec.describe Screenshots::ConfigParser do
       end
     end
 
+    context "with a custom project config path" do
+      subject(:config) { described_class.from_repo_path(repo_dir, project: project) }
+
+      before do
+        project.screenshot_settings = { "config_path" => ".paid/custom-screenshots.yml" }
+
+        write_config_at(repo_dir, ".paid/custom-screenshots.yml", <<~YAML)
+          routes:
+            - path: /dashboard
+              name: dashboard
+        YAML
+      end
+
+      it "reads the configured file instead of the default path" do
+        expect(config.routes).to contain_exactly(
+          have_attributes(path: "/dashboard", name: "dashboard", requires_auth: false, seed_key: nil)
+        )
+      end
+
+      it "rejects configured paths that escape the repo" do
+        project.screenshot_settings = { "config_path" => "../custom-screenshots.yml" }
+
+        expect { config }.to raise_error(
+          Screenshots::ConfigError,
+          "config_path escapes the repo directory"
+        )
+      end
+
+      it "rejects configured paths that point to a directory" do
+        project.screenshot_settings = { "config_path" => "." }
+
+        expect { config }.to raise_error(
+          Screenshots::ConfigError,
+          ". must be a file"
+        )
+      end
+    end
+
     context "with a full config" do
       subject(:config) { described_class.from_repo_path(repo_dir, project: project) }
 
@@ -89,7 +213,7 @@ RSpec.describe Screenshots::ConfigParser do
               factory: project
               key: project
               owner: user
-          setup:
+          setup_commands:
             - bin/rails db:prepare
             - bin/rails db:seed
           services:
@@ -124,6 +248,7 @@ RSpec.describe Screenshots::ConfigParser do
       it "parses seed, setup, services, and UI globs" do
         expect(config.seed.last).to have_attributes(model: "Project", factory: "project", key: "project")
         expect(config.seed.last.attributes).to eq("owner" => "user")
+        expect(config.setup_commands).to eq([ "bin/rails db:prepare", "bin/rails db:seed" ])
         expect(config.setup).to eq([ "bin/rails db:prepare", "bin/rails db:seed" ])
         expect(config.services).to eq(%w[postgres redis])
         expect(config.ui_patterns).to eq([ "app/views/**/*", "app/components/**/*" ])
@@ -139,7 +264,7 @@ RSpec.describe Screenshots::ConfigParser do
           "enabled" => true,
           "driver" => "cuprite",
           "auth" => { "strategy" => "token", "credentials" => { "token" => "db-token" } },
-          "setup" => [ "bin/rails db:prepare" ]
+          "setup_commands" => [ "bin/rails db:prepare" ]
         }
 
         write_config(repo_dir, <<~YAML)
@@ -169,8 +294,39 @@ RSpec.describe Screenshots::ConfigParser do
         expect(config.routes).to contain_exactly(have_attributes(name: "dashboard"))
         expect(config.auth.strategy).to eq("form")
         expect(config.auth.login_path).to eq("/login")
-        expect(config.setup).to eq([ "yarn build" ])
+        expect(config.setup_commands).to eq([ "yarn build" ])
       end
+    end
+
+    it "accepts runner-based seed entries" do
+      write_config(repo_dir, <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+        seed:
+          - key: __all__
+            runner: Screenshots::SeedData::Paid.call
+      YAML
+
+      config = described_class.from_repo_path(repo_dir, project: project)
+
+      expect(config.seed.first).to have_attributes(key: "__all__", runner: "Screenshots::SeedData::Paid.call")
+    end
+
+    it "rejects raw ruby seed runners" do
+      write_config(repo_dir, <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+        seed:
+          - key: __all__
+            runner: |
+              { "user" => { "id" => 1 } }
+      YAML
+
+      expect {
+        described_class.from_repo_path(repo_dir, project: project)
+      }.to raise_error(Screenshots::ConfigError, /seed\[0\]\.runner must reference Screenshots::SeedData::<Runner>\.call/)
     end
 
     it "raises a helpful error for a missing config file" do
@@ -190,6 +346,19 @@ RSpec.describe Screenshots::ConfigParser do
       expect {
         described_class.from_repo_path(repo_dir, project: project)
       }.to raise_error(Screenshots::ConfigError, /driver must be one of: playwright, cuprite/)
+    end
+
+    it "rejects an unknown framework" do
+      write_config(repo_dir, <<~YAML)
+        framework: phoenix
+        routes:
+          - path: /
+            name: homepage
+      YAML
+
+      expect {
+        described_class.from_repo_path(repo_dir, project: project)
+      }.to raise_error(Screenshots::ConfigError, /framework must be one of: rails, nextjs, django, generic/)
     end
 
     it "rejects empty routes" do

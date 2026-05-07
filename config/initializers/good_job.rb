@@ -21,7 +21,7 @@ module Paid
       TenantSetting.resolve_worker_setting(key, env_key: env_key, env: env, default: default)
     rescue NameError
       resolve_from_env(env_key, env:, default:)
-    rescue ArgumentError
+    rescue ActiveRecord::ConnectionNotEstablished, ActiveRecord::NoDatabaseError, ArgumentError
       default
     end
 
@@ -126,6 +126,11 @@ Rails.application.configure do
       cron: "0 3 * * *",
       class: "KnowledgeAuditRetentionJob",
       description: "Delete knowledge audit events older than 90 days"
+    },
+    screenshot_cleanup: {
+      cron: "30 3 * * *",
+      class: "ScreenshotCleanupJob",
+      description: "Delete uploaded screenshots older than the retention window"
     },
     orphan_branch_reaper: {
       cron: "0 * * * *",

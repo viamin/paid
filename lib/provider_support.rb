@@ -15,9 +15,9 @@ module ProviderSupport
 
   # Provider keys whose CLIs are actually installed in the agent Docker container
   # and can execute repository-changing agent tasks. GitHub Copilot CLI is
-  # intentionally excluded: the installed github-copilot-cli only supports
-  # shell/git/gh assist subcommands, not a general agent run command.
-  CONTAINER_EXECUTABLE_PROVIDER_KEYS = Set.new(%w[aider claude codex cursor gemini kilocode opencode]).freeze
+  # included via its --autopilot mode which enables fully autonomous,
+  # non-interactive agent execution.
+  CONTAINER_EXECUTABLE_PROVIDER_KEYS = Set.new(%w[aider claude codex copilot cursor gemini kilocode opencode]).freeze
 
   module_function
 

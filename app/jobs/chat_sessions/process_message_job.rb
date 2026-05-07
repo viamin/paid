@@ -46,6 +46,8 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::TokenLimitExceededError => e
     broadcast_error(chat_session_id, stream_message_id, e.message)
+  rescue ActiveRecord::RecordNotFound
+    raise
   rescue StandardError => e
     Rails.logger.error(
       message: "chat_process_message_job.failed",

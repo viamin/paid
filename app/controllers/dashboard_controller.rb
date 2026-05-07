@@ -49,6 +49,16 @@ class DashboardController < ApplicationController
       locals: { stats: @stats, time_range: @time_range, status_filter: @status_filter, goal_filter: @goal_filter }
   end
 
+  def decision_metrics
+    @time_range = valid_time_range
+    @decision_metrics = Analytics::OrchestrationDecisions::Report.call(
+      relation: decision_records_scope,
+      filters: decision_metrics_filters
+    )
+    render partial: "dashboard/orchestration_decisions",
+      locals: { report: @decision_metrics, time_range: @time_range }
+  end
+
   def knowledge_stats
     @knowledge_stats = Knowledge::DashboardStats.call(account: current_account)
     render partial: "dashboard/knowledge_widget", locals: { knowledge_stats: @knowledge_stats }
@@ -86,5 +96,25 @@ class DashboardController < ApplicationController
   def valid_goal_filter
     goal = params[:goal].to_s
     Dashboard::Stats::VALID_GOALS.include?(goal) ? goal : "all"
+  end
+
+  def decision_records_scope
+    DecisionRecord.joins(:project).where(projects: { account_id: current_account.id })
+  end
+
+  def decision_metrics_filters
+    starts_at = time_range_start(@time_range)
+    starts_at ? { from: starts_at } : {}
+  end
+
+  def time_range_start(time_range)
+    case time_range
+    when "24h"
+      24.hours.ago
+    when "7d"
+      7.days.ago
+    when "30d"
+      30.days.ago
+    end
   end
 end

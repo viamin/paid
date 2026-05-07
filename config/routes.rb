@@ -35,6 +35,7 @@ Rails.application.routes.draw do
   get "dashboard/live", to: redirect("/dashboard")
   get "dashboard/metrics", to: "dashboard#metrics", as: :dashboard_metrics
   get "dashboard/performance", to: "dashboard#performance", as: :dashboard_performance
+  get "dashboard/decision_metrics", to: "dashboard#decision_metrics", as: :dashboard_decision_metrics
   get "dashboard/knowledge_stats", to: "dashboard#knowledge_stats", as: :dashboard_knowledge_stats
   get "dashboard/queue_health", to: "dashboard#queue_health", as: :dashboard_queue_health
   post "dashboard/cancel_run/:id", to: "dashboard#cancel_run", as: :dashboard_cancel_run
@@ -131,6 +132,8 @@ Rails.application.routes.draw do
     post :toggle_auto_merge, on: :member
     post :quality_resume, on: :member
     post :cleanup_stale_runs, on: :member
+    post :detect_screenshot_settings, on: :member
+    post :commit_screenshot_config, on: :member
     resource :workflow_status, only: [ :show ] do
       post :restart
     end
@@ -140,6 +143,9 @@ Rails.application.routes.draw do
     resource :quality_thresholds, only: [ :update ], controller: "projects/quality_thresholds"
     resource :cost_snapshot, only: [ :show ], controller: "projects/cost_snapshots"
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
+    resource :screenshot_config, only: [], controller: "projects/screenshot_configs" do
+      post :detect
+    end
     resources :cost_budgets, only: [ :create, :update, :destroy ], controller: "projects/cost_budgets"
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
       post :cancel, on: :member

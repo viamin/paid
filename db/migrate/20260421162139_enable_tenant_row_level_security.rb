@@ -33,6 +33,7 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
     context_intake_sessions
     cost_budgets
     decision_records
+    decomposition_decisions
     issues
     knowledge_artifacts
     knowledge_audit_events
@@ -594,6 +595,8 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
       "project_service_containers",
       "service_container_metrics",
       "knowledge_usage_stats",
+      # Added by a later migration but depends on the same tenant helper functions.
+      "orchestration_decisions",
       "token_usages",
       "tracker_configurations",
       "exception_incidents"

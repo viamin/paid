@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class AddScreenshotSettingsToProjects < ActiveRecord::Migration[8.1]
+class EnsureProjectScreenshotSettingsColumn < ActiveRecord::Migration[8.1]
   def up
     return if column_exists?(:projects, :screenshot_settings)
 
