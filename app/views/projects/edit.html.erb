@@ -736,7 +736,8 @@
       <% end %>
     </div>
   </div>
-  <% suggested_screenshot_config_yaml = flash[:screenshot_config_suggestion_yaml] %>
+  <% suggested_screenshot_cache_key = flash[:screenshot_config_suggestion_cache_key] %>
+  <% suggested_screenshot_config_yaml = suggested_screenshot_cache_key.present? ? Rails.cache.read(suggested_screenshot_cache_key) : nil %>
   <% suggested_screenshot_framework = flash[:screenshot_config_framework] %>
   <% suggested_screenshot_confidence = flash[:screenshot_config_confidence] %>
   <div class="mt-6 bg-white shadow sm:rounded-lg">

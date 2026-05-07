@@ -1756,18 +1756,28 @@ RSpec.describe "Projects" do
           detected_routes: [ { "path" => "/", "name" => "home" } ]
         )
       end
+      let(:memory_cache) { ActiveSupport::Cache::MemoryStore.new }
+
+      around do |example|
+        original_cache = Rails.cache
+        Rails.cache = memory_cache
+        example.run
+      ensure
+        Rails.cache = original_cache
+      end
 
       before do
         sign_in user
         allow(Screenshots::DetectFramework).to receive(:call).and_return(result)
       end
 
-      it "redirects to the edit page and stores the suggested YAML in flash" do
+      it "redirects to the edit page and stores the suggested YAML in cache" do
         post detect_project_screenshot_config_path(project)
 
         expect(response).to redirect_to(edit_project_path(project))
         expect(flash[:notice]).to include("Suggested screenshot config generated")
-        expect(flash[:screenshot_config_suggestion_yaml]).to include("driver: cuprite")
+        expect(flash[:screenshot_config_suggestion_cache_key]).to be_present
+        expect(Rails.cache.read(flash[:screenshot_config_suggestion_cache_key])).to include("driver: cuprite")
       end
 
       it "returns JSON when requested" do

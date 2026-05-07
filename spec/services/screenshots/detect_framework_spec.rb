@@ -88,4 +88,39 @@ RSpec.describe Screenshots::DetectFramework do
       expect(paths).to include("/sessions", "/sign_in")
     end
   end
+
+  describe "dependency memoization" do
+    let(:repo) do
+      instance_double(
+        described_class::LocalRepository,
+        file?: false,
+        directory?: false,
+        glob: [],
+        paths: []
+      )
+    end
+
+    before do
+      allow(repo).to receive(:read).with("Gemfile").and_return("gem 'rails'\ngem 'devise'\n")
+      allow(repo).to receive(:read).with("package.json").and_return(JSON.dump({
+        "dependencies" => { "next" => "1.0.0", "next-auth" => "1.0.0", "redis" => "1.0.0" }
+      }))
+      allow(repo).to receive(:read).with("config/database.yml").and_return("")
+      allow(repo).to receive(:read).with("config/routes.rb").and_return("devise_for :users\n")
+      allow(repo).to receive(:read).with("middleware.ts").and_return("")
+      allow(repo).to receive(:read).with("middleware.js").and_return("")
+    end
+
+    it "reads Gemfile and package.json once even when multiple detectors query dependencies" do
+      service = described_class.new(repo_path: fixture_path("generic_repo"))
+      allow(service).to receive(:repo).and_return(repo)
+
+      service.send(:detect_rails)
+      service.send(:detect_nextjs)
+      service.send(:detect_services)
+
+      expect(repo).to have_received(:read).with("Gemfile").once
+      expect(repo).to have_received(:read).with("package.json").once
+    end
+  end
 end

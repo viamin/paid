@@ -1,7 +1,11 @@
 # frozen_string_literal: true
 
+require "securerandom"
+
 module Projects
   class ScreenshotConfigsController < ApplicationController
+    SUGGESTED_CONFIG_CACHE_TTL = 10.minutes
+
     before_action :set_project
 
     def detect
@@ -11,7 +15,7 @@ module Projects
 
       respond_to do |format|
         format.html do
-          flash[:screenshot_config_suggestion_yaml] = result.suggested_yaml
+          flash[:screenshot_config_suggestion_cache_key] = cache_suggested_yaml(result.suggested_yaml)
           flash[:screenshot_config_framework] = result.framework.to_s
           flash[:screenshot_config_confidence] = result.confidence
           redirect_to edit_project_path(@project),
@@ -38,6 +42,17 @@ module Projects
 
     def set_project
       @project = policy_scope(Project).includes(:github_token, :created_by).find(params[:project_id])
+    end
+
+    def cache_suggested_yaml(suggested_yaml)
+      cache_key = [
+        "projects",
+        @project.id,
+        "screenshot-config-suggestion",
+        SecureRandom.uuid
+      ].join("/")
+      Rails.cache.write(cache_key, suggested_yaml, expires_in: SUGGESTED_CONFIG_CACHE_TTL)
+      cache_key
     end
   end
 end

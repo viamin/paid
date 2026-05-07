@@ -215,10 +215,14 @@ module Screenshots
     end
 
     def gemfile_dependencies
-      content = repo.read("Gemfile")
-      return [] if content.blank?
-
-      content.scan(/^\s*gem\s+["']([^"']+)["']/).flatten
+      @gemfile_dependencies ||= begin
+        content = repo.read("Gemfile")
+        if content.blank?
+          []
+        else
+          content.scan(/^\s*gem\s+["']([^"']+)["']/).flatten
+        end
+      end
     end
 
     def gemfile_dependency?(name)
@@ -226,16 +230,20 @@ module Screenshots
     end
 
     def package_dependencies
-      content = repo.read("package.json")
-      return [] if content.blank?
-
-      data = JSON.parse(content)
-      JS_DEPENDENCY_KEYS.flat_map do |key|
-        deps = data[key]
-        deps.is_a?(Hash) ? deps.keys : []
+      @package_dependencies ||= begin
+        content = repo.read("package.json")
+        if content.blank?
+          []
+        else
+          data = JSON.parse(content)
+          JS_DEPENDENCY_KEYS.flat_map do |key|
+            deps = data[key]
+            deps.is_a?(Hash) ? deps.keys : []
+          end
+        end
+      rescue JSON::ParserError
+        []
       end
-    rescue JSON::ParserError
-      []
     end
 
     def package_dependency?(name)
