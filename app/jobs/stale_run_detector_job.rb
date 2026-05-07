@@ -40,6 +40,12 @@ class StaleRunDetectorJob < ApplicationJob
   # PR scanning indefinitely if the pause is never acted on.
   PAUSED_TIMEOUT = AgentRun.stale_paused_timeout
 
+  # Issues with paid_state=in_progress are only eligible for recovery once
+  # they've been orphaned for at least this long. Avoids racing with run
+  # creation (create_agent_run_activity sets in_progress then enqueues the
+  # workflow, which may take a few seconds to produce a visible AgentRun).
+  ORPHANED_IN_PROGRESS_AGE = 15.minutes
+
   # Maximum times a stale claimed run can be automatically unclaimed before
   # being timed out. Prevents infinite retry loops when the underlying
   # issue is persistent (e.g. misconfigured project, missing credentials).
@@ -55,6 +61,7 @@ class StaleRunDetectorJob < ApplicationJob
     unclaimed = 0
     requeued = 0
     skipped = 0
+    recovered_orphans = 0
 
     stale_running_runs(running_threshold).find_each do |agent_run|
       resolved += 1 if resolve_stale_run(agent_run)
@@ -100,6 +107,8 @@ class StaleRunDetectorJob < ApplicationJob
       )
     end
 
+    recovered_orphans = recover_orphaned_in_progress_issues
+
     duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - job_started_at) * 1000).round
     Rails.logger.info(
       message: "stale_run_detector.completed",
@@ -107,13 +116,80 @@ class StaleRunDetectorJob < ApplicationJob
       unclaimed: unclaimed,
       requeued: requeued,
       skipped: skipped,
+      recovered_orphans: recovered_orphans,
       duration_ms: duration_ms
     )
 
-    ProcessRunQueueJob.perform_later if resolved > 0 || unclaimed > 0 || requeued > 0
+    ProcessRunQueueJob.perform_later if resolved > 0 || unclaimed > 0 || requeued > 0 || recovered_orphans > 0
   end
 
   private
+
+  # Finds issues stuck in paid_state=in_progress that have no active agent
+  # run. This can happen when a Temporal workflow crashes before reaching a
+  # terminal activity, or when an agent run is deleted without updating the
+  # associated issue. Without recovery these issues are invisible to auto-pick
+  # (which skips in_progress) and invisible to all other cleanup jobs (which
+  # operate top-down from AgentRun records).
+  def recover_orphaned_in_progress_issues
+    active_issue_ids = AgentRun.where(status: AgentRun::UNFINISHED_STATUSES)
+      .where.not(issue_id: nil)
+      .select(:issue_id)
+
+    orphans = Issue.where(paid_state: "in_progress", is_pull_request: false)
+      .where.not(id: active_issue_ids)
+      .where("updated_at < ?", ORPHANED_IN_PROGRESS_AGE.ago)
+
+    count = 0
+    orphans.find_each do |issue|
+      issue.with_lock do
+        issue.reload
+        next unless recoverable_orphaned_issue?(issue)
+
+        issue.update!(paid_state: "new")
+        count += 1
+        Rails.logger.info(
+          message: "stale_run_detector.recovered_orphaned_in_progress",
+          issue_id: issue.id,
+          issue_number: issue.github_number,
+          project_id: issue.project_id
+        )
+      end
+    rescue => e
+      Rails.logger.error(
+        message: "stale_run_detector.recover_orphan_failed",
+        issue_id: issue.id,
+        error: e.message
+      )
+    end
+    count
+  end
+
+  def recoverable_orphaned_issue?(issue)
+    return false unless issue.paid_state == "in_progress"
+    return false if AgentRun.where(issue: issue, status: AgentRun::UNFINISHED_STATUSES).exists?
+    return false if orphaned_enhance_issue_recheck?(issue)
+
+    true
+  end
+
+  # FetchIssuesActivity intentionally moves a needs_input issue to
+  # in_progress before QueueAgentRunActivity persists the follow-up
+  # enhance_issue run. If that workflow dies in between, the issue is
+  # orphaned but still semantically belongs to the enhance_issue path.
+  # Resetting it to "new" would let normal auto-pick queue create_pr
+  # instead of the intended enhancement rerun.
+  def orphaned_enhance_issue_recheck?(issue)
+    return false if issue.enhance_issue_rounds.zero?
+    return false if issue.has_label?(issue.project.enhance_issue_needs_input_label_name)
+    return false if issue.has_label?(issue.project.enhance_issue_enhanced_label_name)
+
+    latest_goal_for(issue) == "enhance_issue"
+  end
+
+  def latest_goal_for(issue)
+    issue.agent_runs.order(created_at: :desc, id: :desc).limit(1).pick(:goal)
+  end
 
   # Uses the default timeout rather than per-user maximums. Individual run
   # timeouts are enforced by the Temporal workflow; this job is a safety net

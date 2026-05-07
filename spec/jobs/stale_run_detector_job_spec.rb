@@ -505,5 +505,108 @@ RSpec.describe StaleRunDetectorJob do
         expect(stale_run.stale_requeue_count).to eq(1)
       end
     end
+
+    context "with orphaned in_progress issues" do
+      let(:project) { create(:project) }
+
+      it "resets an orphaned in_progress issue to new when no active run exists" do
+        issue = create(:issue, project: project, paid_state: "in_progress",
+          updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+
+        described_class.perform_now
+
+        expect(issue.reload.paid_state).to eq("new")
+      end
+
+      it "does not reset an in_progress issue that has an active run" do
+        issue = create(:issue, project: project, paid_state: "in_progress",
+          updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+        create(:agent_run, :running, project: project, issue: issue)
+
+        described_class.perform_now
+
+        expect(issue.reload.paid_state).to eq("in_progress")
+      end
+
+      it "does not reset an orphaned enhance_issue recheck before its run is queued" do
+        issue = create(:issue,
+          project: project,
+          paid_state: "in_progress",
+          enhance_issue_rounds: 1,
+          labels: [],
+          updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+        create(:agent_run, :completed, :enhance_issue_goal, project: project, issue: issue, pull_request_number: nil)
+
+        described_class.perform_now
+
+        expect(issue.reload.paid_state).to eq("in_progress")
+      end
+
+      it "still resets a non-enhancement orphan with prior enhance_issue history" do
+        issue = create(:issue,
+          project: project,
+          paid_state: "in_progress",
+          enhance_issue_rounds: 1,
+          labels: [ project.enhance_issue_enhanced_label_name ],
+          updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+        create(:agent_run, :completed, :enhance_issue_goal, project: project, issue: issue, pull_request_number: nil)
+
+        described_class.perform_now
+
+        expect(issue.reload.paid_state).to eq("new")
+      end
+
+      it "does not reset an issue whose paid_state changed before lock acquisition" do
+        issue = create(:issue, project: project, paid_state: "in_progress",
+          updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+
+        issue.update_column(:paid_state, "completed")
+
+        described_class.perform_now
+
+        expect(issue.reload.paid_state).to eq("completed")
+      end
+
+      it "does not reset an issue that gets a new run between query and lock" do
+        issue = create(:issue, project: project, paid_state: "in_progress",
+          updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+
+        allow(AgentRun).to receive(:where).and_call_original
+        allow(AgentRun).to receive(:where).with(
+          hash_including(issue: issue)
+        ).and_return(double(exists?: true))
+
+        described_class.perform_now
+
+        expect(issue.reload.paid_state).to eq("in_progress")
+      end
+
+      it "does not reset a recently updated in_progress issue" do
+        issue = create(:issue, project: project, paid_state: "in_progress",
+          updated_at: 1.minute.ago)
+
+        described_class.perform_now
+
+        expect(issue.reload.paid_state).to eq("in_progress")
+      end
+
+      it "does not reset an in_progress pull request with no active run" do
+        pull_request = create(:issue, :pull_request, project: project, paid_state: "in_progress",
+          updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+
+        described_class.perform_now
+
+        expect(pull_request.reload.paid_state).to eq("in_progress")
+      end
+
+      it "enqueues ProcessRunQueueJob after recovering orphans" do
+        create(:issue, project: project, paid_state: "in_progress",
+          updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+
+        expect(ProcessRunQueueJob).to receive(:perform_later).and_call_original
+
+        described_class.perform_now
+      end
+    end
   end
 end
