@@ -1220,6 +1220,7 @@ RSpec.describe Activities::FetchIssuesActivity do
 
       before do
         allow(github_client).to receive(:issues).and_return([ updated_issue ])
+        project.update_column(:last_issue_reconciliation_at, Time.current)
       end
 
       it "passes since parameter, state: all, and direction: asc to the API" do
@@ -1435,6 +1436,118 @@ RSpec.describe Activities::FetchIssuesActivity do
 
           returned_ids = result[:issues].map { |i| i[:id] }
           expect(returned_ids).not_to include(rescannable.id)
+        end
+      end
+
+      context "when issue reconciliation is due" do
+        before do
+          project.update_column(:last_issue_reconciliation_at, 2.hours.ago)
+        end
+
+        it "closes locally-open issues not in GitHub's open set" do
+          stale = create(:issue, project: project, github_issue_id: 5000,
+                         github_number: 50, github_state: "open")
+          open_issue = create(:issue, project: project, github_issue_id: 5001,
+                              github_number: 51, github_state: "open")
+
+          allow(github_client).to receive(:issues).and_return([ updated_issue ])
+          allow(github_client).to receive(:issues).with(
+            project.full_name,
+            hash_including(state: "open")
+          ).and_return([
+            OpenStruct.new(number: 51, pull_request: nil)
+          ])
+
+          activity.execute(project_id: project.id)
+
+          expect(stale.reload.github_state).to eq("closed")
+          expect(open_issue.reload.github_state).to eq("open")
+        end
+
+        it "updates last_issue_reconciliation_at after running" do
+          allow(github_client).to receive(:issues).and_return([ updated_issue ])
+          allow(github_client).to receive(:issues).with(
+            project.full_name,
+            hash_including(state: "open")
+          ).and_return([])
+
+          freeze_time do
+            activity.execute(project_id: project.id)
+
+            expect(project.reload.last_issue_reconciliation_at).to be_within(0.1).of(Time.current)
+          end
+        end
+
+        it "skips reconciliation when truncated" do
+          stub_const("#{described_class}::DEFAULT_PER_PAGE", 2)
+          stub_const("#{described_class}::DEFAULT_MAX_PAGES", 1)
+
+          stale = create(:issue, project: project, github_issue_id: 5000,
+                         github_number: 50, github_state: "open")
+
+          allow(github_client).to receive(:issues) do |_repo, **opts|
+            if opts[:state] == "open" && !opts.key?(:since)
+              [ OpenStruct.new(number: 1), OpenStruct.new(number: 2), OpenStruct.new(number: 3) ]
+            else
+              [ updated_issue ]
+            end
+          end
+          allow(Rails.logger).to receive(:warn)
+
+          activity.execute(project_id: project.id)
+
+          expect(stale.reload.github_state).to eq("open")
+        end
+
+        it "updates last_issue_reconciliation_at even when truncated" do
+          stub_const("#{described_class}::DEFAULT_PER_PAGE", 2)
+          stub_const("#{described_class}::DEFAULT_MAX_PAGES", 1)
+
+          allow(github_client).to receive(:issues) do |_repo, **opts|
+            if opts[:state] == "open" && !opts.key?(:since)
+              [ OpenStruct.new(number: 1), OpenStruct.new(number: 2), OpenStruct.new(number: 3) ]
+            else
+              [ updated_issue ]
+            end
+          end
+          allow(Rails.logger).to receive(:warn)
+
+          freeze_time do
+            activity.execute(project_id: project.id)
+
+            expect(project.reload.last_issue_reconciliation_at).to be_within(0.1).of(Time.current)
+          end
+        end
+
+        it "does not close pull requests during issue reconciliation" do
+          stale_issue = create(:issue, project: project, github_issue_id: 5000,
+                               github_number: 50, github_state: "open")
+          stale_pr = create(:issue, :pull_request, project: project, github_issue_id: 5001,
+                            github_number: 51, github_state: "open")
+
+          allow(github_client).to receive(:issues).and_return([ updated_issue ])
+          allow(github_client).to receive(:issues).with(
+            project.full_name,
+            hash_including(state: "open")
+          ).and_return([])
+          allow(github_client).to receive_messages(pull_requests: [
+            OpenStruct.new(number: 51)
+          ])
+
+          activity.execute(project_id: project.id)
+
+          expect(stale_issue.reload.github_state).to eq("closed")
+          expect(stale_pr.reload.github_state).to eq("open")
+        end
+
+        it "skips reconciliation when recently reconciled" do
+          project.update_column(:last_issue_reconciliation_at, 5.minutes.ago)
+          stale = create(:issue, project: project, github_issue_id: 5000,
+                         github_number: 50, github_state: "open")
+
+          activity.execute(project_id: project.id)
+
+          expect(stale.reload.github_state).to eq("open")
         end
       end
     end

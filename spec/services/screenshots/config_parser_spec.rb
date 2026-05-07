@@ -139,7 +139,7 @@ RSpec.describe Screenshots::ConfigParser do
               factory: project
               key: project
               owner: user
-          setup:
+          setup_commands:
             - bin/rails db:prepare
             - bin/rails db:seed
           services:
@@ -174,6 +174,7 @@ RSpec.describe Screenshots::ConfigParser do
       it "parses seed, setup, services, and UI globs" do
         expect(config.seed.last).to have_attributes(model: "Project", factory: "project", key: "project")
         expect(config.seed.last.attributes).to eq("owner" => "user")
+        expect(config.setup_commands).to eq([ "bin/rails db:prepare", "bin/rails db:seed" ])
         expect(config.setup).to eq([ "bin/rails db:prepare", "bin/rails db:seed" ])
         expect(config.services).to eq(%w[postgres redis])
         expect(config.ui_patterns).to eq([ "app/views/**/*", "app/components/**/*" ])
@@ -189,7 +190,7 @@ RSpec.describe Screenshots::ConfigParser do
           "enabled" => true,
           "driver" => "cuprite",
           "auth" => { "strategy" => "token", "credentials" => { "token" => "db-token" } },
-          "setup" => [ "bin/rails db:prepare" ]
+          "setup_commands" => [ "bin/rails db:prepare" ]
         }
 
         write_config(repo_dir, <<~YAML)
@@ -219,8 +220,39 @@ RSpec.describe Screenshots::ConfigParser do
         expect(config.routes).to contain_exactly(have_attributes(name: "dashboard"))
         expect(config.auth.strategy).to eq("form")
         expect(config.auth.login_path).to eq("/login")
-        expect(config.setup).to eq([ "yarn build" ])
+        expect(config.setup_commands).to eq([ "yarn build" ])
       end
+    end
+
+    it "accepts runner-based seed entries" do
+      write_config(repo_dir, <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+        seed:
+          - key: __all__
+            runner: Screenshots::SeedData::Paid.call
+      YAML
+
+      config = described_class.from_repo_path(repo_dir, project: project)
+
+      expect(config.seed.first).to have_attributes(key: "__all__", runner: "Screenshots::SeedData::Paid.call")
+    end
+
+    it "rejects raw ruby seed runners" do
+      write_config(repo_dir, <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+        seed:
+          - key: __all__
+            runner: |
+              { "user" => { "id" => 1 } }
+      YAML
+
+      expect {
+        described_class.from_repo_path(repo_dir, project: project)
+      }.to raise_error(Screenshots::ConfigError, /seed\[0\]\.runner must reference Screenshots::SeedData::<Runner>\.call/)
     end
 
     it "raises a helpful error for a missing config file" do

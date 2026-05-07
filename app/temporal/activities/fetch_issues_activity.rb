@@ -10,6 +10,7 @@ module Activities
     DEFAULT_RELATIONSHIP_PARSE_ISSUE_LIMIT = 100
     DEFAULT_RELATIONSHIP_PARSE_BUDGET_SECONDS = 30
     DEFAULT_RELATIONSHIP_COMMENT_PAGES = 2
+    ISSUE_RECONCILIATION_INTERVAL = 1.hour
 
     def execute(input)
       project_id = input[:project_id]
@@ -36,6 +37,7 @@ module Activities
       enhance_issue_rechecks = detect_enhance_issue_rechecks(project, synced_issues)
       closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
       stale_pr_count = reconcile_open_pull_requests(project, client) if incremental && !truncated
+      stale_issue_count = reconcile_open_issues(project, client) if incremental && !truncated
 
       if truncated && incremental
         # Incremental fetches sort ascending (oldest-updated first), so a
@@ -119,6 +121,7 @@ module Activities
         issue_count: synced_issues.size,
         closed_count: closed_count,
         stale_pr_count: stale_pr_count || 0,
+        stale_issue_count: stale_issue_count || 0,
         incremental: incremental,
         enhance_issue_recheck_count: enhance_issue_rechecks.size,
         rescan_count: incremental ? open_issues.count { |si| si[:rescan] } : 0
@@ -658,6 +661,77 @@ module Activities
       )
 
       count
+    end
+
+    # Mirrors reconcile_open_pull_requests for issues. Fetches all open issue
+    # numbers from GitHub and closes locally-open issues not in that set.
+    # Gated by ISSUE_RECONCILIATION_INTERVAL (default 1 hour) to limit API
+    # cost, since issue counts can be much larger than PR counts.
+    def reconcile_open_issues(project, client)
+      return 0 unless issue_reconciliation_due?(project)
+
+      open_numbers, truncated = fetch_open_issue_numbers(client, project.full_name)
+
+      project.update_column(:last_issue_reconciliation_at, Time.current)
+
+      if truncated
+        logger.warn(
+          message: "github_sync.issue_reconciliation_skipped_truncated",
+          project_id: project.id
+        )
+        return 0
+      end
+
+      stale = project.issues
+        .where(github_state: "open", is_pull_request: false, source: Issue::GITHUB_SOURCE)
+      stale = stale.where.not(github_number: open_numbers) if open_numbers.any?
+
+      count = stale.count
+      if count > 0
+        stale.update_all(github_state: "closed", updated_at: Time.current)
+        project.broadcast_issues_update
+
+        logger.info(
+          message: "github_sync.reconciled_stale_issues",
+          project_id: project.id,
+          count: count
+        )
+      end
+
+      count
+    end
+
+    def issue_reconciliation_due?(project)
+      last = project.last_issue_reconciliation_at
+      last.nil? || last < ISSUE_RECONCILIATION_INTERVAL.ago
+    end
+
+    def fetch_open_issue_numbers(client, repo_full_name)
+      numbers = []
+      page = 1
+      truncated = false
+
+      loop do
+        page_issues = client.issues(repo_full_name, state: "open", per_page: DEFAULT_PER_PAGE, page: page)
+        break if page_issues.empty?
+
+        numbers.concat(page_issues.reject { |i| i.respond_to?(:pull_request) && i.pull_request }.filter_map(&:number))
+        break if page_issues.size < DEFAULT_PER_PAGE
+
+        page += 1
+        next unless page > DEFAULT_MAX_PAGES
+
+        truncated = client.issues(repo_full_name, state: "open", per_page: DEFAULT_PER_PAGE, page: page).any?
+        logger.warn(
+          message: "github_sync.fetch_issue_numbers_page_limit",
+          repo: repo_full_name,
+          fetched_count: numbers.size,
+          max_pages: DEFAULT_MAX_PAGES
+        ) if truncated
+        break
+      end
+
+      [ numbers.uniq, truncated ]
     end
 
     # Stamp relationships_parsed_at only if a concurrent trust-policy change
