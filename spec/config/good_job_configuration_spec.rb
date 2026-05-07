@@ -83,7 +83,7 @@ RSpec.describe GoodJob do
       expected_jobs = %i[
         worktree_cleanup poll_workflow_health_check stale_run_detector
         docker_orphan_cleanup recover_missing_pull_request_labels models_sync
-        ab_test_analysis process_run_queue service_container_reconciliation
+        ab_test_analysis process_run_queue service_container_reconciliation screenshot_cleanup
         knowledge_audit_retention delayed_human_feedback notifications_check_provider_quotas
       ]
 
