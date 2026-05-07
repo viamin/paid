@@ -29,13 +29,12 @@ RSpec.describe Screenshots::Storage do
   end
 
   describe "#upload" do
-    it "uploads a file to S3 and returns a signed object URL" do
+    it "uploads a file to S3 and returns a public URL" do
       file = Tempfile.new([ "screenshot", ".png" ])
       file.write("fake png data")
       file.rewind
 
       s3_client.stub_responses(:put_object, {})
-      allow(storage).to receive(:signed_url).and_return("https://cdn.example.test/screenshots/acme/web/pr-42/abc1234/dashboard.png?signature=test")
 
       url = storage.upload(
         file_path: file.path,
@@ -46,8 +45,7 @@ RSpec.describe Screenshots::Storage do
         route_name: "dashboard"
       )
 
-      expect(url).to eq("https://cdn.example.test/screenshots/acme/web/pr-42/abc1234/dashboard.png?signature=test")
-      expect(url).to include("dashboard.png")
+      expect(url).to eq("https://test-bucket.s3.us-east-1.amazonaws.com/screenshots/acme/web/pr-42/abc1234/dashboard.png")
     ensure
       file.close
       file.unlink
@@ -75,15 +73,14 @@ RSpec.describe Screenshots::Storage do
       file.unlink
     end
 
-    it "returns a signed URL for the uploaded object" do
+    it "returns a public URL (not a presigned URL) for the uploaded object" do
       file = Tempfile.new([ "screenshot", ".png" ])
       file.write("fake png data")
       file.rewind
 
       s3_client.stub_responses(:put_object, {})
-      allow(storage).to receive(:signed_url).and_return("https://cdn.example.test/screenshots/acme/web/pr-42/abc1234/dashboard.png?signature=test")
 
-      storage.upload(
+      url = storage.upload(
         file_path: file.path,
         org: "acme",
         repo: "web",
@@ -92,7 +89,8 @@ RSpec.describe Screenshots::Storage do
         route_name: "dashboard"
       )
 
-      expect(storage).to have_received(:signed_url).with("screenshots/acme/web/pr-42/abc1234/dashboard.png")
+      expect(url).not_to include("X-Amz-Signature")
+      expect(url).to eq("https://test-bucket.s3.us-east-1.amazonaws.com/screenshots/acme/web/pr-42/abc1234/dashboard.png")
     ensure
       file.close
       file.unlink
@@ -141,7 +139,7 @@ RSpec.describe Screenshots::Storage do
   end
 
   describe "#previous_screenshots" do
-    it "returns signed URLs for the most recent previous commit" do
+    it "returns public URLs for the most recent previous commit" do
       s3_client.stub_responses(:list_objects_v2, {
         contents: [
           { key: "screenshots/acme/web/pr-42/old111/dashboard.png", last_modified: 2.hours.ago },
@@ -155,7 +153,7 @@ RSpec.describe Screenshots::Storage do
       result = storage.previous_screenshots(org: "acme", repo: "web", pr_number: 42, exclude_sha: "current")
 
       expect(result.keys).to contain_exactly("dashboard", "homepage")
-      expect(result["dashboard"]).to include("screenshots/acme/web/pr-42/old111/dashboard.png")
+      expect(result["dashboard"]).to eq("https://test-bucket.s3.us-east-1.amazonaws.com/screenshots/acme/web/pr-42/old111/dashboard.png")
     end
 
     it "picks the most recent commit when multiple previous commits exist" do
@@ -170,7 +168,7 @@ RSpec.describe Screenshots::Storage do
 
       result = storage.previous_screenshots(org: "acme", repo: "web", pr_number: 42, exclude_sha: "current")
 
-      expect(result["dashboard"]).to include("newer/dashboard.png")
+      expect(result["dashboard"]).to eq("https://test-bucket.s3.us-east-1.amazonaws.com/screenshots/acme/web/pr-42/newer/dashboard.png")
     end
 
     it "returns empty hash when no previous commits exist" do

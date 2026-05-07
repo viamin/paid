@@ -20,7 +20,7 @@ RSpec.describe Screenshots::PrComment do
   let(:screenshots) do
     [
       { route_name: "dashboard", url: "https://s3.example.com/dashboard.png" },
-      { route_name: "homepage", url: "https://s3.example.com/homepage.png" }
+      { route_name: "sign_in", url: "https://s3.example.com/sign_in.png" }
     ]
   end
 
@@ -37,11 +37,22 @@ RSpec.describe Screenshots::PrComment do
       expect(body).to include("`abc1234`")
     end
 
-    it "renders a markdown table with sorted screenshots" do
+    it "renders a markdown table with sorted screenshots grouped by category" do
       body = service.build_comment_body
 
+      expect(body).to include("### Authenticated Pages")
+      expect(body).to include("### Unauthenticated Pages")
       expect(body).to include("| Dashboard | ![dashboard](https://s3.example.com/dashboard.png) |")
-      expect(body).to include("| Homepage | ![homepage](https://s3.example.com/homepage.png) |")
+      expect(body).to include("| Sign In | ![sign_in](https://s3.example.com/sign_in.png) |")
+    end
+
+    it "groups unauthenticated pages before authenticated pages" do
+      body = service.build_comment_body
+
+      unauth_pos = body.index("### Unauthenticated Pages")
+      auth_pos = body.index("### Authenticated Pages")
+
+      expect(unauth_pos).to be < auth_pos
     end
 
     it "humanizes route names with underscores" do
@@ -63,7 +74,7 @@ RSpec.describe Screenshots::PrComment do
       let(:previous_screenshots) do
         {
           "dashboard" => "https://s3.example.com/prev-dashboard.png",
-          "homepage" => "https://s3.example.com/prev-homepage.png"
+          "sign_in" => "https://s3.example.com/prev-sign_in.png"
         }
       end
 

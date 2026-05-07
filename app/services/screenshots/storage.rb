@@ -35,7 +35,12 @@ module Screenshots
       @url_ttl = url_ttl
     end
 
-    # Uploads a PNG file to S3 and returns a signed object URL.
+    # Uploads a PNG file to S3 and returns a stable public URL.
+    #
+    # The returned URL uses the configured public base URL (or the default S3
+    # virtual-hosted-style URL) so that inline images in PR comments are
+    # accessible from any browser, even when the S3 endpoint used for uploads
+    # is an internal host unreachable from the public internet.
     #
     # @param file_path [String] Path to the local PNG file
     # @param org [String] GitHub org/owner
@@ -43,7 +48,7 @@ module Screenshots
     # @param pr_number [Integer] Pull request number
     # @param commit_sha [String] Commit SHA
     # @param route_name [String] Route slug for the screenshot
-    # @return [String] Signed object URL for the uploaded file
+    # @return [String] Stable public URL for the uploaded file
     def upload(file_path:, org:, repo:, pr_number:, commit_sha:, route_name:)
       key = object_key(org:, repo:, pr_number:, commit_sha:, route_name:)
 
@@ -56,7 +61,7 @@ module Screenshots
         )
       end
 
-      signed_url(key)
+      public_url(key)
     rescue Aws::S3::Errors::ServiceError => e
       raise StorageError, "S3 upload failed: #{e.message}"
     end
@@ -103,7 +108,7 @@ module Screenshots
       latest_sha = commits.max_by { |_, objects| objects.map(&:last_modified).max }.first
       commits[latest_sha].each_with_object({}) do |obj, result|
         route_name = File.basename(obj.key, ".png")
-        result[route_name] = signed_url(obj.key)
+        result[route_name] = public_url(obj.key)
       end
     rescue Aws::S3::Errors::ServiceError
       {}
