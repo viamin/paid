@@ -1946,12 +1946,31 @@ RSpec.describe "Projects" do
     context "when authenticated as owner" do
       let(:project) { create(:project, account: account, github_token: github_token) }
       let(:result) do
-        Screenshots::DetectFramework::Result.new(
-          framework: :rails,
-          confidence: 0.95,
-          suggested_config: { "enabled" => true, "driver" => "cuprite", "routes" => [ { "path" => "/", "name" => "home" } ] },
-          detected_services: [ "postgres" ],
-          detected_routes: [ { "path" => "/", "name" => "home" } ]
+        Projects::Screenshots::DetectFramework::Result.new(
+          framework: "Rails",
+          confidence: "high",
+          driver: "cuprite",
+          service_dependencies: [ "postgres" ],
+          setup_commands: [ "bin/setup --skip-server", "bin/rails db:prepare" ],
+          suggested_config: {
+            "framework" => "Rails",
+            "driver" => "cuprite",
+            "auto_capture" => true,
+            "services" => [ "postgres" ],
+            "setup" => [ "bin/setup --skip-server", "bin/rails db:prepare" ]
+          },
+          suggested_yaml: <<~YAML,
+            ---
+            framework: Rails
+            driver: cuprite
+            auto_capture: true
+            services:
+            - postgres
+            setup:
+            - bin/setup --skip-server
+            - bin/rails db:prepare
+          YAML
+          detected_at: Time.current.iso8601
         )
       end
       let(:memory_cache) { ActiveSupport::Cache::MemoryStore.new }
@@ -1966,14 +1985,14 @@ RSpec.describe "Projects" do
 
       before do
         sign_in user
-        allow(Screenshots::DetectFramework).to receive(:call).and_return(result)
+        allow(Projects::Screenshots::DetectFramework).to receive(:call).and_return(result)
       end
 
       it "redirects to the edit page and stores the suggested YAML in cache" do
         post detect_project_screenshot_config_path(project)
 
         expect(response).to redirect_to(edit_project_path(project))
-        expect(flash[:notice]).to include("Suggested screenshot config generated")
+        expect(flash[:notice]).to include("Suggested screenshot config generated for Rails.")
         expect(flash[:screenshot_config_suggestion_cache_key]).to be_present
         expect(Rails.cache.read(flash[:screenshot_config_suggestion_cache_key])).to include("driver: cuprite")
       end
@@ -1983,15 +2002,15 @@ RSpec.describe "Projects" do
 
         expect(response).to have_http_status(:ok)
         body = JSON.parse(response.body)
-        expect(body["framework"]).to eq("rails")
-        expect(body["confidence"]).to eq(0.95)
+        expect(body["framework"]).to eq("Rails")
+        expect(body["confidence"]).to eq("high")
         expect(body["suggested_yaml"]).to include("driver: cuprite")
-        expect(body["detected_services"]).to eq([ "postgres" ])
+        expect(body["service_dependencies"]).to eq([ "postgres" ])
       end
 
       context "when detection fails" do
         before do
-          allow(Screenshots::DetectFramework).to receive(:call)
+          allow(Projects::Screenshots::DetectFramework).to receive(:call)
             .and_raise(GithubClient::ApiError.new("boom"))
         end
 

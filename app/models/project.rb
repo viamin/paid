@@ -93,11 +93,6 @@ class Project < ApplicationRecord
     "metric_thresholds" => {}
   }.freeze
 
-  DEFAULT_SCREENSHOT_SETTINGS = {
-    "enabled" => false,
-    "driver" => "playwright"
-  }.freeze
-
   AUTOMATION_SETTINGS = [
     { label: "Auto-Add Labels", attribute: :auto_add_labels_enabled,
      description: "Automatically add the generated label to PRs and issues created by Paid." }.freeze,
@@ -384,8 +379,10 @@ class Project < ApplicationRecord
   end
 
   def effective_screenshot_settings
+    return @effective_screenshot_settings if defined?(@effective_screenshot_settings) && @effective_screenshot_settings
+
     stored = screenshot_settings.is_a?(Hash) ? screenshot_settings.deep_stringify_keys : {}
-    normalize_screenshot_settings(DEFAULT_SCREENSHOT_SETTINGS.deep_merge(stored))
+    @effective_screenshot_settings = normalize_screenshot_settings(DEFAULT_SCREENSHOT_SETTINGS.deep_merge(stored))
   end
 
   def effective_screenshot_status
@@ -596,15 +593,6 @@ class Project < ApplicationRecord
     super
   end
 
-  def effective_screenshot_settings
-    return @effective_screenshot_settings if defined?(@effective_screenshot_settings) && @effective_screenshot_settings
-
-    saved = screenshot_settings
-    saved = saved.is_a?(Hash) ? saved.deep_stringify_keys : {}
-
-    @effective_screenshot_settings = DEFAULT_SCREENSHOT_SETTINGS.deep_merge(saved)
-  end
-
   def screenshot_enabled
     effective_screenshot_settings["enabled"] == true
   end
@@ -614,10 +602,6 @@ class Project < ApplicationRecord
   end
 
   def screenshots_enabled?
-    screenshot_enabled
-  end
-
-  def screenshot_enabled?
     screenshot_enabled
   end
 

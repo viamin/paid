@@ -21,6 +21,12 @@ module Screenshots
       ui_patterns
       ui_exclusions
     ].freeze
+    VALID_PROJECT_TOP_LEVEL_KEYS = %w[
+      config_path
+      auto_capture
+      service_dependencies
+      detection
+    ].freeze
     VALID_ROUTE_KEYS = %w[path name requires_auth seed_key].freeze
     VALID_AUTH_KEYS = %w[strategy login_path fields credentials].freeze
     VALID_VIEWPORT_KEYS = %w[width height].freeze
@@ -136,7 +142,7 @@ module Screenshots
     end
 
     def validate_partial!(settings)
-      validate_unknown_keys!("top-level", settings, VALID_TOP_LEVEL_KEYS)
+      validate_unknown_keys!("top-level", settings, VALID_TOP_LEVEL_KEYS + VALID_PROJECT_TOP_LEVEL_KEYS)
 
       validate_driver!(settings["driver"]) if settings.key?("driver")
       validate_enabled!(settings["enabled"]) if settings.key?("enabled")
@@ -148,6 +154,10 @@ module Screenshots
       validate_string_array!("setup", settings["setup"]) if settings.key?("setup")
       validate_string_array!("setup_commands", settings["setup_commands"]) if settings.key?("setup_commands")
       validate_string_array!("services", settings["services"]) if settings.key?("services")
+      validate_config_path!(settings["config_path"]) if settings.key?("config_path")
+      validate_auto_capture!(settings["auto_capture"]) if settings.key?("auto_capture")
+      validate_string_array!("service_dependencies", settings["service_dependencies"]) if settings.key?("service_dependencies")
+      validate_detection!(settings["detection"]) if settings.key?("detection")
       validate_globs!("ui_patterns", settings["ui_patterns"]) if settings.key?("ui_patterns")
       validate_globs!("ui_exclusions", settings["ui_exclusions"]) if settings.key?("ui_exclusions")
     end
@@ -175,6 +185,24 @@ module Screenshots
       return if value.is_a?(String) && value.present?
 
       raise ConfigError, "base_url must be a non-blank string"
+    end
+
+    def validate_config_path!(value)
+      return if value.is_a?(String) && value.present?
+
+      raise ConfigError, "config_path must be a non-blank string"
+    end
+
+    def validate_auto_capture!(value)
+      return if value == true || value == false
+
+      raise ConfigError, "auto_capture must be true or false"
+    end
+
+    def validate_detection!(value)
+      return if value.is_a?(Hash)
+
+      raise ConfigError, "detection must be a mapping"
     end
 
     def validate_viewport!(value)
