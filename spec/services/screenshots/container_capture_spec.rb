@@ -111,4 +111,21 @@ RSpec.describe Screenshots::ContainerCapture do
     expect(agent_run.reload.service_container_ids).to eq([])
     expect(service.instance_variable_get(:@screenshot_service_container_ids)).to contain_exactly(101, 202)
   end
+
+  it "shell-escapes readiness probe url parts before building the probe command" do
+    allow(service).to receive(:config).and_return(
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:3000/it's-a-path",
+        "routes" => [ { "path" => "/", "name" => "home" } ]
+      )
+    )
+
+    command = service.send(:readiness_probe_command)
+
+    expect(command).to include("SCREENSHOT_APP_HOST=localhost")
+    expect(command).to include("SCREENSHOT_APP_PORT=3000")
+    expect(command).to include("SCREENSHOT_APP_PATH=/it\\'s-a-path")
+    expect(command).to include('ENV.fetch("SCREENSHOT_APP_PATH")')
+    expect(command).not_to include(%q(uri = URI("http://localhost:3000/it's-a-path")))
+  end
 end

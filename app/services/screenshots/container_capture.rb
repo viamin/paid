@@ -432,9 +432,12 @@ module Screenshots
       port = uri.port || app_port
 
       <<~SH.squish
+        SCREENSHOT_APP_HOST=#{Shellwords.escape(host)}
+        SCREENSHOT_APP_PORT=#{Shellwords.escape(port.to_s)}
+        SCREENSHOT_APP_PATH=#{Shellwords.escape(path)}
         ruby -rnet/http -ruri -e '
           deadline = Time.now + #{STARTUP_TIMEOUT_SECONDS};
-          uri = URI("http://#{host}:#{port}#{path}");
+          uri = URI("http://\#{ENV.fetch("SCREENSHOT_APP_HOST")}:\#{ENV.fetch("SCREENSHOT_APP_PORT")}\#{ENV.fetch("SCREENSHOT_APP_PATH")}");
           loop do
             begin
               response = Net::HTTP.start(uri.host, uri.port, open_timeout: 2, read_timeout: 2) { |http| http.get(uri.request_uri) };
