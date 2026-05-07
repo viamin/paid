@@ -34,6 +34,19 @@ RSpec.describe Screenshots::ConfigParser do
       )
     end
 
+    it "returns an explicit framework override from project screenshot settings" do
+      project.screenshot_settings = { "framework" => "nextjs" }
+      write_config(repo_dir, <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+      YAML
+
+      expect(described_class.ui_detection_overrides(project:, repo_path: repo_dir)).to eq(
+        framework: :nextjs
+      )
+    end
+
     it "does not return default Rails UI patterns when the repo config omits them" do
       write_config(repo_dir, <<~YAML)
         routes:
@@ -219,6 +232,19 @@ RSpec.describe Screenshots::ConfigParser do
       expect {
         described_class.from_repo_path(repo_dir, project: project)
       }.to raise_error(Screenshots::ConfigError, /driver must be one of: playwright, cuprite/)
+    end
+
+    it "rejects an unknown framework" do
+      write_config(repo_dir, <<~YAML)
+        framework: phoenix
+        routes:
+          - path: /
+            name: homepage
+      YAML
+
+      expect {
+        described_class.from_repo_path(repo_dir, project: project)
+      }.to raise_error(Screenshots::ConfigError, /framework must be one of: rails, nextjs, django, generic/)
     end
 
     it "rejects empty routes" do

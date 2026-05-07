@@ -47,7 +47,7 @@ module Screenshots
       @changed_files = Array(changed_files)
       @patterns = patterns
       @exclusions = exclusions
-      @framework = framework
+      @framework = framework&.to_sym
       @repo_path = repo_path
     end
 

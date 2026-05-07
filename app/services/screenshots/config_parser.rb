@@ -9,6 +9,7 @@ module Screenshots
     VALID_TOP_LEVEL_KEYS = %w[
       driver
       enabled
+      framework
       base_url
       viewport
       routes
@@ -84,6 +85,7 @@ module Screenshots
       explicit_settings = explicit_project_settings.merge(file_settings)
 
       {}.tap do |overrides|
+        overrides[:framework] = merged["framework"]&.to_sym if explicit_settings.key?("framework")
         overrides[:patterns] = merged["ui_patterns"] if explicit_settings.key?("ui_patterns")
         overrides[:exclusions] = merged["ui_exclusions"] if explicit_settings.key?("ui_exclusions")
       end
@@ -148,6 +150,7 @@ module Screenshots
 
       validate_driver!(settings["driver"]) if settings.key?("driver")
       validate_enabled!(settings["enabled"]) if settings.key?("enabled")
+      validate_framework!(settings["framework"]) if settings.key?("framework")
       validate_base_url!(settings["base_url"]) if settings.key?("base_url")
       validate_viewport!(settings["viewport"]) if settings.key?("viewport")
       validate_routes_shape!(settings["routes"]) if settings.key?("routes")
@@ -176,6 +179,13 @@ module Screenshots
       return if value == true || value == false
 
       raise ConfigError, "enabled must be true or false"
+    end
+
+    def validate_framework!(value)
+      framework = value.is_a?(String) || value.is_a?(Symbol) ? value.to_sym : nil
+      return if framework&.in?(FrameworkPatterns::REGISTRY.keys)
+
+      raise ConfigError, "framework must be one of: #{FrameworkPatterns::REGISTRY.keys.join(', ')}"
     end
 
     def validate_base_url!(value)

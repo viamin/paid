@@ -1010,6 +1010,7 @@ RSpec.describe Project do
         project = build(:project, screenshot_settings: {
           "enabled" => true,
           "driver" => "cuprite",
+          "framework" => "nextjs",
           "viewport" => { "width" => 1440 }
         })
 
@@ -1028,6 +1029,13 @@ RSpec.describe Project do
 
         expect(project).not_to be_valid
         expect(project.errors[:screenshot_settings].join).to include("driver must be one of: playwright, cuprite")
+      end
+
+      it "rejects unknown screenshot frameworks" do
+        project = build(:project, screenshot_settings: { "framework" => "phoenix" })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("framework must be one of: rails, nextjs, django, generic")
       end
 
       it "rejects unknown screenshot_settings keys" do
