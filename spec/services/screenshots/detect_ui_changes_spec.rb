@@ -321,6 +321,20 @@ RSpec.describe Screenshots::DetectUiChanges do
       expect(result[:ui_files]).to eq([ "app/views/projects/index.html.erb" ])
     end
 
+    it "preserves framework exclusions when custom exclusions are provided" do
+      result = described_class.call(
+        changed_files: [
+          "app/views/projects/index.html.erb",
+          "app/views/devise/mailer/reset_password_instructions.html.erb"
+        ],
+        framework: :rails,
+        exclusions: [ "app/views/pwa/**/*" ]
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "app/views/projects/index.html.erb" ])
+    end
+
     it "custom patterns override framework when both provided" do
       result = described_class.call(
         changed_files: [ "app/views/projects/index.html.erb" ],

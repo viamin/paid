@@ -36,7 +36,7 @@ module Screenshots
     # @param changed_files [Array<String>] list of file paths changed in the PR
     # @param framework [Symbol, nil] framework identifier (e.g. :rails, :nextjs)
     # @param patterns [Array<Regexp, String>, nil] custom inclusion patterns or globs (overrides framework)
-    # @param exclusions [Array<Regexp, String>, nil] custom exclusion patterns or globs (overrides framework)
+    # @param exclusions [Array<Regexp, String>, nil] custom exclusion patterns or globs (extends framework exclusions)
     # @param repo_path [String, nil] repo root for framework auto-detection
     # @return [Hash] with :ui_changes? boolean and :ui_files array
     def self.call(changed_files:, framework: nil, patterns: nil, exclusions: nil, repo_path: nil)
@@ -82,7 +82,7 @@ module Screenshots
 
         {
           patterns: @patterns || framework_patterns[:patterns],
-          exclusions: @exclusions || framework_patterns[:exclusions]
+          exclusions: framework_patterns[:exclusions] + Array(@exclusions)
         }
       end
     end
