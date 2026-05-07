@@ -3319,6 +3319,7 @@ CREATE TABLE public.projects (
     agent_runs_count integer DEFAULT 0 NOT NULL,
     completed_agent_runs_count integer DEFAULT 0 NOT NULL,
     screenshot_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
+    screenshot_status jsonb DEFAULT '{}'::jsonb NOT NULL,
     last_issue_reconciliation_at timestamp(6) without time zone
 );
 
@@ -3343,7 +3344,14 @@ COMMENT ON COLUMN public.projects.completed_agent_runs_count IS 'Counter cache f
 -- Name: COLUMN projects.screenshot_settings; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.projects.screenshot_settings IS 'Project-level defaults and overrides for repository screenshot capture config';
+COMMENT ON COLUMN public.projects.screenshot_settings IS 'Per-project screenshot capture configuration and detection metadata.';
+
+
+--
+-- Name: COLUMN projects.screenshot_status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.projects.screenshot_status IS 'Latest screenshot capture status shown in project settings.';
 
 
 --
@@ -11214,6 +11222,7 @@ SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
 ('20260507011753'),
+('20260506175107'),
 ('20260506174922'),
 ('20260506074459'),
 ('20260505220424'),

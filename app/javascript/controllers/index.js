@@ -70,6 +70,9 @@ application.register("provider-form", ProviderFormController)
 import RepositorySelectorController from "./repository_selector_controller"
 application.register("repository-selector", RepositorySelectorController)
 
+import ScreenshotConfigController from "./screenshot_config_controller"
+application.register("screenshot-config", ScreenshotConfigController)
+
 import SortableController from "./sortable_controller"
 application.register("sortable", SortableController)
 

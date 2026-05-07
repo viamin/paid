@@ -933,7 +933,12 @@ RSpec.describe Project do
 
         expect(project.effective_screenshot_settings).to eq(
           "enabled" => false,
-          "driver" => "playwright"
+          "driver" => "playwright",
+          "config_path" => ".paid/screenshots.yml",
+          "auto_capture" => true,
+          "service_dependencies" => [],
+          "setup_commands" => [],
+          "detection" => {}
         )
       end
 
@@ -942,7 +947,12 @@ RSpec.describe Project do
 
         expect(project.effective_screenshot_settings).to eq(
           "enabled" => true,
-          "driver" => "playwright"
+          "driver" => "playwright",
+          "config_path" => ".paid/screenshots.yml",
+          "auto_capture" => true,
+          "service_dependencies" => [],
+          "setup_commands" => [],
+          "detection" => {}
         )
       end
     end
@@ -971,7 +981,12 @@ RSpec.describe Project do
         expect(project.screenshot_settings).to eq("enabled" => true)
         expect(project.effective_screenshot_settings).to eq(
           "enabled" => true,
-          "driver" => "playwright"
+          "driver" => "playwright",
+          "config_path" => ".paid/screenshots.yml",
+          "auto_capture" => true,
+          "service_dependencies" => [],
+          "setup_commands" => [],
+          "detection" => {}
         )
       end
     end
@@ -1100,6 +1115,11 @@ RSpec.describe Project do
         expect(reloaded.effective_screenshot_settings).to eq(
           "enabled" => true,
           "driver" => "cuprite",
+          "config_path" => ".paid/screenshots.yml",
+          "auto_capture" => true,
+          "service_dependencies" => [],
+          "setup_commands" => [],
+          "detection" => {},
           "viewport" => { "width" => 1440, "height" => 900 }
         )
       end
