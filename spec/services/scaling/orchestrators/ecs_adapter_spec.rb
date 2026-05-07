@@ -262,6 +262,36 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
       expect(result).to be_a(Scaling::Orchestrators::Data::ResourceUpdateResult)
       expect(result.accepted).to be true
     end
+
+    it "raises for invalid cpu_limit strings" do
+      allow(adapter).to receive(:describe_service)
+        .with(service_name)
+        .and_return({ taskDefinition: task_definition[:taskDefinitionArn] })
+      allow(adapter).to receive(:describe_task_definition)
+        .with(task_definition[:taskDefinitionArn])
+        .and_return(task_definition)
+      expect(adapter).not_to receive(:register_task_definition)
+      expect(adapter).not_to receive(:run_aws).with("ecs", "update-service", any_args)
+
+      expect do
+        adapter.set_resource_limits(service: service_name, cpu_limit: "half", memory_limit: "2Gi")
+      end.to raise_error(described_class::ApiError, /cpu_limit/)
+    end
+
+    it "raises for invalid memory_limit strings" do
+      allow(adapter).to receive(:describe_service)
+        .with(service_name)
+        .and_return({ taskDefinition: task_definition[:taskDefinitionArn] })
+      allow(adapter).to receive(:describe_task_definition)
+        .with(task_definition[:taskDefinitionArn])
+        .and_return(task_definition)
+      expect(adapter).not_to receive(:register_task_definition)
+      expect(adapter).not_to receive(:run_aws).with("ecs", "update-service", any_args)
+
+      expect do
+        adapter.set_resource_limits(service: service_name, cpu_limit: "500m", memory_limit: "bogus")
+      end.to raise_error(described_class::ApiError, /memory_limit/)
+    end
   end
 
   describe "#healthy?" do

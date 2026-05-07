@@ -14,6 +14,9 @@ module Scaling
 
       class ApiError < OrchestratorError; end
 
+      CPU_LIMIT_PATTERN = /\A\d+(?:\.\d+)?m?\z/.freeze
+      MEMORY_LIMIT_PATTERN = /\A\d+(?:\.\d+)?(?:mi|gi|m|g)?\z/i.freeze
+
       FARGATE_TASK_SIZES = {
         256 => { memory_range: 512..2048, step: 512 },
         512 => { memory_range: 1024..4096, step: 1024 },
@@ -242,6 +245,8 @@ module Scaling
       # ECS uses 1024 units per vCPU, so "2" becomes 2048.
       def ecs_cpu_units(value)
         string = value.to_s.strip
+        raise ApiError, "Invalid ECS cpu_limit: #{value.inspect}" if string.blank? || !string.match?(CPU_LIMIT_PATTERN)
+
         return (string.delete_suffix("m").to_f / 1000 * 1024).round if string.end_with?("m")
 
         (string.to_f * 1024).round
@@ -249,6 +254,8 @@ module Scaling
 
       def ecs_memory_mib(value)
         string = value.to_s.strip.downcase
+        raise ApiError, "Invalid ECS memory_limit: #{value.inspect}" if string.blank? || !string.match?(MEMORY_LIMIT_PATTERN)
+
         return string.delete_suffix("mi").to_i if string.end_with?("mi")
         return (string.delete_suffix("gi").to_f * 1024).round if string.end_with?("gi")
         return string.delete_suffix("m").to_i if string.end_with?("m")
