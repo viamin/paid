@@ -19,7 +19,8 @@ RSpec.describe Workflows::PlanningWorkflow do
     let(:input) { { project_id: 1, issue_id: 2 } }
 
     before do
-      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger)
+      workflow_info = Struct.new(:workflow_id).new("test-planning-wf")
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, info: workflow_info)
     end
 
     it "accepts a single input parameter" do
@@ -48,6 +49,8 @@ RSpec.describe Workflows::PlanningWorkflow do
             { created_issues: [ { issue_id: 10 }, { issue_id: 11 }, { issue_id: 12 } ] }
           when "Activities::UpdatePlanningLabelsActivity"
             { success: true }
+          when "Activities::LogDecompositionDecisionActivity"
+            { decomposition_decision_id: 1 }
           else
             {}
           end
@@ -62,7 +65,7 @@ RSpec.describe Workflows::PlanningWorkflow do
         expect(result[:created_issues]).to eq([ { issue_id: 10 }, { issue_id: 11 }, { issue_id: 12 } ])
       end
 
-      it "calls all four activities in sequence" do
+      it "calls the planning activities in sequence" do
         workflow.execute(input)
 
         expect(workflow).to have_received(:run_activity)
@@ -77,6 +80,21 @@ RSpec.describe Workflows::PlanningWorkflow do
         expect(workflow).to have_received(:run_activity)
           .with(Activities::UpdatePlanningLabelsActivity, hash_including(project_id: 1, issue_id: 2, task_count: 3), timeout: 30)
       end
+
+      it "logs the final planning decision" do
+        workflow.execute(input)
+
+        expect(workflow).to have_received(:run_activity)
+          .with(Activities::LogDecompositionDecisionActivity,
+            hash_including(
+              workflow_name: "Workflows::PlanningWorkflow",
+              decision_type: "planning_outcome",
+              outcome: "sub_issues_created",
+              plan_data: hash_including(tasks: tasks)
+            ),
+            timeout: 30,
+            retry_policy: Workflows::PlanningWorkflow::NO_RETRY)
+      end
     end
 
     context "when decomposition produces a single task" do
@@ -90,9 +108,11 @@ RSpec.describe Workflows::PlanningWorkflow do
           when "Activities::FetchPlanningContextActivity"
             { context: {} }
           when "Activities::DecomposeFeatureActivity"
-            { tasks: tasks }
+            { tasks: tasks, prompt_source: "fallback_prompt" }
           when "Activities::UpdatePlanningLabelsActivity"
             { success: true }
+          when "Activities::LogDecompositionDecisionActivity"
+            { decomposition_decision_id: 2 }
           else
             {}
           end
@@ -107,6 +127,14 @@ RSpec.describe Workflows::PlanningWorkflow do
         expect(result[:created_issues]).to eq([])
         expect(workflow).not_to have_received(:run_activity)
           .with(Activities::CreateSubIssuesActivity, anything, any_args)
+        expect(workflow).to have_received(:run_activity)
+          .with(Activities::LogDecompositionDecisionActivity,
+            hash_including(
+              outcome: "single_task_plan",
+              metadata: hash_including(prompt_source: "fallback_prompt")
+            ),
+            timeout: 30,
+            retry_policy: Workflows::PlanningWorkflow::NO_RETRY)
       end
     end
 
@@ -120,6 +148,8 @@ RSpec.describe Workflows::PlanningWorkflow do
             { tasks: [] }
           when "Activities::UpdatePlanningLabelsActivity"
             { success: true }
+          when "Activities::LogDecompositionDecisionActivity"
+            { decomposition_decision_id: 3 }
           else
             {}
           end
@@ -132,17 +162,41 @@ RSpec.describe Workflows::PlanningWorkflow do
         expect(result[:success]).to be true
         expect(result[:task_count]).to eq(0)
         expect(result[:created_issues]).to eq([])
+        expect(workflow).to have_received(:run_activity)
+          .with(Activities::LogDecompositionDecisionActivity,
+            hash_including(outcome: "empty_plan"),
+            timeout: 30,
+            retry_policy: Workflows::PlanningWorkflow::NO_RETRY)
       end
     end
 
     context "when an activity raises an error" do
       before do
-        allow(workflow).to receive(:run_activity)
-          .and_raise(Temporalio::Error::ApplicationError.new("LLM failed", type: "DecompositionFailed"))
+        allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+          case activity_class.name
+          when "Activities::FetchPlanningContextActivity"
+            { context: {} }
+          when "Activities::DecomposeFeatureActivity"
+            raise Temporalio::Error::ApplicationError.new("LLM failed", type: "DecompositionFailed")
+          when "Activities::LogDecompositionDecisionActivity"
+            { decomposition_decision_id: 4 }
+          else
+            {}
+          end
+        end
       end
 
       it "re-raises the error" do
         expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError)
+        expect(workflow).to have_received(:run_activity)
+          .with(Activities::LogDecompositionDecisionActivity,
+            hash_including(
+              decision_type: "planning_outcome",
+              outcome: "decomposition_failed",
+              error_details: hash_including(error_message: "LLM failed")
+            ),
+            timeout: 30,
+            retry_policy: Workflows::PlanningWorkflow::NO_RETRY)
       end
     end
   end
