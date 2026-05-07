@@ -7,9 +7,13 @@ module Analytics
         total_count = distinct_count(decision_records_table[:id])
         decision_type_count = distinct_count(decision_type_expression)
 
-        rows = filtered_scope
+        scope = filtered_scope
           .joins(:project)
           .joins(decision_types_join_sql)
+
+        scope = scope.where(decision_type_expression.in(decision_types)) if decision_types.any?
+
+        rows = scope
           .group(
             projects_table[:id],
             projects_table[:name],

@@ -160,6 +160,27 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
     ]
   end
 
+  def expected_auth_uncategorized_projects
+    [
+      expected_project(
+        project: project_b,
+        total_count: 2,
+        decision_type_count: 2,
+        active_count: 1,
+        superseded_count: 0,
+        reverted_count: 1
+      ),
+      expected_project(
+        project: project_a,
+        total_count: 1,
+        decision_type_count: 1,
+        active_count: 1,
+        superseded_count: 0,
+        reverted_count: 0
+      )
+    ]
+  end
+
   describe ".call" do
     it "returns the initial question set" do
       report = described_class.call
@@ -278,7 +299,7 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
     it "filters the type rollup by tag-derived decision type, including uncategorized records" do
       report = described_class.call(filters: { decision_types: [ "AUTH", "uncategorized" ] })
 
-      expect(report[:by_project].pluck(:project_name)).to eq(%w[Beta Alpha])
+      expect(report[:by_project]).to eq(expected_auth_uncategorized_projects)
       expect(report[:by_decision_type]).to eq([
         expected_decision_type(
           decision_type: "auth",
