@@ -41,9 +41,13 @@ module ChatSessions
 
     private
 
+    MAX_CONTENT_LENGTH = 12_000
+    MAX_CONVERSATION_MESSAGES = 200
+
     def validate!
       raise ArgumentError, "chat session must be active" unless chat_session.status == "active"
       raise ArgumentError, "content cannot be blank" if content.blank?
+      raise ArgumentError, "content exceeds maximum length of #{MAX_CONTENT_LENGTH} characters" if content.length > MAX_CONTENT_LENGTH
     end
 
     def check_token_limit!
@@ -71,7 +75,6 @@ module ChatSessions
 
     # Cap conversation history to avoid unbounded memory growth and
     # exceeding the LLM context window in long-running sessions.
-    MAX_CONVERSATION_MESSAGES = 200
 
     def build_conversation
       messages = chat_session.messages.chronological

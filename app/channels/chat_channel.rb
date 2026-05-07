@@ -19,40 +19,25 @@ class ChatChannel < ApplicationCable::Channel
     return unless @chat_session
 
     TenantContext.with(current_user.account) do
-      content = data["content"]
+      content = data["content"].to_s
       return if content.blank?
       return transmit_event("error", { message: "You are not authorized to send messages" }) unless authorized_to_send_messages?
       return transmit_event("error", { message: "Rate limit exceeded" }) if rate_limited?
+      if content.length > ChatSessions::SendMessage::MAX_CONTENT_LENGTH
+        return transmit_event("error", { message: "Message exceeds maximum length" })
+      end
 
       stream_message_id = SecureRandom.uuid
       broadcast_event("message_start", { message_id: stream_message_id, model: @chat_session.model })
 
-      assistant_message = ChatSessions::SendMessage.call(
-        chat_session: @chat_session,
+      ChatSessions::ProcessMessageJob.perform_later(
+        chat_session_id: @chat_session.id,
         content: content,
-        stream_message_id: stream_message_id,
-        on_message_persisted: ->(message, stream_message_id: nil) {
-          broadcast_persisted_message(message, stream_message_id: stream_message_id)
-        },
-        on_chunk: ->(chunk) {
-          broadcast_event("message_chunk", { message_id: stream_message_id, content: chunk })
-        }
+        stream_message_id: stream_message_id
       )
-
-      broadcast_event("message_complete", {
-        message_id: stream_message_id,
-        tokens: {
-          input: assistant_message.tokens_input,
-          output: assistant_message.tokens_output
-        }
-      })
     end
-  rescue NotImplementedError => e
-    transmit_event("error", { message: e.message })
-  rescue ArgumentError => e
-    transmit_event("error", { message: e.message })
   rescue StandardError => e
-    Rails.logger.error(message: "chat_channel.send_message_failed", session_id: @chat_session.id, error: e.message)
+    Rails.logger.error(message: "chat_channel.send_message_failed", session_id: @chat_session&.id, error: e.message)
     transmit_event("error", { message: "An unexpected error occurred" })
   end
 
@@ -83,17 +68,5 @@ class ChatChannel < ApplicationCable::Channel
 
   def transmit_event(type, data)
     transmit({ type: type }.merge(data))
-  end
-
-  def broadcast_persisted_message(message, stream_message_id: nil)
-    broadcast_event("message_created", {
-      message_id: message.id,
-      role: message.role,
-      stream_message_id: stream_message_id,
-      html: ApplicationController.render(
-        partial: "chat_messages/message",
-        locals: { message: message }
-      )
-    })
   end
 end
