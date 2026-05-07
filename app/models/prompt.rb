@@ -23,6 +23,7 @@ class Prompt < ApplicationRecord
   validates :category, presence: true, inclusion: { in: CATEGORIES }
   validates :account, presence: true, if: :project_level?
   validate :project_belongs_to_account, if: -> { project.present? && account.present? }
+  validate :current_version_must_be_activatable
 
   scope :active, -> { where(active: true) }
   scope :inactive, -> { where(active: false) }
@@ -121,5 +122,12 @@ class Prompt < ApplicationRecord
     return if project.account_id == account_id
 
     errors.add(:project, "must belong to the same account")
+  end
+
+  def current_version_must_be_activatable
+    return unless current_version
+    return if current_version.activatable?
+
+    errors.add(:current_version, "must be approved before it can become active")
   end
 end

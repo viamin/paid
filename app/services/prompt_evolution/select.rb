@@ -111,7 +111,7 @@ module PromptEvolution
     # PromptVersions that are active and have enough samples to score.
     def eligible_candidates
       @eligible_candidates ||= begin
-        candidates = prompt.prompt_versions.active.includes(agent_runs: :quality_metrics).to_a
+        candidates = prompt.prompt_versions.active.activatable.includes(agent_runs: :quality_metrics).to_a
         candidates.select { |v| sample_count(v) >= @min_samples }
       end
     end

@@ -123,6 +123,16 @@ RSpec.describe PromptVersion do
       expect(described_class.rejected).to contain_exactly(rejected)
     end
 
+    it "scopes activatable versions to unreviewed and approved records" do
+      pending = create(:prompt_version, :pending_review, prompt: prompt, version: 1)
+      approved = create(:prompt_version, :approved, prompt: prompt, version: 2)
+      rejected = create(:prompt_version, :rejected, prompt: prompt, version: 3)
+      unreviewed = create(:prompt_version, prompt: prompt, version: 4)
+
+      expect(described_class.activatable).to contain_exactly(approved, unreviewed)
+      expect(described_class.activatable).not_to include(pending, rejected)
+    end
+
     it "allows review fields to be updated after creation" do
       version = create(:prompt_version, :pending_review, prompt: prompt, version: 1)
       user = create(:user)
@@ -132,6 +142,18 @@ RSpec.describe PromptVersion do
       version.review_notes = "Good enough"
       version.review_status = "approved"
       expect(version).to be_valid
+    end
+
+    it "treats only approved or unreviewed versions as activatable" do
+      pending = create(:prompt_version, :pending_review, prompt: prompt, version: 1)
+      approved = create(:prompt_version, :approved, prompt: prompt, version: 2)
+      rejected = create(:prompt_version, :rejected, prompt: prompt, version: 3)
+      unreviewed = create(:prompt_version, prompt: prompt, version: 4)
+
+      expect(pending).not_to be_activatable
+      expect(rejected).not_to be_activatable
+      expect(approved).to be_activatable
+      expect(unreviewed).to be_activatable
     end
   end
 
