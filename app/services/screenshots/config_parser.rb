@@ -6,6 +6,7 @@ require "psych"
 module Screenshots
   class ConfigParser
     CONFIG_PATH = ".paid/screenshots.yml"
+    RUNNER_REFERENCE_PATTERN = /\AScreenshots::SeedData::[A-Z]\w*(?:::[A-Z]\w*)*\.call\z/
     VALID_TOP_LEVEL_KEYS = %w[
       driver
       enabled
@@ -278,7 +279,14 @@ module Screenshots
           raise ConfigError, "seed[#{index}].key is required"
         end
 
-        next if record["runner"].is_a?(String) && record["runner"].present?
+        if record["runner"].present?
+          unless record["runner"].is_a?(String) && record["runner"].match?(RUNNER_REFERENCE_PATTERN)
+            raise ConfigError,
+              "seed[#{index}].runner must reference Screenshots::SeedData::<Runner>.call"
+          end
+
+          next
+        end
 
         %w[model factory].each do |key|
           next if record[key].is_a?(String) && record[key].present?

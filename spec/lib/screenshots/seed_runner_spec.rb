@@ -13,10 +13,6 @@ RSpec.describe Screenshots::SeedRunner do
     $stdout = original_stdout
   end
 
-  def seed_script_record
-    "FakeSeedRecord.new({ \"id\" => 1, \"username\" => \"screenshot\", \"admin\" => true, \"metadata\" => { \"ignored\" => true } })"
-  end
-
   def install_seed_script_fakes
     stub_const("TenantContext", Class.new do
       def self.with_system_access
@@ -24,6 +20,15 @@ RSpec.describe Screenshots::SeedRunner do
       end
     end)
     stub_const("FakeSeedRecord", Struct.new(:attributes))
+    stub_const("Screenshots::SeedData::Fake", Class.new do
+      def self.call
+        scalar_record
+      end
+
+      def self.scalar_record
+        ::FakeSeedRecord.new({ "id" => 1, "username" => "screenshot", "admin" => true, "metadata" => { "ignored" => true } })
+      end
+    end)
   end
 
   def run_seed_script(config)
@@ -43,10 +48,7 @@ RSpec.describe Screenshots::SeedRunner do
       "seed" => [
         {
           "key" => "__all__",
-          "runner" => "{
-            \"user\" => { \"id\" => 1, \"email\" => \"screenshot@example.com\", \"password\" => \"secret\" },
-            \"project\" => { \"id\" => 2, \"name\" => \"Paid\" }
-          }"
+          "runner" => "Screenshots::SeedData::Paid.call"
         }
       ]
     )
@@ -73,7 +75,7 @@ RSpec.describe Screenshots::SeedRunner do
 
   it "serializes all scalar record attributes for interpolation" do
     install_seed_script_fakes
-    result = run_seed_script([ { "key" => "user", "runner" => seed_script_record } ])
+    result = run_seed_script([ { "key" => "user", "runner" => "Screenshots::SeedData::Fake.call" } ])
 
     expect(result.fetch("user")).to include(
       "id" => 1,
@@ -81,5 +83,13 @@ RSpec.describe Screenshots::SeedRunner do
       "admin" => true
     )
     expect(result.fetch("user")).not_to have_key("metadata")
+  end
+
+  it "rejects arbitrary ruby runner strings" do
+    install_seed_script_fakes
+
+    expect {
+      run_seed_script([ { "key" => "user", "runner" => "system('rm -rf /')" } ])
+    }.to raise_error(ArgumentError, /Screenshots::SeedData::<Runner>\.call/)
   end
 end

@@ -13,6 +13,8 @@ module Screenshots
       seed_records = {}
       results = {}
 
+      RUNNER_PATTERN = /\\A(?<class>Screenshots::SeedData::[A-Z]\\w*(?:::[A-Z]\\w*)*)\\.call\\z/
+
       def capture_seed_result(record)
         return record unless record.respond_to?(:attributes)
 
@@ -50,12 +52,28 @@ module Screenshots
         attributes.to_h.transform_values { |value| resolve_seed_value(value, seed_records) }
       end
 
+      def execute_seed_runner(reference)
+        match = RUNNER_PATTERN.match(reference)
+        raise ArgumentError, "seed runner must reference Screenshots::SeedData::<Runner>.call" unless match
+
+        runner_class = match[:class].safe_constantize
+        raise ArgumentError, "seed runner \#{reference} could not be resolved" unless runner_class
+
+        callable = runner_class.method(:call)
+
+        unless callable.arity.zero?
+          raise ArgumentError, "seed runner \#{reference} must accept zero arguments"
+        end
+
+        runner_class.call
+      end
+
       TenantContext.with_system_access do
         seed.each do |entry|
           key = entry.fetch("key")
 
           if entry["runner"].present?
-            result = eval(entry.fetch("runner"), TOPLEVEL_BINDING, "screenshots_seed_runner", 1)
+            result = execute_seed_runner(entry.fetch("runner"))
             if key == "__all__" && result.is_a?(Hash)
               result.each do |rk, rv|
                 seed_records[rk.to_s] = rv

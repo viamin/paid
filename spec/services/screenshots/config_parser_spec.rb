@@ -181,13 +181,28 @@ RSpec.describe Screenshots::ConfigParser do
             name: homepage
         seed:
           - key: __all__
-            runner: |
-              { "user" => { "id" => 1 } }
+            runner: Screenshots::SeedData::Paid.call
       YAML
 
       config = described_class.from_repo_path(repo_dir, project: project)
 
-      expect(config.seed.first).to have_attributes(key: "__all__", runner: include('"user"'))
+      expect(config.seed.first).to have_attributes(key: "__all__", runner: "Screenshots::SeedData::Paid.call")
+    end
+
+    it "rejects raw ruby seed runners" do
+      write_config(repo_dir, <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+        seed:
+          - key: __all__
+            runner: |
+              { "user" => { "id" => 1 } }
+      YAML
+
+      expect {
+        described_class.from_repo_path(repo_dir, project: project)
+      }.to raise_error(Screenshots::ConfigError, /seed\[0\]\.runner must reference Screenshots::SeedData::<Runner>\.call/)
     end
 
     it "raises a helpful error for a missing config file" do
