@@ -213,11 +213,10 @@ jobs:
       SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}
       SCREENSHOTS_S3_REGION: ${{ secrets.SCREENSHOTS_S3_REGION }}
       SCREENSHOTS_S3_ENDPOINT: ${{ secrets.SCREENSHOTS_S3_ENDPOINT }}
-      # Target repository and token — defaults to the workflow repo for same-repo
-      # PRs. Set SCREENSHOTS_GITHUB_TOKEN and SCREENSHOTS_TARGET_REPO secrets to
-      # post screenshots to a tracked project's target-repository PR instead.
+      # Same-repo PR comment token override. Use SCREENSHOTS_GITHUB_TOKEN only
+      # when the default workflow token lacks permission to comment.
       GITHUB_TOKEN: ${{ secrets.SCREENSHOTS_GITHUB_TOKEN || github.token }}
-      GITHUB_REPOSITORY: ${{ secrets.SCREENSHOTS_TARGET_REPO || github.repository }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
@@ -261,7 +260,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.SCREENSHOTS_GITHUB_TOKEN || github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          TARGET_REPO: ${{ secrets.SCREENSHOTS_TARGET_REPO || github.repository }}
+          TARGET_REPO: ${{ github.repository }}
         run: |
           marker="<!-- pr-screenshots-comment -->"
           existing_comment_id=$(gh api \
@@ -310,6 +309,6 @@ jobs:
           SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}
           SCREENSHOTS_S3_REGION: ${{ secrets.SCREENSHOTS_S3_REGION }}
           SCREENSHOTS_S3_ENDPOINT: ${{ secrets.SCREENSHOTS_S3_ENDPOINT }}
-          GITHUB_REPOSITORY: ${{ secrets.SCREENSHOTS_TARGET_REPO || github.repository }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: bin/rails screenshots:cleanup_pr

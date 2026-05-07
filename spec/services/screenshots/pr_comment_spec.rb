@@ -73,6 +73,23 @@ RSpec.describe Screenshots::PrComment do
       expect(body).to include("No screenshots captured")
       expect(body).not_to include("| Page |")
     end
+
+    it "renders artifact fallback instructions when inline uploads are unavailable" do
+      service = described_class.new(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: [],
+        artifact_name: "pr-screenshots"
+      )
+
+      body = service.build_comment_body
+
+      expect(body).to include("inline screenshot upload is unavailable")
+      expect(body).to include("Download the `pr-screenshots` workflow artifact")
+      expect(body).not_to include("| Page |")
+    end
   end
 
   describe "#call" do

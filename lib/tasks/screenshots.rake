@@ -35,13 +35,24 @@ namespace :screenshots do
     github_token = ENV.fetch("GITHUB_TOKEN")
     screenshot_dir = ENV.fetch("SCREENSHOT_OUTPUT_DIR", "tmp/screenshots")
     screenshot_paths = Dir.glob(File.join(screenshot_dir, "*.png")).sort
+    github_client = GithubClient.new(token: github_token)
 
     if screenshot_paths.any? && !Screenshots::Storage.configured?
-      raise Screenshots::Publish::PublishError, "Screenshot storage is not configured"
+      Screenshots::PrComment.call(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: [],
+        artifact_name: "pr-screenshots"
+      )
+
+      puts "Posted artifact-only screenshot instructions for PR ##{pr_number}."
+      next
     end
 
     Screenshots::Publish.call(
-      github_client: GithubClient.new(token: github_token),
+      github_client: github_client,
       repo: repo,
       pr_number: pr_number,
       commit_sha: commit_sha,
