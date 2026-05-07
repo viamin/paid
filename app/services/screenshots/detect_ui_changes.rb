@@ -90,8 +90,10 @@ module Screenshots
     def detect_or_default_framework
       # Use repo_path if given, otherwise probe the working directory so
       # callers that only supply changed_files still get auto-detection.
+      # Uses the lightweight detection path to avoid expensive route
+      # discovery, service scanning, and auth detection.
       path = @repo_path || Dir.pwd
-      DetectFramework.call(repo_path: path).framework
+      DetectFramework.detect_framework_only(repo_path: path)
     end
 
     def ui_file?(path)

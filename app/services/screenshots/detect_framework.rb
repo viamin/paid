@@ -63,6 +63,12 @@ module Screenshots
       new(...).call
     end
 
+    # Lightweight detection that returns only the framework symbol.
+    # Skips expensive route discovery, service scanning, and auth detection.
+    def self.detect_framework_only(...)
+      new(...).detect_framework_only
+    end
+
     def initialize(project: nil, repo_path: nil, file_list: nil)
       @project = project
       @repo_path = repo_path
@@ -90,6 +96,15 @@ module Screenshots
       )
     end
 
+    # Returns only the framework symbol, skipping route discovery,
+    # service scanning, and auth detection.
+    def detect_framework_only
+      detect_framework_identity(:rails) ||
+        detect_framework_identity(:nextjs) ||
+        detect_framework_identity(:django) ||
+        :generic
+    end
+
     private
 
     def self.deep_stringify(value)
@@ -105,6 +120,42 @@ module Screenshots
       end
     end
 
+    # Runs only the confidence scoring for a given framework and returns the
+    # symbol if the score meets the threshold, without discovering routes,
+    # services, or auth configuration.
+    def detect_framework_identity(framework)
+      score = case framework
+      when :rails then score_rails
+      when :nextjs then score_nextjs
+      when :django then score_django
+      end
+      framework if score && score >= 0.5
+    end
+
+    def score_rails
+      score = 0.0
+      score += 0.55 if repo.file?("config/routes.rb")
+      score += 0.3 if gemfile_dependency?("rails")
+      score += 0.15 if repo.directory?("app/controllers")
+      score
+    end
+
+    def score_nextjs
+      score = 0.0
+      score += 0.55 if %w[next.config.js next.config.mjs next.config.ts].any? { |path| repo.file?(path) }
+      score += 0.3 if package_dependency?("next")
+      score += 0.15 if %w[app pages src/app src/pages].any? { |path| repo.directory?(path) }
+      score
+    end
+
+    def score_django
+      score = 0.0
+      score += 0.55 if repo.file?("manage.py")
+      score += 0.25 if repo.glob("**/settings.py").any?
+      score += 0.2 if repo.glob("**/urls.py").any?
+      score
+    end
+
     def repo
       @repo ||= begin
         return LocalRepository.new(repo_path) if present_value?(repo_path)
@@ -116,10 +167,7 @@ module Screenshots
     end
 
     def detect_rails
-      score = 0.0
-      score += 0.55 if repo.file?("config/routes.rb")
-      score += 0.3 if gemfile_dependency?("rails")
-      score += 0.15 if repo.directory?("app/controllers")
+      score = score_rails
       return unless score >= 0.5
 
       {
@@ -132,10 +180,7 @@ module Screenshots
     end
 
     def detect_nextjs
-      score = 0.0
-      score += 0.55 if %w[next.config.js next.config.mjs next.config.ts].any? { |path| repo.file?(path) }
-      score += 0.3 if package_dependency?("next")
-      score += 0.15 if %w[app pages src/app src/pages].any? { |path| repo.directory?(path) }
+      score = score_nextjs
       return unless score >= 0.5
 
       {
@@ -148,10 +193,7 @@ module Screenshots
     end
 
     def detect_django
-      score = 0.0
-      score += 0.55 if repo.file?("manage.py")
-      score += 0.25 if repo.glob("**/settings.py").any?
-      score += 0.2 if repo.glob("**/urls.py").any?
+      score = score_django
       return unless score >= 0.5
 
       {
@@ -637,7 +679,7 @@ module Screenshots
       def read(path)
         return unless file?(path)
 
-        File.read(absolute(path))
+        File.read(absolute(path), encoding: "utf-8")
       end
 
       def glob(pattern)

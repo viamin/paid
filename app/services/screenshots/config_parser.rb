@@ -37,7 +37,7 @@ module Screenshots
       end
 
       def ui_detection_overrides(project: nil, repo_path: nil, blob: nil, content: nil)
-        new(project:, repo_path:, blob:, content:).send(:ui_detection_overrides)
+        new(project:, repo_path:, blob:, content:).ui_detection_overrides
       end
 
       def from_repo_path(repo_path, project: nil)
@@ -51,7 +51,7 @@ module Screenshots
       # Validates a partial settings hash (e.g. DB-stored project settings where
       # routes are not required). Raises ConfigError on invalid nested values.
       def validate_partial!(settings)
-        new.send(:validate_partial!, settings)
+        new.validate_partial!(settings)
       end
     end
 
@@ -67,22 +67,6 @@ module Screenshots
       validate_root!(file_settings)
 
       Screenshots::Configuration.from_hash(merged_settings(file_settings)).freeze
-    end
-
-    private
-
-    attr_reader :project, :repo_path, :blob, :content
-
-    def raw_content
-      return content if content.present?
-      return decode_blob(blob) if blob.present?
-
-      path = config_path
-      raise ConfigError, "Missing #{CONFIG_PATH} in #{repo_path}" unless File.exist?(path)
-
-      File.read(path)
-    rescue Errno::ENOENT => e
-      raise ConfigError, "Unable to read #{CONFIG_PATH}: #{e.message}"
     end
 
     def ui_detection_overrides
@@ -101,6 +85,44 @@ module Screenshots
         overrides[:patterns] = merged["ui_patterns"] if explicit_settings.key?("ui_patterns")
         overrides[:exclusions] = merged["ui_exclusions"] if explicit_settings.key?("ui_exclusions")
       end
+    end
+
+    def validate_partial!(settings)
+      validate_unknown_keys!("top-level", settings, VALID_TOP_LEVEL_KEYS + VALID_PROJECT_TOP_LEVEL_KEYS)
+
+      validate_driver!(settings["driver"]) if settings.key?("driver")
+      validate_enabled!(settings["enabled"]) if settings.key?("enabled")
+      validate_framework!(settings["framework"]) if settings.key?("framework")
+      validate_base_url!(settings["base_url"]) if settings.key?("base_url")
+      validate_viewport!(settings["viewport"]) if settings.key?("viewport")
+      validate_routes_shape!(settings["routes"]) if settings.key?("routes")
+      validate_auth!(settings["auth"]) if settings.key?("auth")
+      validate_seed!(settings["seed"]) if settings.key?("seed")
+      validate_string_array!("setup", settings["setup"]) if settings.key?("setup")
+      validate_string_array!("setup_commands", settings["setup_commands"]) if settings.key?("setup_commands")
+      validate_string_array!("services", settings["services"]) if settings.key?("services")
+      validate_config_path!(settings["config_path"]) if settings.key?("config_path")
+      validate_auto_capture!(settings["auto_capture"]) if settings.key?("auto_capture")
+      validate_string_array!("service_dependencies", settings["service_dependencies"]) if settings.key?("service_dependencies")
+      validate_detection!(settings["detection"]) if settings.key?("detection")
+      validate_globs!("ui_patterns", settings["ui_patterns"]) if settings.key?("ui_patterns")
+      validate_globs!("ui_exclusions", settings["ui_exclusions"]) if settings.key?("ui_exclusions")
+    end
+
+    private
+
+    attr_reader :project, :repo_path, :blob, :content
+
+    def raw_content
+      return content if content.present?
+      return decode_blob(blob) if blob.present?
+
+      path = config_path
+      raise ConfigError, "Missing #{CONFIG_PATH} in #{repo_path}" unless File.exist?(path)
+
+      File.read(path)
+    rescue Errno::ENOENT => e
+      raise ConfigError, "Unable to read #{CONFIG_PATH}: #{e.message}"
     end
 
     def config_path
@@ -162,28 +184,6 @@ module Screenshots
     def validate_root!(settings)
       validate_partial!(settings)
       validate_routes!(settings["routes"])
-    end
-
-    def validate_partial!(settings)
-      validate_unknown_keys!("top-level", settings, VALID_TOP_LEVEL_KEYS + VALID_PROJECT_TOP_LEVEL_KEYS)
-
-      validate_driver!(settings["driver"]) if settings.key?("driver")
-      validate_enabled!(settings["enabled"]) if settings.key?("enabled")
-      validate_framework!(settings["framework"]) if settings.key?("framework")
-      validate_base_url!(settings["base_url"]) if settings.key?("base_url")
-      validate_viewport!(settings["viewport"]) if settings.key?("viewport")
-      validate_routes_shape!(settings["routes"]) if settings.key?("routes")
-      validate_auth!(settings["auth"]) if settings.key?("auth")
-      validate_seed!(settings["seed"]) if settings.key?("seed")
-      validate_string_array!("setup", settings["setup"]) if settings.key?("setup")
-      validate_string_array!("setup_commands", settings["setup_commands"]) if settings.key?("setup_commands")
-      validate_string_array!("services", settings["services"]) if settings.key?("services")
-      validate_config_path!(settings["config_path"]) if settings.key?("config_path")
-      validate_auto_capture!(settings["auto_capture"]) if settings.key?("auto_capture")
-      validate_string_array!("service_dependencies", settings["service_dependencies"]) if settings.key?("service_dependencies")
-      validate_detection!(settings["detection"]) if settings.key?("detection")
-      validate_globs!("ui_patterns", settings["ui_patterns"]) if settings.key?("ui_patterns")
-      validate_globs!("ui_exclusions", settings["ui_exclusions"]) if settings.key?("ui_exclusions")
     end
 
     def validate_unknown_keys!(context, hash, allowed_keys)
