@@ -1675,6 +1675,134 @@ ALTER SEQUENCE public.decision_records_id_seq OWNED BY public.decision_records.i
 
 
 --
+-- Name: decomposition_decisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.decomposition_decisions (
+    id bigint NOT NULL,
+    project_id bigint NOT NULL,
+    issue_id bigint NOT NULL,
+    decision_key character varying NOT NULL,
+    workflow_name character varying NOT NULL,
+    workflow_id character varying NOT NULL,
+    decision_type character varying NOT NULL,
+    outcome character varying NOT NULL,
+    input_context jsonb DEFAULT '{}'::jsonb NOT NULL,
+    plan_data jsonb DEFAULT '{}'::jsonb NOT NULL,
+    hints jsonb DEFAULT '{}'::jsonb NOT NULL,
+    error_details jsonb DEFAULT '{}'::jsonb NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.decomposition_decisions FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: COLUMN decomposition_decisions.project_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.decomposition_decisions.project_id IS 'Project whose issue decomposition flow produced this decision.';
+
+
+--
+-- Name: COLUMN decomposition_decisions.issue_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.decomposition_decisions.issue_id IS 'Parent issue being decomposed or parallelized.';
+
+
+--
+-- Name: COLUMN decomposition_decisions.decision_key; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.decomposition_decisions.decision_key IS 'Idempotency key for this workflow decision boundary.';
+
+
+--
+-- Name: COLUMN decomposition_decisions.workflow_name; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.decomposition_decisions.workflow_name IS 'Temporal workflow class that emitted the decision.';
+
+
+--
+-- Name: COLUMN decomposition_decisions.workflow_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.decomposition_decisions.workflow_id IS 'Temporal workflow identifier for correlation across activities.';
+
+
+--
+-- Name: COLUMN decomposition_decisions.decision_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.decomposition_decisions.decision_type IS 'Decision boundary being recorded, such as planning_outcome or parallelization_outcome.';
+
+
+--
+-- Name: COLUMN decomposition_decisions.outcome; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.decomposition_decisions.outcome IS 'Observed outcome at the decision boundary.';
+
+
+--
+-- Name: COLUMN decomposition_decisions.input_context; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.decomposition_decisions.input_context IS 'Issue and planning inputs available when the decision was made.';
+
+
+--
+-- Name: COLUMN decomposition_decisions.plan_data; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.decomposition_decisions.plan_data IS 'Generated tasks, created issues, and related plan artifacts.';
+
+
+--
+-- Name: COLUMN decomposition_decisions.hints; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.decomposition_decisions.hints IS 'Derived dependency and parallelism hints for later analysis.';
+
+
+--
+-- Name: COLUMN decomposition_decisions.error_details; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.decomposition_decisions.error_details IS 'Failure details when the decision path ended exceptionally.';
+
+
+--
+-- Name: COLUMN decomposition_decisions.metadata; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.decomposition_decisions.metadata IS 'Additional workflow metadata such as prompt source and activity boundaries.';
+
+
+--
+-- Name: decomposition_decisions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.decomposition_decisions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: decomposition_decisions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.decomposition_decisions_id_seq OWNED BY public.decomposition_decisions.id;
+
+
+--
 -- Name: exception_incidents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4744,6 +4872,13 @@ ALTER TABLE ONLY public.decision_records ALTER COLUMN id SET DEFAULT nextval('pu
 
 
 --
+-- Name: decomposition_decisions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.decomposition_decisions ALTER COLUMN id SET DEFAULT nextval('public.decomposition_decisions_id_seq'::regclass);
+
+
+--
 -- Name: exception_incidents id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -5337,6 +5472,14 @@ ALTER TABLE ONLY public.decision_record_links
 
 ALTER TABLE ONLY public.decision_records
     ADD CONSTRAINT decision_records_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: decomposition_decisions decomposition_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.decomposition_decisions
+    ADD CONSTRAINT decomposition_decisions_pkey PRIMARY KEY (id);
 
 
 --
@@ -6950,6 +7093,48 @@ CREATE INDEX index_decision_records_on_superseded_by_id ON public.decision_recor
 --
 
 CREATE INDEX index_decision_records_on_tags ON public.decision_records USING gin (tags);
+
+
+--
+-- Name: index_decomposition_decisions_on_decision_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_decomposition_decisions_on_decision_key ON public.decomposition_decisions USING btree (decision_key);
+
+
+--
+-- Name: index_decomposition_decisions_on_issue_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_decomposition_decisions_on_issue_id ON public.decomposition_decisions USING btree (issue_id);
+
+
+--
+-- Name: index_decomposition_decisions_on_issue_id_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_decomposition_decisions_on_issue_id_and_created_at ON public.decomposition_decisions USING btree (issue_id, created_at);
+
+
+--
+-- Name: index_decomposition_decisions_on_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_decomposition_decisions_on_project_id ON public.decomposition_decisions USING btree (project_id);
+
+
+--
+-- Name: index_decomposition_decisions_on_project_id_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_decomposition_decisions_on_project_id_and_created_at ON public.decomposition_decisions USING btree (project_id, created_at);
+
+
+--
+-- Name: index_decomposition_decisions_on_workflow_id_and_decision_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_decomposition_decisions_on_workflow_id_and_decision_type ON public.decomposition_decisions USING btree (workflow_id, decision_type);
 
 
 --
@@ -8856,6 +9041,14 @@ ALTER TABLE ONLY public.chat_messages
 
 
 --
+-- Name: decomposition_decisions fk_rails_4adcc53fc4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.decomposition_decisions
+    ADD CONSTRAINT fk_rails_4adcc53fc4 FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
 -- Name: github_tokens fk_rails_4d276bfe2f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8869,6 +9062,14 @@ ALTER TABLE ONLY public.github_tokens
 
 ALTER TABLE ONLY public.cost_budgets
     ADD CONSTRAINT fk_rails_4e6c4ff426 FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: decomposition_decisions fk_rails_53762b28b0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.decomposition_decisions
+    ADD CONSTRAINT fk_rails_53762b28b0 FOREIGN KEY (issue_id) REFERENCES public.issues(id) ON DELETE CASCADE;
 
 
 --
@@ -9830,6 +10031,12 @@ ALTER TABLE public.decision_record_links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.decision_records ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: decomposition_decisions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.decomposition_decisions ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: exception_incidents; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -10349,6 +10556,16 @@ CREATE POLICY tenant_isolation ON public.decision_records USING ((public.paid_te
   WHERE ((projects.id = decision_records.project_id) AND (projects.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
    FROM public.projects
   WHERE ((projects.id = decision_records.project_id) AND (projects.account_id = public.paid_current_account_id()))))));
+
+--
+-- Name: decomposition_decisions tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.decomposition_decisions USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = decomposition_decisions.project_id) AND (projects.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = decomposition_decisions.project_id) AND (projects.account_id = public.paid_current_account_id()))))));
 
 
 --
@@ -11221,6 +11438,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260507125050'),
 ('20260507011753'),
 ('20260506175107'),
 ('20260506174922'),
@@ -11471,4 +11689,3 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260128004342'),
 ('20260128004305'),
 ('20260127154444');
-
