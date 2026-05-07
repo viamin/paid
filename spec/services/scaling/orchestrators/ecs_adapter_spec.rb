@@ -14,6 +14,10 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
     ).and_return(payload.to_json)
   end
 
+  def described_task_definition(task_definition, tags: nil)
+    { task_definition:, tags: }
+  end
+
   describe "#current_status" do
     let(:ready_service_payload) do
       {
@@ -85,7 +89,8 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
     let(:next_task_definition_arn) { "arn:aws:ecs:task-definition/agent-worker:8" }
 
     def expect_task_definition_registration(expected_cpu: "512", expected_memory: "2048",
-                                              expected_container_cpu: 512, expected_container_memory: 2048)
+                                              expected_container_cpu: 512, expected_container_memory: 2048,
+                                              expected_tags: nil)
       expect(adapter).to receive(:run_aws).with(
         "ecs", "register-task-definition",
         "--cli-input-json", kind_of(String)
@@ -96,6 +101,7 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
         expect(container[:memory]).to eq(expected_container_memory)
         expect(payload[:cpu]).to eq(expected_cpu)
         expect(payload[:memory]).to eq(expected_memory)
+        expect(payload[:tags]).to eq(expected_tags) if expected_tags
 
         { taskDefinition: { taskDefinitionArn: next_task_definition_arn } }.to_json
       end
@@ -125,7 +131,7 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
         .and_return({ taskDefinition: task_definition_arn })
       allow(named_adapter).to receive(:describe_task_definition)
         .with(task_definition_arn)
-        .and_return(task_definition)
+        .and_return(described_task_definition(task_definition))
     end
 
     def expect_named_adapter_service_update(named_adapter)
@@ -144,7 +150,7 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
         .and_return({ taskDefinition: task_definition[:taskDefinitionArn] })
       allow(adapter).to receive(:describe_task_definition)
         .with(task_definition[:taskDefinitionArn])
-        .and_return(task_definition)
+        .and_return(described_task_definition(task_definition))
       expect_task_definition_registration
 
       expect(adapter).to receive(:run_aws).with(
@@ -167,7 +173,7 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
         .and_return({ taskDefinition: task_definition[:taskDefinitionArn] })
       allow(adapter).to receive(:describe_task_definition)
         .with(task_definition[:taskDefinitionArn])
-        .and_return(task_definition)
+        .and_return(described_task_definition(task_definition))
       expect_task_definition_registration(expected_cpu: "2048", expected_memory: "4096",
                                           expected_container_cpu: 2048)
       expect(adapter).to receive(:run_aws).with(
@@ -190,7 +196,7 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
         .and_return({ taskDefinition: task_definition[:taskDefinitionArn] })
       allow(adapter).to receive(:describe_task_definition)
         .with(task_definition[:taskDefinitionArn])
-        .and_return(task_definition)
+        .and_return(described_task_definition(task_definition))
       expect_task_definition_registration(expected_cpu: "512")
 
       expect(adapter).to receive(:run_aws).with(
@@ -213,7 +219,7 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
         .and_return({ taskDefinition: task_definition[:taskDefinitionArn] })
       allow(adapter).to receive(:describe_task_definition)
         .with(task_definition[:taskDefinitionArn])
-        .and_return(task_definition)
+        .and_return(described_task_definition(task_definition))
       expect(adapter).not_to receive(:register_task_definition)
       expect(adapter).not_to receive(:run_aws)
 
@@ -237,7 +243,7 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
         .and_return({ taskDefinition: task_definition[:taskDefinitionArn] })
       allow(adapter).to receive(:describe_task_definition)
         .with(task_definition[:taskDefinitionArn])
-        .and_return(mismatched_task_definition)
+        .and_return(described_task_definition(mismatched_task_definition))
 
       expect do
         adapter.set_resource_limits(service: service_name, cpu_limit: "500m", memory_limit: "2Gi")
@@ -269,7 +275,7 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
         .and_return({ taskDefinition: task_definition[:taskDefinitionArn] })
       allow(adapter).to receive(:describe_task_definition)
         .with(task_definition[:taskDefinitionArn])
-        .and_return(task_definition)
+        .and_return(described_task_definition(task_definition))
       expect(adapter).not_to receive(:register_task_definition)
       expect(adapter).not_to receive(:run_aws).with("ecs", "update-service", any_args)
 
@@ -284,13 +290,39 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
         .and_return({ taskDefinition: task_definition[:taskDefinitionArn] })
       allow(adapter).to receive(:describe_task_definition)
         .with(task_definition[:taskDefinitionArn])
-        .and_return(task_definition)
+        .and_return(described_task_definition(task_definition))
       expect(adapter).not_to receive(:register_task_definition)
       expect(adapter).not_to receive(:run_aws).with("ecs", "update-service", any_args)
 
       expect do
         adapter.set_resource_limits(service: service_name, cpu_limit: "500m", memory_limit: "bogus")
       end.to raise_error(described_class::ApiError, /memory_limit/)
+    end
+
+    it "preserves task definition tags when registering a replacement revision" do
+      tags = [
+        { key: "owner", value: "platform" },
+        { key: "cost-center", value: "infra" }
+      ]
+
+      allow(adapter).to receive(:describe_service)
+        .with(service_name)
+        .and_return({ taskDefinition: task_definition[:taskDefinitionArn] })
+      allow(adapter).to receive(:describe_task_definition)
+        .with(task_definition[:taskDefinitionArn])
+        .and_return(described_task_definition(task_definition, tags:))
+      expect_task_definition_registration(expected_tags: tags)
+      expect(adapter).to receive(:run_aws).with(
+        "ecs", "update-service",
+        "--cluster", "paid-prod",
+        "--service", service_name,
+        "--task-definition", next_task_definition_arn,
+        "--force-new-deployment"
+      ).and_return({ service: { taskDefinition: next_task_definition_arn } }.to_json)
+
+      result = adapter.set_resource_limits(service: service_name, cpu_limit: "500m", memory_limit: "2Gi")
+
+      expect(result.accepted).to be true
     end
   end
 
@@ -318,6 +350,26 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
         "ecs", "list-services",
         "--cluster", "paid-prod",
         "--max-items", "1"
+      )
+    end
+
+    it "includes tags when describing task definitions" do
+      status = instance_double(Process::Status, success?: true)
+      allow(Open3).to receive(:capture3).and_return([
+        { taskDefinition: { family: service_name }, tags: [] }.to_json,
+        "",
+        status
+      ])
+
+      adapter.send(:describe_task_definition, "arn:aws:ecs:task-definition/agent-worker:7")
+
+      expect(Open3).to have_received(:capture3).with(
+        "aws",
+        "--region", "us-east-1",
+        "--output", "json",
+        "ecs", "describe-task-definition",
+        "--task-definition", "arn:aws:ecs:task-definition/agent-worker:7",
+        "--include", "TAGS"
       )
     end
 

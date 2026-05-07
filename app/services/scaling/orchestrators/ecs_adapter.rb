@@ -70,11 +70,12 @@ module Scaling
 
       def set_resource_limits(service:, cpu_limit: nil, memory_limit: nil)
         service_data = describe_service(service)
-        task_definition = describe_task_definition(service_data.fetch(:taskDefinition))
+        task_definition_data = describe_task_definition(service_data.fetch(:taskDefinition))
+        task_definition = task_definition_data.fetch(:task_definition)
         container_definitions = updated_container_definitions(service, task_definition[:containerDefinitions], cpu_limit, memory_limit)
         return no_op_resource_update(service, cpu_limit, memory_limit) if container_definitions == task_definition[:containerDefinitions]
 
-        registration = register_task_definition(task_definition, container_definitions)
+        registration = register_task_definition(task_definition, container_definitions, task_definition_data[:tags])
 
         run_aws("ecs", "update-service",
           "--cluster", cluster,
@@ -116,10 +117,14 @@ module Scaling
       def describe_task_definition(task_definition_arn)
         response = parse_json(
           run_aws("ecs", "describe-task-definition",
-            "--task-definition", task_definition_arn)
+            "--task-definition", task_definition_arn,
+            "--include", "TAGS")
         )
 
-        response.fetch(:taskDefinition)
+        {
+          task_definition: response.fetch(:taskDefinition),
+          tags: response[:tags]
+        }
       end
 
       def updated_container_definitions(service, definitions, cpu_limit, memory_limit)
@@ -135,7 +140,7 @@ module Scaling
         end
       end
 
-      def register_task_definition(task_definition, container_definitions)
+      def register_task_definition(task_definition, container_definitions, tags)
         task_resources = updated_task_resources(task_definition, container_definitions)
         payload = {
           family: task_definition[:family],
@@ -153,7 +158,8 @@ module Scaling
           ipcMode: task_definition[:ipcMode],
           proxyConfiguration: task_definition[:proxyConfiguration],
           inferenceAccelerators: task_definition[:inferenceAccelerators],
-          ephemeralStorage: task_definition[:ephemeralStorage]
+          ephemeralStorage: task_definition[:ephemeralStorage],
+          tags: tags
         }.compact
 
         parse_json(
