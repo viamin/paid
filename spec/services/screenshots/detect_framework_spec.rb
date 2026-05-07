@@ -57,6 +57,68 @@ RSpec.describe Screenshots::DetectFramework do
 
       expect(result.confidence).to be < 0.5
     end
+
+    context "with file_list" do
+      it "detects Rails from routes, Gemfile, and app structure" do
+        result = described_class.call(
+          file_list: [ "Gemfile", "config/routes.rb", "app/controllers/home_controller.rb" ]
+        )
+
+        expect(result.framework).to eq(:rails)
+      end
+
+      it "detects Next.js from src/pages" do
+        result = described_class.call(
+          file_list: [ "next.config.ts", "package.json", "src/pages/index.tsx" ]
+        )
+
+        expect(result.framework).to eq(:nextjs)
+        expect(result.detected_routes.map { |route| route["path"] }).to include("/")
+      end
+
+      it "falls back to generic for an empty file list" do
+        result = described_class.call(file_list: [])
+
+        expect(result.framework).to eq(:generic)
+      end
+    end
+
+    context "with repo_path" do
+      let(:repo_path) { Dir.mktmpdir }
+
+      after { FileUtils.remove_entry(repo_path) }
+
+      it "detects Next.js src/app layout from the filesystem" do
+        FileUtils.mkdir_p(File.join(repo_path, "src/app"))
+        File.write(File.join(repo_path, "next.config.js"), "export default {}")
+        File.write(File.join(repo_path, "package.json"), JSON.dump({ "dependencies" => { "next" => "15.0.0" } }))
+        File.write(File.join(repo_path, "src/app/page.tsx"), "export default function Page() {}")
+
+        result = described_class.call(repo_path: repo_path)
+
+        expect(result.framework).to eq(:nextjs)
+        expect(result.detected_routes.map { |route| route["path"] }).to include("/")
+      end
+
+      it "ignores heavyweight directories while scanning the filesystem" do
+        FileUtils.mkdir_p(File.join(repo_path, ".git/objects"))
+        FileUtils.mkdir_p(File.join(repo_path, "node_modules/react"))
+        FileUtils.mkdir_p(File.join(repo_path, "app/views"))
+        FileUtils.mkdir_p(File.join(repo_path, "config"))
+        File.write(File.join(repo_path, "config/routes.rb"), "# routes")
+        File.write(File.join(repo_path, "Gemfile"), "gem 'rails'\n")
+        File.write(File.join(repo_path, ".git/objects/packfile"), "ignored")
+        File.write(File.join(repo_path, "node_modules/react/index.js"), "ignored")
+
+        repo = described_class::LocalRepository.new(repo_path)
+
+        expect(repo.paths).to include("Gemfile", "config/routes.rb")
+        expect(repo.paths).not_to include(
+          ".git/objects/packfile",
+          "node_modules/react/index.js"
+        )
+      end
+    end
   end
 
   describe "parse_rails_routes_output" do

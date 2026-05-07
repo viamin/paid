@@ -63,6 +63,89 @@ RSpec.describe "screenshots:capture" do
         changed_files: [ "app/views/projects/index.html.erb" ]
       )
     end
+
+    it "passes repo-configured UI patterns and exclusions into detection" do
+      ENV["CHANGED_FILES"] = "frontend/app.js"
+      allow(File).to receive(:exist?).and_call_original
+      allow(File).to receive(:exist?).with(File.join(Dir.pwd, ".paid/screenshots.yml")).and_return(true)
+      allow(Screenshots::ConfigParser).to receive(:ui_detection_overrides).with(project: nil, repo_path: Dir.pwd).and_return(
+        patterns: [ "frontend/**/*" ],
+        exclusions: [ "frontend/vendor/**/*" ]
+      )
+      allow(Screenshots::DetectUiChanges).to receive(:call).and_return(
+        { ui_changes?: true, ui_files: [ "frontend/app.js" ] }
+      )
+      allow(Screenshots::Capture).to receive(:call).and_return([])
+
+      task.invoke
+
+      expect(Screenshots::DetectUiChanges).to have_received(:call).with(
+        changed_files: [ "frontend/app.js" ],
+        repo_path: Dir.pwd,
+        patterns: [ "frontend/**/*" ],
+        exclusions: [ "frontend/vendor/**/*" ]
+      )
+    end
+
+    it "passes a configured framework override into detection" do
+      ENV["CHANGED_FILES"] = "frontend/app.js"
+      allow(Screenshots::ConfigParser).to receive(:ui_detection_overrides).with(project: nil, repo_path: Dir.pwd).and_return(
+        framework: :nextjs
+      )
+      allow(Screenshots::DetectUiChanges).to receive(:call).and_return(
+        { ui_changes?: true, ui_files: [ "frontend/app.js" ] }
+      )
+      allow(Screenshots::Capture).to receive(:call).and_return([])
+
+      task.invoke
+
+      expect(Screenshots::DetectUiChanges).to have_received(:call).with(
+        changed_files: [ "frontend/app.js" ],
+        repo_path: Dir.pwd,
+        framework: :nextjs
+      )
+    end
+
+    it "passes the project into UI detection overrides" do
+      ENV["CHANGED_FILES"] = "frontend/app.js"
+      original_project_id = ENV["PROJECT_ID"]
+      ENV["PROJECT_ID"] = "123"
+      project = instance_double(Project)
+
+      allow(Project).to receive(:find_by).with(id: "123").and_return(project)
+      allow(Screenshots::ConfigParser).to receive(:ui_detection_overrides).with(project:, repo_path: Dir.pwd).and_return(
+        framework: :nextjs
+      )
+      allow(Screenshots::DetectUiChanges).to receive(:call).and_return(
+        { ui_changes?: true, ui_files: [ "frontend/app.js" ] }
+      )
+      allow(Screenshots::Capture).to receive(:call).and_return([])
+
+      task.invoke
+
+      expect(Screenshots::DetectUiChanges).to have_received(:call).with(
+        changed_files: [ "frontend/app.js" ],
+        repo_path: Dir.pwd,
+        framework: :nextjs
+      )
+    ensure
+      ENV["PROJECT_ID"] = original_project_id
+    end
+
+    it "keeps framework auto-detection when UI patterns were not explicitly configured" do
+      allow(Screenshots::ConfigParser).to receive(:ui_detection_overrides).with(project: nil, repo_path: Dir.pwd).and_return({})
+      allow(Screenshots::DetectUiChanges).to receive(:call).and_return(
+        { ui_changes?: true, ui_files: [ "app/views/projects/index.html.erb" ] }
+      )
+      allow(Screenshots::Capture).to receive(:call).and_return([])
+
+      task.invoke
+
+      expect(Screenshots::DetectUiChanges).to have_received(:call).with(
+        changed_files: [ "app/views/projects/index.html.erb" ],
+        repo_path: Dir.pwd
+      )
+    end
   end
 
   context "when CHANGED_FILES is empty" do

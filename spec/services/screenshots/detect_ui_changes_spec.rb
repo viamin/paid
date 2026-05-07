@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "open3"
 
 RSpec.describe Screenshots::DetectUiChanges do
   describe ".call" do
@@ -198,6 +199,201 @@ RSpec.describe Screenshots::DetectUiChanges do
 
       expect(result[:ui_changes?]).to be true
       expect(result[:ui_files]).to contain_exactly("public/404.html", "public/500.html")
+    end
+  end
+
+  describe "framework-aware detection" do
+    it "auto-detects framework from working directory when no framework specified" do
+      # This repo is a Rails app, so auto-detection from Dir.pwd should find Rails patterns
+      result = described_class.call(changed_files: [ "app/views/projects/index.html.erb" ])
+
+      expect(result[:ui_changes?]).to be true
+    end
+
+    it "detects Next.js page changes with framework: :nextjs" do
+      result = described_class.call(
+        changed_files: [ "app/dashboard/page.tsx" ],
+        framework: :nextjs
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "app/dashboard/page.tsx" ])
+    end
+
+    it "detects Next.js component changes" do
+      result = described_class.call(
+        changed_files: [ "components/Button.tsx" ],
+        framework: :nextjs
+      )
+
+      expect(result[:ui_changes?]).to be true
+    end
+
+    it "detects Next.js src/pages changes" do
+      result = described_class.call(
+        changed_files: [ "src/pages/index.tsx" ],
+        framework: :nextjs
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "src/pages/index.tsx" ])
+    end
+
+    it "ignores Next.js pages router API routes" do
+      result = described_class.call(
+        changed_files: [ "pages/api/users.ts", "src/pages/api/auth/[...nextauth].ts" ],
+        framework: :nextjs
+      )
+
+      expect(result[:ui_changes?]).to be false
+      expect(result[:ui_files]).to be_empty
+    end
+
+    it "ignores Next.js app router API routes" do
+      result = described_class.call(
+        changed_files: [ "app/api/users/route.ts", "src/app/api/auth/[...nextauth]/route.ts" ],
+        framework: :nextjs
+      )
+
+      expect(result[:ui_changes?]).to be false
+      expect(result[:ui_files]).to be_empty
+    end
+
+    it "detects Next.js app router stylesheet changes" do
+      result = described_class.call(
+        changed_files: [ "app/dashboard/page.module.css", "app/globals.css" ],
+        framework: :nextjs
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to contain_exactly("app/dashboard/page.module.css", "app/globals.css")
+    end
+
+    it "ignores Rails-specific files with Next.js framework" do
+      result = described_class.call(
+        changed_files: [ "app/helpers/application_helper.rb" ],
+        framework: :nextjs
+      )
+
+      expect(result[:ui_changes?]).to be false
+    end
+
+    it "detects Django template changes" do
+      result = described_class.call(
+        changed_files: [ "templates/home.html" ],
+        framework: :django
+      )
+
+      expect(result[:ui_changes?]).to be true
+    end
+
+    it "detects generic web file changes" do
+      result = described_class.call(
+        changed_files: [ "src/App.vue", "styles/main.scss" ],
+        framework: :generic
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to contain_exactly("src/App.vue", "styles/main.scss")
+    end
+  end
+
+  describe "custom patterns" do
+    it "accepts glob string patterns from screenshots config" do
+      result = described_class.call(
+        changed_files: [ "app/views/projects/index.html.erb", "app/models/project.rb" ],
+        patterns: [ "app/views/**/*" ]
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "app/views/projects/index.html.erb" ])
+    end
+
+    it "applies glob string exclusions from screenshots config" do
+      result = described_class.call(
+        changed_files: [ "app/views/projects/index.html.erb", "app/views/layouts/mailer/reset.html.erb" ],
+        patterns: [ "app/views/**/*" ],
+        exclusions: [ "app/views/layouts/mailer/**/*" ]
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "app/views/projects/index.html.erb" ])
+    end
+
+    it "uses provided patterns instead of framework defaults" do
+      result = described_class.call(
+        changed_files: [ "my_custom/views/home.html" ],
+        patterns: [ %r{\Amy_custom/views/} ]
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "my_custom/views/home.html" ])
+    end
+
+    it "applies custom exclusions" do
+      result = described_class.call(
+        changed_files: [ "my_custom/views/home.html", "my_custom/views/admin/secret.html" ],
+        patterns: [ %r{\Amy_custom/views/} ],
+        exclusions: [ %r{\Amy_custom/views/admin/} ]
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "my_custom/views/home.html" ])
+    end
+
+    it "applies custom exclusions on top of detected framework defaults" do
+      result = described_class.call(
+        changed_files: [ "app/views/projects/index.html.erb", "app/views/pwa/manifest.json.erb" ],
+        exclusions: [ "app/views/pwa/**/*" ],
+        repo_path: Dir.pwd
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "app/views/projects/index.html.erb" ])
+    end
+
+    it "preserves framework exclusions when custom exclusions are provided" do
+      result = described_class.call(
+        changed_files: [
+          "app/views/projects/index.html.erb",
+          "app/views/devise/mailer/reset_password_instructions.html.erb"
+        ],
+        framework: :rails,
+        exclusions: [ "app/views/pwa/**/*" ]
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "app/views/projects/index.html.erb" ])
+    end
+
+    it "custom patterns override framework when both provided" do
+      result = described_class.call(
+        changed_files: [ "app/views/projects/index.html.erb" ],
+        framework: :rails,
+        patterns: [ %r{\Acustom_only/} ]
+      )
+
+      expect(result[:ui_changes?]).to be false
+    end
+  end
+
+  describe "standalone Ruby execution" do
+    it "works without Rails loading Active Support extensions" do
+      command = <<~SH
+        ruby -rjson -e '
+          require_relative "app/services/screenshots/detect_ui_changes"
+          result = Screenshots::DetectUiChanges.call(changed_files: ["app/views/projects/index.html.erb"])
+          print JSON.dump(result)
+        '
+      SH
+
+      output, status = Open3.capture2e(command, chdir: Rails.root.to_s)
+
+      expect(status.success?).to be(true), output
+      expect(JSON.parse(output)).to include(
+        "ui_changes?" => true,
+        "ui_files" => [ "app/views/projects/index.html.erb" ]
+      )
     end
   end
 end
