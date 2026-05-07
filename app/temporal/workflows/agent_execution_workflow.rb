@@ -323,7 +323,10 @@ module Workflows
               # Step 8: Request review-bot review on the new draft PR (best-effort)
               request_review_bot_review(project_id, pr_result[:pull_request_number])
 
-              # Step 9: Draft a decision record (best-effort)
+              # Step 9: Capture screenshots for UI PRs (best-effort)
+              capture_screenshots(agent_run_id)
+
+              # Step 10: Draft a decision record (best-effort)
               draft_decision_record(agent_run_id)
             end
           end
@@ -631,6 +634,20 @@ module Workflows
     rescue => e
       Temporalio::Workflow.logger.warn(
         message: "agent_execution.draft_decision_record_failed",
+        agent_run_id: agent_run_id,
+        error: e.message,
+        error_class: e.class.name
+      )
+    end
+
+    def capture_screenshots(agent_run_id)
+      run_activity(Activities::CaptureScreenshotsActivity,
+        { agent_run_id: agent_run_id }, timeout: 360, retry_policy: NO_RETRY)
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "agent_execution.capture_screenshots_failed",
         agent_run_id: agent_run_id,
         error: e.message,
         error_class: e.class.name
