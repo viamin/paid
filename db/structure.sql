@@ -3572,13 +3572,6 @@ COMMENT ON COLUMN public.projects.completed_agent_runs_count IS 'Counter cache f
 
 
 --
--- Name: COLUMN projects.last_issue_reconciliation_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.projects.last_issue_reconciliation_at IS 'Timestamp of the last issue state reconciliation against GitHub';
-
-
---
 -- Name: COLUMN projects.screenshot_settings; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -4355,6 +4348,8 @@ CREATE TABLE public.strategy_experiment_assignments (
     updated_at timestamp(6) without time zone NOT NULL
 );
 
+ALTER TABLE ONLY public.strategy_experiment_assignments FORCE ROW LEVEL SECURITY;
+
 
 --
 -- Name: TABLE strategy_experiment_assignments; Type: COMMENT; Schema: public; Owner: -
@@ -4397,6 +4392,8 @@ CREATE TABLE public.strategy_experiment_variants (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
 );
+
+ALTER TABLE ONLY public.strategy_experiment_variants FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -4455,6 +4452,8 @@ CREATE TABLE public.strategy_experiments (
     updated_at timestamp(6) without time zone NOT NULL,
     winner_variant_id bigint
 );
+
+ALTER TABLE ONLY public.strategy_experiments FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -10791,6 +10790,24 @@ ALTER TABLE public.service_container_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.service_containers ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: strategy_experiment_assignments; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.strategy_experiment_assignments ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: strategy_experiment_variants; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.strategy_experiment_variants ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: strategy_experiments; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.strategy_experiments ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: style_guides; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -11544,6 +11561,35 @@ CREATE POLICY tenant_isolation ON public.service_containers USING ((public.paid_
 
 
 --
+-- Name: strategy_experiment_assignments tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.strategy_experiment_assignments USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.strategy_experiments
+  WHERE ((strategy_experiments.id = strategy_experiment_assignments.strategy_experiment_id) AND (strategy_experiments.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.strategy_experiments
+  WHERE ((strategy_experiments.id = strategy_experiment_assignments.strategy_experiment_id) AND (strategy_experiments.account_id = public.paid_current_account_id()))))));
+
+
+--
+-- Name: strategy_experiment_variants tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.strategy_experiment_variants USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.strategy_experiments
+  WHERE ((strategy_experiments.id = strategy_experiment_variants.strategy_experiment_id) AND (strategy_experiments.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.strategy_experiments
+  WHERE ((strategy_experiments.id = strategy_experiment_variants.strategy_experiment_id) AND (strategy_experiments.account_id = public.paid_current_account_id()))))));
+
+
+--
+-- Name: strategy_experiments tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.strategy_experiments USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+
+
+--
 -- Name: tenant_settings tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -11958,6 +12004,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260507224416'),
 ('20260507204652'),
 ('20260507164917'),
 ('20260507125050'),
