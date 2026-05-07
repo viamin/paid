@@ -101,8 +101,8 @@ module Containers
     #   Defaults to NETWORK_NAME (paid_agent). Callers should pass the same
     #   network the agent container will use so services are reachable.
     # @return [Hash] Environment variables hash for the agent container
-    def provision(agent_run, network: NetworkPolicy::NETWORK_NAME)
-      service_containers = agent_run.project.service_containers.to_a
+    def provision(agent_run, network: NetworkPolicy::NETWORK_NAME, service_names: nil)
+      service_containers = selected_service_containers(agent_run.project, service_names)
       return {} if service_containers.empty?
 
       @network = network
@@ -179,6 +179,13 @@ module Containers
     end
 
     private
+
+    def selected_service_containers(project, service_names)
+      scope = project.service_containers
+      names = Array(service_names).map(&:to_s).map(&:strip).reject(&:blank?).uniq
+      scope = scope.where(name: names) if names.any?
+      scope.to_a
+    end
 
     def ensure_running!(service_container)
       if service_container.running?

@@ -983,6 +983,33 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
           { pull_request_url: "https://github.com/o/r/pull/99", pull_request_number: 99 }
         when "Activities::UpdateIssueWithPrActivity" then {}
         when "Activities::RequestReviewActivity" then {}
+        when "Activities::CaptureScreenshotsActivity" then { status: "captured", screenshot_count: 2 }
+        when "Activities::DraftDecisionRecordActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        when "Activities::EnqueueJanitorActivity" then {}
+        else {}
+        end
+      end
+    end
+
+    def stub_new_pr_creation_with_screenshot_failure
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::ProvisionServicesActivity" then {}
+        when "Activities::ProvisionContainerActivity" then {}
+        when "Activities::CheckProxyHealthActivity" then {}
+        when "Activities::CloneRepoActivity" then {}
+        when "Activities::RunAgentActivity" then { success: true, has_changes: true }
+        when "Activities::PushBranchActivity" then {}
+        when "Activities::CreatePullRequestActivity"
+          { pull_request_url: "https://github.com/o/r/pull/99", pull_request_number: 99 }
+        when "Activities::UpdateIssueWithPrActivity" then {}
+        when "Activities::RequestReviewActivity" then {}
+        when "Activities::CaptureScreenshotsActivity"
+          raise StandardError, "chrome unreachable"
         when "Activities::DraftDecisionRecordActivity" then {}
         when "Activities::CleanupContainerActivity" then {}
         when "Activities::CleanupServicesActivity" then {}
@@ -1002,6 +1029,31 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         .with(Activities::RequestReviewActivity,
           { project_id: 1, pr_number: 99 },
           timeout: 60)
+    end
+
+    it "captures screenshots after PR creation" do
+      stub_new_pr_creation
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CaptureScreenshotsActivity,
+          { agent_run_id: 42 },
+          timeout: 900,
+          retry_policy: described_class::NO_RETRY)
+    end
+
+    it "does not fail the workflow when screenshot capture fails" do
+      stub_new_pr_creation_with_screenshot_failure
+
+      result = workflow.execute(input)
+
+      expect(result[:success]).to be true
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::DraftDecisionRecordActivity,
+          { agent_run_id: 42 },
+          timeout: 60,
+          retry_policy: described_class::NO_RETRY)
     end
 
     it "emits the pre-patch activity input shape for new PR when the workflow patch is not set" do
