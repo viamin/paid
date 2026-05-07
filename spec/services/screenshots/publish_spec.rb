@@ -30,10 +30,15 @@ RSpec.describe Screenshots::Publish do
         ]
       end
 
+      let(:previous_screenshots) do
+        { "homepage" => "https://s3.example.com/prev-homepage.png" }
+      end
+
       before do
         allow(storage).to receive(:upload) do |file_path:, route_name:, **|
           "https://s3.example.com/#{route_name}.png?source=#{File.basename(file_path)}"
         end
+        allow(storage).to receive(:previous_screenshots).and_return(previous_screenshots)
         allow(Screenshots::PrComment).to receive(:call).and_return(comment)
         service.call
       end
@@ -57,7 +62,7 @@ RSpec.describe Screenshots::Publish do
         )
       end
 
-      it "posts the uploaded screenshots to the PR comment" do
+      it "posts the uploaded screenshots with previous screenshots to the PR comment" do
         expect(Screenshots::PrComment).to have_received(:call).with(
           github_client: github_client,
           repo: repo,
@@ -66,7 +71,8 @@ RSpec.describe Screenshots::Publish do
           screenshots: [
             { route_name: "homepage", url: "https://s3.example.com/homepage.png?source=homepage.png" },
             { route_name: "dashboard", url: "https://s3.example.com/dashboard.png?source=dashboard.png" }
-          ]
+          ],
+          previous_screenshots: previous_screenshots
         )
       end
 
@@ -92,7 +98,8 @@ RSpec.describe Screenshots::Publish do
           repo: repo,
           pr_number: pr_number,
           commit_sha: commit_sha,
-          screenshots: []
+          screenshots: [],
+          previous_screenshots: {}
         )
       end
     end

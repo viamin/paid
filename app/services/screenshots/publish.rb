@@ -34,12 +34,24 @@ module Screenshots
         }
       end
 
+      previous = if uploaded_screenshots.any?
+        storage.previous_screenshots(
+          org: owner,
+          repo: name,
+          pr_number: @pr_number,
+          exclude_sha: @commit_sha
+        )
+      else
+        {}
+      end
+
       Screenshots::PrComment.call(
         github_client: @github_client,
         repo: @repo,
         pr_number: @pr_number,
         commit_sha: @commit_sha,
-        screenshots: uploaded_screenshots
+        screenshots: uploaded_screenshots,
+        previous_screenshots: previous
       )
     end
 

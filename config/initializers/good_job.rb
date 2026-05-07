@@ -21,7 +21,7 @@ module Paid
       TenantSetting.resolve_worker_setting(key, env_key: env_key, env: env, default: default)
     rescue NameError
       resolve_from_env(env_key, env:, default:)
-    rescue ArgumentError
+    rescue ActiveRecord::ConnectionNotEstablished, ActiveRecord::NoDatabaseError, ArgumentError
       default
     end
 

@@ -140,6 +140,61 @@ RSpec.describe Screenshots::Storage do
     end
   end
 
+  describe "#previous_screenshots" do
+    it "returns signed URLs for the most recent previous commit" do
+      s3_client.stub_responses(:list_objects_v2, {
+        contents: [
+          { key: "screenshots/acme/web/pr-42/old111/dashboard.png", last_modified: 2.hours.ago },
+          { key: "screenshots/acme/web/pr-42/old111/homepage.png", last_modified: 2.hours.ago },
+          { key: "screenshots/acme/web/pr-42/current/dashboard.png", last_modified: 1.minute.ago },
+          { key: "screenshots/acme/web/pr-42/current/homepage.png", last_modified: 1.minute.ago }
+        ],
+        is_truncated: false
+      })
+
+      result = storage.previous_screenshots(org: "acme", repo: "web", pr_number: 42, exclude_sha: "current")
+
+      expect(result.keys).to contain_exactly("dashboard", "homepage")
+      expect(result["dashboard"]).to include("screenshots/acme/web/pr-42/old111/dashboard.png")
+    end
+
+    it "picks the most recent commit when multiple previous commits exist" do
+      s3_client.stub_responses(:list_objects_v2, {
+        contents: [
+          { key: "screenshots/acme/web/pr-42/older/dashboard.png", last_modified: 1.day.ago },
+          { key: "screenshots/acme/web/pr-42/newer/dashboard.png", last_modified: 2.hours.ago },
+          { key: "screenshots/acme/web/pr-42/current/dashboard.png", last_modified: 1.minute.ago }
+        ],
+        is_truncated: false
+      })
+
+      result = storage.previous_screenshots(org: "acme", repo: "web", pr_number: 42, exclude_sha: "current")
+
+      expect(result["dashboard"]).to include("newer/dashboard.png")
+    end
+
+    it "returns empty hash when no previous commits exist" do
+      s3_client.stub_responses(:list_objects_v2, {
+        contents: [
+          { key: "screenshots/acme/web/pr-42/current/dashboard.png", last_modified: 1.minute.ago }
+        ],
+        is_truncated: false
+      })
+
+      result = storage.previous_screenshots(org: "acme", repo: "web", pr_number: 42, exclude_sha: "current")
+
+      expect(result).to eq({})
+    end
+
+    it "returns empty hash on S3 errors" do
+      s3_client.stub_responses(:list_objects_v2, "ServiceError")
+
+      result = storage.previous_screenshots(org: "acme", repo: "web", pr_number: 42, exclude_sha: "current")
+
+      expect(result).to eq({})
+    end
+  end
+
   describe "#delete_pr_screenshots" do
     it "deletes all objects under the PR prefix" do
       s3_client.stub_responses(:list_objects_v2, {

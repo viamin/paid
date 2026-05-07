@@ -30,15 +30,19 @@ module Screenshots
     # @param pr_number [Integer] Pull request number
     # @param commit_sha [String] Commit SHA for the screenshots
     # @param screenshots [Array<Hash>] Each hash has :route_name and :url keys
+    # @param previous_screenshots [Hash<String, String>] Mapping of route_name to
+    #   signed URL from the previous commit's capture, used for before/after comparison
     # @param artifact_name [String, nil] Workflow artifact name when screenshots
     #   were captured but inline storage is unavailable
     # @param status [String] Comment state: success, no_ui_changes, or capture_failed
-    def initialize(github_client:, repo:, pr_number:, commit_sha:, screenshots:, artifact_name: nil, status: "success")
+    def initialize(github_client:, repo:, pr_number:, commit_sha:, screenshots:,
+      previous_screenshots: {}, artifact_name: nil, status: "success")
       @github_client = github_client
       @repo = repo
       @pr_number = pr_number
       @commit_sha = commit_sha
       @screenshots = screenshots
+      @previous_screenshots = previous_screenshots
       @artifact_name = artifact_name
       @status = status
     end
@@ -116,13 +120,28 @@ module Screenshots
       lines << ""
       lines << "### Pages captured"
       lines << ""
-      lines << "| Page | Screenshot |"
-      lines << "|------|-----------|"
 
-      @screenshots.sort_by { |s| s[:route_name] }.each do |screenshot|
-        name = screenshot[:route_name]
-        url = screenshot[:url]
-        lines << "| #{humanize_route(name)} | ![#{name}](#{url}) |"
+      if @previous_screenshots.any?
+        lines << "| Page | Before | After |"
+        lines << "|------|--------|-------|"
+
+        @screenshots.sort_by { |s| s[:route_name] }.each do |screenshot|
+          name = screenshot[:route_name]
+          after_url = screenshot[:url]
+          before_url = @previous_screenshots[name]
+
+          before_cell = before_url ? "![before-#{name}](#{before_url})" : "_New page_"
+          lines << "| #{humanize_route(name)} | #{before_cell} | ![#{name}](#{after_url}) |"
+        end
+      else
+        lines << "| Page | Screenshot |"
+        lines << "|------|-----------|"
+
+        @screenshots.sort_by { |s| s[:route_name] }.each do |screenshot|
+          name = screenshot[:route_name]
+          url = screenshot[:url]
+          lines << "| #{humanize_route(name)} | ![#{name}](#{url}) |"
+        end
       end
 
       lines << ""

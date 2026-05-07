@@ -59,6 +59,49 @@ RSpec.describe Screenshots::PrComment do
       expect(body).to include("| Project Show |")
     end
 
+    context "with previous screenshots for before/after comparison" do
+      let(:previous_screenshots) do
+        {
+          "dashboard" => "https://s3.example.com/prev-dashboard.png",
+          "homepage" => "https://s3.example.com/prev-homepage.png"
+        }
+      end
+
+      it "renders a before/after table when previous screenshots exist" do
+        service = described_class.new(
+          github_client: github_client,
+          repo: repo,
+          pr_number: pr_number,
+          commit_sha: commit_sha,
+          screenshots: screenshots,
+          previous_screenshots: previous_screenshots
+        )
+
+        body = service.build_comment_body
+
+        expect(body).to include("| Page | Before | After |")
+        expect(body).to include("![before-dashboard](https://s3.example.com/prev-dashboard.png)")
+        expect(body).to include("![dashboard](https://s3.example.com/dashboard.png)")
+      end
+
+      it "shows 'New page' for routes without a previous screenshot" do
+        service = described_class.new(
+          github_client: github_client,
+          repo: repo,
+          pr_number: pr_number,
+          commit_sha: commit_sha,
+          screenshots: [ { route_name: "settings", url: "https://s3.example.com/settings.png" } ],
+          previous_screenshots: { "other_route" => "https://s3.example.com/prev-other.png" }
+        )
+
+        body = service.build_comment_body
+
+        expect(body).to include("| Page | Before | After |")
+        expect(body).to include("_New page_")
+        expect(body).to include("![settings](https://s3.example.com/settings.png)")
+      end
+    end
+
     it "handles empty screenshots" do
       service = described_class.new(
         github_client: github_client,

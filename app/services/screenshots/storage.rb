@@ -74,6 +74,41 @@ module Screenshots
       )
     end
 
+    # Returns signed URLs for the most recent previous commit's screenshots,
+    # excluding the current commit. Used for before/after comparison in PR comments.
+    #
+    # @param org [String] GitHub org/owner
+    # @param repo [String] Repository name
+    # @param pr_number [Integer] Pull request number
+    # @param exclude_sha [String] Current commit SHA to exclude
+    # @return [Hash<String, String>] Mapping of route_name to signed URL
+    def previous_screenshots(org:, repo:, pr_number:, exclude_sha:)
+      prefix = "screenshots/#{org}/#{repo}/pr-#{pr_number}/"
+      commits = Hash.new { |h, k| h[k] = [] }
+
+      s3_client.list_objects_v2(bucket: @bucket, prefix: prefix).each_page do |page|
+        page.contents.each do |obj|
+          parts = obj.key.delete_prefix(prefix).split("/", 2)
+          next unless parts.size == 2
+
+          sha = parts[0]
+          next if sha == exclude_sha
+
+          commits[sha] << obj
+        end
+      end
+
+      return {} if commits.empty?
+
+      latest_sha = commits.max_by { |_, objects| objects.map(&:last_modified).max }.first
+      commits[latest_sha].each_with_object({}) do |obj, result|
+        route_name = File.basename(obj.key, ".png")
+        result[route_name] = signed_url(obj.key)
+      end
+    rescue Aws::S3::Errors::ServiceError
+      {}
+    end
+
     # Deletes all screenshots for a given PR.
     #
     # @param org [String] GitHub org/owner
