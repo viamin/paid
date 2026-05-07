@@ -81,8 +81,24 @@ module DashboardHelper
     "review" => "PR Reviews"
   }.freeze
 
+  DECISION_STATUS_BADGE_CLASSES = {
+    "active" => "bg-emerald-100 text-emerald-700",
+    "superseded" => "bg-amber-100 text-amber-700",
+    "reverted" => "bg-rose-100 text-rose-700"
+  }.freeze
+
   def time_range_label(range)
     TIME_RANGE_LABELS.fetch(range, range.to_s.titleize)
+  end
+
+  def decision_type_label(decision_type)
+    return "Uncategorized" if decision_type.to_s == "uncategorized"
+
+    decision_type.to_s.tr("_", " ").titleize
+  end
+
+  def decision_status_badge_classes(status)
+    DECISION_STATUS_BADGE_CLASSES.fetch(status.to_s, "bg-slate-100 text-slate-700")
   end
 
   # Dark-mode colors for these badges are handled by the global unlayered
