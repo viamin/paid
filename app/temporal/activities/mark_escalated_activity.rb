@@ -26,6 +26,23 @@ module Activities
         pr_number: issue.github_number
       )
 
+      OrchestrationDecisionEvent.record!(
+        project: project,
+        issue: issue,
+        decision_point: "mark_escalated",
+        action: "escalate",
+        status: "applied",
+        signals: {
+          trigger: "escalate_to_owner",
+          reason: input[:reason],
+          phase_before: "draft"
+        },
+        result: {
+          updated: true,
+          phase: issue.pr_review_phase
+        }
+      )
+
       { updated: true }
     end
 

@@ -16,14 +16,37 @@ module Activities
       issue = Issue.find(input[:issue_id])
 
       expected_count = input[:expected_review_goal_retry_count]
+      incremented = false
+      before_count = issue.review_goal_retry_count
       if expected_count
         issue.with_lock do
           issue.reload
-          issue.increment!(:review_goal_retry_count) if issue.review_goal_retry_count == expected_count
+          before_count = issue.review_goal_retry_count
+          if issue.review_goal_retry_count == expected_count
+            issue.increment!(:review_goal_retry_count)
+            incremented = true
+          end
         end
       else
         issue.increment!(:review_goal_retry_count)
+        incremented = true
       end
+
+      OrchestrationDecisionEvent.record!(
+        project: issue.project,
+        issue: issue,
+        decision_point: "review_goal_retry",
+        action: "retry",
+        status: incremented ? "applied" : "noop",
+        signals: {
+          trigger: "review_goal_retry",
+          expected_review_goal_retry_count: expected_count,
+          current_review_goal_retry_count: before_count
+        },
+        result: {
+          review_goal_retry_count: issue.review_goal_retry_count
+        }
+      )
 
       logger.info(
         message: "pr_scanner.review_goal_retry_recorded",

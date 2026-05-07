@@ -10,10 +10,13 @@ RSpec.describe Activities::RecordReviewGoalRetryActivity do
     it "increments the review_goal_retry_count on the issue" do
       issue = create(:issue, project: project, review_goal_retry_count: 0)
 
-      result = activity.execute(issue_id: issue.id)
+      expect {
+        result = activity.execute(issue_id: issue.id)
+        expect(result[:review_goal_retry_count]).to eq(1)
+      }.to change(OrchestrationDecisionEvent, :count).by(1)
 
       expect(issue.reload.review_goal_retry_count).to eq(1)
-      expect(result[:review_goal_retry_count]).to eq(1)
+      expect(OrchestrationDecisionEvent.last.status).to eq("applied")
     end
 
     it "increments from an existing count" do
@@ -36,9 +39,14 @@ RSpec.describe Activities::RecordReviewGoalRetryActivity do
       it "skips increment when current count does not match expected" do
         issue = create(:issue, project: project, review_goal_retry_count: 2)
 
-        activity.execute(issue_id: issue.id, expected_review_goal_retry_count: 0)
+        expect {
+          activity.execute(issue_id: issue.id, expected_review_goal_retry_count: 0)
+        }.to change(OrchestrationDecisionEvent, :count).by(1)
 
         expect(issue.reload.review_goal_retry_count).to eq(2)
+        event = OrchestrationDecisionEvent.last
+        expect(event.status).to eq("noop")
+        expect(event.result).to include("review_goal_retry_count" => 2)
       end
 
       it "prevents double-counting on repeated calls with same expected count" do

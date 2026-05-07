@@ -9,7 +9,25 @@ module Activities
     def execute(input)
       issue = Issue.find_by(id: input[:issue_id])
       return { dismissed: false } unless issue
-      return { dismissed: false } unless issue.escalated_phase?
+      unless issue.escalated_phase?
+        OrchestrationDecisionEvent.record!(
+          project: issue.project,
+          issue: issue,
+          decision_point: "dismiss_escalation",
+          action: "resume",
+          status: "noop",
+          signals: {
+            trigger: "dismiss_escalation",
+            draft: input[:draft] == true,
+            phase_before: issue.pr_review_phase
+          },
+          result: {
+            dismissed: false,
+            phase: issue.pr_review_phase
+          }
+        )
+        return { dismissed: false }
+      end
 
       issue.dismiss_escalation!(draft: input[:draft] == true)
 
@@ -18,6 +36,25 @@ module Activities
         issue_id: issue.id,
         pr_number: issue.github_number,
         resumed_phase: issue.pr_review_phase
+      )
+
+      OrchestrationDecisionEvent.record!(
+        project: issue.project,
+        issue: issue,
+        decision_point: "dismiss_escalation",
+        action: "resume",
+        status: "applied",
+        signals: {
+          trigger: "dismiss_escalation",
+          draft: input[:draft] == true,
+          phase_before: "escalated"
+        },
+        result: {
+          dismissed: true,
+          phase: issue.pr_review_phase,
+          review_goal_retry_count: issue.review_goal_retry_count,
+          pr_followup_count: issue.pr_followup_count
+        }
       )
 
       {

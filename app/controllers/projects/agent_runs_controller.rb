@@ -293,7 +293,7 @@ module Projects
         return
       end
 
-      resumed = @agent_run.resume!
+      resumed = @agent_run.resume!(decision_point: "manual_resume")
       unless resumed
         redirect_to project_agent_run_path(@project, @agent_run),
           alert: "The agent run state changed and could not be resumed."
@@ -385,13 +385,36 @@ module Projects
         status: "queued"
       )
 
-      @agent_run.retry!
+      @agent_run.retry!(
+        decision_point: "manual_retry",
+        signals: {
+          selected_agent_type: agent_type,
+          selected_provider: retry_provider&.routing_key || retry_provider&.provider_key
+        },
+        result: { new_agent_run_id: new_run.id }
+      )
 
       ProcessRunQueueJob.perform_later
 
       redirect_to project_agent_run_path(@project, new_run),
         notice: "Agent run queued as a retry of run ##{@agent_run.id}."
     rescue ActiveRecord::RecordNotUnique => e
+      OrchestrationDecisionEvent.record!(
+        project: @project,
+        issue: @agent_run.issue,
+        agent_run: @agent_run,
+        decision_point: "manual_retry",
+        action: "retry",
+        status: "failed",
+        signals: {
+          selected_agent_type: agent_type,
+          selected_provider: retry_provider&.routing_key || retry_provider&.provider_key
+        },
+        result: {
+          error_class: e.class.name,
+          error_message: e.message
+        }
+      )
       alert = if (e.cause&.message || e.message).include?("proxy_token")
         "An unexpected error occurred. Please try again."
       else
@@ -451,7 +474,11 @@ module Projects
         trigger_type: "manual",
         status: "queued"
       )
-      @agent_run.retry!
+      @agent_run.retry!(
+        decision_point: "refresh_auth_retry",
+        signals: { auth_provider: provider.to_s },
+        result: { new_agent_run_id: new_run.id }
+      )
       ProcessRunQueueJob.perform_later
 
       redirect_to project_agent_run_path(@project, new_run),
@@ -459,6 +486,19 @@ module Projects
     # Catch all harness errors (including AuthenticationError, which is a
     # subclass of Error) so this works even when the shim hasn't loaded yet.
     rescue AgentHarness::Error => e
+      OrchestrationDecisionEvent.record!(
+        project: @project,
+        issue: @agent_run.issue,
+        agent_run: @agent_run,
+        decision_point: "refresh_auth_retry",
+        action: "retry",
+        status: "failed",
+        signals: { auth_provider: provider&.to_s },
+        result: {
+          error_class: e.class.name,
+          error_message: e.message
+        }
+      )
       Rails.logger.error(
         message: "agent_execution.refresh_auth_failed",
         agent_run_id: @agent_run.id,
@@ -468,6 +508,19 @@ module Projects
       redirect_to project_agent_run_path(@project, @agent_run),
         alert: "Re-authentication failed: #{e.message}"
     rescue NotImplementedError => e
+      OrchestrationDecisionEvent.record!(
+        project: @project,
+        issue: @agent_run.issue,
+        agent_run: @agent_run,
+        decision_point: "refresh_auth_retry",
+        action: "retry",
+        status: "failed",
+        signals: { auth_provider: @agent_run.auth_provider },
+        result: {
+          error_class: e.class.name,
+          error_message: e.message
+        }
+      )
       Rails.logger.error(
         message: "agent_execution.refresh_auth_unavailable",
         agent_run_id: @agent_run.id,
@@ -478,6 +531,19 @@ module Projects
       redirect_to project_agent_run_path(@project, @agent_run),
         alert: "Re-authentication is not supported for this provider."
     rescue ActiveRecord::RecordNotUnique => e
+      OrchestrationDecisionEvent.record!(
+        project: @project,
+        issue: @agent_run.issue,
+        agent_run: @agent_run,
+        decision_point: "refresh_auth_retry",
+        action: "retry",
+        status: "failed",
+        signals: { auth_provider: @agent_run.auth_provider },
+        result: {
+          error_class: e.class.name,
+          error_message: e.message
+        }
+      )
       alert = if (e.cause&.message || e.message).include?("proxy_token")
         "An unexpected error occurred. Please try again."
       else

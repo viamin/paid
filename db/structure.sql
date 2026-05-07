@@ -2938,6 +2938,108 @@ ALTER SEQUENCE public.onboarding_steps_id_seq OWNED BY public.onboarding_steps.i
 
 
 --
+-- Name: orchestration_decision_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.orchestration_decision_events (
+    id bigint NOT NULL,
+    project_id bigint NOT NULL,
+    issue_id bigint,
+    agent_run_id bigint,
+    decision_point character varying NOT NULL,
+    action character varying NOT NULL,
+    status character varying NOT NULL,
+    sequence integer NOT NULL,
+    signals jsonb DEFAULT '{}'::jsonb NOT NULL,
+    result jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: COLUMN orchestration_decision_events.project_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decision_events.project_id IS 'Project owning the orchestration decision event.';
+
+
+--
+-- Name: COLUMN orchestration_decision_events.issue_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decision_events.issue_id IS 'Optional PR or issue the decision was evaluated against.';
+
+
+--
+-- Name: COLUMN orchestration_decision_events.agent_run_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decision_events.agent_run_id IS 'Optional agent run whose lifecycle changed because of the decision.';
+
+
+--
+-- Name: COLUMN orchestration_decision_events.decision_point; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decision_events.decision_point IS 'Named workflow, activity, job, or controller branch that made the decision.';
+
+
+--
+-- Name: COLUMN orchestration_decision_events.action; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decision_events.action IS 'Selected orchestration action category such as retry, pause, resume, or escalate.';
+
+
+--
+-- Name: COLUMN orchestration_decision_events.status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decision_events.status IS 'Decision outcome status: applied, noop, or failed.';
+
+
+--
+-- Name: COLUMN orchestration_decision_events.sequence; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decision_events.sequence IS 'Per-action sequence number so repeated retries remain distinguishable.';
+
+
+--
+-- Name: COLUMN orchestration_decision_events.signals; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decision_events.signals IS 'Normalized triggering signals and counters that informed the decision.';
+
+
+--
+-- Name: COLUMN orchestration_decision_events.result; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decision_events.result IS 'Persisted outcome details for the selected decision.';
+
+
+--
+-- Name: orchestration_decision_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.orchestration_decision_events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: orchestration_decision_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.orchestration_decision_events_id_seq OWNED BY public.orchestration_decision_events.id;
+
+
+--
 -- Name: pr_templates; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4905,6 +5007,13 @@ ALTER TABLE ONLY public.onboarding_steps ALTER COLUMN id SET DEFAULT nextval('pu
 
 
 --
+-- Name: orchestration_decision_events id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orchestration_decision_events ALTER COLUMN id SET DEFAULT nextval('public.orchestration_decision_events_id_seq'::regclass);
+
+
+--
 -- Name: pr_templates id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -5572,6 +5681,14 @@ ALTER TABLE ONLY public.onboarding_steps
 
 
 --
+-- Name: orchestration_decision_events orchestration_decision_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orchestration_decision_events
+    ADD CONSTRAINT orchestration_decision_events_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: pr_templates pr_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6033,6 +6150,34 @@ CREATE INDEX idx_on_project_id_recommendation_type_333faaed2e ON public.knowledg
 --
 
 CREATE INDEX idx_on_project_id_status_warmed_at_d791387888 ON public.container_pool_entries USING btree (project_id, status, warmed_at);
+
+
+--
+-- Name: idx_orch_decision_events_issue_action_sequence; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_orch_decision_events_issue_action_sequence ON public.orchestration_decision_events USING btree (issue_id, action, sequence);
+
+
+--
+-- Name: idx_orch_decision_events_project_action_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_orch_decision_events_project_action_status ON public.orchestration_decision_events USING btree (project_id, action, status, created_at);
+
+
+--
+-- Name: idx_orch_decision_events_run_action_sequence; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_orch_decision_events_run_action_sequence ON public.orchestration_decision_events USING btree (agent_run_id, action, sequence);
+
+
+--
+-- Name: idx_orchestration_decision_events_project_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_orchestration_decision_events_project_time ON public.orchestration_decision_events USING btree (project_id, created_at);
 
 
 --
@@ -7730,6 +7875,27 @@ CREATE UNIQUE INDEX index_onboarding_steps_on_account_id_and_step ON public.onbo
 
 
 --
+-- Name: index_orchestration_decision_events_on_agent_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orchestration_decision_events_on_agent_run_id ON public.orchestration_decision_events USING btree (agent_run_id);
+
+
+--
+-- Name: index_orchestration_decision_events_on_issue_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orchestration_decision_events_on_issue_id ON public.orchestration_decision_events USING btree (issue_id);
+
+
+--
+-- Name: index_orchestration_decision_events_on_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orchestration_decision_events_on_project_id ON public.orchestration_decision_events USING btree (project_id);
+
+
+--
 -- Name: index_pr_templates_on_account_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8624,6 +8790,14 @@ ALTER TABLE ONLY public.agent_coordination_signals
 
 
 --
+-- Name: orchestration_decision_events fk_rails_154a5615fc; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orchestration_decision_events
+    ADD CONSTRAINT fk_rails_154a5615fc FOREIGN KEY (issue_id) REFERENCES public.issues(id);
+
+
+--
 -- Name: providers fk_rails_173128f3bd; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8693,6 +8867,14 @@ ALTER TABLE ONLY public.project_service_containers
 
 ALTER TABLE ONLY public.pre_commit_requirements
     ADD CONSTRAINT fk_rails_23004001c3 FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: orchestration_decision_events fk_rails_23ac907e08; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orchestration_decision_events
+    ADD CONSTRAINT fk_rails_23ac907e08 FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id);
 
 
 --
@@ -8893,6 +9075,14 @@ ALTER TABLE ONLY public.llm_output_metrics
 
 ALTER TABLE ONLY public.ab_test_assignments
     ADD CONSTRAINT fk_rails_5c6d672759 FOREIGN KEY (ab_test_variant_id) REFERENCES public.ab_test_variants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: orchestration_decision_events fk_rails_5ca5d801b0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orchestration_decision_events
+    ADD CONSTRAINT fk_rails_5ca5d801b0 FOREIGN KEY (project_id) REFERENCES public.projects(id);
 
 
 --
@@ -11221,6 +11411,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260507132811'),
 ('20260507011753'),
 ('20260506175107'),
 ('20260506174922'),

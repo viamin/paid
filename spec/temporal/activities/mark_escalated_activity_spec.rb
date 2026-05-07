@@ -103,6 +103,17 @@ RSpec.describe Activities::MarkEscalatedActivity do
 
         expect(result[:updated]).to be true
       end
+
+      it "records an escalation decision event" do
+        expect {
+          activity.execute(issue_id: issue.id, reason: "Draft review limit reached")
+        }.to change(OrchestrationDecisionEvent, :count).by(1)
+
+        event = OrchestrationDecisionEvent.last
+        expect(event.action).to eq("escalate")
+        expect(event.status).to eq("applied")
+        expect(event.signals).to include("reason" => "Draft review limit reached")
+      end
     end
 
     context "when label addition fails" do
