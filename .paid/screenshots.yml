@@ -1,0 +1,38 @@
+# Paid's own screenshot capture continues to use Cuprite so it can boot the
+# Rails app in-process, but the seed/auth data now lives in config instead of
+# the capture service.
+driver: cuprite
+base_url: http://localhost:3000
+
+routes:
+  - path: /users/sign_in
+    name: sign_in
+  - path: /dashboard
+    name: dashboard
+    requires_auth: true
+  - path: /projects
+    name: projects
+    requires_auth: true
+  - path: /projects/:project_id
+    name: project_show
+    requires_auth: true
+    seed_key: project
+  - path: /prompts/:prompt_id
+    name: prompt_show
+    requires_auth: true
+    seed_key: prompt
+
+auth:
+  strategy: form
+  login_path: /users/sign_in
+  fields:
+    email: input[name="user[email]"]
+    password: input[name="user[password]"]
+    submit: input[name="commit"]
+  credentials:
+    email: "%{user_email}"
+    password: "%{user_password}"
+
+seed:
+  - key: __all__
+    runner: Screenshots::SeedData::Paid.call

@@ -9,7 +9,7 @@ module Screenshots
     :routes,
     :auth,
     :seed,
-    :setup,
+    :setup_commands,
     :services,
     :ui_patterns,
     :ui_exclusions
@@ -31,7 +31,7 @@ module Screenshots
     Viewport = ::Data.define(:width, :height)
     Route = ::Data.define(:path, :name, :requires_auth, :seed_key)
     Auth = ::Data.define(:strategy, :login_path, :fields, :credentials)
-    SeedRecord = ::Data.define(:model, :factory, :key, :attributes)
+    SeedRecord = ::Data.define(:key, :runner, :model, :factory, :attributes)
 
     class << self
       def from_hash(hash)
@@ -45,7 +45,7 @@ module Screenshots
           routes: routes_from_array(hash["routes"]),
           auth: auth_from_hash(hash["auth"]),
           seed: seed_from_array(hash["seed"]),
-          setup: string_array(hash["setup"]).freeze,
+          setup_commands: string_array(hash["setup_commands"] || hash["setup"]).freeze,
           services: string_array(hash["services"]).freeze,
           ui_patterns: string_array(hash["ui_patterns"], default: DEFAULT_UI_PATTERNS).freeze,
           ui_exclusions: string_array(hash["ui_exclusions"], default: DEFAULT_UI_EXCLUSIONS).freeze
@@ -88,10 +88,11 @@ module Screenshots
       def seed_from_array(seed)
         Array(seed).map do |record|
           SeedRecord.new(
+            key: record["key"],
+            runner: record["runner"],
             model: record["model"],
             factory: record["factory"],
-            key: record["key"],
-            attributes: record.except("model", "factory", "key").deep_stringify_keys.freeze
+            attributes: record.except("model", "factory", "key", "runner").deep_stringify_keys.freeze
           )
         end.freeze
       end
@@ -110,5 +111,6 @@ module Screenshots
     end
 
     def enabled? = enabled == true
+    def setup = setup_commands
   end
 end

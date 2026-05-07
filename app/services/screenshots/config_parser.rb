@@ -6,6 +6,7 @@ require "psych"
 module Screenshots
   class ConfigParser
     CONFIG_PATH = ".paid/screenshots.yml"
+    RUNNER_REFERENCE_PATTERN = /\AScreenshots::SeedData::[A-Z]\w*(?:::[A-Z]\w*)*\.call\z/
     VALID_TOP_LEVEL_KEYS = %w[
       driver
       enabled
@@ -14,6 +15,7 @@ module Screenshots
       routes
       auth
       seed
+      setup_commands
       setup
       services
       ui_patterns
@@ -103,8 +105,15 @@ module Screenshots
       explicit_db_settings = explicit_project_settings
       merged = db_settings.deep_merge(file_settings)
 
-      %w[routes auth seed setup].each do |key|
+      %w[routes auth seed setup setup_commands].each do |key|
         merged[key] = file_settings[key] if file_settings.key?(key)
+      end
+
+      if file_settings.key?("setup") || file_settings.key?("setup_commands")
+        merged["setup"] = file_settings["setup"] if file_settings.key?("setup")
+        merged["setup_commands"] = file_settings["setup_commands"] if file_settings.key?("setup_commands")
+        merged.delete("setup_commands") if file_settings.key?("setup") && !file_settings.key?("setup_commands")
+        merged.delete("setup") if file_settings.key?("setup_commands") && !file_settings.key?("setup")
       end
 
       %w[enabled driver].each do |key|
@@ -137,6 +146,7 @@ module Screenshots
       validate_auth!(settings["auth"]) if settings.key?("auth")
       validate_seed!(settings["seed"]) if settings.key?("seed")
       validate_string_array!("setup", settings["setup"]) if settings.key?("setup")
+      validate_string_array!("setup_commands", settings["setup_commands"]) if settings.key?("setup_commands")
       validate_string_array!("services", settings["services"]) if settings.key?("services")
       validate_globs!("ui_patterns", settings["ui_patterns"]) if settings.key?("ui_patterns")
       validate_globs!("ui_exclusions", settings["ui_exclusions"]) if settings.key?("ui_exclusions")
@@ -265,7 +275,20 @@ module Screenshots
           raise ConfigError, "seed[#{index}] must be a mapping"
         end
 
-        %w[model factory key].each do |key|
+        unless record["key"].is_a?(String) && record["key"].present?
+          raise ConfigError, "seed[#{index}].key is required"
+        end
+
+        if record["runner"].present?
+          unless record["runner"].is_a?(String) && record["runner"].match?(RUNNER_REFERENCE_PATTERN)
+            raise ConfigError,
+              "seed[#{index}].runner must reference Screenshots::SeedData::<Runner>.call"
+          end
+
+          next
+        end
+
+        %w[model factory].each do |key|
           next if record[key].is_a?(String) && record[key].present?
 
           raise ConfigError, "seed[#{index}].#{key} is required"
