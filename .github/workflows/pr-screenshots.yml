@@ -195,7 +195,7 @@ jobs:
     needs: [detect, capture]
     if: >-
       always()
-      && needs.capture.result != 'skipped'
+      && needs.capture.result == 'success'
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
@@ -213,6 +213,7 @@ jobs:
       SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}
       SCREENSHOTS_S3_REGION: ${{ secrets.SCREENSHOTS_S3_REGION }}
       SCREENSHOTS_S3_ENDPOINT: ${{ secrets.SCREENSHOTS_S3_ENDPOINT }}
+      SCREENSHOTS_S3_URL_TTL: ${{ vars.SCREENSHOTS_S3_URL_TTL }}
       # Same-repo PR comment token override. Use SCREENSHOTS_GITHUB_TOKEN only
       # when the default workflow token lacks permission to comment.
       GITHUB_TOKEN: ${{ secrets.SCREENSHOTS_GITHUB_TOKEN || github.token }}
@@ -231,14 +232,12 @@ jobs:
 
       - name: Download screenshot artifacts
         id: download_screenshots
-        if: needs.capture.result == 'success'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4
         with:
           name: pr-screenshots
           path: screenshots-download
 
       - name: Publish screenshots and refresh PR comment
-        if: always()
         run: |
           bin/rails screenshots:publish SCREENSHOT_OUTPUT_DIR=screenshots-download
 

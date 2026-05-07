@@ -75,6 +75,25 @@ RSpec.describe Screenshots::Storage do
     end
   end
 
+  describe "#signed_url" do
+    it "uses the configured URL TTL" do
+      presigner = instance_double(Aws::S3::Presigner)
+      storage = described_class.new(bucket: "test-bucket", region: "us-east-1", url_ttl: 1234)
+
+      allow(storage).to receive(:presigner).and_return(presigner)
+      allow(presigner).to receive(:presigned_url).and_return("https://example.test/screenshot.png")
+
+      storage.signed_url("screenshots/acme/web/pr-42/abc1234/dashboard.png")
+
+      expect(presigner).to have_received(:presigned_url).with(
+        :get_object,
+        bucket: "test-bucket",
+        key: "screenshots/acme/web/pr-42/abc1234/dashboard.png",
+        expires_in: 1234
+      )
+    end
+  end
+
   describe "#delete_pr_screenshots" do
     it "deletes all objects under the PR prefix" do
       s3_client.stub_responses(:list_objects_v2, {
@@ -132,6 +151,50 @@ RSpec.describe Screenshots::Storage do
       allow(storage).to receive_messages(access_key_id: nil, secret_access_key: nil)
 
       expect(storage.configured?).to be false
+    end
+  end
+
+  describe "default URL TTL configuration" do
+    around do |example|
+      original_env = ENV.to_h.slice("SCREENSHOTS_S3_URL_TTL")
+      ENV.delete("SCREENSHOTS_S3_URL_TTL")
+      example.run
+    ensure
+      if original_env.key?("SCREENSHOTS_S3_URL_TTL")
+        ENV["SCREENSHOTS_S3_URL_TTL"] = original_env["SCREENSHOTS_S3_URL_TTL"]
+      else
+        ENV.delete("SCREENSHOTS_S3_URL_TTL")
+      end
+    end
+
+    it "defaults to the S3 presigner maximum" do
+      storage = described_class.new(bucket: "test-bucket", region: "us-east-1")
+
+      expect(storage.send(:configured_url_ttl)).to eq(described_class::MAX_URL_TTL)
+    end
+
+    it "uses the SCREENSHOTS_S3_URL_TTL override when present" do
+      ENV["SCREENSHOTS_S3_URL_TTL"] = "7200"
+
+      storage = described_class.new(bucket: "test-bucket", region: "us-east-1")
+
+      expect(storage.send(:configured_url_ttl)).to eq(7200)
+    end
+
+    it "rejects non-positive TTL overrides" do
+      ENV["SCREENSHOTS_S3_URL_TTL"] = "0"
+
+      expect {
+        described_class.new(bucket: "test-bucket", region: "us-east-1")
+      }.to raise_error(ArgumentError, /SCREENSHOTS_S3_URL_TTL must be positive/)
+    end
+
+    it "rejects TTL overrides above the S3 presigner maximum" do
+      ENV["SCREENSHOTS_S3_URL_TTL"] = (described_class::MAX_URL_TTL + 1).to_s
+
+      expect {
+        described_class.new(bucket: "test-bucket", region: "us-east-1")
+      }.to raise_error(ArgumentError, /cannot exceed #{described_class::MAX_URL_TTL} seconds/)
     end
   end
 end

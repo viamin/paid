@@ -23,13 +23,15 @@ module Screenshots
 
     DEFAULT_BUCKET = "paid-screenshots"
     DEFAULT_REGION = "us-east-1"
-    DEFAULT_URL_TTL = 7.days
     DEFAULT_RETENTION_DAYS = 30
+    # AWS SigV4 presigned S3 URLs cannot exceed one week.
+    MAX_URL_TTL = Aws::S3::Presigner::ONE_WEEK
+    DEFAULT_URL_TTL = MAX_URL_TTL
 
     def initialize(bucket: nil, region: nil, url_ttl: nil)
       @bucket = bucket || configured_bucket
       @region = region || configured_region
-      @url_ttl = url_ttl || DEFAULT_URL_TTL
+      @url_ttl = url_ttl || configured_url_ttl
     end
 
     # Uploads a PNG file to S3 and returns a signed URL.
@@ -157,6 +159,17 @@ module Screenshots
 
     def configured_region
       ENV.fetch("SCREENSHOTS_S3_REGION", credentials_dig(:region) || DEFAULT_REGION)
+    end
+
+    def configured_url_ttl
+      value = ENV["SCREENSHOTS_S3_URL_TTL"] || credentials_dig(:url_ttl)
+      return DEFAULT_URL_TTL if value.blank?
+
+      ttl = Integer(value)
+      raise ArgumentError, "SCREENSHOTS_S3_URL_TTL must be positive" unless ttl.positive?
+      raise ArgumentError, "SCREENSHOTS_S3_URL_TTL cannot exceed #{MAX_URL_TTL} seconds for S3 presigned URLs" if ttl > MAX_URL_TTL
+
+      ttl
     end
 
     def access_key_id
