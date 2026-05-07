@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.42.0](https://github.com/viamin/paid/compare/v0.41.0...v0.42.0) (2026-05-07)
+
+
+### Features
+
+* **analytics:** build orchestration decision analysis queries ([#1821](https://github.com/viamin/paid/issues/1821)) ([6bc2b65](https://github.com/viamin/paid/commit/6bc2b65d0d1570b1ca284709bf44242f2ce465e3))
+* **copilot:** re-enable GitHub Copilot CLI as container-executable provider using --autopilot mode ([#1743](https://github.com/viamin/paid/issues/1743)) ([5723b1f](https://github.com/viamin/paid/commit/5723b1f35e862a9ee95da58a4be63925736ceb1c))
+* **orchestration:** log agent selection decisions with context ([#1819](https://github.com/viamin/paid/issues/1819)) ([11349de](https://github.com/viamin/paid/commit/11349de243c8c88efbc10dff630b6c79d2626a9f))
+* **scaling:** Phase 3.6 — Auto-Scaling Preparation ([#1738](https://github.com/viamin/paid/issues/1738)) ([9a56632](https://github.com/viamin/paid/commit/9a566320d3085f245d14338146e670cb6be1f7b8))
+* **screenshots:** add screenshot_settings to Project model ([#1730](https://github.com/viamin/paid/issues/1730)) ([058298c](https://github.com/viamin/paid/commit/058298c7c68a190a2edb7122417f0d57cd8606cf))
+* **screenshots:** define .paid/screenshots.yml config schema and parser ([#1729](https://github.com/viamin/paid/issues/1729)) ([eced0df](https://github.com/viamin/paid/commit/eced0df9bbf099f32c939927e605e13e1ff90bff))
+* **screenshots:** framework auto-detection and config suggestion ([#1742](https://github.com/viamin/paid/issues/1742)) ([3fa4b57](https://github.com/viamin/paid/commit/3fa4b57caef5f5d259bccb2c1d16d0adb7a07343))
+* **screenshots:** framework-aware UI change detection ([#1740](https://github.com/viamin/paid/issues/1740)) ([d6ec2cf](https://github.com/viamin/paid/commit/d6ec2cf2f5f73603822643a78b8b1556dde97fdd))
+* **screenshots:** generic capture engine supporting Playwright and Cuprite ([#1739](https://github.com/viamin/paid/issues/1739)) ([9ce2e41](https://github.com/viamin/paid/commit/9ce2e4170730b713e231d88d2c6bbc481db862e2))
+* **screenshots:** project screenshot settings UI ([#1731](https://github.com/viamin/paid/issues/1731)) ([87e023c](https://github.com/viamin/paid/commit/87e023c432245d0cc919eb72ca2856419de00b82))
+* **screenshots:** upload screenshots to storage and post to PR comments ([#1741](https://github.com/viamin/paid/issues/1741)) ([cdc7b1b](https://github.com/viamin/paid/commit/cdc7b1b72c95f206ba28603acae2d8bb4f3808b7))
+
+
+### Bug Fixes
+
+* 1535: Pin exact PostgreSQL client version across all environments to eliminate structure.sql drift ([#1734](https://github.com/viamin/paid/issues/1734)) ([7169958](https://github.com/viamin/paid/commit/7169958494455d25d07056dd7166bb8ab4a1c69e))
+* **auto-pick:** recover orphaned in_progress issues with no active run ([#1735](https://github.com/viamin/paid/issues/1735)) ([b1d329e](https://github.com/viamin/paid/commit/b1d329e26f352b87325867d6a7f128a89275f12f))
+* **devcontainer:** sync pinned tool installs and Redis fallback ([#1733](https://github.com/viamin/paid/issues/1733)) ([d71037d](https://github.com/viamin/paid/commit/d71037df78ff1d01677ab26417e89b6457b04c7e))
+* **fetch-issues:** bound relationship parsing per cycle ([#1736](https://github.com/viamin/paid/issues/1736)) ([2e61070](https://github.com/viamin/paid/commit/2e61070a8b13aa9349c91c9e5ef3e0851126b3fd))
+* **github-sync:** self-heal stale issue state and orphaned in_progress issues ([#1744](https://github.com/viamin/paid/issues/1744)) ([53e4287](https://github.com/viamin/paid/commit/53e4287a92cdd4ce06bd63137c3dde3e7cea438c))
+
 ## [0.41.0](https://github.com/viamin/paid/compare/v0.40.0...v0.41.0) (2026-05-06)
 
 
