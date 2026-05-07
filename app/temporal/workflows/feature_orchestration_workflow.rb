@@ -22,11 +22,13 @@ module Workflows
   #   aggregate_pr: (optional) Whether to create an aggregated PR
   class FeatureOrchestrationWorkflow < BaseWorkflow
     DEFAULT_TIMEOUT_SECONDS = 7200
+    NO_RETRY = Temporalio::RetryPolicy.new(max_attempts: 1)
 
     def execute(input)
       project_id = input[:project_id]
       issue_id = input[:issue_id]
       timeout_seconds = input.fetch(:timeout_seconds, DEFAULT_TIMEOUT_SECONDS)
+      workflow_id = Temporalio::Workflow.info.workflow_id
 
       Temporalio::Workflow.logger.info(
         message: "feature_orchestration.started",
@@ -34,13 +36,25 @@ module Workflows
         issue_id: issue_id
       )
 
+      tasks = []
+      created_issues = []
+      planning_context = {}
+      prompt_source = nil
+      decision_phase = "planning"
+      decision_step = "fetch_planning_context"
+      @decision_step = decision_step
+
       # Phase 1: Decompose the feature into sub-tasks
       planning_result = run_planning(project_id, issue_id)
 
       tasks = planning_result[:tasks] || []
       created_issues = planning_result[:created_issues]
+      planning_context = planning_result[:context] || {}
+      prompt_source = planning_result[:prompt_source]
 
       # Update labels/state immediately after planning completes (mirrors PlanningWorkflow step 4)
+      decision_step = "update_planning_labels"
+      @decision_step = decision_step
       run_activity(
         Activities::UpdatePlanningLabelsActivity,
         {
@@ -51,8 +65,54 @@ module Workflows
         timeout: 30
       )
 
+      safe_log_decomposition_decision(
+        project_id: project_id,
+        issue_id: issue_id,
+        decision_key: "#{workflow_id}:planning_outcome:final",
+        workflow_name: self.class.name,
+        workflow_id: workflow_id,
+        decision_type: "planning_outcome",
+        outcome: planning_outcome_for(tasks),
+        input_context: planning_context,
+        plan_data: {
+          tasks: tasks,
+          created_issues: created_issues
+        },
+        metadata: {
+          prompt_source: prompt_source,
+          failed_step: nil,
+          activity_boundaries: %w[
+            Activities::FetchPlanningContextActivity
+            Activities::DecomposeFeatureActivity
+            Activities::CreateSubIssuesActivity
+            Activities::UpdatePlanningLabelsActivity
+          ]
+        }
+      )
+
       # If planning produced 0-1 tasks, no parallel execution needed
+      decision_phase = "parallelization"
       unless tasks.size > 1
+        safe_log_decomposition_decision(
+          project_id: project_id,
+          issue_id: issue_id,
+          decision_key: "#{workflow_id}:parallelization_outcome:final",
+          workflow_name: self.class.name,
+          workflow_id: workflow_id,
+          decision_type: "parallelization_outcome",
+          outcome: parallelization_outcome_for(tasks),
+          input_context: planning_context,
+          plan_data: {
+            tasks: tasks,
+            created_issues: created_issues
+          },
+          metadata: {
+            prompt_source: prompt_source,
+            failed_step: nil,
+            activity_boundaries: [ "Workflows::ParallelAgentExecutionWorkflow" ]
+          }
+        )
+
         Temporalio::Workflow.logger.info(
           message: "feature_orchestration.single_task_skip",
           project_id: project_id,
@@ -69,8 +129,33 @@ module Workflows
       end
 
       # Phase 2: Launch parallel execution on all sub-tasks
+      decision_step = "build_sub_tasks"
+      @decision_step = decision_step
       sub_tasks = build_sub_tasks(tasks, created_issues)
 
+      safe_log_decomposition_decision(
+        project_id: project_id,
+        issue_id: issue_id,
+        decision_key: "#{workflow_id}:parallelization_outcome:final",
+        workflow_name: self.class.name,
+        workflow_id: workflow_id,
+        decision_type: "parallelization_outcome",
+        outcome: "parallel_execution_planned",
+        input_context: planning_context,
+        plan_data: {
+          tasks: tasks,
+          created_issues: created_issues,
+          sub_tasks: sub_tasks
+        },
+        metadata: {
+          prompt_source: prompt_source,
+          failed_step: nil,
+          activity_boundaries: [ "Workflows::ParallelAgentExecutionWorkflow" ]
+        }
+      )
+
+      decision_step = "run_parallel_execution"
+      @decision_step = decision_step
       parallel_result = run_parallel_execution(
         project_id: project_id,
         issue_id: issue_id,
@@ -99,6 +184,31 @@ module Workflows
         aggregated_pr: parallel_result[:aggregated_pr]
       }
     rescue => e
+      failed_step = @decision_step || decision_step
+
+      safe_log_decomposition_decision(
+        project_id: project_id,
+        issue_id: issue_id,
+        decision_key: "#{workflow_id}:#{decision_phase}_outcome:failure",
+        workflow_name: self.class.name,
+        workflow_id: workflow_id,
+        decision_type: decision_phase == "parallelization" ? "parallelization_outcome" : "planning_outcome",
+        outcome: decision_phase == "parallelization" ? parallelization_failure_outcome_for(failed_step) : planning_failure_outcome_for(failed_step),
+        input_context: planning_context,
+        plan_data: {
+          tasks: tasks,
+          created_issues: created_issues
+        },
+        error_details: {
+          error_class: e.class.to_s,
+          error_message: e.message
+        },
+        metadata: {
+          prompt_source: prompt_source,
+          failed_step: failed_step
+        }
+      )
+
       Temporalio::Workflow.logger.error(
         message: "feature_orchestration.failed",
         project_id: project_id,
@@ -117,6 +227,7 @@ module Workflows
     # summary, requiring re-fetching. Shared activities keep the actual logic deduplicated.
     def run_planning(project_id, issue_id)
       # Step 1: Fetch knowledge base context
+      @decision_step = "fetch_planning_context"
       context_result = run_activity(
         Activities::FetchPlanningContextActivity,
         { project_id: project_id, issue_id: issue_id },
@@ -124,6 +235,7 @@ module Workflows
       )
 
       # Step 2: Decompose into sub-tasks
+      @decision_step = "decompose_feature"
       decompose_result = run_activity(
         Activities::DecomposeFeatureActivity,
         {
@@ -135,10 +247,12 @@ module Workflows
       )
 
       tasks = decompose_result[:tasks]
+      prompt_source = decompose_result[:prompt_source]
       created_issues = []
 
       # Step 3: Create sub-issues if multiple tasks
       if tasks.present? && tasks.size > 1
+        @decision_step = "create_sub_issues"
         create_result = run_activity(
           Activities::CreateSubIssuesActivity,
           {
@@ -160,7 +274,7 @@ module Workflows
         created_issues = create_result[:created_issues]
       end
 
-      { tasks: tasks, created_issues: created_issues }
+      { tasks: tasks, created_issues: created_issues, context: context_result[:context], prompt_source: prompt_source }
     end
 
     def build_sub_tasks(tasks, created_issues)
@@ -214,6 +328,51 @@ module Workflows
         id: workflow_id,
         execution_timeout: timeout_seconds + 300,
         task_queue: Paid::AGENT_TASK_QUEUE
+      )
+    end
+
+    def planning_outcome_for(tasks)
+      return "empty_plan" if tasks.empty?
+      return "single_task_plan" if tasks.one?
+
+      "sub_issues_created"
+    end
+
+    def planning_failure_outcome_for(step)
+      case step
+      when "decompose_feature" then "decomposition_failed"
+      when "create_sub_issues" then "sub_issue_creation_failed"
+      else "planning_failed"
+      end
+    end
+
+    def parallelization_outcome_for(tasks)
+      return "parallel_execution_skipped_empty_plan" if tasks.empty?
+      return "parallel_execution_skipped_single_task" if tasks.one?
+
+      "parallel_execution_planned"
+    end
+
+    def parallelization_failure_outcome_for(step)
+      case step
+      when "build_sub_tasks" then "parallelization_planning_failed"
+      else "parallelization_failed"
+      end
+    end
+
+    def safe_log_decomposition_decision(payload)
+      run_activity(
+        Activities::LogDecompositionDecisionActivity,
+        payload,
+        timeout: 30,
+        retry_policy: NO_RETRY
+      )
+    rescue => log_error
+      Temporalio::Workflow.logger.warn(
+        message: "feature_orchestration.decomposition_decision_log_failed",
+        workflow_id: Temporalio::Workflow.info.workflow_id,
+        error_class: log_error.class.to_s,
+        error: log_error.message
       )
     end
   end

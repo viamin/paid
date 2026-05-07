@@ -98,6 +98,11 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
         expect(workflow).to have_received(:run_activity)
           .with(Activities::DecomposeFeatureActivity, hash_including(project_id: 1, issue_id: 2), timeout: 120)
         expect_orchestration_sub_issue_creation!
+        expect(workflow).to have_received(:run_activity)
+          .with(Activities::LogDecompositionDecisionActivity,
+            hash_including(decision_type: "planning_outcome", outcome: "sub_issues_created"),
+            timeout: 30,
+            retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
       end
 
       it "launches ParallelAgentExecutionWorkflow as child workflow" do
@@ -137,6 +142,15 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
 
         expect(workflow).to have_received(:run_activity)
           .with(Activities::UpdatePlanningLabelsActivity, hash_including(task_count: 3), timeout: 30)
+        expect(workflow).to have_received(:run_activity)
+          .with(Activities::LogDecompositionDecisionActivity,
+            hash_including(
+              decision_type: "parallelization_outcome",
+              outcome: "parallel_execution_planned",
+              plan_data: hash_including(sub_tasks: array_including(hash_including(issue_id: 10)))
+            ),
+            timeout: 30,
+            retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
       end
 
       it "passes aggregate_pr option to child workflow when provided" do
@@ -187,6 +201,14 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
 
         expect(workflow).to have_received(:run_activity)
           .with(Activities::UpdatePlanningLabelsActivity, hash_including(task_count: 1), timeout: 30)
+        expect(workflow).to have_received(:run_activity)
+          .with(Activities::LogDecompositionDecisionActivity,
+            hash_including(
+              decision_type: "parallelization_outcome",
+              outcome: "parallel_execution_skipped_single_task"
+            ),
+            timeout: 30,
+            retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
       end
     end
 
@@ -203,6 +225,11 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
         expect(result[:parallel_execution]).to be false
         expect(result[:task_count]).to eq(0)
         expect(Temporalio::Workflow).not_to have_received(:execute_child_workflow)
+        expect(workflow).to have_received(:run_activity)
+          .with(Activities::LogDecompositionDecisionActivity,
+            hash_including(outcome: "parallel_execution_skipped_empty_plan"),
+            timeout: 30,
+            retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
       end
     end
 
@@ -293,6 +320,14 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
           Temporalio::Error::ApplicationError,
           /returned nil issue_id for task 1: Task B/
         )
+        expect(workflow).to have_received(:run_activity)
+          .with(Activities::LogDecompositionDecisionActivity,
+            hash_including(
+              decision_type: "parallelization_outcome",
+              outcome: "parallelization_planning_failed"
+            ),
+            timeout: 30,
+            retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
       end
     end
 
@@ -313,12 +348,30 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
 
     context "when an activity raises an error" do
       before do
-        allow(workflow).to receive(:run_activity)
-          .and_raise(Temporalio::Error::ApplicationError.new("LLM failed", type: "DecompositionFailed"))
+        allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+          case activity_class.name
+          when "Activities::FetchPlanningContextActivity"
+            { context: {} }
+          when "Activities::DecomposeFeatureActivity"
+            raise Temporalio::Error::ApplicationError.new("LLM failed", type: "DecompositionFailed")
+          when "Activities::LogDecompositionDecisionActivity"
+            { decomposition_decision_id: 9 }
+          else
+            {}
+          end
+        end
       end
 
       it "re-raises the error" do
         expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError, "LLM failed")
+        expect(workflow).to have_received(:run_activity)
+          .with(Activities::LogDecompositionDecisionActivity,
+            hash_including(
+              decision_type: "planning_outcome",
+              outcome: "decomposition_failed"
+            ),
+            timeout: 30,
+            retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
       end
     end
 
@@ -426,6 +479,8 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
         { created_issues: created_issues }
       when "Activities::UpdatePlanningLabelsActivity"
         { success: true }
+      when "Activities::LogDecompositionDecisionActivity"
+        { decomposition_decision_id: 1 }
       else
         {}
       end

@@ -21,22 +21,23 @@ module Activities
       project = Project.find(project_id)
       issue = project.issues.find(issue_id)
 
-      tasks = decompose(issue, knowledge_context)
+      prompt_data = render_prompt(issue, knowledge_context)
+      tasks = decompose(prompt_data[:prompt])
 
       logger.info(
         message: "planning.decomposition_complete",
         project_id: project_id,
         issue_id: issue_id,
-        task_count: tasks.size
+        task_count: tasks.size,
+        prompt_source: prompt_data[:prompt_source]
       )
 
-      { tasks: tasks }
+      { tasks: tasks, prompt_source: prompt_data[:prompt_source] }
     end
 
     private
 
-    def decompose(issue, context)
-      prompt = build_prompt(issue, context)
+    def decompose(prompt)
       response = AgentHarness.send_message(
         prompt,
         provider: :claude,
@@ -95,7 +96,7 @@ module Activities
       ]
     PROMPT
 
-    def build_prompt(issue, context)
+    def render_prompt(issue, context)
       vars = {
         title: issue.title,
         body: issue.body.to_s.truncate(8000),
@@ -103,12 +104,23 @@ module Activities
         max_tasks: MAX_TASKS
       }
 
-      Prompts::Render.call(
-        slug: PROMPT_SLUG,
-        project: issue.project,
-        variables: vars,
-        fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
-      ).strip
+      prompt = Prompt.resolve(PROMPT_SLUG, project: issue.project)
+      version = prompt&.current_version
+
+      if version
+        { prompt: version.render(vars).strip, prompt_source: "active_prompt" }
+      else
+        logger.warn(
+          message: "planning.decomposition_prompt_fallback",
+          project_id: issue.project_id,
+          issue_id: issue.id,
+          prompt_slug: PROMPT_SLUG
+        )
+        {
+          prompt: Prompts::Render.interpolate(FALLBACK_PROMPT, vars).strip,
+          prompt_source: "fallback_prompt"
+        }
+      end
     end
 
     def build_knowledge_section(snippets)

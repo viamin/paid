@@ -22,10 +22,17 @@ module Workflows
     def execute(input)
       project_id = input[:project_id]
       issue_id = input[:issue_id]
+      workflow_id = Temporalio::Workflow.info.workflow_id
 
       Temporalio::Workflow.logger.info(
         "PlanningWorkflow started for project=#{project_id} issue=#{issue_id}"
       )
+
+      context_result = {}
+      tasks = []
+      created_issues = []
+      prompt_source = nil
+      decision_step = "fetch_planning_context"
 
       # Step 1: Fetch knowledge base context for informed decomposition
       context_result = run_activity(
@@ -35,6 +42,7 @@ module Workflows
       )
 
       # Step 2: Decompose the feature into sub-tasks using LLM
+      decision_step = "decompose_feature"
       decompose_result = run_activity(
         Activities::DecomposeFeatureActivity,
         {
@@ -45,12 +53,14 @@ module Workflows
         timeout: 120
       )
 
-      tasks = decompose_result[:tasks]
+      tasks = Array(decompose_result[:tasks])
+      prompt_source = decompose_result[:prompt_source]
 
       # Step 3: Create sub-issues from the plan (skip if single-task or empty)
       if tasks.present? && tasks.size > 1
         sub_tasks = tasks.map { |t| { title: t[:title], body: t[:description] } }
 
+        decision_step = "create_sub_issues"
         create_result = run_activity(
           Activities::CreateSubIssuesActivity,
           {
@@ -63,11 +73,10 @@ module Workflows
         )
 
         created_issues = create_result[:created_issues]
-      else
-        created_issues = []
       end
 
       # Step 4: Update labels on the parent issue
+      decision_step = "update_planning_labels"
       run_activity(
         Activities::UpdatePlanningLabelsActivity,
         {
@@ -76,6 +85,31 @@ module Workflows
           task_count: tasks.size
         },
         timeout: 30
+      )
+
+      safe_log_decomposition_decision(
+        project_id: project_id,
+        issue_id: issue_id,
+        decision_key: "#{workflow_id}:planning_outcome:final",
+        workflow_name: self.class.name,
+        workflow_id: workflow_id,
+        decision_type: "planning_outcome",
+        outcome: planning_outcome_for(tasks),
+        input_context: context_result[:context],
+        plan_data: {
+          tasks: tasks,
+          created_issues: created_issues
+        },
+        metadata: {
+          prompt_source: prompt_source,
+          failed_step: nil,
+          activity_boundaries: %w[
+            Activities::FetchPlanningContextActivity
+            Activities::DecomposeFeatureActivity
+            Activities::CreateSubIssuesActivity
+            Activities::UpdatePlanningLabelsActivity
+          ]
+        }
       )
 
       {
@@ -87,6 +121,35 @@ module Workflows
       }
 
     rescue => e
+      safe_log_decomposition_decision(
+        project_id: project_id,
+        issue_id: issue_id,
+        decision_key: "#{workflow_id}:planning_outcome:failure",
+        workflow_name: self.class.name,
+        workflow_id: workflow_id,
+        decision_type: "planning_outcome",
+        outcome: planning_failure_outcome_for(decision_step),
+        input_context: context_result[:context],
+        plan_data: {
+          tasks: tasks,
+          created_issues: created_issues
+        },
+        error_details: {
+          error_class: e.class.to_s,
+          error_message: e.message
+        },
+        metadata: {
+          prompt_source: prompt_source,
+          failed_step: decision_step,
+          activity_boundaries: %w[
+            Activities::FetchPlanningContextActivity
+            Activities::DecomposeFeatureActivity
+            Activities::CreateSubIssuesActivity
+            Activities::UpdatePlanningLabelsActivity
+          ]
+        }
+      )
+
       Temporalio::Workflow.logger.error(
         message: "PlanningWorkflow failed",
         project_id: project_id,
@@ -95,6 +158,39 @@ module Workflows
         error: e.message
       )
       raise
+    end
+
+    private
+
+    def planning_outcome_for(tasks)
+      return "empty_plan" if tasks.empty?
+      return "single_task_plan" if tasks.one?
+
+      "sub_issues_created"
+    end
+
+    def planning_failure_outcome_for(step)
+      case step
+      when "decompose_feature" then "decomposition_failed"
+      when "create_sub_issues" then "sub_issue_creation_failed"
+      else "planning_failed"
+      end
+    end
+
+    def safe_log_decomposition_decision(payload)
+      run_activity(
+        Activities::LogDecompositionDecisionActivity,
+        payload,
+        timeout: 30,
+        retry_policy: NO_RETRY
+      )
+    rescue => log_error
+      Temporalio::Workflow.logger.warn(
+        message: "planning.decomposition_decision_log_failed",
+        workflow_id: Temporalio::Workflow.info.workflow_id,
+        error_class: log_error.class.to_s,
+        error: log_error.message
+      )
     end
   end
 end
