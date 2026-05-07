@@ -840,7 +840,7 @@ Deliverables:
 - [x] Performance handles 10+ concurrent projects with benchmarks
 - [x] Provider quota tracking: per-provider usage visible on /providers page
 - [x] Provider-specific code upstreamed to agent-harness
-- [x] Upstream quota polling deferred to Phase 4
+- [x] ~~Upstream quota polling~~ — deferred to Phase 4
 - [x] MCP server support for agent tool use and project configuration
 - [x] Interactive chat with streaming UI, cost tracking, and container workspace
 - [x] Self-healing exception handling with auto-issue filing
