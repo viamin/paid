@@ -6,6 +6,18 @@ operational procedures for running Paid in production at various scales.
 For worker-specific tuning details, see [WORKER_POOL_TUNING.md](WORKER_POOL_TUNING.md).
 For monitoring and alerting, see [OBSERVABILITY.md](OBSERVABILITY.md).
 
+## Orchestrator Integrations
+
+Paid's scaling decision layer is infrastructure-agnostic. `Scaling::Orchestrator`
+adapters translate those decisions into platform-specific actions:
+
+| Adapter | Primary target | Notes |
+|---------|----------------|-------|
+| `Scaling::Orchestrators::KubernetesAdapter` | Kubernetes Deployments | Direct replica scaling plus resource-limit patching |
+| `Scaling::Orchestrators::DockerSwarmAdapter` | Docker Swarm services | Uses `docker service` CLI commands against a Swarm manager |
+| `Scaling::Orchestrators::EcsAdapter` | Amazon ECS services | Uses the AWS CLI to scale services and roll task-definition revisions |
+| `Scaling::Orchestrators::DockerComposeAdapter` | Local/dev Docker Compose | Development and CI fallback, not a production auto-scaling target |
+
 ## Architecture Overview
 
 Paid has four independently scalable process types:

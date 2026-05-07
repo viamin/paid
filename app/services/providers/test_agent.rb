@@ -473,7 +473,7 @@ module Providers
         return "Paid is not configured with an OpenAI API key for containerized OpenAI-backed runs (Codex or OpenCode)."
       end
 
-      if message.match?(/exec:\s*"github-copilot-cli": executable file not found in \$PATH/i)
+      if message.match?(/exec:\s*"(?:github-copilot-cli|copilot)": executable file not found in \$PATH/i)
         return "GitHub Copilot CLI is missing from the agent container. Rebuild the paid-agent image to install the fixed Copilot CLI package."
       end
 

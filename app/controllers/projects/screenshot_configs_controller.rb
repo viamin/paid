@@ -11,7 +11,7 @@ module Projects
     def detect
       authorize @project, :update?
 
-      result = Screenshots::DetectFramework.call(project: @project)
+      result = Projects::Screenshots::DetectFramework.call(project: @project)
 
       respond_to do |format|
         format.html do

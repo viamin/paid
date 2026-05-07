@@ -85,7 +85,7 @@ class NetworkPolicy
 
     # Returns true when any provider CLI config is available for
     # subscription-based authentication (e.g. from `claude login`,
-    # `gemini auth login`, Codex `auth.json`, or Copilot `hosts.json`).
+    # `gemini auth login`, Codex `auth.json`, or Copilot `config.json`).
     #
     # Mirrors the detection logic in Containers::Provision#subscription_auth?
     # so that service containers are always placed on the same network as the
@@ -218,7 +218,7 @@ class NetworkPolicy
 
     def copilot_subscription_auth?
       dir = copilot_config_dir
-      dir.present? && File.file?(File.join(dir, "hosts.json"))
+      dir.present? && File.file?(File.join(dir, "config.json"))
     end
 
     # Returns the Claude config directory path, checking the explicit
@@ -272,17 +272,17 @@ class NetworkPolicy
 
     # Returns the GitHub Copilot config directory path.
     def copilot_config_dir
-      if ENV["COPILOT_CONFIG_DIR"].present?
-        return ENV["COPILOT_CONFIG_DIR"] if credential_present?(ENV["COPILOT_CONFIG_DIR"], "hosts.json")
+      [ ENV["COPILOT_HOME"], ENV["COPILOT_CONFIG_DIR"] ].each do |env_path|
+        return env_path if env_path.present? && credential_present?(env_path, "config.json")
       end
 
       home = home_dir
       if home.present?
-        config_copilot = File.join(home, ".config", "github-copilot")
-        return config_copilot if credential_present?(config_copilot, "hosts.json")
+        dot_copilot = File.join(home, ".copilot")
+        return dot_copilot if credential_present?(dot_copilot, "config.json")
       end
 
-      "/.config/github-copilot" if credential_present?("/.config/github-copilot", "hosts.json")
+      "/.copilot" if credential_present?("/.copilot", "config.json")
     end
 
     # Returns true when the directory exists and contains the given credential file.
