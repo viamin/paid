@@ -68,7 +68,13 @@ module Screenshots
         runner_class.call
       end
 
-      TenantContext.with_system_access do
+      def with_seed_context
+        return yield unless defined?(TenantContext)
+
+        TenantContext.with_system_access { yield }
+      end
+
+      with_seed_context do
         seed.each do |entry|
           key = entry.fetch("key")
 

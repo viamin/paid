@@ -39,4 +39,13 @@ RSpec.describe Screenshots::Driver::Playwright do
 
     expect(driver.current_path).to eq("/dashboard")
   end
+
+  it "uses a fresh browser context and page for each helper session" do
+    helper_source = File.read(driver.send(:helper_path))
+
+    expect(helper_source).to include("context = await browser.newContext({ viewport });")
+    expect(helper_source).to include("page = await context.newPage();")
+    expect(helper_source).not_to include("browser.contexts()[0]")
+    expect(helper_source).not_to include("context.pages()[0]")
+  end
 end

@@ -13,12 +13,17 @@ RSpec.describe Screenshots::SeedRunner do
     $stdout = original_stdout
   end
 
-  def install_seed_script_fakes
-    stub_const("TenantContext", Class.new do
-      def self.with_system_access
-        yield
-      end
-    end)
+  def install_seed_script_fakes(with_tenant_context: true)
+    if with_tenant_context
+      stub_const("TenantContext", Class.new do
+        def self.with_system_access
+          yield
+        end
+      end)
+    elsif Object.const_defined?(:TenantContext)
+      hide_const("TenantContext")
+    end
+
     stub_const("FakeSeedRecord", Struct.new(:attributes))
     stub_const("Screenshots::SeedData::Fake", Class.new do
       def self.call
@@ -83,6 +88,14 @@ RSpec.describe Screenshots::SeedRunner do
       "admin" => true
     )
     expect(result.fetch("user")).not_to have_key("metadata")
+  end
+
+  it "runs without TenantContext when used outside Paid" do
+    install_seed_script_fakes(with_tenant_context: false)
+
+    result = run_seed_script([ { "key" => "user", "runner" => "Screenshots::SeedData::Fake.call" } ])
+
+    expect(result.fetch("user")).to include("id" => 1, "username" => "screenshot")
   end
 
   it "rejects arbitrary ruby runner strings" do
