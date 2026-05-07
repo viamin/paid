@@ -33,7 +33,7 @@ RSpec.describe OrchestrationStrategies::Resolve do
 
         expect(result).to be_a(OrchestrationStrategy)
         expect(result).not_to be_persisted
-        expect(result.version).to eq(0)
+        expect(result.version).to eq(1)
         expect(result.configuration).to eq(OrchestrationStrategies::Defaults.review_settings)
       end
 

@@ -34,7 +34,7 @@ module OrchestrationStrategies
       OrchestrationStrategy.new(
         strategy_type: strategy_type,
         name: "#{strategy_type.titleize} (hardcoded fallback)",
-        version: 0,
+        version: 1,
         configuration: config,
         active: true,
         account: nil

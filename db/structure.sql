@@ -6442,7 +6442,7 @@ CREATE INDEX idx_orchestration_decisions_run_type_created ON public.orchestratio
 -- Name: idx_orchestration_strategies_active_type_account; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_orchestration_strategies_active_type_account ON public.orchestration_strategies USING btree (strategy_type, account_id) WHERE (active = true);
+CREATE UNIQUE INDEX idx_orchestration_strategies_active_type_account ON public.orchestration_strategies USING btree (strategy_type, account_id) NULLS NOT DISTINCT WHERE (active = true);
 
 
 --
@@ -11768,6 +11768,8 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260507223324'),
+('20260507223302'),
 ('20260507204357'),
 ('20260507164917'),
 ('20260507125050'),
