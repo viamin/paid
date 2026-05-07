@@ -5,8 +5,13 @@ require "rails_helper"
 
 RSpec.describe Screenshots::ConfigParser do
   def write_config(dir, content)
-    FileUtils.mkdir_p(File.join(dir, ".paid"))
-    File.write(File.join(dir, ".paid", "screenshots.yml"), content)
+    write_config_at(dir, ".paid/screenshots.yml", content)
+  end
+
+  def write_config_at(dir, path, content)
+    full_path = File.join(dir, path)
+    FileUtils.mkdir_p(File.dirname(full_path))
+    File.write(full_path, content)
   end
 
   let(:repo_dir) { Dir.mktmpdir }
@@ -55,6 +60,37 @@ RSpec.describe Screenshots::ConfigParser do
       )
     end
 
+    it "reads UI overrides from the project-configured config path" do
+      project.screenshot_settings = { "config_path" => ".paid/custom-screenshots.yml" }
+      write_config_at(repo_dir, ".paid/custom-screenshots.yml", <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+        ui_patterns:
+          - frontend/**/*
+      YAML
+
+      expect(described_class.ui_detection_overrides(project:, repo_path: repo_dir)).to eq(
+        patterns: [ "frontend/**/*" ]
+      )
+    end
+
+    it "rejects UI override config paths that escape the repo" do
+      project.screenshot_settings = { "config_path" => "../custom-screenshots.yml" }
+
+      expect {
+        described_class.ui_detection_overrides(project:, repo_path: repo_dir)
+      }.to raise_error(Screenshots::ConfigError, "config_path escapes the repo directory")
+    end
+
+    it "rejects UI override config paths that point to a directory" do
+      project.screenshot_settings = { "config_path" => "." }
+
+      expect {
+        described_class.ui_detection_overrides(project:, repo_path: repo_dir)
+      }.to raise_error(Screenshots::ConfigError, ". must be a file")
+    end
+
     it "does not return default Rails UI patterns when the repo config omits them" do
       write_config(repo_dir, <<~YAML)
         routes:
@@ -101,6 +137,44 @@ RSpec.describe Screenshots::ConfigParser do
         )
         expect(config.ui_patterns).to eq(Screenshots::Configuration::DEFAULT_UI_PATTERNS)
         expect(config.ui_exclusions).to eq(Screenshots::Configuration::DEFAULT_UI_EXCLUSIONS)
+      end
+    end
+
+    context "with a custom project config path" do
+      subject(:config) { described_class.from_repo_path(repo_dir, project: project) }
+
+      before do
+        project.screenshot_settings = { "config_path" => ".paid/custom-screenshots.yml" }
+
+        write_config_at(repo_dir, ".paid/custom-screenshots.yml", <<~YAML)
+          routes:
+            - path: /dashboard
+              name: dashboard
+        YAML
+      end
+
+      it "reads the configured file instead of the default path" do
+        expect(config.routes).to contain_exactly(
+          have_attributes(path: "/dashboard", name: "dashboard", requires_auth: false, seed_key: nil)
+        )
+      end
+
+      it "rejects configured paths that escape the repo" do
+        project.screenshot_settings = { "config_path" => "../custom-screenshots.yml" }
+
+        expect { config }.to raise_error(
+          Screenshots::ConfigError,
+          "config_path escapes the repo directory"
+        )
+      end
+
+      it "rejects configured paths that point to a directory" do
+        project.screenshot_settings = { "config_path" => "." }
+
+        expect { config }.to raise_error(
+          Screenshots::ConfigError,
+          ". must be a file"
+        )
       end
     end
 

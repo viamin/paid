@@ -15,6 +15,7 @@ module Activities
 
       project = issue.project
       client = project.github_token.client
+      phase_before = issue.pr_review_phase
       issue.update!(pr_review_phase: "escalated")
 
       add_phase_label(client, project, issue.github_number, PAID_ESCALATED_LABEL)
@@ -35,7 +36,7 @@ module Activities
         signals: {
           trigger: "escalate_to_owner",
           reason: input[:reason],
-          phase_before: "draft"
+          phase_before: phase_before
         },
         result: {
           updated: true,

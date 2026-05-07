@@ -1317,14 +1317,16 @@ class AgentRun < ApplicationRecord
   end
 
   def retry!(decision_point: "agent_run.retry", signals: {}, result: {})
-    update!(status: "retried")
-    log_orchestration_decision!(
-      action: "retry",
-      decision_point: decision_point,
-      status: "applied",
-      signals: signals.merge(previous_status: status_before_last_save),
-      result: result.merge(status: status)
-    )
+    with_lock do
+      update!(status: "retried")
+      log_orchestration_decision!(
+        action: "retry",
+        decision_point: decision_point,
+        status: "applied",
+        signals: signals.merge(previous_status: status_before_last_save),
+        result: result.merge(status: status)
+      )
+    end
   end
 
   def auth_expired?
