@@ -46,8 +46,8 @@ module Scaling
 
       def set_resource_limits(service:, cpu_limit: nil, memory_limit: nil)
         args = [ "docker", "service", "update" ]
-        args.push("--limit-cpu", cpu_limit) if cpu_limit
-        args.push("--limit-memory", memory_limit) if memory_limit
+        args.push("--limit-cpu", normalize_cpu_limit(cpu_limit)) if cpu_limit
+        args.push("--limit-memory", normalize_memory_limit(memory_limit)) if memory_limit
         args.push(service)
         run_command(*args)
 
@@ -107,6 +107,44 @@ module Scaling
         return stdout if status.success?
 
         raise CommandError, "Command failed (exit #{status.exitstatus}): #{stderr.presence || stdout}"
+      end
+
+      def normalize_cpu_limit(value)
+        string = value.to_s.strip
+        raise CommandError, "Invalid docker swarm cpu_limit: #{value.inspect}" if string.blank?
+
+        return format_decimal(string.delete_suffix("m").to_f / 1000) if string.end_with?("m") && numeric?(string.delete_suffix("m"))
+        return format_decimal(string.to_f) if numeric?(string)
+
+        raise CommandError, "Invalid docker swarm cpu_limit: #{value.inspect}"
+      end
+
+      def normalize_memory_limit(value)
+        string = value.to_s.strip
+        raise CommandError, "Invalid docker swarm memory_limit: #{value.inspect}" if string.blank?
+
+        match = string.match(/\A(?<amount>\d+(?:\.\d+)?)(?<unit>ki|mi|gi|ti|k|m|g|t)?\z/i)
+        raise CommandError, "Invalid docker swarm memory_limit: #{value.inspect}" unless match
+
+        amount = format_decimal(match[:amount].to_f)
+        unit = case match[:unit]&.downcase
+        when "ki" then "k"
+        when "mi" then "m"
+        when "gi" then "g"
+        when "ti" then "t"
+        else
+          match[:unit].to_s.downcase
+        end
+
+        "#{amount}#{unit}"
+      end
+
+      def numeric?(value)
+        value.match?(/\A\d+(?:\.\d+)?\z/)
+      end
+
+      def format_decimal(value)
+        value.to_s.sub(/\.0+\z/, "").sub(/(\.\d*?)0+\z/, '\1')
       end
     end
   end

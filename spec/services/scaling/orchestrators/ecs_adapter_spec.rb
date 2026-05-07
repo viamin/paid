@@ -275,6 +275,22 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
       expect(adapter.healthy?).to be true
     end
 
+    it "forces JSON output for CLI calls" do
+      status = instance_double(Process::Status, success?: true)
+      allow(Open3).to receive(:capture3).and_return([ "{}", "", status ])
+
+      adapter.send(:run_aws, "ecs", "list-services", "--cluster", "paid-prod", "--max-items", "1")
+
+      expect(Open3).to have_received(:capture3).with(
+        "aws",
+        "--region", "us-east-1",
+        "--output", "json",
+        "ecs", "list-services",
+        "--cluster", "paid-prod",
+        "--max-items", "1"
+      )
+    end
+
     it "returns false when the AWS CLI call fails" do
       allow(adapter).to receive(:run_aws).and_raise(described_class::ApiError, "auth failed")
 

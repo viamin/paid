@@ -267,6 +267,7 @@ module Scaling
         cmd = [ "aws" ]
         cmd.push("--region", region) if region.present?
         cmd.push("--profile", profile) if profile.present?
+        cmd.push("--output", "json")
         cmd.concat(args)
 
         stdout, stderr, status = Open3.capture3(*cmd)

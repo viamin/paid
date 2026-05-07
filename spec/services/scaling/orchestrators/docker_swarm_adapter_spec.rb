@@ -74,15 +74,21 @@ RSpec.describe Scaling::Orchestrators::DockerSwarmAdapter do
   end
 
   describe "#set_resource_limits" do
-    it "updates service limits" do
+    it "normalizes shared orchestrator resource strings for docker swarm" do
       expect(adapter).to receive(:run_command)
-        .with("docker", "service", "update", "--limit-cpu", "2", "--limit-memory", "1g", "agent-worker")
+        .with("docker", "service", "update", "--limit-cpu", "0.5", "--limit-memory", "512m", "agent-worker")
         .and_return("updated")
 
-      result = adapter.set_resource_limits(service: "agent-worker", cpu_limit: "2", memory_limit: "1g")
+      result = adapter.set_resource_limits(service: "agent-worker", cpu_limit: "500m", memory_limit: "512Mi")
 
       expect(result).to be_a(Scaling::Orchestrators::Data::ResourceUpdateResult)
       expect(result.accepted).to be true
+    end
+
+    it "raises a clear adapter error for invalid resource strings" do
+      expect do
+        adapter.set_resource_limits(service: "agent-worker", cpu_limit: "half", memory_limit: "512Mi")
+      end.to raise_error(described_class::CommandError, /cpu_limit/)
     end
   end
 
