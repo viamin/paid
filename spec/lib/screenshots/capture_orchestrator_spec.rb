@@ -113,6 +113,22 @@ RSpec.describe Screenshots::CaptureOrchestrator do
     expect(Screenshots::Driver::Playwright).to have_received(:new).with(config: playwright_config, repo_path: Rails.root.to_s)
   end
 
+  it "fails fast when authenticated routes are configured without an auth strategy" do
+    unauthenticated_config = Screenshots::Configuration.from_hash(
+      "driver" => "cuprite",
+      "routes" => [
+        { "path" => "/", "name" => "home" },
+        { "path" => "/projects/:project_id", "name" => "project_show", "requires_auth" => true, "seed_key" => "project" }
+      ]
+    )
+
+    orchestrator = build_orchestrator(config: unauthenticated_config)
+
+    expect { orchestrator.call }
+      .to raise_error(ArgumentError, /authenticated routes.*auth\.strategy is missing or none/)
+    expect(driver).not_to have_received(:start_browser)
+  end
+
   it "can capture legacy target objects passed by the compatibility wrapper" do
     target = Screenshots::CaptureTargets::Target.new(
       slug: "project_show",

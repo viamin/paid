@@ -38,6 +38,7 @@ module Screenshots
       setup_runner.call(commands: config.setup_commands, repo_path:)
       seed_data = seed_runner.call(config:, repo_path:, driver_name: config.driver)
       routes = resolve_routes(seed_data)
+      ensure_authentication_config!(routes)
 
       capture_results = []
       driver.start_browser
@@ -45,7 +46,7 @@ module Screenshots
       capture_partition(routes, requires_auth: false, capture_results:)
 
       authenticated_routes = routes.select(&:requires_auth)
-      if authenticated_routes.any? && config.auth.strategy != "none"
+      if authenticated_routes.any?
         driver.authenticate(auth_config: resolved_auth_config(seed_data))
       end
       capture_partition(authenticated_routes, requires_auth: true, capture_results:)
@@ -126,6 +127,17 @@ module Screenshots
       rescue StandardError => e
         capture_results << CaptureResult.new(route.name, file_path, false, "#{route.name} (#{route.path}): #{e.message}")
       end
+    end
+
+    def ensure_authentication_config!(routes)
+      return unless routes.any?(&:requires_auth)
+      return if auth_strategy_configured?
+
+      raise ArgumentError, "Screenshot config defines authenticated routes but auth.strategy is missing or none"
+    end
+
+    def auth_strategy_configured?
+      config.auth.strategy.present? && config.auth.strategy != "none"
     end
 
     def auth_redirect?(current_path)

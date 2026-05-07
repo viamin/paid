@@ -16,7 +16,21 @@ module Screenshots
       def capture_seed_result(record)
         return record unless record.respond_to?(:attributes)
 
-        record.attributes.slice("id", "email", "slug", "name")
+        record.attributes.each_with_object({}) do |(attribute, value), captured|
+          serialized = serialize_seed_value(value)
+          captured[attribute] = serialized unless serialized == :__screenshots_skip__
+        end
+      end
+
+      def serialize_seed_value(value)
+        case value
+        when String, Numeric, TrueClass, FalseClass, NilClass
+          value
+        else
+          return value.iso8601 if value.respond_to?(:iso8601)
+
+          :__screenshots_skip__
+        end
       end
 
       def resolve_seed_value(value, seed_records)
