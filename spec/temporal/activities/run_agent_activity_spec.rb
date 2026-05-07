@@ -220,8 +220,8 @@ RSpec.describe Activities::RunAgentActivity do
       expect(described_class.container_executable?("opencode")).to be true
     end
 
-    it "does not treat copilot as container executable" do
-      expect(described_class.container_executable?("copilot")).to be false
+    it "treats copilot as container executable via autopilot mode" do
+      expect(described_class.container_executable?("copilot")).to be true
     end
 
     it "recognizes claude_code via agent type mapping" do
@@ -318,6 +318,14 @@ RSpec.describe Activities::RunAgentActivity do
       )
       expect(plan.command).to include("claude", "--print", "--dangerously-skip-permissions")
     end
+
+    it "generates copilot env that bypasses approval prompts in dangerous mode" do
+      plan = Providers::HarnessExecutionPlan.for_provider_key(
+        provider_key: "copilot", prompt: "test", options: { dangerous_mode: true }
+      )
+      expect(plan.command).to include("copilot", "--autopilot")
+      expect(plan.env).to include("COPILOT_ALLOW_ALL" => "true")
+    end
   end
 
   describe ".provider_order" do
@@ -381,14 +389,14 @@ RSpec.describe Activities::RunAgentActivity do
       expect(result).to eq(%w[claude_code opencode codex])
     end
 
-    it "skips copilot in fallback order because it is not an agent runner" do
+    it "includes copilot in fallback order as a container-executable provider" do
       result = described_class.provider_order(
         agent_type: "claude_code",
         fallback_enabled: true,
         fallback_providers: %w[copilot codex]
       )
 
-      expect(result).to eq(%w[claude_code codex])
+      expect(result).to eq(%w[claude_code copilot codex])
     end
   end
 
@@ -592,6 +600,23 @@ RSpec.describe Activities::RunAgentActivity do
         env = activity.send(:command_env_for, context, "ping")
 
         expect(env).not_to have_key("PAID_KILOCODE_CONFIG_B64")
+      end
+    end
+
+    context "with a persisted copilot provider" do
+      it "propagates dangerous-mode approval bypass through the harness runtime path" do
+        provider = create(:provider, user: user, provider_key: "copilot", auth_type: "subscription")
+        context = described_class::CommandContext.new(
+          provider_candidate: provider.routing_key,
+          provider: "copilot",
+          user: user
+        )
+
+        command = activity.send(:build_command, context, "ping")
+        env = activity.send(:command_env_for, context, "ping")
+
+        expect(command).to include("copilot", "--autopilot")
+        expect(env).to include("COPILOT_ALLOW_ALL" => "true")
       end
     end
   end
@@ -934,6 +959,8 @@ RSpec.describe Activities::RunAgentActivity do
       codex_provider = create(:provider, user: user, provider_key: "codex")
       agent_run.update!(provider: copilot_provider, agent_type: "copilot")
       user.settings.update!(fallback_enabled: true, fallback_providers: [ codex_provider.routing_key ])
+      allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
+      allow(ProviderSupport).to receive(:container_executable_provider_key?).with("copilot").and_return(false)
 
       providers = activity.send(:build_provider_order, agent_run, user.settings)
 
@@ -945,6 +972,8 @@ RSpec.describe Activities::RunAgentActivity do
       copilot_provider = create(:provider, user: user, provider_key: "copilot")
       agent_run.update!(provider: copilot_provider, agent_type: "copilot")
       user.settings.update!(fallback_enabled: false)
+      allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
+      allow(ProviderSupport).to receive(:container_executable_provider_key?).with("copilot").and_return(false)
 
       providers = activity.send(:build_provider_order, agent_run, user.settings)
 

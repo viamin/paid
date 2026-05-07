@@ -46,12 +46,12 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.provider_id).to be_nil
     end
 
-    it "falls back to the runnable default when a requested agent_type is not container executable" do
+    it "accepts copilot when a requested agent_type is container executable" do
       result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "copilot")
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.provider).to eq(user.providers.find_by!(provider_key: "claude"))
-      expect(agent_run.agent_type).to eq("claude_code")
+      expect(agent_run.provider_id).to be_nil
+      expect(agent_run.agent_type).to eq("copilot")
     end
 
     it "derives agent_type from provider_id when only a provider is supplied" do
@@ -64,8 +64,20 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.agent_type).to eq("codex")
     end
 
-    it "falls back to the runnable default when a requested provider_id is not container executable" do
+    it "accepts copilot when a requested provider_id is container executable" do
       copilot_provider = user.providers.find_or_create_by!(provider_key: "copilot", auth_type: "subscription")
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: copilot_provider.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.provider).to eq(copilot_provider)
+      expect(agent_run.agent_type).to eq("copilot")
+    end
+
+    it "falls back to the runnable default when a requested provider is treated as non-executable" do
+      copilot_provider = user.providers.find_or_create_by!(provider_key: "copilot", auth_type: "subscription")
+      allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
+      allow(ProviderSupport).to receive(:container_executable_provider_key?).with("copilot").and_return(false)
 
       result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: copilot_provider.id)
 

@@ -309,12 +309,13 @@ RSpec.describe NetworkPolicy do
     around do |example|
       # Isolate env vars used by config dir detection
       original_env = ENV.to_h.slice(
-        "CLAUDE_CONFIG_DIR", "CODEX_CONFIG_DIR", "CODEX_HOME", "GEMINI_CONFIG_DIR", "COPILOT_CONFIG_DIR"
+        "CLAUDE_CONFIG_DIR", "CODEX_CONFIG_DIR", "CODEX_HOME", "GEMINI_CONFIG_DIR", "COPILOT_HOME", "COPILOT_CONFIG_DIR"
       )
       ENV.delete("CLAUDE_CONFIG_DIR")
       ENV.delete("CODEX_CONFIG_DIR")
       ENV.delete("CODEX_HOME")
       ENV.delete("GEMINI_CONFIG_DIR")
+      ENV.delete("COPILOT_HOME")
       ENV.delete("COPILOT_CONFIG_DIR")
       example.run
     ensure
@@ -397,10 +398,10 @@ RSpec.describe NetworkPolicy do
       before do
         allow(Dir).to receive(:exist?).and_return(false)
         allow(Dir).to receive(:exist?).with("/tmp/copilot-test").and_return(true)
-        ENV["COPILOT_CONFIG_DIR"] = "/tmp/copilot-test"
+        ENV["COPILOT_HOME"] = "/tmp/copilot-test"
         allow(File).to receive(:file?).and_return(false)
         allow(File).to receive(:file?)
-          .with("/tmp/copilot-test/hosts.json").and_return(true)
+          .with("/tmp/copilot-test/config.json").and_return(true)
       end
 
       it "returns true" do

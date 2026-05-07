@@ -58,12 +58,11 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(result[:provider_attempt_count]).to eq(1)
     end
 
-    it "falls back to the runnable default when a requested agent_type is not container executable" do
+    it "accepts copilot as a container-executable agent_type" do
       result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "copilot")
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.provider).to eq(project.created_by.providers.find_by!(provider_key: "claude"))
-      expect(agent_run.agent_type).to eq("claude_code")
+      expect(agent_run.agent_type).to eq("copilot")
       expect(result[:provider_attempt_count]).to eq(1)
     end
 
@@ -79,6 +78,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
     it "falls back to the runnable default when a requested provider_id is not container executable" do
       provider = create(:provider, user: project.created_by, provider_key: "copilot")
+      allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
+      allow(ProviderSupport).to receive(:container_executable_provider_key?).with("copilot").and_return(false)
 
       result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: provider.id)
 

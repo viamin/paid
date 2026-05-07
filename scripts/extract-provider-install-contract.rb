@@ -14,6 +14,13 @@
 
 require "agent_harness"
 
+def normalized_install_command(contract)
+  command = Array(contract[:install_command]).dup
+  return command if command.empty? || command.include?("--ignore-scripts")
+
+  command << "--ignore-scripts"
+end
+
 provider = ARGV[0]
 unless provider
   warn "Usage: #{$PROGRAM_NAME} <provider>"
@@ -47,17 +54,21 @@ end
 begin
   contract = AgentHarness.install_contract(provider.to_sym)
 rescue AgentHarness::ConfigurationError
-  # Some providers (e.g., Codex) use the class-level installation_contract
-  # instead of the generic registry method. Fall back to that API.
+  metadata = AgentHarness.provider_metadata(provider.to_sym)
+  provider_class_name = metadata.fetch(:canonical_provider).to_s.split("_").map(&:capitalize).join
+
+  # Some providers expose install metadata via their canonical class contract
+  # even when the alias-based registry lookup does not implement
+  # AgentHarness.install_contract(provider_alias).
   begin
-    provider_class = AgentHarness::Providers.const_get(provider.split("_").map(&:capitalize).join)
+    provider_class = AgentHarness::Providers.const_get(provider_class_name)
     if provider_class.respond_to?(:installation_contract)
       contract = provider_class.installation_contract
     else
       warn "No install contract found for provider: #{provider}"
       exit 1
     end
-  rescue NameError => e
+  rescue KeyError, NameError => e
     warn "No install contract found for provider: #{provider} (#{e.message})"
     exit 1
   end
@@ -101,9 +112,10 @@ if source == :uv_tool
   puts "SUPPORTED_VERSION=#{contract[:version]}"
 elsif is_npm
   package = contract[:package] || (source.is_a?(Hash) && source[:package])
+  install_command = normalized_install_command(contract)
   puts "SOURCE=npm"
   puts "PACKAGE=#{package}"
-  puts "INSTALL_COMMAND=#{contract[:install_command]&.join(" ")}"
+  puts "INSTALL_COMMAND=#{install_command.join(" ")}"
   puts "SUPPORTED_VERSION=#{contract[:version] || contract[:default_version]}"
 else
   install_command = contract.dig(:install, :command) || contract[:install_command_string]
