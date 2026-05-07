@@ -1828,6 +1828,8 @@ CREATE TABLE public.exception_incidents (
     updated_at timestamp(6) without time zone NOT NULL
 );
 
+ALTER TABLE ONLY public.exception_incidents FORCE ROW LEVEL SECURITY;
+
 
 --
 -- Name: exception_incidents_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -4360,6 +4362,8 @@ CREATE TABLE public.strategies (
     CONSTRAINT chk_strategies_scope_consistency CHECK (((project_id IS NULL) OR (account_id IS NOT NULL)))
 );
 
+ALTER TABLE ONLY public.strategies FORCE ROW LEVEL SECURITY;
+
 
 --
 -- Name: TABLE strategies; Type: COMMENT; Schema: public; Owner: -
@@ -4472,6 +4476,8 @@ CREATE TABLE public.strategy_versions (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
 );
+
+ALTER TABLE ONLY public.strategy_versions FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -10683,6 +10689,12 @@ ALTER TABLE public.decision_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.decomposition_decisions ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: exception_incidents; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.exception_incidents ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: github_tokens; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -10927,6 +10939,18 @@ ALTER TABLE public.service_container_metrics ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.service_containers ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: strategies; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.strategies ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: strategy_versions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.strategy_versions ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: style_guides; Type: ROW SECURITY; Schema: public; Owner: -
@@ -11213,6 +11237,13 @@ CREATE POLICY tenant_isolation ON public.decomposition_decisions USING ((public.
   WHERE ((projects.id = decomposition_decisions.project_id) AND (projects.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
    FROM public.projects
   WHERE ((projects.id = decomposition_decisions.project_id) AND (projects.account_id = public.paid_current_account_id()))))));
+
+
+--
+-- Name: exception_incidents tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.exception_incidents USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
 
 
 --
@@ -11691,13 +11722,17 @@ CREATE POLICY tenant_isolation ON public.token_usages USING ((public.paid_tenant
   WHERE ((agent_runs.id = token_usages.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((knowledge_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.knowledge_runs
      JOIN public.projects ON ((projects.id = knowledge_runs.project_id)))
-  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR (((agent_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
+  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((chat_session_id IS NOT NULL) AND (EXISTS ( SELECT 1
+   FROM public.chat_sessions
+  WHERE ((chat_sessions.id = token_usages.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR (((agent_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.agent_runs
      JOIN public.projects ON ((projects.id = agent_runs.project_id)))
   WHERE ((agent_runs.id = token_usages.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((knowledge_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.knowledge_runs
      JOIN public.projects ON ((projects.id = knowledge_runs.project_id)))
-  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))))));
+  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((chat_session_id IS NOT NULL) AND (EXISTS ( SELECT 1
+   FROM public.chat_sessions
+  WHERE ((chat_sessions.id = token_usages.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id()))))))));
 
 
 --
@@ -11810,6 +11845,34 @@ CREATE POLICY tenant_isolation_delete ON public.prompts FOR DELETE USING ((publi
 
 
 --
+-- Name: strategies tenant_isolation_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_delete ON public.strategies FOR DELETE USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = strategies.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((current_version_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.strategy_versions
+  WHERE ((strategy_versions.id = strategies.current_version_id) AND (strategy_versions.strategy_id = strategies.id))))))));
+
+
+--
+-- Name: strategy_versions tenant_isolation_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_delete ON public.strategy_versions FOR DELETE USING ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM public.strategies
+  WHERE ((strategies.id = strategy_versions.strategy_id) AND ((strategies.account_id = public.paid_current_account_id()) AND ((strategies.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = strategies.project_id) AND (projects.account_id = public.paid_current_account_id()))))))))) AND ((parent_version_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.strategy_versions parent_versions
+  WHERE ((parent_versions.id = strategy_versions.parent_version_id) AND (parent_versions.strategy_id = strategy_versions.strategy_id))))) AND ((created_by_user_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = strategy_versions.created_by_user_id) AND (users.account_id = public.paid_current_account_id()))))) AND ((promoted_by_user_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = strategy_versions.promoted_by_user_id) AND (users.account_id = public.paid_current_account_id()))))))));
+
+
+--
 -- Name: style_guides tenant_isolation_delete; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -11877,6 +11940,34 @@ CREATE POLICY tenant_isolation_insert ON public.prompts FOR INSERT WITH CHECK ((
 
 
 --
+-- Name: strategies tenant_isolation_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_insert ON public.strategies FOR INSERT WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = strategies.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((current_version_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.strategy_versions
+  WHERE ((strategy_versions.id = strategies.current_version_id) AND (strategy_versions.strategy_id = strategies.id))))))));
+
+
+--
+-- Name: strategy_versions tenant_isolation_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_insert ON public.strategy_versions FOR INSERT WITH CHECK ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM public.strategies
+  WHERE ((strategies.id = strategy_versions.strategy_id) AND ((strategies.account_id = public.paid_current_account_id()) AND ((strategies.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = strategies.project_id) AND (projects.account_id = public.paid_current_account_id()))))))))) AND ((parent_version_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.strategy_versions parent_versions
+  WHERE ((parent_versions.id = strategy_versions.parent_version_id) AND (parent_versions.strategy_id = strategy_versions.strategy_id))))) AND ((created_by_user_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = strategy_versions.created_by_user_id) AND (users.account_id = public.paid_current_account_id()))))) AND ((promoted_by_user_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = strategy_versions.promoted_by_user_id) AND (users.account_id = public.paid_current_account_id()))))))));
+
+
+--
 -- Name: style_guides tenant_isolation_insert; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -11933,6 +12024,28 @@ CREATE POLICY tenant_isolation_select ON public.prompt_versions FOR SELECT USING
 CREATE POLICY tenant_isolation_select ON public.prompts FOR SELECT USING ((public.paid_tenant_bypass() OR ((account_id IS NULL) OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM public.projects
   WHERE ((projects.id = prompts.project_id) AND (projects.account_id = public.paid_current_account_id())))))))));
+
+
+--
+-- Name: strategies tenant_isolation_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_select ON public.strategies FOR SELECT USING ((public.paid_tenant_bypass() OR (((account_id IS NULL) OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = strategies.project_id) AND (projects.account_id = public.paid_current_account_id()))))))) AND ((current_version_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.strategy_versions
+  WHERE ((strategy_versions.id = strategies.current_version_id) AND (strategy_versions.strategy_id = strategies.id))))))));
+
+
+--
+-- Name: strategy_versions tenant_isolation_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_select ON public.strategy_versions FOR SELECT USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.strategies
+  WHERE ((strategies.id = strategy_versions.strategy_id) AND ((strategies.account_id IS NULL) OR ((strategies.account_id = public.paid_current_account_id()) AND ((strategies.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = strategies.project_id) AND (projects.account_id = public.paid_current_account_id()))))))))))));
 
 
 --
@@ -12026,6 +12139,48 @@ CREATE POLICY tenant_isolation_update ON public.prompts FOR UPDATE USING ((publi
 
 
 --
+-- Name: strategies tenant_isolation_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_update ON public.strategies FOR UPDATE USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = strategies.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((current_version_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.strategy_versions
+  WHERE ((strategy_versions.id = strategies.current_version_id) AND (strategy_versions.strategy_id = strategies.id)))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = strategies.project_id) AND (projects.account_id = public.paid_current_account_id()))))) AND ((current_version_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.strategy_versions
+  WHERE ((strategy_versions.id = strategies.current_version_id) AND (strategy_versions.strategy_id = strategies.id))))))));
+
+
+--
+-- Name: strategy_versions tenant_isolation_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_update ON public.strategy_versions FOR UPDATE USING ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM public.strategies
+  WHERE ((strategies.id = strategy_versions.strategy_id) AND ((strategies.account_id = public.paid_current_account_id()) AND ((strategies.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = strategies.project_id) AND (projects.account_id = public.paid_current_account_id()))))))))) AND ((parent_version_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.strategy_versions parent_versions
+  WHERE ((parent_versions.id = strategy_versions.parent_version_id) AND (parent_versions.strategy_id = strategy_versions.strategy_id))))) AND ((created_by_user_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = strategy_versions.created_by_user_id) AND (users.account_id = public.paid_current_account_id()))))) AND ((promoted_by_user_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = strategy_versions.promoted_by_user_id) AND (users.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM public.strategies
+  WHERE ((strategies.id = strategy_versions.strategy_id) AND ((strategies.account_id = public.paid_current_account_id()) AND ((strategies.project_id IS NULL) OR (EXISTS ( SELECT 1
+           FROM public.projects
+          WHERE ((projects.id = strategies.project_id) AND (projects.account_id = public.paid_current_account_id()))))))))) AND ((parent_version_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.strategy_versions parent_versions
+  WHERE ((parent_versions.id = strategy_versions.parent_version_id) AND (parent_versions.strategy_id = strategy_versions.strategy_id))))) AND ((created_by_user_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = strategy_versions.created_by_user_id) AND (users.account_id = public.paid_current_account_id()))))) AND ((promoted_by_user_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = strategy_versions.promoted_by_user_id) AND (users.account_id = public.paid_current_account_id()))))))));
+
+
+--
 -- Name: style_guides tenant_isolation_update; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -12085,6 +12240,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260507211918'),
 ('20260507202027'),
 ('20260507195716'),
 ('20260507164917'),

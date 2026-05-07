@@ -34,6 +34,43 @@ RSpec.describe OrchestrationDecision do
       expect(decision.errors[:project]).to include("must match the agent run's project")
     end
 
+    it "allows a global strategy version" do
+      strategy_version = create(:strategy_version, strategy: create(:strategy, :global))
+      decision = build(:orchestration_decision, strategy_version: strategy_version)
+
+      expect(decision).to be_valid
+    end
+
+    it "allows an account-scoped strategy version for the same account" do
+      project = create(:project)
+      strategy = create(:strategy, account: project.account, project: nil)
+      strategy_version = create(:strategy_version, strategy: strategy)
+      decision = build(:orchestration_decision, :without_agent_run, project: project, strategy_version: strategy_version)
+
+      expect(decision).to be_valid
+    end
+
+    it "rejects a strategy version from another account" do
+      project = create(:project)
+      other_account_strategy = create(:strategy, :for_account)
+      strategy_version = create(:strategy_version, strategy: other_account_strategy)
+      decision = build(:orchestration_decision, :without_agent_run, project: project, strategy_version: strategy_version)
+
+      expect(decision).not_to be_valid
+      expect(decision.errors[:strategy_version]).to include("must be global or scoped to the decision's account/project")
+    end
+
+    it "rejects a strategy version scoped to a different project" do
+      project = create(:project)
+      other_project = create(:project, account: project.account)
+      strategy = create(:strategy, project: other_project, account: project.account)
+      strategy_version = create(:strategy_version, strategy: strategy)
+      decision = build(:orchestration_decision, :without_agent_run, project: project, strategy_version: strategy_version)
+
+      expect(decision).not_to be_valid
+      expect(decision.errors[:strategy_version]).to include("must be global or scoped to the decision's account/project")
+    end
+
     it "requires context to be an object" do
       decision = build(:orchestration_decision, context: [])
 
