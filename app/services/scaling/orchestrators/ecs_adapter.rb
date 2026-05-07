@@ -240,6 +240,7 @@ module Scaling
       def ecs_cpu_units(value)
         string = value.to_s.strip
         return (string.delete_suffix("m").to_f / 1000 * 1024).round if string.end_with?("m")
+        return string.to_i if string.match?(/\A\d+\z/)
 
         (string.to_f * 1024).round
       end

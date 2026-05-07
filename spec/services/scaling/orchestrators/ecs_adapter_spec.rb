@@ -160,6 +160,52 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
       expect(result.accepted).to be true
     end
 
+    it "preserves raw ECS CPU-unit inputs when updating container resources" do
+      allow(adapter).to receive(:describe_service)
+        .with(service_name)
+        .and_return({ taskDefinition: task_definition[:taskDefinitionArn] })
+      allow(adapter).to receive(:describe_task_definition)
+        .with(task_definition[:taskDefinitionArn])
+        .and_return(task_definition)
+      expect_task_definition_registration(expected_cpu: "512")
+
+      expect(adapter).to receive(:run_aws).with(
+        "ecs", "update-service",
+        "--cluster", "paid-prod",
+        "--service", service_name,
+        "--task-definition", next_task_definition_arn,
+        "--force-new-deployment"
+      ).and_return({ service: { taskDefinition: next_task_definition_arn } }.to_json)
+
+      result = adapter.set_resource_limits(service: service_name, cpu_limit: "512", memory_limit: "2Gi")
+
+      expect(result).to be_a(Scaling::Orchestrators::Data::ResourceUpdateResult)
+      expect(result.accepted).to be true
+    end
+
+    it "converts fractional vCPU inputs to ECS CPU units" do
+      allow(adapter).to receive(:describe_service)
+        .with(service_name)
+        .and_return({ taskDefinition: task_definition[:taskDefinitionArn] })
+      allow(adapter).to receive(:describe_task_definition)
+        .with(task_definition[:taskDefinitionArn])
+        .and_return(task_definition)
+      expect_task_definition_registration(expected_cpu: "512")
+
+      expect(adapter).to receive(:run_aws).with(
+        "ecs", "update-service",
+        "--cluster", "paid-prod",
+        "--service", service_name,
+        "--task-definition", next_task_definition_arn,
+        "--force-new-deployment"
+      ).and_return({ service: { taskDefinition: next_task_definition_arn } }.to_json)
+
+      result = adapter.set_resource_limits(service: service_name, cpu_limit: "0.5", memory_limit: "2Gi")
+
+      expect(result).to be_a(Scaling::Orchestrators::Data::ResourceUpdateResult)
+      expect(result.accepted).to be true
+    end
+
     it "short-circuits when the requested limits already match the target container" do
       allow(adapter).to receive(:describe_service)
         .with(service_name)
