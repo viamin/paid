@@ -12,6 +12,8 @@ module Screenshots
   #   Screenshots::DetectFramework.call(file_list: ["next.config.js", "app/page.tsx"])
   #   # => :nextjs
   class DetectFramework
+    SKIP_DIRECTORIES = %w[.git node_modules vendor tmp log].freeze
+
     # @param repo_path [String, nil] path to the repo root (checks filesystem)
     # @param file_list [Array<String>, nil] list of repo file paths (avoids filesystem)
     # @return [Symbol] detected framework identifier
@@ -78,7 +80,13 @@ module Screenshots
       Find.find(@repo_path).each_with_object([]) do |path, entries|
         next if path == @repo_path
 
-        entries << path.delete_prefix(prefix)
+        relative_path = path.delete_prefix(prefix)
+
+        if File.directory?(path) && SKIP_DIRECTORIES.include?(relative_path.split("/").first)
+          Find.prune
+        end
+
+        entries << relative_path
       end
     end
   end

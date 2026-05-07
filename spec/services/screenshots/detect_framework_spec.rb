@@ -116,6 +116,29 @@ RSpec.describe Screenshots::DetectFramework do
 
         expect(described_class.call(repo_path: repo_path)).to eq(:django)
       end
+
+      it "ignores heavyweight directories while scanning the filesystem" do
+        FileUtils.mkdir_p(File.join(repo_path, ".git/objects"))
+        FileUtils.mkdir_p(File.join(repo_path, "node_modules/react"))
+        FileUtils.mkdir_p(File.join(repo_path, "app/views"))
+        FileUtils.mkdir_p(File.join(repo_path, "config"))
+        File.write(File.join(repo_path, "config/routes.rb"), "# routes")
+        File.write(File.join(repo_path, ".git/objects/packfile"), "ignored")
+        File.write(File.join(repo_path, "node_modules/react/index.js"), "ignored")
+
+        detector = described_class.new(repo_path: repo_path)
+        entries = detector.send(:candidate_entries)
+
+        expect(entries).to include("app/views", "config/routes.rb")
+        expect(entries).not_to include(
+          ".git",
+          ".git/objects",
+          ".git/objects/packfile",
+          "node_modules",
+          "node_modules/react",
+          "node_modules/react/index.js"
+        )
+      end
     end
 
     context "with no arguments" do
