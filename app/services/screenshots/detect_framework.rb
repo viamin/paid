@@ -280,7 +280,7 @@ module Screenshots
     def detect_rails_auth
       return devise_auth_config if gemfile_dependency?("devise")
 
-      routes = repo.read("config/routes.rb").to_s
+      routes = rails_routes_content
       return devise_auth_config if routes.include?("devise_for")
 
       { "strategy" => "none" }
@@ -336,7 +336,7 @@ module Screenshots
       routes_from_command = discover_rails_routes_from_command
       return routes_from_command if routes_from_command.any?
 
-      content = repo.read("config/routes.rb").to_s
+      content = rails_routes_content
       return [] if content.blank?
 
       prefixes = []
@@ -361,6 +361,10 @@ module Screenshots
       end
 
       unique_routes(routes)
+    end
+
+    def rails_routes_content
+      @rails_routes_content ||= repo.read("config/routes.rb").to_s
     end
 
     def discover_rails_routes_from_command
