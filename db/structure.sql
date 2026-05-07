@@ -11221,6 +11221,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260507164917'),
 ('20260507011753'),
 ('20260506175107'),
 ('20260506174922'),
