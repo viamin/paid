@@ -62,4 +62,23 @@ RSpec.describe OrchestrationDecisionEvent do
       expect(event.result).to eq("review_goal_retry_count" => 1)
     end
   end
+
+  describe ".record" do
+    it "swallows logging failures and returns nil" do
+      project = create(:project)
+      issue = create(:issue, project: project)
+
+      allow(described_class).to receive(:record!).and_raise(ActiveRecord::StatementInvalid, "boom")
+
+      expect(
+        described_class.record(
+          project: project,
+          issue: issue,
+          decision_point: "review_goal_retry",
+          action: "retry",
+          status: "applied"
+        )
+      ).to be_nil
+    end
+  end
 end

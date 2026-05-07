@@ -993,6 +993,15 @@ RSpec.describe AgentRun do
       expect(event.decision_point).to eq("manual_retry")
       expect(event.result).to include("new_agent_run_id" => 123, "status" => "retried")
     end
+
+    it "still marks the run retried when decision logging fails" do
+      agent_run = create(:agent_run, :failed)
+      allow(OrchestrationDecisionEvent).to receive(:record!).and_raise(ActiveRecord::StatementInvalid, "boom")
+
+      expect { agent_run.retry! }.not_to raise_error
+
+      expect(agent_run.reload.status).to eq("retried")
+    end
   end
 
     describe "#auth_expired?" do
@@ -3155,6 +3164,15 @@ RSpec.describe AgentRun do
       expect(agent_run.reload.status).to eq("completed")
       expect(OrchestrationDecisionEvent.last.status).to eq("noop")
     end
+
+    it "still pauses the run when decision logging fails" do
+      agent_run = create(:agent_run, :running)
+      allow(OrchestrationDecisionEvent).to receive(:record!).and_raise(ActiveRecord::StatementInvalid, "boom")
+
+      expect(agent_run.pause!(violation_type: "loop_detected")).to be true
+
+      expect(agent_run.reload.status).to eq("paused")
+    end
   end
 
   describe "#resume!" do
@@ -3206,6 +3224,16 @@ RSpec.describe AgentRun do
 
       expect(agent_run.reload.status).to eq("running")
       expect(OrchestrationDecisionEvent.last.status).to eq("noop")
+    end
+
+    it "still resumes the run when decision logging fails" do
+      agent_run = create(:agent_run, :running)
+      agent_run.pause!(violation_type: "loop_detected", context: { details: "test" })
+      allow(OrchestrationDecisionEvent).to receive(:record!).and_raise(ActiveRecord::StatementInvalid, "boom")
+
+      expect(agent_run.resume!).to be true
+
+      expect(agent_run.reload.status).to eq("queued")
     end
   end
 

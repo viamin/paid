@@ -1204,7 +1204,7 @@ class AgentRun < ApplicationRecord
     with_lock do
       reload
       unless running?
-        log_orchestration_decision!(
+        log_orchestration_decision(
           action: "pause",
           decision_point: decision_point,
           status: "noop",
@@ -1220,7 +1220,7 @@ class AgentRun < ApplicationRecord
         guardrail_violation_type: violation_type,
         guardrail_context: context
       )
-      log_orchestration_decision!(
+      log_orchestration_decision(
         action: "pause",
         decision_point: decision_point,
         status: "applied",
@@ -1239,7 +1239,7 @@ class AgentRun < ApplicationRecord
     with_lock do
       reload
       unless paused?
-        log_orchestration_decision!(
+        log_orchestration_decision(
           action: "resume",
           decision_point: decision_point,
           status: "noop",
@@ -1260,7 +1260,7 @@ class AgentRun < ApplicationRecord
         temporal_workflow_id: nil,
         temporal_run_id: nil
       )
-      log_orchestration_decision!(
+      log_orchestration_decision(
         action: "resume",
         decision_point: decision_point,
         status: "applied",
@@ -1319,7 +1319,7 @@ class AgentRun < ApplicationRecord
   def retry!(decision_point: "agent_run.retry", signals: {}, result: {})
     with_lock do
       update!(status: "retried")
-      log_orchestration_decision!(
+      log_orchestration_decision(
         action: "retry",
         decision_point: decision_point,
         status: "applied",
@@ -1425,8 +1425,8 @@ class AgentRun < ApplicationRecord
     logs_text(log_type: "stderr", limit: limit)
   end
 
-  def log_orchestration_decision!(action:, decision_point:, status:, signals:, result:)
-    OrchestrationDecisionEvent.record!(
+  def log_orchestration_decision(action:, decision_point:, status:, signals:, result:)
+    OrchestrationDecisionEvent.record(
       project: project,
       issue: issue,
       agent_run: self,
@@ -1437,7 +1437,7 @@ class AgentRun < ApplicationRecord
       result: result
     )
   end
-  private :log_orchestration_decision!
+  private :log_orchestration_decision
 
   # Returns the prompt for this run: custom_prompt if provided,
   # otherwise delegates to goal-specific prompt builders.

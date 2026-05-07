@@ -10,7 +10,7 @@ module Activities
       issue = Issue.find_by(id: input[:issue_id])
       return { dismissed: false } unless issue
       unless issue.escalated_phase?
-        OrchestrationDecisionEvent.record!(
+        OrchestrationDecisionEvent.record(
           project: issue.project,
           issue: issue,
           decision_point: "dismiss_escalation",
@@ -38,7 +38,7 @@ module Activities
         resumed_phase: issue.pr_review_phase
       )
 
-      OrchestrationDecisionEvent.record!(
+      OrchestrationDecisionEvent.record(
         project: issue.project,
         issue: issue,
         decision_point: "dismiss_escalation",

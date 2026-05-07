@@ -39,13 +39,16 @@ class OrchestrationDecisionEvent < ApplicationRecord
   end
 
   # Non-bang variant that silently swallows failures. Use this inside rescue
-  # blocks so a logging failure cannot mask the original exception.
+  # blocks or lifecycle transactions so a logging failure cannot mask the
+  # original exception or poison the caller's transaction.
   def self.record(project:, decision_point:, action:, status:, issue: nil, agent_run: nil, signals: {}, result: {})
-    record!(
-      project: project, issue: issue, agent_run: agent_run,
-      decision_point: decision_point, action: action, status: status,
-      signals: signals, result: result
-    )
+    transaction(requires_new: true) do
+      record!(
+        project: project, issue: issue, agent_run: agent_run,
+        decision_point: decision_point, action: action, status: status,
+        signals: signals, result: result
+      )
+    end
   rescue StandardError => e
     Rails.logger.warn(
       message: "orchestration_decision.record_failed",

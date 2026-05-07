@@ -32,7 +32,7 @@ module Activities
         incremented = true
       end
 
-      OrchestrationDecisionEvent.record!(
+      OrchestrationDecisionEvent.record(
         project: issue.project,
         issue: issue,
         decision_point: "review_goal_retry",

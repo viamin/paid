@@ -69,6 +69,15 @@ RSpec.describe Activities::DismissEscalationActivity do
         expect(event.action).to eq("resume")
         expect(event.status).to eq("applied")
       end
+
+      it "still returns dismissed: true when decision logging fails" do
+        allow(OrchestrationDecisionEvent).to receive(:record!).and_raise(ActiveRecord::StatementInvalid, "boom")
+
+        result = activity.execute(issue_id: issue.id)
+
+        expect(result[:dismissed]).to be true
+        expect(issue.reload.pr_review_phase).to eq("ready")
+      end
     end
 
     context "when the escalated PR is still draft" do
