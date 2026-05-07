@@ -29,12 +29,13 @@ RSpec.describe Screenshots::Storage do
   end
 
   describe "#upload" do
-    it "uploads a file to S3 and returns a public URL" do
+    it "uploads a file to S3 and returns a presigned URL" do
       file = Tempfile.new([ "screenshot", ".png" ])
       file.write("fake png data")
       file.rewind
 
       s3_client.stub_responses(:put_object, {})
+      allow(storage).to receive(:signed_url).and_return("https://example.test/uploaded.png?X-Amz-Signature=123")
 
       url = storage.upload(
         file_path: file.path,
@@ -45,7 +46,8 @@ RSpec.describe Screenshots::Storage do
         route_name: "dashboard"
       )
 
-      expect(url).to eq("https://test-bucket.s3.us-east-1.amazonaws.com/screenshots/acme/web/pr-42/abc1234/dashboard.png")
+      expect(url).to eq("https://example.test/uploaded.png?X-Amz-Signature=123")
+      expect(storage).to have_received(:signed_url).with("screenshots/acme/web/pr-42/abc1234/dashboard.png")
     ensure
       file.close
       file.unlink
@@ -73,12 +75,13 @@ RSpec.describe Screenshots::Storage do
       file.unlink
     end
 
-    it "returns a public URL (not a presigned URL) for the uploaded object" do
+    it "returns a presigned URL for the uploaded object" do
       file = Tempfile.new([ "screenshot", ".png" ])
       file.write("fake png data")
       file.rewind
 
       s3_client.stub_responses(:put_object, {})
+      allow(storage).to receive(:signed_url).and_return("https://example.test/uploaded.png?X-Amz-Signature=123")
 
       url = storage.upload(
         file_path: file.path,
@@ -89,8 +92,7 @@ RSpec.describe Screenshots::Storage do
         route_name: "dashboard"
       )
 
-      expect(url).not_to include("X-Amz-Signature")
-      expect(url).to eq("https://test-bucket.s3.us-east-1.amazonaws.com/screenshots/acme/web/pr-42/abc1234/dashboard.png")
+      expect(url).to include("X-Amz-Signature")
     ensure
       file.close
       file.unlink
@@ -116,30 +118,8 @@ RSpec.describe Screenshots::Storage do
     end
   end
 
-  describe "#public_url" do
-    it "builds a stable S3 URL when no custom endpoint is configured" do
-      url = storage.send(:public_url, "screenshots/acme/web/pr-42/abc1234/dashboard.png")
-
-      expect(url).to eq("https://test-bucket.s3.us-east-1.amazonaws.com/screenshots/acme/web/pr-42/abc1234/dashboard.png")
-    end
-
-    it "builds a stable endpoint URL when a custom endpoint is configured" do
-      allow(storage).to receive(:endpoint).and_return("https://s3.example.test")
-
-      url = storage.send(:public_url, "screenshots/acme/web/pr-42/abc1234/dashboard.png")
-
-      expect(url).to eq("https://s3.example.test/test-bucket/screenshots/acme/web/pr-42/abc1234/dashboard.png")
-    end
-
-    it "URL-encodes path segments" do
-      url = storage.send(:public_url, "screenshots/acme/web/pr-42/abc1234/project show.png")
-
-      expect(url).to end_with("/screenshots/acme/web/pr-42/abc1234/project%20show.png")
-    end
-  end
-
   describe "#previous_screenshots" do
-    it "returns public URLs for the most recent previous commit" do
+    it "returns signed URLs for the most recent previous commit" do
       s3_client.stub_responses(:list_objects_v2, {
         contents: [
           { key: "screenshots/acme/web/pr-42/old111/dashboard.png", last_modified: 2.hours.ago },
@@ -149,11 +129,14 @@ RSpec.describe Screenshots::Storage do
         ],
         is_truncated: false
       })
+      allow(storage).to receive(:signed_url) do |key|
+        "https://example.test/#{File.basename(key)}?X-Amz-Signature=123"
+      end
 
       result = storage.previous_screenshots(org: "acme", repo: "web", pr_number: 42, exclude_sha: "current")
 
       expect(result.keys).to contain_exactly("dashboard", "homepage")
-      expect(result["dashboard"]).to eq("https://test-bucket.s3.us-east-1.amazonaws.com/screenshots/acme/web/pr-42/old111/dashboard.png")
+      expect(result["dashboard"]).to eq("https://example.test/dashboard.png?X-Amz-Signature=123")
     end
 
     it "picks the most recent commit when multiple previous commits exist" do
@@ -165,10 +148,13 @@ RSpec.describe Screenshots::Storage do
         ],
         is_truncated: false
       })
+      allow(storage).to receive(:signed_url) do |key|
+        "https://example.test/#{File.basename(key)}?X-Amz-Signature=123"
+      end
 
       result = storage.previous_screenshots(org: "acme", repo: "web", pr_number: 42, exclude_sha: "current")
 
-      expect(result["dashboard"]).to eq("https://test-bucket.s3.us-east-1.amazonaws.com/screenshots/acme/web/pr-42/newer/dashboard.png")
+      expect(result["dashboard"]).to eq("https://example.test/dashboard.png?X-Amz-Signature=123")
     end
 
     it "returns empty hash when no previous commits exist" do

@@ -1,11 +1,9 @@
 # frozen_string_literal: true
 
 require "aws-sdk-s3"
-require "cgi"
-
 module Screenshots
   # Uploads screenshot PNG files to S3-compatible object storage and returns
-  # signed object URLs for inline viewing in PR comments.
+  # presigned object URLs for inline viewing in PR comments.
   #
   # Files are organized by: screenshots/{org}/{repo}/pr-{number}/{commit_sha}/{route_name}.png
   #
@@ -35,12 +33,7 @@ module Screenshots
       @url_ttl = url_ttl
     end
 
-    # Uploads a PNG file to S3 and returns a stable public URL.
-    #
-    # The returned URL uses the configured public base URL (or the default S3
-    # virtual-hosted-style URL) so that inline images in PR comments are
-    # accessible from any browser, even when the S3 endpoint used for uploads
-    # is an internal host unreachable from the public internet.
+    # Uploads a PNG file to S3 and returns a presigned URL.
     #
     # @param file_path [String] Path to the local PNG file
     # @param org [String] GitHub org/owner
@@ -48,7 +41,7 @@ module Screenshots
     # @param pr_number [Integer] Pull request number
     # @param commit_sha [String] Commit SHA
     # @param route_name [String] Route slug for the screenshot
-    # @return [String] Stable public URL for the uploaded file
+    # @return [String] Presigned GET URL for the uploaded file
     def upload(file_path:, org:, repo:, pr_number:, commit_sha:, route_name:)
       key = object_key(org:, repo:, pr_number:, commit_sha:, route_name:)
 
@@ -61,7 +54,7 @@ module Screenshots
         )
       end
 
-      public_url(key)
+      signed_url(key)
     rescue Aws::S3::Errors::ServiceError => e
       raise StorageError, "S3 upload failed: #{e.message}"
     end
@@ -108,7 +101,7 @@ module Screenshots
       latest_sha = commits.max_by { |_, objects| objects.map(&:last_modified).max }.first
       commits[latest_sha].each_with_object({}) do |obj, result|
         route_name = File.basename(obj.key, ".png")
-        result[route_name] = public_url(obj.key)
+        result[route_name] = signed_url(obj.key)
       end
     rescue Aws::S3::Errors::ServiceError
       {}
@@ -185,10 +178,6 @@ module Screenshots
       @presigner ||= Aws::S3::Presigner.new(client: s3_client)
     end
 
-    def public_url(key)
-      "#{public_base_url}/#{escaped_key(key)}"
-    end
-
     def url_ttl
       @url_ttl ||= configured_url_ttl
     end
@@ -231,24 +220,6 @@ module Screenshots
 
     def endpoint
       self.class.send(:configured_endpoint)
-    end
-
-    def public_base_url
-      configured_public_base_url ||
-        if endpoint.present?
-          "#{endpoint.delete_suffix("/")}/#{@bucket}"
-        else
-          "https://#{@bucket}.s3.#{@region}.amazonaws.com"
-        end
-    end
-
-    def configured_public_base_url
-      value = ENV["SCREENSHOTS_S3_PUBLIC_BASE_URL"] || credentials_dig(:public_base_url)
-      value&.delete_suffix("/")
-    end
-
-    def escaped_key(key)
-      key.split("/").map { |segment| CGI.escape(segment).gsub("+", "%20") }.join("/")
     end
 
     def credentials_dig(key)
