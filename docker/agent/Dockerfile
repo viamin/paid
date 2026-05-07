@@ -224,11 +224,18 @@ RUN if [ -z "${OPENCODE_PACKAGE}" ]; then \
 # Install GitHub Copilot CLI via agent-harness install contract.
 # The modern `copilot` binary supports --autopilot mode for fully autonomous,
 # non-interactive agent execution. Install recipe is owned by agent-harness.
+# Supply-chain hardening: enforce --ignore-scripts regardless of what the
+# contract returns, matching the policy applied to every other npm install above.
 ARG COPILOT_INSTALL_COMMAND
 RUN if [ -z "${COPILOT_INSTALL_COMMAND}" ]; then \
         echo "ERROR: COPILOT_INSTALL_COMMAND build-arg is required (sourced from agent-harness)" >&2; \
         exit 1; \
     fi \
+    && case "${COPILOT_INSTALL_COMMAND}" in \
+        *--ignore-scripts*) ;; \
+        *) echo "ERROR: COPILOT_INSTALL_COMMAND must include --ignore-scripts for supply-chain safety" >&2; exit 1 ;; \
+    esac \
+    && echo "Installing GitHub Copilot CLI via agent-harness contract: ${COPILOT_INSTALL_COMMAND}" \
     && eval "${COPILOT_INSTALL_COMMAND}"
 
 # Install Cursor agent CLI via agent-harness install contract.
