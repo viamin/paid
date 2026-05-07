@@ -220,8 +220,8 @@ RSpec.describe Activities::RunAgentActivity do
       expect(described_class.container_executable?("opencode")).to be true
     end
 
-    it "does not treat copilot as container executable" do
-      expect(described_class.container_executable?("copilot")).to be false
+    it "treats copilot as container executable via autopilot mode" do
+      expect(described_class.container_executable?("copilot")).to be true
     end
 
     it "recognizes claude_code via agent type mapping" do
@@ -381,14 +381,14 @@ RSpec.describe Activities::RunAgentActivity do
       expect(result).to eq(%w[claude_code opencode codex])
     end
 
-    it "skips copilot in fallback order because it is not an agent runner" do
+    it "includes copilot in fallback order as a container-executable provider" do
       result = described_class.provider_order(
         agent_type: "claude_code",
         fallback_enabled: true,
         fallback_providers: %w[copilot codex]
       )
 
-      expect(result).to eq(%w[claude_code codex])
+      expect(result).to eq(%w[claude_code copilot codex])
     end
   end
 
@@ -934,6 +934,8 @@ RSpec.describe Activities::RunAgentActivity do
       codex_provider = create(:provider, user: user, provider_key: "codex")
       agent_run.update!(provider: copilot_provider, agent_type: "copilot")
       user.settings.update!(fallback_enabled: true, fallback_providers: [ codex_provider.routing_key ])
+      allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
+      allow(ProviderSupport).to receive(:container_executable_provider_key?).with("copilot").and_return(false)
 
       providers = activity.send(:build_provider_order, agent_run, user.settings)
 
@@ -945,6 +947,8 @@ RSpec.describe Activities::RunAgentActivity do
       copilot_provider = create(:provider, user: user, provider_key: "copilot")
       agent_run.update!(provider: copilot_provider, agent_type: "copilot")
       user.settings.update!(fallback_enabled: false)
+      allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
+      allow(ProviderSupport).to receive(:container_executable_provider_key?).with("copilot").and_return(false)
 
       providers = activity.send(:build_provider_order, agent_run, user.settings)
 

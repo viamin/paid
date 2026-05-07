@@ -221,10 +221,15 @@ RUN if [ -z "${OPENCODE_PACKAGE}" ]; then \
     fi \
     && npm install -g --ignore-scripts "${OPENCODE_PACKAGE}"
 
-# NOTE: @githubnext/github-copilot-cli@0.1.0 publishes a broken package that
-# declares the github-copilot-cli bin without shipping the target file,
-# producing an OCI "executable file not found in $PATH" failure at runtime.
-RUN npm install -g --ignore-scripts @githubnext/github-copilot-cli@0.1.36
+# Install GitHub Copilot CLI via agent-harness install contract.
+# The modern `copilot` binary supports --autopilot mode for fully autonomous,
+# non-interactive agent execution. Install recipe is owned by agent-harness.
+ARG COPILOT_INSTALL_COMMAND
+RUN if [ -z "${COPILOT_INSTALL_COMMAND}" ]; then \
+        echo "ERROR: COPILOT_INSTALL_COMMAND build-arg is required (sourced from agent-harness)" >&2; \
+        exit 1; \
+    fi \
+    && eval "${COPILOT_INSTALL_COMMAND}"
 
 # Install Cursor agent CLI via agent-harness install contract.
 # agent-harness owns the artifact URL, checksum pin, and binary metadata.
