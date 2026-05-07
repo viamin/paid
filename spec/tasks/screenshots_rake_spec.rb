@@ -62,6 +62,32 @@ RSpec.describe "screenshots:capture" do
         changed_files: [ "app/views/projects/index.html.erb" ]
       )
     end
+
+    it "passes repo-configured UI patterns and exclusions into detection" do
+      config = Screenshots::Configuration.from_hash(
+        "routes" => [ { "path" => "/", "name" => "home" } ],
+        "ui_patterns" => [ "frontend/**/*" ],
+        "ui_exclusions" => [ "frontend/vendor/**/*" ]
+      )
+
+      ENV["CHANGED_FILES"] = "frontend/app.js"
+      allow(File).to receive(:exist?).and_call_original
+      allow(File).to receive(:exist?).with(File.join(Dir.pwd, ".paid/screenshots.yml")).and_return(true)
+      allow(Screenshots::ConfigParser).to receive(:from_repo_path).with(Dir.pwd).and_return(config)
+      allow(Screenshots::DetectUiChanges).to receive(:call).and_return(
+        { ui_changes?: true, ui_files: [ "frontend/app.js" ] }
+      )
+      allow(Screenshots::Capture).to receive(:call).and_return([])
+
+      task.invoke
+
+      expect(Screenshots::DetectUiChanges).to have_received(:call).with(
+        changed_files: [ "frontend/app.js" ],
+        repo_path: Dir.pwd,
+        patterns: [ "frontend/**/*" ],
+        exclusions: [ "frontend/vendor/**/*" ]
+      )
+    end
   end
 
   context "when CHANGED_FILES is empty" do

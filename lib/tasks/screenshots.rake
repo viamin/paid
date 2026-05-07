@@ -10,7 +10,19 @@ namespace :screenshots do
     changed_files = ENV.fetch("CHANGED_FILES", "").split("\n").map(&:strip).reject(&:empty?)
 
     if changed_files.any?
-      result = Screenshots::DetectUiChanges.call(changed_files: changed_files)
+      ui_detection_options = { repo_path: Dir.pwd }
+      config_path = File.join(Dir.pwd, Screenshots::ConfigParser::CONFIG_PATH)
+
+      if File.exist?(config_path)
+        config = Screenshots::ConfigParser.from_repo_path(Dir.pwd)
+        ui_detection_options[:patterns] = config.ui_patterns
+        ui_detection_options[:exclusions] = config.ui_exclusions
+      end
+
+      result = Screenshots::DetectUiChanges.call(
+        changed_files: changed_files,
+        **ui_detection_options
+      )
       unless result[:ui_changes?]
         puts "No UI-facing file changes detected. Skipping screenshot capture."
         next

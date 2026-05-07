@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "find"
+
 module Screenshots
   # Auto-detects the web framework of a repository by examining file presence.
   #
@@ -53,22 +55,30 @@ module Screenshots
     end
 
     def file_exists?(path)
-      if @file_list
-        @file_list.any? { |f| f == path || f.start_with?("#{path}/") }
-      elsif @repo_path
-        File.exist?(File.join(@repo_path, path))
-      else
-        false
-      end
+      candidate_entries.any? { |f| f == path || f.start_with?("#{path}/") }
     end
 
     def any_match?(pattern)
-      if @file_list
-        @file_list.any? { |f| pattern.match?(f) }
+      candidate_entries.any? { |f| pattern.match?(f) }
+    end
+
+    def candidate_entries
+      @candidate_entries ||= if @file_list
+        Array(@file_list)
       elsif @repo_path
-        Dir.glob(File.join(@repo_path, "**/*")).any? { |f| pattern.match?(f.delete_prefix("#{@repo_path}/")) }
+        scan_repo_entries
       else
-        false
+        []
+      end
+    end
+
+    def scan_repo_entries
+      prefix = "#{@repo_path}/"
+
+      Find.find(@repo_path).each_with_object([]) do |path, entries|
+        next if path == @repo_path
+
+        entries << path.delete_prefix(prefix)
       end
     end
   end

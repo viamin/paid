@@ -108,6 +108,14 @@ RSpec.describe Screenshots::DetectFramework do
 
         expect(described_class.call(repo_path: repo_path)).to eq(:nextjs)
       end
+
+      it "detects Django from nested templates on the filesystem" do
+        FileUtils.mkdir_p(File.join(repo_path, "blog/templates/blog"))
+        File.write(File.join(repo_path, "manage.py"), "print('manage')")
+        File.write(File.join(repo_path, "blog/templates/blog/index.html"), "<h1>Blog</h1>")
+
+        expect(described_class.call(repo_path: repo_path)).to eq(:django)
+      end
     end
 
     context "with no arguments" do
